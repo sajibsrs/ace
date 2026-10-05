@@ -1,0 +1,276 @@
+/* Lexes one file and prints its tokens exactly as `ace --tokens` does. */
+
+import file
+import mem
+import str
+import sys
+
+import lexer: "./lexer.ace"
+
+Token: type = lexer.Token
+TokKind: type = lexer.TokKind
+
+/* Buffered standard output. */
+Out: struct {
+    buf: mut []u8 = null,
+    at: usize,
+}
+
+Out.flush(mut self) {
+    done: usize = 0
+    for done < self.at {
+        n: int, err: Error = sys.write(sys.stdout, self.buf[done..self.at])
+        if err != null { sys.exit(1) }
+        done += usize(n)
+    }
+    self.at = 0
+}
+
+Out.put(mut self, text: []u8) {
+    if self.at + text.len > self.buf.len { mut self.flush() }
+    if text.len > self.buf.len { // too long to buffer: write it straight through
+        done: usize = 0
+        for done < text.len {
+            n: int, err: Error = sys.write(sys.stdout, text[done..])
+            if err != null { sys.exit(1) }
+            done += usize(n)
+        }
+        return
+    }
+    mem.copy(self.buf[self.at..self.at + text.len], text)
+    self.at += text.len
+}
+
+Out.byte(mut self, c: u8) {
+    if self.at == self.buf.len { mut self.flush() }
+    self.buf[self.at] = c
+    self.at += 1
+}
+
+Out.num(mut self, v: u64) {
+    tmp: [24]u8
+    n: usize, ok: bool = str.format(mut tmp[..], usize(v))
+    mut self.put(tmp[..n])
+}
+
+/* C's `%g`: six significant digits, trailing zeros dropped, scientific when
+ * the decimal exponent is below -4 or at least 6. Rounds the exact value
+ * half to even.
+ */
+Out.general(mut self, v: f64) {
+    zero: f64 = 0.0
+    if v != v {
+        mut self.put("nan")
+        return
+    }
+    if v - v != zero {
+        if v < zero { mut self.put("-inf") } else { mut self.put("inf") }
+        return
+    }
+    if v < zero || (v == zero && 1.0 / v < zero) { mut self.byte('-') }
+    mag: f64 = v
+    if v < zero { mag = zero - v }
+    if mag == zero {
+        mut self.byte('0')
+        return
+    }
+
+    // mag = m * 2^e exactly; its decimal digits are those of m * 2^e when
+    // e >= 0, else of m * 5^-e scaled by 10^e. Digits are kept least
+    // significant first while multiplying.
+    raw: u64 = bitcast(u64, mag)
+    m: u64 = raw & u64(0xFFFFFFFFFFFFF)
+    e: int = int((raw >> 52) & u64(0x7FF))
+    if e == 0 {
+        e = -1074
+    } else {
+        m |= u64(1) << 52
+        e -= 1075
+    }
+    low: [800]u8 = [0 : 800]
+    nd: usize = 0
+    for m != 0 {
+        low[nd] = u8(m % 10)
+        m /= 10
+        nd += 1
+    }
+    factor: u32 = 2
+    times: int = e
+    if e < 0 {
+        factor = 5
+        times = -e
+    }
+    for k: int in 0 .. times {
+        carry: u32 = 0
+        for i: usize in 0 .. nd {
+            p: u32 = u32(low[i]) * factor + carry
+            low[i] = u8(p % 10)
+            carry = p / 10
+        }
+        if carry != 0 {
+            low[nd] = u8(carry)
+            nd += 1
+        }
+    }
+    exp: int = int(nd) - 1
+    if e < 0 { exp += e }
+
+    digits: [800]u8 = [0 : 800]
+    for i: usize in 0 .. nd { digits[i] = low[nd - 1 - i] + '0' }
+    first: usize = 0
+
+    // Six significant digits, rounded half to even on the exact tail.
+    sig: [7]u8 = [0 : 7]
+    for i: usize in 0 .. 6 {
+        if first + i < nd { sig[i] = digits[first + i] } else { sig[i] = '0' }
+    }
+    up: bool = false
+    if first + 6 < nd {
+        d: u8 = digits[first + 6]
+        if d > '5' {
+            up = true
+        } else if d == '5' {
+            rest: bool = false
+            for i: usize in first + 7 .. nd {
+                if digits[i] != '0' {
+                    rest = true
+                    break
+                }
+            }
+            up = rest || (sig[5] - '0') % 2 == 1
+        }
+    }
+    if up {
+        i: usize = 6
+        carry: bool = true
+        for carry && i > 0 {
+            i -= 1
+            if sig[i] == '9' {
+                sig[i] = '0'
+            } else {
+                sig[i] += 1
+                carry = false
+            }
+        }
+        if carry { // 999999 rounded to 1000000
+            sig[0] = '1'
+            exp += 1
+        }
+    }
+    last: usize = 6
+    for last > 1 && sig[last - 1] == '0' { last -= 1 }
+
+    if exp < -4 || exp >= 6 {
+        mut self.byte(sig[0])
+        if last > 1 {
+            mut self.byte('.')
+            mut self.put(sig[1..last])
+        }
+        mut self.byte('e')
+        e: int = exp
+        if e < 0 {
+            mut self.byte('-')
+            e = -e
+        } else {
+            mut self.byte('+')
+        }
+        if e < 10 { mut self.byte('0') }
+        mut self.num(u64(e))
+        return
+    }
+    if exp < 0 {
+        mut self.put("0.")
+        for i: int in 0 .. -exp - 1 { mut self.byte('0') }
+        mut self.put(sig[..last])
+        return
+    }
+    whole: usize = usize(exp) + 1
+    for i: usize in 0 .. whole {
+        if i < last { mut self.byte(sig[i]) } else { mut self.byte('0') }
+    }
+    if last > whole {
+        mut self.byte('.')
+        mut self.put(sig[whole..last])
+    }
+}
+
+/* Writes `text` to standard error. */
+complain(text: string) {
+    n: int, err: Error = sys.write(sys.stderr, text)
+}
+
+main(): int {
+    if sys.argc() != 2 {
+        complain("usage: lexer file.ace\n")
+        return 2
+    }
+    path: string = sys.arg(1)
+    src: mut []u8, rerr: Error = file.read(path)
+    defer mem.release[u8](mut src)
+    if rerr != null {
+        line: [4096]u8
+        n: usize, ok: bool = str.format(mut line[..], "ace: cannot open '%s'\n", path)
+        complain(line[..n])
+        return 1
+    }
+
+    out: Out = Out { buf = mem.alloc[u8](65536), at = 0 }
+    defer mem.release[u8](mut out.buf)
+    lx: lexer.Lexer = lexer.Lexer.new(src)
+    defer mut lx.wipe()
+    errors: int = 0
+
+    for {
+        t: Token, err: Error = mut lx.next()
+        if err != null {
+            line: u32, col: u32 = lx.where()
+            text: [4352]u8
+            n: usize, ok: bool = str.format(mut text[..], "%s:%d:%d: error: %s\n", path, int(line), int(col), err.message)
+            complain(text[..n])
+            errors += 1
+        }
+        mut out.num(u64(t.line))
+        mut out.byte(':')
+        mut out.num(u64(t.col))
+        mut out.byte('\t')
+        mut out.put(lexer.disp(t.kind))
+        switch t.kind {
+            TokKind.ident {
+                mut out.byte('\t')
+                mut out.put(t.text)
+            }
+            TokKind.int {
+                mut out.byte('\t')
+                mut out.num(t.ival)
+            }
+            TokKind.float {
+                mut out.byte('\t')
+                mut out.general(t.fval)
+            }
+            TokKind.string {
+                // The C dump prints with %.*s, which stops at a NUL byte.
+                end: usize, found: bool = str.find(t.text, char(0))
+                if !found { end = t.text.len }
+                mut out.put("\t\"")
+                mut out.put(t.text[..end])
+                mut out.byte('"')
+            }
+            TokKind.char {
+                mut out.byte('\t')
+                if t.ival >= 33 && t.ival <= 126 {
+                    mut out.byte('\'')
+                    mut out.byte(u8(t.ival))
+                    mut out.byte('\'')
+                } else {
+                    mut out.num(t.ival)
+                }
+            }
+            default {}
+        }
+        mut out.byte('\n')
+        if t.kind == TokKind.eof { break }
+    }
+    mut out.flush()
+    if errors > 0 { return 1 }
+    return 0
+}

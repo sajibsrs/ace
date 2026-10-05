@@ -140,6 +140,9 @@ history.
   language features), `std/` (standard-library operations), or `package/`
   (first-party packages; not `pkg/`, which is reserved for dependency
   lookup). Benchmarks never live under `tests/`.
+- Put Ace programs written to find language flaws under `experiment/<name>/`
+  (e.g. `experiment/lexer/`), structured like `demo/`. They are not part of
+  `make test`; an experiment may carry its own check script.
 
 ## Scoped rules
 

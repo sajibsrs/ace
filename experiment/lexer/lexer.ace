@@ -1,0 +1,643 @@
+/* lexer — the Ace lexer written in Ace, mirroring src/lexer.c token for token.
+ *
+ * `Lexer.next` streams one token per call. Identifier text is a view into the
+ * source; a string literal's decoded bytes live in the lexer's scratch buffer
+ * and stay valid only until the next call.
+ */
+
+import mem
+import str
+
+pub TokKind: enum u8 {
+    eof, newline, ident,
+    kw_import, kw_pub, kw_mut, kw_const, kw_noalias, kw_if, kw_else, kw_for,
+    kw_in, kw_switch, kw_default, kw_return, kw_break, kw_continue, kw_defer,
+    kw_asm, kw_extern, kw_contract, kw_struct, kw_embed, kw_signs, kw_distinct,
+    kw_type, kw_enum, kw_union, kw_specialized, kw_intrinsic, kw_inline,
+    kw_volatile, kw_self, kw_null, kw_true, kw_false,
+    int, float, string, char,
+    assign, add_eq, sub_eq, mul_eq, div_eq, mod_eq, and_eq, or_eq, xor_eq,
+    shl_eq, shr_eq,
+    plus, minus, star, slash, percent, eq_eq, bang_eq, lt, le, gt, ge,
+    and_and, or_or, amp, pipe, caret, shl, shr, tilde, bang,
+    lparen, rparen, lbrack, rbrack, lbrace, rbrace, comma, colon, semi, at,
+    dot, dot_dot, dot_dot_dot,
+}
+
+/* Display names, indexed by TokKind; must follow the enum's order. */
+DISP: [84]string = [
+    "eof", "newline", "ident",
+    "import", "pub", "mut", "const", "noalias", "if", "else", "for",
+    "in", "switch", "default", "return", "break", "continue", "defer",
+    "asm", "extern", "contract", "struct", "embed", "signs", "distinct",
+    "type", "enum", "union", "specialized", "intrinsic", "inline",
+    "volatile", "self", "null", "true", "false",
+    "int", "float", "string", "char",
+    "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
+    "<<=", ">>=",
+    "+", "-", "*", "/", "%", "==", "!=", "<", "<=", ">", ">=",
+    "&&", "||", "&", "|", "^", "<<", ">>", "~", "!",
+    "(", ")", "[", "]", "{", "}", ",", ":", ";", "@",
+    ".", "..", "...",
+]
+
+pub disp(kind: TokKind): string {
+    return DISP[u8(kind)]
+}
+
+pub LexErr: error {
+    1: allocation = "out of memory",
+    2: escape_end = "unterminated escape sequence",
+    3: escape_hex = "\\x escape needs two hex digits",
+    4: escape = "unknown escape sequence",
+    5: string = "unterminated string literal",
+    6: char_end = "unterminated char literal",
+    7: char_empty = "empty char literal",
+    8: char_size = "char literal must hold exactly one character",
+    9: exponent = "malformed float exponent",
+    10: exponent_dot = "float exponent requires a '.' — write 1.0e5, not 1e5",
+    11: separator = "malformed '_' separator (must sit between digits)",
+    12: digits = "missing digits after base prefix",
+    13: binary = "invalid binary digit",
+    14: range = "integer literal out of range",
+    15: colons = "'::' is not an operator; a type's functions are reached with '.'",
+    16: non_ascii = "non-ASCII byte (identifiers are ASCII in v1)",
+    17: unexpected = "unexpected character",
+    18: comment = "unterminated block comment",
+}
+
+pub Token: struct {
+    kind: TokKind,
+    line: u32,
+    col: u32,
+    text: string,  // ident: source view; string: decoded bytes (scratch)
+    ival: u64,     // int value, char byte
+    fval: f64,     // float value
+}
+
+pub Lexer: struct {
+    src: string,
+    pos: usize,
+    line: u32,
+    col: u32,
+    tline: u32,     // start of the token being scanned
+    tcol: u32,
+    prev: TokKind,  // last returned kind; newline = none or already emitted
+    count: usize,   // tokens returned so far
+    scratch: mut []u8 = null,
+    used: usize,
+    err: Error,     // first error of the current token
+    eline: u32,
+    ecol: u32,
+}
+
+/* A lexer over `src`, which must outlive it. Call `wipe` when done. */
+pub Lexer.new(src: string): Lexer {
+    lx: Lexer = Lexer {
+        src = src, pos = 0, line = 1, col = 1, tline = 1, tcol = 1,
+        prev = TokKind.newline, count = 0, used = 0,
+        err = null, eline = 0, ecol = 0,
+    }
+    if src.len >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
+        lx.pos = 3 // UTF-8 BOM
+    }
+    return lx
+}
+
+pub Lexer.wipe(mut self) {
+    mem.release[u8](mut self.scratch)
+    self.used = 0
+}
+
+/* The current error's position (valid when `next` returned an error). */
+pub Lexer.where(self): (u32, u32) {
+    return self.eline, self.ecol
+}
+
+inline Lexer.cur(self): u8 {
+    if self.pos < self.src.len { return self.src[self.pos] }
+    return 0
+}
+
+inline Lexer.peek(self, k: usize): u8 {
+    p: usize = self.pos + k
+    if p < self.src.len { return self.src[p] }
+    return 0
+}
+
+inline Lexer.adv(mut self): u8 {
+    if self.pos >= self.src.len { return 0 }
+    c: u8 = self.src[self.pos]
+    self.pos += 1
+    if c == '\n' {
+        self.line += 1
+        self.col = 1
+    } else {
+        self.col += 1
+    }
+    return c
+}
+
+Lexer.fail(mut self, e: Error) {
+    if self.err != null { return }
+    self.err = e
+    self.eline = self.tline
+    self.ecol = self.tcol
+}
+
+Lexer.push(mut self, c: u8) {
+    if self.used == self.scratch.len {
+        grown: mut []u8, ok: bool = mem.grow[u8](self.scratch, self.used + 1)
+        if !ok {
+            mut self.fail(LexErr.allocation)
+            return
+        }
+        self.scratch = grown
+    }
+    self.scratch[self.used] = c
+    self.used += 1
+}
+
+Lexer.make(self, kind: TokKind): Token {
+    return Token { kind = kind, line = self.tline, col = self.tcol, text = "", ival = 0, fval = 0.0 }
+}
+
+/* Can a token of this kind end an expression? (the newline rule) */
+ends_expr(k: TokKind): bool {
+    switch k {
+        TokKind.ident, TokKind.int, TokKind.float, TokKind.string, TokKind.char { return true }
+        TokKind.kw_null, TokKind.kw_true, TokKind.kw_false, TokKind.kw_self { return true }
+        TokKind.rparen, TokKind.rbrack, TokKind.rbrace { return true }
+        TokKind.kw_return, TokKind.kw_break, TokKind.kw_continue { return true }
+        TokKind.kw_specialized, TokKind.kw_intrinsic { return true }
+        default {}
+    }
+    return false
+}
+
+inline ident_start(c: u8): bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+}
+
+inline ident_char(c: u8): bool {
+    return ident_start(c) || (c >= '0' && c <= '9')
+}
+
+/* The digit's value in `base`, or -1. */
+digval(c: u8, base: int): int {
+    v: int = -1
+    if c >= '0' && c <= '9' {
+        v = int(c - '0')
+    } else if c >= 'a' && c <= 'f' {
+        v = int(c - 'a') + 10
+    } else if c >= 'A' && c <= 'F' {
+        v = int(c - 'A') + 10
+    }
+    if v >= base { v = -1 }
+    return v
+}
+
+/* Every '_' must sit between two digits of the given base. */
+seps_ok(p: []char, base: int): bool {
+    for i: usize in 0 .. p.len {
+        if p[i] != '_' { continue }
+        if i == 0 || i == p.len - 1 { return false }
+        if digval(p[i - 1], base) < 0 || digval(p[i + 1], base) < 0 { return false }
+    }
+    return true
+}
+
+keyword(t: []char): TokKind {
+    k: TokKind = TokKind.ident
+    switch t[0] {
+        'a' { if mem.equal(t, "asm") { k = TokKind.kw_asm } }
+        'b' { if mem.equal(t, "break") { k = TokKind.kw_break } }
+        'c' {
+              if mem.equal(t, "const") {
+                  k = TokKind.kw_const
+              } else if mem.equal(t, "continue") {
+                  k = TokKind.kw_continue
+              } else if mem.equal(t, "contract") {
+                  k = TokKind.kw_contract
+              }
+            }
+        'd' {
+              if mem.equal(t, "default") {
+                  k = TokKind.kw_default
+              } else if mem.equal(t, "defer") {
+                  k = TokKind.kw_defer
+              } else if mem.equal(t, "distinct") {
+                  k = TokKind.kw_distinct
+              }
+            }
+        'e' {
+            if mem.equal(t, "else") {
+                k = TokKind.kw_else
+            } else if mem.equal(t, "extern") {
+                k = TokKind.kw_extern
+            } else if mem.equal(t, "embed") {
+                k = TokKind.kw_embed
+            } else if mem.equal(t, "enum") {
+                k = TokKind.kw_enum
+            }
+        }
+        'f' {
+            if mem.equal(t, "for") {
+                k = TokKind.kw_for
+            } else if mem.equal(t, "false") {
+                k = TokKind.kw_false
+            }
+        }
+        'i' {
+            if mem.equal(t, "if") {
+                k = TokKind.kw_if
+            } else if mem.equal(t, "in") {
+                k = TokKind.kw_in
+            } else if mem.equal(t, "import") {
+                k = TokKind.kw_import
+            } else if mem.equal(t, "intrinsic") {
+                k = TokKind.kw_intrinsic
+            } else if mem.equal(t, "inline") {
+                k = TokKind.kw_inline
+            }
+        }
+        'm' { if mem.equal(t, "mut") { k = TokKind.kw_mut } }
+        'n' {
+            if mem.equal(t, "noalias") {
+                k = TokKind.kw_noalias
+            } else if mem.equal(t, "null") {
+                k = TokKind.kw_null
+            }
+        }
+        'p' { if mem.equal(t, "pub") { k = TokKind.kw_pub } }
+        'r' { if mem.equal(t, "return") { k = TokKind.kw_return } }
+        's' {
+            if mem.equal(t, "switch") {
+                k = TokKind.kw_switch
+            } else if mem.equal(t, "struct") {
+                k = TokKind.kw_struct
+            } else if mem.equal(t, "signs") {
+                k = TokKind.kw_signs
+            } else if mem.equal(t, "specialized") {
+                k = TokKind.kw_specialized
+            } else if mem.equal(t, "self") {
+                k = TokKind.kw_self
+            }
+        }
+        't' {
+            if mem.equal(t, "type") {
+                k = TokKind.kw_type
+            } else if mem.equal(t, "true") {
+                k = TokKind.kw_true
+            }
+        }
+        'u' { if mem.equal(t, "union") { k = TokKind.kw_union } }
+        'v' { if mem.equal(t, "volatile") { k = TokKind.kw_volatile } }
+        default {}
+    }
+    return k
+}
+
+Lexer.scan_ident(mut self): Token {
+    start: usize = self.pos
+    for ident_char(self.cur()) { mut self.adv() }
+    text: string = self.src[start..self.pos]
+    t: Token = self.make(keyword(text))
+    t.text = text
+    return t
+}
+
+Lexer.scan_number(mut self): Token {
+    start: usize = self.pos
+    base: int = 10
+    if self.cur() == '0' && (self.peek(1) == 'x' || self.peek(1) == 'X') {
+        mut self.adv()
+        mut self.adv()
+        base = 16
+    } else if self.cur() == '0' && (self.peek(1) == 'b' || self.peek(1) == 'B') {
+        mut self.adv()
+        mut self.adv()
+        base = 2
+    }
+
+    dstart: usize = self.pos
+    for self.cur() == '_' || digval(self.cur(), base) >= 0 { mut self.adv() }
+    dend: usize = self.pos
+
+    is_float: bool = false
+    if base == 10 && self.cur() == '.' && digval(self.peek(1), 10) >= 0 {
+        is_float = true
+        mut self.adv()
+        for self.cur() == '_' || digval(self.cur(), 10) >= 0 { mut self.adv() }
+        if self.cur() == 'e' || self.cur() == 'E' {
+            mut self.adv()
+            if self.cur() == '+' || self.cur() == '-' { mut self.adv() }
+            if digval(self.cur(), 10) < 0 { mut self.fail(LexErr.exponent) }
+            for self.cur() == '_' || digval(self.cur(), 10) >= 0 { mut self.adv() }
+        }
+    } else if base == 10 && (self.cur() == 'e' || self.cur() == 'E') {
+        n1: u8 = self.peek(1)
+        n2: u8 = self.peek(2)
+        if digval(n1, 10) >= 0 || ((n1 == '+' || n1 == '-') && digval(n2, 10) >= 0) {
+            mut self.fail(LexErr.exponent_dot)
+        }
+    }
+
+    if !seps_ok(self.src[dstart..self.pos], base) { mut self.fail(LexErr.separator) }
+    if dend == dstart {
+        mut self.fail(LexErr.digits)
+    } else if base == 2 && digval(self.cur(), 10) >= 0 {
+        mut self.fail(LexErr.binary)
+    }
+
+    if is_float {
+        self.used = 0
+        for i: usize in start .. self.pos {
+            if self.src[i] != '_' { mut self.push(self.src[i]) }
+        }
+        t: Token = self.make(TokKind.float)
+        v: f64, ok: bool = str.parse[f64](self.scratch[..self.used])
+        t.fval = v
+        return t
+    }
+
+    v: u64 = 0
+    over: bool = false
+    b: u64 = u64(base)
+    for i: usize in dstart .. dend {
+        c: u8 = self.src[i]
+        if c == '_' { continue }
+        dv: u64 = u64(digval(c, base))
+        if v > (u64(0xFFFFFFFFFFFFFFFF) - dv) / b {
+            over = true
+            break
+        }
+        v = v * b + dv
+    }
+    t: Token = self.make(TokKind.int)
+    t.ival = v // on overflow, the digits read so far (as the C lexer keeps them)
+    if over { mut self.fail(LexErr.range) }
+    return t
+}
+
+/* Called with the backslash already consumed. */
+Lexer.escape(mut self): u8 {
+    c: u8 = self.cur()
+    if c == 0 {
+        mut self.fail(LexErr.escape_end)
+        return '?'
+    }
+    mut self.adv()
+    switch c {
+        'n' { return '\n' }
+        't' { return '\t' }
+        'r' { return '\r' }
+        '0' { return 0 }
+        '\\', '"', '\'' { return c }
+        'x' {
+            h: int = digval(self.cur(), 16)
+            if h < 0 {
+                mut self.fail(LexErr.escape_hex)
+                return '?'
+            }
+            mut self.adv()
+            l: int = digval(self.cur(), 16)
+            if l < 0 {
+                mut self.fail(LexErr.escape_hex)
+                return '?'
+            }
+            mut self.adv()
+            return u8(h * 16 + l)
+        }
+        default {}
+    }
+    mut self.fail(LexErr.escape)
+    return '?'
+}
+
+Lexer.scan_string(mut self): Token {
+    mut self.adv() // opening quote
+    self.used = 0
+    for {
+        c: u8 = self.cur()
+        if c == '"' {
+            mut self.adv()
+            break
+        }
+        if c == 0 || c == '\n' {
+            mut self.fail(LexErr.string)
+            break
+        }
+        if c == '\\' {
+            mut self.adv()
+            e: u8 = mut self.escape()
+            mut self.push(e)
+        } else {
+            mut self.push(mut self.adv()) // UTF-8 bytes pass through
+        }
+    }
+    t: Token = self.make(TokKind.string)
+    t.text = self.scratch[..self.used]
+    return t
+}
+
+Lexer.scan_char(mut self): Token {
+    mut self.adv() // opening quote
+    val: u8 = 0
+    ok: bool = true
+    if self.cur() == 0 || self.cur() == '\n' {
+        mut self.fail(LexErr.char_end)
+        ok = false
+    } else if self.cur() == '\'' {
+        mut self.adv()
+        mut self.fail(LexErr.char_empty)
+        ok = false
+    } else if self.cur() == '\\' {
+        mut self.adv()
+        val = mut self.escape()
+    } else {
+        val = mut self.adv()
+    }
+    if ok {
+        if self.cur() != '\'' {
+            mut self.fail(LexErr.char_size)
+            for self.cur() != 0 && self.cur() != '\'' && self.cur() != '\n' { mut self.adv() }
+            if self.cur() == '\'' { mut self.adv() }
+        } else {
+            mut self.adv()
+        }
+    }
+    t: Token = self.make(TokKind.char)
+    t.ival = u64(val)
+    return t
+}
+
+/* `plain`, or `with_eq` when an '=' follows (consumed). */
+Lexer.eq(mut self, plain: TokKind, with_eq: TokKind): TokKind {
+    if self.cur() == '=' {
+        mut self.adv()
+        return with_eq
+    }
+    return plain
+}
+
+/* A punctuation token, or false after an unexpected byte (reported). */
+Lexer.scan_punct(mut self, c: u8): (TokKind, bool) {
+    mut self.adv()
+    k: TokKind = TokKind.eof
+    switch c {
+        '(' { k = TokKind.lparen }
+        ')' { k = TokKind.rparen }
+        '[' { k = TokKind.lbrack }
+        ']' { k = TokKind.rbrack }
+        '{' { k = TokKind.lbrace }
+        '}' { k = TokKind.rbrace }
+        ',' { k = TokKind.comma }
+        ':' {
+              if self.cur() == ':' { mut self.fail(LexErr.colons) }
+              k = TokKind.colon
+            }
+        '~' { k = TokKind.tilde }
+        '+' { k = mut self.eq(TokKind.plus, TokKind.add_eq) }
+        '-' { k = mut self.eq(TokKind.minus, TokKind.sub_eq) }
+        '*' { k = mut self.eq(TokKind.star, TokKind.mul_eq) }
+        '%' { k = mut self.eq(TokKind.percent, TokKind.mod_eq) }
+        '^' { k = mut self.eq(TokKind.caret, TokKind.xor_eq) }
+        '=' { k = mut self.eq(TokKind.assign, TokKind.eq_eq) }
+        '!' { k = mut self.eq(TokKind.bang, TokKind.bang_eq) }
+        '/' { k = mut self.eq(TokKind.slash, TokKind.div_eq) }
+        '&' {
+            if self.cur() == '&' {
+                mut self.adv()
+                k = TokKind.and_and
+            } else {
+                k = mut self.eq(TokKind.amp, TokKind.and_eq)
+            }
+        }
+        '|' {
+            if self.cur() == '|' {
+                mut self.adv()
+                k = TokKind.or_or
+            } else {
+                k = mut self.eq(TokKind.pipe, TokKind.or_eq)
+            }
+        }
+        '<' {
+            if self.cur() == '<' {
+                mut self.adv()
+                k = mut self.eq(TokKind.shl, TokKind.shl_eq)
+            } else {
+                k = mut self.eq(TokKind.lt, TokKind.le)
+            }
+        }
+        '>' {
+            if self.cur() == '>' {
+                mut self.adv()
+                k = mut self.eq(TokKind.shr, TokKind.shr_eq)
+            } else {
+                k = mut self.eq(TokKind.gt, TokKind.ge)
+            }
+        }
+        '.' {
+            k = TokKind.dot
+            if self.cur() == '.' {
+                mut self.adv()
+                k = TokKind.dot_dot
+                if self.cur() == '.' {
+                    mut self.adv()
+                    k = TokKind.dot_dot_dot
+                }
+            }
+        }
+        ';' { k = TokKind.semi }
+        '@' { k = TokKind.at }
+        default {
+            if c >= 0x80 {
+                mut self.fail(LexErr.non_ascii)
+            } else {
+                mut self.fail(LexErr.unexpected)
+            }
+            return k, false
+        }
+    }
+    return k, true
+}
+
+/* Skips whitespace and comments; true when a newline was crossed. */
+Lexer.trivia(mut self): bool {
+    nl: bool = false
+    for {
+        c: u8 = self.cur()
+        if c == ' ' || c == '\t' || c == 0x0B || c == 0x0C {
+            mut self.adv()
+        } else if c == '\n' {
+            mut self.adv()
+            nl = true
+        } else if c == '\r' { // CRLF and lone CR both count once
+            mut self.adv()
+            if self.cur() == '\n' { mut self.adv() }
+            nl = true
+        } else if c == '/' && self.peek(1) == '/' {
+            for self.cur() != 0 && self.cur() != '\n' { mut self.adv() }
+        } else if c == '/' && self.peek(1) == '*' {
+            self.tline = self.line
+            self.tcol = self.col
+            mut self.adv()
+            mut self.adv()
+            for {
+                if self.cur() == 0 {
+                    mut self.fail(LexErr.comment)
+                    break
+                }
+                if self.cur() == '*' && self.peek(1) == '/' {
+                    mut self.adv()
+                    mut self.adv()
+                    break
+                }
+                if self.cur() == '\n' { nl = true }
+                mut self.adv()
+            }
+        } else {
+            break
+        }
+    }
+    return nl
+}
+
+Lexer.emit(mut self, t: Token): (Token, Error) {
+    self.prev = t.kind
+    self.count += 1
+    e: Error = self.err
+    self.err = null
+    return t, e
+}
+
+/* The next token; after eof, eof again. A token with an error is still a
+ * token (as in the C lexer); `where` gives the error's position.
+ */
+pub Lexer.next(mut self): (Token, Error) {
+    for {
+        nl: bool = mut self.trivia()
+        self.tline = self.line
+        self.tcol = self.col
+
+        if self.cur() == 0 {
+            if self.count > 0 && self.prev != TokKind.newline && self.prev != TokKind.eof {
+                return mut self.emit(self.make(TokKind.newline))
+            }
+            return mut self.emit(self.make(TokKind.eof))
+        }
+
+        // No newline before ';' (for-head clauses stay joined).
+        if nl && ends_expr(self.prev) && self.cur() != ';' { return mut self.emit(self.make(TokKind.newline)) }
+
+        c: u8 = self.cur()
+        if ident_start(c) { return mut self.emit(mut self.scan_ident()) }
+        if c >= '0' && c <= '9' { return mut self.emit(mut self.scan_number()) }
+        if c == '"' { return mut self.emit(mut self.scan_string()) }
+        if c == '\'' { return mut self.emit(mut self.scan_char()) }
+        k: TokKind, ok: bool = mut self.scan_punct(c)
+        if ok { return mut self.emit(self.make(k)) }
+        // An unexpected byte yields no token; its error rides on the next one.
+    }
+}
