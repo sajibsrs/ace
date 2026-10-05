@@ -1503,12 +1503,22 @@ static int format_helper_call(Lw* l, Sym* h, Args* g, IrType ret) {
 // frame, drained to standard output; its closer returns the total or the
 // failing write's result. str.format's is the destination; its closer
 // returns the byte count or -1, giving (count, true) or (0, false).
-static int format_call(Lw* l, Node* x, int fi, Agg* res) {
+// fi is the format's argument index: 1 when a destination comes first. A
+// str.format destination is the sink's storage; a printf descriptor (to_fd)
+// is passed to the opener, and storage is in the frame as for plain printf.
+static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
     PrintfPlan* plan = (PrintfPlan*)x->aux;
     Sym* open = (Sym*)plan->open;
     Sym* close = (Sym*)plan->close;
-    int dp, dn;
-    if (fi) view_parts(l, x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0], &dp, &dn);
+    int dp, dn, fd = -1;
+    Node* dest = fi ? (x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0]) : NULL;
+    if (to_fd) {
+        Agg v;
+        value(l, dest, node_ty(dest), &v);
+        fd = widen(l, v.v[0], need_type(l, node_ty(dest)), need_type(l, open->type->params[2]));
+    } else if (fi) {
+        view_parts(l, dest, &dp, &dn);
+    }
     int nargs = x->nkids - fi - 1;
     Agg* cap = (Agg*)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(Agg));
     SType** capt = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
@@ -1521,7 +1531,7 @@ static int format_call(Lw* l, Node* x, int fi, Agg* res) {
         value(l, arg, t, &cap[i]);
         capt[i] = t;
     }
-    if (!fi) {
+    if (!fi || to_fd) {
         dp = at_entry(l, IR_SLOT, IT_PTR);
         l->fn->ins[dp].imm = PRINTF_STORAGE;
         l->fn->ins[dp].aux = 8;
@@ -1535,6 +1545,7 @@ static int format_call(Lw* l, Node* x, int fi, Agg* res) {
     g.v[g.n++] = dp;
     g.v[g.n++] = dn;
     g.agg = 1;
+    if (to_fd) arg_scalar(l, &g, fd);
     format_helper_call(l, open, &g, IT_VOID);
     for (int i = 0; i < plan->nparts; i++) {
         PrintfPart* part = &plan->parts[i];
@@ -1579,7 +1590,7 @@ static int format_call(Lw* l, Node* x, int fi, Agg* res) {
     args_init(&g);
     arg_scalar(l, &g, sink);
     int n = format_helper_call(l, close, &g, IT_I64);
-    if (!fi) return n;
+    if (!fi || to_fd) return n;
     int count = temp_var(l, IT_U64, konst(l, IT_U64, 0));
     int fit = temp_var(l, IT_BOOL, konst(l, IT_BOOL, 0));
     int wrote = guard(l, cmp(l, IR_GE, n, konst(l, IT_I64, 0)));
@@ -1641,7 +1652,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
     case BI_MEM_ALLOC: case BI_MEM_REALLOC: case BI_MEM_RELEASE: case BI_MEM_ALLOC_T: case BI_MEM_ZALLOC_T:
     case BI_MEM_REALLOC_T: case BI_MEM_RELEASE_T: case BI_MEM_ALLOC_SIZE: case BI_MEM_COPY: case BI_MEM_MOVE:
     case BI_MEM_FILL: case BI_MEM_ZERO: case BI_MEM_COMPARE: case BI_MEM_EQUAL: case BI_FMT_PRINTF:
-    case BI_STR_FORMAT:
+    case BI_FMT_PRINTF_FD: case BI_STR_FORMAT:
         if (x->ival != (uint64_t)bi) return -2; // sema checked it as the builtin
         switch (bi) {
         case BI_MEM_ALLOC: return mem_alloc(l, x, res);
@@ -1654,8 +1665,9 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         }
         case BI_MEM_COMPARE: return mem_compare(l, x);
         case BI_MEM_EQUAL: return mem_equal(l, x);
-        case BI_FMT_PRINTF: return x->aux ? format_call(l, x, 0, res) : -2;
-        case BI_STR_FORMAT: return x->aux ? format_call(l, x, 1, res) : -2;
+        case BI_FMT_PRINTF: return x->aux ? format_call(l, x, 0, 0, res) : -2;
+        case BI_FMT_PRINTF_FD: return x->aux ? format_call(l, x, 1, 1, res) : -2;
+        case BI_STR_FORMAT: return x->aux ? format_call(l, x, 1, 0, res) : -2;
         case BI_MEM_COPY: case BI_MEM_MOVE: case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
         default: return mem_alloc_typed(l, x, bi, res);
         }

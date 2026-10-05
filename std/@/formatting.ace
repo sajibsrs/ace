@@ -131,8 +131,9 @@ pub fixed(value: decimal.Decimal, digits: []u8, precision: usize, out: mut []u8)
 
 /* Formatted output through caller storage, shared by fmt.printf and
  * str.format. Pieces append to storage[0..used]; a piece that does not fit
- * first hands the buffered bytes to drain, which returns their count or a
- * non-positive failure. fmt.printf drains to standard output; str.format's
+ * first hands the buffered bytes to drain, with the sink's target, which
+ * returns their count or a non-positive failure. fmt.printf drains to its
+ * target descriptor (standard output by default); str.format's
  * drain refuses, so filling its destination fails the call. The first
  * failure sticks and later writes are no-ops. Nothing outlives the call.
  */
@@ -142,16 +143,18 @@ pub Sink: struct {
     drained: int,               // bytes drain has taken
     failed: bool,
     status: int,                // the failing drain result
-    drain: ([]u8): int,
+    target: i32,                // passed to drain: fmt.printf's descriptor
+    drain: (i32, []u8): int,
 }
 
-pub Sink.init(storage: mut []u8, drain: ([]u8): int): Sink {
+pub Sink.init(storage: mut []u8, target: i32, drain: (i32, []u8): int): Sink {
     return Sink {
         storage = storage,
         used = 0,
         drained = 0,
         failed = false,
         status = 0,
+        target = target,
         drain = drain,
     }
 }
@@ -160,8 +163,8 @@ pub Sink.init(storage: mut []u8, drain: ([]u8): int): Sink {
  * storage, so every later write takes the slow path, which stops there.
  */
 Sink.emit(mut self, bytes: []u8) {
-    drain: ([]u8): int = self.drain
-    n: int = drain(bytes)
+    drain: (i32, []u8): int = self.drain
+    n: int = drain(self.target, bytes)
 
     if n <= 0 {
         self.failed = true

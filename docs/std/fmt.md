@@ -154,6 +154,19 @@ shape depends on the static format.
 An argument with no value, such as a `panic(...)` call, is a compile-time
 error.
 
+A first argument of type `sys.Fd` writes to that descriptor instead of
+standard output, as C's `dprintf` does; everything else is the same:
+
+```ace
+import fmt
+import sys
+
+main(): int {
+    written: int = fmt.printf(sys.stderr, "warning: %d retries\n", 3)
+    return written - 19
+}
+```
+
 ## Design rationale
 
 Why the rules in `spec/std/fmt.md` are shaped as they are.

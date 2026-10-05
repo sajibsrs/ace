@@ -1,0 +1,31 @@
+/* fmt.printf to a descriptor: the formatted bytes reach the pipe it names and
+ * the result is their count, as for standard output.
+ */
+
+// expect-exit: 0
+// expect-output: out 1
+
+import fmt
+import mem
+import sys
+
+main(): int {
+    reader: sys.Fd, writer: sys.Fd, err: Error = sys.pipe()
+    if err != null { return 1 }
+
+    written: int = fmt.printf(writer, "%d:%s:%.1f %c\n", -42, "pipe", 2.25, u8('z'))
+    if written != 15 { return 2 }
+
+    if fmt.printf(writer, "") != 0 { return 3 }
+
+    if fmt.printf(sys.stdout, "out %d\n", 1) != 6 { return 4 }
+
+    sys.close(writer)
+    buffer: [32]u8 = [0 : 32]
+    n: int, rerr: Error = sys.read(reader, mut buffer[..])
+    sys.close(reader)
+    if rerr != null || n != 15 { return 5 }
+
+    if !mem.equal(buffer[..15], "-42:pipe:2.2 z\n") { return 6 }
+    return 0
+}

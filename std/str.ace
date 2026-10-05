@@ -481,12 +481,12 @@ pub format(destination: mut []char, format: string): (usize, bool) {
  * each format piece through the shared formatting.piece* writers between
  * put_open and put_close, which returns the byte count or -1.
  */
-refuse(bytes: []u8): int {
+refuse(target: i32, bytes: []u8): int {
     return -1
 }
 
 put_open(mut sink: formatting.Sink, destination: mut []char) {
-    sink = formatting.Sink.init(destination, refuse)
+    sink = formatting.Sink.init(destination, 0, refuse)
 }
 
 put_close(mut sink: formatting.Sink): int {

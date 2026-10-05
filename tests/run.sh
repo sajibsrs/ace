@@ -546,6 +546,21 @@ for want in \
     fi
 done
 
+printf_fd_errors=$("$ACE" tests/sema/printf/fd_err.ace 2>&1)
+for want in \
+    "11:45: error: fmt.printf argument 1 for conversion at decoded byte 0 requires int" \
+    "12:19: error: fmt.printf format requires 2 value arguments, got 1" \
+    "13:20: error: fmt.printf writes to the descriptor; it takes no 'mut'" \
+    "14:19: error: fmt.printf requires a compile-time-static format string" \
+    "15:40: error: fmt.printf is direct-call-only" \
+    "16:32: error: fmt.printf is direct-call-only" \
+    "17:53: error: str.format is direct-call-only"; do
+    if ! printf '%s\n' "$printf_fd_errors" | grep -qF "$want"; then
+        echo "FAIL: missing fmt.printf(fd, ...) diagnostic '$want'"
+        fail=1
+    fi
+done
+
 if ! "$ACE" tests/sema/printf/no_value_arg_err.ace 2>&1 | grep -qF \
     "6:29: error: fmt.printf argument has no value"; then
     echo "FAIL: missing printf no-value-argument diagnostic"
@@ -1850,8 +1865,8 @@ if [ -d tests/emit ]; then
         echo "FAIL: --report separator missing"
         fail=1
     fi
-    if ! printf '%s\n' "$report" | grep -q 'source files:.*9$'; then
-        echo "FAIL: --report should count root + fmt/target + decimal/bigint/ryu/table/formatting/mem sources"
+    if ! printf '%s\n' "$report" | grep -q 'source files:.*11$'; then
+        echo "FAIL: --report should count root + fmt/target + sys/target + decimal/bigint/ryu/table/formatting/mem sources"
         fail=1
     fi
     for label in 'source bytes:' 'tokens:' 'machine code:' 'object file:' 'compile time:'; do

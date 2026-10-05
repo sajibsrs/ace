@@ -199,6 +199,8 @@ printf_examples(): int {
     if written != 28 { return 1 }
     byte: u8 = u8(65)
     fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15), f32(0.5), byte)
+    warned: int = fmt.printf(sys.stderr, "warning: %d retries\n", 3)
+    if warned != 19 { return 2 }
     return 0
 }
 

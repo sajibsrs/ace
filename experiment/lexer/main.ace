@@ -1,6 +1,7 @@
 /* Lexes one file and prints its tokens exactly as `ace --tokens` does. */
 
 import file
+import fmt
 import mem
 import str
 import sys
@@ -222,23 +223,16 @@ Out.general(mut self, v: f64) {
     }
 }
 
-/* Writes `text` to standard error. */
-complain(text: string) {
-    n: int, err: Error = sys.write(sys.stderr, text)
-}
-
 main(): int {
     if sys.argc() != 2 {
-        complain("usage: lexer file.ace\n")
+        fmt.printf(sys.stderr, "usage: lexer file.ace\n")
         return 2
     }
     path: string = sys.arg(1)
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
-        line: [4096]u8
-        n: usize, ok: bool = str.format(mut line[..], "ace: cannot open '%s'\n", path)
-        complain(line[..n])
+        fmt.printf(sys.stderr, "ace: cannot open '%s'\n", path)
         return 1
     }
 
@@ -252,9 +246,7 @@ main(): int {
         t: Token, err: Error = mut lx.next()
         if err != null {
             line: u32, col: u32 = lx.where()
-            text: [4352]u8
-            n: usize, ok: bool = str.format(mut text[..], "%s:%d:%d: error: %s\n", path, int(line), int(col), err.message)
-            complain(text[..n])
+            fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), err.message)
             errors += 1
         }
         mut out.num(u64(t.line))

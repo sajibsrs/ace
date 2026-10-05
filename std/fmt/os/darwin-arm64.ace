@@ -4,6 +4,6 @@ extern "c" {
     c_write(fd: i32, data: *u8, size: usize): int as "write"
 }
 
-pub write(data: *u8, size: usize): int {
-    return c_write(1, data, size)
+pub write(fd: i32, data: *u8, size: usize): int {
+    return c_write(fd, data, size)
 }

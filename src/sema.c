@@ -2180,6 +2180,13 @@ static int coerce(Ck* k, Node* e, SType* want) {
                 e->ty = T_ERR;
                 return 0;
             }
+            if (found->decl && (found->decl->ival == BI_FMT_PRINTF || found->decl->ival == BI_FMT_PRINTF_FD ||
+                                found->decl->ival == BI_STR_FORMAT)) {
+                ck_err(k, e, "%s is direct-call-only because its checked arguments depend on the static format",
+                       found->decl->ival == BI_STR_FORMAT ? "str.format" : "fmt.printf");
+                e->ty = T_ERR;
+                return 0;
+            }
             if (has_mut_param(found->decl)) {
                 ck_err(k, e, "'%.*s' has a mut parameter and cannot be used as a function value",
                        (int)e->len, e->str);
@@ -2555,7 +2562,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             ck_err(k, e, "module '%.*s' used as a value", (int)e->len, e->str);
             return T_ERR;
         }
-        if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF) {
+        if (s->kind == SYM_FUNC && s->decl && (s->decl->ival == BI_FMT_PRINTF || s->decl->ival == BI_FMT_PRINTF_FD)) {
             ck_err(k, e, "fmt.printf is direct-call-only because its checked arguments depend on the static format");
             return T_ERR;
         }
@@ -3797,7 +3804,7 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
  * diagnostics.
  */
 typedef struct {
-    int         bi;         // BI_FMT_PRINTF or BI_STR_FORMAT
+    int         bi;         // BI_FMT_PRINTF, BI_FMT_PRINTF_FD, or BI_STR_FORMAT
     int         fi;         // the format's argument index
     const char* who;
     const char* open;       // the sink opener and closer beside the public function
@@ -3805,6 +3812,7 @@ typedef struct {
 } FormatCall;
 
 static const FormatCall PRINTF_CALL = { BI_FMT_PRINTF, 0, "fmt.printf", "print_open", "print_close" };
+static const FormatCall PRINTF_FD_CALL = { BI_FMT_PRINTF_FD, 1, "fmt.printf", "print_to_open", "print_close" };
 static const FormatCall STR_FORMAT_CALL = { BI_STR_FORMAT, 1, "str.format", "put_open", "put_close" };
 
 static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc) {
@@ -3822,7 +3830,10 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             return T_ERR;
         }
         Node* dest = call->kids[0];
-        if (dest->kind == N_MUTARG) {
+        if (dest->kind == N_MUTARG && fc->bi == BI_FMT_PRINTF_FD) {
+            ck_err(k, dest, "%s writes to the descriptor; it takes no 'mut'", who);
+            dest = dest->a;
+        } else if (dest->kind == N_MUTARG) {
             ck_err(k, dest, "%s writes through the destination slice's own permission; it takes no 'mut'", who);
             dest = dest->a;
         }
@@ -4637,8 +4648,24 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 }
             if (mi) return check_memory_call(k, call, mi, (int)mi->decl->ival);
         }
-        if (s->kind == SYM_FUNC && s->decl && s->decl->ival == BI_FMT_PRINTF)
-            return check_format_call(k, call, s, &PRINTF_CALL);
+        if (s->kind == SYM_FUNC && s->decl &&
+            (s->decl->ival == BI_FMT_PRINTF || s->decl->ival == BI_FMT_PRINTF_FD)) {
+            // fmt.printf("format", ...) or fmt.printf(fd, "format", ...): a
+            // first argument of the descriptor type selects the second.
+            Sym* plain = NULL;
+            Sym* to_fd = NULL;
+            for (Sym* it = s; it; it = it->overload) {
+                if (it->decl && it->decl->ival == BI_FMT_PRINTF) plain = it;
+                if (it->decl && it->decl->ival == BI_FMT_PRINTF_FD) to_fd = it;
+            }
+            if (to_fd && call->nkids >= 1) {
+                Node* first = call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0];
+                SType* ft = overload_arg_type(k, first);
+                if (ft && same_type(ft, to_fd->type->params[0]))
+                    return check_format_call(k, call, to_fd, &PRINTF_FD_CALL);
+            }
+            if (plain) return check_format_call(k, call, plain, &PRINTF_CALL);
+        }
         if (s->kind == SYM_FUNC && call->nkids >= 2) { // str.format(destination, "format", ...)
             Sym* sf = NULL;
             for (Sym* it = s; it; it = it->overload)

@@ -432,7 +432,8 @@ static void mark_fmt_intrinsics(Loader* L, Module* m) {
     if (!is_std_named_module(L, m->canon, "fmt")) return;
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
-        if (n->kind == N_FUNC && (n->flags & F_PUB) && text_is(n->str, n->len, "printf")) n->ival = BI_FMT_PRINTF;
+        if (n->kind == N_FUNC && (n->flags & F_PUB) && text_is(n->str, n->len, "printf"))
+            n->ival = n->nkids == 2 ? BI_FMT_PRINTF_FD : BI_FMT_PRINTF; // (fd, format) or (format)
     }
 }
 

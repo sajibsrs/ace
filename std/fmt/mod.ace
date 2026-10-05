@@ -6,15 +6,20 @@ import os: "./os/darwin-arm64.ace"
 @when(target == "linux-x64")
 import os: "./os/linux-x64.ace"
 
+import sys
+
 import decimal: @float_decimal
 import formatting: @formatting
+
+/* The descriptor every output call but `printf(fd, ...)` writes to. */
+STDOUT: const i32 = 1
 
 pub print(text: string): int {
     if text.len == 0 { return 0 }
     total: int = 0
 
     for attempt: int in 0 .. int(text.len) {
-        n: int = os.write(&text[total], text.len - usize(total))
+        n: int = os.write(STDOUT, &text[total], text.len - usize(total))
         if n <= 0 { return n }
 
         total += n
@@ -53,7 +58,7 @@ pub print(value: int): int {
     total: int = 0
 
     for attempt: int in 0 .. int(size) {
-        n: int = os.write(&digits[at + total], size - usize(total))
+        n: int = os.write(STDOUT, &digits[at + total], size - usize(total))
         if n <= 0 { return n }
 
         total += n
@@ -81,7 +86,7 @@ pub print(value: uint): int {
     total: int = 0
 
     for attempt: int in 0 .. int(size) {
-        n: int = os.write(&digits[at + total], size - usize(total))
+        n: int = os.write(STDOUT, &digits[at + total], size - usize(total))
         if n <= 0 { return n }
 
         total += n
@@ -109,7 +114,7 @@ pub print(value: usize): int {
     total: int = 0
 
     for attempt: int in 0 .. int(size) {
-        n: int = os.write(&digits[at + total], size - usize(total))
+        n: int = os.write(STDOUT, &digits[at + total], size - usize(total))
         if n <= 0 { return n }
 
         total += n
@@ -119,12 +124,13 @@ pub print(value: usize): int {
     return total
 }
 
-// Byte flush with partial-write retry, shared by the numeric overloads.
-write_bytes(data: []u8): int {
+// Byte flush to fd with partial-write retry, shared by the numeric overloads
+// and the printf sinks.
+write_bytes(fd: i32, data: []u8): int {
     total: int = 0
 
     for attempt: int in 0 .. int(data.len) {
-        n: int = os.write(&data[total], data.len - usize(total))
+        n: int = os.write(fd, &data[total], data.len - usize(total))
         if n <= 0 { return n }
 
         total += n
@@ -229,7 +235,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
         out[at] = u8(48 + lo)
         at += 1
     }
-    return write_bytes(out[0..at])
+    return write_bytes(STDOUT, out[0..at])
 }
 
 pub print(value: f64): int {
@@ -298,7 +304,12 @@ pub print(value: f32): int {
  * call and its non-positive result is returned unchanged.
  */
 print_open(mut sink: formatting.Sink, storage: mut []u8) {
-    sink = formatting.Sink.init(storage, write_bytes)
+    sink = formatting.Sink.init(storage, STDOUT, write_bytes)
+}
+
+/* The opener of `printf(fd, ...)`: the same sink, draining to fd. */
+print_to_open(mut sink: formatting.Sink, storage: mut []u8, fd: sys.Fd) {
+    sink = formatting.Sink.init(storage, i32(fd), write_bytes)
 }
 
 print_close(mut sink: formatting.Sink): int {
@@ -315,6 +326,15 @@ print_close(mut sink: formatting.Sink): int {
  */
 pub printf(format: string): int {
     return print(format)
+}
+
+/* `printf` to the descriptor fd instead of standard output, as C's `dprintf`;
+ * the same checks, lowering, and result.
+ */
+pub printf(fd: sys.Fd, format: string): int {
+    if format.len == 0 { return 0 }
+
+    return write_bytes(i32(fd), format)
 }
 
 /*

@@ -20,3 +20,7 @@
   storage and rejects an embedded NUL; `pkg/sdl` uses it. `sys` paths holding
   a NUL now fail with `EINVAL` instead of opening the shorter path; `sys`
   keeps its own copy, since it imports nothing.
+- `fmt.printf(fd, format, ...)` writes to a `sys.Fd` with `printf`'s checks
+  and result, as C's `dprintf`: the shared formatting sink passes a target to
+  its drain. Neither `printf` form nor `str.format`'s formatted form can be
+  taken as a function value through an explicit function type any more.
