@@ -130,13 +130,14 @@ main(): int {
   `string`. The format and arguments follow [`fmt.printf`](fmt.md) exactly:
   the format is a string literal or a `const` global, and the compiler checks
   each conversion's argument type. The text is `destination[..n]`; no NUL is
-  appended, so text for a C API writes `\0` in the format. A short destination
-  returns `(0, false)` with its contents unspecified. It cannot be used as a
-  function value.
+  appended. Text passed as a raw C pointer writes `\0` in the format; a
+  `string`-taking wrapper such as `debug_text` adds its own. A short
+  destination returns `(0, false)` with its contents unspecified. It cannot be
+  used as a function value.
 
 ```ace
 line: [64]u8 = [0 : 64]
-n: usize, ok: bool = str.format(mut line[..], "FPS %d, %.2f ms\0", fps, frame_ms)
+n: usize, ok: bool = str.format(mut line[..], "FPS %d, %.2f ms", fps, frame_ms)
 if ok { renderer.debug_text(6.0, 6.0, string(line[..n])) }
 ```
 

@@ -88,9 +88,9 @@ str_examples(): int {
     fps: int = 60
     frame_ms: f64 = 16.67
     line: [64]u8 = [0 : 64]
-    written: usize, ok_line: bool = str.format(mut line[..], "FPS %d, %.2f ms\0", fps, frame_ms)
+    written: usize, ok_line: bool = str.format(mut line[..], "FPS %d, %.2f ms", fps, frame_ms)
 
-    if !ok_line || written != 17 { return 6 }
+    if !ok_line || written != 16 { return 6 }
     return 0
 }
 
