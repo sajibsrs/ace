@@ -95,7 +95,7 @@ main(): int {
     buf: [32]char = [char(0) : 32]
     dst: mut []char = mut buf[0..32]
     count: usize, fit: bool = str.format(dst, n)
-    if !fit || count != 4 {
+    if !fit || count != 3 {
         return 3
     }
     return 0
