@@ -84,3 +84,8 @@
   and `x op= e` lower `e` first, then the target's place, then the old value,
   so a right side that grows the target's slice stores into the new storage; an
   aggregate copied from a place is snapshotted only when the target has a call.
+- A root-file type no longer turns an imported generic's same-named type
+  parameter (`[T]`) into specialization arguments: bracket interpretation
+  (Generics #12) skips root-file types for imported declarations, as lookup
+  does (#91); a specialization with no generic, bracketing a declared type,
+  hints to rename the type parameter.

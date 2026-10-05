@@ -678,6 +678,12 @@ if ! printf '%s\n' "$missing_generic_error" | grep -qF \
     echo "FAIL: missing missing-generic diagnostic"
     fail=1
 fi
+type_param_error=$("$ACE" tests/sema/specialization/type_named_param_err.ace 2>&1)
+if ! printf '%s\n' "$type_param_error" | grep -qF \
+    "'T' names a type here — rename the type parameter to declare a generic"; then
+    echo "FAIL: missing type-named-parameter hint"
+    fail=1
+fi
 unspecialized_call_error=$("$ACE" tests/sema/specialization/unspecialized_call_err.ace 2>&1)
 if ! printf '%s\n' "$unspecialized_call_error" | grep -qF \
     "matches no specialization — 'load' is declared 'specialized' (no default body) at line 4"; then

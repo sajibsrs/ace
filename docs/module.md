@@ -233,7 +233,8 @@ All loaded modules are merged into one compilation unit in dependency order —
 imported declarations come before the importing file's own — so an imported
 module is complete before its importer is checked. Within a file, top-level
 declarations are order-independent, and each file sees only its own top level
-and its imports: the root file's names never reach an imported module's code. Source file
+and its imports: the root file's names never reach an imported module's code, nor change
+whether its generic brackets declare type parameters or specialize. Source file
 names and line rows are preserved per file, so debugger line tables resolve
 every function to the file it was written in.
 

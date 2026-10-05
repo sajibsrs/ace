@@ -1774,7 +1774,10 @@ static Node* spec_bracket_ident(Scope* fs, Node* f, int is_extern) {
     if (is_extern || (f->flags & (F_EXPO | F_METHOD | F_ASSOC)) || !f->c) return NULL;
     for (int i = 0; i < f->c->nkids; i++) {
         Node* id = f->c->kids[i];
-        if (prim_by_name(id->str, id->len) || is_void_name(id) || scope_find(fs, 1, id->str, id->len)) return id;
+        if (prim_by_name(id->str, id->len) || is_void_name(id)) return id;
+        // root names stay unseen from imported modules (Sym.is_root is not yet set)
+        Sym* s = scope_find(fs, 1, id->str, id->len);
+        if (s && !(s->top && !in_imported(s->top) && in_imported(f))) return id;
     }
     return NULL;
 }
@@ -1930,7 +1933,12 @@ static void enter_specialization(Ck* k, Node* f) {
     int has_generic = 0;
     for (Sym* old = head; old && !has_generic; old = old->overload) has_generic = old->is_generic;
     if (!has_generic) {
-        ck_err(k, f, "no generic declaration of '%.*s' in this file", (int)f->len, f->str);
+        Node* id = spec_bracket_ident(k->scope, f, 0);
+        if (id && !prim_by_name(id->str, id->len) && !is_void_name(id))
+            ck_err(k, f, "no generic declaration of '%.*s' in this file; '%.*s' names a type here — rename the "
+                   "type parameter to declare a generic", (int)f->len, f->str, (int)id->len, id->str);
+        else
+            ck_err(k, f, "no generic declaration of '%.*s' in this file", (int)f->len, f->str);
         return;
     }
     if (f->flags & F_SPECIALIZED) {

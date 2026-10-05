@@ -1,0 +1,12 @@
+/* A bracket name that is a declared type makes a specialization; with no
+ * generic of that name, the error says how to declare a generic instead. */
+
+T: type = int
+
+main(): int {
+    return 0
+}
+
+pick[T](a: T, b: T): T {
+    return b
+}
