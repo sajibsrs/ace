@@ -27,7 +27,8 @@ paths:
   subcommands (`init`/`build`/`run`/`check`) rather than the debug flags —
   same one-directory-per-case/`<case>/app`+`<case>/pkg/<name>` layout, with
   `// expect-build-exit: N` (build an app, run it both via the linked binary
-  and `pkg run`), `// expect-build-ok` (build a lib: succeeds, no linked
+  and `pkg run`, passing it the words of `// run-args: ...` after `--`),
+  `// expect-build-ok` (build a lib: succeeds, no linked
   binary), `// expect-run-err: substring` (`pkg run` on a lib must fail with
   that diagnostic), and `// expect-check-ok` (`pkg check` succeeds from a
   nested working directory, proving the walk-up-to-nearest-`ace.pkg`

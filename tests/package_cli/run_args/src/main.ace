@@ -1,0 +1,11 @@
+/* `pkg run -- ARGS` passes ARGS to the program unchanged, even ace's own flags. */
+
+import mem
+import sys
+
+main(): int {
+    if sys.argc() != 3 { return 1 }
+    if !mem.equal(sys.arg(1), "--debug") { return 2 }
+    if !mem.equal(sys.arg(2), "en1") { return 3 }
+    return 0
+}

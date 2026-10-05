@@ -1,0 +1,7 @@
+// expect-build-exit: 0
+// run-args: --debug en1
+name: run_args
+version: 0.1.0
+ace: 0.1
+type: exe
+root: src/main.ace

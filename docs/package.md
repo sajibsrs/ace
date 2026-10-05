@@ -14,7 +14,7 @@ grouped under `ace pkg`:
 ace pkg init exe my_app
 ace pkg init lib my_lib
 ace pkg build
-ace pkg run
+ace pkg run [-- ARGS...]
 ace pkg check
 ace pkg add NAME VERSION
 ace pkg remove NAME
@@ -34,6 +34,9 @@ package, `build` additionally compiles and links into
 `--target=`/`--report` flags as plain compilation. `run` is
 exe-only — it errors on a `lib` package — and otherwise builds, then
 executes the linked binary in place, propagating its exact exit code.
+Arguments after the first `--` go to the program unchanged, so
+`ace pkg run --debug -- --debug input.json` builds in debug mode and passes
+the program `--debug input.json`; without `--` it receives none.
 
 `init <exe|lib> [DIR]` creates a minimal package skeleton at `DIR` (default:
 the working directory), deriving the package name from `DIR`'s basename. It

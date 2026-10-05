@@ -80,3 +80,5 @@
   an error (`module path is too long`, `build path ... is too long`) rather
   than a silent truncation, and `parse_stmt`'s identifier case returns instead
   of falling into `default`; gcc builds warning-free.
+- `ace pkg run` passes the arguments after the first `--` to the program
+  unchanged (as `cargo run --` does); flags before it stay the build's.

@@ -2354,7 +2354,8 @@ fi
 # dependencies under "$case/pkg/<name>", matching the tests/package convention. Markers live as
 # `//`-comments in ace.pkg: `// expect-build-exit: N` builds an app case and
 # runs it (via both `pkg build` + the binary, and `pkg run` directly),
-# expecting exit code N; `// expect-build-ok` builds a lib case, expecting
+# expecting exit code N, passing the words of `// run-args: ...` to the binary
+# and after `pkg run --debug --`; `// expect-build-ok` builds a lib case, expecting
 # `pkg build` to succeed with no linked binary in build/; `// expect-build-err:
 # substring` expects `pkg build` on an app case to fail with that diagnostic
 # (e.g. a native link-input conflict, Package System #14 — checking alone
@@ -2383,6 +2384,7 @@ if [ -d tests/package_cli ]; then
         [ -n "$host" ] && [ "$host" != "$(uname -s)" ] && continue
         name=$(sed -n 's/^name: *//p' "$f")
         build_exit=$(sed -n 's/^\/\/ *expect-build-exit:[[:space:]]*//p' "$f")
+        run_args=$(sed -n 's/^\/\/ *run-args:[[:space:]]*//p' "$f")
         build_ok=$(sed -n 's/^\/\/ *expect-build-ok[[:space:]]*.*/yes/p' "$f")
         build_err=$(sed -n 's/^\/\/ *expect-build-err:[[:space:]]*//p' "$f")
         run_err=$(sed -n 's/^\/\/ *expect-run-err:[[:space:]]*//p' "$f")
@@ -2479,13 +2481,13 @@ EOF
                 cat /tmp/ace_test_errs
                 fail=1
             else
-                "$dir/build/$name"
+                "$dir/build/$name" $run_args
                 got=$?
                 if [ "$got" -ne "$build_exit" ]; then
                     echo "FAIL: $dir/build/$name exited $got, want $build_exit"
                     fail=1
                 fi
-                (cd "$dir" && "$ACE" pkg run --debug) >/dev/null 2>/tmp/ace_test_errs
+                (cd "$dir" && "$ACE" pkg run --debug -- $run_args) >/dev/null 2>/tmp/ace_test_errs
                 got=$?
                 if [ "$got" -ne "$build_exit" ]; then
                     echo "FAIL: $dir 'pkg run' exited $got, want $build_exit"

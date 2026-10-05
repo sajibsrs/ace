@@ -69,8 +69,8 @@ static void usage(void) {
                     "  ace pkg build [--debug|--release] [--target=TARGET] [--report]\n"
                     "                compile (and, for an exe, link) the package found by\n"
                     "                walking up from the working directory to the nearest ace.pkg\n"
-                    "  ace pkg run   [--debug|--release] [--target=TARGET] [--report]\n"
-                    "                build, then execute the exe (exe-only)\n"
+                    "  ace pkg run   [--debug|--release] [--target=TARGET] [--report] [-- ARGS...]\n"
+                    "                build, then execute the exe (exe-only), passing it ARGS\n"
                     "  ace pkg check full semantic check of the enclosing package, no codegen\n");
     exit(2);
 }
@@ -235,7 +235,7 @@ static void package_usage(void) {
                     "       ace pkg build [--debug|--release] [--target=TARGET]\n"
                     "                     [--report]\n"
                     "       ace pkg run   [--debug|--release] [--target=TARGET]\n"
-                    "                     [--report]\n"
+                    "                     [--report] [-- ARGS...]\n"
                     "       ace pkg check\n"
                     "       ace pkg add NAME VERSION\n"
                     "       ace pkg remove NAME\n"
@@ -622,13 +622,26 @@ static int package_cmd_build(int argc, char** argv, const char* argv0) {
 }
 
 static int package_cmd_run(int argc, char** argv, const char* argv0) {
+    // Everything after the first "--" is the program's own argv, passed through untouched.
+    int nflags = 0;
+    while (nflags < argc && strcmp(argv[nflags], "--") != 0) nflags++;
+    int nprog = nflags < argc ? argc - nflags - 1 : 0;
+
     char bin[4096];
-    int rc = package_build_or_run(argc, argv, argv0, 1, bin, sizeof bin);
+    int rc = package_build_or_run(nflags, argv, argv0, 1, bin, sizeof bin);
     if (rc != 0) return rc;
 
-    char* args[] = {bin, NULL};
+    char** args = malloc(sizeof(char*) * (size_t)(nprog + 2));
+    if (!args) {
+        fprintf(stderr, "ace: out of memory\n");
+        return 1;
+    }
+    args[0] = bin;
+    for (int i = 0; i < nprog; i++) args[i + 1] = argv[nflags + 1 + i];
+    args[nprog + 1] = NULL;
     pid_t pid;
     int spawn_rc = posix_spawn(&pid, bin, NULL, NULL, args, environ);
+    free(args);
     if (spawn_rc != 0) {
         fprintf(stderr, "ace: cannot launch '%s': %s\n", bin, strerror(spawn_rc));
         return 1;
