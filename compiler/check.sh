@@ -3,7 +3,7 @@
 # .ace file, then times both on the largest files. Run from anywhere.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/../.." && pwd)
+root=$(cd "$here/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 

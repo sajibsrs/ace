@@ -95,3 +95,6 @@
   `darwin-arm64$SocketType`): the loader records each module prefix's display
   name (a directory module's name for every file beneath it, else the stem)
   and `type_name` maps prefixed names through it.
+- The Ace lexer moves from `experiment/lexer/` to `compiler/`, starting the
+  self-hosted compiler beside the C bootstrap in `src/`; `compiler/check.sh`
+  diffs its token stream against `ace --tokens` over every repository file.
