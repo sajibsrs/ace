@@ -2096,6 +2096,12 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
     int nfns = 0, cfns = 0, main_at = -1;
     SymTab by_name;
     memset(&by_name, 0, sizeof by_name);
+    // Globals likewise: only those a compiled function, an emitted global's
+    // initializer, or C export references are emitted.
+    Node** vars = NULL;
+    int nvars = 0, cvars = 0;
+    SymTab var_by_name;
+    memset(&var_by_name, 0, sizeof var_by_name);
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
@@ -2150,9 +2156,33 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             } while (generic && (inst = inst->next));
             break;
         }
-        case N_VAR:
-            emit_global(&e, n);
+        case N_VAR: {
+            // deferred like functions: emitted once referenced, unless C-exported
+            // or the object has no main (both checked below)
+            Node* binder = n->kids[0];
+            if (!node_sym(binder)) break;
+            if (nvars == cvars) {
+                cvars = cvars ? cvars * 2 : 64;
+                vars = realloc(vars, (size_t)cvars * sizeof *vars);
+                if (!vars) exit(1);
+            }
+            vars[nvars++] = n;
+            char nm[640];
+            if (sema_build_type(binder->a)->kind == SK_STATICMAP) {
+                static const char* parts[] = { "keys", "values", "slots" };
+                for (int k = 0; k < 3; k++) {
+                    snprintf(nm, sizeof nm, "__ace$map$%.*s$%s", (int)binder->len, binder->str, parts[k]);
+                    sym_intern(&var_by_name, nm, (uint32_t)strlen(nm))->value = (uint64_t)nvars;
+                }
+            } else if (n->flags & F_EXPO) {
+                vars[nvars - 1] = NULL; // a C global may be read from anywhere
+                emit_global(&e, n);
+            } else {
+                snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);
+                sym_intern(&var_by_name, nm, (uint32_t)strlen(nm))->value = (uint64_t)nvars;
+            }
             break;
+        }
         case N_SIGNING:
             emit_signing(&e, n);
             break;
@@ -2162,13 +2192,22 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
     }
     for (int i = 0; i < nfns; i++)
         if (main_at < 0 || fns[i].global) compile_fn(&e, file, mode, &fns[i], i == main_at);
+    if (main_at < 0)
+        for (int i = 0; i < nvars; i++)
+            if (vars[i]) { emit_global(&e, vars[i]); vars[i] = NULL; }
     for (size_t k = 0; k < e.o.syms.n; k++) {
         ESym* s = e.o.syms.v[k];
         if (s->type) continue;
         ESym* hit = sym_intern(&by_name, s->name, s->len);
         if (hit->value && !fns[hit->value - 1].done) compile_fn(&e, file, mode, &fns[hit->value - 1], 0);
+        hit = sym_intern(&var_by_name, s->name, s->len);
+        if (hit->value && vars[hit->value - 1]) {
+            emit_global(&e, vars[hit->value - 1]);
+            vars[hit->value - 1] = NULL;
+        }
     }
     free(fns);
+    free(vars);
     int x64 = strcmp(ace_target, "linux-x64") == 0;
     if (x64) {
         x64_runtime(&e.o);

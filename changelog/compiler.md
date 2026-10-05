@@ -1,5 +1,9 @@
 # Compiler
 
+- Globals join function reachability: a global is emitted only once a compiled
+  function references its symbol (C exports always, everything without
+  `main`), so importing `sys` for a type no longer links its ~70 constants
+  (`bench/core/raytrace` 62456 → 37112 bytes).
 - Front end roughly halved (`bench/std/string` check 119.6M → 61.9M
   instructions): built-in std modules are recognized by comparing the
   module's resolved path under the std root, not by `realpath` on candidate

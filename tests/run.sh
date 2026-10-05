@@ -1503,6 +1503,16 @@ if [ -d tests/emit ]; then
             echo "FAIL: loop heads must be 16-byte aligned"
             fail=1
         fi
+        # Globals no compiled function references are not emitted; C exports are.
+        if command -v nm >/dev/null 2>&1; then
+            syms=$(nm /tmp/ace_emit/basics/unreferenced_globals.o)
+            if printf '%s\n' "$syms" | grep -Eq 'ace\$g\$(UNUSED|spare)$' ||
+               ! printf '%s\n' "$syms" | grep -q 'ace\$g\$counter$' ||
+               ! printf '%s\n' "$syms" | grep -q ' _exported$'; then
+                echo "FAIL: unreferenced globals emitted, or referenced/exported ones missing"
+                fail=1
+            fi
+        fi
         # Scalar locals, parameters, and range-loop state are never reached
         # through a computed frame address.
         if ! otool -tv /tmp/ace_emit/basics/local_slots.o | awk '

@@ -1,0 +1,15 @@
+/* Only referenced globals are emitted; C-exported ones always are. */
+
+// expect-exit: 42
+
+USED: const int = 37
+UNUSED: const int = 7
+counter: int = 3
+spare: int = 9
+
+extern "c" exported: i32 = 5
+
+main(): int {
+    counter += 2
+    return USED + counter - 3 + int(exported) - 2
+}
