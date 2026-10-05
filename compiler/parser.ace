@@ -1,0 +1,1803 @@
+/* parser — the Ace parser written in Ace, mirroring src/parser.c node for node.
+ *
+ * The whole file is lexed up front into `kinds` (one Token per entry) and
+ * `toks` (positions and values), so lookahead is index arithmetic. Nodes live
+ * in one flat array, addressed by u32 index; index 0 is the absent node. A
+ * node's variable-length children are a run in the shared `kids` array, built
+ * on `stack` while the list is open. Per-kind layout follows src/parser.c.
+ *
+ * The first syntax error stops the parse: from then on every token reads as
+ * eof, so each loop ends without further checks.
+ */
+
+import fmt
+import mem
+import str
+import sys
+
+import lexer: "./lexer.ace"
+import output: "./output.ace"
+
+pub Token: type = lexer.Token
+Out: type = output.Out
+
+pub Kind: enum u8 {
+    file,
+    named, ptr, slice_t, array_t, tuple_t, func_t, const_t, tparams, staticmap_t,
+    import, var, func, param, struct, bits, field, union, variant, contract,
+    method, enum, alias, distinct, error_domain, signing, conformance, extern,
+    externfn, externvar,
+    block, exprstmt, assign, if, for, range, switch, case, varpat, return,
+    break, continue, fallthrough, asm, asmbind, label, defer,
+    int_lit, float_lit, str_lit, char_lit, bool, null, ident, tuple_e,
+    binary, cmpchain, ops, op, unary, call, mutarg, index, slice_e, field_e,
+    arraylit, structlit, fieldinit, staticmaplit, mapentry,
+}
+
+/* Dump names, as `ace --ast` prints them. */
+NAMES: [Kind]string = [
+    Kind.file = "file",                  Kind.named = "named",                Kind.ptr = "ptr",
+    Kind.slice_t = "slice_t",            Kind.array_t = "array_t",            Kind.tuple_t = "tuple_t",
+    Kind.func_t = "func_t",              Kind.const_t = "const_t",            Kind.tparams = "tparams",
+    Kind.staticmap_t = "staticmap_t",    Kind.import = "import",             Kind.var = "var",
+    Kind.func = "func",                  Kind.param = "param",                Kind.struct = "struct",
+    Kind.bits = "bits",                  Kind.field = "field",                Kind.union = "union",
+    Kind.variant = "variant",            Kind.contract = "contract",         Kind.method = "method",
+    Kind.enum = "enum",                 Kind.alias = "alias",                Kind.distinct = "distinct",
+    Kind.error_domain = "error",         Kind.signing = "signing",            Kind.conformance = "conformance",
+    Kind.extern = "extern",             Kind.externfn = "externfn",          Kind.externvar = "externvar",
+    Kind.block = "block",                Kind.exprstmt = "exprstmt",          Kind.assign = "assign",
+    Kind.if = "if",                     Kind.for = "for",                   Kind.range = "range",
+    Kind.switch = "switch",             Kind.case = "case",                  Kind.varpat = "varpat",
+    Kind.return = "return",             Kind.break = "break",               Kind.continue = "continue",
+    Kind.fallthrough = "fallthrough",    Kind.asm = "asm",                   Kind.asmbind = "asmbind",
+    Kind.label = "label",                Kind.defer = "defer",               Kind.int_lit = "int_lit",
+    Kind.float_lit = "float_lit",        Kind.str_lit = "str_lit",            Kind.char_lit = "char_lit",
+    Kind.bool = "bool",                 Kind.null = "null",                 Kind.ident = "ident",
+    Kind.tuple_e = "tuple",              Kind.binary = "binary",              Kind.cmpchain = "cmpchain",
+    Kind.ops = "ops",                    Kind.op = "op",                      Kind.unary = "unary",
+    Kind.call = "call",                  Kind.mutarg = "mutarg",              Kind.index = "index",
+    Kind.slice_e = "slice",              Kind.field_e = "field",              Kind.arraylit = "arraylit",
+    Kind.structlit = "structlit",        Kind.fieldinit = "fieldinit",        Kind.staticmaplit = "staticmaplit",
+    Kind.mapentry = "mapentry",
+]
+
+/* Node flags, with src/ace.h's values. */
+pub F_PUB: const u32 = 1
+pub F_EXPO: const u32 = 2
+pub F_MUT: const u32 = 4
+pub F_NOALIAS: const u32 = 8
+pub F_CONST: const u32 = 16
+pub F_DEFAULT: const u32 = 32
+pub F_VARARGS: const u32 = 64
+pub F_METHOD: const u32 = 128
+pub F_SELECT: const u32 = 256
+pub F_EMBED: const u32 = 512
+pub F_SPECIALIZED: const u32 = 1024
+pub F_FORGEN: const u32 = 2048
+pub F_MIXED: const u32 = 4096
+pub F_INTRINSIC: const u32 = 16384
+pub F_PACKED: const u32 = 32768
+pub F_VOLATILE: const u32 = 65536
+pub F_CABI: const u32 = 131072
+pub F_ASSOC: const u32 = 262144
+pub F_INLINE: const u32 = 1048576
+pub F_COLD: const u32 = 4194304
+pub F_GROUPED: const u32 = 33554432
+F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
+
+/* Flag dump names, in `ace --ast` order. */
+FLAG_BITS: [18]u32 = [
+    F_PUB, F_EXPO, F_MUT, F_NOALIAS, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
+    F_ASSOC, F_SELECT, F_EMBED, F_SPECIALIZED, F_INTRINSIC, F_INLINE, F_COLD,
+    F_PACKED, F_VOLATILE, F_CABI,
+]
+FLAG_NAMES: [18]string = [
+    " pub", " extern-c", " mut", " noalias", " const", " default", " varargs",
+    " method", " assoc", " select", " embed", " specialized", " intrinsic",
+    " inline", " cold", " packed", " volatile", " c_abi",
+]
+
+NOSLIT: const int = 1 // no struct literal at this expression level
+
+pub Node: struct {
+    kind: Kind,
+    op: Token,     // binary/unary/assign/op operator
+    flags: u32,
+    line: u32,
+    col: u32,
+    text: string,  // name or string bytes, when F_TEXT is set
+    ival: u64,     // int/char/bool literal
+    fval: f64,     // float literal
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    kids: u32,     // first child in Parser.kids
+    nkids: u32,
+}
+
+/* A token's position and value; its kind lives in Parser.kinds. */
+Tok: struct {
+    line: u32,
+    col: u32,
+    ival: u64,
+    fval: f64,
+    text: string, // ident: source view; string: decoded bytes in `pool`
+}
+
+pub Parser: struct {
+    path: string,
+    kinds: mut []Token = null,
+    toks: mut []Tok = null,
+    ntok: usize,
+    pool: mut []u8 = null, // decoded string literals; never reallocated
+    i: usize,
+    nodes: mut []Node = null,
+    nnode: usize,
+    kids: mut []u32 = null,
+    nkid: usize,
+    stack: mut []u32 = null,
+    nstack: usize,
+    failed: bool,
+    eline: u32,
+    ecol: u32,
+    msg: mut []u8 = null,
+    nmsg: usize,
+}
+
+/* Lexes `src` (which must outlive the parser) into a parser over `path`.
+ * Lex errors are reported on stderr as `ace --tokens` reports them; the
+ * returned count is how many there were. Call `wipe` when done.
+ */
+pub Parser.new(src: string, path: string): (Parser, int) {
+    p: Parser = Parser { path = path, ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, eline = 0, ecol = 0, nmsg = 0 }
+    p.pool = mem.alloc[u8](src.len + 1)
+    p.msg = mem.alloc[u8](256)
+    p.kinds = mem.alloc[Token](64)
+    p.toks = mem.alloc[Tok](64)
+    p.nodes = mem.alloc[Node](256)
+    p.kids = mem.alloc[u32](256)
+    p.stack = mem.alloc[u32](64)
+    used: usize = 0
+    errors: int = 0
+    lx: lexer.Lexer = lexer.Lexer.new(src)
+    defer mut lx.wipe()
+    for {
+        t: Token, err: Error = mut lx.next()
+        if err != null {
+            eline: u32, ecol: u32 = lx.where()
+            report(path, eline, ecol, err.message)
+            errors += 1
+        }
+        line: u32, col: u32 = lx.pos()
+        tok: Tok = Tok { line = line, col = col, ival = lx.int(), fval = lx.float(), text = "" }
+        switch t {
+            Token.string {
+                text: string = lx.lit()
+                mem.copy(p.pool[used..used + text.len], text)
+                tok.text = p.pool[used..used + text.len]
+                used += text.len
+            }
+            default { tok.text = lx.lit() }
+        }
+        if p.ntok == p.kinds.len {
+            p.kinds = grow[Token](p.kinds)
+            p.toks = grow[Tok](p.toks)
+        }
+        p.kinds[p.ntok] = t
+        p.toks[p.ntok] = tok
+        p.ntok += 1
+        if t == Token.eof { break }
+    }
+    return p, errors
+}
+
+pub Parser.wipe(mut self) {
+    mem.release[Token](mut self.kinds)
+    mem.release[Tok](mut self.toks)
+    mem.release[u8](mut self.pool)
+    mem.release[Node](mut self.nodes)
+    mem.release[u32](mut self.kids)
+    mem.release[u32](mut self.stack)
+    mem.release[u8](mut self.msg)
+}
+
+/* `s` with doubled capacity; aborts when out of memory, as the C parser's
+ * arena does.
+ */
+grow[T](s: mut []T): mut []T {
+    g: mut []T, ok: bool = mem.grow[T](s, s.len * 2)
+    if !ok {
+        report("ace", 0, 0, "out of memory")
+        sys.exit(1)
+    }
+    return g
+}
+
+report(path: string, line: u32, col: u32, message: string) {
+    fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), message)
+}
+
+/* The syntax error, if the parse failed. */
+pub Parser.error(self): (bool, u32, u32, string) {
+    return self.failed, self.eline, self.ecol, self.msg[..self.nmsg]
+}
+
+pub Parser.node(self, n: u32): Node {
+    return self.nodes[n]
+}
+
+pub Parser.kid(self, n: u32, k: u32): u32 {
+    return self.kids[self.nodes[n].kids + k]
+}
+
+// --- cursor -------------------------------------------------------------------
+
+/* The kind of the token `k` ahead; eof past the end or after an error. */
+inline Parser.kth(self, k: usize): Token {
+    j: usize = self.i + k
+    if self.failed || j >= self.ntok { return Token.eof }
+    return self.kinds[j]
+}
+
+pub inline Parser.at(self, k: Token): bool {
+    return self.kth(0) == k
+}
+
+pub inline Parser.ate(mut self, k: Token): bool {
+    if self.kth(0) == k {
+        self.i += 1
+        return true
+    }
+    return false
+}
+
+/* The current token is the identifier `s`. */
+Parser.ident_at(self, k: usize, s: string): bool {
+    return self.kth(k) == Token.ident && mem.equal(self.toks[self.i + k].text, s)
+}
+
+/* Records the first error, at token `ti`, as the concatenation of `parts`;
+ * later errors are dropped.
+ */
+Parser.fail_at(mut self, ti: usize, a: string, b: string, c: string, d: string) {
+    if self.failed { return }
+    self.failed = true
+    t: usize = ti
+    if t >= self.ntok { t = self.ntok - 1 }
+    self.eline = self.toks[t].line
+    self.ecol = self.toks[t].col
+    mut self.append(a)
+    mut self.append(b)
+    mut self.append(c)
+    mut self.append(d)
+}
+
+Parser.append(mut self, part: string) {
+    n: usize = part.len
+    if self.nmsg + n > self.msg.len { n = self.msg.len - self.nmsg }
+    mem.copy(self.msg[self.nmsg..self.nmsg + n], part[..n])
+    self.nmsg += n
+}
+
+Parser.fail(mut self, message: string) {
+    mut self.fail_at(self.i, message, "", "", "")
+}
+
+/* `prefix` then the current token's description, as C's gdesc writes it. */
+Parser.fail_got(mut self, prefix: string) {
+    if self.failed { return }
+    switch self.kinds[self.i] {
+        Token.ident { mut self.fail_at(self.i, prefix, "'", self.toks[self.i].text, "'") }
+        Token.string { mut self.fail_at(self.i, prefix, "string literal", "", "") }
+        default { mut self.fail_at(self.i, prefix, "'", lexer.disp(self.kinds[self.i]), "'") }
+    }
+}
+
+/* "expected <what>, got <current token>". */
+Parser.fail_expected(mut self, what: string) {
+    if self.failed { return }
+    mut self.append("expected ")
+    mut self.append(what)
+    mut self.fail_got(", got ")
+}
+
+/* A member name (field, enum member, variant, error entry, method) may be a
+ * keyword: it is declared in its list or written after '.', never bare.
+ */
+member_kind(k: Token): bool {
+    return k == Token.ident || (u8(k) >= u8(Token.import) && u8(k) <= u8(Token.false))
+}
+
+/* Consumes a member name and returns its index, or fails. */
+Parser.expect_member(mut self, what: string): usize {
+    if !member_kind(self.kth(0)) { mut self.fail_expected(what) }
+    t: usize = self.i
+    if !self.failed { self.i += 1 }
+    return t
+}
+
+/* Consumes a `k` token and returns its index, or fails. */
+Parser.expect(mut self, k: Token, what: string): usize {
+    if !self.at(k) { mut self.fail_expected(what) }
+    t: usize = self.i
+    if !self.failed { self.i += 1 }
+    return t
+}
+
+
+// --- nodes --------------------------------------------------------------------
+
+/* A new node of `kind` at token `ti`'s position. */
+Parser.make(mut self, kind: Kind, ti: usize): u32 {
+    if self.nnode == self.nodes.len { self.nodes = grow[Node](self.nodes) }
+    t: usize = ti
+    if t >= self.ntok { t = self.ntok - 1 }
+    n: u32 = u32(self.nnode)
+    self.nodes[n] = Node {
+        kind = kind, op = Token.eof, flags = 0, line = self.toks[t].line, col = self.toks[t].col,
+        text = "", ival = 0, fval = 0.0, a = 0, b = 0, c = 0, d = 0, kids = 0, nkids = 0,
+    }
+    self.nnode += 1
+    return n
+}
+
+/* A new node at the current token. */
+Parser.nd(mut self, kind: Kind): u32 {
+    return mut self.make(kind, self.i)
+}
+
+Parser.named(mut self, n: u32, text: string) {
+    self.nodes[n].text = text
+    self.nodes[n].flags |= F_TEXT
+}
+
+/* An identifier node for token `ti`. */
+Parser.ident_node(mut self, kind: Kind, ti: usize): u32 {
+    n: u32 = mut self.make(kind, ti)
+    mut self.named(n, self.toks[ti].text)
+    return n
+}
+
+Parser.push(mut self, x: u32) {
+    if self.nstack == self.stack.len { self.stack = grow[u32](self.stack) }
+    self.stack[self.nstack] = x
+    self.nstack += 1
+}
+
+/* Moves the children pushed since `mark` into `n`'s kids. */
+Parser.close(mut self, n: u32, mark: usize) {
+    count: usize = self.nstack - mark
+    for self.nkid + count > self.kids.len { self.kids = grow[u32](self.kids) }
+    for j: usize in 0..count { self.kids[self.nkid + j] = self.stack[mark + j] }
+    self.nodes[n].kids = u32(self.nkid)
+    self.nodes[n].nkids = u32(count)
+    self.nkid += count
+    self.nstack = mark
+}
+
+// --- types --------------------------------------------------------------------
+
+/* At `void` used as a type (not `void.x`). */
+Parser.at_void(self): bool {
+    return self.ident_at(0, "void") && self.kth(1) != Token.dot
+}
+
+/* A function type's return after its ':': a type, or 'void' for none. */
+Parser.func_type_ret(mut self): u32 {
+    if self.at_void() {
+        self.i += 1
+        return 0
+    }
+    return mut self.parse_type()
+}
+
+/* A type argument: a type, or 'void'. */
+Parser.type_arg(mut self): u32 {
+    if !self.at_void() { return mut self.parse_type() }
+    v: u32 = mut self.ident_node(Kind.named, self.i)
+    self.i += 1
+    return v
+}
+
+/* A comma list of types up to `close`, trailing comma allowed. */
+Parser.type_list(mut self, close: Token) {
+    if self.at(close) { return }
+    for {
+        mut self.push(mut self.parse_type())
+        if !mut self.ate(Token.comma) || self.at(close) { break }
+    }
+}
+
+pub Parser.parse_type(mut self): u32 {
+    if self.at(Token.const) {
+        t: u32 = mut self.nd(Kind.const_t)
+        self.i += 1
+        a: u32 = mut self.parse_type()
+        self.nodes[t].a = a
+        return t
+    }
+    if self.at(Token.mut) { // type-position mut marks writable content
+        self.i += 1
+        if self.at(Token.star) { // mut *T
+            t: u32 = mut self.nd(Kind.ptr)
+            self.nodes[t].flags |= F_MUT
+            self.i += 1
+            a: u32 = mut self.parse_type()
+            self.nodes[t].a = a
+            return t
+        }
+        if self.at(Token.lbrack) { // mut []T
+            if self.kth(1) != Token.rbrack {
+                mut self.fail("'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array type takes no 'mut'")
+                return 0
+            }
+            t: u32 = mut self.nd(Kind.slice_t)
+            self.nodes[t].flags |= F_MUT
+            self.i += 2
+            a: u32 = mut self.parse_type()
+            self.nodes[t].a = a
+            return t
+        }
+        if self.ident_at(0, "string") && self.kth(1) != Token.dot { // mut string
+            t: u32 = mut self.ident_node(Kind.named, self.i)
+            self.nodes[t].flags |= F_MUT
+            self.i += 1
+            return t
+        }
+        mut self.fail("'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'")
+        return 0
+    }
+    if self.at(Token.star) {
+        t: u32 = mut self.nd(Kind.ptr)
+        self.i += 1
+        a: u32 = mut self.parse_type()
+        self.nodes[t].a = a
+        return t
+    }
+    if self.at(Token.lbrack) {
+        self.i += 1
+        if mut self.ate(Token.rbrack) { // []T
+            t: u32 = mut self.nd(Kind.slice_t)
+            a: u32 = mut self.parse_type()
+            self.nodes[t].a = a
+            return t
+        }
+        t: u32 = mut self.nd(Kind.array_t) // [N]T
+        b: u32 = mut self.expr(0)
+        self.nodes[t].b = b
+        mut self.expect(Token.rbrack, "']' after array length")
+        a: u32 = mut self.parse_type()
+        self.nodes[t].a = a
+        return t
+    }
+    if self.at(Token.extern) { // extern "c" (params): ret
+        f: u32 = mut self.nd(Kind.func_t)
+        self.nodes[f].flags |= F_CABI
+        self.i += 1
+        abi: usize = mut self.expect(Token.string, "ABI string after 'extern'")
+        if !self.failed && !mem.equal(self.toks[abi].text, "c") { mut self.fail("function types support only the 'c' ABI") }
+        mut self.expect(Token.lparen, "'(' after function type ABI")
+        mark: usize = self.nstack
+        mut self.type_list(Token.rparen)
+        mut self.expect(Token.rparen, "')' to close function parameter types")
+        mut self.close(f, mark)
+        mut self.expect(Token.colon, "':' and a return type or 'void' after C function parameter types")
+        a: u32 = mut self.func_type_ret()
+        self.nodes[f].a = a
+        return f
+    }
+    if self.at(Token.lparen) { // tuple or function type
+        t: u32 = mut self.nd(Kind.tuple_t)
+        self.i += 1
+        mark: usize = self.nstack
+        mut self.type_list(Token.rparen)
+        mut self.expect(Token.rparen, "')' to close type list")
+        if mut self.ate(Token.colon) { // (params): ret
+            f: u32 = mut self.nd(Kind.func_t)
+            mut self.close(f, mark)
+            a: u32 = mut self.func_type_ret()
+            self.nodes[f].a = a
+            return f
+        }
+        count: usize = self.nstack - mark
+        if count < 2 {
+            if count == 0 {
+                mut self.fail("'()' is not a type: a tuple has two or more members, and a function type needs ': R' or ': void'")
+            } else {
+                mut self.fail("'(T)' is not a type: a tuple has two or more members, and a function type needs ': R' or ': void'")
+            }
+            self.nstack = mark
+            return 0
+        }
+        mut self.close(t, mark)
+        return t
+    }
+    if self.at(Token.ident) { // named, qualified, generic-instantiated
+        if self.ident_at(0, "StaticMap") && self.kth(1) == Token.lbrack {
+            m: u32 = mut self.nd(Kind.staticmap_t)
+            self.i += 2
+            a: u32 = mut self.parse_type()
+            self.nodes[m].a = a
+            if mut self.ate(Token.comma) { mut self.fail("StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]") }
+            mut self.expect(Token.rbrack, "']' after StaticMap key type")
+            b: u32 = mut self.parse_type()
+            self.nodes[m].b = b
+            return m
+        }
+        if self.at_void() {
+            mut self.fail("'void' is allowed only as a function type's return or a type argument")
+            return 0
+        }
+        named: u32 = mut self.ident_node(Kind.named, self.i)
+        self.i += 1
+        for self.at(Token.dot) {
+            self.i += 1
+            m: usize = mut self.expect(Token.ident, "type name after '.'")
+            outer: u32 = mut self.ident_node(Kind.named, m)
+            self.nodes[outer].a = named
+            named = outer
+        }
+        if self.at(Token.lbrack) { // generic instantiation
+            self.i += 1
+            mark: usize = self.nstack
+            for {
+                mut self.push(mut self.type_arg())
+                if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+            }
+            mut self.expect(Token.rbrack, "']' to close type arguments")
+            mut self.close(named, mark)
+        }
+        return named
+    }
+    mut self.fail_got("expected type, got ")
+    return 0
+}
+
+// --- expressions --------------------------------------------------------------
+
+/* Binary operator levels, loosest first: || && | ^ & ==/!= (comparison
+ * chains) <</>> +/- * / %; 0 when `k` is no binary operator.
+ */
+level(k: Token): int {
+    switch k {
+        Token.or_or { return 1 }
+        Token.and_and { return 2 }
+        Token.pipe { return 3 }
+        Token.caret { return 4 }
+        Token.amp { return 5 }
+        Token.eq_eq, Token.bang_eq { return 6 }
+        Token.lt, Token.le, Token.gt, Token.ge { return 7 }
+        Token.shl, Token.shr { return 8 }
+        Token.plus, Token.minus { return 9 }
+        Token.star, Token.slash, Token.percent { return 10 }
+        default { return 0 }
+    }
+}
+
+CMP_LEVEL: const int = 7
+
+pub Parser.expr(mut self, ctx: int): u32 {
+    return mut self.binary(1, ctx)
+}
+
+/* Left-associative operators of level `lv` and tighter; comparisons chain. */
+Parser.binary(mut self, lv: int, ctx: int): u32 {
+    if lv > 10 { return mut self.unary(ctx) }
+    l: u32 = mut self.binary(lv + 1, ctx)
+    if lv == CMP_LEVEL {
+        if level(self.kth(0)) != CMP_LEVEL { return l }
+        ch: u32 = mut self.nd(Kind.cmpchain)
+        ops: u32 = mut self.nd(Kind.ops)
+        mark: usize = self.nstack
+        mut self.push(l)
+        opmark: usize = 0
+        // Operands and operators interleave on the stack; split them after.
+        for level(self.kth(0)) == CMP_LEVEL {
+            on: u32 = mut self.nd(Kind.op)
+            self.nodes[on].op = self.kinds[self.i]
+            mut self.push(on)
+            self.i += 1
+            mut self.push(mut self.binary(lv + 1, ctx))
+        }
+        count: usize = self.nstack - mark
+        // Reorder [x0, op1, x1, op2, x2] into operands then operators.
+        tmp: mut []u32 = mem.alloc[u32](count)
+        nx: usize = 0
+        j: usize = 0
+        for j < count {
+            tmp[nx] = self.stack[mark + j]
+            nx += 1
+            j += 2
+        }
+        opmark = nx
+        j = 1
+        for j < count {
+            tmp[opmark] = self.stack[mark + j]
+            opmark += 1
+            j += 2
+        }
+        for j2: usize in 0..count { self.stack[mark + j2] = tmp[j2] }
+        mem.release[u32](mut tmp)
+        mut self.close(ops, mark + nx)
+        mut self.close(ch, mark)
+        self.nodes[ch].a = ops
+        return ch
+    }
+    for level(self.kth(0)) == lv {
+        op: usize = self.i
+        self.i += 1
+        r: u32 = mut self.binary(lv + 1, ctx)
+        b: u32 = mut self.make(Kind.binary, op)
+        self.nodes[b].op = self.kinds[op]
+        self.nodes[b].a = l
+        self.nodes[b].b = r
+        l = b
+    }
+    return l
+}
+
+/* A prefix operator node over the unary expression that follows. */
+Parser.prefix(mut self, op: Token, flags: u32, skip: usize, ctx: int): u32 {
+    u: u32 = mut self.nd(Kind.unary)
+    self.nodes[u].op = op
+    self.nodes[u].flags |= flags
+    self.i += skip
+    a: u32 = mut self.unary(ctx)
+    self.nodes[u].a = a
+    return u
+}
+
+/* Non-diagnostic type lookahead from token `i`: the index after the type,
+ * or 0 when no type starts there.
+ */
+Parser.scan_type(self, i: usize): usize {
+    k: Token = self.kind_at(i)
+    switch k {
+        Token.const, Token.star { return self.scan_type(i + 1) }
+        Token.mut {
+            n: Token = self.kind_at(i + 1)
+            if n != Token.star && n != Token.lbrack && n != Token.ident { return 0 }
+            return self.scan_type(i + 1)
+        }
+        Token.lbrack {
+            j: usize = i + 1
+            if self.kind_at(j) == Token.rbrack {
+                j += 1
+            } else {
+                if self.kind_at(j) != Token.int || self.kind_at(j + 1) != Token.rbrack { return 0 }
+                j += 2
+            }
+            return self.scan_type(j)
+        }
+        Token.ident {
+            j: usize = i + 1
+            for self.kind_at(j) == Token.dot {
+                if self.kind_at(j + 1) != Token.ident { return 0 }
+                j += 2
+            }
+            if self.kind_at(j) == Token.lbrack {
+                j = self.scan_types(j + 1)
+                if j == 0 || self.kind_at(j) != Token.rbrack { return 0 }
+                j += 1
+            }
+            return j
+        }
+        Token.lparen {
+            j: usize = self.scan_types(i + 1)
+            if j == 0 || self.kind_at(j) != Token.rparen { return 0 }
+            j += 1
+            if self.kind_at(j) == Token.colon { return self.scan_type(j + 1) }
+            return j
+        }
+        default { return 0 }
+    }
+}
+
+/* A comma list of scanned types: the index after it, or 0. */
+Parser.scan_types(self, i: usize): usize {
+    j: usize = i
+    for {
+        j = self.scan_type(j)
+        if j == 0 { return 0 }
+        if self.kind_at(j) != Token.comma { return j }
+        j += 1
+    }
+}
+
+/* Token `j`'s kind, eof past the end (scans ignore the error state). */
+inline Parser.kind_at(self, j: usize): Token {
+    if j >= self.ntok { return Token.eof }
+    return self.kinds[j]
+}
+
+/* A bracketed argument in expression position: a function type can only be
+ * a type argument, never an index.
+ */
+Parser.bracket_arg(mut self): u32 {
+    if self.at(Token.extern) { return mut self.parse_type() }
+    if self.at(Token.lparen) {
+        j: usize = self.i
+        depth: int = 0
+        for j < self.ntok {
+            k: Token = self.kinds[j]
+            if k == Token.lparen {
+                depth += 1
+            } else if k == Token.rparen {
+                depth -= 1
+                if depth == 0 { break }
+            }
+            j += 1
+        }
+        if self.kind_at(j + 1) == Token.colon { return mut self.parse_type() }
+    }
+    return mut self.expr(0)
+}
+
+Parser.unary(mut self, ctx: int): u32 {
+    k: Token = self.kth(0)
+    if k == Token.bang || k == Token.tilde || k == Token.minus { return mut self.prefix(k, 0, 1, ctx) }
+    if k == Token.mut && self.kth(1) == Token.amp { return mut self.prefix(Token.amp, F_MUT, 2, ctx) }
+    if k == Token.mut {
+        // Type-position mut in expression-position type arguments.
+        mut_string: bool = self.ident_at(1, "string")
+        if self.kth(1) == Token.star ||
+            (self.kth(1) == Token.lbrack && self.kth(2) == Token.rbrack) ||
+            (mut_string && self.kth(2) != Token.lbrack) {
+            return mut self.postfix(ctx, mut self.parse_type())
+        }
+        // A mutating method call or writable-view establishment.
+        self.i += 1
+        base: u32 = mut self.postfix(ctx, mut self.primary(ctx))
+        if base != 0 && (self.nodes[base].kind == Kind.slice_e || self.nodes[base].kind == Kind.call) {
+            self.nodes[base].flags |= F_MUT
+            return base
+        }
+        mut self.fail("'mut' in an expression marks a method receiver or establishes a writable view")
+        return base
+    }
+    if k == Token.star {
+        // `*T(address)` is a pointer conversion; any other '*' dereferences.
+        after: usize = 0
+        if !self.failed { after = self.scan_type(self.i) }
+        if after != 0 && self.kind_at(after) == Token.lparen { return mut self.postfix(ctx, mut self.parse_type()) }
+        self.i += 1
+        u: u32 = mut self.nd(Kind.unary)
+        self.nodes[u].op = Token.star
+        a: u32 = mut self.unary(ctx)
+        self.nodes[u].a = a
+        return u
+    }
+    if k == Token.amp { return mut self.prefix(Token.amp, 0, 1, ctx) }
+    if k == Token.volatile { return mut self.prefix(Token.volatile, 0, 1, ctx) }
+    return mut self.postfix(ctx, mut self.primary(ctx))
+}
+
+Parser.structlit(mut self, base: u32): u32 {
+    lit: u32 = mut self.nd(Kind.structlit)
+    self.nodes[lit].a = base
+    self.i += 1 // '{'
+    mark: usize = self.nstack
+    if !self.at(Token.rbrace) {
+        for {
+            fi: u32 = mut self.nd(Kind.fieldinit)
+            if member_kind(self.kth(0)) && self.kth(1) == Token.colon {
+                mut self.fail("struct literal field initialization uses '='; ':' is for declarations and type annotations")
+            }
+            if member_kind(self.kth(0)) && self.kth(1) == Token.assign {
+                mut self.named(fi, self.toks[self.i].text)
+                self.i += 2
+            }
+            a: u32 = mut self.expr(0)
+            self.nodes[fi].a = a
+            mut self.push(fi)
+            if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
+        }
+    }
+    mut self.expect(Token.rbrace, "'}' to close struct literal")
+    mut self.close(lit, mark)
+    return lit
+}
+
+pub Parser.staticmaplit(mut self): u32 {
+    lit: u32 = mut self.nd(Kind.staticmaplit)
+    mut self.expect(Token.lbrace, "'{' to open StaticMap literal")
+    mark: usize = self.nstack
+    for !self.at(Token.rbrace) {
+        entry: u32 = mut self.nd(Kind.mapentry)
+        a: u32 = mut self.expr(0)
+        self.nodes[entry].a = a
+        mut self.expect(Token.colon, "':' between StaticMap key and value")
+        b: u32 = mut self.expr(0)
+        self.nodes[entry].b = b
+        mut self.push(entry)
+        if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
+    }
+    mut self.expect(Token.rbrace, "'}' to close StaticMap literal")
+    mut self.close(lit, mark)
+    return lit
+}
+
+/* `base` is an identifier node spelled `s`. */
+Parser.is_ident(self, base: u32, s: string): bool {
+    return base != 0 && self.nodes[base].kind == Kind.ident && mem.equal(self.nodes[base].text, s)
+}
+
+/* A call's arguments after its '(' (consumed). */
+Parser.call_args(mut self, call: u32, base: u32) {
+    mark: usize = self.nstack
+    if self.is_ident(base, "sizeof") || self.is_ident(base, "alignof") || self.is_ident(base, "blank") {
+        mut self.push(mut self.parse_type())
+        mut self.expect(Token.rparen, "')' after layout type")
+        mut self.close(call, mark)
+        return
+    }
+    if self.is_ident(base, "bitcast") {
+        mut self.push(mut self.parse_type())
+        mut self.expect(Token.comma, "',' after bitcast type")
+        mut self.push(mut self.expr(0))
+        mut self.expect(Token.rparen, "')' after bitcast value")
+        mut self.close(call, mark)
+        return
+    }
+    if self.is_ident(base, "offsetof") {
+        mut self.push(mut self.parse_type())
+        mut self.expect(Token.comma, "',' after offsetof type")
+        ft: usize = mut self.expect_member("field name in offsetof")
+        path: u32 = mut self.ident_node(Kind.ident, ft)
+        for mut self.ate(Token.dot) {
+            part: usize = mut self.expect_member("field name after '.' in offsetof")
+            field: u32 = mut self.ident_node(Kind.field_e, part)
+            self.nodes[field].a = path
+            path = field
+        }
+        mut self.push(path)
+        mut self.expect(Token.rparen, "')' after offsetof field path")
+        mut self.close(call, mark)
+        return
+    }
+    if !self.at(Token.rparen) {
+        for {
+            // `mut &value` is one writable-address expression, not a mut argument.
+            if self.at(Token.mut) && self.kth(1) != Token.amp {
+                mt: usize = self.i
+                self.i += 1
+                value: u32 = mut self.expr(0)
+                if value != 0 && (self.nodes[value].kind == Kind.slice_e || self.nodes[value].kind == Kind.call) {
+                    // a writable view, or a nested call's receiver mark
+                    self.nodes[value].flags |= F_MUT
+                    mut self.push(value)
+                } else {
+                    ma: u32 = mut self.make(Kind.mutarg, mt)
+                    self.nodes[ma].a = value
+                    mut self.push(ma)
+                }
+            } else {
+                mut self.push(mut self.expr(0))
+            }
+            if !mut self.ate(Token.comma) || self.at(Token.rparen) { break }
+        }
+    }
+    mut self.expect(Token.rparen, "')' to close call arguments")
+    mut self.close(call, mark)
+}
+
+Parser.postfix(mut self, ctx: int, start: u32): u32 {
+    base: u32 = start
+    for {
+        switch self.kth(0) {
+            Token.lparen {
+                call: u32 = mut self.nd(Kind.call)
+                self.nodes[call].a = base
+                self.i += 1
+                mut self.call_args(call, base)
+                base = call
+            }
+            Token.lbrack { // index, slice, or generic instantiation
+                self.i += 1
+                ix: u32 = mut self.nd(Kind.index)
+                self.nodes[ix].a = base
+                lo: u32 = 0
+                hi: u32 = 0
+                is_slice: bool = false
+                multi: bool = false
+                if self.at(Token.dot_dot) {
+                    is_slice = true
+                    self.i += 1
+                    if !self.at(Token.rbrack) { hi = mut self.expr(0) }
+                } else {
+                    lo = mut self.bracket_arg()
+                    if self.at(Token.dot_dot) {
+                        is_slice = true
+                        self.i += 1
+                        if !self.at(Token.rbrack) { hi = mut self.expr(0) }
+                    } else if self.at(Token.comma) { // f[int, f64]
+                        mark: usize = self.nstack
+                        mut self.push(lo)
+                        for mut self.ate(Token.comma) {
+                            if self.at(Token.rbrack) { break }
+                            mut self.push(mut self.bracket_arg())
+                        }
+                        mut self.expect(Token.rbrack, "']' after index/type arguments")
+                        mut self.close(ix, mark)
+                        multi = true
+                    }
+                }
+                if multi {
+                    base = ix
+                } else {
+                    mut self.expect(Token.rbrack, "']' after index/slice")
+                    if is_slice {
+                        sl: u32 = mut self.nd(Kind.slice_e)
+                        self.nodes[sl].line = self.nodes[ix].line
+                        self.nodes[sl].col = self.nodes[ix].col
+                        self.nodes[sl].a = base
+                        self.nodes[sl].b = lo
+                        self.nodes[sl].c = hi
+                        base = sl
+                    } else {
+                        self.nodes[ix].b = lo
+                        base = ix
+                    }
+                }
+            }
+            Token.dot {
+                self.i += 1
+                f: usize = mut self.expect_member("field name after '.'")
+                fa: u32 = mut self.ident_node(Kind.field_e, f)
+                self.nodes[fa].a = base
+                base = fa
+            }
+            Token.lbrace { // typed struct literal, suppressed at statement heads
+                if (ctx & NOSLIT) != 0 { return base }
+                base = mut self.structlit(base)
+            }
+            default { return base }
+        }
+    }
+}
+
+Parser.leaf(mut self, kind: Kind): u32 {
+    x: u32 = mut self.nd(kind)
+    self.i += 1
+    return x
+}
+
+Parser.primary(mut self, ctx: int): u32 {
+    t: usize = self.i
+    switch self.kth(0) {
+        Token.int, Token.char {
+            kind: Kind = Kind.int_lit
+            if self.kinds[t] == Token.char { kind = Kind.char_lit }
+            x: u32 = mut self.leaf(kind)
+            self.nodes[x].ival = self.toks[t].ival
+            return x
+        }
+        Token.float {
+            x: u32 = mut self.leaf(Kind.float_lit)
+            self.nodes[x].fval = self.toks[t].fval
+            return x
+        }
+        Token.string {
+            x: u32 = mut self.leaf(Kind.str_lit)
+            mut self.named(x, self.toks[t].text)
+            return x
+        }
+        Token.at { // @file / @line
+            if self.ident_at(1, "line") {
+                x: u32 = mut self.nd(Kind.int_lit)
+                self.nodes[x].ival = u64(self.toks[t].line)
+                self.i += 2
+                return x
+            }
+            if self.ident_at(1, "file") {
+                x: u32 = mut self.nd(Kind.str_lit)
+                mut self.named(x, self.path)
+                self.i += 2
+                return x
+            }
+            mut self.fail("expected 'file' or 'line' after '@' in an expression")
+            return mut self.nd(Kind.int_lit)
+        }
+        Token.null {
+            self.i += 1
+            return mut self.nd(Kind.null) // at the next token, as in C
+        }
+        Token.true, Token.false {
+            x: u32 = mut self.leaf(Kind.bool)
+            if self.kinds[t] == Token.true { self.nodes[x].ival = 1 }
+            return x
+        }
+        Token.ident, Token.self { // the receiver reads as an ordinary local
+            x: u32 = mut self.ident_node(Kind.ident, t)
+            self.i += 1
+            return x
+        }
+        Token.lparen { // grouping or tuple
+            self.i += 1
+            mark: usize = self.nstack
+            mut self.push(mut self.expr(0))
+            for mut self.ate(Token.comma) {
+                if self.at(Token.rparen) { break }
+                mut self.push(mut self.expr(0))
+            }
+            mut self.expect(Token.rparen, "')' to close expression")
+            if self.nstack - mark == 1 {
+                x: u32 = self.stack[mark]
+                self.nstack = mark
+                if x != 0 && self.nodes[x].kind == Kind.field_e { self.nodes[x].flags |= F_GROUPED }
+                return x
+            }
+            tu: u32 = mut self.make(Kind.tuple_e, t)
+            mut self.close(tu, mark)
+            return tu
+        }
+        Token.lbrack { // array literal, or a slice type called as a conversion
+            self.i += 1
+            if self.at(Token.rbrack) && slice_type_start(self.kth(1)) {
+                ty: u32 = mut self.nd(Kind.slice_t)
+                self.i += 1
+                a: u32 = mut self.parse_type()
+                self.nodes[ty].a = a
+                return ty
+            }
+            al: u32 = mut self.nd(Kind.arraylit)
+            mark: usize = self.nstack
+            if !self.at(Token.rbrack) {
+                first: u32 = mut self.expr(0)
+                if mut self.ate(Token.colon) {
+                    self.nodes[al].a = first
+                    b: u32 = mut self.expr(0) // repetition count
+                    self.nodes[al].b = b
+                } else {
+                    keyed: bool = self.at(Token.assign) // [E.a = x, E.b = y]
+                    el: u32 = first
+                    for {
+                        if keyed {
+                            en: u32 = mut self.nd(Kind.mapentry)
+                            self.nodes[en].a = el
+                            mut self.expect(Token.assign, "'=' after a keyed array literal's member")
+                            b: u32 = mut self.expr(0)
+                            self.nodes[en].b = b
+                            el = en
+                        } else if self.at(Token.assign) {
+                            mut self.fail("a keyed array literal keys every element, the first included")
+                        }
+                        mut self.push(el)
+                        if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+                        el = mut self.expr(0)
+                    }
+                }
+            }
+            mut self.expect(Token.rbrack, "']' to close array literal")
+            mut self.close(al, mark)
+            return al
+        }
+        Token.lbrace { // bare struct literal
+            if (ctx & NOSLIT) != 0 { mut self.fail("unexpected '{' — struct literals need a type or parentheses here") }
+            return mut self.structlit(0)
+        }
+        default {
+            mut self.fail_got("expected expression, got ")
+            return 0
+        }
+    }
+}
+
+/* Tokens that may start a slice conversion's element type after `[]`. */
+slice_type_start(k: Token): bool {
+    return k == Token.ident || k == Token.mut || k == Token.star || k == Token.lbrack ||
+        k == Token.lparen || k == Token.const
+}
+
+// --- statements ---------------------------------------------------------------
+
+/* The current token's line (the last token's once past the end). */
+Parser.line(self): u32 {
+    t: usize = self.i
+    if t >= self.ntok { t = self.ntok - 1 }
+    return self.toks[t].line
+}
+
+Parser.skipnl(mut self) {
+    for self.at(Token.newline) { self.i += 1 }
+}
+
+Parser.bare_list_line(mut self, line: u32) {
+    if self.line() != line { mut self.fail("bare comma-separated lists must stay on one physical line") }
+}
+
+/* One expression, or a bare comma list of them as a tuple. */
+Parser.expr_list(mut self, ctx: int): u32 {
+    first: usize = self.i
+    line: u32 = self.line()
+    mark: usize = self.nstack
+    mut self.push(mut self.expr(ctx))
+    for self.at(Token.comma) {
+        mut self.bare_list_line(line)
+        self.i += 1
+        mut self.bare_list_line(line)
+        mut self.push(mut self.expr(0))
+    }
+    if self.nstack - mark == 1 {
+        x: u32 = self.stack[mark]
+        self.nstack = mark
+        return x
+    }
+    tu: u32 = mut self.make(Kind.tuple_e, first)
+    mut self.close(tu, mark)
+    return tu
+}
+
+Parser.stmt_end(mut self) {
+    if !mut self.ate(Token.newline) && !self.at(Token.rbrace) && !self.at(Token.eof) {
+        mut self.fail_got("expected newline or '}' after statement, got ")
+    }
+}
+
+Parser.parse_if(mut self): u32 {
+    n: u32 = mut self.nd(Kind.if)
+    mut self.expect(Token.if, "'if'")
+    a: u32 = mut self.expr(NOSLIT)
+    self.nodes[n].a = a
+    b: u32 = mut self.block()
+    self.nodes[n].b = b
+    if self.at(Token.else) { // must be on the '}' line (the lexer emits a newline otherwise)
+        self.i += 1
+        c: u32 = 0
+        if self.at(Token.if) {
+            c = mut self.parse_if()
+        } else {
+            c = mut self.block()
+        }
+        self.nodes[n].c = c
+    }
+    return n
+}
+
+/* Scans an `ident ':'` for-head: a depth-0 `in` selects typed binders; a
+ * depth-0 `=` or `;` selects a declaration init. Bounded, never backtracking.
+ */
+Parser.for_head_typed_at(self): bool {
+    j: usize = self.i + 2 // past the binder name and ':'
+    depth: int = 0
+    for j < self.ntok {
+        k: Token = self.kinds[j]
+        if depth == 0 {
+            if k == Token.in { return true }
+            if k == Token.assign || k == Token.semi || k == Token.lbrace || k == Token.newline || k == Token.eof { return false }
+        }
+        if k == Token.lbrack || k == Token.lparen || k == Token.lbrace {
+            depth += 1
+        } else if k == Token.rbrack || k == Token.rparen || k == Token.rbrace {
+            if depth == 0 { return false }
+            depth -= 1
+        }
+        j += 1
+    }
+    return false
+}
+
+Parser.for_semi(mut self, hline: u32, what: string) {
+    if self.line() != hline { mut self.fail("for-head clauses must stay on one physical line") }
+    mut self.expect(Token.semi, what)
+}
+
+/* The three-clause tail after the init: [cond] ';' [post] block. */
+Parser.for_tail(mut self, n: u32, hline: u32) {
+    if !self.at(Token.semi) && !self.at(Token.lbrace) {
+        b: u32 = mut self.expr(NOSLIT)
+        self.nodes[n].b = b
+    }
+    mut self.for_semi(hline, "';' after the for-head condition")
+    if !self.at(Token.lbrace) {
+        c: u32 = mut self.expr_stmt(NOSLIT)
+        self.nodes[n].c = c
+    }
+    if self.line() != hline { mut self.fail("for-head clauses must stay on one physical line") }
+    d: u32 = mut self.block()
+    self.nodes[n].d = d
+}
+
+/* The head after `for`, told apart by bounded lookahead: `{` infinite, `;`
+ * three-clause with no init, `ident ':'` typed binders or a declaration init,
+ * otherwise a condition or an assignment/expression-statement init.
+ */
+Parser.for_head(mut self, n: u32): u32 {
+    hline: u32 = self.line()
+    if self.at(Token.lbrace) { // infinite: exits only via break/return
+        self.nodes[n].flags |= F_FORGEN
+        d: u32 = mut self.block()
+        self.nodes[n].d = d
+        return n
+    }
+    if self.at(Token.semi) { // three-clause with an empty init
+        self.nodes[n].flags |= F_FORGEN
+        self.i += 1
+        mut self.for_tail(n, hline)
+        return n
+    }
+    if self.at(Token.ident) && self.kth(1) == Token.colon && self.for_head_typed_at() {
+        line: u32 = self.line()
+        mark: usize = self.nstack
+        for {
+            v: usize = mut self.expect(Token.ident, "loop variable name")
+            binder: u32 = mut self.ident_node(Kind.param, v)
+            mut self.expect(Token.colon, "':' after loop variable")
+            a: u32 = mut self.parse_type()
+            self.nodes[binder].a = a
+            mut self.push(binder)
+            if !self.at(Token.comma) { break }
+            mut self.bare_list_line(line)
+            self.i += 1
+            mut self.bare_list_line(line)
+            if self.nstack - mark == 2 { mut self.fail("for-in accepts at most index and value binders") }
+            if self.failed { break }
+        }
+        mut self.close(n, mark)
+        mut self.expect(Token.in, "'in'")
+        if mut self.ate(Token.mut) { self.nodes[n].flags |= F_MUT } // `in mut iterable`: aliasing
+        it: u32 = mut self.expr(NOSLIT)
+        if (self.nodes[n].flags & F_MUT) != 0 && it != 0 && self.nodes[it].kind == Kind.slice_e {
+            self.nodes[it].flags |= F_MUT // `in mut xs[lo..hi]`: establish, then alias
+        }
+        if self.at(Token.dot_dot) {
+            r: u32 = mut self.nd(Kind.range) // at '..', like a binary node
+            self.i += 1
+            self.nodes[r].a = it
+            b: u32 = mut self.expr(NOSLIT)
+            self.nodes[r].b = b
+            if self.ident_at(0, "step") {
+                self.i += 1
+                c: u32 = mut self.expr(NOSLIT)
+                self.nodes[r].c = c
+            }
+            it = r
+        }
+        self.nodes[n].b = it
+        c: u32 = mut self.block()
+        self.nodes[n].c = c
+        return n
+    }
+    self.nodes[n].flags |= F_FORGEN
+    if self.at(Token.ident) && self.kth(1) == Token.colon { // declaration init
+        name: usize = self.i
+        self.i += 1 // ident; decl_stmt consumes ':'
+        a: u32 = mut self.decl_stmt(name)
+        self.nodes[n].a = a
+    } else {
+        a: u32 = mut self.expr_stmt(NOSLIT)
+        self.nodes[n].a = a
+        if self.at(Token.lbrace) { // condition only: the expression is the condition
+            self.nodes[n].b = self.nodes[a].a
+            self.nodes[n].a = 0
+            d: u32 = mut self.block()
+            self.nodes[n].d = d
+            return n
+        }
+    }
+    mut self.for_semi(hline, "';' after the for-head initializer")
+    mut self.for_tail(n, hline)
+    return n
+}
+
+/* At a union-variant case pattern `Type.variant(binder: T)`, qualified and
+ * generic bases included: a bounded scan for the `(` opening the binder.
+ */
+Parser.variant_binder_at(self): bool {
+    j: usize = self.i
+    if self.kind_at(j) != Token.ident { return false }
+    j += 1
+    segments: int = 1
+    for {
+        for self.kind_at(j) == Token.lbrack { // generic arguments
+            depth: int = 0
+            for j < self.ntok {
+                k: Token = self.kinds[j]
+                j += 1
+                if k == Token.lbrack {
+                    depth += 1
+                } else if k == Token.rbrack {
+                    depth -= 1
+                    if depth == 0 { break }
+                }
+            }
+        }
+        if self.kind_at(j) == Token.dot && member_kind(self.kind_at(j + 1)) {
+            j += 2
+            segments += 1
+            continue
+        }
+        break
+    }
+    if segments < 2 { return false }
+    if j + 2 >= self.ntok { return false }
+    return self.kinds[j] == Token.lparen && self.kinds[j + 1] == Token.ident &&
+        (self.kinds[j + 2] == Token.colon || self.kinds[j + 2] == Token.rparen)
+}
+
+/* `Type.variant(binder: T)`: the variant reference keeps the field shape
+ * sema resolves for construction; the binder rides in b.
+ */
+Parser.variant_pattern(mut self): u32 {
+    base: u32 = 0 // qualified chain of the segments before the variant
+    seg: usize = 0
+    for {
+        first: bool = base == 0 && !self.at(Token.dot)
+        if self.at(Token.dot) { self.i += 1 } // separator before the next segment
+        if first {
+            seg = mut self.expect(Token.ident, "type or variant name")
+        } else {
+            seg = mut self.expect_member("type or variant name")
+        }
+        if self.at(Token.lparen) || self.failed { break } // the variant name
+        node: u32 = mut self.ident_node(Kind.ident, seg)
+        if base != 0 {
+            q: u32 = mut self.ident_node(Kind.field_e, seg)
+            self.nodes[q].a = base
+            base = q
+        } else {
+            base = node
+        }
+        if self.at(Token.lbrack) { // generic arguments on this segment
+            self.i += 1
+            ix: u32 = mut self.nd(Kind.index)
+            self.nodes[ix].a = base
+            mark: usize = self.nstack
+            for {
+                mut self.push(mut self.parse_type())
+                if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+            }
+            mut self.expect(Token.rbrack, "']' to close type arguments")
+            mut self.close(ix, mark)
+            base = ix
+        }
+    }
+    vp: u32 = mut self.make(Kind.varpat, seg)
+    ref: u32 = mut self.ident_node(Kind.field_e, seg)
+    self.nodes[ref].a = base
+    self.nodes[vp].a = ref
+    self.i += 1 // '('
+    bname: usize = mut self.expect(Token.ident, "binder name")
+    binder: u32 = mut self.ident_node(Kind.param, bname)
+    if mut self.ate(Token.colon) { // `Variant(k)` is a typeless binder; sema diagnoses it
+        a: u32 = mut self.parse_type()
+        self.nodes[binder].a = a
+    }
+    self.nodes[vp].b = binder
+    mut self.expect(Token.rparen, "')' to close variant pattern")
+    return vp
+}
+
+/* A case opening with `(` whose matching `)` encloses a top-level comma is a
+ * parenthesized case list, never a tuple: no switch value is a tuple.
+ */
+Parser.case_list_at(self): bool {
+    if !self.at(Token.lparen) { return false }
+    depth: int = 0
+    for j: usize in self.i..self.ntok {
+        k: Token = self.kinds[j]
+        if k == Token.lparen || k == Token.lbrack || k == Token.lbrace {
+            depth += 1
+        } else if k == Token.rparen || k == Token.rbrack || k == Token.rbrace {
+            depth -= 1
+            if depth == 0 { return false }
+        } else if k == Token.comma && depth == 1 {
+            return true
+        } else if k == Token.eof {
+            return false
+        }
+    }
+    return false
+}
+
+Parser.parse_switch(mut self): u32 {
+    n: u32 = mut self.nd(Kind.switch)
+    mut self.expect(Token.switch, "'switch'")
+    a: u32 = mut self.expr(NOSLIT)
+    self.nodes[n].a = a
+    mut self.expect(Token.lbrace, "'{' to open switch body")
+    cases: usize = self.nstack
+    mut self.skipnl()
+    for !self.at(Token.rbrace) {
+        if self.at(Token.eof) {
+            mut self.fail("unexpected end of file in switch body")
+            break
+        }
+        c: u32 = mut self.nd(Kind.case)
+        if self.at(Token.default) {
+            self.i += 1
+            self.nodes[c].flags |= F_DEFAULT
+        } else if self.at(Token.else) {
+            mut self.fail("'else' is not a switch case; use 'default'")
+        } else {
+            mark: usize = self.nstack
+            line: u32 = self.line()
+            multi: bool = self.case_list_at() // `(` patterns across lines `)`
+            if multi { self.i += 1 }
+            for {
+                if self.variant_binder_at() {
+                    mut self.push(mut self.variant_pattern())
+                } else {
+                    mut self.push(mut self.expr(NOSLIT))
+                }
+                if !self.at(Token.comma) { break }
+                if !multi { mut self.bare_list_line(line) }
+                self.i += 1
+                if multi && self.at(Token.rparen) { break }
+                if !multi { mut self.bare_list_line(line) }
+                if self.failed { break }
+            }
+            if multi {
+                if self.line() == line { mut self.fail("parentheses around case values are only for multiline lists") }
+                mut self.expect(Token.rparen, "')' to close case values")
+            }
+            mut self.close(c, mark)
+        }
+        b: u32 = mut self.block()
+        self.nodes[c].b = b
+        // `fallthrough` is contextual only as a bare statement directly in a
+        // case block; any other use is an identifier. Sema checks position.
+        x: Node = self.nodes[b]
+        for k: u32 in 0..x.nkids {
+            st: u32 = self.kids[x.kids + k]
+            if self.nodes[st].kind != Kind.exprstmt || !self.is_ident(self.nodes[st].a, "fallthrough") { continue }
+            id: u32 = self.nodes[st].a
+            self.nodes[st].kind = Kind.fallthrough
+            self.nodes[st].a = 0
+            mut self.named(st, self.nodes[id].text)
+        }
+        mut self.push(c)
+        mut self.skipnl()
+    }
+    self.i += 1 // '}'
+    mut self.close(n, cases)
+    return n
+}
+
+Parser.parse_asm(mut self): u32 {
+    n: u32 = mut self.nd(Kind.asm)
+    mut self.expect(Token.asm, "'asm'")
+    s: usize = mut self.expect(Token.string, "instruction string after 'asm'")
+    mut self.named(n, self.toks[s].text)
+    mut self.expect(Token.lbrace, "'{' to open asm bindings")
+    binds: usize = self.nstack
+    mut self.skipnl()
+    for !self.at(Token.rbrace) {
+        if self.at(Token.eof) {
+            mut self.fail("unexpected end of file in asm block")
+            break
+        }
+        kind: string = ""
+        regs: bool = false // in/out bind registers to values
+        if self.at(Token.in) { // `in` is a keyword; accept it as the binding kind
+            kind = "in"
+            regs = true
+            self.i += 1
+        } else if self.at(Token.ident) {
+            kind = self.toks[self.i].text
+            regs = mem.equal(kind, "out")
+            if !regs && !mem.equal(kind, "clobbers") {
+                mut self.fail_at(self.i, "expected in/out/clobbers binding, got '", kind, "'", "")
+            }
+            self.i += 1
+        } else {
+            mut self.fail_got("expected in/out/clobbers binding, got ")
+        }
+        bnd: u32 = mut self.nd(Kind.asmbind)
+        mut self.named(bnd, kind)
+        mut self.expect(Token.colon, "':' after binding kind")
+        mark: usize = self.nstack
+        for {
+            reg: usize = mut self.expect(Token.ident, "register name")
+            mut self.push(mut self.ident_node(Kind.ident, reg))
+            if regs {
+                mut self.expect(Token.assign, "'=' in register binding")
+                if self.at(Token.int) { // x16 = 3: an immediate operand
+                    imm: u32 = mut self.leaf(Kind.int_lit)
+                    self.nodes[imm].ival = self.toks[self.i - 1].ival
+                    mut self.push(imm)
+                } else {
+                    v: usize = mut self.expect(Token.ident, "value name")
+                    mut self.push(mut self.ident_node(Kind.ident, v))
+                }
+            }
+            if !mut self.ate(Token.comma) || self.at(Token.rbrace) || self.at(Token.newline) { break }
+        }
+        mut self.close(bnd, mark)
+        mut self.push(bnd)
+        if !mut self.ate(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after asm binding") }
+        mut self.skipnl()
+    }
+    self.i += 1 // '}'
+    mut self.close(n, binds)
+    return n
+}
+
+/* x: T = e | x: const T = e | n: T, m: U = f() (typed destructuring), after
+ * the first name (token `first`).
+ */
+Parser.decl_stmt(mut self, first: usize): u32 {
+    n: u32 = mut self.make(Kind.var, first)
+    mark: usize = self.nstack
+    is_const: bool = false
+    name: usize = first
+    for {
+        if self.at(Token.colon) {
+            self.i += 1
+            if self.at(Token.const) {
+                is_const = true
+                self.i += 1
+            }
+            binder: u32 = mut self.ident_node(Kind.param, name)
+            a: u32 = mut self.parse_type()
+            self.nodes[binder].a = a
+            mut self.push(binder)
+        } else {
+            mut self.push(mut self.ident_node(Kind.ident, name))
+            self.nodes[n].flags |= F_MIXED
+        }
+        if !self.at(Token.comma) || self.failed { break }
+        mut self.bare_list_line(self.toks[first].line)
+        self.i += 1
+        mut self.bare_list_line(self.toks[first].line)
+        name = mut self.expect(Token.ident, "binder name after ','")
+    }
+    if is_const { self.nodes[n].flags |= F_CONST }
+    count: usize = self.nstack - mark
+    staticmap: bool = count == 1 && self.nodes[self.stack[mark]].a != 0 &&
+        self.nodes[self.nodes[self.stack[mark]].a].kind == Kind.staticmap_t
+    mut self.close(n, mark)
+    if mut self.ate(Token.assign) {
+        if count > 1 { self.nodes[n].flags |= F_MIXED }
+        b: u32 = 0
+        if staticmap && self.at(Token.lbrace) {
+            b = mut self.staticmaplit()
+        } else {
+            b = mut self.expr_list(0)
+        }
+        self.nodes[n].b = b
+    } else if count > 1 || (self.nodes[n].flags & F_MIXED) != 0 {
+        mut self.fail("destructuring declaration requires an initializer")
+    }
+    return n
+}
+
+/* A `break`/`continue` with its optional label. */
+Parser.jump(mut self, kind: Kind): u32 {
+    n: u32 = mut self.leaf(kind)
+    if self.at(Token.ident) {
+        mut self.named(n, self.toks[self.i].text)
+        self.i += 1
+    }
+    return n
+}
+
+Parser.stmt(mut self): u32 {
+    switch self.kth(0) {
+        Token.if { return mut self.parse_if() }
+        Token.for {
+            n: u32 = mut self.nd(Kind.for)
+            mut self.expect(Token.for, "'for'")
+            return mut self.for_head(n)
+        }
+        Token.switch { return mut self.parse_switch() }
+        Token.asm { return mut self.parse_asm() }
+        Token.return {
+            n: u32 = mut self.leaf(Kind.return)
+            if !self.at(Token.newline) && !self.at(Token.rbrace) && !self.at(Token.eof) {
+                a: u32 = mut self.expr_list(0)
+                self.nodes[n].a = a
+            }
+            return n
+        }
+        Token.break { return mut self.jump(Kind.break) }
+        Token.continue { return mut self.jump(Kind.continue) }
+        Token.defer {
+            n: u32 = mut self.leaf(Kind.defer)
+            mt: usize = self.i
+            if mut self.ate(Token.mut) { // `defer mut c.scale(2.0)`: receiver-marked call
+                e: u32 = mut self.expr(NOSLIT)
+                if e == 0 || self.nodes[e].kind != Kind.call {
+                    mut self.fail_at(mt, "'mut' after 'defer' marks a call receiver", "", "", "")
+                    return n
+                }
+                self.nodes[e].flags |= F_MUT
+                self.nodes[n].a = e
+            } else {
+                a: u32 = mut self.expr(NOSLIT)
+                self.nodes[n].a = a
+            }
+            return n
+        }
+        Token.mut { // `mut c.scale(2.0)`: receiver-marked call statement
+            mt: usize = self.i
+            n: u32 = mut self.leaf(Kind.exprstmt)
+            e: u32 = mut self.expr(NOSLIT)
+            if e == 0 || self.nodes[e].kind != Kind.call {
+                mut self.fail_at(mt, "'mut' at statement level marks a call receiver", "", "", "")
+                return n
+            }
+            self.nodes[e].flags |= F_MUT
+            self.nodes[n].a = e
+            return n
+        }
+        Token.ident {
+            if self.kth(1) != Token.colon { return mut self.expr_stmt(0) }
+            if self.kth(2) == Token.lbrace { // labeled block
+                n: u32 = mut self.ident_node(Kind.label, self.i)
+                self.i += 2
+                a: u32 = mut self.block()
+                self.nodes[n].a = a
+                return n
+            }
+            if self.kth(2) == Token.for { // labeled for: block-label namespace
+                n: u32 = mut self.ident_node(Kind.for, self.i)
+                self.i += 3 // label, ':', 'for'
+                return mut self.for_head(n)
+            }
+            name: usize = self.i
+            self.i += 1 // ident; decl_stmt consumes ':'
+            return mut self.decl_stmt(name)
+        }
+        default { return mut self.expr_stmt(0) }
+    }
+}
+
+is_assign_op(k: Token): bool {
+    switch k {
+        (
+            Token.assign, Token.add_eq, Token.sub_eq, Token.mul_eq, Token.div_eq, Token.mod_eq,
+            Token.and_eq, Token.or_eq, Token.xor_eq, Token.shl_eq, Token.shr_eq,
+        ) { return true }
+        default { return false }
+    }
+}
+
+/* An expression-led statement: an assignment (single or destructuring) or a
+ * bare expression. Shared with for-head clauses, which rely on it never
+ * producing a declaration; they pass NOSLIT, as the body's '{' follows.
+ */
+Parser.expr_stmt(mut self, ctx: int): u32 {
+    start: usize = self.i
+    line: u32 = self.line()
+    e: u32 = mut self.expr(ctx)
+    if self.at(Token.comma) { // destructuring assignment, possibly mixed under `=`
+        a: u32 = mut self.nd(Kind.assign)
+        mark: usize = self.nstack
+        mut self.push(e)
+        for self.at(Token.comma) {
+            mut self.bare_list_line(line)
+            self.i += 1
+            mut self.bare_list_line(line)
+            if self.at(Token.ident) && self.kth(1) == Token.colon {
+                binder: u32 = mut self.ident_node(Kind.param, self.i)
+                self.i += 2
+                t: u32 = mut self.parse_type()
+                self.nodes[binder].a = t
+                mut self.push(binder)
+                self.nodes[a].flags |= F_MIXED
+            } else {
+                mut self.push(mut self.expr(ctx))
+            }
+            if self.failed { break }
+        }
+        if (self.nodes[a].flags & F_MIXED) != 0 {
+            for j: usize in mark..self.nstack {
+                k: Kind = Kind.ident
+                if self.stack[j] != 0 { k = self.nodes[self.stack[j]].kind }
+                if k != Kind.ident && k != Kind.param { mut self.fail("mixed '=' left side accepts names only") }
+            }
+            self.nodes[a].kind = Kind.var
+        }
+        op: usize = mut self.expect(Token.assign, "'=' in assignment")
+        self.nodes[a].op = self.kind_at(op)
+        mut self.close(a, mark)
+        r: u32 = mut self.expr_list(ctx)
+        if self.nodes[a].kind == Kind.var {
+            self.nodes[a].b = r
+        } else {
+            self.nodes[a].a = r
+        }
+        return a
+    }
+    if is_assign_op(self.kth(0)) { // single-target assignment, compound included
+        a: u32 = mut self.nd(Kind.assign)
+        self.nodes[a].op = self.kinds[self.i]
+        if e != 0 && self.nodes[e].kind == Kind.unary && self.nodes[e].op == Token.volatile {
+            if self.nodes[a].op != Token.assign { mut self.fail("volatile access supports only simple '=' assignment") }
+            self.nodes[a].flags |= F_VOLATILE
+            e = self.nodes[e].a
+        }
+        self.i += 1
+        mark: usize = self.nstack
+        mut self.push(e)
+        mut self.close(a, mark)
+        r: u32 = mut self.expr(ctx)
+        self.nodes[a].a = r
+        return a
+    }
+    n: u32 = mut self.make(Kind.exprstmt, start)
+    self.nodes[n].a = e
+    return n
+}
+
+pub Parser.block(mut self): u32 {
+    b: u32 = mut self.nd(Kind.block)
+    mut self.expect(Token.lbrace, "'{'")
+    mark: usize = self.nstack
+    mut self.skipnl()
+    for !self.at(Token.rbrace) {
+        if self.at(Token.eof) {
+            mut self.fail("unexpected end of file, expected '}'")
+            break
+        }
+        mut self.push(mut self.stmt())
+        mut self.stmt_end()
+        mut self.skipnl()
+    }
+    self.i += 1 // '}'
+    mut self.close(b, mark)
+    return b
+}
+
+// --- dump ---------------------------------------------------------------------
+
+/* Prints the tree at `n` as `ace --ast` does. */
+pub Parser.dump(self, mut out: Out, n: u32, ind: usize) {
+    for j: usize in 0..ind { mut out.byte(' ') }
+    if n == 0 {
+        mut out.put("nil\n")
+        return
+    }
+    x: Node = self.nodes[n]
+    mut out.byte('(')
+    mut out.put(NAMES[x.kind])
+    if (x.flags & F_TEXT) != 0 {
+        mut out.put(" '")
+        // C prints with "%.*s", which stops at an embedded NUL.
+        nul: usize, found: bool = str.find(x.text, '\0')
+        if found {
+            mut out.put(x.text[..nul])
+        } else {
+            mut out.put(x.text)
+        }
+        mut out.byte('\'')
+    }
+    switch x.kind {
+        Kind.int_lit, Kind.char_lit, Kind.bool {
+            mut out.byte(' ')
+            mut out.num(x.ival)
+        }
+        Kind.float_lit {
+            mut out.byte(' ')
+            mut out.general(x.fval)
+        }
+        Kind.binary, Kind.unary, Kind.assign, Kind.op {
+            mut out.put(" op='")
+            mut out.put(lexer.disp(x.op))
+            mut out.byte('\'')
+        }
+        default {}
+    }
+    for j: usize in 0..FLAG_BITS.len {
+        if (x.flags & FLAG_BITS[j]) != 0 { mut out.put(FLAG_NAMES[j]) }
+    }
+    mut out.put(" @")
+    mut out.num(u64(x.line))
+    mut out.byte(':')
+    mut out.num(u64(x.col))
+    if x.a == 0 && x.b == 0 && x.c == 0 && x.d == 0 && x.nkids == 0 {
+        mut out.put(")\n")
+        return
+    }
+    mut out.byte('\n')
+    if x.a != 0 { self.dump(mut out, x.a, ind + 1) }
+    if x.b != 0 { self.dump(mut out, x.b, ind + 1) }
+    if x.c != 0 { self.dump(mut out, x.c, ind + 1) }
+    if x.d != 0 { self.dump(mut out, x.d, ind + 1) }
+    for k: u32 in 0..x.nkids { self.dump(mut out, self.kids[x.kids + k], ind + 1) }
+    for j: usize in 0..ind { mut out.byte(' ') }
+    mut out.put(")\n")
+}

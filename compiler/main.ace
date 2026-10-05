@@ -3,90 +3,13 @@
 import file
 import fmt
 import mem
-import str
 import sys
 
 import lexer: "./lexer.ace"
+import output: "./output.ace"
 
 Token: type = lexer.Token
-
-/* Buffered standard output. */
-Out: struct {
-    buf: mut []u8 = null,
-    at: usize,
-}
-
-Out.flush(mut self) {
-    done: usize = 0
-    for done < self.at {
-        n: int, err: Error = sys.write(sys.stdout, self.buf[done..self.at])
-        if err != null { sys.exit(1) }
-        done += usize(n)
-    }
-    self.at = 0
-}
-
-Out.put(mut self, text: []u8) {
-    if self.at + text.len > self.buf.len { mut self.flush() }
-    if text.len > self.buf.len { // too long to buffer: write it straight through
-        done: usize = 0
-        for done < text.len {
-            n: int, err: Error = sys.write(sys.stdout, text[done..])
-            if err != null { sys.exit(1) }
-            done += usize(n)
-        }
-        return
-    }
-    mem.copy(self.buf[self.at..self.at + text.len], text)
-    self.at += text.len
-}
-
-Out.byte(mut self, c: u8) {
-    if self.at == self.buf.len { mut self.flush() }
-    self.buf[self.at] = c
-    self.at += 1
-}
-
-Out.num(mut self, v: u64) {
-    tmp: [24]u8
-    n: usize, ok: bool = str.format(mut tmp[..], usize(v))
-    mut self.put(tmp[..n])
-}
-
-/* `text` escaped as an Ace string literal's body that lexes back to the same
- * bytes; UTF-8 passes through.
- */
-Out.quoted(mut self, text: string) {
-    hex: string = "0123456789abcdef"
-    for c: u8 in text {
-        switch c {
-            '"', '\\' {
-                mut self.byte('\\')
-                mut self.byte(c)
-            }
-            '\n' { mut self.put("\\n") }
-            '\t' { mut self.put("\\t") }
-            '\r' { mut self.put("\\r") }
-            0 { mut self.put("\\0") }
-            default {
-                if c < 0x20 || c == 0x7F {
-                    mut self.put("\\x")
-                    mut self.byte(hex[c >> 4])
-                    mut self.byte(hex[c & 15])
-                } else {
-                    mut self.byte(c)
-                }
-            }
-        }
-    }
-}
-
-/* C's `%g`, as `ace --tokens` prints floats. */
-Out.general(mut self, v: f64) {
-    tmp: [32]u8
-    n: usize, ok: bool = str.format(mut tmp[..], "%g", v)
-    mut self.put(tmp[..n])
-}
+Out: type = output.Out
 
 main(): int {
     if sys.argc() != 2 {
