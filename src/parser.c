@@ -302,7 +302,7 @@ static Node* type_atom(P* p) {
         if (at(p, T_LBRACK)) { // mut []T — writable elements
             if (kth(p, 1) != T_RBRACK) {
                 perr(p,
-                     "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array type takes no 'mut'");
+                     "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array is already writable storage; take a writable view with 'mut name[..]'");
                 return NULL;
             }
             t = nd(p, N_SLICE_T);

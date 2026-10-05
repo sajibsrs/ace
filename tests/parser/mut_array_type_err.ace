@@ -1,0 +1,6 @@
+/* A fixed array type takes no type-position 'mut'. */
+
+main(): int {
+    a: mut [4]u32 = [0, 0, 0, 0]
+    return 0
+}

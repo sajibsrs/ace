@@ -425,7 +425,7 @@ pub Parser.parse_type(mut self): u32 {
         }
         if self.at(Token.lbrack) { // mut []T
             if self.kth(1) != Token.rbrack {
-                mut self.fail("'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array type takes no 'mut'")
+                mut self.fail("'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array is already writable storage; take a writable view with 'mut name[..]'")
                 return 0
             }
             t: u32 = mut self.nd(Kind.slice_t)

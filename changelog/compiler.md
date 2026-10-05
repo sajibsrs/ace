@@ -1,5 +1,7 @@
 # Compiler
 
+- `mut` on a fixed array type now names the fix in its diagnostic: the array is
+  already writable, and `mut name[..]` takes a writable view (both parsers).
 - Globals join function reachability: a global is emitted only once a compiled
   function references its symbol (C exports always, everything without
   `main`), so importing `sys` for a type no longer links its ~70 constants

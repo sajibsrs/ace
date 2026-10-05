@@ -46,6 +46,13 @@ if ! printf '%s\n' "$struct_literal_colon_error" | grep -qF \
     fail=1
 fi
 
+mut_array_type=$("$ACE" tests/parser/mut_array_type_err.ace 2>&1)
+if ! printf '%s\n' "$mut_array_type" | grep -qF \
+    "a fixed array is already writable storage; take a writable view with 'mut name[..]'"; then
+    echo "FAIL: 'mut' on a fixed array type should point to the writable view spelling"
+    fail=1
+fi
+
 unknown_decl=$("$ACE" tests/parser/unknown_decl_type_err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
     "tests/parser/unknown_decl_type_err.ace:3:8: error: unknown declaration type 'protocol'"; then
