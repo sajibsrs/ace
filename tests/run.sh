@@ -2367,7 +2367,8 @@ fi
 # `//`-comments in ace.pkg: `// expect-build-exit: N` builds an app case and
 # runs it (via both `pkg build` + the binary, and `pkg run` directly),
 # expecting exit code N, passing the words of `// run-args: ...` to the binary
-# and after `pkg run --debug --`; `// expect-build-ok` builds a lib case, expecting
+# and after `pkg run --debug --`, also run from the repository root through
+# `--dir` with a relative compiler path; `// expect-build-ok` builds a lib case, expecting
 # `pkg build` to succeed with no linked binary in build/; `// expect-build-err:
 # substring` expects `pkg build` on an app case to fail with that diagnostic
 # (e.g. a native link-input conflict, Package System #14 — checking alone
@@ -2503,6 +2504,16 @@ EOF
                 got=$?
                 if [ "$got" -ne "$build_exit" ]; then
                     echo "FAIL: $dir 'pkg run' exited $got, want $build_exit"
+                    cat /tmp/ace_test_errs
+                    fail=1
+                fi
+                # A relative compiler path proves std/ is still found after the chdir.
+                case_abs="$PWD/$dir"
+                (cd "$(dirname "$ACE")" && "./$(basename "$ACE")" pkg run --debug --dir="$case_abs" -- $run_args) \
+                    >/dev/null 2>/tmp/ace_test_errs
+                got=$?
+                if [ "$got" -ne "$build_exit" ]; then
+                    echo "FAIL: $dir 'pkg run --dir' exited $got, want $build_exit"
                     cat /tmp/ace_test_errs
                     fail=1
                 fi

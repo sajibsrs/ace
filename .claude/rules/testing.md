@@ -27,7 +27,8 @@ paths:
   subcommands (`init`/`build`/`run`/`check`) rather than the debug flags —
   same one-directory-per-case/`<case>/app`+`<case>/pkg/<name>` layout, with
   `// expect-build-exit: N` (build an app, run it both via the linked binary
-  and `pkg run`, passing it the words of `// run-args: ...` after `--`),
+  and `pkg run`, passing it the words of `// run-args: ...` after `--`, and again from the
+  repository root through `--dir`),
   `// expect-build-ok` (build a lib: succeeds, no linked
   binary), `// expect-run-err: substring` (`pkg run` on a lib must fail with
   that diagnostic), and `// expect-check-ok` (`pkg check` succeeds from a

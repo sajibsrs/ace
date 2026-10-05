@@ -1,9 +1,7 @@
 /* macOS/Apple-arm64 BPF packet-sniffer proof of concept.
  *
  * Build and run:
- *   cd demo/darwin-packet-sniffer
- *   ../../ace pkg build
- *   sudo build/darwin_packet_sniffer [interface] [--debug]
+ *   sudo ./ace pkg run --dir=demo/darwin-packet-sniffer -- [interface] [--debug]
  *
  * Capture storage is a fixed-capacity caller-owned stack array. The parser
  * reads bounded byte slices manually and creates no typed view over them.

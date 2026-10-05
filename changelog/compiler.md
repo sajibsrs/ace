@@ -82,6 +82,8 @@
   of falling into `default`; gcc builds warning-free.
 - `ace pkg run` passes the arguments after the first `--` to the program
   unchanged (as `cargo run --` does); flags before it stay the build's.
+- `ace pkg --dir=DIR` starts the `ace.pkg` walk-up in `DIR`, as a prior `cd`
+  would, for every command but `init`; it is read only before a `--`.
 - `std/` is found beside the real executable (`_NSGetExecutablePath`, or
   `/proc/self/exe`, then `realpath`) rather than `argv[0]`, so `ace` run by
   bare name from `PATH` or through a symlink finds it.

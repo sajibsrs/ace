@@ -69,6 +69,7 @@ static void usage(void) {
                     "  ace pkg build [--debug|--release] [--target=TARGET] [--report]\n"
                     "                compile (and, for an exe, link) the package found by\n"
                     "                walking up from the working directory to the nearest ace.pkg\n"
+                    "  ace pkg CMD --dir=DIR  any pkg command but init, walking up from DIR\n"
                     "  ace pkg run   [--debug|--release] [--target=TARGET] [--report] [-- ARGS...]\n"
                     "                build, then execute the exe (exe-only), passing it ARGS\n"
                     "  ace pkg check full semantic check of the enclosing package, no codegen\n");
@@ -240,6 +241,8 @@ static void package_usage(void) {
                     "       ace pkg add NAME VERSION\n"
                     "       ace pkg remove NAME\n"
                     "       ace pkg list\n"
+                    "  --dir=DIR  start the ace.pkg walk-up in DIR instead of the working\n"
+                    "             directory (every command but init)\n"
                     "  init   create a minimal exe or lib package skeleton, without\n"
                     "         overwriting an existing ace.pkg or root file\n"
                     "  build  compile (and for an exe, link) the package found by walking\n"
@@ -739,6 +742,32 @@ static int package_cmd_init(int argc, char** argv) {
 
 static int package_main(int argc, char** argv) {
     if (argc < 1) package_usage();
+    // --dir=DIR starts the nearest-ace.pkg walk-up in DIR, as a prior cd
+    // would; it is removed here so no subcommand sees it, and is looked for
+    // only before a "--", whose words belong to the program pkg run starts.
+    const char* start_dir = NULL;
+    int kept = 1;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--") == 0) {
+            while (i < argc) argv[kept++] = argv[i++];
+            break;
+        }
+        if (strncmp(argv[i], "--dir=", 6) == 0) {
+            if (start_dir) cli_error("--dir given more than once");
+            if (argv[i][6] == 0) cli_error("--dir requires a directory");
+            start_dir = argv[i] + 6;
+        } else {
+            argv[kept++] = argv[i];
+        }
+    }
+    argc = kept;
+    if (start_dir) {
+        if (strcmp(argv[0], "init") == 0) cli_error("pkg init takes its directory as [DIR], not --dir");
+        if (chdir(start_dir) != 0) {
+            fprintf(stderr, "ace: cannot enter '%s': %s\n", start_dir, strerror(errno));
+            return 1;
+        }
+    }
     if (strcmp(argv[0], "init") == 0) return package_cmd_init(argc - 1, argv + 1);
     if (strcmp(argv[0], "build") == 0) return package_cmd_build(argc - 1, argv + 1);
     if (strcmp(argv[0], "run") == 0) return package_cmd_run(argc - 1, argv + 1);
