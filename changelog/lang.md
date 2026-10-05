@@ -75,3 +75,8 @@
 - An untyped constant taking an enum type implicitly (`k: K = 7`, a `K`
   argument) must name a member, as `K(7)` already must; the constant is checked
   whole and its operands fold at the backing integer type.
+- A member name (field, bit field, enum member, union variant, error entry,
+  contract method, method or associated function) may be a keyword: the parser
+  accepts any keyword token where it declares a member or reads one after `.`,
+  and the lexer ends a line after such a keyword as after an identifier;
+  bindings stay reserved.

@@ -35,9 +35,9 @@ main(): int {
     for running {
         event: Event
         for mut event.poll() {
-            if event.kind == EventType.quit || event.kind == EventType.window_close_requested {
+            if event.type == EventType.quit || event.type == EventType.window_close_requested {
                 running = false
-            } else if event.kind == EventType.key_down && event.keyboard.key == Keycode.escape {
+            } else if event.type == EventType.key_down && event.keyboard.key == Keycode.escape {
                 running = false
             }
         }

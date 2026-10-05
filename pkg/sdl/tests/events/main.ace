@@ -18,7 +18,7 @@ main(): int {
     defer sdl.quit()
 
     sent: sdl.Event
-    sent.keyboard.kind = sdl.EventType.key_down
+    sent.keyboard.type = sdl.EventType.key_down
     sent.keyboard.reserved = 0
     sent.keyboard.timestamp = 0
     sent.keyboard.window_id = 7
@@ -33,7 +33,7 @@ main(): int {
 
     quit: sdl.Event
     quit.padding = [0 : 128]
-    quit.kind = sdl.EventType.quit
+    quit.type = sdl.EventType.quit
     quit_key: sdl.KeyboardEvent, quit_is_key: bool = quit.key()
     if quit_is_key { return 8 }
 

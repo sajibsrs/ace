@@ -2,8 +2,8 @@
 //
 // Newline handling (spec/syntax.md "newline terminates statements", GRAMMAR.md §6.1):
 // a newline token is emitted only when the previous token can end an
-// expression — ident/literal/null/true/false, ')', ']', '}', '?', or the
-// keywords return/break/continue — and the next token is not ';'. Consequence:
+// expression — ident/literal/null/true/false, a keyword after '.', ')', ']',
+// '}', '?', or the keywords return/break/continue — and the next token is not ';'. Consequence:
 // parenthesized/bracketed groups and trailing-comma lists continue across
 // lines for free; 'else' stays on the '}' line. ';' tokenizes only for the
 // for-head clause separators; the parser rejects it everywhere else.
@@ -211,7 +211,9 @@ static void push(Lex* L, Token t) {
         if (!L->toks) oom();
     }
     L->toks[L->n++] = t;
-    L->prev = t.kind;
+    // A keyword after '.' is a member name (Source #3): it ends an expression
+    // as an identifier does.
+    L->prev = t.kind >= T_IMPORT && t.kind <= T_FALSE && L->prev == T_DOT ? T_IDENT : t.kind;
 }
 
 // Can a token of this kind end an expression/statement? (newline rule)

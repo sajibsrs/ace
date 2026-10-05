@@ -17,6 +17,7 @@ keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "volatile" | "self"
 
 ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
+member        := ident | keyword                         // member names only (Source #3)
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
 int_lit       := digit+ ("_" digit+)* | "0x" hex+ | "0b" bin+     [P: suffixes]
 float_lit     := digit+ "." digit+ [exponent]             [P]
@@ -86,7 +87,7 @@ const_decl    := ident ":" "const" type "=" expr
 func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause]
                  (block | "specialized" | "intrinsic")
                                                           // brackets = type params or specialization args — Notes #23
-type_func_decl := owner_type "." ident "(" [receiver ["," params] | params] ")" [ret_clause] block
+type_func_decl := owner_type "." member "(" [receiver ["," params] | params] ")" [ret_clause] block
                                                           // with receiver: method, called as x.name(...);
                                                           // without: associated function, called as Type.name(...)
 receiver      := ["mut"] "self"                            // untyped; first parameter only
@@ -100,30 +101,30 @@ block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)* [","]
-field         := [offset_attr] [align_attr] ["embed"] ident ":" type ["=" expr]
+field         := [offset_attr] [align_attr] ["embed"] member ":" type ["=" expr]  // `embed:` names a field
 
 bits_decl     := ident ":" contextual_bits bits_backing "{" bits_fields "}"
 contextual_bits := ident                                // exact text "bits"; not reserved
 bits_backing  := "u8" | "u16" | "u32" | "u64"
 bits_fields   := bits_field ("," bits_field)* [","]
-bits_field    := ident ":" [contextual_signed] int_lit // `_` is anonymous
+bits_field    := member ":" [contextual_signed] int_lit // `_` is anonymous
 contextual_signed := ident                              // exact text "signed"; not reserved
 
 contract_decl := ident [type_params] ":" "contract" "{" method_decl* "}"
-method_decl   := ident "(" receiver ["," params] ")" [ret_clause]
+method_decl   := member "(" receiver ["," params] ")" [ret_clause]
 
 enum_decl     := ident ":" "enum" [enum_backing] "{" enum_members "}"
 enum_backing  := type                                  // sema: fixed-width integer or alias
 enum_members  := enum_member ("," enum_member)* [","]
-enum_member   := ident ["=" expr]
+enum_member   := member ["=" expr]
 union_decl    := ident [type_params] ":" "union" "{" union_variants "}"
 union_variants := union_variant ("," union_variant)* [","]
-union_variant := ident [":" type]                    // zero or one payload
+union_variant := member [":" type]                    // zero or one payload
 
 alias_decl    := ident [type_params] ":" "type" "=" type
 distinct_decl := ident ":" "distinct" type
 error_domain_decl := ident ":" contextual_error ["{" [error_entry ("," error_entry)* [","]] "}"]
-error_entry   := signed_int_lit ":" ident "=" string_lit
+error_entry   := signed_int_lit ":" member "=" string_lit
 signed_int_lit := ["-"] int_lit
 contextual_error := ident                                    // exact text "error"; not reserved
 
@@ -180,8 +181,8 @@ default_case  := "default" block                          [P]
 case_pat      := case_value ("," case_value)*                 // one line
                | "(" case_value ("," case_value)* [","] ")" // multiline only
 case_value    := union_pattern | expr
-union_pattern := named_type "." ident
-               | named_type "." ident "(" ident ":" type ")"
+union_pattern := named_type "." member
+               | named_type "." member "(" ident ":" type ")"
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
 continue_stmt := "continue" [ident]                      // nearest loop, or an enclosing label
@@ -227,7 +228,7 @@ postfix       := primary postfix_part*
 postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr args
                | "[" expr "]"                             // index
                | "[" [expr] ".." [expr] "]"               [P] slice expression
-               | "." ident                                // field or built-in sequence .len
+               | "." member                               // field or built-in sequence .len
                | "[" type_args "]"                        // generic instantiation — see Notes
 
 arg_list      := arg ("," arg)*
@@ -241,7 +242,7 @@ keyed_list    := keyed_elem ("," keyed_elem)* [","]      // [E.a = x, E.b = y]
 keyed_elem    := named_type "." ident "=" expr
 array_repeat  := expr ":" expr                          // [0 : 12]; exact contextual array length
 struct_lit    := "{" [field_init ("," field_init)*] "}"   [P]
-field_init    := ident "=" expr
+field_init    := member "=" expr
 static_map_lit := "{" [map_entry ("," map_entry)* [","]] "}"
 map_entry     := expr ":" expr
 
@@ -282,7 +283,7 @@ Semantics and restrictions belong in `spec/`; these notes record only parsing
 choices that are not evident from the productions.
 
 1. Newlines terminate statements using lexer insertion after tokens that can end
-   an expression. Incomplete expressions suppress insertion; `for`-head
+   an expression (a keyword after `.` counts as a member name). Incomplete expressions suppress insertion; `for`-head
    semicolons are the only semicolons.
 2. Statement starts use bounded lookahead: `ident :` begins a label or typed
    declaration, and `ident =`/`ident ,` begins assignment. Function declarations
@@ -313,7 +314,7 @@ choices that are not evident from the productions.
     the normative permission rules.
 11. Calls spelled `sizeof(`, `alignof(`, or `blank(` parse their sole operand with
     the full type grammar.
-12. `offsetof(` parses a type, comma, and dot-separated field-name path;
+12. `offsetof(` parses a type, comma, and dot-separated `member` path;
     `bitcast(` parses a type, comma, and one expression.
     `static_assert` is additionally admitted in the top-level declaration list.
 13. A pointer or slice type is admitted as a primary only as the callee of its

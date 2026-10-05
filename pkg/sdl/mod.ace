@@ -127,13 +127,13 @@ pub Vertex: struct {
 }
 
 pub QuitEvent: struct {
-    kind: EventType,
+    type: EventType,
     reserved: u32,
     timestamp: u64,
 }
 
 pub KeyboardEvent: struct {
-    kind: EventType,
+    type: EventType,
     reserved: u32,
     timestamp: u64,
     window_id: u32,
@@ -149,7 +149,7 @@ pub KeyboardEvent: struct {
 // SDL_Event: a C union, written as an overlapping struct.
 pub Event: struct {
     @offset(0)
-    kind: EventType,
+    type: EventType,
 
     @offset(0)
     keyboard: KeyboardEvent,
@@ -254,10 +254,10 @@ pub error(): string {
 // Fill this event with the next pending one; false when none is left.
 pub Event.poll(mut self): bool { return c_poll_event(mut &self) }
 
-// The keyboard member, and whether kind says it holds one; false for every
+// The keyboard member, and whether type says it holds one; false for every
 // other kind, whose bytes the member would misread.
 pub Event.key(self): (KeyboardEvent, bool) {
-    return self.keyboard, self.kind == EventType.key_down || self.kind == EventType.key_up
+    return self.keyboard, self.type == EventType.key_down || self.type == EventType.key_up
 }
 
 // An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written

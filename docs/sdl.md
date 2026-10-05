@@ -158,32 +158,31 @@ On a renderer of any other driver, `shader_formats()` is empty and
 ## Events
 
 `Event` mirrors SDL's `SDL_Event` union as an overlapping struct: every
-member starts at offset zero, and `kind` is the event type shared by all of
+member starts at offset zero, and `type` is the event type shared by all of
 them.
 
 ```ace
 event: sdl.Event
 for mut event.poll() {
-    if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
+    if event.type == sdl.EventType.quit || event.type == sdl.EventType.window_close_requested {
         running = false
-    } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
+    } else if event.type == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
         running = false
     }
 }
 ```
 
 `event.keyboard` is a `KeyboardEvent` (`key`, `scancode`, `mod`, `down`,
-`repeat`, …) and `event.quit` a `QuitEvent`; read the member that `kind`
+`repeat`, …) and `event.quit` a `QuitEvent`; read the member that `type`
 names. `event.key(): (KeyboardEvent, bool)` does that check for you,
-returning false unless `kind` is `key_down` or `key_up`:
+returning false unless `type` is `key_down` or `key_up`:
 
 ```ace
 key: sdl.KeyboardEvent, is_key: bool = event.key()
 if is_key && key.key == sdl.Keycode.space { ... }
 ```
 
-Field names follow SDL's, except the shared `type` field, which is
-`kind` because `type` is an Ace keyword. `kind` is an `EventType` and `key` a
+Field names follow SDL's. `type` is an `EventType` and `key` a
 `Keycode`, `u32`-backed enums naming the values this binding handles; SDL may
 deliver other values, which simply match no named member. `Keycode` names
 `backspace`, `tab`, `enter`, `escape`, `space`, `digit_0`…`digit_9`, `a`…`z`,

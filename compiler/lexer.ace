@@ -11,11 +11,11 @@ import str
 
 pub Token: enum u8 {
     eof, newline, ident,
-    kw_import, kw_pub, kw_mut, kw_const, kw_noalias, kw_if, kw_else, kw_for,
-    kw_in, kw_switch, kw_default, kw_return, kw_break, kw_continue, kw_defer,
-    kw_asm, kw_extern, kw_contract, kw_struct, kw_embed, kw_signs, kw_distinct,
-    kw_type, kw_enum, kw_union, kw_specialized, kw_intrinsic, kw_inline,
-    kw_volatile, kw_self, kw_null, kw_true, kw_false,
+    import, pub, mut, const, noalias, if, else, for,
+    in, switch, default, return, break, continue, defer,
+    asm, extern, contract, struct, embed, signs, distinct,
+    type, enum, union, specialized, intrinsic, inline,
+    volatile, self, null, true, false,
     int, float, string, char,
     assign, add_eq, sub_eq, mul_eq, div_eq, mod_eq, and_eq, or_eq, xor_eq,
     shl_eq, shr_eq,
@@ -28,17 +28,17 @@ pub Token: enum u8 {
 /* Display names: one per Token, checked complete by the compiler. */
 DISP: [Token]string = [
     Token.eof = "eof",                     Token.newline = "newline",             Token.ident = "ident",
-    Token.kw_import = "import",            Token.kw_pub = "pub",                  Token.kw_mut = "mut",
-    Token.kw_const = "const",              Token.kw_noalias = "noalias",          Token.kw_if = "if",
-    Token.kw_else = "else",                Token.kw_for = "for",                  Token.kw_in = "in",
-    Token.kw_switch = "switch",            Token.kw_default = "default",          Token.kw_return = "return",
-    Token.kw_break = "break",              Token.kw_continue = "continue",        Token.kw_defer = "defer",
-    Token.kw_asm = "asm",                  Token.kw_extern = "extern",            Token.kw_contract = "contract",
-    Token.kw_struct = "struct",            Token.kw_embed = "embed",              Token.kw_signs = "signs",
-    Token.kw_distinct = "distinct",        Token.kw_type = "type",                Token.kw_enum = "enum",
-    Token.kw_union = "union",              Token.kw_specialized = "specialized",  Token.kw_intrinsic = "intrinsic",
-    Token.kw_inline = "inline",            Token.kw_volatile = "volatile",        Token.kw_self = "self",
-    Token.kw_null = "null",                Token.kw_true = "true",                Token.kw_false = "false",
+    Token.import = "import",            Token.pub = "pub",                  Token.mut = "mut",
+    Token.const = "const",              Token.noalias = "noalias",          Token.if = "if",
+    Token.else = "else",                Token.for = "for",                  Token.in = "in",
+    Token.switch = "switch",            Token.default = "default",          Token.return = "return",
+    Token.break = "break",              Token.continue = "continue",        Token.defer = "defer",
+    Token.asm = "asm",                  Token.extern = "extern",            Token.contract = "contract",
+    Token.struct = "struct",            Token.embed = "embed",              Token.signs = "signs",
+    Token.distinct = "distinct",        Token.type = "type",                Token.enum = "enum",
+    Token.union = "union",              Token.specialized = "specialized",  Token.intrinsic = "intrinsic",
+    Token.inline = "inline",            Token.volatile = "volatile",        Token.self = "self",
+    Token.null = "null",                Token.true = "true",                Token.false = "false",
     Token.int = "int",                     Token.float = "float",                 Token.string = "string",
     Token.char = "char",                   Token.assign = "=",                    Token.add_eq = "+=",
     Token.sub_eq = "-=",                   Token.mul_eq = "*=",                   Token.div_eq = "/=",
@@ -199,10 +199,10 @@ Lexer.push(mut self, c: u8) {
 ends_expr(k: Token): bool {
     switch k {
         (Token.ident, Token.int, Token.float, Token.string, Token.char,
-         Token.kw_null, Token.kw_true, Token.kw_false, Token.kw_self,
+         Token.null, Token.true, Token.false, Token.self,
          Token.rparen, Token.rbrack, Token.rbrace,
-         Token.kw_return, Token.kw_break, Token.kw_continue,
-         Token.kw_specialized, Token.kw_intrinsic) { return true }
+         Token.return, Token.break, Token.continue,
+         Token.specialized, Token.intrinsic) { return true }
         default {}
     }
     return false
@@ -243,89 +243,89 @@ seps_ok(p: []char, base: int): bool {
 keyword(t: []char): Token {
     k: Token = Token.ident
     switch t[0] {
-        'a' { if mem.equal(t, "asm") { k = Token.kw_asm } }
-        'b' { if mem.equal(t, "break") { k = Token.kw_break } }
+        'a' { if mem.equal(t, "asm") { k = Token.asm } }
+        'b' { if mem.equal(t, "break") { k = Token.break } }
         'c' {
             if mem.equal(t, "const") {
-                k = Token.kw_const
+                k = Token.const
             } else if mem.equal(t, "continue") {
-                k = Token.kw_continue
+                k = Token.continue
             } else if mem.equal(t, "contract") {
-                k = Token.kw_contract
+                k = Token.contract
             }
         }
         'd' {
             if mem.equal(t, "default") {
-                k = Token.kw_default
+                k = Token.default
             } else if mem.equal(t, "defer") {
-                k = Token.kw_defer
+                k = Token.defer
             } else if mem.equal(t, "distinct") {
-                k = Token.kw_distinct
+                k = Token.distinct
             }
         }
         'e' {
             if mem.equal(t, "else") {
-                k = Token.kw_else
+                k = Token.else
             } else if mem.equal(t, "extern") {
-                k = Token.kw_extern
+                k = Token.extern
             } else if mem.equal(t, "embed") {
-                k = Token.kw_embed
+                k = Token.embed
             } else if mem.equal(t, "enum") {
-                k = Token.kw_enum
+                k = Token.enum
             }
         }
         'f' {
             if mem.equal(t, "for") {
-                k = Token.kw_for
+                k = Token.for
             } else if mem.equal(t, "false") {
-                k = Token.kw_false
+                k = Token.false
             }
         }
         'i' {
             if mem.equal(t, "if") {
-                k = Token.kw_if
+                k = Token.if
             } else if mem.equal(t, "in") {
-                k = Token.kw_in
+                k = Token.in
             } else if mem.equal(t, "import") {
-                k = Token.kw_import
+                k = Token.import
             } else if mem.equal(t, "intrinsic") {
-                k = Token.kw_intrinsic
+                k = Token.intrinsic
             } else if mem.equal(t, "inline") {
-                k = Token.kw_inline
+                k = Token.inline
             }
         }
-        'm' { if mem.equal(t, "mut") { k = Token.kw_mut } }
+        'm' { if mem.equal(t, "mut") { k = Token.mut } }
         'n' {
             if mem.equal(t, "noalias") {
-                k = Token.kw_noalias
+                k = Token.noalias
             } else if mem.equal(t, "null") {
-                k = Token.kw_null
+                k = Token.null
             }
         }
-        'p' { if mem.equal(t, "pub") { k = Token.kw_pub } }
-        'r' { if mem.equal(t, "return") { k = Token.kw_return } }
+        'p' { if mem.equal(t, "pub") { k = Token.pub } }
+        'r' { if mem.equal(t, "return") { k = Token.return } }
         's' {
             if mem.equal(t, "switch") {
-                k = Token.kw_switch
+                k = Token.switch
             } else if mem.equal(t, "struct") {
-                k = Token.kw_struct
+                k = Token.struct
             } else if mem.equal(t, "signs") {
-                k = Token.kw_signs
+                k = Token.signs
             } else if mem.equal(t, "specialized") {
-                k = Token.kw_specialized
+                k = Token.specialized
             } else if mem.equal(t, "self") {
-                k = Token.kw_self
+                k = Token.self
             }
         }
         't' {
             if mem.equal(t, "type") {
-                k = Token.kw_type
+                k = Token.type
             } else if mem.equal(t, "true") {
-                k = Token.kw_true
+                k = Token.true
             }
         }
-        'u' { if mem.equal(t, "union") { k = Token.kw_union } }
-        'v' { if mem.equal(t, "volatile") { k = Token.kw_volatile } }
+        'u' { if mem.equal(t, "union") { k = Token.union } }
+        'v' { if mem.equal(t, "volatile") { k = Token.volatile } }
         default {}
     }
     return k
@@ -655,7 +655,12 @@ Lexer.trivia(mut self): bool {
 }
 
 Lexer.emit(mut self, t: Token): (Token, Error) {
-    self.prev = t
+    // A keyword after '.' is a member name: it ends an expression as an ident does.
+    if self.prev == Token.dot && u8(t) >= u8(Token.import) && u8(t) <= u8(Token.false) {
+        self.prev = Token.ident
+    } else {
+        self.prev = t
+    }
     self.count += 1
     e: Error = self.err
     self.err = null

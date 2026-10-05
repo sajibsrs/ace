@@ -1,0 +1,58 @@
+/* Member names may be keywords (Source #3): fields, bit fields, enum members,
+ * union variants, error entries, contract methods, and methods, declared in
+ * their lists and reached after '.'. */
+
+// expect-exit: 42
+
+Kind: enum u8 { if, struct, default, true }
+
+NAMES: [Kind]string = [Kind.if = "if", Kind.struct = "struct", Kind.default = "default", Kind.true = "true"]
+
+Event: struct {
+    type: u32,
+    embed: int = 3,
+    in: Kind,
+}
+
+Shape: union { none, for: int, switch: f64 }
+
+Fail: error {
+    1: return = "returned",
+}
+
+Flags: bits u8 { const: 1, mut: 3, _: 4 }
+
+Named: contract { import(self): int }
+
+Config: struct { const: int }
+
+Config.default(): Config {
+    return Config { const = 9 }
+}
+
+Config.import(self): int {
+    return self.const
+}
+
+Config signs Named
+
+main(): int {
+    e: Event = Event { type = 2, in = Kind.default }
+    e.type += 1
+    if e.type != 3 || e.embed != 3 || NAMES[e.in].len != 7 { return 1 }
+    if int(offsetof(Event, in)) != 16 || int(Kind.true) != 3 { return 2 }
+    s: Shape = Shape.for(5)
+    n: int = 0
+    switch s {
+        Shape.for(v: int) { n = v }
+        Shape.switch(x: f64) { return 3 }
+        default { return 4 }
+    }
+    err: Error = Fail.return
+    k: Kind = Kind.default
+    if err != Fail.return || k != e.in { return 5 }
+    f: Flags = Flags { const = 1, mut = 5 }
+    if int(f.mut) != 5 { return 6 }
+    c: Config = Config.default()
+    return n + c.import() + 28
+}

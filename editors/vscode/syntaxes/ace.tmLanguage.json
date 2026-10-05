@@ -362,6 +362,18 @@
     "keywords": {
       "patterns": [
         {
+          "name": "variable.other.ace",
+          "match": "(?<=\\.)(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile|self|null|true|false)\\b"
+        },
+        {
+          "name": "variable.other.member.ace",
+          "match": "^\\s*(?:import|pub|mut|const|noalias|if|else|for|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile|self|null|true|false)\\b(?=\\s*:(?!:))"
+        },
+        {
+          "name": "variable.other.member.ace",
+          "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|distinct|type|enum|volatile|self|null|true|false)\\b(?=\\s*=(?!=))"
+        },
+        {
           "name": "keyword.control.ace",
           "match": "\\b(?:out|clobbers)\\b(?=\\s*:)"
         },

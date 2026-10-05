@@ -751,7 +751,10 @@ Event: union {
 ```
 
 Variant names are chosen by the programmer. `none` and `quit` are not
-keywords. Construct a payloadless variant as a qualified value and a payload
+keywords, and a member name may even be one: fields, enum members, variants,
+error entries, and methods are only declared in their list or written after
+`.`, so `e.type`, `Kind.if`, and `Config.default()` are unambiguous. Bindings
+(locals, parameters, globals, types, functions) keep every keyword reserved. Construct a payloadless variant as a qualified value and a payload
 variant with one argument:
 
 ```ace
@@ -975,6 +978,12 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   and runs less often than indexing (Zig checks `@enumFromInt` likewise). A
   dense enum costs one unsigned compare.
 
+- Source #3: a member name is never bare — it follows `.` or sits in its
+  declaration list — so a keyword there cannot be misread, and the next token
+  already decides each position. Mirroring C names (`SDL_Event.type`) and
+  naming kinds after keywords (`Kind.if`) then needs no rename or escape;
+  JavaScript property names and Swift member access work the same way, while
+  Rust (`r#type`) and Zig (`@"type"`) pay with escape syntax.
 - Syntax & Parsing #9: one declaration rule works uniformly for literals,
   aggregates, null values, and single- or multi-return expressions while making
   the programmer's expected type locally visible and independently checkable

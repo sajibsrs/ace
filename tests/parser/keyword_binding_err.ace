@@ -1,0 +1,7 @@
+/* A keyword stays reserved as a binding name; only member names may be
+ * keywords (Source #3). */
+
+main(): int {
+    type: int = 1
+    return type
+}

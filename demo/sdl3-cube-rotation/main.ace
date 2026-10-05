@@ -88,9 +88,9 @@ main(): int {
         work_start: u64 = sdl.ticks_ns()
         event: sdl.Event
         for mut event.poll() {
-            if event.kind == sdl.EventType.quit || event.kind == sdl.EventType.window_close_requested {
+            if event.type == sdl.EventType.quit || event.type == sdl.EventType.window_close_requested {
                 running = false
-            } else if event.kind == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
+            } else if event.type == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
                 running = false
             }
         }

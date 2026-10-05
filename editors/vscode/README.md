@@ -53,6 +53,11 @@ packages are recognized at qualified use sites; an arbitrary import alias is
 recognized as a package on its import line, but its later uses require future
 semantic editor support for guaranteed classification.
 
+A keyword used as a member name is highlighted as a name after `.`, before a
+field's `:`, and before a literal's `=`. A field named `in` and keyword
+members inside an enum or union list still highlight as keywords; telling
+them apart needs the declaration context a TextMate grammar does not track.
+
 ## Run locally
 
 1. Open the root of the Ace repository in Visual Studio Code.

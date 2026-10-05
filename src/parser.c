@@ -194,6 +194,16 @@ static Token* expect(P* p, TokKind k, const char* what) {
     return &p->toks[p->i++];
 }
 
+// A member name (field, enum member, union variant, error entry, method) may
+// be a keyword: it is declared in a member list or written after '.', never
+// bare (Source #3).
+static int member_kind(TokKind k) { return k == T_IDENT || (k >= T_IMPORT && k <= T_FALSE); }
+
+static Token* expect_member(P* p, const char* what) {
+    if (!member_kind(tk(p)->kind)) perr(p, "expected %s, got %s", what, gdesc(p));
+    return &p->toks[p->i++];
+}
+
 // --- nodes --------------------------------------------------------------------
 
 static Node* nd(P* p, NKind kind) {
@@ -750,9 +760,9 @@ static Node* parse_structlit(P* p, Node* base) {
     if (!at(p, T_RBRACE)) {
         for (;;) {
             Node* fi = nd(p, N_FIELDINIT);
-            if (at(p, T_IDENT) && kth(p, 1) == T_COLON)
+            if (member_kind(tk(p)->kind) && kth(p, 1) == T_COLON)
                 perr(p, "struct literal field initialization uses '='; ':' is for declarations and type annotations");
-            if (at(p, T_IDENT) && kth(p, 1) == T_ASSIGN) {
+            if (member_kind(tk(p)->kind) && kth(p, 1) == T_ASSIGN) {
                 fi->str = tk(p)->str;
                 fi->len = tk(p)->len;
                 p->i += 2;
@@ -824,10 +834,10 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
                 NV w = {0};
                 nv_push(p, &w, parse_type(p));
                 expect(p, T_COMMA, "',' after offsetof type");
-                Token* ft = expect(p, T_IDENT, "field name in offsetof");
+                Token* ft = expect_member(p, "field name in offsetof");
                 Node* path = ident_node(p, ft);
                 while (ate(p, T_DOT)) {
-                    Token* part = expect(p, T_IDENT, "field name after '.' in offsetof");
+                    Token* part = expect_member(p, "field name after '.' in offsetof");
                     Node* field = nd_tok(p, N_FIELD_E, part);
                     field->a = path; field->str = part->str; field->len = part->len;
                     path = field;
@@ -921,7 +931,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
         }
         case T_DOT: { // field access / module member
             p->i++;
-            Token* f = expect(p, T_IDENT, "field name after '.'");
+            Token* f = expect_member(p, "field name after '.'");
             Node* fa = nd_tok(p, N_FIELD_E, f);
             fa->a = base;
             fa->str = f->str;
@@ -1256,7 +1266,7 @@ static size_t variant_binder_at(P* p) {
                 }
             }
         }
-        if (j + 1 < p->n && p->toks[j].kind == T_DOT && p->toks[j + 1].kind == T_IDENT) {
+        if (j + 1 < p->n && p->toks[j].kind == T_DOT && member_kind(p->toks[j + 1].kind)) {
             j += 2;
             segments++;
             continue;
@@ -1281,8 +1291,9 @@ static Node* parse_variant_pattern(P* p, size_t lparen) {
     Node* base = NULL; // qualified chain of the segments before the variant
     Token* seg = NULL;
     for (;;) {
+        int first = !base && !at(p, T_DOT);
         if (at(p, T_DOT)) p->i++; // separator before the next segment
-        seg = expect(p, T_IDENT, "type or variant name");
+        seg = first ? expect(p, T_IDENT, "type or variant name") : expect_member(p, "type or variant name");
         if (at(p, T_LPAREN)) break; // the variant name (no generics on it)
         Node* node = ident_node(p, seg);
         if (base) {
@@ -1839,7 +1850,7 @@ static Node* owner_type(P* p, Token* name, Node* tp) {
  * (typed here as the owner), otherwise an associated function. */
 static Node* parse_type_func_rest(P* p, Token* owner, Node* tp, int pub) {
     expect(p, T_DOT, "'.' after function owner");
-    Token* name = expect(p, T_IDENT, "function name after '.'");
+    Token* name = expect_member(p, "function name after '.'");
     Node* f = parse_func_rest(p, name, tp, pub, 0, 1);
     f->d = owner_type(p, owner, tp);
     if (f->nkids && !f->kids[0]->a) {
@@ -1903,7 +1914,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         expect(p, T_LBRACE, "'{' after bits backing type");
         NV fields = {0};
         if (!at(p, T_RBRACE)) for (;;) {
-            Token* fname = expect(p, T_IDENT, "bit-field name or '_'");
+            Token* fname = expect_member(p, "bit-field name or '_'");
             Node* fl = nd_tok(p, N_FIELD, fname);
             fl->str = fname->str; fl->len = fname->len;
             expect(p, T_COLON, "':' after bit-field name");
@@ -1943,8 +1954,8 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                 } else if (at(p, T_AT)) {
                     perr(p, "only @offset and @align may modify a struct field");
                 }
-                int embed = ate(p, T_EMBED);
-                Token* fname = expect(p, T_IDENT, "field name");
+                int embed = at(p, T_EMBED) && kth(p, 1) != T_COLON && ate(p, T_EMBED); // `embed: T` names a field
+                Token* fname = expect_member(p, "field name");
                 Node* fl = nd_tok(p, N_FIELD, fname);
                 fl->str = fname->str;
                 fl->len = fname->len;
@@ -1977,7 +1988,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
             if (at(p, T_EOF)) perr(p, "unexpected end of file in contract");
             Node* m = nd(p, N_METHOD);
             if (at(p, T_MUT)) perr(p, "a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'");
-            Token* mname = expect(p, T_IDENT, "method name");
+            Token* mname = expect_member(p, "method name");
             m->str = mname->str;
             m->len = mname->len;
             expect(p, T_LPAREN, "'(' after method name");
@@ -2008,7 +2019,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         NV members = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
-                Node* m = ident_node(p, expect(p, T_IDENT, "enum member"));
+                Node* m = ident_node(p, expect_member(p, "enum member"));
                 if (ate(p, T_ASSIGN)) m->a = expr(p, 0);
                 nv_push(p, &members, m);
                 if (!ate(p, T_COMMA)) break;
@@ -2030,7 +2041,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         NV variants = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
-                Token* vname = expect(p, T_IDENT, "variant name");
+                Token* vname = expect_member(p, "variant name");
                 Node* v = nd_tok(p, N_VARIANT, vname);
                 v->str = vname->str;
                 v->len = vname->len;
@@ -2080,7 +2091,7 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                     Node* entry = nd(p, N_FIELD);
                     entry->a = expr(p, 0);
                     expect(p, T_COLON, "':' after error code");
-                    Token* ename = expect(p, T_IDENT, "error entry name");
+                    Token* ename = expect_member(p, "error entry name");
                     entry->str = ename->str;
                     entry->len = ename->len;
                     expect(p, T_ASSIGN, "'=' after error entry name");

@@ -3,10 +3,14 @@
 2. Source is UTF-8. Newlines terminate statements; semicolons appear only
    between clauses of a general `for` head. `//` comments end at newline and
    `/* ... */` comments do not nest.
-3. Keywords are reserved in every name position — bindings, fields, enum
-   members, union variants — and there is no raw-identifier escape. A C name
-   that is an Ace keyword keeps its spelling through a link name (`as "sym"`,
-   C Interop #2).
+3. Keywords are reserved in every binding position (locals, parameters,
+   globals, constants, type and function names, labels), and there is no
+   raw-identifier escape. A member name — struct or bit field, enum member,
+   union variant, error entry, contract method, method or associated
+   function — may be a keyword, since it is only declared in its member list
+   or written after `.` (`e.type`, `Kind.if`, `Config.default()`), never
+   bare. A C name that is an Ace keyword keeps its spelling through a link
+   name (`as "sym"`, C Interop #2).
 
 ## Syntax & Parsing
 1. Fast, simple parsing is the goal — single-lookahead LL(1) is the guideline, not a requirement; small bounded lookahead is acceptable where it buys readability.
