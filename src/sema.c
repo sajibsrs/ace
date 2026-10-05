@@ -4236,6 +4236,17 @@ static int struct_type_base(Ck* k, Node* base) {
     return ts && ts->type && ts->type->kind == SK_STRUCT;
 }
 
+/* A type parameter named before '.' while stamping (T.make()): its bound
+ * type, substituted ahead of any declared type as build_named does. */
+static SType* bound_type_param(Ck* k, Node* base) {
+    if (base->kind != N_IDENT) return NULL;
+    for (int i = 0; i < k->nsub; i++)
+        if ((uint32_t)strlen(k->tnames[i]) == base->len &&
+            memcmp(k->tnames[i], base->str, base->len) == 0)
+            return substituted_value_type(k, base, i);
+    return NULL;
+}
+
 static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
     Node* callee = call->a;
     uint32_t key_len;
@@ -4862,9 +4873,18 @@ static SType* check_call_raw(Ck* k, Node* call) {
     // '.' reaches the type's functions. The owner may itself be generic
     // (Map[K, V].new(...)) via the ordinary indexed-type-name resolution
     // shared with typeid and union-variant use.
-    if (callee->kind == N_FIELD_E && struct_type_base(k, callee->a)) {
+    SType* bound = callee->kind == N_FIELD_E ? bound_type_param(k, callee->a) : NULL;
+    if (bound || (callee->kind == N_FIELD_E && struct_type_base(k, callee->a))) {
         SType* owner;
-        if (callee->a->kind == N_IDENT) {
+        if (bound) { // T.name(...) under stamping: the bound type owns it
+            if (bound->kind == SK_ERR) return T_ERR;
+            if (bound->kind != SK_STRUCT) {
+                ck_err(k, call, "'%.*s' is %s, which has no associated functions",
+                       (int)callee->a->len, callee->a->str, type_name(bound));
+                return T_ERR;
+            }
+            owner = bound;
+        } else if (callee->a->kind == N_IDENT) {
             Sym* ts = lookup_type(k, callee->a->str, callee->a->len);
             if (ts->is_generic) {
                 ck_err(k, call, "generic type '%.*s' needs explicit type arguments",

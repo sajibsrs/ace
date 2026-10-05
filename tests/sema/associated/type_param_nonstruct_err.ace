@@ -1,0 +1,9 @@
+/* A type parameter bound to a non-struct owns no associated functions. */
+
+make[T](): int {
+    return T.zero()
+}
+
+main(): int {
+    return make[int]()
+}

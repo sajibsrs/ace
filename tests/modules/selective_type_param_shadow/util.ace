@@ -1,0 +1,7 @@
+/* Companion: a public type with an associated function. */
+
+pub Box: struct { v: int }
+
+pub Box.make(): Box {
+    return Box{v = 1}
+}

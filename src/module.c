@@ -1154,7 +1154,9 @@ static void replace_name(Node* n, const char* name) {
 static const char* lowered_name(RefLower* c, const char* name, uint32_t len, int is_type) {
     Select* s = find_select(c->sels, name, len, is_type);
     if (!s && !c->renames) return NULL;
-    if (local_name(c, name, len, is_type)) return NULL;
+    // a value position may name a type (T.make()), which a type parameter shadows
+    if (local_name(c, name, len, is_type) || (!is_type && local_name(c, name, len, 1)))
+        return NULL;
     if (s) return s->identity;
     Rename* r = find_rename(c->renames, name, len);
     return r ? r->to : NULL;

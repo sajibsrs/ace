@@ -1,0 +1,19 @@
+/* A type parameter shadows a same-named selected type before '.' too. */
+// expect-exit: 2
+
+import Box from "./util.ace"
+
+Pair: struct { v: int }
+
+Pair.make(): Pair {
+    return Pair{v = 2}
+}
+
+pick[Box](): int {
+    b: Box = Box.make()
+    return b.v
+}
+
+main(): int {
+    return pick[Pair]()
+}

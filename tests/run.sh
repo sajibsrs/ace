@@ -143,6 +143,7 @@ tests/modules/selective_type_value/main.ace|3:8: error: imported name 'Thing' co
 tests/modules/selective_value_type/main.ace|3:8: error: imported name 'make' collides with a declaration
 tests/modules/selective_local_type/main.ace|6:5: error: 'Thing' names a type; a value may not share its name
 tests/sema/associated/nongeneric_owner_args_err.ace|8:23: error: 'P' is not generic and takes no type arguments
+tests/sema/associated/type_param_nonstruct_err.ace|4:18: error: 'T' is i64, which has no associated functions
 tests/sema/names/function_type_err.ace|3:1: error: 'N' names a type; a value may not share its name
 tests/sema/names/global_type_err.ace|3:1: error: 'Point' names a type; a value may not share its name
 tests/sema/names/local_type_err.ace|4:5: error: 'Point' names a type; a value may not share its name

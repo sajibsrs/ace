@@ -841,6 +841,11 @@ number: Number = Number.zero()
 function may not share a name on the same type. A contract method names its
 receiver the same way: `get(self): int`, `set(mut self, value: int)`.
 
+Inside a generic, a type parameter reaches its bound type's associated
+functions the same way, checked in each instantiation: `x: T = T.zero()`
+calls `Number.zero()` in `f[Number]`, and `f[int]` is an error because `int`
+owns none.
+
 One signing may list multiple contracts on one line:
 
 ```ace

@@ -1,0 +1,31 @@
+// expect-exit: 127
+
+/* A type parameter before '.' reaches the bound type's associated functions,
+ * stamped per instantiation, a generic owner included. */
+
+Box: struct { v: int }
+
+Box.make(): Box {
+    return Box { v = 1 }
+}
+
+Pair: struct { v: int }
+
+Pair.make(): Pair {
+    return Pair { v = 2 }
+}
+
+Cell[U]: struct { v: U }
+
+Cell[U].make(): Cell[U] {
+    return Cell[U] { v = 7 }
+}
+
+pick[T](): int {
+    x: T = T.make()
+    return x.v
+}
+
+main(): int {
+    return pick[Box]() * 100 + pick[Pair]() * 10 + pick[Cell[int]]()
+}

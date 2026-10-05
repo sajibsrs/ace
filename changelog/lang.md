@@ -1,5 +1,9 @@
 # Language
 
+- A type parameter before `.` calls its bound type's associated function
+  (`T.make()`), resolved per instantiation through the stamping substitution;
+  a non-struct binding is an error. Selective-import lowering lets a type
+  parameter shadow a same-named selected type in that position too.
 - Methods name their receiver explicitly (`Counter.get(self)`,
   `Counter.add(mut self, k)`, contracts too); a `Type.f(...)` without `self`
   is an associated function, so `::` and the leading `mut` are gone and `.`
