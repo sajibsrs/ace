@@ -109,6 +109,20 @@ explicitly and may print the code separately. Occurrence-specific context such
 as an offset or path is returned alongside the error rather than hidden inside
 it.
 
+When the context belongs to a long-lived object, keep it there and expose it
+through a query, as Zig's `std.json` does with its `Diagnostics`. A lexer that
+returns `(Token, Error)` records where the error happened and offers it
+separately, so the error stays one word and callers that ignore the position
+pay nothing:
+
+```ace
+tok: Token, err: Error = mut lex.next()
+if err != null {
+    line: u32, col: u32 = lex.where()
+    fmt.printf("%d:%d: %s\n", int(line), int(col), err.message)
+}
+```
+
 ## Panic
 
 `panic(message: string)` is the separate unrecoverable bug channel. It writes

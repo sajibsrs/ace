@@ -446,6 +446,10 @@ main(): int {
 }
 ```
 
+When every element is written by a loop, start from a zeroed array
+(`table: [256]u8 = [0 : 256]`): the fill is one `memset`, small beside the loop
+itself. Heap storage from `mem.alloc` is uninitialized and needs no fill.
+
 Nothing is tracked through a view afterwards: pointer aliases, inline
 assembly, and extern code are programmer-trusted boundaries with no hidden
 alias analysis.
