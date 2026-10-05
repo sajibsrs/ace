@@ -2997,6 +2997,29 @@ static int error_description(Lw* l, Node* x, Agg* out) {
 
 // The leaves of x, converted to type t: a scalar's one value, or those of an
 // aggregate.
+// Array literal x viewed as []T: its [N]T as static data when its elements
+// are constant, else built in a stack object; empty, the null view.
+static void literal_view(Lw* l, Node* x, Agg* out) {
+    SType* at = (SType*)x->aux;
+    out->n = 2;
+    out->v[1] = konst(l, IT_U64, at->count);
+    if (!at->count) {
+        out->v[0] = konst(l, IT_PTR, 0);
+        return;
+    }
+    if (x->flags & F_STATICLIT) {
+        IrFunc* fn = l->fn;
+        const char* name = literal_name();
+        fn->literals = (IrLiteral*)grow(fn->literals, &fn->cliterals, fn->nliterals + 1, sizeof(IrLiteral));
+        fn->literals[fn->nliterals++] = (IrLiteral){ name, x };
+        out->v[0] = global_named(l, name);
+        return;
+    }
+    int slot = new_slot(l, at);
+    store_value(l, x, at, slot, 0);
+    out->v[0] = slot;
+}
+
 static void value(Lw* l, Node* x, SType* t, Agg* out) {
     if (!is_agg(t)) {
         out->n = 1;
@@ -3007,6 +3030,10 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
         Node* lit = x->kind == N_STR ? x : const_string(x);
         if (lit) {
             string_literal(l, lit, out);
+            return;
+        }
+        if (x->kind == N_ARRAYLIT && x->aux) { // an array literal viewed as []T
+            literal_view(l, x, out);
             return;
         }
         if (x->kind == N_NULL) { // Sequences #8: the null view

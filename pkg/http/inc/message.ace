@@ -134,16 +134,14 @@ pub Request.format(self, output: mut []u8): (usize, Error) {
     if !ok { return 0, FormatErr.capacity }
 
     at: usize = 0
-    start: [4]string = [self.method, " ", self.target, " HTTP/1.1\r\n"]
-    written: usize, fit: bool = str.concat(start[..], output[at..])
+    written: usize, fit: bool = str.concat([self.method, " ", self.target, " HTTP/1.1\r\n"], output[at..])
     if !fit { return 0, FormatErr.capacity }
 
     at += written
     for i: usize in 0 .. self.headers.len {
         name: string = self.headers[i].name
         value: string = self.headers[i].value
-        field: [4]string = [name, ": ", value, "\r\n"]
-        written, fit = str.concat(field[..], output[at..])
+        written, fit = str.concat([name, ": ", value, "\r\n"], output[at..])
         if !fit { return 0, FormatErr.capacity }
 
         at += written
@@ -204,16 +202,14 @@ pub Response.format(self, output: mut []u8): (usize, Error) {
     at += 3
     output[at] = 32
     at += 1
-    reason_line: [2]string = [reason, "\r\n"]
-    written: usize, fit: bool = str.concat(reason_line[..], output[at..])
+    written: usize, fit: bool = str.concat([reason, "\r\n"], output[at..])
     if !fit { return 0, FormatErr.capacity }
 
     at += written
     for i: usize in 0 .. self.headers.len {
         name: string = self.headers[i].name
         value: string = self.headers[i].value
-        field: [4]string = [name, ": ", value, "\r\n"]
-        written, fit = str.concat(field[..], output[at..])
+        written, fit = str.concat([name, ": ", value, "\r\n"], output[at..])
         if !fit { return 0, FormatErr.capacity }
 
         at += written

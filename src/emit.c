@@ -942,6 +942,35 @@ static int eval_fold(Em* e, Node* v, SType* t, Buf* out) {
     return 0;
 }
 
+const char* literal_name(void) {
+    static unsigned next;
+    char buf[32];
+    int n = snprintf(buf, sizeof buf, "__ace$lit$%u", next++);
+    return arena_copy(buf, (size_t)n);
+}
+
+/*
+ * The static data of constant array literal lit viewed as []T (sema's aux is
+ * its [N]T), read-only under link symbol name; NULL when not constant.
+ */
+static ESym* literal_data(Em* e, Node* lit, const char* name) {
+    SType* at = (SType*)lit->aux;
+    Buf bytes = {0};
+    ConstRels rels = {0};
+    ESym* g = NULL;
+    if (eval_const(e, lit, at, &bytes, &rels)) {
+        Sec* d = &e->o.secs[SEC_CONST];
+        while (d->data.len % ty_align(at)) buf_put8(&d->data, 0);
+        g = sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, d);
+        uint32_t start = (uint32_t)d->data.len;
+        buf_write(&d->data, bytes.d, bytes.len);
+        for (int i = 0; i < rels.n; i++) reloc_add(d, start + rels.v[i].off, rels.v[i].sym, 0, 3, 1, RM_UNSIGNED);
+    }
+    free(bytes.d);
+    free(rels.v);
+    return g;
+}
+
 static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
     t = unwrap(t);
     if (!t) return 0;
@@ -1075,6 +1104,16 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
             return 1;
         }
         if (v->kind == N_STRUCTLIT && t->kind != SK_STRUCT) return 0;
+        if (v->kind == N_ARRAYLIT && t->kind == SK_SLICE && v->aux) { // its [N]T, then the view
+            SType* at = (SType*)v->aux;
+            uint32_t off = (uint32_t)out->len;
+            ESym* g = at->count ? literal_data(e, v, literal_name()) : NULL;
+            if (at->count && !g) return 0;
+            buf_put64(out, 0);
+            buf_put64(out, at->count);
+            if (g) const_reloc_add(rels, off, g);
+            return 1;
+        }
         if (v->kind == N_ARRAYLIT && t->kind != SK_ARRAY) return 0;
         int positional = v->nkids > 0 && v->kids[0]->str == NULL;
         size_t start = out->len;
@@ -2060,6 +2099,9 @@ static int compile_ir(Em* e, Node* n, IrFunc* ir, const char* why, const char* n
     }
     for (int k = 0; k < ir->nvtables; k++)
         obj_vtable(&e->o, ir->vtables[k].conc, ir->vtables[k].contract, ir->vtables[k].conf);
+    for (int k = 0; k < ir->nliterals; k++)
+        if (!literal_data(e, ir->literals[k].lit, ir->literals[k].name))
+            em_err(e, ir->literals[k].lit, "array literal is not a compile-time constant");
     if (strcmp(ace_target, "linux-x64") == 0) x64_func(&e->o, ir, name, (uint32_t)strlen(name), global);
     else arm64_func(&e->o, ir, name, (uint32_t)strlen(name), global);
     ir_free(ir);

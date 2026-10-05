@@ -585,6 +585,18 @@ for want in \
     fi
 done
 
+slice_literal_errors=$("$ACE" tests/sema/arrays/slice_literal_err.ace 2>&1)
+for want in \
+    "11:11: error: array literal cannot establish a writable view: mut []i64" \
+    "12:24: error: keyed array literal needs an [E]T context, not []string" \
+    "13:24: error: type mismatch: string given where i64 expected" \
+    "14:16: error: ambiguous call to overloaded function 'pick'"; do
+    if ! printf '%s\n' "$slice_literal_errors" | grep -qF "$want"; then
+        echo "FAIL: missing slice literal diagnostic '$want'"
+        fail=1
+    fi
+done
+
 mem_typed_errors=$("$ACE" tests/sema/memory/typed_err.ace 2>&1)
 for want in \
     "type mismatch: mut []usize given where []i32 expected" \

@@ -488,6 +488,35 @@ whose encoding repeats one byte, or a runtime one-byte integer, fills the whole
 array in one pass; any other value is stored into element 0 and the filled
 prefix is doubled by copies, so generated code grows with `log2(count)`.
 
+Where a plain `[]T` is expected (a parameter, declaration, assignment,
+return, or struct field), an array literal supplies its own length and takes
+`T` from the context; it is an anonymous `[N]T` viewed as `[]T`:
+
+```ace
+total(xs: []int): int {
+    sum: int = 0
+    for x: int in xs { sum += x }
+    return sum
+}
+
+primes(): []int {
+    return [2, 3, 5, 7]
+}
+
+six: int = total([1, 2, 3])
+```
+
+When every element is a compile-time constant, the array is read-only static
+data emitted once, so the view stays valid for the whole program and
+`primes()` may return it; the call costs no stores. Otherwise the array is
+stack storage of the enclosing function, built exactly as a named
+`tmp: [N]T = [...]` would be, and the view is valid while that function runs.
+An empty literal is the null view. The view is plain: a `mut []T` context
+rejects a literal, since nothing could read what is written through it. A
+keyed literal needs its `[E]T`. Overload selection treats a literal as
+matching both `[]T` and an `[N]T` of its length, so a set holding both is
+ambiguous for it.
+
 The direct read-only property `sequence.len` is available on built-in arrays (constant element
 count), slices (stored element count), and strings (stored byte count), including
 their writable forms. It returns `usize`, performs no call or dispatch, and is
@@ -974,6 +1003,12 @@ The examples are covered by `tests/sema/docs/type_ok.ace`.
 
 Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
 
+- Syntax & Parsing #8 (slice-context literals): passing a list inline, as Go
+  `[]int{1, 2}`, Zig `&.{1, 2}`, and Rust `&[1, 2]` do, removes a named array
+  whose only use is `name[..]`. Ace never allocates implicitly, so the storage
+  is static data when constant (Rust's promotion to `'static`, Zig's comptime
+  data) and stack storage otherwise (C99 compound literals); Go's heap escape
+  is unavailable. A literal-backed view stays plain, as string literals do.
 - Type System #13, Syntax & Parsing #16: a table parallel to an enum (display
   names, precedence, dispatch) stays in step by construction, where a
   positional `[N]T` shifts silently when a member is added. Indexing by `E`

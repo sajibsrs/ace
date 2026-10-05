@@ -91,6 +91,7 @@ void ir_free(IrFunc* fn) {
     free(fn->params);
     free(fn->rets);
     free(fn->vtables);
+    free(fn->literals);
     free(fn);
 }
 

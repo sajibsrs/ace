@@ -1,5 +1,9 @@
 # Language
 
+- An array literal where plain `[]T` is expected is an anonymous `[N]T`
+  viewed as `[]T`: sema checks it against `[N]T` in `coerce`, constant
+  elements become a read-only `__ace$lit$` symbol, and others a stack slot of
+  the function. `Parser.fail_at` and `pkg/http` pass parts inline.
 - A type parameter before `.` calls its bound type's associated function
   (`T.make()`), resolved per instantiation through the stamping substitution;
   a non-struct binding is an error. Selective-import lowering lets a type

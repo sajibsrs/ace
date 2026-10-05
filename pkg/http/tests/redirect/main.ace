@@ -31,9 +31,8 @@ read_request(connection: tcp.Conn, expected: string): Error {
             break
         }
     }
-    prefix: [3]string = ["GET ", expected, " HTTP/1.1"]
     line: [256]u8 = [0 : 256]
-    line_count: usize, fit: bool = str.concat(prefix[..], mut line[..])
+    line_count: usize, fit: bool = str.concat(["GET ", expected, " HTTP/1.1"], mut line[..])
     if !fit || !mem.equal(bytes[..first_end], line[..line_count]) { return http.ClientErr.response }
 
     return null
@@ -59,10 +58,9 @@ client(port: u16): int {
     port_count: usize, ok: bool = str.format(mut port_bytes[..], uint(port))
     if !ok { return 1 }
 
-    parts: [3]string = ["http://127.0.0.1:", port_bytes[..port_count], "/a/b/start"]
     url_bytes: [96]u8 = [0 : 96]
     url_count: usize
-    url_count, ok = str.concat(parts[..], mut url_bytes[..])
+    url_count, ok = str.concat(["http://127.0.0.1:", port_bytes[..port_count], "/a/b/start"], mut url_bytes[..])
     if !ok { return 2 }
 
     context: http.ClientContext = http.ClientContext.new()

@@ -187,6 +187,8 @@ const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, STy
 // pair: by module-level signing emission, or, for a generic signing, by
 // obj_vtable wherever a function constructs the pair.
 const char* vtable_name(SType* conc, SType* contract);
+// A fresh link symbol for a constant []T array literal's static data (emit.c).
+const char* literal_name(void);
 ESym*       obj_vtable(Obj* o, SType* conc, SType* contract, Node* conf);
 // The internal symbol a direct call to Ace function s targets, a stamped
 // generic's or a specialization's included (same buffer as fn_mangle).

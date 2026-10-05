@@ -2199,7 +2199,44 @@ static int has_mut_param(Node* decl) {
     return 0;
 }
 
+/*
+ * An array literal where []T is expected: an anonymous [N]T, N its own
+ * length, viewed as plain []T (aux holds the [N]T). Constant elements make
+ * it static data; otherwise it is stack storage of the enclosing function.
+ */
+static int coerce_slicelit(Ck* k, Node* e, SType* want) {
+    e->ty = T_ERR;
+    if (want->is_mut) {
+        ck_err(k, e, "array literal cannot establish a writable view: %s needs storage that is written",
+               type_name(want));
+        return 0;
+    }
+    if (e->nkids > 0 && e->kids[0]->kind == N_MAPENTRY) {
+        ck_err(k, e, "keyed array literal needs an [E]T context, not %s", type_name(want));
+        return 0;
+    }
+    int64_t count = e->nkids;
+    if (e->a) {
+        coerce(k, e->b, st_prim(P_USIZE));
+        if (!ut_const(e->b, &count) || count < 0) {
+            ck_err(k, e->b, "array repetition count must be a compile-time usize expression");
+            return 0;
+        }
+    }
+    SType* at = st_new(SK_ARRAY);
+    at->count = (uint64_t)count;
+    at->base = want->base;
+    check_arraylit(k, e, at);
+    if (node_ty(e) == T_ERR) return 0;
+    e->aux = at;
+    e->ty = want;
+    e->flags &= ~F_STATICLIT;
+    if (compile_time_expr(e)) e->flags |= F_STATICLIT;
+    return 1;
+}
+
 static int coerce(Ck* k, Node* e, SType* want) {
+    if (e->kind == N_ARRAYLIT && want && want->kind == SK_SLICE) return coerce_slicelit(k, e, want);
     if (e->kind == N_ARRAYLIT && want && want->kind == SK_ARRAY) {
         check_arraylit(k, e, want);
         return node_ty(e) != T_ERR;
@@ -3346,6 +3383,8 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) {
+        if (param && param->kind == SK_SLICE) // a plain []T views a positional literal
+            return !param->is_mut && !(raw->nkids > 0 && raw->kids[0]->kind == N_MAPENTRY);
         if (!param || param->kind != SK_ARRAY) return 0;
         return raw->a ? raw->ival == param->count
                       : (uint64_t)raw->nkids == param->count;

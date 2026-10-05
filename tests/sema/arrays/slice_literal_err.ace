@@ -1,0 +1,15 @@
+/* A []T literal is a plain positional view of a temporary. */
+
+Color: enum { red, green }
+
+fill(xs: mut []int) { }
+
+pick(xs: [2]int): int { return 2 }
+pick(xs: []int): int { return 0 }
+
+main(): int {
+    fill([1, 2])
+    names: []string = [Color.red = "r", Color.green = "g"]
+    mixed: []int = [1, "a"]
+    return pick([1, 2])
+}

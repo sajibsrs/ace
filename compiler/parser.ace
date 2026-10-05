@@ -261,17 +261,14 @@ Parser.ident_at(self, k: usize, s: string): bool {
 /* Records the first error, at token `ti`, as the concatenation of `parts`;
  * later errors are dropped.
  */
-Parser.fail_at(mut self, ti: usize, a: string, b: string, c: string, d: string) {
+Parser.fail_at(mut self, ti: usize, parts: []string) {
     if self.failed { return }
     self.failed = true
     t: usize = ti
     if t >= self.ntok { t = self.ntok - 1 }
     self.eline = self.toks[t].line
     self.ecol = self.toks[t].col
-    mut self.append(a)
-    mut self.append(b)
-    mut self.append(c)
-    mut self.append(d)
+    for part: string in parts { mut self.append(part) }
 }
 
 Parser.append(mut self, part: string) {
@@ -282,16 +279,16 @@ Parser.append(mut self, part: string) {
 }
 
 Parser.fail(mut self, message: string) {
-    mut self.fail_at(self.i, message, "", "", "")
+    mut self.fail_at(self.i, [message])
 }
 
 /* `prefix` then the current token's description, as C's gdesc writes it. */
 Parser.fail_got(mut self, prefix: string) {
     if self.failed { return }
     switch self.kinds[self.i] {
-        Token.ident { mut self.fail_at(self.i, prefix, "'", self.toks[self.i].text, "'") }
-        Token.string { mut self.fail_at(self.i, prefix, "string literal", "", "") }
-        default { mut self.fail_at(self.i, prefix, "'", lexer.disp(self.kinds[self.i]), "'") }
+        Token.ident { mut self.fail_at(self.i, [prefix, "'", self.toks[self.i].text, "'"]) }
+        Token.string { mut self.fail_at(self.i, [prefix, "string literal"]) }
+        default { mut self.fail_at(self.i, [prefix, "'", lexer.disp(self.kinds[self.i]), "'"]) }
     }
 }
 
@@ -1448,7 +1445,7 @@ Parser.parse_asm(mut self): u32 {
             kind = self.toks[self.i].text
             regs = mem.equal(kind, "out")
             if !regs && !mem.equal(kind, "clobbers") {
-                mut self.fail_at(self.i, "expected in/out/clobbers binding, got '", kind, "'", "")
+                mut self.fail_at(self.i, ["expected in/out/clobbers binding, got '", kind, "'"])
             }
             self.i += 1
         } else {
@@ -1567,7 +1564,7 @@ Parser.stmt(mut self): u32 {
             if mut self.ate(Token.mut) { // `defer mut c.scale(2.0)`: receiver-marked call
                 e: u32 = mut self.expr(NOSLIT)
                 if e == 0 || self.nodes[e].kind != Kind.call {
-                    mut self.fail_at(mt, "'mut' after 'defer' marks a call receiver", "", "", "")
+                    mut self.fail_at(mt, ["'mut' after 'defer' marks a call receiver"])
                     return n
                 }
                 self.nodes[e].flags |= F_MUT
@@ -1582,7 +1579,7 @@ Parser.stmt(mut self): u32 {
             n: u32 = mut self.leaf(Kind.exprstmt)
             e: u32 = mut self.expr(NOSLIT)
             if e == 0 || self.nodes[e].kind != Kind.call {
-                mut self.fail_at(mt, "'mut' at statement level marks a call receiver", "", "", "")
+                mut self.fail_at(mt, ["'mut' at statement level marks a call receiver"])
                 return n
             }
             self.nodes[e].flags |= F_MUT

@@ -185,6 +185,13 @@ typedef struct {
     Node*  conf;
 } IrVtable;
 
+// The static data of a constant []T array literal (Syntax & Parsing #8):
+// the object gains it with the function, under name.
+typedef struct {
+    const char* name;
+    Node*       lit;
+} IrLiteral;
+
 typedef struct {
     Node*    decl;
     Sym*     sym;
@@ -200,6 +207,8 @@ typedef struct {
     int      nblocks, cblocks;
     IrVtable* vtables;
     int       nvtables, cvtables;
+    IrLiteral* literals;
+    int        nliterals, cliterals;
 } IrFunc;
 
 // --- construction (lower.c) -------------------------------------------------------

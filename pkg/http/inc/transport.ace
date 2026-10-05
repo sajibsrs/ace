@@ -74,14 +74,13 @@ pub exchange(
 ): (Response, Error) {
 
     /* The request target is known exactly: size to fit before writing. */
-    target_parts: [2]string = [parsed.path, parsed.query]
     if resize {
         mem_target: mut []u8, target_ok: bool = mem.grow[u8](storage.target, parsed.path.len + parsed.query.len)
         if !target_ok { return Response {}, ClientErr.allocation }
 
         storage.target = mem_target
     }
-    target_count: usize, fit: bool = str.concat(target_parts[..], mut storage.target[..])
+    target_count: usize, fit: bool = str.concat([parsed.path, parsed.query], mut storage.target[..])
     if !fit { return Response {}, ClientErr.target_capacity }
 
     fields: [2]Header = [

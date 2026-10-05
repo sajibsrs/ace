@@ -103,7 +103,18 @@ view_initialized(): int {
     return int(string(bytes[0..count]).len)
 }
 
+total(xs: []int): int {
+    sum: int = 0
+    for x: int in xs { sum += x }
+    return sum
+}
+
+primes(): []int {
+    return [2, 3, 5, 7]
+}
+
 main(): int {
+    six: int = total([1, 2, 3])
     explicit: int = 4
     number: int, message: string = 1, "old"
     written: int, message = 2, "new"
@@ -197,5 +208,5 @@ main(): int {
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +
         operation(1, 2) + int(state) + box.value + value.get() +
         partial.x + partial.y + int(view.len) + int(tail.len) +
-        int(plain[1]) + int(writable_view.len) + explicit - 7
+        int(plain[1]) + int(writable_view.len) + explicit - 7 + six - total(primes()) + 11
 }

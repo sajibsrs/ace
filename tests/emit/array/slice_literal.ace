@@ -1,0 +1,52 @@
+/* Array literal in []T context: argument, local, assignment, return, struct
+ * field, global, nested, repetition, empty, generic, inline, and a loop. */
+
+// expect-exit: 157
+
+total(xs: []int): int {
+    sum: int = 0
+    for x: int in xs { sum += x }
+    return sum
+}
+
+join(parts: []string): int {
+    n: int = 0
+    for p: string in parts { n += int(p.len) }
+    return n
+}
+
+deep(xss: [][]int): int {
+    n: int = 0
+    for xs: []int in xss { n += total(xs) }
+    return n
+}
+
+count[T](xs: []T): int { return int(xs.len) }
+
+inline first(xs: []int): int { return xs[0] }
+
+primes(): []int {
+    return [2, 3, 5, 7]
+}
+
+Cmd: struct { name: string, args: []string }
+
+G: []int = [10, 20]
+TABLE: [][]int = [[1, 2], [3]]
+CMD: Cmd = { name = "ls", args = ["-l", "-a"] }
+
+main(): int {
+    x: int = 4
+    r: int = total([1, 2, 3]) + total([x, 5, x + 5]) + total([7 : 3]) // 45
+    s: []int = [x, 1]
+    t: []int = [1, 1]
+    s = [x, x, x]
+    r += total(s) + total(t) + total(primes()) + total(G) // 61
+    c: Cmd = { name = "sh", args = [CMD.name, "-c"] }
+    r += join(c.args) + join(CMD.args) + total([]) // 8
+    for i: int in 0..3 { r += total([i, i]) } // 6
+    r += deep([[1, 2], [x]]) + deep(TABLE) // 13
+    r += count[int]([1, 2, 3]) + count[string](["a"]) + first([5, 6]) + first([x, 6]) // 13
+    r += x - 1 + x * 2 // 11
+    return r // 157
+}

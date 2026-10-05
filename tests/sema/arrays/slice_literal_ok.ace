@@ -1,0 +1,12 @@
+/* An array literal takes []T's element type, its own length, and a plain view. */
+
+Cmd: struct { name: string, args: []string }
+
+total(xs: []int): int { return int(xs.len) }
+
+main(): int {
+    n: int = 2
+    c: Cmd = { name = "ls", args = ["-l"] }
+    s: []int = [n, 1]
+    return total([1, 2, 3]) + total([0 : 4]) + total(s) + int(c.args.len)
+}
