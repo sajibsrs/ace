@@ -49,6 +49,9 @@ history.
 - Prioritize correctness > performance > convenience, in code and in
   resolving issues alike: never trade a correct result for speed, nor speed
   for convenience.
+- Compilation is fast enough: add a pass or layer that speeds up generated
+  code even at some compile-time cost, and state that cost with the gain.
+  Never slow compilation for its own sake.
 - Order decisions as philosophy, semantics, syntax, then implementation. For
   contested design, cite `PHILOSOPHY.md` and prioritize
   performance > simplicity > modularity > compile time > safety.
