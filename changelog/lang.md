@@ -72,3 +72,6 @@
   `_` drops its value, binds nothing, may repeat, and is never read; `_ = f()`
   drops one result. `_` can no longer name a declaration, so `_: T` binders in
   `std/utf8`, `pkg/http`, and tests became bare `_`.
+- An untyped constant taking an enum type implicitly (`k: K = 7`, a `K`
+  argument) must name a member, as `K(7)` already must; the constant is checked
+  whole and its operands fold at the backing integer type.

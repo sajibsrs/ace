@@ -733,8 +733,9 @@ Opcode: enum u8 {
 The backing type must be a fixed-width integer type. Values must fit it and may
 not be duplicated. Size, alignment, fields, arrays, parameters, and returns use
 that exact representation; conversions to and from integers remain explicit.
-An enum value is always a member: `State(7)` with a constant is a compile-time
-error, and `--debug` traps a runtime conversion that names no member, testing
+An enum value is always a member: a constant that names no member is a
+compile-time error, whether written `State(7)` or taken implicitly (`s: State =
+7`), and `--debug` traps a runtime conversion that names no member, testing
 the value before it narrows to the backing type.
 
 A tagged union is a closed set of named alternatives stored inline. Variants

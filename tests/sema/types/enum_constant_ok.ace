@@ -1,0 +1,9 @@
+/* Untyped constants that name members take an enum type, folded whole. */
+
+K: enum { a, b, c }
+
+main(): int {
+    k: K = 2 - 1
+    j: K = 2
+    return int(i32(k)) + int(i32(j))
+}

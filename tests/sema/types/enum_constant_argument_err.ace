@@ -1,0 +1,11 @@
+/* An untyped constant argument to an enum parameter must name a member. */
+
+K: enum { a, b }
+
+pick(k: K): int {
+    return int(i32(k))
+}
+
+main(): int {
+    return pick(9)
+}

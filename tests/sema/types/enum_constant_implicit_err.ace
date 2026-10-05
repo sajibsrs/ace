@@ -1,0 +1,8 @@
+/* An untyped constant taking an enum type must name a member (Safety #2, #4). */
+
+K: enum { a, b }
+
+main(): int {
+    k: K = 7
+    return int(i32(k))
+}

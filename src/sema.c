@@ -833,6 +833,7 @@ static void check_stmt(Ck* k, Node* s);
 static void check_block(Ck* k, Node* b);
 static void check_structlit(Ck* k, Node* lit, SType* want);
 static void check_arraylit(Ck* k, Node* lit, SType* want);
+static int enum_member_value(SType* e, int64_t v);
 static SType* check_lvalue(Ck* k, Node* e, int write);
 static void check_func_body(Ck* k, Node* f);
 static void check_mut_args(Ck* k, Node* call, Node* fndecl);
@@ -2262,14 +2263,24 @@ static int coerce(Ck* k, Node* e, SType* want) {
     }
     if (t == T_UT_INT && (is_int(want) || want->kind == SK_ENUM || (want->kind == SK_DISTINCT && is_int(want->base)))) {
         if (ut_fits(k, e, want->kind == SK_DISTINCT ? want->base : want)) {
+            int64_t cv;
+            SType* part = want; // an enum constant is checked whole; its operands are integers
+            if (want->kind == SK_ENUM) {
+                part = want->base ? want->base : st_prim(P_I32);
+                if (ut_const(e, &cv) && !enum_member_value(want, cv)) {
+                    // Safety #2, #4: an enum value is always a member
+                    ck_err(k, e, "%lld is not a member of %s", (long long)cv, type_name(want));
+                    return 0;
+                }
+            }
             if (e->kind == N_BINARY) {
-                coerce(k, e->a, want);
-                coerce(k, e->b, want);
+                coerce(k, e->a, part);
+                coerce(k, e->b, part);
             } else if (e->kind == N_UNARY) {
                 // the whole was range-checked above; a literal operand is a
                 // magnitude (i64 min negates 9223372036854775808)
-                if (e->a->kind == N_INT || e->a->kind == N_FLOAT) e->a->ty = want;
-                else coerce(k, e->a, want);
+                if (e->a->kind == N_INT || e->a->kind == N_FLOAT) e->a->ty = part;
+                else coerce(k, e->a, part);
             }
             e->ty = want; // untyped literal takes its expected type here
             return 1;
