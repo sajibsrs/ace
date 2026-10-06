@@ -254,7 +254,8 @@ for want in \
     "10:18: error: no matching overload 'take'" \
     "11:18: error: no matching overload 'both'" \
     "12:18: error: no matching overload 'both'" \
-    "13:18: error: no matching overload 'take'"; do
+    "13:25: error: integer literal 300 out of range for u8" \
+    "15:18: error: no matching overload 'take'"; do
     if ! printf '%s\n' "$array_overload_errors" | grep -qF "$want"; then
         echo "FAIL: missing array-literal overload diagnostic '$want'"
         fail=1

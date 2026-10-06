@@ -1,8 +1,8 @@
 /* An array literal selects an overload by its candidate element type:
- * untyped integers as int, floats as f64, characters as u8, and typed
- * elements as their type, for []E and [N]E, free and method calls alike. */
+ * untyped integers as int, floats as f64, characters as u8 (also when
+ * mixed with integers), and typed elements as their type, for []E and [N]E, free and method calls alike. */
 
-// expect-exit: 63
+// expect-exit: 67
 
 pick(xs: []int): int { return 1 }
 pick(xs: []string): int { return 2 }
@@ -25,5 +25,6 @@ main(): int {
     r += fix([1, 2]) + fix(["a", "b"]) // 13
     r += b.add([1]) + b.add(["a", "b"]) // 23
     r += pick([u8(1)]) + pick([i32(1), x]) + pick([x : 2]) // 14
-    return r - 3 // 63
+    r += pick(['\r', '\n', 0]) // 4
+    return r - 3 // 67
 }

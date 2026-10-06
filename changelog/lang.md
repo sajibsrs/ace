@@ -109,3 +109,7 @@
   empty view that selects an overload `[]` alone cannot, and `[N]T(value)`
   parses (a one-element literal before `T(`) as an identity array cast,
   which lowering and constant evaluation see through to its argument.
+- Character and integer constants mixed in an array literal select a `u8`
+  overload (#101): a literal of untyped constants takes the natural type of
+  its highest kind (integer < character), and `'a' + 1` stays a character
+  constant; range checks still reject `['a', 300]`.

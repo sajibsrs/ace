@@ -3355,28 +3355,53 @@ static int arraylit_same(SType* a, SType* b, int depth) {
     return same_type(a, b);
 }
 
+static SType* overload_leaf_type(Ck* k, Node* arg, int* rank);
+
+/* A constant's kind (1 integer, 2 character, 3 float) to its natural type. */
+static SType* const_rank_type(int rank) {
+    return st_prim(rank == 3 ? P_F64 : rank == 2 ? P_U8 : P_I64);
+}
+
+/* Rebuild t with its type depth levels down replaced by leaf. */
+static SType* with_innermost(SType* t, int depth, SType* leaf) {
+    if (depth == 0) return leaf;
+    SType* at = st_new(SK_ARRAY);
+    at->base = with_innermost(t->base, depth - 1, leaf);
+    return at;
+}
+
 /*
  * An array literal's overload candidate (Names & Scoping #6): an array of
  * E when every element has the same candidate type E, recursively for
  * nested literals of any lengths; otherwise none, and it matches no
- * candidate of a real overload set. *depth receives the nesting below this
- * literal. arraylit_fits checks the lengths against the literal itself.
+ * candidate of a real overload set. A literal of untyped constants alone
+ * takes the natural type of its highest kind instead (integer < character),
+ * so ['a', 10] is a []u8 candidate. *depth receives the nesting below this literal and *rank
+ * that highest kind (0 when any leaf is typed). arraylit_fits checks the
+ * lengths against the literal itself.
  */
-static SType* overload_arraylit_cand(Ck* k, Node* lit, int* depth) {
+static SType* overload_arraylit_cand(Ck* k, Node* lit, int* depth, int* rank) {
     int n = lit->a ? 1 : lit->nkids;
     if (n == 0 || (!lit->a && lit->kids[0]->kind == N_MAPENTRY)) return NULL;
     SType* elem = NULL;
-    int d = -1;
+    int d = -1, r = 3, mixed = 0;
     for (int i = 0; i < n; i++) {
         Node* e = lit->a ? lit->a : lit->kids[i];
-        int ed = 0;
-        SType* t = e->kind == N_ARRAYLIT ? overload_arraylit_cand(k, e, &ed) : overload_arg_type(k, e);
+        int ed = 0, er = 0;
+        SType* t = e->kind == N_ARRAYLIT ? overload_arraylit_cand(k, e, &ed, &er) : overload_leaf_type(k, e, &er);
         if (e->kind == N_ARRAYLIT) ed++;
         if (!t || t == T_ERR || t == T_UT_NULL) return NULL;
-        if (elem && (ed != d || !arraylit_same(elem, t, d))) return NULL;
+        if (elem && ed != d) return NULL;
+        if (elem && !arraylit_same(elem, t, d)) mixed = 1;
+        // r tracks the highest kind, or 0 once a typed leaf appears; a
+        // float and an integer never meet, since casts are explicit
+        if (!er || (i > 0 && (!r || (er == 3) != (r == 3)))) r = 0;
+        else if (i == 0 || er > r) r = er;
         elem = t, d = ed;
     }
-    *depth = d;
+    if (mixed && !r) return NULL;
+    if (r) elem = with_innermost(elem, d, const_rank_type(r));
+    *depth = d, *rank = r;
     SType* at = st_new(SK_ARRAY);
     at->base = elem;
     return at;
@@ -3403,10 +3428,29 @@ static int arraylit_fits(Node* lit, SType* cand, SType* param) {
 
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
-    if (raw->kind == N_ARRAYLIT) {
-        int depth;
-        return overload_arraylit_cand(k, raw, &depth);
+    int depth, rank;
+    if (raw->kind == N_ARRAYLIT) return overload_arraylit_cand(k, raw, &depth, &rank);
+    return overload_leaf_type(k, raw, &rank);
+}
+
+/*
+ * Whether untyped constant expression e has character kind: a character
+ * literal, or an operation on one (a shift by its left operand), as in Go.
+ */
+static int const_is_char(Node* e) {
+    switch (e->kind) {
+    case N_CHAR: return 1;
+    case N_UNARY: return e->a && const_is_char(e->a);
+    case N_BINARY:
+        if (e->op == T_SHL || e->op == T_SHR) return const_is_char(e->a);
+        return const_is_char(e->a) || const_is_char(e->b);
+    default: return 0;
     }
+}
+
+/* A non-literal argument's overload candidate; *rank as overload_arraylit_cand. */
+static SType* overload_leaf_type(Ck* k, Node* raw, int* rank) {
+    *rank = 0;
     if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
     // matches no candidate exactly: only a sole candidate's parameter selects it
     int overloaded = overloaded_func_name(k, raw);
@@ -3415,14 +3459,11 @@ static SType* overload_arg_type(Ck* k, Node* arg) {
     // the chosen candidate checks the argument again; report its error once
     if (!k->quiet && k->d->errors != errors) raw->flags |= F_REPORTED;
     if (overloaded) return NULL;
-    if (t == T_UT_INT) {
-        /* A character literal is a one-byte constant, so its overload-call
-         * default is the byte type (Stdlib #15), not int. */
-        if (raw->kind == N_CHAR) return st_prim(P_U8);
-        return st_prim(P_I64); // integer-literal default: int
-    }
-    if (t == T_UT_FLOAT) return st_prim(P_F64); // float-literal default: f64
-    return t;
+    /* A constant's natural type by kind: a character constant is one byte
+     * (Stdlib #15), an integer int, a float f64. */
+    if (t == T_UT_INT) *rank = const_is_char(raw) ? 2 : 1;
+    if (t == T_UT_FLOAT) *rank = 3;
+    return *rank ? const_rank_type(*rank) : t;
 }
 
 /*

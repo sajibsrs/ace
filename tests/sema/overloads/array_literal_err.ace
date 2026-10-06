@@ -11,5 +11,7 @@ main(): int {
     b: int = both([1, 2.5])
     c: int = both([])
     d: int = take(['a', 300])
-    return a + b + c + d
+    x: int = 10
+    e: int = take(['a', x])
+    return a + b + c + d + e
 }
