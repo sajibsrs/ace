@@ -39,7 +39,7 @@ for mut re.next(text, mut at) {
 
 `Regex.new` parses and compiles the pattern and sizes every buffer a search
 needs, so it is the only call that allocates or fails. When it fails with a
-`ParseErr`, `Syntax.parse` on the same pattern reports the byte offset. A
+`ParseErr`, `Regex.new(pattern, mut diag)` explains it (see Parsing). A
 search reuses that scratch state, which is why each search method takes
 `mut self`; none of them allocates or can fail.
 
@@ -105,31 +105,43 @@ faster, `(\d+)-(\d+)` 1.9x.
 ## Parsing
 
 ```ace
-s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse("a(b|c)*")
+storage: [256]u8
+diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
+s: regex.Syntax, err: Error = regex.Syntax.parse("a(b[c-\\q])", mut diag)
 defer mut s.wipe()
 
 if err != null {
-    // err is a regex.ParseErr; `at` is the byte offset of the problem
+    fmt.print(diag.text()) // err is a regex.ParseErr
 }
 ```
 
-`Syntax.parse` reads the complete pattern. On success the offset is zero. On
-failure the returned `Syntax` holds no storage and the offset names the byte at
-which the error was found, with three exceptions that point at something more
-useful than the end of the pattern: an unclosed group reports its `(`, an
-unterminated class its `[`, and an invalid repetition count its `{`. An invalid
-escape reports its backslash.
+`Syntax.parse` reads the complete pattern; on failure the returned `Syntax`
+holds no storage. `Syntax.parse(pattern, mut diag)` and `Regex.new(pattern,
+mut diag)` also append the failure's context to `diag` (see [error
+context](std/fmt.md)), innermost first: the error at line:column, then each
+enclosing class or group by its opening delimiter. The example prints:
 
-| `ParseErr`           | Example           | Offset |
+```
+invalid escape sequence at 1:7
+in class at 1:4
+in group at 1:2
+```
+
+The error is reported where it was found, except where something earlier is
+more useful than the end of the pattern: an unclosed group at its `(`, an
+unterminated class at its `[`, an invalid repetition count at its `{`, and an
+invalid escape at its backslash.
+
+| `ParseErr`           | Example           | Column |
 | -------------------- | ----------------- | ------ |
-| `missing_paren`      | `a(b(c)`          | 1      |
-| `unexpected_paren`   | `ab)`             | 2      |
-| `missing_operand`    | `a**`, `{2}`      | 2, 0   |
-| `invalid_repeat`     | `a{3,1}`          | 1      |
-| `invalid_range`      | `[z-a]`           | 1      |
-| `unterminated_class` | `[abc`            | 0      |
-| `invalid_escape`     | `\q`              | 0      |
-| `depth`              | 513 nested groups | 512    |
+| `missing_paren`      | `a(b(c)`          | 2      |
+| `unexpected_paren`   | `ab)`             | 3      |
+| `missing_operand`    | `a**`, `{2}`      | 3, 1   |
+| `invalid_repeat`     | `a{3,1}`          | 2      |
+| `invalid_range`      | `[z-a]`           | 2      |
+| `unterminated_class` | `[abc`            | 1      |
+| `invalid_escape`     | `\q`              | 1      |
+| `depth`              | 513 nested groups | 513    |
 | `allocation`         | —                 | —      |
 
 ## Syntax

@@ -6,7 +6,7 @@ import regex
  * on a mismatch.
  */
 tree(pattern: string, want: string): int {
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(pattern)
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern)
     defer mut s.wipe()
     if err != null {
         fmt.print("parse failed: ")
@@ -30,20 +30,46 @@ tree(pattern: string, want: string): int {
     return 0
 }
 
-/* Expects `pattern` to fail with `want` at byte offset `offset`. */
+/* Expects `pattern` to fail with `want`, its context starting with the error
+ * at byte offset `offset`.
+ */
 fails(pattern: string, want: Error, offset: usize): int {
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(pattern)
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, mut diag)
     defer mut s.wipe()
-    if err != want || at != offset {
+    head_storage: [64]u8
+    head: fmt.Buffer = fmt.Buffer.init(mut head_storage[..])
+    mut head.printf("%s at 1:%d\n", want.message, int(offset + 1))
+    text: string = diag.text()
+
+    if err != want || text.len < head.text().len || !mem.equal(text[0..head.text().len], head.text()) {
         fmt.print(pattern)
         fmt.print(": got ")
         fmt.print(err.name)
-        fmt.print(" at ")
-        fmt.print(at)
-        fmt.print(", want ")
-        fmt.print(want.name)
-        fmt.print(" at ")
-        fmt.println(offset)
+        fmt.print(", context ")
+        fmt.print(text)
+        fmt.print("want ")
+        fmt.print(head.text())
+        return 1
+    }
+
+    return 0
+}
+
+/* Expects `pattern` to fail with exactly the context `want`. */
+explains(pattern: string, want: string): int {
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, mut diag)
+    defer mut s.wipe()
+
+    if err == null || !mem.equal(diag.text(), want) {
+        fmt.print(pattern)
+        fmt.print(": got ")
+        fmt.print(diag.text())
+        fmt.print("want ")
+        fmt.print(want)
         return 1
     }
 
@@ -123,6 +149,10 @@ errors(): int {
     bad += fails("\\xZZ", regex.ParseErr.invalid_escape, 0)
     bad += fails("[\\b]", regex.ParseErr.invalid_escape, 1)
     bad += fails("\\1", regex.ParseErr.invalid_escape, 0)
+    bad += explains("a(b[c-\\q])", "invalid escape sequence at 1:7\nin class at 1:4\nin group at 1:2\n")
+    bad += explains("((a)(b{2,1}))", "invalid repetition count at 1:7\nin group at 1:5\nin group at 1:1\n")
+    bad += explains("x\n(a*?+)", "repetition operator has no operand at 2:5\nin group at 2:1\n")
+    bad += explains("(a", "missing closing parenthesis at 1:1\n")
     return bad
 }
 
@@ -136,7 +166,7 @@ depth(): int {
         text[1024 - 1 - i] = ')'
     }
     bad: int = 0
-    s: regex.Syntax, err: Error, at: usize = regex.Syntax.parse(string(text[0..1024]))
+    s: regex.Syntax, err: Error = regex.Syntax.parse(string(text[0..1024]))
     mut s.wipe()
 
     if err != null {

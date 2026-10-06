@@ -5,6 +5,7 @@
  * method takes `mut self`; none allocates or fails.
  */
 
+import fmt
 import matcher: "./matcher.ace"
 import program: "./program.ace"
 import syntax: "./syntax.ace"
@@ -35,10 +36,17 @@ pub Regex: struct {
 }
 
 /* Parses and compiles `pattern`. The error is a `ParseErr` or a
- * `CompileErr`; `Syntax.parse` reports the pattern offset of a `ParseErr`.
+ * `CompileErr`.
  */
 pub Regex.new(pattern: string): (Regex, Error) {
-    tree: Syntax, err: Error, at: usize = Syntax.parse(pattern)
+    diag: fmt.Buffer = fmt.Buffer.init(null)
+    regex: Regex, err: Error = Regex.new(pattern, mut diag)
+    return regex, err
+}
+
+/* `new`, appending a `ParseErr`'s context to `diag` as `Syntax.parse` does. */
+pub Regex.new(pattern: string, mut diag: fmt.Buffer): (Regex, Error) {
+    tree: Syntax, err: Error = Syntax.parse(pattern, mut diag)
     defer mut tree.wipe()
     if err != null { return blank(Regex), err }
 

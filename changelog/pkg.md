@@ -26,3 +26,6 @@
 - `json.Parser.parse` and `Json.parse` take an optional `mut diag:
   fmt.Buffer` for error context (what was expected at line:column, then each
   enclosing element or key) and no longer return a byte offset.
+- `regex.Syntax.parse` and `Regex.new` take an optional `mut diag:
+  fmt.Buffer` for error context (the error at line:column, then each enclosing
+  class or group) and no longer return a byte offset (Standard Library #23).

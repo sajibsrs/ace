@@ -11,6 +11,7 @@
 
 import array
 import ascii
+import fmt
 import str
 import output: "./output.ace"
 
@@ -182,12 +183,20 @@ is_quantifier(c: u8): bool {
     return c == '*' || c == '+' || c == '?' || c == '{'
 }
 
-/* Parses the complete pattern. On failure the returned offset is the byte at
- * which the error was found, except that an unclosed group or class reports
- * its opening delimiter and an invalid repetition count its `{`. A failed
- * parse holds no storage.
+/* Parses the complete pattern. A failed parse holds no storage. */
+pub Syntax.parse(pattern: string): (Syntax, Error) {
+    diag: fmt.Buffer = fmt.Buffer.init(null)
+    syntax: Syntax, err: Error = Syntax.parse(pattern, mut diag)
+    return syntax, err
+}
+
+/* `parse`, appending the failure's context to `diag` innermost-first: the
+ * error at line:column, then each enclosing class or group by its opening
+ * delimiter. An unclosed group or class is reported at its opening delimiter,
+ * an invalid repetition count at its `{`, and an invalid escape at its
+ * backslash.
  */
-pub Syntax.parse(pattern: string): (Syntax, Error, usize) {
+pub Syntax.parse(pattern: string, mut diag: fmt.Buffer): (Syntax, Error) {
     p: Parser = Parser {
         nodes = array.Array[Node] {},
         children = array.Array[u32] {},
@@ -198,13 +207,13 @@ pub Syntax.parse(pattern: string): (Syntax, Error, usize) {
         groups = 0,
     }
     defer mut p.stack.wipe()
-    root: u32, err: Error = mut p.parse_alt(0)
-    if err == null && p.at < p.text.len { err = ParseErr.unexpected_paren }
+    root: u32, err: Error = mut p.parse_alt(0, mut diag)
+    if err == null && p.at < p.text.len { err = p.fail(mut diag, ParseErr.unexpected_paren) }
     if err != null {
         mut p.nodes.wipe()
         mut p.children.wipe()
         mut p.classes.wipe()
-        return blank(Syntax), err, p.at
+        return blank(Syntax), err
     }
 
     syntax: Syntax = Syntax {
@@ -214,7 +223,7 @@ pub Syntax.parse(pattern: string): (Syntax, Error, usize) {
         root = root,
         groups = p.groups,
     }
-    return syntax, null, 0
+    return syntax, null
 }
 
 /* Releases the tree and leaves it empty. */
@@ -299,50 +308,83 @@ Parser.collect(mut self, base: usize, alternate: bool): (u32, Error) {
     return result, err
 }
 
+/* The 1-based line and column of byte `at` in the pattern. */
+Parser.position(self, at: usize): (usize, usize) {
+    line: usize = 1
+    start: usize = 0
+
+    for i: usize in 0 .. at {
+        if self.text[i] == '\n' {
+            line += 1
+            start = i + 1
+        }
+    }
+    return line, at - start + 1
+}
+
+/* Appends "`err`'s message at line:column" for the current offset to `diag`
+ * and returns `err`; null passes through, so a helper's result can be
+ * returned through it. The position is counted only on the failure path.
+ */
+Parser.fail(self, mut diag: fmt.Buffer, err: Error): Error {
+    if err == null { return null }
+    line: usize, column: usize = self.position(self.at)
+    mut diag.printf("%s at %d:%d\n", err.message, int(line), int(column))
+    return err
+}
+
+/* `fail`, then the class opened at `open` as enclosing context. */
+Parser.in_class(self, mut diag: fmt.Buffer, err: Error, open: usize): Error {
+    self.fail(mut diag, err)
+    line: usize, column: usize = self.position(open)
+    mut diag.printf("in class at %d:%d\n", int(line), int(column))
+    return err
+}
+
 /* alternation := concatenation ('|' concatenation)* */
-Parser.parse_alt(mut self, depth: usize): (u32, Error) {
+Parser.parse_alt(mut self, depth: usize, mut diag: fmt.Buffer): (u32, Error) {
     base: usize = self.stack.len
 
     for {
-        branch: u32, err: Error = mut self.parse_concat(depth)
+        branch: u32, err: Error = mut self.parse_concat(depth, mut diag)
         if err != null { return 0, err }
 
         err = mut self.stack.push(branch)
-        if err != null { return 0, ParseErr.allocation }
+        if err != null { return 0, self.fail(mut diag, ParseErr.allocation) }
 
         if self.at == self.text.len || self.text[self.at] != '|' { break }
         self.at += 1
     }
     result: u32, err: Error = mut self.collect(base, true)
-    return result, err
+    return result, self.fail(mut diag, err)
 }
 
 /* concatenation := repetition*, ending before '|', ')', or the end */
-Parser.parse_concat(mut self, depth: usize): (u32, Error) {
+Parser.parse_concat(mut self, depth: usize, mut diag: fmt.Buffer): (u32, Error) {
     base: usize = self.stack.len
 
     for self.at < self.text.len && self.text[self.at] != '|' && self.text[self.at] != ')' {
-        item: u32, err: Error = mut self.parse_repeat(depth)
+        item: u32, err: Error = mut self.parse_repeat(depth, mut diag)
         if err != null { return 0, err }
 
         err = mut self.stack.push(item)
-        if err != null { return 0, ParseErr.allocation }
+        if err != null { return 0, self.fail(mut diag, ParseErr.allocation) }
     }
     result: u32, err: Error = mut self.collect(base, false)
-    return result, err
+    return result, self.fail(mut diag, err)
 }
 
 /* repetition := atom [quantifier ['?']]. A second quantifier is rejected
  * rather than read as a repetition of a repetition.
  */
-Parser.parse_repeat(mut self, depth: usize): (u32, Error) {
-    if is_quantifier(self.text[self.at]) { return 0, ParseErr.missing_operand }
-    atom: u32, err: Error = mut self.parse_atom(depth)
+Parser.parse_repeat(mut self, depth: usize, mut diag: fmt.Buffer): (u32, Error) {
+    if is_quantifier(self.text[self.at]) { return 0, self.fail(mut diag, ParseErr.missing_operand) }
+    atom: u32, err: Error = mut self.parse_atom(depth, mut diag)
     if err != null { return 0, err }
 
     if self.at == self.text.len || !is_quantifier(self.text[self.at]) { return atom, null }
     min: u32, max: u32, count_err: Error = mut self.parse_quantifier()
-    if count_err != null { return 0, count_err }
+    if count_err != null { return 0, self.fail(mut diag, count_err) }
 
     greedy: bool = true
 
@@ -351,14 +393,14 @@ Parser.parse_repeat(mut self, depth: usize): (u32, Error) {
         self.at += 1
     }
 
-    if self.at < self.text.len && is_quantifier(self.text[self.at]) { return 0, ParseErr.missing_operand }
+    if self.at < self.text.len && is_quantifier(self.text[self.at]) { return 0, self.fail(mut diag, ParseErr.missing_operand) }
     result: u32, add_err: Error = mut self.add(Node.repeat(Repeat {
         child = atom,
         min = min,
         max = max,
         greedy = greedy,
     }))
-    return result, add_err
+    return result, self.fail(mut diag, add_err)
 }
 
 /* quantifier := '*' | '+' | '?' | '{' count [',' [count]] '}' */
@@ -403,47 +445,47 @@ Parser.parse_count(mut self): (u32, bool) {
 }
 
 /* atom := group | class | '.' | '^' | '$' | escape | byte */
-Parser.parse_atom(mut self, depth: usize): (u32, Error) {
+Parser.parse_atom(mut self, depth: usize, mut diag: fmt.Buffer): (u32, Error) {
     c: u8 = self.text[self.at]
 
     switch c {
         '(' {
-            result: u32, err: Error = mut self.parse_group(depth)
+            result: u32, err: Error = mut self.parse_group(depth, mut diag)
             return result, err
         }
         '[' {
-            result: u32, err: Error = mut self.parse_class()
+            result: u32, err: Error = mut self.parse_class(mut diag)
             return result, err
         }
         '.' {
             self.at += 1
             result: u32, err: Error = mut self.add(Node.any)
-            return result, err
+            return result, self.fail(mut diag, err)
         }
         '^' {
             self.at += 1
             result: u32, err: Error = mut self.add(Node.bol)
-            return result, err
+            return result, self.fail(mut diag, err)
         }
         '$' {
             self.at += 1
             result: u32, err: Error = mut self.add(Node.eol)
-            return result, err
+            return result, self.fail(mut diag, err)
         }
         '\\' {
-            result: u32, err: Error = mut self.parse_escape()
+            result: u32, err: Error = mut self.parse_escape(mut diag)
             return result, err
         }
         default {}
     }
     self.at += 1
     result: u32, err: Error = mut self.add(Node.byte(c))
-    return result, err
+    return result, self.fail(mut diag, err)
 }
 
 /* group := '(' ['?:'] alternation ')' */
-Parser.parse_group(mut self, depth: usize): (u32, Error) {
-    if depth >= MAX_DEPTH { return 0, ParseErr.depth }
+Parser.parse_group(mut self, depth: usize, mut diag: fmt.Buffer): (u32, Error) {
+    if depth >= MAX_DEPTH { return 0, self.fail(mut diag, ParseErr.depth) }
     open: usize = self.at
     self.at += 1
     index: u32 = 0
@@ -454,51 +496,55 @@ Parser.parse_group(mut self, depth: usize): (u32, Error) {
         self.groups += 1
         index = self.groups
     }
-    child: u32, err: Error = mut self.parse_alt(depth + 1)
-    if err != null { return 0, err }
+    child: u32, err: Error = mut self.parse_alt(depth + 1, mut diag)
+    if err != null {
+        line: usize, column: usize = self.position(open)
+        mut diag.printf("in group at %d:%d\n", int(line), int(column))
+        return 0, err
+    }
 
     if self.at == self.text.len {
         self.at = open
-        return 0, ParseErr.missing_paren
+        return 0, self.fail(mut diag, ParseErr.missing_paren)
     }
     self.at += 1
     result: u32, add_err: Error = mut self.add(Node.group(Group {
         index = index,
         child = child,
     }))
-    return result, add_err
+    return result, self.fail(mut diag, add_err)
 }
 
 /* An escape outside a class: `\b` and `\B` are word-boundary assertions and
  * every other escape is a class item.
  */
-Parser.parse_escape(mut self): (u32, Error) {
+Parser.parse_escape(mut self, mut diag: fmt.Buffer): (u32, Error) {
     if self.at + 1 < self.text.len && self.text[self.at + 1] == 'b' {
         self.at += 2
         result: u32, err: Error = mut self.add(Node.word)
-        return result, err
+        return result, self.fail(mut diag, err)
     }
 
     if self.at + 1 < self.text.len && self.text[self.at + 1] == 'B' {
         self.at += 2
         result: u32, err: Error = mut self.add(Node.not_word)
-        return result, err
+        return result, self.fail(mut diag, err)
     }
     byte: u8, set: Class, is_set: bool, err: Error = mut self.parse_item()
-    if err != null { return 0, err }
+    if err != null { return 0, self.fail(mut diag, err) }
     if is_set {
         result: u32, add_err: Error = mut self.add_class(set)
-        return result, add_err
+        return result, self.fail(mut diag, add_err)
     }
 
     result: u32, add_err: Error = mut self.add(Node.byte(byte))
-    return result, add_err
+    return result, self.fail(mut diag, add_err)
 }
 
 /* class := '[' ['^'] (item ['-' item])* ']'. A '-' first or last is a
  * literal; `]` must be escaped.
  */
-Parser.parse_class(mut self): (u32, Error) {
+Parser.parse_class(mut self, mut diag: fmt.Buffer): (u32, Error) {
     open: usize = self.at
     self.at += 1
     negated: bool = false
@@ -512,7 +558,7 @@ Parser.parse_class(mut self): (u32, Error) {
     for {
         if self.at == self.text.len {
             self.at = open
-            return 0, ParseErr.unterminated_class
+            return 0, self.fail(mut diag, ParseErr.unterminated_class)
         }
 
         if self.text[self.at] == ']' {
@@ -521,7 +567,7 @@ Parser.parse_class(mut self): (u32, Error) {
         }
         start: usize = self.at
         lo: u8, set: Class, is_set: bool, err: Error = mut self.parse_item()
-        if err != null { return 0, err }
+        if err != null { return 0, self.in_class(mut diag, err, open) }
         if is_set {
             mut members.add(set)
             continue
@@ -532,10 +578,10 @@ Parser.parse_class(mut self): (u32, Error) {
         if self.at + 1 < self.text.len && self.text[self.at] == '-' && self.text[self.at + 1] != ']' {
             self.at += 1
             hi, set, is_set, err = mut self.parse_item()
-            if err != null { return 0, err }
+            if err != null { return 0, self.in_class(mut diag, err, open) }
             if is_set || hi < lo {
                 self.at = start
-                return 0, ParseErr.invalid_range
+                return 0, self.in_class(mut diag, ParseErr.invalid_range, open)
             }
         }
         mut members.add_range(lo, hi)
@@ -543,7 +589,7 @@ Parser.parse_class(mut self): (u32, Error) {
 
     if negated { mut members.negate() }
     result: u32, err: Error = mut self.add_class(members)
-    return result, err
+    return result, self.fail(mut diag, err)
 }
 
 /* One byte or one Perl class, plain or escaped. Returns the byte, or the
