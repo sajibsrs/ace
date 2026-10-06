@@ -199,7 +199,7 @@ reg_bind      := ident "=" ident                          // x0 = fd
 
 ## 4. Expressions
 
-Precedence, loosest to tightest; all binary levels left-associative **except** comparison, which is a non-associative chain (`lo <= x <= hi`, each operand evaluated once).
+Precedence, loosest to tightest; all binary levels left-associative **except** comparison, which is a non-associative chain (`lo <= x <= hi`, each operand evaluated once). A bitwise operand (`&`, `^`, `|`) is never an unparenthesized equality or comparison: `b & 0xC0 != 0x80` is an error, written `(b & 0xC0) != 0x80`.
 
 ```ebnf
 expr          := or_expr

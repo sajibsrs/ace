@@ -609,21 +609,41 @@ static Node* expr_chain(P* p, Node* first, int ctx);
 
 static Node* expr(P* p, int ctx) { return expr_binary(p, 1, ctx); }
 
-/* Left-associative operators of level min and tighter, by precedence
- * climbing: one level lookup per operator, not one call per level. */
+/* Whether level lv is an equality or comparison's, which a bitwise
+ * operator (| ^ &, levels 3-5) never takes as an operand unparenthesized. */
+static int compare_level(int lv) { return lv == 6 || lv == CMP_LEVEL; }
+
+static Node* expr_climb(P* p, int min, int ctx, int* top);
+
 static Node* expr_binary(P* p, int min, int ctx) {
+    int top;
+    return expr_climb(p, min, ctx, &top);
+}
+
+/* Left-associative operators of level min and tighter, by precedence
+ * climbing: one level lookup per operator, not one call per level. top
+ * receives the level of the result's outermost operator, 0 for none. */
+static Node* expr_climb(P* p, int min, int ctx, int* top) {
     Node* l = expr_unary(p, ctx);
+    int ltop = 0;
     for (;;) {
         int lv = level(tk(p)->kind);
         if (lv < min || lv == 0) break;
         if (lv == CMP_LEVEL) {
             l = expr_chain(p, l, ctx);
+            ltop = lv;
             continue;
         }
         Token* op = tk(p);
         p->i++;
-        l = mkbin(p, op, l, expr_binary(p, lv + 1, ctx));
+        int rtop;
+        Node* r = expr_climb(p, lv + 1, ctx, &rtop);
+        if (lv >= 3 && lv <= 5 && (compare_level(ltop) || compare_level(rtop)))
+            perr_at(p, op, "a bitwise operator and a comparison need parentheses to mix");
+        l = mkbin(p, op, l, r);
+        ltop = lv;
     }
+    *top = ltop;
     return l;
 }
 

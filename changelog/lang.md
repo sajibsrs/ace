@@ -113,3 +113,7 @@
   overload (#101): a literal of untyped constants takes the natural type of
   its highest kind (integer < character), and `'a' + 1` stays a character
   constant; range checks still reject `['a', 300]`.
+- A bitwise operator rejects an unparenthesized equality or comparison operand
+  (#104): both parsers' precedence climbing returns the level of a result's
+  outermost operator, and `&`, `^`, `|` fail when either operand's is `==`,
+  `!=`, or a comparison chain.

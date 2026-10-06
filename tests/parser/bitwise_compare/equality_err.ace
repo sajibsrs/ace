@@ -1,0 +1,5 @@
+/* An equality as a bitwise operand needs parentheses. */
+
+f(b: u8): bool {
+    return b & 0xC0 != 0x80
+}

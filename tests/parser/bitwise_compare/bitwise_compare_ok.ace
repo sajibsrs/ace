@@ -1,0 +1,12 @@
+/* A bitwise operator mixes with an equality or comparison only through
+ * parentheses; bitwise levels still mix with each other and with shifts and
+ * arithmetic.
+ */
+
+f(b: u8, x: bool, y: bool): bool {
+    m: bool = (b & 0xC0) != 0x80
+    n: bool = x & (b == 1)
+    o: bool = (b | 1) < 2 && x ^ y
+    p: u8 = b | b & 0x0F ^ b << 1 + 2
+    return m && n && o && p == 0
+}

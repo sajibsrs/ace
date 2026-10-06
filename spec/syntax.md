@@ -80,6 +80,10 @@
     evaluated in written order and stored at their key. A positional literal
     does not initialize `[E]T`, and keys do not apply to `[N]T`. Multiline
     keyed literals follow #7.
+17. A bitwise operator (`&`, `^`, `|`) never takes an unparenthesized equality
+    or comparison as an operand: `b & 0xC0 != 0x80` is a parse error, written
+    `(b & 0xC0) != 0x80` or `b & (0xC0 != 0x80)`. Precedence is otherwise as
+    `GRAMMAR.md` §4 lists it.
 
 ## Names & Scoping
 1. Qualification is the primary namespacing mechanism — modules provide what C fakes with prefixes: `parser.init()` instead of `ace_parser_init`; import aliasing resolves module-name collisions. Selective import is the explicit opt-in for bringing particular public spellings into their ordinary namespaces.

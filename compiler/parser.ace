@@ -571,31 +571,46 @@ level(k: Token): int {
 CMP_LEVEL: const int = 7
 
 pub Parser.expr(mut self, ctx: int): u32 {
-    return mut self.binary(1, ctx)
+    r: u32, top: int = mut self.binary(1, ctx)
+    return r
+}
+
+/* Whether level `lv` is an equality or comparison's, which a bitwise operator
+ * (| ^ &, levels 3-5) never takes as an operand unparenthesized.
+ */
+compare_level(lv: int): bool {
+    return lv == 6 || lv == CMP_LEVEL
 }
 
 /* Left-associative operators of level `min` and tighter, by precedence
- * climbing: one level lookup per operator, not one call per level.
+ * climbing: one level lookup per operator, not one call per level. Also
+ * returns the level of the result's outermost operator, 0 for none.
  */
-Parser.binary(mut self, min: int, ctx: int): u32 {
+Parser.binary(mut self, min: int, ctx: int): (u32, int) {
     l: u32 = mut self.unary(ctx)
+    ltop: int = 0
     for {
         lv: int = level(self.kth(0))
         if lv < min || lv == 0 { break }
         if lv == CMP_LEVEL {
             l = mut self.chain(l, ctx)
+            ltop = lv
             continue
         }
         op: usize = self.i
         self.i += 1
-        r: u32 = mut self.binary(lv + 1, ctx)
+        r: u32, rtop: int = mut self.binary(lv + 1, ctx)
+        if lv >= 3 && lv <= 5 && (compare_level(ltop) || compare_level(rtop)) {
+            mut self.fail_at(op, ["a bitwise operator and a comparison need parentheses to mix"])
+        }
         b: u32 = mut self.make(Kind.binary, op)
         self.nodes[b].op = self.kinds[op]
         self.nodes[b].a = l
         self.nodes[b].b = r
         l = b
+        ltop = lv
     }
-    return l
+    return l, ltop
 }
 
 /* The comparison chain whose first operand is `l`. */
@@ -611,7 +626,8 @@ Parser.chain(mut self, l: u32, ctx: int): u32 {
         self.nodes[on].op = self.kinds[self.i]
         mut self.push(on)
         self.i += 1
-        mut self.push(mut self.binary(CMP_LEVEL + 1, ctx))
+        operand: u32, top: int = mut self.binary(CMP_LEVEL + 1, ctx)
+        mut self.push(operand)
     }
     count: usize = self.nstack - mark
     // Reorder [x0, op1, x1, op2, x2] into operands then operators.

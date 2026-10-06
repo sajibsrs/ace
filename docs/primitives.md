@@ -23,6 +23,10 @@ shifts `<< >>`. Comparisons produce `bool`. Signed division truncates toward
 zero, and the remainder has the dividend's sign. `!` is logical negation and
 accepts only `bool`; `~` complements every bit of an integer value.
 
+A bitwise operator never mixes with an equality or comparison without
+parentheses, in either order: `b & 0xC0 != 0x80` and `b == 1 | x` are parse
+errors, written `(b & 0xC0) != 0x80` and `(b == 1) | x`.
+
 Debug output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
 value of its declared type, and on division/remainder by zero or the signed
 minimum divided by `-1`. Shift counts must be nonnegative and below the left
@@ -199,3 +203,12 @@ from an ordinary zero value.
   literals materialize only where the existing coercion rules admit them.
 
 The examples are covered by `tests/sema/docs/primitive_ok.ace`.
+
+## Design rationale
+
+- Bitwise operators and comparisons do not mix unparenthesized because C's
+  ranking (`&` looser than `==`) makes `b & mask != value` mean
+  `b & (mask != value)`, and reranking would silently change what such code
+  means. Rejecting the mix never changes meaning and can later relax to
+  Go's ranking (`&` above `==`) without breaking code. GCC and Clang flag the
+  same mix with `-Wparentheses`.

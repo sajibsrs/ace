@@ -53,6 +53,13 @@ if ! printf '%s\n' "$mut_array_type" | grep -qF \
     fail=1
 fi
 
+bitwise_compare=$("$ACE" tests/parser/bitwise_compare/equality_err.ace 2>&1)
+if ! printf '%s\n' "$bitwise_compare" | grep -qF \
+    "equality_err.ace:4:14: error: a bitwise operator and a comparison need parentheses to mix"; then
+    echo "FAIL: an equality as a bitwise operand should require parentheses"
+    fail=1
+fi
+
 unknown_decl=$("$ACE" tests/parser/unknown_decl_type_err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
     "tests/parser/unknown_decl_type_err.ace:3:8: error: unknown declaration type 'protocol'"; then

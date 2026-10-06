@@ -1,0 +1,5 @@
+/* A comparison chain as a bitwise operand needs parentheses. */
+
+f(b: u8): bool {
+    return b ^ 1 < 2
+}
