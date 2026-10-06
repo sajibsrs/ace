@@ -126,3 +126,6 @@
   sized to the longest identifier; an 80-byte one had cut it to 79 bytes,
   losing its closing quote. The unreachable default link-name length check is
   gone.
+- A call that resolves to nothing but has one candidate of its arity reports
+  that candidate's call-site `mut` mismatch (receiver or named parameter)
+  instead of `no method`/`no associated function` (#89).

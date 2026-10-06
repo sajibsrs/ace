@@ -3488,6 +3488,53 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
     return 0;
 }
 
+/*
+ * Resolution found nothing. When exactly one candidate takes this many
+ * arguments, a call-site `mut` that does not fit it (receiver or argument)
+ * is the likely cause; name it rather than report a missing function.
+ * `self` is 1 for a method call, whose declaration lists self first.
+ */
+static int mut_mismatch_err(Ck* k, Node* call, Sym* head, int self) {
+    Node* callee = call->a;
+    Node* decl = NULL;
+    for (Sym* f = head; f; f = f->overload) {
+        if (!f->decl || f->decl->nkids != call->nkids + self) continue;
+        if (decl) return 0;
+        decl = f->decl;
+    }
+    if (!decl) return 0;
+    if (self) {
+        int rmut = (decl->flags & F_MUT) != 0;
+        int cmut = (call->flags & F_MUT) != 0;
+        if (rmut && !cmut) {
+            ck_err(k, call, "method '%.*s' takes 'mut self'; it needs 'mut' at the call: mut x.%.*s(...)",
+                   (int)callee->len, callee->str, (int)callee->len, callee->str);
+            return 1;
+        }
+        if (!rmut && cmut) {
+            ck_err(k, call, "'mut' marks mutating methods; '%.*s' is read-only",
+                   (int)callee->len, callee->str);
+            return 1;
+        }
+    }
+    for (int i = 0; i < call->nkids; i++) {
+        Node* p = decl->kids[i + self];
+        int am = call->kids[i]->kind == N_MUTARG;
+        int pm = (p->flags & F_MUT) != 0;
+        if (am && !pm) {
+            ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter '%.*s' of '%.*s' is not one",
+                   (int)p->len, p->str, (int)callee->len, callee->str);
+            return 1;
+        }
+        if (pm && !am) {
+            ck_err(k, call->kids[i], "mut parameter '%.*s' of '%.*s' needs 'mut' at the call site",
+                   (int)p->len, p->str, (int)callee->len, callee->str);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) {
@@ -4430,6 +4477,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
         return method_ft->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
+    if (mut_mismatch_err(k, call, head, 1)) return T_ERR;
     ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
     return T_ERR;
 }
@@ -4484,6 +4532,7 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
         return found_ft->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
+    if (mut_mismatch_err(k, call, head, 0)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
 }
@@ -4539,6 +4588,7 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
         return found->type->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
+    if (mut_mismatch_err(k, call, head, 0)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
 }

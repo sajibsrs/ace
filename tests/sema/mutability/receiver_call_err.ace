@@ -1,0 +1,10 @@
+/* err: a mut self method called without call-site 'mut' names the permission. */
+
+A[T]: struct { n: usize = 0 }
+A[T].wipe(mut self) { self.n = 0 }
+
+main(): int {
+    a: A[int] = A[int]{}
+    a.wipe()
+    return 0
+}
