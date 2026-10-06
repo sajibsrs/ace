@@ -1,4 +1,6 @@
-/* Lexes one file and prints its tokens exactly as `ace --tokens` does. */
+/* Lexes one file and prints its tokens exactly as `ace --tokens` does, or
+ * with --ast parses it and prints the tree exactly as `ace --ast` does.
+ */
 
 import file
 import fmt
@@ -7,16 +9,24 @@ import sys
 
 import lexer: "./lexer.ace"
 import output: "./output.ace"
+import parser: "./parser.ace"
 
 Token: type = lexer.Token
 Out: type = output.Out
 
+/* What @when compares `target` against: the target this driver runs on. */
+@when(target == "darwin-arm64")
+TARGET: const string = "darwin-arm64"
+@when(target == "linux-x64")
+TARGET: const string = "linux-x64"
+
 main(): int {
-    if sys.argc() != 2 {
-        fmt.printf(sys.stderr, "usage: lexer file.ace\n")
+    ast: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--ast")
+    if sys.argc() != 2 && !ast {
+        fmt.printf(sys.stderr, "usage: ace-self [--ast] file.ace\n")
         return 2
     }
-    path: string = sys.arg(1)
+    path: string = sys.arg(sys.argc() - 1)
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
@@ -26,6 +36,7 @@ main(): int {
 
     out: Out = Out { buf = mem.alloc[u8](65536), at = 0 }
     defer mem.release[u8](mut out.buf)
+    if ast { return dump_ast(mut out, src, path) }
     lx: lexer.Lexer = lexer.Lexer.new(src)
     defer mut lx.wipe()
     errors: int = 0
@@ -78,5 +89,21 @@ main(): int {
     }
     mut out.flush()
     if errors > 0 { return 1 }
+    return 0
+}
+
+/* Parses `src` for the host target and dumps the tree; 1 on any error. */
+dump_ast(mut out: Out, src: string, path: string): int {
+    p: parser.Parser, lex_errors: int = parser.Parser.new(src, path)
+    defer mut p.wipe()
+    if lex_errors > 0 { return 1 }
+    f: u32 = mut p.parse(TARGET)
+    failed: bool, line: u32, col: u32, message: string = p.error()
+    if failed {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), message)
+        return 1
+    }
+    p.dump(mut out, f, 0)
+    mut out.flush()
     return 0
 }

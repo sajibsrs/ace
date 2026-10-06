@@ -102,7 +102,8 @@
 - The Ace lexer moves from `experiment/lexer/` to `compiler/`, starting the
   self-hosted compiler beside the C bootstrap in `src/`; `compiler/check.sh`
   diffs its token stream against `ace --tokens` over every repository file.
-- `compiler/parser.ace` ports `src/parser.c`'s types, expressions, and
-  statements: nodes in one flat array addressed by `u32` (0 absent), children
-  as runs in a shared array, the file lexed up front, the first error ending
-  the parse; `Out` moves to `compiler/output.ace`. Dumps match `ace --ast`.
+- `compiler/parser.ace` ports `src/parser.c` whole, declarations and
+  `@when` included: nodes in one flat array addressed by `u32` (0 absent),
+  children as runs in a shared array, the file lexed up front, the first error
+  ending the parse; `Out` moves to `compiler/output.ace`. `main.ace --ast`
+  dumps the tree, and `compiler/check.sh` diffs it against `ace --ast`.
