@@ -22,9 +22,11 @@ main(): int {
 
     doc: json.Json = json.Json.new()
     defer mut doc.wipe()
-    perr: Error, at: usize = mut doc.parse(data)
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
+    perr: Error = mut doc.parse(data, mut diag)
     if perr != null {
-        fmt.printf("failed to parse %s at byte %u: %s\n", PATH, at, perr.message)
+        fmt.printf("failed to parse %s: %s\n%s", PATH, perr.message, diag.text())
         return 1
     }
 

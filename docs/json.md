@@ -59,7 +59,7 @@ import json
 main(): int {
     doc: json.Json = json.Json.new()
     defer mut doc.wipe()
-    err: Error, at: usize = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    err: Error = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
     if err != null { return 1 }
 
     fmt.println(doc.string("/name"))  // ace
@@ -69,15 +69,15 @@ main(): int {
 ```
 
 `json.Json.new(): Json` makes an empty `Json`, and `mut doc.parse(text:
-string): (Error, usize)` parses `text` as one value into `doc.root`. On failure
-`root` is `Value.none`, the error is a `json.ParseErr`, and the offset is the
-byte at which it was found, as for `Parser.parse`. Each `parse` reuses the
+string): Error` parses `text` as one value into `doc.root`. On failure `root`
+is `Value.none` and the error is a `json.ParseErr`; `mut doc.parse(text, mut
+diag)` also explains it, as for `Parser.parse`. Each `parse` reuses the
 storage of the one before, so the previous `root` and every string read from
 it are invalid afterwards. Parse many documents with one `Json`:
 
 ```ace
 for i: usize in 0 .. texts.len {
-    err: Error, at: usize = mut doc.parse(texts[i])
+    err: Error = mut doc.parse(texts[i])
     if err != null { continue }
 
     fmt.println(doc.string("/id"))
@@ -144,11 +144,10 @@ The text is borrowed from the `Json` and valid until `reset` or `wipe`.
 ## Parsing
 
 `json.Parser.new(): Parser` makes a parser and `mut parser.wipe()`
-releases it. `mut parser.parse(text: string): (Value, Error, usize)` parses `text` as
+releases it. `mut parser.parse(text: string): (Value, Error)` parses `text` as
 exactly one value. Surrounding space, tab, line feed, and carriage return are
-skipped. On error it returns `Value.none`, an error from the `json.ParseErr`
-domain, and the byte offset at which the error was found (an unterminated
-string reports its opening quote); on success the offset is 0:
+skipped. On error it returns `Value.none` and an error from the `json.ParseErr`
+domain:
 
 | Error | Meaning |
 | --- | --- |
@@ -160,6 +159,18 @@ string reports its opening quote); on success the offset is 0:
 | `trailing_data` | non-whitespace bytes after the value |
 | `empty_input` | no value at all |
 | `allocation` | an allocation failed |
+
+`mut parser.parse(text, mut diag: fmt.Buffer)` also appends the failure's
+context to `diag` (see [error context](std/fmt.md)), innermost first: what was
+expected at which line:column (an unterminated string at its opening quote),
+then one line per enclosing array element or object member:
+
+```
+invalid literal at 2:9
+in key "a"
+in array element 2
+in key "items"
+```
 
 Strings are decoded: `\uXXXX` escapes, including surrogate pairs, become UTF-8.
 Other bytes pass through unchanged and are not validated as UTF-8.
@@ -181,7 +192,7 @@ import json
 main(): int {
     parser: json.Parser = json.Parser.new()
     defer mut parser.wipe()
-    root: json.Value, err: Error, at: usize = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    root: json.Value, err: Error = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
 
     if err != null {
         fmt.printf("parse failed: %d\n", int(err.code))

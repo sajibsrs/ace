@@ -5,6 +5,7 @@
  * `root` on its own, so writing a parsed tree back is `value(root)`.
  */
 
+import fmt
 import parsing: "./parsing.ace"
 import pointer: "./pointer.ace"
 import value: "./value.ace"
@@ -32,14 +33,21 @@ pub Json.new(): Json {
 /* Parses `text` as one JSON value into `root`, reusing the storage of the
  * previous parse, so the previous `root` and every string read from it are
  * invalid afterwards. On failure `root` is `Value.none` and the error is a
- * `ParseErr` with the byte offset at which it was found (0 on success); the
- * storage stays owned until `wipe`.
+ * `ParseErr`; the storage stays owned until `wipe`.
  */
-pub Json.parse(mut self, text: string): (Error, usize) {
+pub Json.parse(mut self, text: string): Error {
     mut self.parser.reset()
-    root: Value, err: Error, at: usize = mut self.parser.parse(text)
+    root: Value, err: Error = mut self.parser.parse(text)
     self.root = root
-    return err, at
+    return err
+}
+
+/* `parse`, appending the failure's context to `diag` as `Parser.parse` does. */
+pub Json.parse(mut self, text: string, mut diag: fmt.Buffer): Error {
+    mut self.parser.reset()
+    root: Value, err: Error = mut self.parser.parse(text, mut diag)
+    self.root = root
+    return err
 }
 
 pub Json.wipe(mut self) {

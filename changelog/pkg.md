@@ -23,3 +23,6 @@
   `json.Parser.parse` returns `(Value, Error, usize)` and `Json.parse`
   `(Error, usize)`, the byte offset of the failure (an unterminated string
   reports its opening quote), 0 on success, matching `regex.Syntax::parse`.
+- `json.Parser.parse` and `Json.parse` take an optional `mut diag:
+  fmt.Buffer` for error context (what was expected at line:column, then each
+  enclosing element or key) and no longer return a byte offset.

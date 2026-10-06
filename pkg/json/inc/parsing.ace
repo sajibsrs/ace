@@ -7,6 +7,7 @@
  */
 
 import array
+import fmt
 import mem
 import str
 import utf8
@@ -109,28 +110,37 @@ pub Parser.reset(mut self) {
 /* Parses the complete text as one JSON value. Trailing non-whitespace bytes
  * after the value are rejected, matching a whole-document parse rather than
  * a stream that tolerates more input after one value. A failed parse needs
- * no cleanup: whatever it allocated stays owned by the parser. On failure the
- * returned offset is the byte at which the error was found, except that an
- * unterminated string reports its opening quote; on success it is 0.
+ * no cleanup: whatever it allocated stays owned by the parser.
  */
-pub Parser.parse(mut self, text: string): (Value, Error, usize) {
+pub Parser.parse(mut self, text: string): (Value, Error) {
+    diag: fmt.Buffer = fmt.Buffer.init(null)
+    result: Value, err: Error = mut self.parse(text, mut diag)
+    return result, err
+}
+
+/* `parse`, appending the failure's context to `diag` innermost-first: what
+ * was expected at which line:column, then one line per enclosing array
+ * element or object member. An unterminated string is reported at its opening
+ * quote.
+ */
+pub Parser.parse(mut self, text: string, mut diag: fmt.Buffer): (Value, Error) {
     self.text = text
     self.at = 0
     mut self.stack.clear()
     mut self.pstack.clear()
     mut self.skip_ws()
 
-    if self.at == self.text.len { return Value.none, ParseErr.empty_input, self.at }
+    if self.at == self.text.len { return Value.none, self.fail(mut diag, ParseErr.empty_input, "expected a value") }
     rerr: Error = mut self.reserve()
-    if rerr != null { return Value.none, rerr, self.at }
+    if rerr != null { return Value.none, self.fail(mut diag, rerr, "out of memory") }
 
-    result: Value, err: Error = mut self.parse_value(0)
-    if err != null { return Value.none, err, self.at }
+    result: Value, err: Error = mut self.parse_value(0, mut diag)
+    if err != null { return Value.none, err }
 
     mut self.skip_ws()
 
-    if self.at != self.text.len { return Value.none, ParseErr.trailing_data, self.at }
-    return result, null, 0
+    if self.at != self.text.len { return Value.none, self.fail(mut diag, ParseErr.trailing_data, "expected end of input") }
+    return result, null
 }
 
 /* Takes this parse's block, reusing a kept one that is large enough, and
@@ -176,53 +186,72 @@ Parser.reserve(mut self): Error {
     return null
 }
 
+/* Appends "`what` at line:column" for the current offset to `diag` and
+ * returns `err`. The position is counted only here, on the failure path.
+ */
+Parser.fail(self, mut diag: fmt.Buffer, err: Error, what: string): Error {
+    line: usize = 1
+    start: usize = 0
+
+    for i: usize in 0 .. self.at {
+        if self.text[i] == '\n' {
+            line += 1
+            start = i + 1
+        }
+    }
+    mut diag.printf("%s at %d:%d\n", what, int(line), int(self.at - start + 1))
+    return err
+}
+
 inline Parser.skip_ws(mut self) {
     for self.at < self.text.len && is_ws(self.text[self.at]) { self.at += 1 }
 }
 
-Parser.parse_value(mut self, depth: usize): (Value, Error) {
+Parser.parse_value(mut self, depth: usize, mut diag: fmt.Buffer): (Value, Error) {
     mut self.skip_ws()
 
-    if self.at == self.text.len { return Value.none, ParseErr.unexpected_token }
+    if self.at == self.text.len { return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected a value") }
     c: u8 = self.text[self.at]
 
     if c == '"' {
-        text: string, err: Error = mut self.parse_string()
+        text: string, err: Error = mut self.parse_string(mut diag)
         if err != null { return Value.none, err }
 
         return Value.string(text), null
     }
 
     if c == '{' {
-        result: Value, err: Error = mut self.parse_object(depth)
+        result: Value, err: Error = mut self.parse_object(depth, mut diag)
         return result, err
     }
 
     if c == '[' {
-        result: Value, err: Error = mut self.parse_array(depth)
+        result: Value, err: Error = mut self.parse_array(depth, mut diag)
         return result, err
     }
 
     if c == 't' {
         if mut self.consume_literal("true") { return Value.bool(true), null }
-        return Value.none, ParseErr.unexpected_token
+        return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "invalid literal")
     }
 
     if c == 'f' {
         if mut self.consume_literal("false") { return Value.bool(false), null }
-        return Value.none, ParseErr.unexpected_token
+        return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "invalid literal")
     }
 
     if c == 'n' {
         if mut self.consume_literal("null") { return Value.none, null }
-        return Value.none, ParseErr.unexpected_token
+        return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "invalid literal")
     }
 
     if c == '-' || is_digit(c) {
         result: Value, err: Error = mut self.parse_number()
-        return result, err
+        if err != null { return Value.none, self.fail(mut diag, err, "invalid number") }
+
+        return result, null
     }
-    return Value.none, ParseErr.unexpected_token
+    return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected a value")
 }
 
 Parser.consume_literal(mut self, literal: string): bool {
@@ -274,13 +303,13 @@ Parser.parse_number(mut self): (Value, Error) {
     return Value.number(parsed), null
 }
 
-Parser.parse_string(mut self): (string, Error) {
+Parser.parse_string(mut self, mut diag: fmt.Buffer): (string, Error) {
     self.at += 1
     start: usize = self.at
     end: usize, closed: bool = find_string_end(self.text, start)
     if !closed {
         self.at = start - 1
-        return "", ParseErr.unterminated_string
+        return "", self.fail(mut diag, ParseErr.unterminated_string, "unterminated string")
     }
 
     upper: usize = end - start
@@ -291,15 +320,15 @@ Parser.parse_string(mut self): (string, Error) {
     }
     base: usize = self.bat
     used: usize, err: Error = decode_string(self.text, start, end, self.bytes[base..base + upper])
-    if err != null { return "", err }
+    if err != null { return "", self.fail(mut diag, err, err.message) }
 
     self.at = end + 1
     self.bat = base + used
     return string(self.bytes[base..base + used]), null
 }
 
-Parser.parse_array(mut self, depth: usize): (Value, Error) {
-    if depth >= MAX_DEPTH { return Value.none, ParseErr.depth }
+Parser.parse_array(mut self, depth: usize, mut diag: fmt.Buffer): (Value, Error) {
+    if depth >= MAX_DEPTH { return Value.none, self.fail(mut diag, ParseErr.depth, "nesting too deep") }
     self.at += 1
     empty: mut []Value = null
     base: usize = self.stack.len
@@ -312,15 +341,18 @@ Parser.parse_array(mut self, depth: usize): (Value, Error) {
 
     for {
         mut self.skip_ws()
-        elem: Value, err: Error = mut self.parse_value(depth + 1)
-        if err != null { return Value.none, err }
+        elem: Value, err: Error = mut self.parse_value(depth + 1, mut diag)
+        if err != null {
+            mut diag.printf("in array element %d\n", int(self.stack.len - base))
+            return Value.none, err
+        }
 
         push_err: Error = mut self.stack.push(elem)
-        if push_err != null { return Value.none, ParseErr.allocation }
+        if push_err != null { return Value.none, self.fail(mut diag, ParseErr.allocation, "out of memory") }
 
         mut self.skip_ws()
 
-        if self.at == self.text.len { return Value.none, ParseErr.unexpected_token }
+        if self.at == self.text.len { return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected ',' or ']'") }
         c: u8 = self.text[self.at]
 
         if c == ',' {
@@ -332,7 +364,7 @@ Parser.parse_array(mut self, depth: usize): (Value, Error) {
             self.at += 1
             break
         }
-        return Value.none, ParseErr.unexpected_token
+        return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected ',' or ']'")
     }
     count: usize = self.stack.len - base
     at: usize = self.iat
@@ -343,8 +375,8 @@ Parser.parse_array(mut self, depth: usize): (Value, Error) {
     return Value.array(self.items[at..at + count]), null
 }
 
-Parser.parse_object(mut self, depth: usize): (Value, Error) {
-    if depth >= MAX_DEPTH { return Value.none, ParseErr.depth }
+Parser.parse_object(mut self, depth: usize, mut diag: fmt.Buffer): (Value, Error) {
+    if depth >= MAX_DEPTH { return Value.none, self.fail(mut diag, ParseErr.depth, "nesting too deep") }
     self.at += 1
     empty: mut []Pair = null
     base: usize = self.pstack.len
@@ -358,27 +390,30 @@ Parser.parse_object(mut self, depth: usize): (Value, Error) {
     for {
         mut self.skip_ws()
 
-        if self.at == self.text.len || self.text[self.at] != '"' { return Value.none, ParseErr.unexpected_token }
-        key: string, kerr: Error = mut self.parse_string()
+        if self.at == self.text.len || self.text[self.at] != '"' { return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected a string key") }
+        key: string, kerr: Error = mut self.parse_string(mut diag)
         if kerr != null { return Value.none, kerr }
 
         mut self.skip_ws()
 
-        if self.at == self.text.len || self.text[self.at] != ':' { return Value.none, ParseErr.unexpected_token }
+        if self.at == self.text.len || self.text[self.at] != ':' { return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected ':'") }
         self.at += 1
         mut self.skip_ws()
-        elem: Value, verr: Error = mut self.parse_value(depth + 1)
-        if verr != null { return Value.none, verr }
+        elem: Value, verr: Error = mut self.parse_value(depth + 1, mut diag)
+        if verr != null {
+            mut diag.printf("in key \"%s\"\n", key)
+            return Value.none, verr
+        }
 
         push_err: Error = mut self.pstack.push(Pair {
             key = key,
             value = elem,
         })
-        if push_err != null { return Value.none, ParseErr.allocation }
+        if push_err != null { return Value.none, self.fail(mut diag, ParseErr.allocation, "out of memory") }
 
         mut self.skip_ws()
 
-        if self.at == self.text.len { return Value.none, ParseErr.unexpected_token }
+        if self.at == self.text.len { return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected ',' or '}'") }
         c: u8 = self.text[self.at]
 
         if c == ',' {
@@ -390,7 +425,7 @@ Parser.parse_object(mut self, depth: usize): (Value, Error) {
             self.at += 1
             break
         }
-        return Value.none, ParseErr.unexpected_token
+        return Value.none, self.fail(mut diag, ParseErr.unexpected_token, "expected ',' or '}'")
     }
     count: usize = self.pstack.len - base
     at: usize = self.pat
