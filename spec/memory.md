@@ -137,7 +137,7 @@ Carved (typed allocation):
 ## Values & Passing
 Decision: value semantics with explicit copies; references only at call boundaries.
 1. Assignment copies — `q = p` gives `q` its own value storage; mutating that copied value never changes `p`. For a slice this copies only its pointer and length: reassigning/reslicing `q` does not change `p`, while element writes through either view reach their shared backing storage (Memory #12).
-2. Function/method parameters are passed by reference (unlike C) — no hidden copies at call boundaries; mutations are visible to the caller. To pass a protected copy, assign to a new variable first.
+2. A `mut` parameter or method receiver is a reference to the caller's argument storage; its writes are visible to the caller. A plain parameter is a read-only value whose representation is the compiler's choice: a copy, or the address of the caller's argument. A program must not depend on which: a plain parameter's address does not outlive the call (Memory #29), and writing its argument's storage during the call — through an aliasing `mut` parameter, a module variable, or a pointer — is programmer error after which the parameter's value is unspecified.
 3. Plain declarations are stack storage; heap memory exists only via explicit allocation (see: Memory #5).
 4. Copy-on-write is not a language semantic — assignment is a plain copy. COW, where wanted, is an explicit opt-in library type.
 5. The compiler may elide copies when the result is observably identical (codegen freedom, not language semantics).

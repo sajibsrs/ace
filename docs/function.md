@@ -18,9 +18,11 @@ Semicolons are not used. A newline terminates a complete statement.
 
 ## Parameters and mutation
 
-Parameter bindings are read-only by default. Ace gives them reference
-semantics, while allowing the compiler to pass small read-only values in
-registers when that is observably equivalent.
+Parameter bindings are read-only by default. A plain parameter is a value the
+compiler may pass as a copy or as the address of the caller's argument, so a
+program must not tell the two apart: a view of a parameter does not outlive the
+call, and the argument's storage must not change while the call runs, as in
+`f(a, mut a)` where `f` writes its `mut` parameter and then reads the plain one.
 
 A function that changes an argument marks the parameter `mut`; its caller must
 repeat `mut`, and the argument must be an lvalue.
@@ -732,8 +734,13 @@ The examples are covered by `tests/sema/docs/function_ok.ace`.
 
 ## Design rationale
 
-Why the rules in `spec/compiler.md` and C Interop (`spec/modules-packages.md`) are shaped as they are.
+Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and Values & Passing #2 are shaped as they are.
 
+- Plain parameters (Values & Passing #2): leaving copy versus address to the
+  compiler lets each argument use the cheapest machine passing (registers for
+  small values, an address for large ones) with no alias analysis, as Carbon's
+  value bindings and Mojo's `read` arguments do. Fixing either choice would
+  either force every aggregate through memory or promise a copy on every call.
 - C Interop #2: one keyword names the C boundary in both directions, as C and
   C++ do (`extern "C" int f(void);` declares, `extern "C" int f(void) { … }`
   defines) and Rust does (`extern "C" { fn f(); }`, `extern "C" fn f() {}`).

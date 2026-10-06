@@ -583,8 +583,7 @@ Why the rules in `spec/memory.md` are shaped as they are.
   which would make allocation implicit (Memory #5); Rust proves every path with
   lifetimes. Following a view through variables or calls needs that alias and
   lifetime analysis, which Ace leaves out (Memory #12). A plain parameter counts
-  as frame storage because small arguments are passed in registers and copied
-  into the callee.
+  as frame storage because it may be a copy (Values & Passing #2).
 - Zero-filled typed allocation (Memory #24): the zero representation is
   universal, so the only cost of offering it is one name, while a hand-written
   clear loop was measured 1.5x to 3x slower to initialize tables of 2^14 to 2^22
