@@ -123,3 +123,6 @@
   use `.name` carry names; `Kind.name` stays a member lookup.
 - An identifier is at most 128 characters (Source #4); both lexers report a
   longer one.
+- `null` selects an overload whose parameter accepts it, as a plain call
+  coerces it (`fmt.Buffer.init(null)`); a `null` two overloads accept is
+  ambiguous.

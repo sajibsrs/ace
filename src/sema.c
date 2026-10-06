@@ -3542,6 +3542,7 @@ static int exact_arg_type(Node* arg, SType* actual, SType* param) {
         return arraylit_fits(raw, actual, param);
     }
     if (raw->kind == N_STRUCTLIT && !raw->a) return param && (param->kind == SK_STRUCT || param->kind == SK_BITS);
+    if (actual == T_UT_NULL) return param && accepts_null(param); // as a plain call coerces it
     return same_type(actual, param);
 }
 

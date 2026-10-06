@@ -1,0 +1,6 @@
+/* `null` fits both a pointer and a slice overload, so the call is ambiguous. */
+
+f(p: *u8): int { return 1 }
+f(s: []u8): int { return 2 }
+
+main(): int { return f(null) }

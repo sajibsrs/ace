@@ -1,0 +1,14 @@
+/* `null` selects the overload whose parameter accepts it, as a plain call
+ * coerces it, for free and associated calls alike. */
+
+// expect-exit: 3
+
+T: struct { a: int }
+
+f(s: mut []u8): int { return int(s.len) + 1 }
+f(x: int): int { return x }
+
+T.g(s: mut []u8): int { return int(s.len) + 2 }
+T.g(x: int, s: mut []u8): int { return x }
+
+main(): int { return f(null) + T.g(null) }

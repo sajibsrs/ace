@@ -238,7 +238,7 @@ main(): int {
 }
 ```
 
-A caller that wants no context passes empty storage (`mut storage[0..0]`).
+A caller that wants no context passes `fmt.Buffer.init(null)`.
 
 ## Design rationale
 
