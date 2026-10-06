@@ -1,5 +1,9 @@
 # Compiler
 
+- Both parsers parse binary operators by precedence climbing: one `level`
+  lookup per operator, not a call per precedence level for every operand.
+  The self-hosted parser runs 1.26–1.66x faster (`shader.ace` 1.9x → 1.1x of
+  C); the C parser 1.02–1.04x. ASTs are unchanged.
 - An arithmetic operator on two operands of one non-numeric type reports
   `operator * does not apply to [2]i64` rather than an operand type mismatch.
 - `mut` on a fixed array type now names the fix in its diagnostic: the array is

@@ -485,18 +485,9 @@ static Node* mkbin(P* p, Token* op, Node* l, Node* r) {
     return b;
 }
 
-// precedence chain, C table (loosest → tightest):
-// || → && → | → ^ → & → ==/!= → </<=/>/>= (chains) → <</>> → +,- → *,/,% → unary
-static Node* expr_mul(P* p, int ctx);
-static Node* expr_add(P* p, int ctx);
-static Node* expr_shift(P* p, int ctx);
-static Node* expr_cmp(P* p, int ctx);
-static Node* expr_bitand(P* p, int ctx);
-static Node* expr_bitxor(P* p, int ctx);
-static Node* expr_bitor(P* p, int ctx);
-static Node* expr_eq(P* p, int ctx);
-static Node* expr_and(P* p, int ctx);
-static Node* expr_orlvl(P* p, int ctx);
+// binary precedence, loosest → tightest (see level):
+// || → && → | → ^ → & → ==/!= → </<=/>/>= (chains) → <</>> → +,- → *,/,%
+static Node* expr_binary(P* p, int min, int ctx);
 static Node* expr_unary(P* p, int ctx);
 static Node* expr_postfix(P* p, int ctx);
 static Node* expr_postfix_base(P* p, int ctx, Node* base);
@@ -595,124 +586,64 @@ static int is_assign_op(TokKind k) {
     }
 }
 
-static int is_cmp_op(TokKind k) {
+#define CMP_LEVEL 7
+
+/* The binary precedence of operator k, 1 (loosest) to 10, or 0 for none. */
+static int level(TokKind k) {
     switch (k) {
-    case T_LT: case T_LE: case T_GT: case T_GE:
-        return 1;
-    default:
-        return 0;
+    case T_OROR: return 1;
+    case T_ANDAND: return 2;
+    case T_PIPE: return 3;
+    case T_CARET: return 4;
+    case T_AMP: return 5;
+    case T_EQEQ: case T_BANGEQ: return 6;
+    case T_LT: case T_LE: case T_GT: case T_GE: return CMP_LEVEL;
+    case T_SHL: case T_SHR: return 8;
+    case T_PLUS: case T_MINUS: return 9;
+    case T_STAR: case T_SLASH: case T_PERCENT: return 10;
+    default: return 0;
     }
 }
 
-static Node* expr(P* p, int ctx) { return expr_orlvl(p, ctx); }
+static Node* expr_chain(P* p, Node* first, int ctx);
 
-static Node* expr_orlvl(P* p, int ctx) {
-    Node* l = expr_and(p, ctx);
-    while (at(p, T_OROR)) {
+static Node* expr(P* p, int ctx) { return expr_binary(p, 1, ctx); }
+
+/* Left-associative operators of level min and tighter, by precedence
+ * climbing: one level lookup per operator, not one call per level. */
+static Node* expr_binary(P* p, int min, int ctx) {
+    Node* l = expr_unary(p, ctx);
+    for (;;) {
+        int lv = level(tk(p)->kind);
+        if (lv < min || lv == 0) break;
+        if (lv == CMP_LEVEL) {
+            l = expr_chain(p, l, ctx);
+            continue;
+        }
         Token* op = tk(p);
         p->i++;
-        l = mkbin(p, op, l, expr_and(p, ctx));
+        l = mkbin(p, op, l, expr_binary(p, lv + 1, ctx));
     }
     return l;
 }
 
-static Node* expr_and(P* p, int ctx) {
-    Node* l = expr_bitor(p, ctx);
-    while (at(p, T_ANDAND)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_bitor(p, ctx));
-    }
-    return l;
-}
-
-static Node* expr_bitor(P* p, int ctx) {
-    Node* l = expr_bitxor(p, ctx);
-    while (at(p, T_PIPE)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_bitxor(p, ctx));
-    }
-    return l;
-}
-
-static Node* expr_bitxor(P* p, int ctx) {
-    Node* l = expr_bitand(p, ctx);
-    while (at(p, T_CARET)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_bitand(p, ctx));
-    }
-    return l;
-}
-
-static Node* expr_bitand(P* p, int ctx) {
-    Node* l = expr_eq(p, ctx);
-    while (at(p, T_AMP)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_eq(p, ctx));
-    }
-    return l;
-}
-
-static Node* expr_eq(P* p, int ctx) {
-    Node* l = expr_cmp(p, ctx);
-    while (at(p, T_EQEQ) || at(p, T_BANGEQ)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_cmp(p, ctx));
-    }
-    return l;
-}
-static Node* expr_cmp(P* p, int ctx) {
-    Node* first = expr_shift(p, ctx);
-    if (!is_cmp_op(tk(p)->kind)) return first;
+/* The comparison chain whose first operand is first. */
+static Node* expr_chain(P* p, Node* first, int ctx) {
     Node* ch = nd(p, N_CMPCHAIN);
     Node* ops = nd(p, N_OPS);
     NV operands = {0}, opnodes = {0};
     nv_push(p, &operands, first);
-    while (is_cmp_op(tk(p)->kind)) {
+    while (level(tk(p)->kind) == CMP_LEVEL) {
         Node* on = nd(p, N_OP);
         on->op = (uint8_t)tk(p)->kind;
         nv_push(p, &opnodes, on);
         p->i++;
-        nv_push(p, &operands, expr_shift(p, ctx));
+        nv_push(p, &operands, expr_binary(p, CMP_LEVEL + 1, ctx));
     }
     set_kids(ch, &operands);
     set_kids(ops, &opnodes);
     ch->a = ops;
     return ch;
-}
-
-static Node* expr_shift(P* p, int ctx) {
-    Node* l = expr_add(p, ctx);
-    while (at(p, T_SHL) || at(p, T_SHR)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_add(p, ctx));
-    }
-    return l;
-}
-
-static Node* expr_add(P* p, int ctx) {
-    Node* l = expr_mul(p, ctx);
-    while (at(p, T_PLUS) || at(p, T_MINUS)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_mul(p, ctx));
-    }
-    return l;
-}
-
-static Node* expr_mul(P* p, int ctx) {
-    Node* l = expr_unary(p, ctx);
-    while (at(p, T_STAR) || at(p, T_SLASH) || at(p, T_PERCENT)) {
-        Token* op = tk(p);
-        p->i++;
-        l = mkbin(p, op, l, expr_unary(p, ctx));
-    }
-    return l;
 }
 
 static Node* expr_unary(P* p, int ctx) {

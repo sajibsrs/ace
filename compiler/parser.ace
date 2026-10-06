@@ -574,50 +574,18 @@ pub Parser.expr(mut self, ctx: int): u32 {
     return mut self.binary(1, ctx)
 }
 
-/* Left-associative operators of level `lv` and tighter; comparisons chain. */
-Parser.binary(mut self, lv: int, ctx: int): u32 {
-    if lv > 10 { return mut self.unary(ctx) }
-    l: u32 = mut self.binary(lv + 1, ctx)
-    if lv == CMP_LEVEL {
-        if level(self.kth(0)) != CMP_LEVEL { return l }
-        ch: u32 = mut self.nd(Kind.cmpchain)
-        ops: u32 = mut self.nd(Kind.ops)
-        mark: usize = self.nstack
-        mut self.push(l)
-        opmark: usize = 0
-        // Operands and operators interleave on the stack; split them after.
-        for level(self.kth(0)) == CMP_LEVEL {
-            on: u32 = mut self.nd(Kind.op)
-            self.nodes[on].op = self.kinds[self.i]
-            mut self.push(on)
-            self.i += 1
-            mut self.push(mut self.binary(lv + 1, ctx))
+/* Left-associative operators of level `min` and tighter, by precedence
+ * climbing: one level lookup per operator, not one call per level.
+ */
+Parser.binary(mut self, min: int, ctx: int): u32 {
+    l: u32 = mut self.unary(ctx)
+    for {
+        lv: int = level(self.kth(0))
+        if lv < min || lv == 0 { break }
+        if lv == CMP_LEVEL {
+            l = mut self.chain(l, ctx)
+            continue
         }
-        count: usize = self.nstack - mark
-        // Reorder [x0, op1, x1, op2, x2] into operands then operators.
-        tmp: mut []u32 = mem.alloc[u32](count)
-        nx: usize = 0
-        j: usize = 0
-        for j < count {
-            tmp[nx] = self.stack[mark + j]
-            nx += 1
-            j += 2
-        }
-        opmark = nx
-        j = 1
-        for j < count {
-            tmp[opmark] = self.stack[mark + j]
-            opmark += 1
-            j += 2
-        }
-        mem.copy[u32](self.stack[mark..self.nstack], tmp)
-        mem.release[u32](mut tmp)
-        mut self.close(ops, mark + nx)
-        mut self.close(ch, mark)
-        self.nodes[ch].a = ops
-        return ch
-    }
-    for level(self.kth(0)) == lv {
         op: usize = self.i
         self.i += 1
         r: u32 = mut self.binary(lv + 1, ctx)
@@ -628,6 +596,46 @@ Parser.binary(mut self, lv: int, ctx: int): u32 {
         l = b
     }
     return l
+}
+
+/* The comparison chain whose first operand is `l`. */
+Parser.chain(mut self, l: u32, ctx: int): u32 {
+    ch: u32 = mut self.nd(Kind.cmpchain)
+    ops: u32 = mut self.nd(Kind.ops)
+    mark: usize = self.nstack
+    mut self.push(l)
+    opmark: usize = 0
+    // Operands and operators interleave on the stack; split them after.
+    for level(self.kth(0)) == CMP_LEVEL {
+        on: u32 = mut self.nd(Kind.op)
+        self.nodes[on].op = self.kinds[self.i]
+        mut self.push(on)
+        self.i += 1
+        mut self.push(mut self.binary(CMP_LEVEL + 1, ctx))
+    }
+    count: usize = self.nstack - mark
+    // Reorder [x0, op1, x1, op2, x2] into operands then operators.
+    tmp: mut []u32 = mem.alloc[u32](count)
+    nx: usize = 0
+    j: usize = 0
+    for j < count {
+        tmp[nx] = self.stack[mark + j]
+        nx += 1
+        j += 2
+    }
+    opmark = nx
+    j = 1
+    for j < count {
+        tmp[opmark] = self.stack[mark + j]
+        opmark += 1
+        j += 2
+    }
+    mem.copy[u32](self.stack[mark..self.nstack], tmp)
+    mem.release[u32](mut tmp)
+    mut self.close(ops, mark + nx)
+    mut self.close(ch, mark)
+    self.nodes[ch].a = ops
+    return ch
 }
 
 /* A prefix operator node over the unary expression that follows. */
