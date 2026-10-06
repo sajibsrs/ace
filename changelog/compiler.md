@@ -122,3 +122,7 @@
   via `deref_value`, null-checked in debug, where lowering had rejected them.
   `--ast` prints a selector `x.f` as `selector`, no longer `field` like a field
   declaration; the self-hosted dump now prints `x.kind.name` with no table.
+- A syntax error quoting an identifier prints the whole name, in a buffer
+  sized to the longest identifier; an 80-byte one had cut it to 79 bytes,
+  losing its closing quote. The unreachable default link-name length check is
+  gone.

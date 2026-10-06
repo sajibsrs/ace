@@ -95,6 +95,9 @@ int         path_beneath(const char* path, const char* dir);
 void        build_roots(const char* root_dir);
 const char* build_path(const char* path);
 
+// The longest identifier, in characters (ASCII, so bytes).
+#define IDENT_MAX 128
+
 // Lex the whole source; returns a malloc'd token array terminated by T_EOF.
 // *count includes the terminator. Token text storage outlives the call.
 Token* lex(Source* s, Diag* d, size_t* count);

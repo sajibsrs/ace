@@ -178,7 +178,7 @@ static void skipnl(P* p) {
 }
 
 static const char* gdesc(P* p) {
-    static char buf[80];
+    static char buf[IDENT_MAX + 3]; // a quoted identifier and its NUL
     Token* t = tk(p);
     switch (t->kind) {
     case T_IDENT:
@@ -1782,11 +1782,8 @@ static Node* try_tparams(P* p) {
 
 // `as "name"` after a C-boundary signature or type: the linker symbol when it
 // differs from the Ace-side name. `as` is contextual, like `from`.
-static const char* parse_link_name(P* p, Token* name) {
-    if (!ident_at(p, "as")) {
-        if (name->len > 510) perr(p, "extern link name cannot exceed 510 bytes");
-        return NULL;
-    }
+static const char* parse_link_name(P* p) {
+    if (!ident_at(p, "as")) return NULL; // an identifier fits: IDENT_MAX < 510
     p->i++;
     Token* link = expect(p, T_STR, "link name string after 'as'");
     if (link->len == 0) perr(p, "extern link name cannot be empty");
@@ -1808,7 +1805,7 @@ static Node* parse_func_rest(P* p, Token* name, Node* tp, int pub, int expo, int
     f->kids = ph->kids;
     f->nkids = ph->nkids;
     f->a = parse_ret(p);
-    if (expo) f->cname = parse_link_name(p, name); // an export's C symbol
+    if (expo) f->cname = parse_link_name(p); // an export's C symbol
     if (eat(p, T_SPECIALIZED)) {
         f->flags |= F_SPECIALIZED; // no-default template: no body follows
         return f;
@@ -2177,7 +2174,7 @@ static Node* parse_extern(P* p) {
         if (eat(p, T_COLON)) { // a C global variable (C Interop #6)
             f->kind = N_EXTERNVAR;
             f->a = parse_type(p);
-            f->cname = parse_link_name(p, name);
+            f->cname = parse_link_name(p);
             if (at(p, T_ASSIGN)) {
                 nv_push(p, &p->exports, parse_extern_global(p, name, f->a, f->cname, (f->flags & F_MUT) != 0, 0));
                 if (!eat(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
@@ -2215,7 +2212,7 @@ static Node* parse_extern(P* p) {
             if (!def) {
                 expect(p, T_RPAREN, "')' to close extern parameters");
                 f->a = parse_ret(p);
-                f->cname = parse_link_name(p, name);
+                f->cname = parse_link_name(p);
                 def = at(p, T_LBRACE);
             }
             if (def) {
@@ -2473,7 +2470,7 @@ static Node* parse_top(P* p) {
             Token* name = expect(p, T_IDENT, "C global name");
             expect(p, T_COLON, "':' after C global name");
             Node* type = parse_type(p);
-            const char* cname = parse_link_name(p, name);
+            const char* cname = parse_link_name(p);
             return parse_extern_global(p, name, type, cname, gmut, pub);
         }
         if (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_DOT)

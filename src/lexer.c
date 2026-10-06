@@ -267,6 +267,7 @@ static void scan_ident(Lex* L) {
     while (ident_char(cur(L))) adv(L);
     size_t n = L->pos - L->toff;
     const char* text = L->s->buf + L->toff;
+    if (n > IDENT_MAX) err(L, "identifier exceeds %d characters", IDENT_MAX);
     TokKind k = T_IDENT;
     for (size_t i = 0; i < sizeof(KEYWORDS) / sizeof(KEYWORDS[0]); i++) {
         if (KEYWORDS[i].s[0] == text[0] && strlen(KEYWORDS[i].s) == n && memcmp(KEYWORDS[i].s, text, n) == 0) {

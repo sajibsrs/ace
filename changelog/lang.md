@@ -121,3 +121,5 @@
   `string` (Type System #14). Lowering compares the value against each
   member's discriminant, dense or sparse, at the use site, so only enums that
   use `.name` carry names; `Kind.name` stays a member lookup.
+- An identifier is at most 128 characters (Source #4); both lexers report a
+  longer one.

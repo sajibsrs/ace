@@ -11,6 +11,8 @@
    or written after `.` (`e.type`, `Kind.if`, `Config.default()`), never
    bare. A C name that is an Ace keyword keeps its spelling through a link
    name (`as "sym"`, C Interop #2).
+4. An identifier is ASCII and at most 128 characters; a longer one is a lex
+   error. Compiler buffers that hold a name are sized to it.
 
 ## Syntax & Parsing
 1. Fast, simple parsing is the goal — single-lookahead LL(1) is the guideline, not a requirement; small bounded lookahead is acceptable where it buys readability.

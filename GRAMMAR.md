@@ -16,7 +16,7 @@ keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
                 | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
                 | "volatile" | "self"
 
-ident         := letter ("letter" | digit | "_")*        [P: exact ident charset]
+ident         := letter ("letter" | digit | "_")*        [P: exact ident charset; at most 128 characters]
 member        := ident | keyword                         // member names only (Source #3)
 literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" | "false"
 int_lit       := digit+ ("_" digit+)* | "0x" hex+ | "0b" bin+     [P: suffixes]

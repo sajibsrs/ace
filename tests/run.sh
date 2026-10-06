@@ -82,10 +82,9 @@ for case in empty NUL long; do
         fail=1
     fi
 done
-default_link_name_error=$("$ACE" tests/parser/extern_link_name/default_long_err.ace 2>&1)
-if ! printf '%s\n' "$default_link_name_error" | grep -qF \
-    "extern link name cannot exceed 510 bytes"; then
-    echo "FAIL: default extern link-name length diagnostic"
+if ! "$ACE" tests/lexer/ident_long_err.ace 2>&1 | grep -qF \
+    "3:1: error: identifier exceeds 128 characters"; then
+    echo "FAIL: identifier length diagnostic"
     fail=1
 fi
 
@@ -113,6 +112,7 @@ while IFS='|' read -r f want; do
     fi
 done <<'INLINE_RULES'
 tests/parser/inline/visibility_order_err.ace|visibility must come before 'inline'
+tests/parser/long_name_err.ace|4:14: error: expected newline or '}' after statement, got 'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn'
 tests/parser/inline/duplicate_err.ace|duplicate 'inline' modifier
 tests/parser/inline/not_function_err.ace|1:8: error: 'inline' applies only to function declarations
 tests/parser/inline/extern_err.ace|'extern' blocks take no pub/inline

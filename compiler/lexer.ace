@@ -66,6 +66,7 @@ pub LexErr: error {
     17: unexpected = "unexpected character",
     18: comment = "unterminated block comment",
     19: byte = "unexpected byte",
+    20: ident = "identifier exceeds 128 characters",
 }
 
 /* A lexing error at the start of the token it was found in. `byte` is the
@@ -356,12 +357,16 @@ keyword(t: []char): Token {
     return k
 }
 
+/* The longest identifier, in characters (ASCII, so bytes). */
+IDENT_MAX: const usize = 128
+
 Lexer.scan_ident(mut self): Token {
     start: usize = self.off
     i: usize = self.off
     for i < self.src.len && ident_char(self.src[i]) { i += 1 }
     self.off = i
     text: string = self.src[start..self.off]
+    if text.len > IDENT_MAX { mut self.fail(LexErr.ident) }
     self.text = text
     return keyword(text)
 }

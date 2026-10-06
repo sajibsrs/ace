@@ -1864,13 +1864,10 @@ Parser.tparams(mut self): u32 {
 }
 
 /* `as "name"` after a C-boundary signature or type: the linker symbol when
- * it differs from the Ace-side name (token `name`); "" when absent.
+ * it differs from the Ace-side name; "" when absent.
  */
-Parser.link_name(mut self, name: usize): string {
-    if !self.ident_at(0, "as") {
-        if self.text(name).len > 510 { mut self.fail("extern link name cannot exceed 510 bytes") }
-        return ""
-    }
+Parser.link_name(mut self): string {
+    if !self.ident_at(0, "as") { return "" } // an identifier fits: IDENT_MAX < 510
     self.i += 1
     link: string = self.text(mut self.expect(Token.string, "link name string after 'as'"))
     if link.len == 0 { mut self.fail("extern link name cannot be empty") }
@@ -1891,7 +1888,7 @@ Parser.func_rest(mut self, name: usize, tp: u32, pub_: bool, expo: bool, self_ok
     mut self.params("')' to close parameters", self_ok)
     mut self.close(f, mark)
     self.nodes[f].a = mut self.ret()
-    if expo { self.nodes[f].cname = mut self.link_name(name) } // an export's C symbol
+    if expo { self.nodes[f].cname = mut self.link_name() } // an export's C symbol
     if mut self.eat(Token.specialized) {
         self.nodes[f].flags |= F_SPECIALIZED // no-default template: no body follows
         return f
@@ -2282,7 +2279,7 @@ Parser.extern_block(mut self): u32 {
         if mut self.eat(Token.colon) { // a C global variable
             self.nodes[f].kind = Kind.externvar
             self.nodes[f].a = mut self.parse_type()
-            self.nodes[f].cname = mut self.link_name(name)
+            self.nodes[f].cname = mut self.link_name()
             if self.at(Token.assign) {
                 mut_: bool = (self.nodes[f].flags & F_MUT) != 0
                 mut self.export(mut self.extern_global(name, self.nodes[f].a, self.nodes[f].cname, mut_, false))
@@ -2321,7 +2318,7 @@ Parser.extern_block(mut self): u32 {
             if !def {
                 mut self.expect(Token.rparen, "')' to close extern parameters")
                 self.nodes[f].a = mut self.ret()
-                self.nodes[f].cname = mut self.link_name(name)
+                self.nodes[f].cname = mut self.link_name()
                 def = self.at(Token.lbrace)
             }
             if def {
@@ -2568,7 +2565,7 @@ Parser.top(mut self): u32 {
             name: usize = mut self.expect(Token.ident, "C global name")
             mut self.expect(Token.colon, "':' after C global name")
             ty: u32 = mut self.parse_type()
-            cname: string = mut self.link_name(name)
+            cname: string = mut self.link_name()
             return mut self.extern_global(name, ty, cname, gmut, pub_)
         }
         if self.kth(1) == Token.dot { mut self.fail("methods and associated functions cannot use the C ABI") }

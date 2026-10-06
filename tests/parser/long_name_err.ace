@@ -1,0 +1,5 @@
+/* A syntax error quotes the whole offending name, however long. */
+
+main(): int {
+    return 0 nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+}
