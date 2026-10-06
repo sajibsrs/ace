@@ -320,6 +320,56 @@ print_close(mut sink: formatting.Sink): int {
 }
 
 /*
+ * Output buffered across calls: `mut buffer.printf(...)` appends to the
+ * caller's storage, writing to the descriptor only when it fills and on
+ * `flush`, as Go's bufio.Writer. Empty storage writes every piece through.
+ * A failed write sticks: later calls write nothing and return its result.
+ */
+pub Buffer: struct {
+    sink: formatting.Sink,
+    mark: int,                  // bytes taken before the current printf
+}
+
+pub Buffer.init(fd: sys.Fd, storage: mut []u8): Buffer {
+    return Buffer { sink = formatting.Sink.init(storage, i32(fd), write_bytes), mark = 0 }
+}
+
+/* Writes the buffered bytes: their count, or the failing write's result. */
+pub Buffer.flush(mut self): int {
+    before: int = self.sink.drained
+    mut self.sink.flush()
+    if self.sink.failed { return self.sink.status }
+
+    return self.sink.drained - before
+}
+
+/* Formats like `printf` into the buffer, written to its descriptor when the
+ * buffer fills or on `flush` rather than before returning; the same checks and
+ * lowering. Returns the bytes the call took, or the failing write's result.
+ */
+pub Buffer.printf(mut self, format: string): int {
+    before: int = self.sink.drained + int(self.sink.used)
+    mut self.sink.put(format)
+    if self.sink.failed { return self.sink.status }
+
+    return self.sink.drained + int(self.sink.used) - before
+}
+
+/* The opener and closer of `Buffer.printf`, whose pieces write through the
+ * buffer's sink in place. The closer returns the bytes the call took, or the
+ * failing write's result.
+ */
+Buffer.print_open(mut self) {
+    self.mark = self.sink.drained + int(self.sink.used)
+}
+
+Buffer.print_close(mut self): int {
+    if self.sink.failed { return self.sink.status }
+
+    return self.sink.drained + int(self.sink.used) - self.mark
+}
+
+/*
  * This body serves the zero-conversion case and gives the public name an
  * ordinary declaration. Calls are otherwise validated and lowered directly
  * by the compiler; this format-dependent function is never a first-class value.

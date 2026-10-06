@@ -178,6 +178,31 @@ main(): int {
 }
 ```
 
+`fmt.Buffer` keeps output across calls, for code that writes many small
+pieces. `fmt.Buffer.init(fd, storage)` takes a descriptor and caller-owned
+storage, allocating nothing. `mut buffer.printf(format, ...)` is `printf` with
+the same checks and conversions, but its bytes go into the storage and reach
+the descriptor only when the storage fills or on `mut buffer.flush()`, so
+thousands of calls cost a write per storage-full rather than one each:
+
+```ace
+import fmt
+import sys
+
+main(): int {
+    storage: [4096]u8
+    out: fmt.Buffer = fmt.Buffer.init(sys.stdout, mut storage[..])
+    for i: int in 0 .. 3 { mut out.printf("line %d\n", i) }
+    return mut out.flush() - 21
+}
+```
+
+`Buffer.printf` returns the bytes the call took; `flush` returns the bytes it
+wrote. A piece larger than the storage is written straight through. A failed
+write sticks: that call, every later one, and `flush` return its non-positive
+result. Nothing is flushed implicitly — call `flush` before the program exits
+or the storage goes out of scope.
+
 ## Design rationale
 
 Why the rules in `spec/std/fmt.md` are shaped as they are.
@@ -193,3 +218,8 @@ Why the rules in `spec/std/fmt.md` are shaped as they are.
   time cheap; and precise compile-time diagnostics add safety without release
   cost. Every excluded feature can be added later without tightening existing
   code.
+- `Buffer.printf` is a method rather than a `printf` overload so that plain
+  `printf` keeps its guarantee that bytes are written before it returns; the
+  receiver shows where deferred output goes (Zig's `writer.print` beside
+  `std.debug.print`). The buffer reuses `printf`'s sink in place, so it costs
+  no copy per call, and takes caller storage so `fmt` stays allocation-free.

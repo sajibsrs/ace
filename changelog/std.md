@@ -41,3 +41,7 @@
   256-entry `LEADS` table for the width and second-byte range row (as Go's
   `first`/`acceptRanges`), testing each range with one wrapped compare:
   `utf8-valid` drops from 125 to 84 ns (C: 65 ns).
+- Added `fmt.Buffer` and `mut buffer.printf(...)`: `printf`'s checked lowering
+  writing through a sink kept in caller storage across calls, drained on fill
+  or `flush`. `printf` decimals divide by a constant and one-byte literals
+  store directly. The self-hosted compiler's `Out` gives way to it.

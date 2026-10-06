@@ -12,7 +12,7 @@ import output: "./output.ace"
 import parser: "./parser.ace"
 
 Token: type = lexer.Token
-Out: type = output.Out
+Out: type = fmt.Buffer
 
 /* What @when compares `target` against: the target this driver runs on. */
 @when(target == "darwin-arm64")
@@ -34,8 +34,9 @@ main(): int {
         return 1
     }
 
-    out: Out = Out { buf = mem.alloc[u8](65536), at = 0 }
-    defer mem.release[u8](mut out.buf)
+    storage: mut []u8 = mem.alloc[u8](65536)
+    defer mem.release[u8](mut storage)
+    out: Out = Out.init(sys.stdout, storage)
     if ast { return dump_ast(mut out, src, path) }
     lx: lexer.Lexer = lexer.Lexer.new(src)
     defer mut lx.wipe()
@@ -49,42 +50,26 @@ main(): int {
             errors += 1
         }
         line: u32, col: u32 = lx.pos()
-        mut out.num(u64(line))
-        mut out.byte(':')
-        mut out.num(u64(col))
-        mut out.byte('\t')
-        mut out.put(lexer.disp(t))
+        mut out.printf("%d:%d\t%s", int(line), int(col), lexer.disp(t))
         switch t {
-            Token.ident {
-                mut out.byte('\t')
-                mut out.put(lx.lit())
-            }
-            Token.int {
-                mut out.byte('\t')
-                mut out.num(lx.int())
-            }
-            Token.float {
-                mut out.byte('\t')
-                mut out.general(lx.float())
-            }
+            Token.ident { mut out.printf("\t%s", lx.lit()) }
+            Token.int { mut out.printf("\t%u", uint(lx.int())) }
+            Token.float { mut out.printf("\t%g", lx.float()) }
             Token.string {
-                mut out.put("\t\"")
-                mut out.quoted(lx.lit())
-                mut out.byte('"')
+                mut out.printf("\t\"")
+                output.quoted(mut out, lx.lit())
+                mut out.printf("\"")
             }
             Token.char {
-                mut out.byte('\t')
                 if lx.int() >= 33 && lx.int() <= 126 {
-                    mut out.byte('\'')
-                    mut out.byte(u8(lx.int()))
-                    mut out.byte('\'')
+                    mut out.printf("\t'%c'", u8(lx.int()))
                 } else {
-                    mut out.num(lx.int())
+                    mut out.printf("\t%u", uint(lx.int()))
                 }
             }
             default {}
         }
-        mut out.byte('\n')
+        mut out.printf("\n")
         if t == Token.eof { break }
     }
     mut out.flush()

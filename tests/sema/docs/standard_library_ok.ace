@@ -200,7 +200,12 @@ printf_examples(): int {
     byte: u8 = u8(65)
     fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15), f32(0.5), byte)
     warned: int = fmt.printf(sys.stderr, "warning: %d retries\n", 3)
+    storage: [4096]u8
+    out: fmt.Buffer = fmt.Buffer.init(sys.stdout, mut storage[..])
+    for i: int in 0 .. 3 { mut out.printf("line %d\n", i) }
+    flushed: int = mut out.flush()
     if warned != 19 { return 2 }
+    if flushed != 21 { return 3 }
     return 0
 }
 

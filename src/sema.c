@@ -4048,6 +4048,7 @@ typedef struct {
 
 static const FormatCall PRINTF_CALL = { BI_FMT_PRINTF, 0, "fmt.printf", "print_open", "print_close" };
 static const FormatCall PRINTF_FD_CALL = { BI_FMT_PRINTF_FD, 1, "fmt.printf", "print_to_open", "print_close" };
+static const FormatCall PRINTF_BUF_CALL = { BI_FMT_PRINTF_BUF, 0, "Buffer.printf", "print_open", "print_close" };
 static const FormatCall STR_FORMAT_CALL = { BI_STR_FORMAT, 1, "str.format", "put_open", "put_close" };
 
 static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc) {
@@ -4113,7 +4114,7 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             return T_ERR;
         }
         if (format->str[i] == '%') {
-            printf_add_part(plan, &cap, (PrintfPart){ .kind = PF_PERCENT, .off = conv_off, .len = 1 });
+            printf_add_part(plan, &cap, (PrintfPart){ .kind = PF_LITERAL_BYTE, .off = conv_off, .len = 1 });
             i++;
             literal = i;
             continue;
@@ -4248,8 +4249,9 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
     Sym* byte_helper = printf_helper(k, formatting_prefix, rendering_len, who, "piece", counted_arg, 1, call);
     for (int i = 0; i < plan->nparts; i++) {
         PrintfPart* part = &plan->parts[i];
+        if (part->kind == PF_TEXT && part->len == 1) part->kind = PF_LITERAL_BYTE; // stored, not copied
         if (part->kind == PF_TEXT) { part->helper = text_helper; continue; }
-        if (part->kind == PF_PERCENT) { part->helper = byte_helper; continue; }
+        if (part->kind == PF_LITERAL_BYTE) { part->helper = byte_helper; continue; }
         if (part->arg >= call->nkids) continue;
         Node* arg = call->kids[part->arg];
         if (arg->kind == N_MUTARG) {
@@ -4305,6 +4307,14 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
         ck_err(k, call, "'%.*s' is an associated function, called on the type: %s.%.*s(...)",
                (int)callee->len, callee->str, type_name(b), (int)callee->len, callee->str);
         return T_ERR;
+    }
+    if (head && head->decl && head->decl->ival == BI_FMT_PRINTF_BUF) { // mut buffer.printf("format", ...)
+        if (!(call->flags & F_MUT)) {
+            ck_err(k, call, "Buffer.printf appends to the buffer; it needs 'mut' at the call");
+            return T_ERR;
+        }
+        check_lvalue(k, callee->a, 1);
+        return check_format_call(k, call, head, &PRINTF_BUF_CALL);
     }
     int supplied = call->nkids + 1;
     Sym* found = NULL;

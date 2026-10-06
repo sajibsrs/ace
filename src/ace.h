@@ -222,12 +222,13 @@ enum {
     BI_FMT_PRINTF_FD = 38,  // fmt.printf(fd, "format", ...): fmt.printf to a descriptor
     BI_MEM_COPY_T = 39,     // mem.copy[T](noalias dst: mut []T, src: []T)
     BI_MEM_MOVE_T = 40,     // mem.move[T](dst: mut []T, src: []T)
+    BI_FMT_PRINTF_BUF = 41, // fmt.printf(mut buffer, "format", ...): fmt.printf into a fmt.Buffer
 };
 
 enum {
     PF_TEXT, PF_SIGNED, PF_UNSIGNED, PF_BINARY, PF_OCTAL,
     PF_HEX_LOWER, PF_HEX_UPPER,
-    PF_FIXED, PF_SCIENTIFIC, PF_GENERAL, PF_STRING, PF_BYTE, PF_PERCENT,
+    PF_FIXED, PF_SCIENTIFIC, PF_GENERAL, PF_STRING, PF_BYTE, PF_LITERAL_BYTE,
 };
 
 typedef struct Node Node;

@@ -626,6 +626,19 @@ for want in \
     fi
 done
 
+printf_buffer_errors=$("$ACE" tests/sema/printf/buffer_err.ace 2>&1)
+for want in \
+    "10:22: error: Buffer.printf appends to the buffer; it needs 'mut' at the call" \
+    "11:13: error: parameter 'held' is read-only" \
+    "12:28: error: Buffer.printf argument 1 for conversion at decoded byte 0 requires int" \
+    "13:21: error: Buffer.printf format requires 2 value arguments, got 1" \
+    "14:26: error: type mismatch: fmt.Buffer given where string expected"; do
+    if ! printf '%s\n' "$printf_buffer_errors" | grep -qF "$want"; then
+        echo "FAIL: missing Buffer.printf diagnostic '$want'"
+        fail=1
+    fi
+done
+
 if ! "$ACE" tests/sema/printf/no_value_arg_err.ace 2>&1 | grep -qF \
     "6:29: error: fmt.printf argument has no value"; then
     echo "FAIL: missing printf no-value-argument diagnostic"

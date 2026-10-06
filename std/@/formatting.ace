@@ -41,14 +41,37 @@ pub radix(value: u64, radix: u8, uppercase: bool, out: mut []u8): (usize, bool) 
     return count, true
 }
 
+/* Decimal digits of value, as radix with 10: the constant divisor compiles
+ * to a multiply, where radix's runtime one divides.
+ */
+decimal_digits(value: u64, out: mut []u8): (usize, bool) {
+    storage: [20]u8
+    digits: mut []u8 = mut storage[0..20]
+    at: usize = 20
+    remaining: u64 = value
+
+    for digit: int in 0 .. 20 {
+        at -= 1
+        digits[at] = u8(48 + remaining % 10)
+        remaining = remaining / 10
+
+        if remaining == 0 { break }
+    }
+    count: usize = 20 - at
+    if count > out.len { return 0, false }
+
+    for i: usize in 0 .. count { out[i] = digits[at + i] }
+    return count, true
+}
+
 /* Signed decimal digits of value, with '-' before a negative value. */
 signed(value: int, out: mut []u8): (usize, bool) {
     if value >= 0 {
-        n: usize, ok: bool = radix(u64(value), 10, false, out)
+        n: usize, ok: bool = decimal_digits(u64(value), out)
         return n, ok
     }
     if out.len == 0 { return 0, false }
-    n: usize, ok: bool = radix(u64(-(value + 1)) + 1, 10, false, mut out[1..out.len])
+    n: usize, ok: bool = decimal_digits(u64(-(value + 1)) + 1, mut out[1..out.len])
     if !ok { return 0, false }
 
     out[0] = u8(45)
@@ -297,6 +320,17 @@ pub inline Sink.put(mut self, bytes: []u8) {
     self.used += bytes.len
 }
 
+/* One byte, as put: stored directly while there is room. */
+pub inline Sink.byte(mut self, value: u8) {
+    if self.used < self.storage.len {
+        self.storage[self.used] = value
+        self.used += 1
+        return
+    }
+    out: [1]u8 = [value]
+    mut self.overflow(out[0..1])
+}
+
 /* A piece that does not fit: drain the storage, then buffer the piece, or
  * hand it straight to drain when it is larger than the storage.
  */
@@ -391,6 +425,10 @@ pub piece[string](mut sink: Sink, text: string, width: usize, zero: bool) {
 }
 
 pub piece[u8](mut sink: Sink, value: u8, width: usize, zero: bool) {
+    if width == 0 {
+        mut sink.byte(value)
+        return
+    }
     out: [1]u8 = [value]
     mut sink.padded(out[0..1], width, false)
 }
@@ -398,18 +436,30 @@ pub piece[u8](mut sink: Sink, value: u8, width: usize, zero: bool) {
 pub piece[int](mut sink: Sink, value: int, width: usize, zero: bool) {
     storage: [20]u8
     n: usize, ok: bool = signed(value, mut storage[0..20])
+    if width == 0 {
+        mut sink.put(storage[0..n])
+        return
+    }
     mut sink.padded(storage[0..n], width, zero)
 }
 
 pub piece[uint](mut sink: Sink, value: uint, width: usize, zero: bool) {
     storage: [20]u8
-    n: usize, ok: bool = radix(u64(value), 10, false, mut storage[0..20])
+    n: usize, ok: bool = decimal_digits(u64(value), mut storage[0..20])
+    if width == 0 {
+        mut sink.put(storage[0..n])
+        return
+    }
     mut sink.padded(storage[0..n], width, zero)
 }
 
 pub piece[usize](mut sink: Sink, value: usize, width: usize, zero: bool) {
     storage: [20]u8
-    n: usize, ok: bool = radix(u64(value), 10, false, mut storage[0..20])
+    n: usize, ok: bool = decimal_digits(u64(value), mut storage[0..20])
+    if width == 0 {
+        mut sink.put(storage[0..n])
+        return
+    }
     mut sink.padded(storage[0..n], width, zero)
 }
 

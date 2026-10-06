@@ -16,10 +16,9 @@ import str
 import sys
 
 import lexer: "./lexer.ace"
-import output: "./output.ace"
 
 pub Token: type = lexer.Token
-Out: type = output.Out
+Out: type = fmt.Buffer
 
 pub Kind: enum u8 {
     file,
@@ -2708,59 +2707,41 @@ pub Parser.parse(mut self, target: string): u32 {
 
 /* Prints the tree at `n` as `ace --ast` does. */
 pub Parser.dump(self, mut out: Out, n: u32, ind: usize) {
-    for j: usize in 0..ind { mut out.byte(' ') }
+    for j: usize in 0..ind { mut out.printf(" ") }
     if n == 0 {
-        mut out.put("nil\n")
+        mut out.printf("nil\n")
         return
     }
     x: Node = self.nodes[n]
-    mut out.byte('(')
-    mut out.put(NAMES[x.kind])
+    mut out.printf("(%s", NAMES[x.kind])
     if (x.flags & F_TEXT) != 0 {
-        mut out.put(" '")
         // C prints with "%.*s", which stops at an embedded NUL.
         nul: usize, found: bool = str.find(x.text, '\0')
-        if found {
-            mut out.put(x.text[..nul])
-        } else {
-            mut out.put(x.text)
-        }
-        mut out.byte('\'')
+        text: string = x.text
+        if found { text = x.text[..nul] }
+        mut out.printf(" '%s'", text)
     }
     switch x.kind {
-        Kind.int_lit, Kind.char_lit, Kind.bool {
-            mut out.byte(' ')
-            mut out.num(x.ival)
-        }
-        Kind.float_lit {
-            mut out.byte(' ')
-            mut out.general(x.fval)
-        }
-        Kind.binary, Kind.unary, Kind.assign, Kind.op {
-            mut out.put(" op='")
-            mut out.put(lexer.disp(x.op))
-            mut out.byte('\'')
-        }
+        Kind.int_lit, Kind.char_lit, Kind.bool { mut out.printf(" %u", uint(x.ival)) }
+        Kind.float_lit { mut out.printf(" %g", x.fval) }
+        Kind.binary, Kind.unary, Kind.assign, Kind.op { mut out.printf(" op='%s'", lexer.disp(x.op)) }
         default {}
     }
     for j: usize in 0..FLAG_BITS.len {
-        if (x.flags & FLAG_BITS[j]) != 0 { mut out.put(FLAG_NAMES[j]) }
+        if (x.flags & FLAG_BITS[j]) != 0 { mut out.printf("%s", FLAG_NAMES[j]) }
     }
-    mut out.put(" @")
-    mut out.num(u64(x.line))
-    mut out.byte(':')
-    mut out.num(u64(x.col))
+    mut out.printf(" @%d:%d", int(x.line), int(x.col))
     // C tests the kids pointer: a contract method's points past its receiver.
     if x.a == 0 && x.b == 0 && x.c == 0 && x.d == 0 && x.nkids == 0 && x.kind != Kind.method {
-        mut out.put(")\n")
+        mut out.printf(")\n")
         return
     }
-    mut out.byte('\n')
+    mut out.printf("\n")
     if x.a != 0 { self.dump(mut out, x.a, ind + 1) }
     if x.b != 0 { self.dump(mut out, x.b, ind + 1) }
     if x.c != 0 { self.dump(mut out, x.c, ind + 1) }
     if x.d != 0 { self.dump(mut out, x.d, ind + 1) }
     for k: u32 in 0..x.nkids { self.dump(mut out, self.kids[x.kids + k], ind + 1) }
-    for j: usize in 0..ind { mut out.byte(' ') }
-    mut out.put(")\n")
+    for j: usize in 0..ind { mut out.printf(" ") }
+    mut out.printf(")\n")
 }

@@ -2162,7 +2162,8 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                 n->ival == BI_MEM_RELEASE_T || n->ival == BI_MEM_COPY_T ||
                 n->ival == BI_MEM_MOVE_T)
                 break; // compiler-backed std/mem declarations have no body symbol
-            if (n->ival == BI_FMT_PRINTF || n->ival == BI_FMT_PRINTF_FD || n->ival == BI_STR_FORMAT ||
+            if (n->ival == BI_FMT_PRINTF || n->ival == BI_FMT_PRINTF_FD || n->ival == BI_FMT_PRINTF_BUF ||
+                n->ival == BI_STR_FORMAT ||
                 (n->ival >= BI_SYS_ARGC && n->ival <= BI_SYS_ENV))
                 break; // compiler-backed calls lower directly; no symbol
             Sym* decl_sym = node_sym(n);
