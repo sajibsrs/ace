@@ -33,7 +33,7 @@ b0:
     ret
 }
 
-window(ptr, u64, u64): {ptr, u64} {
+window(ptr, u64, u64): u64 {
 b0:
     %0 = param ptr 0
     %1 = param u64 1
@@ -45,7 +45,7 @@ b0:
     check %6, 23:14 bounds violation
     %8 = padd ptr %0, %1 * 8
     %9 = sub u64 %2, %1
-    ret %8, %9
+    ret %9
 }
 
 sum(ptr): u64 {
@@ -205,24 +205,22 @@ b5: ; preds b6
     %102 = load i64 [%5 + 24]
     %103 = const u64 1
     %104 = const u64 3
-    %105 = call {2} window(%99, %100, %101, %102, %103, %104)
-    %106 = proj ptr %105, 0
-    %107 = proj u64 %105, 1
-    %108 = const u64 2
-    %109 = ne bool %107, %108
-    br %109, b1, b4
+    %105 = call u64 window(%99, %100, %101, %102, %103, %104)
+    %106 = const u64 2
+    %107 = ne bool %105, %106
+    br %107, b1, b4
 b6: ; preds b0
-    %111 = load u8 [%4 + 6]
-    %112 = const u8 7
-    %113 = ne bool %111, %112
-    br %113, b1, b5
+    %109 = load u8 [%4 + 6]
+    %110 = const u8 7
+    %111 = ne bool %109, %110
+    br %111, b1, b5
 b7: ; preds b2
-    %115 = const i64 2
+    %113 = const i64 2
     call @__ace$registry_leaks()
-    ret %115
+    ret %113
 b8: ; preds b2
-    %118 = const i64 0
+    %116 = const i64 0
     call @__ace$registry_leaks()
-    ret %118
+    ret %116
 }
 

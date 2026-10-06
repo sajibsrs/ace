@@ -498,6 +498,26 @@ Non-null means only that the stored pointer is nonzero; it does not prove that
 the storage is still live. Independent bytes require a separate explicit
 allocation and copy.
 
+## Views of local storage
+
+A local array, a plain parameter, and a `[]T` array literal with runtime
+elements live in the function's frame. Returning a view of one, or storing it
+in a module variable or `mut` parameter, is a compile error:
+
+```ace
+leak(x: int): []int {
+    a: [2]int = [x, x]
+    return a[..] // error: returned value views storage of this function
+}
+```
+
+The check reads only the returned or stored expression itself, through tuples,
+aggregate literals, and view conversions. A view first bound to a variable
+(`s: []int = a[..]; return s`) or passed through a call is not tracked. A
+constant `[]T` literal is static data and may be returned. To return elements,
+return the array by value or copy them into caller-supplied or allocated
+storage.
+
 ## Current diagnostics
 
 The `mem` declarations are compiler-backed in the current bootstrap. Release
@@ -556,6 +576,15 @@ Why the rules in `spec/memory.md` are shaped as they are.
   cost (the lowering is the raw platform call plus a constant multiply).
   Reinterpretation (`[]u8` to `[]T`) and implicit conversions stay out
   (Sequences #7): the typed form is a separate allocation path, not a view cast.
+- Views of local storage (Memory #29): returning or storing a direct view of
+  the frame is a mistake visible in one expression, so it is rejected at no
+  runtime cost, as Zig does and as Clang (`-Wreturn-stack-address`) and GCC
+  (`-Wreturn-local-addr`) warn. Go instead moves escaping storage to the heap,
+  which would make allocation implicit (Memory #5); Rust proves every path with
+  lifetimes. Following a view through variables or calls needs that alias and
+  lifetime analysis, which Ace leaves out (Memory #12). A plain parameter counts
+  as frame storage because small arguments are passed in registers and copied
+  into the callee.
 - Zero-filled typed allocation (Memory #24): the zero representation is
   universal, so the only cost of offering it is one name, while a hand-written
   clear loop was measured 1.5x to 3x slower to initialize tables of 2^14 to 2^22

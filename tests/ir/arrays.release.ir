@@ -24,14 +24,13 @@ b0:
     ret
 }
 
-window(ptr, u64, u64): {ptr, u64} {
+window(ptr, u64, u64): u64 {
 b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param u64 2
-    %3 = padd ptr %0, %1 * 8
-    %4 = sub u64 %2, %1
-    ret %3, %4
+    %3 = sub u64 %2, %1
+    ret %3
 }
 
 sum(ptr): u64 {

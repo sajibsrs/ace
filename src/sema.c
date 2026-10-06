@@ -5385,6 +5385,91 @@ static SType* discard_type(Ck* k, Node* rhs, SType* rt, int i) {
     return t;
 }
 
+/*
+ * Local escape (Memory #29): the variable a storage path names when every
+ * step stays in that variable's own bytes — fields of a value, elements of an
+ * array — or NULL once the path passes through a pointer or slice.
+ */
+static Sym* path_root(Node* e) {
+    for (;;) {
+        if (e->kind == N_IDENT) return node_sym(e);
+        SType* bt = e->a ? node_ty(e->a) : NULL;
+        if (!bt) return NULL;
+        if (e->kind == N_FIELD_E && bt->kind != SK_PTR) e = e->a;
+        else if (e->kind == N_INDEX && bt->kind == SK_ARRAY) e = e->a;
+        else return NULL;
+    }
+}
+
+// Storage that ends when the function returns: a local or by-value parameter.
+static int dies_on_return(Sym* s) {
+    return s && s->kind == SYM_VAR && !s->is_global && !(s->is_param && s->is_mut);
+}
+
+/*
+ * The first subexpression of e that directly views storage ending with the
+ * function: a slice or address of such a path, or a []T array literal with
+ * runtime elements. Looks through aggregate literals, tuples, and view
+ * conversions; never through variables or calls (no alias analysis).
+ */
+static Node* local_view(Node* e) {
+    switch (e->kind) {
+    case N_SLICE_E: {
+        SType* bt = node_ty(e->a);
+        return bt && bt->kind == SK_ARRAY && dies_on_return(path_root(e->a)) ? e : NULL;
+    }
+    case N_UNARY:
+        return e->op == T_AMP && dies_on_return(path_root(e->a)) ? e : NULL;
+    case N_ARRAYLIT: {
+        SType* t = node_ty(e);
+        if (t && t->kind == SK_SLICE && !(e->flags & F_STATICLIT)) return e;
+        for (int i = 0; i < e->nkids; i++) {
+            Node* v = local_view(lit_elem(e->kids[i]));
+            if (v) return v;
+        }
+        return e->a ? local_view(e->a) : NULL;
+    }
+    case N_STRUCTLIT:
+    case N_TUPLE_E:
+        for (int i = 0; i < e->nkids; i++) {
+            Node* v = local_view(e->kind == N_STRUCTLIT ? e->kids[i]->a : e->kids[i]);
+            if (v) return v;
+        }
+        return NULL;
+    case N_CALL: {
+        Node* callee = e->a;
+        Sym* cs = callee->kind == N_IDENT ? node_sym(callee) : NULL;
+        int conversion = callee->kind == N_PTR || callee->kind == N_SLICE_T ||
+                         (callee->kind == N_IDENT && callee->ty && (!cs || cs->kind == SYM_TYPE));
+        SType* t = node_ty(e);
+        if (!conversion || !t) return NULL;
+        if (t->kind != SK_PTR && t->kind != SK_SLICE && t->kind != SK_CONTRACT &&
+            !(t->kind == SK_PRIM && t->prim == P_STRING))
+            return NULL;
+        for (int i = 0; i < e->nkids; i++) {
+            Node* v = local_view(e->kids[i]);
+            if (v) return v;
+        }
+        return NULL;
+    }
+    default:
+        return NULL;
+    }
+}
+
+static void check_return_escape(Ck* k, Node* value) {
+    Node* v = local_view(value);
+    if (v) ck_err(k, v, "returned value views storage of this function, which ends when it returns");
+}
+
+// A store into storage that outlives the function: a module variable or a mut parameter.
+static void check_store_escape(Ck* k, Node* target, Node* value) {
+    Sym* r = path_root(target);
+    if (!r || r->kind != SYM_VAR || !(r->is_global || (r->is_param && r->is_mut))) return;
+    Node* v = local_view(value);
+    if (v) ck_err(k, v, "stored value views storage of this function, which ends when it returns");
+}
+
 static void check_stmt(Ck* k, Node* s) {
     switch (s->kind) {
     case N_VAR: {
@@ -5547,7 +5632,7 @@ static void check_stmt(Ck* k, Node* s) {
                         continue;
                     }
                     SType* t = check_lvalue(k, s->kids[i], 1);
-                    coerce(k, s->a->kids[i], t);
+                    if (coerce(k, s->a->kids[i], t)) check_store_escape(k, s->kids[i], s->a->kids[i]);
                 }
             } else { // multi-return call: targets must equal return types
                 for (int i = 0; i < s->nkids; i++) {
@@ -5630,13 +5715,16 @@ static void check_stmt(Ck* k, Node* s) {
         }
         if (rhs->kind == N_STRUCTLIT && !rhs->a && (t->kind == SK_STRUCT || t->kind == SK_BITS)) {
             check_structlit(k, rhs, t);
+            check_store_escape(k, s->kids[0], rhs);
             return;
         }
         if (rhs->kind == N_ARRAYLIT && t->kind == SK_ARRAY) {
             check_arraylit(k, rhs, t);
+            check_store_escape(k, s->kids[0], rhs);
             return;
         }
-        coerce(k, rhs, t); // compound ops check as x = x op y with same type
+        if (coerce(k, rhs, t)) // compound ops check as x = x op y with same type
+            check_store_escape(k, s->kids[0], rhs);
         if (t->kind == SK_CONTRACT && s->kids[0]->kind == N_IDENT) {
             Sym* target = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
             if (target) target->is_const_backed = (rhs->flags & F_CONST) != 0;
@@ -5797,7 +5885,8 @@ static void check_stmt(Ck* k, Node* s) {
                 ck_err(k, s, "function returns %d values, return has %d", rt->nfields, s->a->nkids);
                 return;
             }
-            for (int i = 0; i < s->a->nkids; i++) coerce(k, s->a->kids[i], rt->fields[i].t);
+            for (int i = 0; i < s->a->nkids; i++)
+                if (coerce(k, s->a->kids[i], rt->fields[i].t)) check_return_escape(k, s->a->kids[i]);
             s->a->ty = rt;
             return;
         }
@@ -5825,7 +5914,7 @@ static void check_stmt(Ck* k, Node* s) {
             if (given && given->kind != SK_VOID && given->kind != SK_ERR) ck_err(k, s, "function returns nothing");
             return;
         }
-        coerce(k, s->a, rt);
+        if (coerce(k, s->a, rt)) check_return_escape(k, s->a);
         if (rt->kind == SK_CONTRACT && (s->a->flags & F_CONST) && k->curfn)
             k->curfn->flags |= F_CONST; // conservative return-capability summary
         return;

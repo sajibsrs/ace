@@ -133,6 +133,23 @@ tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through i
 tests/sema/names/module_type_name_err.ace|6:32: error: type mismatch: net.SocketType given where i64 expected
 INLINE_RULES
 
+# local escape (spec Memory #29): each direct return or outer store of a view
+# of this function's storage is reported at the view
+f=tests/sema/memory/escape_err.ace
+want=""
+for at in 12:14 16:12 19:13 22:15 26:12 30:20 34:14 38:21 42:18; do
+    want="$want$f:$at: error: returned value views storage of this function, which ends when it returns
+"
+done
+for at in 46:14 47:12 50:12; do
+    want="$want$f:$at: error: stored value views storage of this function, which ends when it returns
+"
+done
+if [ "$("$ACE" "$f" 2>&1 | grep ': error: ')" != "${want%?}" ]; then
+    echo "FAIL: $f should report each local escape"
+    fail=1
+fi
+
 # function types: 'void' marks no return value and binds type parameters (spec Syntax & Parsing #5)
 while IFS='|' read -r f want; do
     if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then

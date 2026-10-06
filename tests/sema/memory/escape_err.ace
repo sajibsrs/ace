@@ -1,0 +1,54 @@
+Shape: contract { area(self): int }
+Square: struct { side: int }
+Square.area(self): int {
+    return self.side * self.side
+}
+Square signs Shape
+Box: struct { v: []int, n: int }
+held: []int = null
+spot: *int = null
+array(): []int {
+    a: [3]int = [1, 2, 3]
+    return a[..]
+}
+address(): *[3]int {
+    a: [3]int = [1, 2, 3]
+    return &a
+}
+literal(x: int, y: int): []int {
+    return [x, y]
+}
+parameter(xs: [3]int): []int {
+    return xs[..]
+}
+field(x: int): *int {
+    b: Box = { v = null, n = x }
+    return &b.n
+}
+aggregate(x: int): Box {
+    a: [2]int = [x, x]
+    return { v = a[..], n = 0 }
+}
+pair(x: int): ([]int, int) {
+    a: [2]int = [x, x]
+    return a[..], 1
+}
+convert(): string {
+    a: [3]u8 = [1, 2, 3]
+    return string(a[..])
+}
+wrap(): Shape {
+    s: Square = { side = 2 }
+    return Shape(&s)
+}
+store_global(x: int) {
+    a: [2]int = [x, x]
+    held = a[..]
+    spot = &a[0]
+}
+store_param(mut out: []int, x: int) {
+    out = [x, x]
+}
+main(): int {
+    return 0
+}

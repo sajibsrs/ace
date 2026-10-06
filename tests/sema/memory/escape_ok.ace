@@ -1,0 +1,51 @@
+/* Views that do not directly escape this function's storage check clean (Memory #29). */
+
+Box: struct { v: []int, n: int }
+
+shared: [3]int = [1, 2, 3]
+last: []int = null
+
+constant(): []int {
+    return [1, 2, 3]
+}
+
+global_view(): []int {
+    return shared[..]
+}
+
+reslice(xs: []int): []int {
+    return xs[1..]
+}
+
+through_pointer(p: *Box): *int {
+    return &p.n
+}
+
+caller_storage(mut b: Box): *int {
+    return &b.n
+}
+
+through_variable(): []int {
+    a: [3]int = [1, 2, 3]
+    s: []int = a[..]
+    return s
+}
+
+local_store(x: int): int {
+    a: [2]int = [x, x]
+    b: Box = { v = a[..], n = 0 }
+    return b.v[1]
+}
+
+address_value(): usize {
+    a: [3]u8 = [1, 2, 3]
+    return usize(&a[0])
+}
+
+static_store() {
+    last = [4, 5]
+}
+
+main(): int {
+    return int(constant().len)
+}

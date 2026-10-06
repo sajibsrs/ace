@@ -1,10 +1,10 @@
-cut(grid: [4]u8, lo: usize, hi: usize): []u8 {
-    return grid[lo..hi]
+cut(grid: [4]u8, lo: usize, hi: usize): usize {
+    return grid[lo..hi].len
 }
 
 main(): int {
     grid: [4]u8 = [0 : 4]
-    return int(cut(grid, 3, 2).len)
+    return int(cut(grid, 3, 2))
 }
 
 // expect-bounds: 2:17

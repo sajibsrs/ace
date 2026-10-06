@@ -1,5 +1,9 @@
 # Language
 
+- Returning a direct view of function storage (a local or plain-parameter
+  array slice or address, or a runtime `[]T` literal), or storing one into a
+  module variable or `mut` parameter, is an error. Sema walks the returned or
+  stored expression through tuples, aggregate literals, and view conversions.
 - An array literal where plain `[]T` is expected is an anonymous `[N]T`
   viewed as `[]T`: sema checks it against `[N]T` in `coerce`, constant
   elements become a read-only `__ace$lit$` symbol, and others a stack slot of
