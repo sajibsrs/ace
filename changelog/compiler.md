@@ -1,5 +1,9 @@
 # Compiler
 
+- The self-hosted lexer keeps every error in a `Diag` list (`Lexer.diags`)
+  with its position and offending byte, and `lexer.report` words each as C
+  does (`'$'`, `0xC3`, `'\q'`); consecutive bad bytes no longer drop errors,
+  `next` returns only the token, and a run ends with C's `N errors` line.
 - The self-hosted parser writes `@file` as the root file's base name, the
   path relative to its own directory, as C's `build_path` does; C's `std/<rel>`
   mapping for files under the compiler's std is not ported.

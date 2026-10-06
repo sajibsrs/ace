@@ -6,8 +6,10 @@
  * live in the lexer's scratch buffer.
  */
 
+import fmt
 import mem
 import str
+import sys
 
 pub Token: enum u8 {
     eof, newline, ident,
@@ -80,6 +82,32 @@ pub LexErr: error {
     16: non_ascii = "non-ASCII byte (identifiers are ASCII in v1)",
     17: unexpected = "unexpected character",
     18: comment = "unterminated block comment",
+    19: byte = "unexpected byte",
+}
+
+/* A lexing error at the start of the token it was found in. `byte` is the
+ * offending byte for the errors whose message shows it.
+ */
+pub Diag: struct {
+    err: Error,
+    line: u32,
+    col: u32,
+    byte: u8,
+}
+
+/* Writes `d` to stderr as the C lexer words it. */
+pub report(path: string, d: Diag) {
+    if d.err == LexErr.non_ascii {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: non-ASCII byte 0x%02X (identifiers are ASCII in v1)\n", path, int(d.line), int(d.col), uint(d.byte))
+    } else if d.err == LexErr.unexpected || d.err == LexErr.binary {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: %s '%c'\n", path, int(d.line), int(d.col), d.err.message, d.byte)
+    } else if d.err == LexErr.escape {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: %s '\\%c'\n", path, int(d.line), int(d.col), d.err.message, d.byte)
+    } else if d.err == LexErr.byte {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: unexpected byte 0x%02X\n", path, int(d.line), int(d.col), uint(d.byte))
+    } else {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(d.line), int(d.col), d.err.message)
+    }
 }
 
 pub Lexer: struct {
@@ -96,9 +124,8 @@ pub Lexer: struct {
     text: string,   // ident: source view; string: decoded bytes (scratch)
     ival: u64,      // int value, char byte
     fval: f64,      // float value
-    err: Error,     // first error of the current token
-    eline: u32,
-    ecol: u32,
+    diag: mut []Diag = null, // every error so far, in source order
+    ndiag: usize,
 }
 
 /* A lexer over `src`, which must outlive it. Call `wipe` when done. */
@@ -106,7 +133,7 @@ pub Lexer.new(src: string): Lexer {
     lx: Lexer = Lexer {
         src = src, off = 0, line = 1, lstart = 0, tline = 1, tcol = 1,
         prev = Token.newline, count = 0, used = 0, text = "", ival = 0, fval = 0.0,
-        err = null, eline = 0, ecol = 0,
+        ndiag = 0,
     }
     if src.len >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
         lx.off = 3 // UTF-8 BOM
@@ -117,7 +144,9 @@ pub Lexer.new(src: string): Lexer {
 
 pub Lexer.wipe(mut self) {
     mem.release[u8](mut self.scratch)
+    mem.release[Diag](mut self.diag)
     self.used = 0
+    self.ndiag = 0
 }
 
 /* The current token's position. */
@@ -142,9 +171,9 @@ pub Lexer.float(self): f64 {
     return self.fval
 }
 
-/* The current error's position (valid when `next` returned an error). */
-pub Lexer.where(self): (u32, u32) {
-    return self.eline, self.ecol
+/* Every error found so far, in source order. */
+pub Lexer.diags(self): []Diag {
+    return self.diag[..self.ndiag]
 }
 
 inline Lexer.cur(self): u8 {
@@ -176,10 +205,23 @@ inline Lexer.mark(mut self) {
 }
 
 Lexer.fail(mut self, e: Error) {
-    if self.err != null { return }
-    self.err = e
-    self.eline = self.tline
-    self.ecol = self.tcol
+    mut self.fail(e, u8(0))
+}
+
+/* Records `e` at the current token's start; aborts when out of memory, as
+ * the C compiler's arena does.
+ */
+Lexer.fail(mut self, e: Error, byte: u8) {
+    if self.ndiag == self.diag.len {
+        grown: mut []Diag, ok: bool = mem.grow[Diag](self.diag, self.diag.len * 2 + 4)
+        if !ok {
+            fmt.printf(sys.stderr, "ace: out of memory\n")
+            sys.exit(1)
+        }
+        self.diag = grown
+    }
+    self.diag[self.ndiag] = Diag { err = e, line = self.tline, col = self.tcol, byte = byte }
+    self.ndiag += 1
 }
 
 Lexer.push(mut self, c: u8) {
@@ -388,7 +430,7 @@ Lexer.scan_number(mut self): Token {
     if dend == dstart {
         mut self.fail(LexErr.digits)
     } else if base == 2 && digval(self.cur(), 10) >= 0 {
-        mut self.fail(LexErr.binary)
+        mut self.fail(LexErr.binary, self.cur())
     }
 
     if is_float {
@@ -450,7 +492,7 @@ Lexer.escape(mut self): u8 {
         }
         default {}
     }
-    mut self.fail(LexErr.escape)
+    mut self.fail(LexErr.escape, c)
     return '?'
 }
 
@@ -590,9 +632,11 @@ Lexer.scan_punct(mut self, c: u8): (Token, bool) {
         '@' { k = Token.at }
         default {
             if c >= 0x80 {
-                mut self.fail(LexErr.non_ascii)
+                mut self.fail(LexErr.non_ascii, c)
+            } else if c > ' ' && c <= '~' {
+                mut self.fail(LexErr.unexpected, c)
             } else {
-                mut self.fail(LexErr.unexpected)
+                mut self.fail(LexErr.byte, c)
             }
             return k, false
         }
@@ -654,7 +698,7 @@ Lexer.trivia(mut self): bool {
     return nl
 }
 
-Lexer.emit(mut self, t: Token): (Token, Error) {
+Lexer.emit(mut self, t: Token): Token {
     // A keyword after '.' is a member name: it ends an expression as an ident does.
     if self.prev == Token.dot && u8(t) >= u8(Token.import) && u8(t) <= u8(Token.false) {
         self.prev = Token.ident
@@ -662,15 +706,13 @@ Lexer.emit(mut self, t: Token): (Token, Error) {
         self.prev = t
     }
     self.count += 1
-    e: Error = self.err
-    self.err = null
-    return t, e
+    return t
 }
 
 /* The next token; after eof, eof again. A token with an error is still a
- * token (as in the C lexer); `where` gives the error's position.
+ * token (as in the C lexer); `diags` holds the errors.
  */
-pub Lexer.next(mut self): (Token, Error) {
+pub Lexer.next(mut self): Token {
     for {
         nl: bool = mut self.trivia()
         mut self.mark()
@@ -692,6 +734,6 @@ pub Lexer.next(mut self): (Token, Error) {
         if c == '\'' { return mut self.emit(mut self.scan_char()) }
         k: Token, ok: bool = mut self.scan_punct(c)
         if ok { return mut self.emit(k) }
-        // An unexpected byte yields no token; its error rides on the next one.
+        // An unexpected byte yields no token, only its error.
     }
 }

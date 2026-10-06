@@ -164,16 +164,10 @@ pub Parser.new(src: string, path: string): (Parser, int) {
     p.stack = mem.alloc[u32](64)
     p.exports = mem.alloc[u32](8)
     used: usize = 0
-    errors: int = 0
     lx: lexer.Lexer = lexer.Lexer.new(src)
     defer mut lx.wipe()
     for {
-        t: Token, err: Error = mut lx.next()
-        if err != null {
-            eline: u32, ecol: u32 = lx.where()
-            report(path, eline, ecol, err.message)
-            errors += 1
-        }
+        t: Token = mut lx.next()
         line: u32, col: u32 = lx.pos()
         tok: Tok = Tok { line = line, col = col, ival = lx.int(), fval = lx.float(), text = "" }
         switch t {
@@ -194,7 +188,8 @@ pub Parser.new(src: string, path: string): (Parser, int) {
         p.ntok += 1
         if t == Token.eof { break }
     }
-    return p, errors
+    for d: lexer.Diag in lx.diags() { lexer.report(path, d) }
+    return p, int(lx.diags().len)
 }
 
 pub Parser.wipe(mut self) {
