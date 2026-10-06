@@ -37,3 +37,7 @@
 - `ascii.lower` reads a 256-entry `LOWER` table instead of range-checking, so
   case-insensitive `ascii.equal` compiles to loads with no data-dependent
   branch: `ascii-fold-64` drops from 154 to 75 ns (C `strncasecmp`: 79 ns).
+- `utf8.valid` skips ASCII runs before calling `span`, and `span` reads a
+  256-entry `LEADS` table for the width and second-byte range row (as Go's
+  `first`/`acceptRanges`), testing each range with one wrapped compare:
+  `utf8-valid` drops from 125 to 84 ns (C: 65 ns).
