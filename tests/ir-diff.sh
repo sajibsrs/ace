@@ -238,8 +238,8 @@ function forin_stmt(pad,   p, acc, w, r, c, i, k) {
     acc = "v" nlocals++
     print p acc ": int = 0"
     declare(acc, "int")
-    c = "f" nlocals++
-    i = "f" nlocals++
+    c = "e" nlocals++
+    i = "e" nlocals++
     k = pick(200)
     r = rand()
     if (r < 0.3) {
@@ -651,7 +651,7 @@ BEGIN {
     print "g_f32: f32 = " fliteral("f32") "\ng_f64: f64 = " fliteral("f64")
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
-    print "mut S.bump(n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
+    print "S.bump(mut self, n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
     print "UE: union { none, a: u8, b: i64, c: f32 }\n"
     print "UW: union { none, w: i32, o: UE }\n"
     print "mk(k: i64, v: i64): UE {\n    if k == 0 { return UE.none }\n    if k == 1 { return UE.a(u8(v)) }\n    if k == 2 { return UE.b(v) }\n    return UE.c(f32(v))\n}\n"
@@ -670,7 +670,7 @@ BEGIN {
     print "echob(b: UB): UB {\n    return b\n}\n"
     print "nblit(noalias d: mut []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
     print "GK: const int = 3 * 5 + 1\n"
-    print "DomErr: error {\n    3: three = \"the third\"\n    9: nine = \"nine\"\n}\n"
+    print "DomErr: error {\n    3: three = \"the third\",\n    9: nine = \"nine\",\n}\n"
     print "derr(k: i64): Error {\n    if k == 0 { return null }\n    if k == 1 { return DomErr(3) }\n    if k == 2 { return DomErr(9) }\n    return DomErr(i32(k))\n}\n"
     print "dlen(e: Error): int {\n    return int(e.name.len) * 100 + int(e.message.len)\n}\n"
     print "again(n: i64): i64 {\n    t: i64 = 0\n    k: i64 = 0\n    rep: {\n        k += 1\n        t += k * GK\n        if k < n { continue rep }\n    }\n    return t\n}\n"
