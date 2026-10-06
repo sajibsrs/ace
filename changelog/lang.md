@@ -105,3 +105,7 @@
   any depth (#99): its candidate recurses through inner literals, which agree
   past their lengths, and `arraylit_fits` walks literal and parameter together,
   taking any inner length at a `[]E` level and exactly `N` at `[N]E`.
+- A cast gives an array literal its type (#100): `[]int([])` names a typed
+  empty view that selects an overload `[]` alone cannot, and `[N]T(value)`
+  parses (a one-element literal before `T(`) as an identity array cast,
+  which lowering and constant evaluation see through to its argument.

@@ -974,6 +974,10 @@ static ESym* literal_data(Em* e, Node* lit, const char* name) {
 static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
     t = unwrap(t);
     if (!t) return 0;
+    // [N]T(value) and []T([...]): the value itself, typed by the cast
+    while (v->kind == N_CALL && v->a && v->nkids == 1 &&
+           (v->a->kind == N_ARRAY_T || (v->a->kind == N_SLICE_T && v->kids[0]->kind == N_ARRAYLIT)))
+        v = v->kids[0];
     switch (v->kind) {
     case N_CALL: {
         // union variant construction with a compile-time payload

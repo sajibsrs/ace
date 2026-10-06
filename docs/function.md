@@ -141,7 +141,9 @@ main(): int {
 
 Overload resolution performs no implicit conversions or ranking. In an overload
 call, an uncast integer literal selects `int` and an uncast floating literal
-selects `f64`. Use an explicit cast to select another numeric type.
+selects `f64`. Use an explicit cast to select another numeric type. An array literal
+selects by its element type; an empty literal has none, so a cast names
+its type: `f([]int([]))`, or `f([2]int([x, y]))` for an array parameter.
 
 Return types do not distinguish overloads. `noalias` also does not distinguish
 them. `mut` does because it is visible at the call site, and type-position

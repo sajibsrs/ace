@@ -511,7 +511,9 @@ data emitted once, so the view stays valid for the whole program and
 `primes()` may return it; the call costs no stores. Otherwise the array is
 stack storage of the enclosing function, built exactly as a named
 `tmp: [N]T = [...]` would be, and the view is valid while that function runs.
-An empty literal is the null view. The view is plain: a `mut []T` context
+An empty literal is the null view. A cast supplies the context too: `[]int([])`
+is a typed empty view and `[2]int([x, y])` an array where no target type is
+expected. The view is plain: a `mut []T` context
 rejects a literal, since nothing could read what is written through it. A
 keyed literal needs its `[E]T`. Overload selection gives a literal the candidate
 element type its elements share (`int` for integers, `f64` for floats, `u8`

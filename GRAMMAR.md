@@ -235,7 +235,7 @@ arg_list      := arg ("," arg)*
 arg           := ["mut"] expr                             // call-site mutation mark
 
 primary       := literal | ident | location | "(" expr_list ")" | array_lit | struct_lit
-               | ptr_type | slice_type
+               | ptr_type | slice_type | array_type
 location      := "@" ident                                // exact text "file" or "line"
 array_lit     := "[" [expr_list | array_repeat | keyed_list] "]"
 keyed_list    := keyed_elem ("," keyed_elem)* [","]      // [E.a = x, E.b = y]
@@ -317,10 +317,11 @@ choices that are not evident from the productions.
 12. `offsetof(` parses a type, comma, and dot-separated `member` path;
     `bitcast(` parses a type, comma, and one expression.
     `static_assert` is additionally admitted in the top-level declaration list.
-13. A pointer or slice type is admitted as a primary only as the callee of its
-    explicit conversion/construction call. Semantic analysis distinguishes the
+13. A pointer, slice, or array type is admitted as a primary only as the callee
+    of its explicit conversion/construction call. Semantic analysis distinguishes the
     one-argument slice spelling cast from two-argument pointer-plus-count slice
-    construction.
+    construction. A one-element array literal followed by an element type and
+    `(` (`[2]int(`, `[2]*T(`, `[2][3]u8(`) is the array type `[N]T` as a callee.
 14. In expression position `@` must be followed by exactly `file` or `line`
     (`location`); any other name is a syntax error. Both words remain ordinary
     identifiers everywhere else.

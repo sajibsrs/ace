@@ -1,0 +1,33 @@
+/* A cast gives an array literal its type, so an empty literal can select
+ * an overload, f([]int([])), and [N]T(value) casts an array the same way:
+ * in a declaration, argument, return, nested, struct field, and global. */
+
+// expect-exit: 83
+
+f(xs: []int): int { return 1 }
+f(x: bool): int { return 2 }
+
+h(xs: [2]int): int { return xs[0] + xs[1] }
+h(xs: []int): int { return 100 }
+
+n(m: [2][2]int): int { return m[1][0] }
+
+mk(v: int): [2]int { return [2]int([v, v + 1]) }
+
+P: struct { xs: [2]int }
+
+G: [2]int = [2]int([4, 5])
+E: []int = []int([7, 8, 9])
+
+main(): int {
+    a: []int = []int([1, 2, 3])
+    b: []int = []int([])
+    v: int = 5
+    c: [2]int = [2]int([v, 6])
+    d: [2]int = [2]int(c)
+    p: P = P{ xs = [2]int([1, 2]) }
+    k: [3]u8 = [3]u8([1, 2, 3])
+    views: int = f([]int([])) + f(false) + int(a.len) * 10 + int(b.len) * 100 + f([]int([7]))
+    arrays: int = h([2]int([v, 1])) + d[1] + mk(20)[1] + n([2][2]int([[1, 2], [3, 4]])) + int(k[2])
+    return views + arrays + G[1] + p.xs[1] + int(E.len)
+}

@@ -2630,7 +2630,14 @@ static int union_equal(Lw* l, Node* x, int negate) {
 
 // x of type t into memory at dst + off: an array or struct literal member by
 // member, a place in memory by copying its bytes, anything else by its leaves.
+// [N]T(value) is an identity cast: the value itself, typed by the cast.
+static Node* array_cast_arg(Node* x) {
+    while (x->kind == N_CALL && x->a && x->a->kind == N_ARRAY_T) x = x->kids[0];
+    return x;
+}
+
 static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
+    x = array_cast_arg(x);
     SType* u = unwrap(t);
     if (x->kind == N_ARRAYLIT && u && u->kind == SK_ARRAY) {
         uint32_t es = sema_size(u->base);
@@ -2708,6 +2715,7 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
 
 // Array x as a place in memory: its own, or a new stack object holding it.
 static Place array_place(Lw* l, Node* x) {
+    x = array_cast_arg(x);
     if (is_place(x)) {
         Place p = place(l, x);
         if (p.var < 0) return p;
@@ -3031,6 +3039,7 @@ static void literal_view(Lw* l, Node* x, Agg* out) {
 }
 
 static void value(Lw* l, Node* x, SType* t, Agg* out) {
+    x = array_cast_arg(x);
     if (!is_agg(t)) {
         out->n = 1;
         out->v[0] = expr(l, x, need_type(l, t));

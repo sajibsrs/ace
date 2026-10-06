@@ -4919,6 +4919,32 @@ static SType* check_call_raw(Ck* k, Node* call) {
                (int)callee->len, callee->str);
         return T_ERR;
     }
+    // Array-shaped identity cast; an array literal takes it as its context.
+    if (callee->kind == N_ARRAY_T) {
+        SType* want = build_type(k, callee);
+        if (want->kind == SK_ERR) return T_ERR;
+        if (call->nkids != 1) {
+            ck_err(k, call, "an array cast takes exactly one argument");
+            return T_ERR;
+        }
+        Node* arg = call->kids[0];
+        if (arg->kind == N_MUTARG) {
+            ck_err(k, arg, "'mut' marks mut parameters; a cast takes no call-site 'mut'");
+            return T_ERR;
+        }
+        if (arg->kind == N_ARRAYLIT) {
+            if (!coerce(k, arg, want)) return T_ERR;
+        } else {
+            SType* from = expr_type(k, arg);
+            if (from->kind == SK_ERR) return T_ERR;
+            if (!same_type(from, want)) {
+                ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
+                return T_ERR;
+            }
+        }
+        callee->ty = want; // lowering: the argument itself
+        return want;
+    }
     // Slice-shaped identity cast or explicit pointer-plus-count construction.
     if (callee->kind == N_SLICE_T) {
         SType* want = build_type(k, callee);
@@ -4981,6 +5007,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
         if (arg->kind == N_MUTARG) {
             ck_err(k, arg, "'mut' marks mut parameters; a cast takes no call-site 'mut'");
             return T_ERR;
+        }
+        // An array literal takes the cast's view type as its context.
+        if (arg->kind == N_ARRAYLIT) {
+            if (!coerce(k, arg, want)) return T_ERR;
+            callee->ty = want;
+            return want;
         }
         SType* from = expr_type(k, arg);
         if (from->kind == SK_ERR) return T_ERR;

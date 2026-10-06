@@ -127,6 +127,40 @@ static int slice_type_start(TokKind k) {
     return k == T_IDENT || k == T_MUT || k == T_STAR || k == T_LBRACK || k == T_LPAREN || k == T_CONST;
 }
 
+// Whether the tokens from offset k on spell an element type called as a cast,
+// `T(`, `*T(`, `[2]T(`, or `m.T[A](`: after a one-element array literal they
+// make it the length of an array type called as a cast ([N]T(value)).
+static int array_cast_ahead(P* p, int k) {
+    for (;;) {
+        TokKind t = kth(p, k);
+        if (t == T_STAR || t == T_MUT || t == T_CONST) {
+            k++;
+        } else if (t == T_LBRACK) {
+            for (int depth = 0;; k++) {
+                t = kth(p, k);
+                if (t == T_EOF) return 0;
+                if (t == T_LBRACK) depth++;
+                else if (t == T_RBRACK && --depth == 0) break;
+            }
+            k++;
+        } else {
+            break;
+        }
+    }
+    if (kth(p, k++) != T_IDENT) return 0;
+    while (kth(p, k) == T_DOT && kth(p, k + 1) == T_IDENT) k += 2;
+    if (kth(p, k) == T_LBRACK) {
+        for (int depth = 0;; k++) {
+            TokKind t = kth(p, k);
+            if (t == T_EOF) return 0;
+            if (t == T_LBRACK) depth++;
+            else if (t == T_RBRACK && --depth == 0) break;
+        }
+        k++;
+    }
+    return kth(p, k) == T_LPAREN;
+}
+
 static int ident_at(P* p, const char* s) {
     return at(p, T_IDENT) && tk(p)->len == strlen(s) && memcmp(tk(p)->str, s, tk(p)->len) == 0;
 }
@@ -1063,6 +1097,13 @@ static Node* expr_primary(P* p, int ctx) {
             }
         }
         expect(p, T_RBRACK, "']' to close array literal");
+        if (w.n == 1 && !al->a && w.v[0]->kind != N_MAPENTRY && array_cast_ahead(p, 0)) {
+            // [N]T(value): an array type called as a cast, admitted only as a callee
+            Node* ty = nd_tok(p, N_ARRAY_T, t);
+            ty->b = w.v[0];
+            ty->a = type_atom(p);
+            return ty;
+        }
         set_kids(al, &w);
         return al;
     }
