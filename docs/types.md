@@ -517,9 +517,12 @@ keyed literal needs its `[E]T`. Overload selection gives a literal the candidate
 element type its elements share (`int` for integers, `f64` for floats, `u8`
 for characters, a typed element's own type), so `pick([1, 2])` chooses
 `pick(xs: []int)` over `pick(xs: []string)`. It matches both `[]E` and an
-`[N]E` of its length, so a set holding both is ambiguous for it. Elements
-without one shared candidate (`[1, 2.5]`, `[]`, nested literals) match no
-overload; cast an element or name the array instead.
+`[N]E` of its length, so a set holding both is ambiguous for it. A nested
+literal recurses: inner literals must agree on their innermost type at the
+same depth, and each level matches a `[]E` with inner literals of any length
+(`f([[1], [2, 3]])` picks `f(xs: [][]int)`) or an `[N]E` with exactly `N`.
+Elements without one shared candidate (`[1, 2.5]`, `[]`, `[[1], ["a"]]`,
+`[[1], [[2]]]`) match no overload; cast an element or name the array instead.
 
 ### Design rationale
 

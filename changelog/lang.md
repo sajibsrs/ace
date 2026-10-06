@@ -101,3 +101,7 @@
   (Generics #12) skips root-file types for imported declarations, as lookup
   does (#91); a specialization with no generic, bracketing a declared type,
   hints to rename the type parameter.
+- A nested array literal selects an overload by its innermost element type at
+  any depth (#99): its candidate recurses through inner literals, which agree
+  past their lengths, and `arraylit_fits` walks literal and parameter together,
+  taking any inner length at a `[]E` level and exactly `N` at `[N]E`.

@@ -1,0 +1,21 @@
+/* A nested array literal selects an overload by its innermost element type,
+ * at any depth: a []T level takes inner literals of any length, a [N]T level
+ * exactly N. */
+
+// expect-exit: 42
+
+f(xs: [][]int): int { return 1 }
+f(xs: [][]string): int { return 2 }
+
+g(xs: [2][3]int): int { return 4 }
+g(xs: [2][3]f64): int { return 8 }
+
+h(xs: [][][]u8): int { return 16 }
+h(xs: [][][]int): int { return 32 }
+
+main(): int {
+    r: int = f([[1], [2, 3]]) + f([["a", "b"]]) // jagged: 3
+    r += g([[1, 2, 3], [4, 5, 6]]) - 4 // 0
+    r += h([[['a']], [['b', 'c'], ['d']]]) + h([[[1]]]) - 9 // 39
+    return r // 42
+}

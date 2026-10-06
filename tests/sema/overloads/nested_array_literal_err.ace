@@ -1,0 +1,18 @@
+/* A nested array literal selects an overload by its innermost element type. */
+
+f(xs: [][]int): int { return 1 }
+f(xs: [][]string): int { return 2 }
+
+g(xs: [2][2]int): int { return 1 }
+g(xs: [2][2]string): int { return 2 }
+
+both(xs: [1][1]int): int { return 1 }
+both(xs: [][]int): int { return 2 }
+
+main(): int {
+    a: int = f([[1], ["a"]])
+    b: int = f([[1], [[2]]])
+    c: int = g([[1, 2], [3]])
+    d: int = both([[1]])
+    return a + b + c + d
+}

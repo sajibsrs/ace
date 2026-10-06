@@ -3345,32 +3345,64 @@ static int overloaded_func_name(Ck* k, Node* e) {
 
 static SType* overload_arg_type(Ck* k, Node* arg);
 
+/* Candidates agree when equal past depth levels of nested literals, whose lengths may differ. */
+static int arraylit_same(SType* a, SType* b, int depth) {
+    for (; depth > 0; depth--) a = a->base, b = b->base;
+    return same_type(a, b);
+}
+
 /*
  * An array literal's overload candidate (Names & Scoping #6): an array of
- * E when every element has the same candidate type E; otherwise none, and
- * it matches no candidate of a real overload set. exact_arg_type checks the
- * length against the literal itself.
+ * E when every element has the same candidate type E, recursively for
+ * nested literals of any lengths; otherwise none, and it matches no
+ * candidate of a real overload set. *depth receives the nesting below this
+ * literal. arraylit_fits checks the lengths against the literal itself.
  */
-static SType* overload_arraylit_type(Ck* k, Node* lit) {
+static SType* overload_arraylit_cand(Ck* k, Node* lit, int* depth) {
     int n = lit->a ? 1 : lit->nkids;
     if (n == 0 || (!lit->a && lit->kids[0]->kind == N_MAPENTRY)) return NULL;
     SType* elem = NULL;
+    int d = -1;
     for (int i = 0; i < n; i++) {
         Node* e = lit->a ? lit->a : lit->kids[i];
-        if (e->kind == N_ARRAYLIT) return NULL; // a nested literal has no candidate
-        SType* t = overload_arg_type(k, e);
+        int ed = 0;
+        SType* t = e->kind == N_ARRAYLIT ? overload_arraylit_cand(k, e, &ed) : overload_arg_type(k, e);
+        if (e->kind == N_ARRAYLIT) ed++;
         if (!t || t == T_ERR || t == T_UT_NULL) return NULL;
-        if (elem && !same_type(elem, t)) return NULL;
-        elem = t;
+        if (elem && (ed != d || !arraylit_same(elem, t, d))) return NULL;
+        elem = t, d = ed;
     }
+    *depth = d;
     SType* at = st_new(SK_ARRAY);
     at->base = elem;
     return at;
 }
 
+/*
+ * Whether array literal lit, with candidate cand, matches param exactly:
+ * a []T level takes literals of any length, a [N]T level exactly N
+ * elements, and the innermost element type matches or shrinks.
+ */
+static int arraylit_fits(Node* lit, SType* cand, SType* param) {
+    if (!param || !param->base || (param->kind != SK_SLICE && param->kind != SK_ARRAY)) return 0;
+    if (lit->nkids > 0 && lit->kids[0]->kind == N_MAPENTRY) return 0;
+    if (param->kind == SK_ARRAY && (lit->a ? lit->ival : (uint64_t)lit->nkids) != param->count) return 0;
+    int n = lit->a ? 1 : lit->nkids;
+    for (int i = 0; i < n; i++) {
+        Node* e = lit->a ? lit->a : lit->kids[i];
+        if (e->kind != N_ARRAYLIT) break; // agreement makes every element a leaf
+        if (!arraylit_fits(e, cand->base, param->base)) return 0;
+    }
+    if (n > 0 && (lit->a ? lit->a : lit->kids[0])->kind == N_ARRAYLIT) return 1;
+    return same_type(cand->base, param->base) || shrink_ok(cand->base, param->base);
+}
+
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
-    if (raw->kind == N_ARRAYLIT) return overload_arraylit_type(k, raw);
+    if (raw->kind == N_ARRAYLIT) {
+        int depth;
+        return overload_arraylit_cand(k, raw, &depth);
+    }
     if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
     // matches no candidate exactly: only a sole candidate's parameter selects it
     int overloaded = overloaded_func_name(k, raw);
@@ -3408,13 +3440,8 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) {
-        if (!actual || !param || !param->base) return 0;
-        if (!same_type(actual->base, param->base) && !shrink_ok(actual->base, param->base)) return 0;
-        if (param && param->kind == SK_SLICE) // a plain []T views a positional literal
-            return !param->is_mut && !(raw->nkids > 0 && raw->kids[0]->kind == N_MAPENTRY);
-        if (!param || param->kind != SK_ARRAY) return 0;
-        return raw->a ? raw->ival == param->count
-                      : (uint64_t)raw->nkids == param->count;
+        if (!actual || (param && param->kind == SK_SLICE && param->is_mut)) return 0; // a plain []T views it
+        return arraylit_fits(raw, actual, param);
     }
     if (raw->kind == N_STRUCTLIT && !raw->a) return param && (param->kind == SK_STRUCT || param->kind == SK_BITS);
     return same_type(actual, param);

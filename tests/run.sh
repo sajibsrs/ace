@@ -260,6 +260,18 @@ for want in \
     fi
 done
 
+nested_overload_errors=$("$ACE" tests/sema/overloads/nested_array_literal_err.ace 2>&1)
+for want in \
+    "13:15: error: no matching overload 'f'" \
+    "14:15: error: no matching overload 'f'" \
+    "15:15: error: no matching overload 'g'" \
+    "16:18: error: ambiguous call to overloaded function 'both'"; do
+    if ! printf '%s\n' "$nested_overload_errors" | grep -qF "$want"; then
+        echo "FAIL: missing nested array-literal overload diagnostic '$want'"
+        fail=1
+    fi
+done
+
 # A call that settles on its sole overload, declared before or after it, is
 # checked where its value lands.
 for f in sole_overload_result_decl sole_overload_result_return forward_result_decl; do
