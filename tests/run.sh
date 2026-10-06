@@ -121,6 +121,7 @@ tests/parser/receiver/leading_mut_err.ace|2:1: error: a top-level declaration ta
 tests/parser/receiver/contract_double_mut_err.ace|2:5: error: a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'
 tests/parser/associated/coloncolon_err.ace|6:13: error: '::' is not an operator; a type's functions are reached with '.'
 tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self' or 'mut self'
+tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]i64
 tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'

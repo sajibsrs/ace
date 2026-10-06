@@ -2867,6 +2867,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         if (is_num(a) && is_num(b) && same_type(a, b)) return a;
+        if (same_type(a, b)) {
+            ck_err(k, e, "operator %s does not apply to %s", tok_disp(op), type_name(a));
+            return T_ERR;
+        }
         ck_err(k, e, "type mismatch: %s %s %s — operands need one type (casts are explicit)",
                type_name(a), tok_disp(op), type_name(b));
         return T_ERR;

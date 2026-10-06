@@ -1,0 +1,8 @@
+/* Arrays take no arithmetic operators; the error names the operator and
+ * the type, not a mismatch between equal operand types. */
+
+main(): int {
+    a: [2]int = [1, 2]
+    b: [2]int = a * a
+    return 0
+}

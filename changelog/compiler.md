@@ -1,5 +1,7 @@
 # Compiler
 
+- An arithmetic operator on two operands of one non-numeric type reports
+  `operator * does not apply to [2]i64` rather than an operand type mismatch.
 - `mut` on a fixed array type now names the fix in its diagnostic: the array is
   already writable, and `mut name[..]` takes a writable view (both parsers).
 - Globals join function reachability: a global is emitted only once a compiled
