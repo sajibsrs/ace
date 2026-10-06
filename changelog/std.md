@@ -34,3 +34,6 @@
   its digits, `%g` reusing the fixed renderer before trimming zeroes.
 - `net.socket` drops its non-`tcp` branch: a `SocketType` value is always a
   member, so the branch could not run.
+- `ascii.lower` reads a 256-entry `LOWER` table instead of range-checking, so
+  case-insensitive `ascii.equal` compiles to loads with no data-dependent
+  branch: `ascii-fold-64` drops from 154 to 75 ns (C `strncasecmp`: 79 ns).
