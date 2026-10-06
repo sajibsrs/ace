@@ -251,7 +251,7 @@ pub inline Parser.at(self, k: Token): bool {
     return self.kth(0) == k
 }
 
-pub inline Parser.ate(mut self, k: Token): bool {
+pub inline Parser.eat(mut self, k: Token): bool {
     if self.kth(0) == k {
         self.i += 1
         return true
@@ -409,7 +409,7 @@ Parser.type_list(mut self, close: Token) {
     if self.at(close) { return }
     for {
         mut self.push(mut self.parse_type())
-        if !mut self.ate(Token.comma) || self.at(close) { break }
+        if !mut self.eat(Token.comma) || self.at(close) { break }
     }
 }
 
@@ -457,7 +457,7 @@ pub Parser.parse_type(mut self): u32 {
     }
     if self.at(Token.lbrack) {
         self.i += 1
-        if mut self.ate(Token.rbrack) { // []T
+        if mut self.eat(Token.rbrack) { // []T
             t: u32 = mut self.nd(Kind.slice_t)
             self.nodes[t].a = mut self.parse_type()
             return t
@@ -489,7 +489,7 @@ pub Parser.parse_type(mut self): u32 {
         mark: usize = self.nstack
         mut self.type_list(Token.rparen)
         mut self.expect(Token.rparen, "')' to close type list")
-        if mut self.ate(Token.colon) { // (params): ret
+        if mut self.eat(Token.colon) { // (params): ret
             f: u32 = mut self.nd(Kind.func_t)
             mut self.close(f, mark)
             self.nodes[f].a = mut self.func_type_ret()
@@ -513,7 +513,7 @@ pub Parser.parse_type(mut self): u32 {
             m: u32 = mut self.nd(Kind.staticmap_t)
             self.i += 2
             self.nodes[m].a = mut self.parse_type()
-            if mut self.ate(Token.comma) { mut self.fail("StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]") }
+            if mut self.eat(Token.comma) { mut self.fail("StaticMap type is spelled StaticMap[K]V, not StaticMap[K, V]") }
             mut self.expect(Token.rbrack, "']' after StaticMap key type")
             self.nodes[m].b = mut self.parse_type()
             return m
@@ -536,7 +536,7 @@ pub Parser.parse_type(mut self): u32 {
             mark: usize = self.nstack
             for {
                 mut self.push(mut self.type_arg())
-                if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+                if !mut self.eat(Token.comma) || self.at(Token.rbrack) { break }
             }
             mut self.expect(Token.rbrack, "']' to close type arguments")
             mut self.close(named, mark)
@@ -789,7 +789,7 @@ Parser.structlit(mut self, base: u32): u32 {
             }
             self.nodes[fi].a = mut self.expr(0)
             mut self.push(fi)
-            if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
+            if !mut self.eat(Token.comma) || self.at(Token.rbrace) { break }
         }
     }
     mut self.expect(Token.rbrace, "'}' to close struct literal")
@@ -807,7 +807,7 @@ pub Parser.staticmaplit(mut self): u32 {
         mut self.expect(Token.colon, "':' between StaticMap key and value")
         self.nodes[entry].b = mut self.expr(0)
         mut self.push(entry)
-        if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
+        if !mut self.eat(Token.comma) || self.at(Token.rbrace) { break }
     }
     mut self.expect(Token.rbrace, "'}' to close StaticMap literal")
     mut self.close(lit, mark)
@@ -841,7 +841,7 @@ Parser.call_args(mut self, call: u32, base: u32) {
         mut self.expect(Token.comma, "',' after offsetof type")
         ft: usize = mut self.expect_member("field name in offsetof")
         path: u32 = mut self.ident_node(Kind.ident, ft)
-        for mut self.ate(Token.dot) {
+        for mut self.eat(Token.dot) {
             part: usize = mut self.expect_member("field name after '.' in offsetof")
             field: u32 = mut self.ident_node(Kind.field_e, part)
             self.nodes[field].a = path
@@ -871,7 +871,7 @@ Parser.call_args(mut self, call: u32, base: u32) {
             } else {
                 mut self.push(mut self.expr(0))
             }
-            if !mut self.ate(Token.comma) || self.at(Token.rparen) { break }
+            if !mut self.eat(Token.comma) || self.at(Token.rparen) { break }
         }
     }
     mut self.expect(Token.rparen, "')' to close call arguments")
@@ -910,7 +910,7 @@ Parser.postfix(mut self, ctx: int, start: u32): u32 {
                     } else if self.at(Token.comma) { // f[int, f64]
                         mark: usize = self.nstack
                         mut self.push(lo)
-                        for mut self.ate(Token.comma) {
+                        for mut self.eat(Token.comma) {
                             if self.at(Token.rbrack) { break }
                             mut self.push(mut self.bracket_arg())
                         }
@@ -1013,7 +1013,7 @@ Parser.primary(mut self, ctx: int): u32 {
             self.i += 1
             mark: usize = self.nstack
             mut self.push(mut self.expr(0))
-            for mut self.ate(Token.comma) {
+            for mut self.eat(Token.comma) {
                 if self.at(Token.rparen) { break }
                 mut self.push(mut self.expr(0))
             }
@@ -1040,7 +1040,7 @@ Parser.primary(mut self, ctx: int): u32 {
             mark: usize = self.nstack
             if !self.at(Token.rbrack) {
                 first: u32 = mut self.expr(0)
-                if mut self.ate(Token.colon) {
+                if mut self.eat(Token.colon) {
                     self.nodes[al].a = first
                     self.nodes[al].b = mut self.expr(0) // repetition count
                 } else {
@@ -1057,7 +1057,7 @@ Parser.primary(mut self, ctx: int): u32 {
                             mut self.fail("a keyed array literal keys every element, the first included")
                         }
                         mut self.push(el)
-                        if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+                        if !mut self.eat(Token.comma) || self.at(Token.rbrack) { break }
                         el = mut self.expr(0)
                     }
                 }
@@ -1176,7 +1176,7 @@ Parser.expr_list(mut self, ctx: int): u32 {
 }
 
 Parser.stmt_end(mut self) {
-    if !mut self.ate(Token.newline) && !self.at(Token.rbrace) && !self.at(Token.eof) {
+    if !mut self.eat(Token.newline) && !self.at(Token.rbrace) && !self.at(Token.eof) {
         mut self.fail_got("expected newline or '}' after statement, got ")
     }
 }
@@ -1276,7 +1276,7 @@ Parser.for_head(mut self, n: u32): u32 {
         }
         mut self.close(n, mark)
         mut self.expect(Token.in, "'in'")
-        if mut self.ate(Token.mut) { self.nodes[n].flags |= F_MUT } // `in mut iterable`: aliasing
+        if mut self.eat(Token.mut) { self.nodes[n].flags |= F_MUT } // `in mut iterable`: aliasing
         it: u32 = mut self.expr(NOSLIT)
         if (self.nodes[n].flags & F_MUT) != 0 && it != 0 && self.nodes[it].kind == Kind.slice_e {
             self.nodes[it].flags |= F_MUT // `in mut xs[lo..hi]`: establish, then alias
@@ -1381,7 +1381,7 @@ Parser.variant_pattern(mut self): u32 {
             mark: usize = self.nstack
             for {
                 mut self.push(mut self.parse_type())
-                if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+                if !mut self.eat(Token.comma) || self.at(Token.rbrack) { break }
             }
             mut self.expect(Token.rbrack, "']' to close type arguments")
             mut self.close(ix, mark)
@@ -1395,7 +1395,7 @@ Parser.variant_pattern(mut self): u32 {
     self.i += 1 // '('
     bname: usize = mut self.expect(Token.ident, "binder name")
     binder: u32 = mut self.ident_node(Kind.param, bname)
-    if mut self.ate(Token.colon) { // `Variant(k)` is a typeless binder; sema diagnoses it
+    if mut self.eat(Token.colon) { // `Variant(k)` is a typeless binder; sema diagnoses it
         self.nodes[binder].a = mut self.parse_type()
     }
     self.nodes[vp].b = binder
@@ -1536,11 +1536,11 @@ Parser.parse_asm(mut self): u32 {
                     mut self.push(mut self.ident_node(Kind.ident, v))
                 }
             }
-            if !mut self.ate(Token.comma) || self.at(Token.rbrace) || self.at(Token.newline) { break }
+            if !mut self.eat(Token.comma) || self.at(Token.rbrace) || self.at(Token.newline) { break }
         }
         mut self.close(bnd, mark)
         mut self.push(bnd)
-        if !mut self.ate(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after asm binding") }
+        if !mut self.eat(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after asm binding") }
         mut self.skipnl()
     }
     self.i += 1 // '}'
@@ -1581,7 +1581,7 @@ Parser.decl_stmt(mut self, first: usize): u32 {
     staticmap: bool = count == 1 && self.nodes[self.stack[mark]].a != 0 &&
         self.nodes[self.nodes[self.stack[mark]].a].kind == Kind.staticmap_t
     mut self.close(n, mark)
-    if mut self.ate(Token.assign) {
+    if mut self.eat(Token.assign) {
         if count > 1 { self.nodes[n].flags |= F_MIXED }
         b: u32 = 0
         if staticmap && self.at(Token.lbrace) {
@@ -1628,7 +1628,7 @@ Parser.stmt(mut self): u32 {
         Token.defer {
             n: u32 = mut self.leaf(Kind.defer)
             mt: usize = self.i
-            if mut self.ate(Token.mut) { // `defer mut c.scale(2.0)`: receiver-marked call
+            if mut self.eat(Token.mut) { // `defer mut c.scale(2.0)`: receiver-marked call
                 e: u32 = mut self.expr(NOSLIT)
                 if e == 0 || self.nodes[e].kind != Kind.call {
                     mut self.fail_at(mt, ["'mut' after 'defer' marks a call receiver"])
@@ -1795,9 +1795,9 @@ Parser.params(mut self, closer: string, self_ok: bool) {
         for {
             pa: u32 = mut self.nd(Kind.param)
             for {
-                if mut self.ate(Token.mut) {
+                if mut self.eat(Token.mut) {
                     self.nodes[pa].flags |= F_MUT
-                } else if mut self.ate(Token.noalias) {
+                } else if mut self.eat(Token.noalias) {
                     self.nodes[pa].flags |= F_NOALIAS
                 } else {
                     break
@@ -1811,7 +1811,7 @@ Parser.params(mut self, closer: string, self_ok: bool) {
                 if self.at(Token.colon) { mut self.fail("'self' takes no type; its type is the method's owner") }
                 mut self.named(pa, "self")
                 mut self.push(pa)
-                if !mut self.ate(Token.comma) || self.at(Token.rparen) { break }
+                if !mut self.eat(Token.comma) || self.at(Token.rparen) { break }
                 continue
             }
             name: usize = mut self.expect(Token.ident, "parameter name")
@@ -1819,14 +1819,14 @@ Parser.params(mut self, closer: string, self_ok: bool) {
             mut self.expect(Token.colon, "':' after parameter name")
             self.nodes[pa].a = mut self.parse_type()
             mut self.push(pa)
-            if !mut self.ate(Token.comma) || self.at(Token.rparen) { break } // trailing comma
+            if !mut self.eat(Token.comma) || self.at(Token.rparen) { break } // trailing comma
         }
     }
     mut self.expect(Token.rparen, closer)
 }
 
 Parser.ret(mut self): u32 {
-    if !mut self.ate(Token.colon) { return 0 }
+    if !mut self.eat(Token.colon) { return 0 }
     if self.at_void() {
         mut self.fail("a function with no return value omits its return clause; 'void' is only a function type's return")
         return 0
@@ -1873,7 +1873,7 @@ Parser.tparams(mut self): u32 {
     self.i += 1 // '['
     for {
         mut self.push(mut self.ident_node(Kind.ident, mut self.expect(Token.ident, "type parameter")))
-        if !mut self.ate(Token.comma) || self.at(Token.rbrack) { break }
+        if !mut self.eat(Token.comma) || self.at(Token.rbrack) { break }
     }
     self.i += 1 // ']'
     mut self.close(tp, mark)
@@ -1909,11 +1909,11 @@ Parser.func_rest(mut self, name: usize, tp: u32, pub_: bool, expo: bool, self_ok
     mut self.close(f, mark)
     self.nodes[f].a = mut self.ret()
     if expo { self.nodes[f].cname = mut self.link_name(name) } // an export's C symbol
-    if mut self.ate(Token.specialized) {
+    if mut self.eat(Token.specialized) {
         self.nodes[f].flags |= F_SPECIALIZED // no-default template: no body follows
         return f
     }
-    if mut self.ate(Token.intrinsic) {
+    if mut self.eat(Token.intrinsic) {
         self.nodes[f].flags |= F_INTRINSIC // compiler-owned implementation; no source body
         return f
     }
@@ -1968,13 +1968,13 @@ Parser.signing(mut self, owner: usize, tp: u32, pub_: bool): u32 {
     sline: u32 = self.line()
     mut self.expect(Token.signs, "'signs'")
     mark: usize = self.nstack
-    if mut self.ate(Token.lparen) {
+    if mut self.eat(Token.lparen) {
         if self.at(Token.rparen) { mut self.fail("a signing needs at least one contract") }
         for {
             c: u32 = mut self.nd(Kind.conformance)
             self.nodes[c].a = mut self.parse_type()
             mut self.push(c)
-            if !mut self.ate(Token.comma) || self.at(Token.rparen) { break }
+            if !mut self.eat(Token.comma) || self.at(Token.rparen) { break }
         }
         if self.line() == sline { mut self.fail("parentheses after 'signs' are only for multiline contract lists") }
         mut self.expect(Token.rparen, "')' to close signed contracts")
@@ -2017,7 +2017,7 @@ Parser.bits_decl(mut self, name: usize, tp: u32, pub_: bool): u32 {
             width: usize = mut self.expect(Token.int, "positive bit-field width")
             if !self.failed { self.nodes[fl].ival = self.toks[width].ival }
             mut self.push(fl)
-            if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break }
+            if !mut self.eat(Token.comma) || self.at(Token.rbrace) { break }
         }
     }
     mut self.expect(Token.rbrace, "'}' to close bits type")
@@ -2047,16 +2047,16 @@ Parser.struct_decl(mut self, name: usize, tp: u32, pub_: bool): u32 {
             } else if self.at(Token.at) {
                 mut self.fail("only @offset and @align may modify a struct field")
             }
-            embedded: bool = self.at(Token.embed) && self.kth(1) != Token.colon && mut self.ate(Token.embed) // `embed: T` names a field
+            embedded: bool = self.at(Token.embed) && self.kth(1) != Token.colon && mut self.eat(Token.embed) // `embed: T` names a field
             fl: u32 = mut self.ident_node(Kind.field, mut self.expect_member("field name"))
             if embedded { self.nodes[fl].flags |= F_EMBED }
             self.nodes[fl].b = align
             self.nodes[fl].d = offset
             mut self.expect(Token.colon, "':' after field name")
             self.nodes[fl].a = mut self.parse_type()
-            if mut self.ate(Token.assign) { self.nodes[fl].c = mut self.expr(0) }
+            if mut self.eat(Token.assign) { self.nodes[fl].c = mut self.expr(0) }
             mut self.push(fl)
-            if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break } // trailing comma
+            if !mut self.eat(Token.comma) || self.at(Token.rbrace) { break } // trailing comma
         }
     }
     mut self.expect(Token.rbrace, "'}' to close struct")
@@ -2094,7 +2094,7 @@ Parser.contract_decl(mut self, name: usize, tp: u32, pub_: bool): u32 {
         self.nstack = mark
         self.nodes[m].a = mut self.ret()
         mut self.push(m)
-        if !mut self.ate(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after method") }
+        if !mut self.eat(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after method") }
         mut self.skipnl()
     }
     self.i += 1 // '}'
@@ -2112,9 +2112,9 @@ Parser.enum_decl(mut self, name: usize, pub_: bool): u32 {
     if !self.at(Token.rbrace) {
         for {
             m: u32 = mut self.ident_node(Kind.ident, mut self.expect_member("enum member"))
-            if mut self.ate(Token.assign) { self.nodes[m].a = mut self.expr(0) }
+            if mut self.eat(Token.assign) { self.nodes[m].a = mut self.expr(0) }
             mut self.push(m)
-            if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break } // trailing comma
+            if !mut self.eat(Token.comma) || self.at(Token.rbrace) { break } // trailing comma
         }
     }
     mut self.expect(Token.rbrace, "'}' to close enum")
@@ -2132,9 +2132,9 @@ Parser.union_decl(mut self, name: usize, tp: u32, pub_: bool): u32 {
     if !self.at(Token.rbrace) {
         for {
             v: u32 = mut self.ident_node(Kind.variant, mut self.expect_member("variant name"))
-            if mut self.ate(Token.colon) { self.nodes[v].a = mut self.parse_type() } // payload: exactly one explicit type
+            if mut self.eat(Token.colon) { self.nodes[v].a = mut self.parse_type() } // payload: exactly one explicit type
             mut self.push(v)
-            if !mut self.ate(Token.comma) || self.at(Token.rbrace) { break } // trailing comma
+            if !mut self.eat(Token.comma) || self.at(Token.rbrace) { break } // trailing comma
         }
     }
     mut self.expect(Token.rbrace, "'}' to close union")
@@ -2146,7 +2146,7 @@ Parser.error_decl(mut self, name: usize, pub_: bool): u32 {
     self.i += 1
     n: u32 = mut self.ident_node(Kind.error_domain, name)
     if pub_ { self.nodes[n].flags |= F_PUB }
-    if !mut self.ate(Token.lbrace) { return n }
+    if !mut self.eat(Token.lbrace) { return n }
     mark: usize = self.nstack
     mut self.skipnl()
     for !self.at(Token.rbrace) {
@@ -2162,7 +2162,7 @@ Parser.error_decl(mut self, name: usize, pub_: bool): u32 {
         self.nodes[entry].b = mut self.expr(0)
         mut self.push(entry)
         mut self.skipnl()
-        if !mut self.ate(Token.comma) {
+        if !mut self.eat(Token.comma) {
             if !self.at(Token.rbrace) { mut self.fail("expected ',' after error entry") }
             break
         }
@@ -2177,7 +2177,7 @@ Parser.error_decl(mut self, name: usize, pub_: bool): u32 {
 Parser.global_decl(mut self, name: usize, pub_: bool): u32 {
     n: u32 = mut self.make(Kind.var, name)
     if pub_ { self.nodes[n].flags |= F_PUB }
-    is_const: bool = mut self.ate(Token.const)
+    is_const: bool = mut self.eat(Token.const)
     if self.at(Token.ident) && self.kth(1) == Token.lbrace {
         mut self.fail_at(self.i, ["unknown declaration type '", self.text(self.i), "'"])
     }
@@ -2187,7 +2187,7 @@ Parser.global_decl(mut self, name: usize, pub_: bool): u32 {
     mut self.push(binder)
     if is_const { self.nodes[n].flags |= F_CONST }
     mut self.close(n, mark)
-    if mut self.ate(Token.assign) {
+    if mut self.eat(Token.assign) {
         a: u32 = self.nodes[binder].a
         b: u32 = 0
         if a != 0 && self.nodes[a].kind == Kind.staticmap_t && self.at(Token.lbrace) {
@@ -2273,7 +2273,7 @@ Parser.export(mut self, x: u32) {
 }
 
 Parser.extern_end(mut self) {
-    if !mut self.ate(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after extern declaration") }
+    if !mut self.eat(Token.newline) && !self.at(Token.rbrace) { mut self.fail("expected newline or '}' after extern declaration") }
     mut self.skipnl()
 }
 
@@ -2293,10 +2293,10 @@ Parser.extern_block(mut self): u32 {
         f: u32 = mut self.nd(Kind.externfn)
         start: usize = self.i
         def: bool = false // a body follows: an Ace definition with C linkage
-        if mut self.ate(Token.mut) { self.nodes[f].flags |= F_MUT }
+        if mut self.eat(Token.mut) { self.nodes[f].flags |= F_MUT }
         name: usize = mut self.expect(Token.ident, "name in extern block")
         mut self.named(f, self.text(name))
-        if mut self.ate(Token.colon) { // a C global variable
+        if mut self.eat(Token.colon) { // a C global variable
             self.nodes[f].kind = Kind.externvar
             self.nodes[f].a = mut self.parse_type()
             self.nodes[f].cname = mut self.link_name(name)
@@ -2325,7 +2325,7 @@ Parser.extern_block(mut self): u32 {
                     mut self.expect(Token.colon, "':' after parameter name")
                     self.nodes[pa].a = mut self.parse_type()
                     mut self.push(pa)
-                    if !mut self.ate(Token.comma) { break }
+                    if !mut self.eat(Token.comma) { break }
                     if self.at(Token.dot_dot_dot) {
                         self.i += 1
                         self.nodes[f].flags |= F_VARARGS
@@ -2407,7 +2407,7 @@ Parser.import_target(mut self, n: u32): bool {
 Parser.import(mut self): u32 {
     n: u32 = mut self.nd(Kind.import)
     mut self.expect(Token.import, "'import'")
-    paren: bool = mut self.ate(Token.lparen)
+    paren: bool = mut self.eat(Token.lparen)
     what: string = "module or member name after 'import'"
     if paren { what = "imported member name" }
     first: usize = mut self.expect(Token.ident, what)
@@ -2417,7 +2417,7 @@ Parser.import(mut self): u32 {
         mut self.push(mut self.ident_node(Kind.ident, first))
         if paren {
             for {
-                if !mut self.ate(Token.comma) || self.at(Token.rparen) { break }
+                if !mut self.eat(Token.comma) || self.at(Token.rparen) { break }
                 mut self.push(mut self.ident_node(Kind.ident, mut self.expect(Token.ident, "imported member name")))
             }
             mut self.expect(Token.rparen, "')' after imported member list")
@@ -2442,12 +2442,12 @@ Parser.import(mut self): u32 {
         self.nodes[n].c = head
         mut self.named(n, self.nodes[leaf].text)
     }
-    if mut self.ate(Token.colon) {
+    if mut self.eat(Token.colon) {
         if (self.nodes[n].flags & F_SELECT) != 0 { mut self.fail("selective imports use 'from', not ':'") }
         // `m: math` alias, `util: "./util.ace"` path, `big: @bigint` reserved
         if !mut self.import_target(n) { mut self.fail("expected module name, path, or internal module after ':' in import") }
     }
-    if !mut self.ate(Token.newline) && !self.at(Token.eof) { mut self.fail("expected newline after import") }
+    if !mut self.eat(Token.newline) && !self.at(Token.eof) { mut self.fail("expected newline after import") }
     return n
 }
 
@@ -2456,9 +2456,9 @@ Parser.import(mut self): u32 {
  * parsed for syntax, then omitted from the file.
  */
 Parser.when_primary(mut self): bool {
-    if mut self.ate(Token.true) { return true }
-    if mut self.ate(Token.false) { return false }
-    if mut self.ate(Token.lparen) {
+    if mut self.eat(Token.true) { return true }
+    if mut self.eat(Token.false) { return false }
+    if mut self.eat(Token.lparen) {
         value: bool = mut self.when_or()
         mut self.expect(Token.rparen, "')' after @when expression")
         return value
@@ -2579,7 +2579,7 @@ Parser.top(mut self): u32 {
     if self.at(Token.extern) && self.kth(1) == Token.string && (self.kth(2) == Token.ident || self.kth(2) == Token.mut) {
         // `extern "c" name(...) { body }` or `extern "c" [mut] name: T = value`
         self.i += 2
-        gmut: bool = mut self.ate(Token.mut)
+        gmut: bool = mut self.eat(Token.mut)
         if gmut || self.kth(1) == Token.colon {
             if inl { mut self.fail("'inline' applies only to function declarations") }
             name: usize = mut self.expect(Token.ident, "C global name")
@@ -2669,7 +2669,7 @@ pub Parser.parse(mut self, target: string): u32 {
                 if packed { self.nodes[decl].flags |= F_PACKED }
                 self.nodes[decl].b = align
             }
-            if !mut self.ate(Token.newline) && !self.at(Token.eof) { mut self.fail_got("expected newline after declaration, got ") }
+            if !mut self.eat(Token.newline) && !self.at(Token.eof) { mut self.fail_got("expected newline after declaration, got ") }
             if active {
                 mut self.push(decl)
                 if x.kind == Kind.extern {
