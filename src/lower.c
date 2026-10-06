@@ -832,6 +832,18 @@ static int place_address(Lw* l, Place p) {
 // --- expressions ------------------------------------------------------------------
 
 static int expr(Lw* l, Node* x, int want);
+
+// The value an Error or enum field reads, as type it: x itself, or what its
+// pointers lead to (p.x auto-derefs), each dereference null-checked.
+static int deref_value(Lw* l, Node* x, IrType it) {
+    SType* t = unwrap(node_ty(x));
+    if (!t || t->kind != SK_PTR) return expr(l, x, it);
+    int v = expr(l, x, IT_PTR);
+    for (t = unwrap(t->base); t && t->kind == SK_PTR; t = unwrap(t->base))
+        v = load(l, IT_PTR, v, 0, access_check(l, v));
+    return load(l, it, v, 0, access_check(l, v));
+}
+
 static void enum_check(Lw* l, int v, IrType from, SType* e, Node* site);
 static void cond(Lw* l, Node* x, int t, int f);
 
@@ -2191,8 +2203,10 @@ static int expr(Lw* l, Node* x, int want) {
         if (ts && ts->kind == SYM_TYPE && is_domain(ts->type)) return konst(l, IT_U64, x->ival); // Domain.entry
         if (ts && ts->kind == SYM_TYPE) unsupported(l, type_why(ts->type));
         SType* bt = unwrap(node_ty(x->a));
-        if (bt && bt->kind == SK_ERROR) { // Errors #9: the domain above the raw i32 code
-            int v = expr(l, x->a, IT_U64);
+        SType* et = bt;
+        while (et && et->kind == SK_PTR) et = unwrap(et->base);
+        if (et && et->kind == SK_ERROR) { // Errors #9: the domain above the raw i32 code
+            int v = deref_value(l, x->a, IT_U64);
             if (x->len == 6 && memcmp(x->str, "domain", 6) == 0) return emit2(l, IR_SHR, IT_U64, v, konst(l, IT_U64, 32));
             if (x->len == 4 && memcmp(x->str, "code", 4) == 0) return emit2(l, IR_CAST, IT_I32, v, -1);
             unsupported(l, "Error description");
@@ -2307,7 +2321,10 @@ static int is_place(Node* x) {
     case N_UNARY: return x->op == T_STAR;
     case N_FIELD_E: {
         SType* bt = unwrap(node_ty(x->a));
-        if (bt && bt->kind == SK_ERROR) return 0; // an Error's description is looked up
+        SType* vt = bt;
+        while (vt && vt->kind == SK_PTR) vt = unwrap(vt->base);
+        if (vt && vt->kind == SK_ERROR) return 0; // an Error's description is looked up
+        if (vt && vt->kind == SK_ENUM) return 0; // an enum's name is looked up
         return (bt && bt->kind == SK_PTR) || is_place(x->a);
     }
     default: return 0;
@@ -2976,9 +2993,10 @@ static void slice_leaves(Lw* l, Node* x, Agg* out) {
 // declaration order.
 static int error_description(Lw* l, Node* x, Agg* out) {
     SType* bt = unwrap(node_ty(x->a));
+    while (bt && bt->kind == SK_PTR) bt = unwrap(bt->base);
     int message = x->len == 7 && memcmp(x->str, "message", 7) == 0;
     if (!bt || bt->kind != SK_ERROR || (!message && !(x->len == 4 && memcmp(x->str, "name", 4) == 0))) return 0;
-    int v = expr(l, x->a, IT_U64);
+    int v = deref_value(l, x->a, IT_U64);
     int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
     int done = new_block(l);
     int domain = message ? -1 : emit2(l, IR_SHR, IT_U64, v, konst(l, IT_U64, 32));
@@ -3023,6 +3041,52 @@ static int error_description(Lw* l, Node* x, Agg* out) {
         }
     }
     jump(l, done);
+    seal(l, done);
+    enter(l, done);
+    out->n = 2;
+    out->v[0] = read_var(l, pv, l->cur);
+    out->v[1] = read_var(l, nv, l->cur);
+    return 1;
+}
+
+// The name of an enum value (Type System #14), when x reads one: the source
+// spelling of the member whose discriminant it equals. A value is always a
+// member (Safety #2), so the last member needs no comparison.
+static int enum_name(Lw* l, Node* x, Agg* out) {
+    SType* bt = unwrap(node_ty(x->a));
+    while (bt && bt->kind == SK_PTR) bt = unwrap(bt->base);
+    if (!bt || bt->kind != SK_ENUM || !bt->decl || !bt->decl->nkids || x->len != 4 || memcmp(x->str, "name", 4) != 0)
+        return 0;
+    Node* d = bt->decl;
+    IrType it = need_type(l, bt);
+    int v = deref_value(l, x->a, it);
+    int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
+    int done = new_block(l);
+    for (int j = 0; j < d->nkids; j++) {
+        Node* m = d->kids[j];
+        Node* name = (Node*)arena_alloc(sizeof(Node));
+        memset(name, 0, sizeof *name);
+        name->kind = N_STR;
+        name->str = m->str;
+        name->len = m->len;
+        int next = -1;
+        if (j + 1 < d->nkids) {
+            int yes = new_block(l);
+            next = new_block(l);
+            terminate(l, IR_BR, cmp(l, IR_EQ, v, konst(l, it, m->ival)), yes, next);
+            seal(l, yes);
+            enter(l, yes);
+        }
+        Agg s;
+        string_literal(l, name, &s);
+        write_var(l, pv, l->cur, s.v[0]);
+        write_var(l, nv, l->cur, s.v[1]);
+        jump(l, done);
+        if (next >= 0) {
+            seal(l, next);
+            enter(l, next);
+        }
+    }
     seal(l, done);
     enter(l, done);
     out->n = 2;
@@ -3098,6 +3162,7 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
         return;
     }
     if (x->kind == N_FIELD_E && is_view(t) && error_description(l, x, out)) return;
+    if (x->kind == N_FIELD_E && is_view(t) && enum_name(l, x, out)) return;
     if (is_union(t)) {
         int vi;
         Node* pay;

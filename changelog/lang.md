@@ -117,3 +117,7 @@
   (#104): both parsers' precedence climbing returns the level of a result's
   outermost operator, and `&`, `^`, `|` fail when either operand's is `==`,
   `!=`, or a comparison chain.
+- `.name` on an enum value is its member's source spelling as a static
+  `string` (Type System #14). Lowering compares the value against each
+  member's discriminant, dense or sparse, at the use site, so only enums that
+  use `.name` carry names; `Kind.name` stays a member lookup.

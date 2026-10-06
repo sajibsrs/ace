@@ -42,5 +42,10 @@ main(): int {
     if ClientErr().code != 0 || ClientErr(-1) != ClientErr.negative { return 9 }
     if ClientErr(-2147483648) != ClientErr.minimum ||
        ClientErr(2147483647) != ClientErr.maximum { return 13 }
+    held: Error = ClientErr.address
+    p: *Error = &held
+    pp: **Error = &p
+    if !same(p.name, "ClientErr") || !same(pp.message, "name resolution failed") { return 14 }
+    if p.code != 1 || pp.domain != held.domain { return 15 }
     return 0
 }

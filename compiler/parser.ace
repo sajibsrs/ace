@@ -24,42 +24,14 @@ pub Kind: enum u8 {
     file,
     named, ptr, slice_t, array_t, tuple_t, func_t, const_t, tparams, staticmap_t,
     import, var, func, param, struct, bits, field, union, variant, contract,
-    method, enum, alias, distinct, error_domain, signing, conformance, extern,
+    method, enum, alias, distinct, error, signing, conformance, extern,
     externfn, externvar,
     block, exprstmt, assign, if, for, range, switch, case, varpat, return,
     break, continue, fallthrough, asm, asmbind, label, defer,
-    int_lit, float_lit, str_lit, char_lit, bool, null, ident, tuple_e,
-    binary, cmpchain, ops, op, unary, call, mutarg, index, slice_e, field_e,
+    int_lit, float_lit, str_lit, char_lit, bool, null, ident, tuple,
+    binary, cmpchain, ops, op, unary, call, mutarg, index, slice, selector,
     arraylit, structlit, fieldinit, staticmaplit, mapentry,
 }
-
-/* Dump names, as `ace --ast` prints them. */
-NAMES: [Kind]string = [
-    Kind.file = "file",               Kind.named = "named",         Kind.ptr = "ptr",
-    Kind.slice_t = "slice_t",         Kind.array_t = "array_t",     Kind.tuple_t = "tuple_t",
-    Kind.func_t = "func_t",           Kind.const_t = "const_t",     Kind.tparams = "tparams",
-    Kind.staticmap_t = "staticmap_t", Kind.import = "import",       Kind.var = "var",
-    Kind.func = "func",               Kind.param = "param",         Kind.struct = "struct",
-    Kind.bits = "bits",               Kind.field = "field",         Kind.union = "union",
-    Kind.variant = "variant",         Kind.contract = "contract",   Kind.method = "method",
-    Kind.enum = "enum",               Kind.alias = "alias",         Kind.distinct = "distinct",
-    Kind.error_domain = "error",      Kind.signing = "signing",     Kind.conformance = "conformance",
-    Kind.extern = "extern",           Kind.externfn = "externfn",   Kind.externvar = "externvar",
-    Kind.block = "block",             Kind.exprstmt = "exprstmt",   Kind.assign = "assign",
-    Kind.if = "if",                   Kind.for = "for",             Kind.range = "range",
-    Kind.switch = "switch",           Kind.case = "case",           Kind.varpat = "varpat",
-    Kind.return = "return",           Kind.break = "break",         Kind.continue = "continue",
-    Kind.fallthrough = "fallthrough", Kind.asm = "asm",             Kind.asmbind = "asmbind",
-    Kind.label = "label",             Kind.defer = "defer",         Kind.int_lit = "int_lit",
-    Kind.float_lit = "float_lit",     Kind.str_lit = "str_lit",     Kind.char_lit = "char_lit",
-    Kind.bool = "bool",               Kind.null = "null",           Kind.ident = "ident",
-    Kind.tuple_e = "tuple",           Kind.binary = "binary",       Kind.cmpchain = "cmpchain",
-    Kind.ops = "ops",                 Kind.op = "op",               Kind.unary = "unary",
-    Kind.call = "call",               Kind.mutarg = "mutarg",       Kind.index = "index",
-    Kind.slice_e = "slice",           Kind.field_e = "field",       Kind.arraylit = "arraylit",
-    Kind.structlit = "structlit",     Kind.fieldinit = "fieldinit", Kind.staticmaplit = "staticmaplit",
-    Kind.mapentry = "mapentry",
-]
 
 /* Node flags, with src/ace.h's values. */
 pub F_PUB: const u32 = 1
@@ -769,7 +741,7 @@ Parser.unary(mut self, ctx: int): u32 {
         // A mutating method call or writable-view establishment.
         self.i += 1
         base: u32 = mut self.postfix(ctx, mut self.primary(ctx))
-        if base != 0 && (self.nodes[base].kind == Kind.slice_e || self.nodes[base].kind == Kind.call) {
+        if base != 0 && (self.nodes[base].kind == Kind.slice || self.nodes[base].kind == Kind.call) {
             self.nodes[base].flags |= F_MUT
             return base
         }
@@ -863,7 +835,7 @@ Parser.call_args(mut self, call: u32, base: u32) {
         path: u32 = mut self.ident_node(Kind.ident, ft)
         for mut self.eat(Token.dot) {
             part: usize = mut self.expect_member("field name after '.' in offsetof")
-            field: u32 = mut self.ident_node(Kind.field_e, part)
+            field: u32 = mut self.ident_node(Kind.selector, part)
             self.nodes[field].a = path
             path = field
         }
@@ -879,7 +851,7 @@ Parser.call_args(mut self, call: u32, base: u32) {
                 mt: usize = self.i
                 self.i += 1
                 value: u32 = mut self.expr(0)
-                if value != 0 && (self.nodes[value].kind == Kind.slice_e || self.nodes[value].kind == Kind.call) {
+                if value != 0 && (self.nodes[value].kind == Kind.slice || self.nodes[value].kind == Kind.call) {
                     // a writable view, or a nested call's receiver mark
                     self.nodes[value].flags |= F_MUT
                     mut self.push(value)
@@ -944,7 +916,7 @@ Parser.postfix(mut self, ctx: int, start: u32): u32 {
                 } else {
                     mut self.expect(Token.rbrack, "']' after index/slice")
                     if is_slice {
-                        sl: u32 = mut self.nd(Kind.slice_e)
+                        sl: u32 = mut self.nd(Kind.slice)
                         self.nodes[sl].line = self.nodes[ix].line
                         self.nodes[sl].col = self.nodes[ix].col
                         self.nodes[sl].a = base
@@ -960,7 +932,7 @@ Parser.postfix(mut self, ctx: int, start: u32): u32 {
             Token.dot {
                 self.i += 1
                 f: usize = mut self.expect_member("field name after '.'")
-                fa: u32 = mut self.ident_node(Kind.field_e, f)
+                fa: u32 = mut self.ident_node(Kind.selector, f)
                 self.nodes[fa].a = base
                 base = fa
             }
@@ -1041,10 +1013,10 @@ Parser.primary(mut self, ctx: int): u32 {
             if self.nstack - mark == 1 {
                 x: u32 = self.stack[mark]
                 self.nstack = mark
-                if x != 0 && self.nodes[x].kind == Kind.field_e { self.nodes[x].flags |= F_GROUPED }
+                if x != 0 && self.nodes[x].kind == Kind.selector { self.nodes[x].flags |= F_GROUPED }
                 return x
             }
-            tu: u32 = mut self.make(Kind.tuple_e, t)
+            tu: u32 = mut self.make(Kind.tuple, t)
             mut self.close(tu, mark)
             return tu
         }
@@ -1190,7 +1162,7 @@ Parser.expr_list(mut self, ctx: int): u32 {
         self.nstack = mark
         return x
     }
-    tu: u32 = mut self.make(Kind.tuple_e, first)
+    tu: u32 = mut self.make(Kind.tuple, first)
     mut self.close(tu, mark)
     return tu
 }
@@ -1297,7 +1269,7 @@ Parser.for_head(mut self, n: u32): u32 {
         mut self.expect(Token.in, "'in'")
         if mut self.eat(Token.mut) { self.nodes[n].flags |= F_MUT } // `in mut iterable`: aliasing
         it: u32 = mut self.expr(NOSLIT)
-        if (self.nodes[n].flags & F_MUT) != 0 && it != 0 && self.nodes[it].kind == Kind.slice_e {
+        if (self.nodes[n].flags & F_MUT) != 0 && it != 0 && self.nodes[it].kind == Kind.slice {
             self.nodes[it].flags |= F_MUT // `in mut xs[lo..hi]`: establish, then alias
         }
         if self.at(Token.dot_dot) {
@@ -1387,7 +1359,7 @@ Parser.variant_pattern(mut self): u32 {
         if self.at(Token.lparen) || self.failed { break } // the variant name
         node: u32 = mut self.ident_node(Kind.ident, seg)
         if base != 0 {
-            q: u32 = mut self.ident_node(Kind.field_e, seg)
+            q: u32 = mut self.ident_node(Kind.selector, seg)
             self.nodes[q].a = base
             base = q
         } else {
@@ -1408,7 +1380,7 @@ Parser.variant_pattern(mut self): u32 {
         }
     }
     vp: u32 = mut self.make(Kind.varpat, seg)
-    ref: u32 = mut self.ident_node(Kind.field_e, seg)
+    ref: u32 = mut self.ident_node(Kind.selector, seg)
     self.nodes[ref].a = base
     self.nodes[vp].a = ref
     self.i += 1 // '('
@@ -2162,7 +2134,7 @@ Parser.union_decl(mut self, name: usize, tp: u32, pub_: bool): u32 {
 
 Parser.error_decl(mut self, name: usize, pub_: bool): u32 {
     self.i += 1
-    n: u32 = mut self.ident_node(Kind.error_domain, name)
+    n: u32 = mut self.ident_node(Kind.error, name)
     if pub_ { self.nodes[n].flags |= F_PUB }
     if !mut self.eat(Token.lbrace) { return n }
     mark: usize = self.nstack
@@ -2716,7 +2688,7 @@ pub Parser.dump(self, mut out: Out, n: u32, ind: usize) {
         return
     }
     x: Node = self.nodes[n]
-    mut out.printf("(%s", NAMES[x.kind])
+    mut out.printf("(%s", x.kind.name)
     if (x.flags & F_TEXT) != 0 {
         // C prints with "%.*s", which stops at an embedded NUL.
         nul: usize, found: bool = str.find(x.text, '\0')

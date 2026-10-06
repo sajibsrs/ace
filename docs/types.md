@@ -790,6 +790,18 @@ compile-time error, whether written `State(7)` or taken implicitly (`s: State =
 7`), and `--debug` traps a runtime conversion that names no member, testing
 the value before it narrows to the backing type.
 
+`.name` on an enum value is the member's source spelling as a read-only
+`string`; on the type, `State.name` would still name a member called `name`.
+
+```ace
+label: string = state.name // "running"
+```
+
+The names are static data, and their lookup is emitted only for an enum whose
+`.name` is used. It maps any discriminant, dense or sparse, without allocating,
+and reads through pointers as other fields do. There is no general reflection:
+`.name` is the only such question, and only an enum value answers it.
+
 A tagged union is a closed set of named alternatives stored inline. Variants
 may carry no data or one explicitly typed payload:
 
@@ -1035,6 +1047,13 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   made rather than where it is used, covers `switch` and every table as well,
   and runs less often than indexing (Zig checks `@enumFromInt` likewise). A
   dense enum costs one unsigned compare.
+- Type System #14 (enum `.name`): a hand-written name table repeats every
+  member and drifts when one is added; the compiler already holds the
+  spelling. Zig `@tagName`, Rust `#[derive(Debug)]`, Go `stringer`, and Nim `$`
+  provide it. It answers one fixed question about a value, emitted only when
+  asked (as `Error.name`, Errors #14), so the no-reflection rule stands. It is
+  `name`, not `tag`: "tag" is a union's discriminant number, and `Error.name`
+  already means a declaration's spelling.
 
 - Source #3: a member name is never bare — it follows `.` or sits in its
   declaration list — so a keyword there cannot be misread, and the next token

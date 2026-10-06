@@ -1,0 +1,6 @@
+Kind: enum { a, b }
+
+main(): int {
+    k: Kind = Kind.a
+    return k.code
+}

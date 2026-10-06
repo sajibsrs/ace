@@ -154,7 +154,7 @@ void      ptrmap_free(PtrMap* m);
     X(N_BINARY, "binary") X(N_CMPCHAIN, "cmpchain") X(N_OPS, "ops")            \
     X(N_OP, "op") X(N_UNARY, "unary") X(N_CALL, "call")                        \
     X(N_MUTARG, "mutarg") X(N_INDEX, "index") X(N_SLICE_E, "slice")            \
-    X(N_FIELD_E, "field") X(N_ARRAYLIT, "arraylit")                            \
+    X(N_FIELD_E, "selector") X(N_ARRAYLIT, "arraylit")                         \
     X(N_STRUCTLIT, "structlit") X(N_FIELDINIT, "fieldinit")                   \
     X(N_STATICMAPLIT, "staticmaplit") X(N_MAPENTRY, "mapentry")
 

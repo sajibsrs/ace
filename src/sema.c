@@ -2439,6 +2439,10 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
+        if (b->kind == SK_ENUM && e->len == 4 && memcmp(e->str, "name", 4) == 0) {
+            if (write) ck_err(k, e, "an enum's name is read-only");
+            return st_prim(P_STRING);
+        }
         if (b->kind == SK_BITS) {
             for (int i = 0; i < b->nfields; i++)
                 if (!b->fields[i].bit_anonymous && strlen(b->fields[i].name) == e->len &&
@@ -3030,6 +3034,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             ck_err(k, e, "type Error has no field '%.*s'", (int)e->len, e->str);
             return T_ERR;
         }
+        if (b->kind == SK_ENUM && e->len == 4 && memcmp(e->str, "name", 4) == 0)
+            return st_prim(P_STRING); // Type System #14: the member's source name
         if (b->kind == SK_CONTRACT) {
             Node* m = contract_method(b, e->str, e->len);
             if (!m) {

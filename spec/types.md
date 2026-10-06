@@ -88,6 +88,15 @@ Carved (explicit struct layout):
     The literal form is Syntax & Parsing #16; repetition `[v : n]` applies
     with `n` equal to the member count. A type parameter as `E` is not admitted
     yet.
+14. Enum member names. `v.name`, on a value `v` of an enum type, is the
+    member's unqualified source spelling as a read-only `string` (`Kind.binary.name`
+    is `"binary"`). It is opt-in static metadata exactly as Errors #14: the
+    name table and lookup are emitted only for an enum whose `.name` is used,
+    the lookup is allocation-free and maps each discriminant (dense or sparse)
+    to its name, and there is no runtime registry, initialization, or general
+    reflection. Because an enum value is always a member (Safety #2), there is
+    no unknown-value case. `.name` is value lookup; `E.name` remains type
+    lookup and names a member called `name` (Syntax #2).
 
 Carved (compile-time static lookup maps):
 

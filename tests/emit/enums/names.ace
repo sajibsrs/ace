@@ -1,0 +1,37 @@
+// expect-exit: 0
+
+Kind: enum { binary, unary, call }
+Perm: enum u8 { none, read = 4, write, exec = 200 }
+Wide: enum i64 { zero, huge = 5000000000 }
+Lone: enum { only }
+Other: enum { call, binary }
+
+same(a: string, b: string): bool {
+    if a.len != b.len { return false }
+    for i: usize in 0 .. a.len {
+        if a[i] != b[i] { return false }
+    }
+    return true
+}
+
+label(k: Kind): string {
+    return k.name
+}
+
+main(): int {
+    if !same(label(Kind.binary), "binary") || !same(label(Kind.unary), "unary") ||
+       !same(label(Kind.call), "call") { return 1 }
+    p: Perm = Perm.none
+    if !same(p.name, "none") { return 2 }
+    p = Perm.write
+    if !same(p.name, "write") || !same(Perm.read.name, "read") || !same(Perm.exec.name, "exec") { return 3 }
+    w: Wide = Wide.huge
+    if !same(w.name, "huge") || w.name.len != 4 || !same(Wide.zero.name, "zero") { return 4 }
+    if !same(Lone.only.name, "only") { return 5 }
+    if !same(Other.call.name, "call") || !same(Other.binary.name, "binary") { return 6 }
+    k: Kind = Kind.call
+    q: *Kind = &k
+    qq: **Kind = &q
+    if !same(q.name, "call") || !same(qq.name, "call") || qq.name.len != 4 { return 7 }
+    return 0
+}

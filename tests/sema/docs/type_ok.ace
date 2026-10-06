@@ -166,6 +166,7 @@ main(): int {
     if byte_match { count += 1 }
     operation: (int, int): int = add
     state: State = State.running
+    label: string = state.name // "running"
     event: Event = Event.point( { x = 3, y = 4 })
 
     switch event {

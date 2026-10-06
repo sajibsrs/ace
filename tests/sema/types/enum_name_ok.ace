@@ -1,0 +1,9 @@
+Kind: enum { name, other }
+
+main(): int {
+    k: Kind = Kind.name
+    s: string = k.name
+    t: string = Kind.name.name
+    if s.len != t.len { return 1 }
+    return 0
+}

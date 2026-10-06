@@ -118,3 +118,7 @@
   children as runs in a shared array, the file lexed up front, the first error
   ending the parse; `Out` moves to `compiler/output.ace`. `main.ace --ast`
   dumps the tree, and `compiler/check.sh` diffs it against `ace --ast`.
+- `Error` fields and enum `.name` read through pointers (`p.name`, `pp.code`)
+  via `deref_value`, null-checked in debug, where lowering had rejected them.
+  `--ast` prints a selector `x.f` as `selector`, no longer `field` like a field
+  declaration; the self-hosted dump now prints `x.kind.name` with no table.
