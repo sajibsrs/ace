@@ -45,3 +45,7 @@
   writing through a sink kept in caller storage across calls, drained on fill
   or `flush`. `printf` decimals divide by a constant and one-byte literals
   store directly. The self-hosted compiler's `Out` gives way to it.
+- Added a storage-only `fmt.Buffer.init(storage)`, `buffer.text()`, and
+  `buffer.dropped()`: a sink with a null drain keeps what fits and counts the
+  rest, checked only on the slow path. Error context is carried this way, by
+  convention; the self-hosted parser's error message uses one.

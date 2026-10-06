@@ -334,6 +334,23 @@ pub Buffer.init(fd: sys.Fd, storage: mut []u8): Buffer {
     return Buffer { sink = formatting.Sink.init(storage, i32(fd), write_bytes), mark = 0 }
 }
 
+/* A buffer that keeps its output in storage, as error context does: bytes
+ * past the end are dropped, never written, and `text` reads what was kept.
+ */
+pub Buffer.init(storage: mut []u8): Buffer {
+    return Buffer { sink = formatting.Sink.init(storage, 0, null), mark = 0 }
+}
+
+/* The bytes kept so far: all of them for a storage-only buffer. */
+pub Buffer.text(self): string {
+    return self.sink.storage[0..self.sink.used]
+}
+
+/* The bytes a storage-only buffer dropped for want of room. */
+pub Buffer.dropped(self): usize {
+    return self.sink.dropped
+}
+
 /* Writes the buffered bytes: their count, or the failing write's result. */
 pub Buffer.flush(mut self): int {
     before: int = self.sink.drained

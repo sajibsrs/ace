@@ -270,8 +270,9 @@ pub Sink: struct {
     drained: int,               // bytes drain has taken
     failed: bool,
     status: int,                // the failing drain result
+    dropped: usize,             // bytes a null drain could not keep
     target: i32,                // passed to drain: fmt.printf's descriptor
-    drain: (i32, []u8): int,
+    drain: (i32, []u8): int,    // null: keep what fits, drop the rest
 }
 
 pub Sink.init(storage: mut []u8, target: i32, drain: (i32, []u8): int): Sink {
@@ -281,6 +282,7 @@ pub Sink.init(storage: mut []u8, target: i32, drain: (i32, []u8): int): Sink {
         drained = 0,
         failed = false,
         status = 0,
+        dropped = 0,
         target = target,
         drain = drain,
     }
@@ -305,7 +307,7 @@ Sink.emit(mut self, bytes: []u8) {
 
 /* Drains the buffered bytes, leaving the storage empty. */
 pub Sink.flush(mut self) {
-    if self.failed || self.used == 0 { return }
+    if self.failed || self.used == 0 || self.drain == null { return }
     mut self.emit(self.storage[0..self.used])
     self.used = 0
 }
@@ -337,6 +339,16 @@ pub inline Sink.byte(mut self, value: u8) {
 Sink.overflow(mut self, bytes: []u8) {
     if self.failed { return }
 
+    if self.drain == null {
+        n: usize = self.storage.len - self.used
+
+        if bytes.len < n { n = bytes.len }
+        mem.copy(mut self.storage[self.used..self.used + n], bytes[0..n])
+        self.used += n
+        self.dropped += bytes.len - n
+        return
+    }
+
     mut self.flush()
     if self.failed { return }
 
@@ -356,6 +368,10 @@ pub Sink.fill(mut self, byte: u8, count: usize) {
         if self.failed || left == 0 { return }
 
         if self.used == self.storage.len {
+            if self.drain == null {
+                self.dropped += left
+                return
+            }
             if self.used == 0 { // no storage at all
                 mut self.emit(self.storage[0..0])
                 if self.failed { return }

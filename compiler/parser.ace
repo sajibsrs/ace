@@ -114,8 +114,8 @@ pub Parser: struct {
     failed: bool,
     eline: u32,
     ecol: u32,
-    msg: mut []u8 = null,
-    nmsg: usize,
+    msg: mut []u8 = null,      // storage of `err`
+    err: fmt.Buffer,           // the first error's message
     exports: mut []u32 = null, // an extern block's Ace-defined C symbols
     nexport: usize,
     target: string,            // what @when compares `target` against
@@ -126,9 +126,9 @@ pub Parser: struct {
  * returned count is how many there were. Call `wipe` when done.
  */
 pub Parser.new(src: string, path: string): (Parser, int) {
-    p: Parser = Parser { path = path, ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, eline = 0, ecol = 0, nmsg = 0, nexport = 0, target = "" }
+    msg: mut []u8 = mem.alloc[u8](256) // the longest message, one name included
+    p: Parser = Parser { path = path, ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, eline = 0, ecol = 0, msg = msg, err = fmt.Buffer.init(msg), nexport = 0, target = "" }
     p.pool = mem.alloc[u8](src.len + 1)
-    p.msg = mem.alloc[u8](256)
     p.kinds = mem.alloc[Token](64)
     p.toks = mem.alloc[Tok](64)
     p.nodes = mem.alloc[Node](256)
@@ -203,7 +203,8 @@ report(path: string, line: u32, col: u32, message: string) {
 
 /* The syntax error, if the parse failed. */
 pub Parser.error(self): (bool, u32, u32, string) {
-    return self.failed, self.eline, self.ecol, self.msg[..self.nmsg]
+    assert(self.err.dropped() == 0) // sized to fit any message
+    return self.failed, self.eline, self.ecol, self.err.text()
 }
 
 pub Parser.node(self, n: u32): Node {
@@ -250,14 +251,7 @@ Parser.fail_at(mut self, ti: usize, parts: []string) {
     if t >= self.ntok { t = self.ntok - 1 }
     self.eline = self.toks[t].line
     self.ecol = self.toks[t].col
-    for part: string in parts { mut self.append(part) }
-}
-
-Parser.append(mut self, part: string) {
-    n: usize = part.len
-    if self.nmsg + n > self.msg.len { n = self.msg.len - self.nmsg }
-    mem.copy(self.msg[self.nmsg..self.nmsg + n], part[..n])
-    self.nmsg += n
+    for part: string in parts { mut self.err.printf("%s", part) }
 }
 
 Parser.fail(mut self, message: string) {
@@ -277,8 +271,7 @@ Parser.fail_got(mut self, prefix: string) {
 /* "expected <what>, got <current token>". */
 Parser.fail_expected(mut self, what: string) {
     if self.failed { return }
-    mut self.append("expected ")
-    mut self.append(what)
+    mut self.err.printf("expected %s", what)
     mut self.fail_got(", got ")
 }
 

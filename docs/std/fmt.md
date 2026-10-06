@@ -203,6 +203,43 @@ write sticks: that call, every later one, and `flush` return its non-positive
 result. Nothing is flushed implicitly — call `flush` before the program exits
 or the storage goes out of scope.
 
+`fmt.Buffer.init(storage)`, with no descriptor, keeps its output in the
+storage: bytes past the end are dropped, `flush` writes nothing, and
+`buffer.text()` reads what was kept, `buffer.dropped()` how many bytes did
+not fit. It carries error context: each layer
+that fails appends one line and returns its `Error` unchanged, and the caller
+prints the buffer innermost-first, with no allocation and nothing paid on the
+success path:
+
+```ace
+import fmt
+
+ParseErr: error
+
+parse(text: string, mut diag: fmt.Buffer): Error {
+    mut diag.printf("line %d: unexpected '}'\n", 12)
+    return ParseErr()
+}
+
+load(path: string, mut diag: fmt.Buffer): Error {
+    err: Error = parse("}", mut diag)
+    if err != null {
+        mut diag.printf("load config %s\n", path)
+        return err
+    }
+    return null
+}
+
+main(): int {
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
+    if load("app.json", mut diag) != null { fmt.print(diag.text()) }
+    return 0
+}
+```
+
+A caller that wants no context passes empty storage (`mut storage[0..0]`).
+
 ## Design rationale
 
 Why the rules in `spec/std/fmt.md` are shaped as they are.
@@ -223,3 +260,8 @@ Why the rules in `spec/std/fmt.md` are shaped as they are.
   receiver shows where deferred output goes (Zig's `writer.print` beside
   `std.debug.print`). The buffer reuses `printf`'s sink in place, so it costs
   no copy per call, and takes caller storage so `fmt` stays allocation-free.
+- Error context lives in a caller's buffer rather than in `Error`, which stays
+  one register-sized value: Go's `%w` wrapping allocates a new error at every
+  layer, while Zig's `Diagnostics` out-parameters, followed here, write into
+  storage the caller provides once. Dropping bytes past the end, rather than
+  failing, keeps the innermost cause, which is written first.
