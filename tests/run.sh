@@ -247,6 +247,19 @@ for want in \
     fi
 done
 
+# an array literal selects an overload by its candidate element type (spec Names #6)
+array_overload_errors=$("$ACE" tests/sema/overloads/array_literal_err.ace 2>&1)
+for want in \
+    "10:18: error: no matching overload 'take'" \
+    "11:18: error: no matching overload 'both'" \
+    "12:18: error: no matching overload 'both'" \
+    "13:18: error: no matching overload 'take'"; do
+    if ! printf '%s\n' "$array_overload_errors" | grep -qF "$want"; then
+        echo "FAIL: missing array-literal overload diagnostic '$want'"
+        fail=1
+    fi
+done
+
 # A call that settles on its sole overload, declared before or after it, is
 # checked where its value lands.
 for f in sole_overload_result_decl sole_overload_result_return forward_result_decl; do

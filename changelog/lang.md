@@ -1,5 +1,9 @@
 # Language
 
+- In a real overload set an array literal's candidate is the element type its
+  elements share under the scalar rule, matching `[]E` and `[N]E`; without
+  one it matches nothing. `overload_arg_type` synthesizes the candidate and
+  `exact_arg_type` compares element types.
 - Returning a direct view of function storage (a local or plain-parameter
   array slice or address, or a runtime `[]T` literal), or storing one into a
   module variable or `mut` parameter, is an error. Sema walks the returned or

@@ -1,0 +1,29 @@
+/* An array literal selects an overload by its candidate element type:
+ * untyped integers as int, floats as f64, characters as u8, and typed
+ * elements as their type, for []E and [N]E, free and method calls alike. */
+
+// expect-exit: 63
+
+pick(xs: []int): int { return 1 }
+pick(xs: []string): int { return 2 }
+pick(xs: []f64): int { return 3 }
+pick(xs: []u8): int { return 4 }
+pick(xs: []i32): int { return 5 }
+
+fix(xs: [2]int): int { return 6 }
+fix(xs: [2]string): int { return 7 }
+
+Box: struct { n: int }
+Box.add(self, xs: []int): int { return self.n + 1 }
+Box.add(self, xs: []string): int { return self.n + 2 }
+
+main(): int {
+    x: i32 = 9
+    b: Box = { n = 10 }
+    r: int = pick([1, 2]) + pick(["a"]) + pick([1.5]) + pick(['a', 'b']) // 10
+    r += pick([x, i32(2)]) + pick([0 : 4]) // 6
+    r += fix([1, 2]) + fix(["a", "b"]) // 13
+    r += b.add([1]) + b.add(["a", "b"]) // 23
+    r += pick([u8(1)]) + pick([i32(1), x]) + pick([x : 2]) // 14
+    return r - 3 // 63
+}

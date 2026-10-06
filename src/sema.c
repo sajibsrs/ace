@@ -3343,9 +3343,34 @@ static int overloaded_func_name(Ck* k, Node* e) {
     return s && s->kind == SYM_FUNC && overload_count(s) > 1;
 }
 
+static SType* overload_arg_type(Ck* k, Node* arg);
+
+/*
+ * An array literal's overload candidate (Names & Scoping #6): an array of
+ * E when every element has the same candidate type E; otherwise none, and
+ * it matches no candidate of a real overload set. exact_arg_type checks the
+ * length against the literal itself.
+ */
+static SType* overload_arraylit_type(Ck* k, Node* lit) {
+    int n = lit->a ? 1 : lit->nkids;
+    if (n == 0 || (!lit->a && lit->kids[0]->kind == N_MAPENTRY)) return NULL;
+    SType* elem = NULL;
+    for (int i = 0; i < n; i++) {
+        Node* e = lit->a ? lit->a : lit->kids[i];
+        if (e->kind == N_ARRAYLIT) return NULL; // a nested literal has no candidate
+        SType* t = overload_arg_type(k, e);
+        if (!t || t == T_ERR || t == T_UT_NULL) return NULL;
+        if (elem && !same_type(elem, t)) return NULL;
+        elem = t;
+    }
+    SType* at = st_new(SK_ARRAY);
+    at->base = elem;
+    return at;
+}
+
 static SType* overload_arg_type(Ck* k, Node* arg) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
-    if (raw->kind == N_ARRAYLIT) return NULL; // candidate parameter supplies its type
+    if (raw->kind == N_ARRAYLIT) return overload_arraylit_type(k, raw);
     if (raw->kind == N_STRUCTLIT && !raw->a) return NULL; // bare literal: parameter supplies its type
     // matches no candidate exactly: only a sole candidate's parameter selects it
     int overloaded = overloaded_func_name(k, raw);
@@ -3383,6 +3408,8 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
     Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) {
+        if (!actual || !param || !param->base) return 0;
+        if (!same_type(actual->base, param->base) && !shrink_ok(actual->base, param->base)) return 0;
         if (param && param->kind == SK_SLICE) // a plain []T views a positional literal
             return !param->is_mut && !(raw->nkids > 0 && raw->kids[0]->kind == N_MAPENTRY);
         if (!param || param->kind != SK_ARRAY) return 0;

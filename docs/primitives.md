@@ -37,8 +37,8 @@ nonzero divisor cannot fail, so debug output omits its guards; zero and a
 signed `-1` divisor keep the ordinary divide and checks.
 
 Integer literals are untyped constants until used. They must fit the destination
-type. In overload selection, an uncast integer or character literal uses the
-natural `int` candidate; cast explicitly to select another overload.
+type. In overload selection, an uncast integer literal uses the natural `int`
+candidate and a character literal `u8`; cast explicitly to select another overload.
 
 ```ace
 small: i32 = 13

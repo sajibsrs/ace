@@ -1,0 +1,15 @@
+/* An array literal selects an overload by its candidate element type. */
+
+take(xs: []u8): int { return 1 }
+take(x: int): int { return 2 }
+
+both(xs: []f64): int { return 1 }
+both(xs: []int): int { return 2 }
+
+main(): int {
+    a: int = take([1, 2])
+    b: int = both([1, 2.5])
+    c: int = both([])
+    d: int = take(['a', 300])
+    return a + b + c + d
+}

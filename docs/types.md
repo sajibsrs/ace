@@ -513,9 +513,20 @@ stack storage of the enclosing function, built exactly as a named
 `tmp: [N]T = [...]` would be, and the view is valid while that function runs.
 An empty literal is the null view. The view is plain: a `mut []T` context
 rejects a literal, since nothing could read what is written through it. A
-keyed literal needs its `[E]T`. Overload selection treats a literal as
-matching both `[]T` and an `[N]T` of its length, so a set holding both is
-ambiguous for it.
+keyed literal needs its `[E]T`. Overload selection gives a literal the candidate
+element type its elements share (`int` for integers, `f64` for floats, `u8`
+for characters, a typed element's own type), so `pick([1, 2])` chooses
+`pick(xs: []int)` over `pick(xs: []string)`. It matches both `[]E` and an
+`[N]E` of its length, so a set holding both is ambiguous for it. Elements
+without one shared candidate (`[1, 2.5]`, `[]`, nested literals) match no
+overload; cast an element or name the array instead.
+
+### Design rationale
+
+The literal's candidate follows the scalar rule element by element rather
+than ranking conversions, as C++ deduces `std::initializer_list<T>` only from
+agreeing elements: selection stays exact, and `f([1])` succeeds exactly when
+`f(1)` would pick the same element type.
 
 The direct read-only property `sequence.len` is available on built-in arrays (constant element
 count), slices (stored element count), and strings (stored byte count), including
