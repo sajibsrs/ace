@@ -137,7 +137,7 @@
           }
         },
         {
-          "begin": "\\b(import)\\b(?=[^\\n]*\\bfrom\\b)",
+          "begin": "(?<!\\.)\\b(import)\\b(?=[^\\n]*\\bfrom\\b)",
           "beginCaptures": {
             "1": { "name": "keyword.control.ace" }
           },
@@ -157,7 +157,7 @@
           ]
         },
         {
-          "begin": "\\b(import)\\b\\s*(\\()",
+          "begin": "(?<!\\.)\\b(import)\\b\\s*(\\()",
           "beginCaptures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "punctuation.section.group.begin.ace" }
