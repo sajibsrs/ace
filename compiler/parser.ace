@@ -220,6 +220,16 @@ grow[T](s: mut []T): mut []T {
     return g
 }
 
+/* `path` relative to its own directory, the root's, as C's build_path writes
+ * a root file's `@file`. C also maps a file under the compiler's std/ to
+ * `std/<rel>` through realpath; that case is not ported.
+ */
+base_name(path: string): string {
+    i: usize = path.len
+    for i > 0 && path[i - 1] != '/' { i -= 1 }
+    return path[i..]
+}
+
 report(path: string, line: u32, col: u32, message: string) {
     fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), message)
 }
@@ -1003,7 +1013,7 @@ Parser.primary(mut self, ctx: int): u32 {
             }
             if self.ident_at(1, "file") {
                 x: u32 = mut self.nd(Kind.str_lit)
-                mut self.named(x, self.path)
+                mut self.named(x, base_name(self.path))
                 self.i += 2
                 return x
             }
@@ -1199,8 +1209,7 @@ Parser.stmt_end(mut self) {
 Parser.parse_if(mut self): u32 {
     n: u32 = mut self.nd(Kind.if)
     mut self.expect(Token.if, "'if'")
-    a: u32 = mut self.expr(NOSLIT)
-    self.nodes[n].a = a
+    self.nodes[n].a = mut self.expr(NOSLIT)
     self.nodes[n].b = mut self.block()
     if self.at(Token.else) { // must be on the '}' line (the lexer emits a newline otherwise)
         self.i += 1
@@ -1443,8 +1452,7 @@ Parser.case_list_at(self): bool {
 Parser.parse_switch(mut self): u32 {
     n: u32 = mut self.nd(Kind.switch)
     mut self.expect(Token.switch, "'switch'")
-    a: u32 = mut self.expr(NOSLIT)
-    self.nodes[n].a = a
+    self.nodes[n].a = mut self.expr(NOSLIT)
     mut self.expect(Token.lbrace, "'{' to open switch body")
     cases: usize = self.nstack
     mut self.skipnl()

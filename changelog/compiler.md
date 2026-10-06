@@ -1,5 +1,8 @@
 # Compiler
 
+- The self-hosted parser writes `@file` as the root file's base name, the
+  path relative to its own directory, as C's `build_path` does; C's `std/<rel>`
+  mapping for files under the compiler's std is not ported.
 - Both parsers parse binary operators by precedence climbing: one `level`
   lookup per operator, not a call per precedence level for every operand.
   The self-hosted parser runs 1.26–1.66x faster (`shader.ace` 1.9x → 1.1x of
