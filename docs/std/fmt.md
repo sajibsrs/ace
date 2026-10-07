@@ -240,6 +240,13 @@ main(): int {
 
 A caller that wants no context passes `fmt.Buffer.init(null)`.
 
+Code that continues past failures and handles each one programmatically, such
+as a lexer reporting every error in a file, takes a caller-owned
+`errors: mut array.Array[R]` instead, where `R` is its own record type holding
+an `err: Error` plus whatever position or payload it reports, and pushes one
+record per failure. Std defines no shared failure record: each domain's record
+carries what that domain needs.
+
 ## Design rationale
 
 Why the rules in `spec/std/fmt.md` are shaped as they are.

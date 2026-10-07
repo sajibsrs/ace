@@ -66,9 +66,9 @@ main(): int {
         mut out.printf("\n")
         if t == Token.eof { break }
     }
-    for d: lexer.Diag in lx.diags() { lexer.report(path, d) }
+    for d: lexer.Diag in lx.errors() { lexer.report(path, d) }
     mut out.flush()
-    return summary(path, int(lx.diags().len))
+    return summary(path, int(lx.errors().len))
 }
 
 /* C's closing count, "path: N error(s)"; 1 when there were any errors. */

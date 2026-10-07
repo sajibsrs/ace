@@ -126,3 +126,6 @@
 - `null` selects an overload whose parameter accepts it, as a plain call
   coerces it (`fmt.Buffer.init(null)`); a `null` two overloads accept is
   ambiguous.
+- Code that continues past failures collects them in a caller-owned
+  `array.Array[R]` of domain records holding an `err: Error` (Errors #14);
+  the self-hosted lexer stores its `Diag`s that way, read through `errors()`.

@@ -6,6 +6,7 @@
  * live in the lexer's scratch buffer.
  */
 
+import array
 import fmt
 import mem
 import str
@@ -108,8 +109,7 @@ pub Lexer: struct {
     text: string,   // ident: source view; string: decoded bytes (scratch)
     ival: u64,      // int value, char byte
     fval: f64,      // float value
-    diag: mut []Diag = null, // every error so far, in source order
-    ndiag: usize,
+    errs: array.Array[Diag], // every error so far, in source order
 }
 
 /* A lexer over `src`, which must outlive it. Call `wipe` when done. */
@@ -117,7 +117,7 @@ pub Lexer.new(src: string): Lexer {
     lx: Lexer = Lexer {
         src = src, off = 0, line = 1, lstart = 0, tline = 1, tcol = 1,
         prev = Token.newline, count = 0, used = 0, text = "", ival = 0, fval = 0.0,
-        ndiag = 0,
+        errs = array.Array[Diag] {},
     }
     if src.len >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
         lx.off = 3 // UTF-8 BOM
@@ -128,9 +128,8 @@ pub Lexer.new(src: string): Lexer {
 
 pub Lexer.wipe(mut self) {
     mem.release[u8](mut self.scratch)
-    mem.release[Diag](mut self.diag)
+    mut self.errs.wipe()
     self.used = 0
-    self.ndiag = 0
 }
 
 /* The current token's position. */
@@ -156,8 +155,8 @@ pub Lexer.float(self): f64 {
 }
 
 /* Every error found so far, in source order. */
-pub Lexer.diags(self): []Diag {
-    return self.diag[..self.ndiag]
+pub Lexer.errors(self): []Diag {
+    return self.errs.view()
 }
 
 inline Lexer.cur(self): u8 {
@@ -196,16 +195,10 @@ Lexer.fail(mut self, e: Error) {
  * the C compiler's arena does.
  */
 Lexer.fail(mut self, e: Error, byte: u8) {
-    if self.ndiag == self.diag.len {
-        grown: mut []Diag, ok: bool = mem.grow[Diag](self.diag, self.diag.len * 2 + 4)
-        if !ok {
-            fmt.printf(sys.stderr, "ace: out of memory\n")
-            sys.exit(1)
-        }
-        self.diag = grown
+    if mut self.errs.push(Diag { err = e, line = self.tline, col = self.tcol, byte = byte }) != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
     }
-    self.diag[self.ndiag] = Diag { err = e, line = self.tline, col = self.tcol, byte = byte }
-    self.ndiag += 1
 }
 
 Lexer.push(mut self, c: u8) {
@@ -698,7 +691,7 @@ Lexer.emit(mut self, t: Token): Token {
 }
 
 /* The next token; after eof, eof again. A token with an error is still a
- * token (as in the C lexer); `diags` holds the errors.
+ * token (as in the C lexer); `errors` holds the errors.
  */
 pub Lexer.next(mut self): Token {
     for {
