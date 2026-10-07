@@ -265,12 +265,12 @@ pub general(value: decimal.Decimal, digits: []u8, precision: usize, out: mut []u
  * failure sticks and later writes are no-ops. Nothing outlives the call.
  */
 pub Sink: struct {
-    storage: mut []u8 = null,
-    used: usize,
-    drained: int,               // bytes drain has taken
-    failed: bool,
-    status: int,                // the failing drain result
-    dropped: usize,             // bytes a null drain could not keep
+    pub storage: mut []u8 = null,
+    pub used: usize,
+    pub drained: int,           // bytes drain has taken
+    pub failed: bool,
+    pub status: int,            // the failing drain result
+    pub dropped: usize,         // bytes a null drain could not keep
     target: i32,                // passed to drain: fmt.printf's descriptor
     drain: (i32, []u8): int,    // null: keep what fits, drop the rest
 }

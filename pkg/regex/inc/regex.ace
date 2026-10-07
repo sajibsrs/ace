@@ -20,8 +20,8 @@ UNSET: const usize = matcher.UNSET
  * for a group that took no part in the match.
  */
 pub Span: struct {
-    start: usize,
-    end: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 /* The convenience layer over the public core: a compiled `Program` with the

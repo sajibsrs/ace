@@ -106,59 +106,59 @@ SDL_GPUShader: struct {}
 SDL_GPURenderState: struct {}
 
 // Handles own one C object each; a null handle means creation failed.
-pub Window: struct { handle: *SDL_Window }
-pub Renderer: struct { handle: *SDL_Renderer }
-pub RenderState: struct { handle: *SDL_GPURenderState }
+pub Window: struct { pub handle: *SDL_Window }
+pub Renderer: struct { pub handle: *SDL_Renderer }
+pub RenderState: struct { pub handle: *SDL_GPURenderState }
 
 // A fragment shader, with the renderer's device that releases it.
-pub Shader: struct { device: *SDL_GPUDevice, handle: *SDL_GPUShader }
+pub Shader: struct { pub device: *SDL_GPUDevice, pub handle: *SDL_GPUShader }
 
 // A position in render pixels (SDL_FPoint).
-pub Point: struct { x: f32 = 0.0, y: f32 = 0.0 }
+pub Point: struct { pub x: f32 = 0.0, pub y: f32 = 0.0 }
 
 // A color with 0..1 channels (SDL_FColor), opaque unless `a` says otherwise.
-pub Color: struct { r: f32 = 0.0, g: f32 = 0.0, b: f32 = 0.0, a: f32 = 1.0 }
+pub Color: struct { pub r: f32 = 0.0, pub g: f32 = 0.0, pub b: f32 = 0.0, pub a: f32 = 1.0 }
 
 // A geometry vertex; the texture coordinate is unused without a texture.
 pub Vertex: struct {
-    position: Point = Point {},
-    color: Color = Color {},
-    tex_coord: Point = Point {},
+    pub position: Point = Point {},
+    pub color: Color = Color {},
+    pub tex_coord: Point = Point {},
 }
 
 pub QuitEvent: struct {
-    type: EventType,
-    reserved: u32,
-    timestamp: u64,
+    pub type: EventType,
+    pub reserved: u32,
+    pub timestamp: u64,
 }
 
 pub KeyboardEvent: struct {
-    type: EventType,
-    reserved: u32,
-    timestamp: u64,
-    window_id: u32,
-    which: u32,
-    scancode: u32,
-    key: Keycode,
-    mod: u16,
-    raw: u16,
-    down: bool,
-    repeat: bool,
+    pub type: EventType,
+    pub reserved: u32,
+    pub timestamp: u64,
+    pub window_id: u32,
+    pub which: u32,
+    pub scancode: u32,
+    pub key: Keycode,
+    pub mod: u16,
+    pub raw: u16,
+    pub down: bool,
+    pub repeat: bool,
 }
 
 // SDL_Event: a C union, written as an overlapping struct.
 pub Event: struct {
     @offset(0)
-    type: EventType,
+    pub type: EventType,
 
     @offset(0)
-    keyboard: KeyboardEvent,
+    pub keyboard: KeyboardEvent,
 
     @offset(0)
-    quit: QuitEvent,
+    pub quit: QuitEvent,
 
     @offset(0)
-    padding: [128]u8,
+    pub padding: [128]u8,
 }
 
 // SDL_GPUShaderCreateInfo; stage is an SDL_GPUShaderStage.

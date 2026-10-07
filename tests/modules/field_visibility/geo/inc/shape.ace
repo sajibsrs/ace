@@ -1,0 +1,16 @@
+/* `pub` on a field of an implementation-file struct reaches the other files
+ * of the directory module, and importers once mod.ace re-exports the struct. */
+
+pub Point: struct {
+    pub x: int,
+    pub y: int,
+    tag: int = 7,
+}
+
+pub Hidden: struct {
+    pub n: int,
+}
+
+pub hidden(n: int): Hidden {
+    return Hidden { n = n }
+}

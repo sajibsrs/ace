@@ -81,7 +81,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 }
             }
 
-            received: int, recv_err: Error = net.receive(conn.socket, mut context.input[occupied..])
+            received: int, recv_err: Error = tcp.receive(conn, mut context.input[occupied..])
             if recv_err != null {
                 if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR { continue }
                 return blank(Request), false

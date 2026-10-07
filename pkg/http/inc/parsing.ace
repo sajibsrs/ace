@@ -6,10 +6,10 @@ import str
 import message: "./message.ace"
 
 pub Url: struct {
-    host: string,
-    path: string,
-    query: string,
-    port: u16,
+    pub host: string,
+    pub path: string,
+    pub query: string,
+    pub port: u16,
 }
 
 pub UrlErr: error {
@@ -45,22 +45,22 @@ pub RequestCapacity: enum {
 }
 
 pub RequestParser: struct {
-    input_offset: usize = 0,
-    line_start: usize = 0,
-    scan_offset: usize = 0,
-    line_stop: usize = 0,
-    line_next: usize = 0,
-    line_ready: bool = false,
-    header_count: usize = 0,
-    body_count: usize = 0,
-    content_length: usize = 0,
-    chunk_remaining: usize = 0,
-    method_start: usize = 0,
-    method_count: usize = 0,
-    target_start: usize = 0,
-    target_count: usize = 0,
-    phase: RequestPhase,
-    framing: RequestFraming,
+    pub input_offset: usize = 0,
+    pub line_start: usize = 0,
+    pub scan_offset: usize = 0,
+    pub line_stop: usize = 0,
+    pub line_next: usize = 0,
+    pub line_ready: bool = false,
+    pub header_count: usize = 0,
+    pub body_count: usize = 0,
+    pub content_length: usize = 0,
+    pub chunk_remaining: usize = 0,
+    pub method_start: usize = 0,
+    pub method_count: usize = 0,
+    pub target_start: usize = 0,
+    pub target_count: usize = 0,
+    pub phase: RequestPhase,
+    pub framing: RequestFraming,
 }
 
 pub RequestProgress: struct {
@@ -102,28 +102,28 @@ pub ResponseCapacity: enum {
 }
 
 pub ResponseParser: struct {
-    input_offset: usize = 0,
-    line_start: usize = 0,
-    scan_offset: usize = 0,
-    line_stop: usize = 0,
-    line_next: usize = 0,
-    line_ready: bool = false,
-    header_count: usize = 0,
-    body_count: usize = 0,
-    content_length: usize = 0,
-    chunk_remaining: usize = 0,
-    version_minor: u8 = 0,
-    status: u16 = 0,
-    reason_start: usize = 0,
-    reason_count: usize = 0,
-    phase: ResponsePhase,
-    framing: ResponseFraming,
-    informational_count: usize = 0,
+    pub input_offset: usize = 0,
+    pub line_start: usize = 0,
+    pub scan_offset: usize = 0,
+    pub line_stop: usize = 0,
+    pub line_next: usize = 0,
+    pub line_ready: bool = false,
+    pub header_count: usize = 0,
+    pub body_count: usize = 0,
+    pub content_length: usize = 0,
+    pub chunk_remaining: usize = 0,
+    pub version_minor: u8 = 0,
+    pub status: u16 = 0,
+    pub reason_start: usize = 0,
+    pub reason_count: usize = 0,
+    pub phase: ResponsePhase,
+    pub framing: ResponseFraming,
+    pub informational_count: usize = 0,
 }
 
 pub ResponseProgress: struct {
     consumed: usize,
-    body_written: usize,
+    pub body_written: usize,
 }
 
 pub ResponseResult: union {

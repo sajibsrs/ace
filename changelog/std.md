@@ -49,3 +49,7 @@
   `buffer.dropped()`: a sink with a null drain keeps what fits and counts the
   rest, checked only on the slow path. Error context is carried this way, by
   convention; the self-hosted parser's error message uses one.
+- `tcp.receive(connection, buffer)` and `tcp.watch(q, connection)` reach a
+  connection whose socket is now private (`watch` registers its current
+  interest with `poll`). sdl's raw C handles, `Array.len`, `Map.len`, and
+  the plain-data `net`, `sys`, and `poll` records mark their fields `pub`.

@@ -25,23 +25,23 @@ pub PUT: const string = "PUT"
 pub TRACE: const string = "TRACE"
 
 pub Header: struct {
-    name: string,
-    value: string,
+    pub name: string,
+    pub value: string,
 }
 
 pub Request: struct {
-    method: string,
-    target: string,
-    headers: []Header = null,
-    body: []u8 = null,
+    pub method: string,
+    pub target: string,
+    pub headers: []Header = null,
+    pub body: []u8 = null,
 }
 
 pub Response: struct {
-    version_minor: u8 = 1,
-    status: u16 = 200,
-    reason: string = null,
-    headers: []Header = null,
-    body: []u8 = null,
+    pub version_minor: u8 = 1,
+    pub status: u16 = 200,
+    pub reason: string = null,
+    pub headers: []Header = null,
+    pub body: []u8 = null,
 }
 
 /* Reports whether `byte` is permitted by the HTTP token grammar. */

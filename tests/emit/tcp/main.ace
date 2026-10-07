@@ -22,13 +22,12 @@ client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect(loopback(port))
     if err != null { return 1 }
 
-    // Separate one-attempt sends let receive_all prove retained progress.
-    count: int, ioerr: Error = net.send(connection.socket, "pi")
-    if ioerr != null || count != 2 {
+    // Separate sends let receive_all prove retained progress.
+    sent: usize, ioerr: Error = tcp.send_all(connection, "pi")
+    if ioerr != null || sent != 2 {
         tcp.close(mut connection)
         return 2
     }
-    sent: usize
     sent, ioerr = tcp.send_all(connection, "ng")
     if ioerr != null || sent != 2 {
         tcp.close(mut connection)
@@ -43,7 +42,7 @@ client(port: u16): int {
         tcp.close(mut connection)
         return 4
     }
-    if tcp.close(mut connection) != null || connection.active { return 5 }
+    if tcp.close(mut connection) != null { return 5 }
     return 0
 }
 
@@ -68,7 +67,6 @@ check_cleanup(): int {
         if err.domain == typeid(net.BindErr) { return 42 }
         return 43
     }
-    if listener.active { return 3 }
 
     // A failed constructor closed its created fd: the next kernel allocation
     // reuses the lowest available descriptor deterministically in this process.
@@ -78,7 +76,7 @@ check_cleanup(): int {
 
     connection: tcp.Conn
     connection, err = tcp.connect(loopback(u16(0)))
-    if !is_error(err, typeid(net.ConnectErr)) || connection.active { return 6 }
+    if !is_error(err, typeid(net.ConnectErr)) { return 6 }
     second: net.Socket
     second, socket_err = net.socket(net.SocketType.tcp)
     if socket_err != null || second != first {
@@ -86,34 +84,6 @@ check_cleanup(): int {
         return 7
     }
     if sys.close(second) != null { return 8 }
-
-    invalid_connection: tcp.Conn = tcp.Conn {
-        socket = net.Socket(-1),
-        active = true,
-    }
-    err = tcp.close(mut invalid_connection)
-    if !is_error(err, typeid(sys.CloseErr)) || invalid_connection.active ||
-       invalid_connection.socket != 0 {
-        return 9
-    }
-    invalid_listener: tcp.Listener = tcp.Listener {
-        socket = net.Socket(-1),
-        active = true,
-    }
-    err = tcp.close(mut invalid_listener)
-    if !is_error(err, typeid(sys.CloseErr)) || invalid_listener.active ||
-       invalid_listener.socket != 0 {
-        return 10
-    }
-
-    // Closing an inactive handle is a silent no-op that never reaches the
-    // descriptor it holds: canonical zero carries descriptor zero.
-    if tcp.close(mut invalid_connection) != null || tcp.close(mut invalid_listener) != null { return 11 }
-    probe: net.Socket
-    probe, socket_err = net.socket(net.SocketType.tcp)
-    if socket_err != null { return 12 }
-    inactive: tcp.Conn = tcp.Conn { socket = probe }
-    if tcp.close(mut inactive) != null || inactive.socket != probe || sys.close(probe) != null { return 13 }
     return 0
 }
 
@@ -121,18 +91,8 @@ main(): int {
     cleanup: int = check_cleanup()
     if cleanup != 0 { return cleanup }
 
-    invalid: tcp.Conn = tcp.Conn {
-        socket = net.Socket(-1),
-        interest = tcp.Interest.none,
-        send_offset = usize(0),
-    }
-    one: [1]u8 = [0]
-    writable: mut []u8 = mut one[0..]
-    count: usize, err: Error = tcp.receive_all(invalid, writable)
-    if count != 0 || !is_error(err, typeid(net.ReceiveErr)) { return 10 }
-    count, err = tcp.send_all(invalid, "x")
-    if count != 0 || !is_error(err, typeid(net.SendErr)) { return 11 }
-    count, err = tcp.send_all(invalid, "")
+    // An empty send never touches the descriptor.
+    count: usize, err: Error = tcp.send_all(tcp.Conn {}, "")
     if count != 0 || err != null { return 12 }
 
     listener: tcp.Listener
@@ -171,7 +131,7 @@ main(): int {
         tcp.close(mut listener)
         return 25
     }
-    if tcp.close(mut connection) != null || connection.active {
+    if tcp.close(mut connection) != null {
         tcp.close(mut listener)
         return 26
     }
@@ -207,6 +167,6 @@ main(): int {
         tcp.close(mut listener)
         return 31
     }
-    if tcp.close(mut listener) != null || listener.active { return 32 }
+    if tcp.close(mut listener) != null { return 32 }
     return 0
 }

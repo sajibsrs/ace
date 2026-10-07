@@ -16,7 +16,7 @@ Parser: type = parsing.Parser
 Formatter: type = writing.Formatter
 
 pub Json: struct {
-    root: Value,
+    pub root: Value,
     parser: Parser,
     formatter: Formatter,
 }

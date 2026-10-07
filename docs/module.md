@@ -188,6 +188,29 @@ considered independently, so selecting the spelling may import either or both,
 depending on which declarations are public. `extern "c"` declarations are
 always module-private.
 
+### Field visibility
+
+A struct field follows the same rule as a declaration, measured from the file
+that declares the struct. An unmarked field is private to that file. A `pub`
+field is visible wherever the struct is, never wider. That means everywhere
+for a `pub` struct in a single-file module or `mod.ace`, or for one a facade
+re-exports through a public alias. It means the directory module's own files
+for a `pub` struct left in an implementation file.
+
+```ace
+pub Array[T]: struct {
+    items: mut []T = null,   // only std/array.ace reads or writes it
+    pub len: usize = 0,      // every importer reads it
+}
+```
+
+Outside its visibility a field cannot be read, written, named in a literal, or
+set positionally (`field 'items' of 'array.Array' is private`). An empty
+literal `T {}` and `blank(T)` stay legal for any visible type, since they set
+no field and yield only the declared defaults and canonical zero. Embedding
+promotes methods, never fields, so `x.base.f` is checked against `f`'s own
+mark.
+
 ## Loading, identity, and cycles
 
 Modules are loaded depth-first in declaration order, and each dependency is
@@ -257,11 +280,21 @@ every function to the file it was written in.
 
 Why the rules in `spec/modules-packages.md` are shaped as they are.
 
-- Modules #10: platform replacement changes the target layer without spreading
+- Modules #3: field visibility reuses declaration visibility, not a separate
+  boundary, so any change to rule 2 carries over to fields unchanged. Private
+  by default matches Rust's per-field `pub` and its rule that a literal must
+  see every field it sets. Go reaches the same split by capitalization, and
+  Zig and Odin keep every field public. A type can then keep invariants (an
+  `Array`'s storage, a `tcp.Conn`'s descriptor) behind its methods while
+  plain data marks its fields `pub`. Like Go's `pkg.T{}`, the empty literal
+  and `blank(T)` stay open, because every Ace type's canonical zero is
+  already a valid value and the type's own defaults are its author's choice.
+
+- Modules #11: platform replacement changes the target layer without spreading
   kernel ABI, constants, structures, or link names through callers, while the
   public Ace surface remains reviewable in one place and redundant forwarding
   layers do not accumulate.
-- Modules #11: one restricted declaration filter supplies zero-cost target
+- Modules #12: one restricted declaration filter supplies zero-cost target
   selection without a textual preprocessor, hidden runtime branch, general
   compile-time execution, or mid-function source fragmentation.
 - C Interop #3: a positive whitelist states exactly what the compiler has

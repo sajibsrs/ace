@@ -1,0 +1,17 @@
+import shape: "./inc/shape.ace"
+
+pub Point: type = shape.Point
+
+pub Inner: struct {
+    pub shown: int = 0,
+    secret: int = 5,
+}
+
+/* Reads a sibling file's pub field of a struct it never re-exports. */
+pub hidden(n: int): shape.Hidden {
+    return shape.hidden(n)
+}
+
+pub sum(n: int): int {
+    return shape.hidden(n).n + Inner {}.secret
+}

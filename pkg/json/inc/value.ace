@@ -10,6 +10,6 @@ pub Value: union {
 }
 
 pub Pair: struct {
-    key: string,
-    value: Value,
+    pub key: string,
+    pub value: Value,
 }

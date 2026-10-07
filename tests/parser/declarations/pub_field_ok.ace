@@ -1,0 +1,12 @@
+/* `pub` marks a field; `pub:` and `embed:` still name one. */
+
+Base: struct {
+    pub: int,
+}
+
+Holder: struct {
+    @align(8)
+    pub embed base: Base,
+    pub count: usize = 0,
+    embed: bool,
+}

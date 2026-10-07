@@ -182,6 +182,7 @@ enum {
     F_FIELDCALL = 16777216, // a call through a function value stored in a struct field
     F_GROUPED = 33554432, // a field expression written in parentheses: (x.f)
     F_STATICLIT = 67108864, // a []T array literal of constant elements: static data
+    F_REEXPORTED = 134217728, // a struct a facade's pub alias makes visible to importers
 };
 
 // Compiler-backed standard-module functions. These markers live only on the
@@ -333,6 +334,12 @@ extern const char* formatting_prefix;
 // where module is the directory module's name for any file in its tree, else
 // the file's stem. Names without a module prefix come back unchanged.
 const char* module_display(const char* name);
+// Modules #2 visibility of a declaration in decl_path marked pub or not, seen
+// from use_path: its own file, else pub in a single-file module or mod.ace,
+// else pub within its directory module only.
+int decl_visible(const char* decl_path, int pub, const char* use_path);
+// Whether a pub declaration in path is visible to the module's importers.
+int decl_external(const char* path);
 
 // --- Packages (ace.pkg manifests, spec/modules-packages.md Package System) --------------------
 // A package is a directory holding one ace.pkg and one root .ace file;

@@ -554,6 +554,49 @@ static void module_set_display(Loader* L, Module* m) {
     g_displays[g_ndisplays++].display = m->display;
 }
 
+// Each loaded file's directory-module root (NULL for a single-file module),
+// keyed by the path its nodes carry, so sema can apply Modules #2 to members
+// declared inside a type (struct fields) exactly as the loader applies it to
+// top-level declarations.
+static struct { const char* path; const char* root; }* g_files;
+static int g_nfiles, g_cfiles;
+
+static void module_register_file(const char* path, const char* root) {
+    if (g_nfiles == g_cfiles) {
+        g_cfiles = g_cfiles ? g_cfiles * 2 : 16;
+        g_files = realloc(g_files, (size_t)g_cfiles * sizeof *g_files);
+        if (!g_files) exit(1);
+    }
+    g_files[g_nfiles].path = path;
+    g_files[g_nfiles++].root = root;
+}
+
+static int file_root(const char* path, const char** root) {
+    for (int i = 0; i < g_nfiles; i++)
+        if (strcmp(g_files[i].path, path) == 0) { *root = g_files[i].root; return 1; }
+    *root = NULL;
+    return 0;
+}
+
+int decl_external(const char* path) {
+    const char* root;
+    file_root(path, &root);
+    if (!root) return 1; // a single-file module's pub is its external surface
+    size_t rl = strlen(root);
+    return strncmp(path, root, rl) == 0 && strcmp(path + rl, "/mod.ace") == 0;
+}
+
+int decl_visible(const char* decl_path, int pub, const char* use_path) {
+    if (!decl_path || !use_path || strcmp(decl_path, use_path) == 0) return 1;
+    if (!pub) return 0;
+    if (decl_external(decl_path)) return 1;
+    const char* root;
+    file_root(decl_path, &root);
+    const char* use_root;
+    file_root(use_path, &use_root);
+    return use_root && strcmp(use_root, root) == 0;
+}
+
 static Module* module_new(Loader* L, const char* canon, Node* file) {
     Module* m = (Module*)arena_alloc(sizeof(Module));
     memset(m, 0, sizeof *m);
@@ -561,6 +604,7 @@ static Module* module_new(Loader* L, const char* canon, Node* file) {
     m->file = file;
     m->prefix = assign_prefix(L, canon);
     module_set_display(L, m);
+    module_register_file(file->path ? file->path : canon, m->root);
     return m;
 }
 

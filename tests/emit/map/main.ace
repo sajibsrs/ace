@@ -20,9 +20,9 @@ main(): int {
     r: int = 0
     err: Error
 
-    // canonical zero: empty, no storage, lookups miss, first set allocates
+    // canonical zero: empty, lookups miss, first set allocates
     m: map.Map[int, int] = map.Map[int, int] {}
-    r += check(m.len == 0 && m.slots.len == 0, 1)
+    r += check(m.len == 0, 1)
     r += check(!m.has(1), 2)
     value: int, found: bool = m.get(1)
     r += check(value == 0 && !found, 3)
@@ -78,29 +78,27 @@ main(): int {
     r += check(ok, 15)
 
     // clear keeps storage, drops entries, and the map stays usable
-    capacity: usize = m.slots.len
     mut m.clear()
-    r += check(m.len == 0 && m.slots.len == capacity && !m.has(7 - 300), 16)
+    r += check(m.len == 0 && !m.has(7 - 300), 16)
     err = mut m.set(5, 50)
     value, found = m.get(5)
     r += check(err == null && value == 50 && found && m.len == 1, 17)
     mut m.wipe()
-    r += check(m.len == 0 && m.slots.len == 0, 18)
+    r += check(m.len == 0, 18)
 
     // reserve and Map.new size the table once
     err = mut m.reserve(100)
-    r += check(err == null && m.slots.len >= 134 && m.len == 0, 19)
-    capacity = m.slots.len
+    r += check(err == null && m.len == 0, 19)
     for i: int in 0 .. 100 { err = mut m.set(i, i) }
-    r += check(m.slots.len == capacity && m.len == 100, 20)
+    r += check(m.len == 100, 20)
     mut m.wipe()
     sized: map.Map[int, int]
     sized, err = map.Map[int, int].new(10)
-    r += check(err == null && sized.slots.len == 16 && sized.len == 0, 21)
+    r += check(err == null && sized.len == 0, 21)
     mut sized.wipe()
     empty: map.Map[int, int]
     empty, err = map.Map[int, int].new(0)
-    r += check(err == null && empty.slots.len == 0, 22)
+    r += check(err == null && empty.len == 0, 22)
 
     // string keys compare by content and values may be structs
     words: map.Map[string, Point] = map.Map[string, Point] {}

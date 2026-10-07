@@ -129,3 +129,8 @@
 - Code that continues past failures collects them in a caller-owned
   `array.Array[R]` of domain records holding an `err: Error` (Errors #14);
   the self-hosted lexer stores its `Diag`s that way, read through `errors()`.
+- Struct fields are private to the declaring file unless `pub`, and a `pub`
+  field is visible exactly where its struct is (Modules #3), through the
+  loader's `decl_visible`, which a facade's `pub` alias also widens. A field
+  outside that set cannot be read, written, or named in a literal; `T {}` and
+  `blank(T)` stay open.

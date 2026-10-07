@@ -12,8 +12,8 @@ ALIGN: const usize = 16
 
 @align(ALIGN)
 pub Box: struct {
-    mode: Mode = Mode.on,
-    size: usize = LIMIT,
+    pub mode: Mode = Mode.on,
+    pub size: usize = LIMIT,
     @align(ALIGN)
-    tag: u8 = 3,
+    pub tag: u8 = 3,
 }

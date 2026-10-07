@@ -1,0 +1,15 @@
+/* Fields outside their visibility cannot be read, written, or named. */
+
+import geo: "./geo"
+
+Outer: struct {
+    embed inner: geo.Inner,
+}
+
+main(): int {
+    p: geo.Point = geo.Point { x = 1, y = 2, tag = 3 }
+    p.tag = 4
+    q: geo.Inner = geo.Inner { 1, 2 }
+    o: Outer = Outer { inner = geo.Inner {} }
+    return p.tag + geo.hidden(1).n + o.inner.secret + q.shown
+}

@@ -16,9 +16,9 @@
  */
 
 pub Log: struct {
-    invc: f64,
-    logc: f64,
-    logctail: f64,
+    pub invc: f64,
+    pub logc: f64,
+    pub logctail: f64,
 }
 
 pub log: const [128]Log = [

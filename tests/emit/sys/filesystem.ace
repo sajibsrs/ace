@@ -55,7 +55,7 @@ main(): int {
         }
     }
     if !found { return 10 }
-    if sys.closedir(mut dir) != null || dir.active { return 11 }
+    if sys.closedir(mut dir) != null { return 11 }
     if sys.unlink(NEW_PATH) != null { return 12 }
     missing: sys.FileInfo, missing_err: Error = sys.stat(NEW_PATH)
     if missing_err == null || missing_err.domain != typeid(sys.StatErr) { return 13 }

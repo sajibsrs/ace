@@ -1,0 +1,19 @@
+/* Struct fields follow declaration visibility (Modules #3). */
+
+// expect-exit: 0
+
+import geo: "./geo"
+
+Outer: struct {
+    embed inner: geo.Inner,
+    own: int,
+}
+
+main(): int {
+    p: geo.Point = geo.Point { x = 1, y = 2 }
+    p.x += p.y
+    empty: geo.Inner = geo.Inner {}
+    zero: geo.Inner = blank(geo.Inner)
+    o: Outer = Outer { inner = geo.Inner { shown = 4 }, own = 1 }
+    return p.x + empty.shown + zero.shown + o.inner.shown + o.own + geo.sum(0) - 13
+}

@@ -196,6 +196,11 @@ tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides 
 tests/modules/selective_type_value/main.ace|3:8: error: imported name 'Thing' collides with a declaration
 tests/modules/selective_value_type/main.ace|3:8: error: imported name 'make' collides with a declaration
 tests/modules/selective_local_type/main.ace|6:5: error: 'Thing' names a type; a value may not share its name
+tests/modules/field_private/main.ace|10:46: error: field 'tag' of 'geo.Point' is private
+tests/modules/field_private/main.ace|11:7: error: field 'tag' of 'geo.Point' is private
+tests/modules/field_private/main.ace|12:35: error: field 'secret' of 'geo.Inner' is private
+tests/modules/field_private/main.ace|14:34: error: field 'n' of 'geo.Hidden' is private
+tests/modules/field_private/main.ace|14:46: error: field 'secret' of 'geo.Inner' is private
 tests/sema/associated/nongeneric_owner_args_err.ace|8:23: error: 'P' is not generic and takes no type arguments
 tests/sema/associated/type_param_nonstruct_err.ace|4:18: error: 'T' is i64, which has no associated functions
 tests/sema/names/function_type_err.ace|3:1: error: 'N' names a type; a value may not share its name

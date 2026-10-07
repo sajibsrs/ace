@@ -62,7 +62,7 @@ pub Matcher: struct {
     next: Queue,
     stack: mut []Frame = null,
     work: mut []usize = null,
-    best: mut []usize = null,
+    pub best: mut []usize = null,
     slots: usize,
     first: Class,
     skip: bool,

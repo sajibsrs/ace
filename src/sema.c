@@ -1822,6 +1822,22 @@ static int check_func_owner(Ck* k, Scope* fs, Node* n) {
     return 1;
 }
 
+/* Modules #3: a struct field is visible exactly where a declaration with its
+ * own `pub` mark and never wider than its struct's would be (Modules #2). */
+static int field_visible(SType* t, int i, Node* at) {
+    Node* d = t->decl;
+    if (!d || d->kind != N_STRUCT || i >= d->nkids || !at) return 1;
+    int pub = (d->kids[i]->flags & F_PUB) && (d->flags & F_PUB);
+    if (pub && (d->flags & F_REEXPORTED)) return 1;
+    return decl_visible(d->path, pub, at->path);
+}
+
+static int field_private_err(Ck* k, SType* t, int i, Node* at) {
+    if (field_visible(t, i, at)) return 0;
+    ck_err(k, at, "field '%s' of '%s' is private", t->fields[i].name, type_name(t));
+    return 1;
+}
+
 /* A field sharing a method name promoted from an embedded struct is an
  * error, like any field/method collision (Abstraction #3). Only methods the
  * struct's module can call are promoted, so only those collide. */
@@ -2459,8 +2475,10 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         }
         for (int i = 0; i < b->nfields; i++)
             if ((uint32_t)strlen(b->fields[i].name) == e->len &&
-                memcmp(b->fields[i].name, e->str, e->len) == 0)
+                memcmp(b->fields[i].name, e->str, e->len) == 0) {
+                field_private_err(k, b, i, e);
                 return b->fields[i].t;
+            }
         ck_err(k, e, "type %s has no field '%.*s'", type_name(b), (int)e->len, e->str);
         return T_ERR;
     }
@@ -3058,8 +3076,10 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (b->kind == SK_STRUCT) {
             for (int i = 0; i < b->nfields; i++)
                 if ((uint32_t)strlen(b->fields[i].name) == e->len &&
-                    memcmp(b->fields[i].name, e->str, e->len) == 0)
+                    memcmp(b->fields[i].name, e->str, e->len) == 0) {
+                    field_private_err(k, b, i, e);
                     return b->fields[i].t;
+                }
             ck_err(k, e, "type %s has no field '%.*s'", type_name(b), (int)e->len, e->str);
             return T_ERR;
         }
@@ -4860,6 +4880,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                                (int)parts[pi]->len, parts[pi]->str);
                         return T_ERR;
                     }
+                    field_private_err(k, t, found, parts[pi]);
                     total += t->fields[found].offset; t = t->fields[found].t;
                 }
                 call->ival = total;
@@ -6260,6 +6281,7 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
                 ck_err(k, fi, "too many fields: %s has %d", type_name(want), want->nfields);
                 return;
             }
+            field_private_err(k, want, i, fi);
             coerce(k, fi->a, want->fields[i].t);
         } else {
             if (!fi->str) { ck_err(k, fi, "cannot mix named and positional fields"); return; }
@@ -6276,6 +6298,7 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
                 continue;
             }
             seen[found] = 1;
+            if (!(fi->flags & F_DEFAULT)) field_private_err(k, want, found, fi);
             coerce(k, fi->a, want->fields[found].t);
         }
     }
@@ -6293,6 +6316,7 @@ static void check_structlit(Ck* k, Node* lit, SType* want) {
                 Node* fi = (Node*)arena_alloc(sizeof(Node));
                 memset(fi, 0, sizeof *fi);
                 fi->kind = N_FIELDINIT; fi->str = want->fields[i].name;
+                fi->flags = F_DEFAULT; // the declaration's default, not written here
                 fi->len = (uint32_t)strlen(fi->str); fi->path = lit->path;
                 fi->line = lit->line; fi->col = lit->col;
                 fi->a = clone_expr(want->fields[i].default_value);
@@ -7963,6 +7987,11 @@ static void resolve_top(Ck* k, Sym* s) {
         s->type = T_ERR; // the alias is not visible in its own expansion
         SType* actual = build_type(&top, n->a);
         if (!s->in_cycle) s->type = actual;
+        // Modules #2: a facade's pub alias re-exports the struct, so its
+        // pub fields reach every importer (Modules #3).
+        if ((n->flags & F_PUB) && actual && actual->kind == SK_STRUCT && actual->decl &&
+            actual->decl->kind == N_STRUCT && (actual->decl->flags & F_PUB) && decl_external(n->path))
+            actual->decl->flags |= F_REEXPORTED;
         break;
     }
     case N_DISTINCT:

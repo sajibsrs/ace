@@ -41,8 +41,8 @@ NIL: const u32 = 0xFFFFFFFF
 
 /* Two continuations, `x` preferred over `y`. */
 pub Fork: struct {
-    x: u32,
-    y: u32,
+    pub x: u32,
+    pub y: u32,
 }
 
 pub Inst: union {
@@ -64,9 +64,9 @@ pub Inst: union {
  * group 0 being the whole match. The canonical zero value holds no storage.
  */
 pub Program: struct {
-    insts: array.Array[Inst],
-    classes: array.Array[Class],
-    slots: u32,
+    pub insts: array.Array[Inst],
+    pub classes: array.Array[Class],
+    pub slots: u32,
 }
 
 /* One compilation in progress. The first failure is kept in `err` and every

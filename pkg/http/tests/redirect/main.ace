@@ -16,7 +16,7 @@ read_request(connection: tcp.Conn, expected: string): Error {
     bytes: [512]u8 = [0 : 512]
     occupied: usize = 0
     for {
-        count: int, err: Error = net.receive(connection.socket, mut bytes[occupied..])
+        count: int, err: Error = tcp.receive(connection, mut bytes[occupied..])
         if err != null { return err }
         if count == 0 { return http.ClientErr.response }
 

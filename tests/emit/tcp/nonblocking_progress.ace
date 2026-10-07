@@ -14,16 +14,6 @@ loopback(port: u16): net.Addr4 {
     }
 }
 
-watch_connection(q: poll.Queue, connection: tcp.Conn): Error {
-    interest: tcp.Interest = tcp.interest(connection)
-    return poll.watch(
-        q,
-        connection.socket,
-        interest == tcp.Interest.read || interest == tcp.Interest.both,
-        interest == tcp.Interest.write || interest == tcp.Interest.both,
-    )
-}
-
 wait_one(q: poll.Queue, storage: mut []poll.Event): (poll.Event, Error) {
     count: usize, err: Error = poll.wait(q, storage, u64(1000000000))
     if err != null || count != 1 {
@@ -54,13 +44,6 @@ sent_count(event: tcp.Event): (usize, bool) {
     }
 }
 
-is_none(event: tcp.Event): bool {
-    switch event {
-        tcp.Event.none { return true }
-        default { return false }
-    }
-}
-
 client(port: u16): int {
     connection: tcp.Conn, err: Error = tcp.connect_nonblock(loopback(port))
     if err != null { return 1 }
@@ -70,7 +53,7 @@ client(port: u16): int {
         return 2
     }
     if tcp.interest(connection) == tcp.Interest.write {
-        if watch_connection(q, connection) != null {
+        if tcp.watch(q, connection) != null {
             tcp.close(mut connection)
             sys.close(sys.Fd(q))
             return 3
@@ -108,7 +91,7 @@ client(port: u16): int {
             default { return 5 }
         }
         if !advanced {
-            if watch_connection(q, connection) != null {
+            if tcp.watch(q, connection) != null {
                 tcp.close(mut connection)
                 sys.close(sys.Fd(q))
                 return 6
@@ -149,7 +132,7 @@ client(port: u16): int {
         if receive_advanced {
             received += receive_amount
         } else {
-            if watch_connection(q, connection) != null {
+            if tcp.watch(q, connection) != null {
                 tcp.close(mut connection)
                 sys.close(sys.Fd(q))
                 return 7
@@ -180,23 +163,6 @@ client(port: u16): int {
 }
 
 main(): int {
-    // Empty buffers perform no I/O and exercise the pinned interest rules.
-    empty_connection: tcp.Conn = tcp.Conn {
-        socket = net.Socket(-1),
-        interest = tcp.Interest.both,
-        send_offset = usize(7),
-    }
-    empty: mut []u8 = null
-    if !is_none(tcp.progress_receive(mut empty_connection, empty)) ||
-       tcp.interest(empty_connection) != tcp.Interest.write {
-        return 1
-    }
-    amount: usize, sent: bool = sent_count(tcp.progress_send(mut empty_connection, empty))
-    if !sent || amount != 0 || empty_connection.send_offset != 0 ||
-       tcp.interest(empty_connection) != tcp.Interest.none {
-        return 2
-    }
-
     listener: tcp.Listener, err: Error = tcp.listen(loopback(u16(0)), usize(8))
     if err != null { return 10 }
     address: net.Addr4
@@ -215,8 +181,8 @@ main(): int {
         sys.exit(client(address.port))
     }
 
-    connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
-    if accept_err != null || net.nonblock(connection.socket, true) != null {
+    connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept_nonblock(listener)
+    if accept_err != null {
         tcp.close(mut listener)
         return 13
     }
@@ -245,7 +211,7 @@ main(): int {
         if receive_advanced {
             received += receive_amount
         } else {
-            if watch_connection(q, connection) != null { return 15 }
+            if tcp.watch(q, connection) != null { return 15 }
             zero: poll.Event = poll.Event {
                 fd = sys.Fd(0),
                 readable = false,
@@ -267,7 +233,7 @@ main(): int {
         if send_advanced {
             flushed += send_amount
         } else {
-            if watch_connection(q, connection) != null { return 17 }
+            if tcp.watch(q, connection) != null { return 17 }
             zero: poll.Event = poll.Event {
                 fd = sys.Fd(0),
                 readable = false,
@@ -281,7 +247,7 @@ main(): int {
             if wait_err != null || !ready.writable { return 18 }
         }
     }
-    if connection.send_offset != 0 || tcp.interest(connection) != tcp.Interest.none { return 19 }
+    if tcp.interest(connection) != tcp.Interest.none { return 19 }
 
     tcp.close(mut connection)
     tcp.close(mut listener)
@@ -290,17 +256,5 @@ main(): int {
     if wait_err != null || !status.exited { return 20 }
     if status.code != 0 { return status.code }
 
-    invalid: tcp.Conn = tcp.Conn {
-        socket = net.Socket(-1),
-        interest = tcp.Interest.write,
-        send_offset = usize(0),
-    }
-    failed: tcp.Event = tcp.progress_connect(mut invalid)
-    switch failed {
-        tcp.Event.failed(query_err: Error) {
-            if query_err.domain != typeid(net.PendingErrorErr) || invalid.interest != tcp.Interest.none { return 21 }
-        }
-        default { return 22 }
-    }
     return 0
 }

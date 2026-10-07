@@ -42,6 +42,10 @@ a canonical-zero wrapper on failure. `local(listener)` queries the bound local
 address, and `accept(listener)` blocks for one connection and returns its peer
 `net.Addr4`.
 
+`receive(connection, buffer)` performs exactly one `net.receive` on the
+connection and returns its count (zero at orderly EOF) and error unchanged. The
+socket field itself is private.
+
 `receive_all(connection, buffer)` fills the complete writable byte view. It
 returns the full length and null on success, retained partial progress with
 `ReceiveAllErr(0)` on orderly EOF, or retained progress with the unchanged
@@ -105,10 +109,14 @@ length. Empty receive and send views perform no syscall: empty receive suspends
 read and returns `none`; empty send resets its offset, removes write, and returns
 `sent(0)`.
 
-Do not call `send_all` while `send_offset` is nonzero; blocking and progress
-send modes may be switched only between complete sources. A connection returned
-by blocking `accept` must first be configured with
-`net.nonblock(connection.socket, true)` before using progress operations.
+`watch(q, connection)` registers the connection with a `poll.Queue` under
+exactly its current interest; call it again after each progress operation that
+changes `interest(connection)`.
+
+Do not call `send_all` while a progress send is unfinished; blocking and
+progress send modes may be switched only between complete sources. Progress
+operations take a connection from `connect_nonblock` or `accept_nonblock`; one
+from blocking `accept` keeps its descriptor private, so it cannot be switched.
 
 ## Design rationale
 

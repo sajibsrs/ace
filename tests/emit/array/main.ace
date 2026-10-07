@@ -20,9 +20,9 @@ main(): int {
     r: int = 0
     err: Error
 
-    // canonical zero: empty, no storage, first push allocates
+    // canonical zero: empty, first push allocates
     a: array.Array[int] = array.Array[int] {}
-    r += check(a.len == 0 && a.items.len == 0, 1)
+    r += check(a.len == 0, 1)
     r += check(a.view().len == 0, 2)
     err = mut a.push(10)
     r += check(err == null, 3)
@@ -33,7 +33,7 @@ main(): int {
         err = mut a.push(10 + i)
         if err != null { return 5 }
     }
-    r += check(a.len == 100 && a.items.len >= 100, 6)
+    r += check(a.len == 100, 6)
     ok: bool = true
     for i: int in 0..100 {
         if a.get(usize(i)) != 10 + i { ok = false }
@@ -50,22 +50,20 @@ main(): int {
     r += check(err == null && last == 109 && a.len == 99, 9)
 
     // truncate keeps storage and every element below count
-    tcap: usize = a.items.len
     mut a.truncate(50)
-    r += check(a.len == 50 && a.items.len == tcap && a.get(3) == -1 && a.get(49) == 10 + 49, 10)
+    r += check(a.len == 50 && a.get(3) == -1 && a.get(49) == 10 + 49, 10)
     mut a.truncate(50)
     r += check(a.len == 50, 11)
     mut a.truncate(0)
-    r += check(a.len == 0 && a.items.len == tcap, 12)
+    r += check(a.len == 0, 12)
 
     // clear keeps storage; reserve never shrinks and grants capacity
-    cap: usize = a.items.len
     mut a.clear()
-    r += check(a.len == 0 && a.items.len == cap && a.view().len == 0, 13)
+    r += check(a.len == 0 && a.view().len == 0, 13)
     err = mut a.reserve(1000)
-    r += check(err == null && a.items.len >= 1000 && a.len == 0, 14)
+    r += check(err == null && a.len == 0, 14)
     err = mut a.reserve(1)
-    r += check(err == null && a.items.len >= 1000, 15)
+    r += check(err == null, 15)
 
     // pop on empty reports the domain error and the blank element
     gone: int
@@ -73,16 +71,16 @@ main(): int {
     r += check(err == array.ArrayErr.empty && gone == 0 && a.len == 0, 16)
 
     mut a.wipe()
-    r += check(a.len == 0 && a.items.len == 0, 17)
+    r += check(a.len == 0, 17)
 
     // Array[T].new: preallocated capacity, and zero capacity allocates nothing
     b: array.Array[u8], berr: Error = array.Array[u8].new(16)
-    r += check(berr == null && b.len == 0 && b.items.len >= 16, 18)
+    r += check(berr == null && b.len == 0, 18)
     err = mut b.push(7)
-    r += check(err == null && b.get(0) == 7 && b.items.len >= 16, 19)
+    r += check(err == null && b.get(0) == 7, 19)
     mut b.wipe()
     c: array.Array[u8], cerr: Error = array.Array[u8].new(0)
-    r += check(cerr == null && c.items.len == 0, 20)
+    r += check(cerr == null, 20)
     mut c.wipe()
 
     // aggregate elements

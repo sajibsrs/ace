@@ -4,18 +4,18 @@
  */
 
 pub Record: struct {
-    frame_start: usize,
-    captured_length: usize,
-    next: usize,
+    pub frame_start: usize,
+    pub captured_length: usize,
+    pub next: usize,
 }
 
 pub Packet: struct {
-    source_mac: [6]u8,
-    destination_mac: [6]u8,
-    source_ip: [4]u8,
-    destination_ip: [4]u8,
-    captured_length: usize,
-    protocol: u8,
+    pub source_mac: [6]u8,
+    pub destination_mac: [6]u8,
+    pub source_ip: [4]u8,
+    pub destination_ip: [4]u8,
+    pub captured_length: usize,
+    pub protocol: u8,
 }
 
 native_u16(data: []u8, at: usize): u16 {

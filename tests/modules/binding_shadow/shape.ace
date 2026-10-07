@@ -2,7 +2,7 @@ import math
 
 pub Kind: enum { square, circle }
 
-pub Box: struct { area: int, floor: int }
+pub Box: struct { pub area: int, pub floor: int }
 
 pub area(): int {
     return 100

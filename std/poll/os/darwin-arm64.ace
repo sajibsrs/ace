@@ -5,11 +5,11 @@ import sys
 pub Queue: distinct sys.Fd
 
 pub Event: struct {
-    fd: sys.Fd,
-    readable: bool,
-    writable: bool,
-    error: bool,
-    hangup: bool,
+    pub fd: sys.Fd,
+    pub readable: bool,
+    pub writable: bool,
+    pub error: bool,
+    pub hangup: bool,
 }
 
 pub QueueErr: error {

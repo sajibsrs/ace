@@ -16,7 +16,7 @@ pub RedirectErr: error {
 
 pub RedirectPolicy: struct {
     /* Zero preserves the strict one-response default. */
-    limit: usize = 0,
+    pub limit: usize = 0,
 }
 
 pub resolve(current: string, location: string, destination: mut []u8): (usize, bool) {

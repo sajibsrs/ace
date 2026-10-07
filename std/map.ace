@@ -30,7 +30,7 @@ pub Slot[K, V]: struct {
 
 pub Map[K, V]: struct {
     slots: mut []Slot[K, V] = null,
-    len: usize = 0,
+    pub len: usize = 0,
 }
 
 hash[K](key: K): u64 specialized

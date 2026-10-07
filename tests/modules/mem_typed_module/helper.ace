@@ -2,7 +2,7 @@
 
 import alloc, release from mem
 
-pub Point: struct { x: i32, y: i32 }
+pub Point: struct { pub x: i32, pub y: i32 }
 
 pub make_points(count: usize): mut []Point {
     points: mut []Point = alloc[Point](count)

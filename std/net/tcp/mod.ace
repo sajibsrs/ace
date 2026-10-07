@@ -1,6 +1,7 @@
 /* tcp — pure-Ace blocking IPv4 TCP composition over net. */
 
 import net
+import poll
 import sys
 
 /* `active` marks a live handle: canonical zero (`Listener {}`) is the empty
@@ -169,6 +170,16 @@ pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     return connection(sock, Interest.read), address, null
 }
 
+/* Registers the connection's descriptor with exactly its current interest. */
+pub watch(q: poll.Queue, connection: Conn): Error {
+    return poll.watch(
+        q,
+        connection.socket,
+        connection.interest == Interest.read || connection.interest == Interest.both,
+        connection.interest == Interest.write || connection.interest == Interest.both,
+    )
+}
+
 pub interest(conn: Conn): Interest {
     return conn.interest
 }
@@ -243,6 +254,11 @@ pub progress_send(mut conn: Conn, src: []u8): Event {
         }
         return Event.sent(usize(count))
     }
+}
+
+/* One receive into `buffer`: the byte count, zero at end of stream. */
+pub receive(connection: Conn, buffer: mut []u8): (int, Error) {
+    return net.receive(connection.socket, buffer)
 }
 
 pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {

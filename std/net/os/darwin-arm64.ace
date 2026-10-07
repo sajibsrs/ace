@@ -12,8 +12,8 @@ pub Socket: type = sys.Fd
 pub SocketType: enum { tcp }
 
 pub Addr4: struct {
-    ip: [4]u8,
-    port: u16,
+    pub ip: [4]u8,
+    pub port: u16,
 }
 
 /* Every operation has a distinct public error domain. The raw OS error is

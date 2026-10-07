@@ -29,13 +29,13 @@ pub ClientErr: error {
 }
 
 pub Storage: struct {
-    addresses: mut []net.Addr4,
-    output: mut []u8,
-    target: mut []u8,
-    input: mut []u8,
-    headers: mut []Header,
-    body: mut []u8,
-    url: mut []u8 = null,
+    pub addresses: mut []net.Addr4,
+    pub output: mut []u8,
+    pub target: mut []u8,
+    pub input: mut []u8,
+    pub headers: mut []Header,
+    pub body: mut []u8,
+    pub url: mut []u8 = null,
 }
 
 pub connect(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
@@ -139,7 +139,7 @@ pub exchange(
             }
 
             received: int
-            received, recv_err: Error = net.receive(connection.socket, mut storage.input[occupied..])
+            received, recv_err: Error = tcp.receive(connection, mut storage.input[occupied..])
             if recv_err != null { return Response {}, recv_err }
 
             occupied += usize(received)

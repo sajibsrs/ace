@@ -9,10 +9,10 @@ import ryu: @ryu
 pub Type: enum { finite, zero, infinity, nan }
 
 pub Decimal: struct {
-    count: int,
-    point: i32,
-    negative: bool,
-    number_type: Type,
+    pub count: int,
+    pub point: i32,
+    pub negative: bool,
+    pub number_type: Type,
 }
 
 write_shortest(value: ryu.Floating, out: mut []u8): (int, i32) {

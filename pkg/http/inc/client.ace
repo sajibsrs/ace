@@ -16,8 +16,8 @@ pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
 
 pub Context: struct {
-    storage: mut []Storage,
-    redirects: RedirectPolicy,
+    pub storage: mut []Storage,
+    pub redirects: RedirectPolicy,
 }
 
 pub Context.new(): Context {

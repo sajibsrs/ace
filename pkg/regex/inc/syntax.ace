@@ -44,31 +44,31 @@ pub UNBOUNDED: const u32 = 0xFFFFFFFF
  * member.
  */
 pub Class: struct {
-    bits: [4]u64,
+    pub bits: [4]u64,
 }
 
 /* A parenthesized group. `index` is its capture number, counted from 1 in
  * order of the opening parentheses; 0 marks a non-capturing `(?:...)`.
  */
 pub Group: struct {
-    index: u32,
-    child: u32,
+    pub index: u32,
+    pub child: u32,
 }
 
 /* `child` repeated `min` through `max` times, `max` being `UNBOUNDED` for no
  * upper bound. A greedy repetition prefers more iterations, a lazy one fewer.
  */
 pub Repeat: struct {
-    child: u32,
-    min: u32,
-    max: u32,
-    greedy: bool,
+    pub child: u32,
+    pub min: u32,
+    pub max: u32,
+    pub greedy: bool,
 }
 
 /* `count` consecutive entries of `Syntax.children`, starting at `first`. */
 pub List: struct {
-    first: u32,
-    count: u32,
+    pub first: u32,
+    pub count: u32,
 }
 
 pub Node: union {
@@ -91,11 +91,11 @@ pub Node: union {
  * holds no storage.
  */
 pub Syntax: struct {
-    nodes: array.Array[Node],
-    children: array.Array[u32],
-    classes: array.Array[Class],
-    root: u32,
-    groups: u32,
+    pub nodes: array.Array[Node],
+    pub children: array.Array[u32],
+    pub classes: array.Array[Class],
+    pub root: u32,
+    pub groups: u32,
 }
 
 /* One parse in progress. `stack` holds finished children until the

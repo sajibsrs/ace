@@ -101,7 +101,7 @@ block         := "{" stmt* "}"
 
 struct_decl   := ident [type_params] ":" "struct" "{" field_list "}"
 field_list    := field ("," field)* [","]
-field         := [offset_attr] [align_attr] ["embed"] member ":" type ["=" expr]  // `embed:` names a field
+field         := [offset_attr] [align_attr] ["pub"] ["embed"] member ":" type ["=" expr]  // `pub:`/`embed:` name a field
 
 bits_decl     := ident ":" contextual_bits bits_backing "{" bits_fields "}"
 contextual_bits := ident                                // exact text "bits"; not reserved

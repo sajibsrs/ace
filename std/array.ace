@@ -19,7 +19,7 @@ pub ArrayErr: error {
 
 pub Array[T]: struct {
     items: mut []T = null,
-    len: usize = 0,
+    pub len: usize = 0,
 }
 
 /* Creates an array with room for `capacity` elements and none live. A zero

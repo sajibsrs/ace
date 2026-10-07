@@ -81,6 +81,7 @@
 //   N_ARRAYLIT  kids = elements, or N_MAPENTRY (a = key, b = value) when keyed;
 //               repetition: a = value, b = count expression
 //   N_STRUCTLIT a = type expr or NULL (bare literal); kids = N_FIELDINIT (str or NULL; a = value)
+//               F_DEFAULT on a N_FIELDINIT marks one sema added from the field's default
 //   N_STATICMAP_T a = key type; b = value type
 //   N_STATICMAPLIT kids = N_MAPENTRY (a = key, b = value)
 //
@@ -2004,12 +2005,14 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
                 } else if (at(p, T_AT)) {
                     perr(p, "only @offset and @align may modify a struct field");
                 }
+                int field_pub = at(p, T_PUB) && kth(p, 1) != T_COLON && eat(p, T_PUB); // `pub: T` names a field
                 int embed = at(p, T_EMBED) && kth(p, 1) != T_COLON && eat(p, T_EMBED); // `embed: T` names a field
                 Token* fname = expect_member(p, "field name");
                 Node* fl = nd_tok(p, N_FIELD, fname);
                 fl->str = fname->str;
                 fl->len = fname->len;
                 if (embed) fl->flags |= F_EMBED;
+                if (field_pub) fl->flags |= F_PUB;
                 fl->b = field_align;
                 fl->d = field_offset;
                 expect(p, T_COLON, "':' after field name");

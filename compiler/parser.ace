@@ -125,9 +125,9 @@ pub Parser: struct {
 
 /* A syntax error; `message` views the parser's message storage. */
 pub SyntaxError: struct {
-    line: u32,
-    col: u32,
-    message: string,
+    pub line: u32,
+    pub col: u32,
+    pub message: string,
 }
 
 /* Errors reported per file before the parser gives up, as in C. */
@@ -2097,9 +2097,11 @@ Parser.struct_decl(mut self, name: usize, tp: u32, pub_: bool): u32 {
             } else if self.at(Token.at) {
                 mut self.fail("only @offset and @align may modify a struct field")
             }
+            field_pub: bool = self.at(Token.pub) && self.kth(1) != Token.colon && mut self.eat(Token.pub) // `pub: T` names a field
             embedded: bool = self.at(Token.embed) && self.kth(1) != Token.colon && mut self.eat(Token.embed) // `embed: T` names a field
             fl: u32 = mut self.ident_node(Kind.field, mut self.expect_member("field name"))
             if embedded { self.nodes[fl].flags |= F_EMBED }
+            if field_pub { self.nodes[fl].flags |= F_PUB }
             self.nodes[fl].b = align
             self.nodes[fl].d = offset
             mut self.expect(Token.colon, "':' after field name")

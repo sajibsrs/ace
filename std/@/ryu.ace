@@ -11,8 +11,8 @@
 import table: @ryu_table
 
 pub Floating: struct {
-    coefficient: u64,
-    exponent: i32,
+    pub coefficient: u64,
+    pub exponent: i32,
 }
 
 pub Wide: struct {

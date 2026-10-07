@@ -5,8 +5,8 @@
  */
 
 pub Power: struct {
-    low: u64,
-    high: u64,
+    pub low: u64,
+    pub high: u64,
 }
 
 pub inverse: const [342]Power = [

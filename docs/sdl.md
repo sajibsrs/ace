@@ -55,7 +55,8 @@ named so far.
 
 `Window` and `Renderer` hold SDL's heap objects, so they follow the
 `.new`/`wipe` pair; `ok()` reports whether creation succeeded, and `wipe` on
-a failed handle is harmless. A title longer than `sdl.TEXT_MAX` (255) bytes
+a failed handle is harmless. Their `pub handle` field is the raw SDL pointer,
+for calling SDL functions this binding does not wrap. A title longer than `sdl.TEXT_MAX` (255) bytes
 fails creation. A `Color` has `f32` channels from 0 to 1, with `a`
 defaulting to 1 (opaque); `Color.hex(rgb)` builds an opaque one from a
 24-bit `0xRRGGBB` value such as `0xF44336`. `Renderer.color(): (Color, bool)` reads the draw
