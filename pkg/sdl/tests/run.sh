@@ -5,8 +5,8 @@
 # gate core compiler iteration. Run via `make test-packages` or directly as
 # `pkg/sdl/tests/run.sh`.
 #
-# The cases link the host's SDL3 through pkg/sdl's [[link]] path hint; where
-# that library is missing, the suite is skipped, not failed.
+# The cases link the SDL3 file pkg/sdl's [[link]] path names; where that
+# file is missing, the suite is skipped, not failed.
 #
 # One directory per case, each its own `app` package depending on `sdl`
 # (`sdl: 0.1.0`), found as the repository's pkg/sdl by the nearest-pkg/
@@ -21,11 +21,11 @@ ACE_BIN=${ACE_BIN:-../../../ace}
 ACE_DIR=$(dirname "$ACE_BIN")
 ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
 
-# pkg/sdl's manifest hints where SDL3 lives ([[link]] path); a host without
-# the library there skips the suite rather than failing it.
-lib_dir=$(sed -n 's/^path: *//p' ../ace.pkg)
-if [ ! -e "$lib_dir/libSDL3.dylib" ]; then
-    echo "pkg/sdl: skipped (no libSDL3 in '$lib_dir')"
+# pkg/sdl's manifest names the SDL3 file ([[link]] path); a host without
+# it skips the suite rather than failing it.
+lib=$(sed -n 's/^path: *//p' ../ace.pkg)
+if [ ! -e "$lib" ]; then
+    echo "pkg/sdl: skipped (no '$lib')"
     exit 0
 fi
 

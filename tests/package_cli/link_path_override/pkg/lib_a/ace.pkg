@@ -5,5 +5,4 @@ type: lib
 root: src/mod.ace
 
 [[link]]
-library: m
-path: /opt/ace-hint-a
+path: /nonexistent-ace/libz.a

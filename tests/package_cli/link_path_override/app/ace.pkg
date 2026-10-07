@@ -1,0 +1,15 @@
+// lib_a's [[link]] path does not exist here; the root's own path for the
+// same file name overrides it, so the build succeeds.
+// expect-build-exit: 0
+
+name: link_path_override
+version: 0.1.0
+ace: 0.1
+type: exe
+root: src/main.ace
+
+[dependencies]
+lib_a: 0.1.0
+
+[[link]]
+path: vendor/libz.a

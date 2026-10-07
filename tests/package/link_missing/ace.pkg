@@ -1,6 +1,5 @@
-// A syntactically valid [[link]] object path that does not exist on disk
-// is still an error, reported at manifest-load time rather than deferred
-// to a later link failure.
+// A relative [[link]] path that does not exist is an error at manifest
+// load, not a later link failure.
 // expect-err: [[link]] path 'vendor/libcrypto.a' does not exist
 
 name: link_missing
@@ -10,4 +9,4 @@ type: exe
 root: main.ace
 
 [[link]]
-object: vendor/libcrypto.a
+path: vendor/libcrypto.a

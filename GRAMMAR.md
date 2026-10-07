@@ -352,8 +352,8 @@ top_key         := "name" | "version" | "ace" | "type" | "root"
                   | "description" | "author" | "license" | "repository"
 dep_key         := ident                           // import alias, only
                                                     // inside [dependencies]
-link_key        := "object" | "search" | "library" | "framework" | "path"
-                                                    // only inside [[link]]
+link_key        := "path" | "framework"            // only inside [[link]],
+                                                    // exactly one per record
 value           := (any – newline)*                [P: escaping/quoting]
 ```
 
@@ -371,12 +371,9 @@ Notes:
    `value` (field present, meaning absent); every other `top_key`, every
    `dep_key`, and every `link_key` requires a nonempty `value`.
 4. `[dependencies]`'s `value` is one exact `major.minor.patch` version
-   (Package System #4); an `object`/`search` `link_key`'s `value` is a path
-   relative to the declaring package's own directory with no `..` traversal,
-   and `object` must end in `.o` or `.a` (Package System #14);
-   `library`/`framework` values are bare names. A `path` value is an
-   absolute directory, admitted only in a record that also has a `library`
-   (Package System #14).
+   (Package System #4); a `path` value is one exact file, absolute or
+   relative to the declaring package's own directory with no `..` traversal
+   (Package System #14); a `framework` value is a bare name.
 5. [P] The recognized header and key sets are closed and expected to grow
    (e.g. a future `authors` as `[[authors]]`); today only `[dependencies]`
    and `[[link]]` exist, and an unrecognized header or key is an error.

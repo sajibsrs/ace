@@ -1,9 +1,9 @@
 // lib_a and lib_b each vendor their own "shared.a" at a different path;
-// same logical identity (basename), different value, so `pkg build` must
+// same file name, different path, so `pkg build` must
 // fail at the link-collection stage (Package System #14) rather than
 // silently picking one or merging them. Checking alone (`pkg check`) never
 // reaches this, since it never links.
-// expect-build-err: native link input 'shared.a' conflicts with
+// expect-build-err: conflicts with
 
 name: link_conflict
 version: 0.1.0

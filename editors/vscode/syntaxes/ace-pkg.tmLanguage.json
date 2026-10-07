@@ -58,7 +58,7 @@
           "name": "keyword.other.key.ace-pkg"
         },
         {
-          "match": "\\b(object|search|library|framework|path)\\b",
+          "match": "\\b(path|framework)\\b",
           "name": "keyword.other.key.link.ace-pkg"
         },
         {

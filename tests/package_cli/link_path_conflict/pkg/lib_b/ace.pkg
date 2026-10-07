@@ -1,9 +1,8 @@
-name: lib_a
+name: lib_b
 version: 0.1.0
 ace: 0.1
 type: lib
 root: src/mod.ace
 
 [[link]]
-library: m
-path: /nonexistent-ace-hint
+path: /opt/ace-hint-b/libm.dylib

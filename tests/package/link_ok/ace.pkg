@@ -1,6 +1,5 @@
-// A [[link]] section with two records, each declaring all four keys once,
-// parses cleanly and does not affect ordinary graph resolution (Step 1:
-// parsing only, not yet wired into Package or the link step).
+// Relative and absolute [[link]] paths and a framework parse; resolving the graph does not
+// check an absolute file, which only the link step uses.
 // expect-ok: link_ok
 
 name: link_ok
@@ -10,13 +9,13 @@ type: exe
 root: main.ace
 
 [[link]]
-object: vendor/libcrypto.a
-search: vendor/lib
-library: crypto
-framework: Security
+path: vendor/libcrypto.a
 
 [[link]]
-object: vendor/x.a
-search: vendor/x
-library: x
-framework: x
+path: vendor/x.a
+
+[[link]]
+path: /nonexistent-ace/libx.dylib
+
+[[link]]
+framework: Security

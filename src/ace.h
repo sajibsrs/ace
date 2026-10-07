@@ -353,18 +353,13 @@ struct PackageDep {
     PackageDep* next;
 };
 
-// Native link inputs declared through a repeatable [[link]] manifest section
-// (spec/modules-packages.md Package System #14, GRAMMAR.md §7) — the same four kinds the
-// direct compiler driver accepts on its command line.
+// A native link input declared by a [[link]] record (spec/modules-packages.md
+// Package System #14, GRAMMAR.md §7): an exact file linked as written, or a
+// platform framework name.
 typedef struct PackageLink PackageLink;
-// LINK_PATH is a record attribute (the directory of the record's library),
-// never a PackageLink of its own.
-typedef enum { LINK_OBJECT, LINK_SEARCH, LINK_LIBRARY, LINK_FRAMEWORK, LINK_PATH } LinkKind;
 struct PackageLink {
-    LinkKind     kind;
-    const char*  value; // canonical path for OBJECT/SEARCH; bare name for LIBRARY/FRAMEWORK
-    const char*  path;  // LIBRARY: its record's path directory, else NULL
-    const char*  file;  // LIBRARY: the file found in path, else NULL
+    const char*  value;     // canonical path when relative in the manifest, else as written; or a framework name
+    int          framework; // value is a framework name
     int          line;
     PackageLink* next;
 };
@@ -392,14 +387,14 @@ struct Package {
 // returned array (free) but not the Package storage (arena, stable).
 Package* package_resolve(const char* package_dir, Diag* d, Package*** order, int* norder);
 
-// Collects every package's declared [[link]] inputs across order
-// (dependency-first, from package_resolve) into direct-driver flag form —
-// spec/modules-packages.md Package System #14: object path positional, "-L"/dir, "-l"/name,
-// "-framework"/name — de-duplicating exact kind+value matches and
-// diagnosing a same-identity/different-value conflict as an error anchored
-// at each declaration's own manifest:line. Returns the argv-style array
-// (caller owns the array itself, not its arena-backed string contents) and
-// its count via *nargs; returns NULL with *nargs 0 if d gained any errors.
+// Collects every package's [[link]] files and frameworks across order
+// (dependency-first, from package_resolve) as linker arguments, once per
+// framework name ("-framework"/name) and once per file name at its first
+// position: the root's path for that name, else the dependencies' one
+// agreed path. Differing dependency paths and a missing file are errors
+// anchored at the declaration's manifest:line. Returns the argv-style array
+// (caller owns the array, not its strings) and its count via *nargs; NULL
+// with *nargs 0 if d gained any errors.
 char** package_collect_links(Package** order, int norder, Diag* d, int* nargs);
 
 // True iff canonical path canon is package_dir or beneath it, outside its

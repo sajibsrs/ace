@@ -1,5 +1,9 @@
 # Tooling
 
+- A `[[link]]` record takes one `path: FILE`, an exact file (relative inside
+  the package, or absolute), or a platform `framework: NAME`, replacing
+  `object`/`search`/`library` and directory paths: no search, suffix order, or
+  `-l` fallback. Identity is the file name; the root's path overrides.
 - Split `CHANGELOG.md` into `changelog/` by area (`lang`, `compiler`, `std`,
   `pkg`, `tooling`), moving every earlier entry verbatim into
   `changelog/archive/` under its original section so sessions grep history

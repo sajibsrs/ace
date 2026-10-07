@@ -11,18 +11,16 @@ need and grows with its users.
 `sdl` is a standalone package at [`pkg/sdl`](../pkg/sdl), not a `std`
 module. A consumer lists it under `[dependencies]` in its own `ace.pkg` as
 `sdl: 0.1.0`, and the source writes a plain `import sdl`. The package
-manifest links `SDL3` with Homebrew's Apple Silicon directory as a hint:
+manifest links Homebrew's Apple Silicon file:
 
 ```
 [[link]]
-library: SDL3
-path: /opt/homebrew/lib
+path: /opt/homebrew/lib/libSDL3.dylib
 ```
 
-Where `libSDL3` is there, the build links that exact file; elsewhere it
-falls back to the linker's own search. An app whose SDL3 lives somewhere
-else gives the same record with its own `path` in its `ace.pkg`; the app's
-path overrides the hint, and a missing file there is a manifest error.
+An app whose SDL3 lives elsewhere names its own file with the same file name
+in its `ace.pkg` (`path: /usr/local/lib/libSDL3.dylib`); the app's path
+overrides the package's.
 
 See [`demo/sdl3-window`](../demo/sdl3-window),
 [`demo/sdl3-cube-rotation`](../demo/sdl3-cube-rotation),

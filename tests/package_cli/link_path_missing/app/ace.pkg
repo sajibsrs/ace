@@ -1,0 +1,12 @@
+// The linked [[link]] file must exist; a missing one is an Ace error, not
+// a later linker one.
+// expect-build-err: [[link]] path '/nonexistent-ace/libx.dylib' is not a file
+
+name: link_path_missing
+version: 0.1.0
+ace: 0.1
+type: exe
+root: src/main.ace
+
+[[link]]
+path: /nonexistent-ace/libx.dylib

@@ -5,4 +5,4 @@ type: lib
 root: src/mod.ace
 
 [[link]]
-object: vendor/shared.a
+path: vendor/shared.a

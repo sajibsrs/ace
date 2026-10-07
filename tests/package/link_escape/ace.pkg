@@ -1,6 +1,6 @@
-// A [[link]] object path with ".." traversal is rejected: a package can
-// only declare native inputs it vendors inside its own directory.
-// expect-err: [[link]] object '../outside.a' must be a relative path within the package
+// A relative [[link]] path with ".." traversal is rejected: a package can
+// only declare relative inputs it vendors inside its own directory.
+// expect-err: [[link]] path '../outside.a' must be absolute or a relative path within the package
 
 name: link_escape
 version: 0.1.0
@@ -9,4 +9,4 @@ type: exe
 root: main.ace
 
 [[link]]
-object: ../outside.a
+path: ../outside.a

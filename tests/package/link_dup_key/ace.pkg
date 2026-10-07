@@ -1,6 +1,5 @@
-// A key repeated within one [[link]] record is an error; two unrelated
-// native components need two separate [[link]] records instead.
-// expect-err: duplicate 'library' in this [[link]] record
+// A record names one file or framework; a second key in it is an error.
+// expect-err: a [[link]] record takes one path or framework
 
 name: link_dup_key
 version: 0.1.0
@@ -9,5 +8,5 @@ type: exe
 root: main.ace
 
 [[link]]
-library: crypto
-library: ssl
+path: /usr/lib/libcrypto.dylib
+path: /usr/lib/libssl.dylib

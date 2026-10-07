@@ -9,5 +9,4 @@ sdl: 0.1.0
 
 // Link SDL3 from Homebrew.
 [[link]]
-library: SDL3
-path: /opt/homebrew/lib
+path: /opt/homebrew/lib/libSDL3.dylib

@@ -7,5 +7,4 @@ description: Minimal SDL3 binding: window, renderer, and event polling
 author: Sajidur Rahman <sajibsrs@gmail.com>
 
 [[link]]
-library: SDL3
-path: /opt/homebrew/lib
+path: /opt/homebrew/lib/libSDL3.dylib

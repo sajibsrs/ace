@@ -75,40 +75,33 @@ working directory.
 
 ## Native link inputs
 
-A `[[link]]` record declares native input for an `exe`'s final link. Each
-record admits at most one of each key:
-
-- `object: PATH` — a `.o` or `.a` inside the package, passed as the file
-- `search: DIR` — a directory inside the package, passed as `-L DIR`
-- `library: NAME` — passed as `-l NAME`
-- `framework: NAME` — passed as `-framework NAME`
-- `path: DIR` — an absolute host directory for the record's `library`
-
-Unrelated inputs go in separate records:
+A `[[link]]` record names one input for an `exe`'s final link: an exact
+file, with the extension it has on disk, or a platform framework:
 
 ```
 [[link]]
-library: SDL3
-path: /opt/homebrew/lib
+path: /opt/homebrew/lib/libSDL3.dylib
+
+[[link]]
+path: vendor/libfoo.a
 
 [[link]]
 framework: CoreFoundation
 ```
 
+A relative path stays inside the declaring package and must exist when the
+manifest loads. An absolute path is a host file. Ace never searches for a
+library, guesses an extension, or falls back to the linker's own search. A
+framework is the one exception: a bare name, passed as `-framework NAME`,
+which the toolchain finds in its active SDK, since a platform framework's
+place is fixed by the platform rather than by how it was installed.
+
 An `exe` collects every package's records, dependencies first, so an
 application depending on a library links what that library declares without
-naming it. The same input declared with different values by two packages
-(an `object` basename at two paths, say) is an error naming both.
-
-`path` resolves its `library` to the exact file the Apple linker would pick
-in that directory — `lib<name>.tbd`, then `.dylib`, then `.a` — and links
-that file in place of `-l<name>`, so the directory applies to that one
-library only. In a dependency, `path` is a hint: where the file is missing,
-the build falls back to `-l<name>` and the linker's own search. In the
-package being built, `path` is binding: it overrides every hint for that
-library, and a missing file is a manifest error. Two dependencies hinting
-different paths for one library are an error; the package being built
-settles it with its own record.
+naming it. Each file name and framework links once. The package being built overrides a
+dependency's path by declaring the same file name at its own path; without
+that, two dependencies declaring one file name at different paths are an
+error naming both. The linked file must exist.
 
 ## Design rationale
 

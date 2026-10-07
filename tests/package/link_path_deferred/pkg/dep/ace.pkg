@@ -5,5 +5,4 @@ type: lib
 root: root.ace
 
 [[link]]
-library: crypto
-path: /usr/lib
+path: /nonexistent-ace/libcrypto.dylib

@@ -3,9 +3,9 @@
  * driver, and the keyboard and quit events of a classic SDL_PollEvent loop.
  *
  * Layouts, values, and signatures mirror the SDL 3.4 headers; the
- * static_asserts pin them. The manifest links SDL3 with Homebrew's
- * /opt/homebrew/lib as a path hint: used where the library is there, else
- * the linker's own search. An app overrides it with its own [[link]] path.
+ * static_asserts pin them. The manifest links Homebrew's
+ * /opt/homebrew/lib/libSDL3.dylib; an app whose SDL3 lives elsewhere names
+ * its own file with a [[link]] path of the same file name.
  */
 
 import str
