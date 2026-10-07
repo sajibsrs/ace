@@ -1,5 +1,5 @@
 // A framework is a bare platform name, not a path.
-// expect-err: [[link]] framework 'Frameworks/Security' must be a bare name
+// expect-err: [link] framework 'Frameworks/Security' must be a bare name
 
 name: link_framework_path
 version: 0.1.0
@@ -7,5 +7,5 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[[link]]
+[link]
 framework: Frameworks/Security

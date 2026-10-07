@@ -1,6 +1,7 @@
 // package.c — ace.pkg manifest parsing and dependency-graph resolution
 // (spec/modules-packages.md Package System). A manifest is a small line-based key: value
-// format, plus one [dependencies] section of name: version entries. Every
+// format, plus [dependency] sections of name: version entries and [link]
+// sections, each optionally qualified by a target (#16). Every
 // dependency name in a graph, direct or transitive, is found from the root
 // package's directory as the nearest <dir>/pkg/<name> (Package System #5);
 // a package's own reserved pkg/ is not part of it (#6). No codegen or
@@ -17,7 +18,7 @@
 
 typedef struct { const char* alias; const char* version; int line; } RawDep;
 
-// One [[link]] record's path or framework name, in file order.
+// One [link] line's path or framework name, in file order.
 typedef struct { const char* value; int line; int framework; } RawLink;
 
 typedef struct {
@@ -45,6 +46,7 @@ typedef struct {
     const char* root_dir; // canonical directory every dependency resolves from
     int         have_ace_version;
     int         ace_major, ace_minor; // the root's, shared by the whole graph
+    const char* target;  // build target selecting qualified sections (#16)
 } PackageLoader;
 
 static void package_err(PackageLoader* L, const char* manifest, int line, const char* fmt, ...) {
@@ -120,7 +122,7 @@ static int parse_ace_version(const char* s, size_t len, int* a, int* b) {
 }
 
 // A relative path with no ".." component — must stay within the package
-// directory that declares it. Shared by the root file and relative [[link]]
+// directory that declares it. Shared by the root file and relative [link]
 // paths (Package System #14: "matching the existing import-containment rule").
 static int path_is_contained(const char* s, size_t len) {
     if (!len || s[0] == '/') return 0;
@@ -189,6 +191,23 @@ static void add_raw_link(RawManifest* rm, const char* value, int line, int frame
     rm->nlinks++;
 }
 
+// A section qualifier names a full target (spec Modules #12) or an OS alone
+// (Package System #16).
+static int target_qualifier_valid(const char* q, size_t n) {
+    static const char* const names[] = {"darwin", "linux", "darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"};
+    for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
+        if (text_is(q, (uint32_t)n, names[i])) return 1;
+    return 0;
+}
+
+// Whether qualifier q selects target: the target itself or its OS.
+static int target_qualifier_matches(const char* q, size_t n, const char* target) {
+    size_t tl = strlen(target);
+    const char* dash = strchr(target, '-');
+    size_t os = dash ? (size_t)(dash - target) : tl;
+    return (n == tl || n == os) && memcmp(q, target, n) == 0;
+}
+
 // Parse one ace.pkg's text into its raw (unvalidated) fields and dependency
 // entries. Diagnoses malformed lines but keeps scanning so one pass reports
 // every problem in the file.
@@ -196,7 +215,10 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
     Source s;
     if (source_load(&s, manifest_path) != 0) { L->d->errors++; return 0; }
     memset(rm, 0, sizeof *rm);
-    int line = 0, in_deps = 0, in_link = 0, link_seen = 0, link_line = 0, ok = 1;
+    int line = 0, in_deps = 0, in_link = 0, active = 1, ok = 1;
+    int section = 0, dep_first = 0; // current section's index, its first RawDep
+    // Headers seen so far, as "kind:qualifier", to reject a repeat.
+    const char* seen[32]; int nseen = 0;
     const char* p = s.buf;
     const char* end = s.buf + s.len;
     while (p < end) {
@@ -209,17 +231,44 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         p = nl ? nl + 1 : end;
         if (tlen == 0) continue;
         if (tlen >= 2 && t[0] == '/' && t[1] == '/') continue; // comment
-        if (t[0] == '[' && in_link && !link_seen) {
-            package_err(L, manifest_path, link_line, "[[link]] record needs a path or framework");
-            ok = 0;
-        }
-        if (tlen == 14 && memcmp(t, "[dependencies]", 14) == 0) { in_deps = 1; in_link = 0; continue; }
-        if (tlen == 8 && memcmp(t, "[[link]]", 8) == 0) { in_link = 1; in_deps = 0; link_seen = 0; link_line = line; continue; }
         if (t[0] == '[') {
-            package_err(L, manifest_path, line, "unknown section '%.*s'", (int)tlen, t);
-            ok = 0;
+            in_deps = in_link = 0;
+            active = 0; // fields of a bad header are dropped
+            section++;
+            dep_first = rm->ndeps;
+            size_t ilen, klen2, qlen = 0;
+            const char* inner = trim(t + 1, tlen - 1 - (t[tlen - 1] == ']'), &ilen);
+            const char* qcolon = t[tlen - 1] == ']' ? memchr(inner, ':', ilen) : NULL;
+            const char* kind = trim(inner, qcolon ? (size_t)(qcolon - inner) : ilen, &klen2);
+            const char* qual = qcolon ? trim(qcolon + 1, ilen - (size_t)(qcolon - inner) - 1, &qlen) : NULL;
+            int is_dep = t[tlen - 1] == ']' && text_is(kind, (uint32_t)klen2, "dependency");
+            int is_link = t[tlen - 1] == ']' && text_is(kind, (uint32_t)klen2, "link");
+            if (!is_dep && !is_link) {
+                package_err(L, manifest_path, line, "unknown section '%.*s'", (int)tlen, t);
+                ok = 0;
+                continue;
+            }
+            if (qcolon && !target_qualifier_valid(qual, qlen)) {
+                package_err(L, manifest_path, line, "unknown target qualifier '%.*s'", (int)qlen, qual);
+                ok = 0;
+                continue;
+            }
+            char hkey[64];
+            snprintf(hkey, sizeof hkey, "%s:%.*s", is_dep ? "dependency" : "link", (int)qlen, qcolon ? qual : "");
+            int repeat = 0;
+            for (int i = 0; i < nseen; i++) if (strcmp(seen[i], hkey) == 0) repeat = 1;
+            if (repeat) {
+                package_err(L, manifest_path, line, "repeated section '%.*s'", (int)tlen, t);
+                ok = 0;
+                continue;
+            }
+            if (nseen < (int)(sizeof seen / sizeof seen[0])) seen[nseen++] = package_strndup(hkey, strlen(hkey));
+            in_deps = is_dep;
+            in_link = is_link;
+            active = !qcolon || target_qualifier_matches(qual, qlen, L->target);
             continue;
         }
+        if (!in_deps && !in_link && section) continue; // inside a rejected header
         const char* colon = memchr(t, ':', tlen);
         if (!colon) {
             package_err(L, manifest_path, line, "expected 'key: value'");
@@ -251,27 +300,24 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         if (in_link) {
             int framework = text_is(key, (uint32_t)kt, "framework");
             if (!framework && !text_is(key, (uint32_t)kt, "path")) {
-                package_err(L, manifest_path, line, "unknown [[link]] field '%.*s'", (int)kt, key);
-                link_seen = 1; // reported; not also a record without a path
+                package_err(L, manifest_path, line, "unknown [link] field '%.*s'", (int)kt, key);
                 ok = 0;
                 continue;
             }
-            if (link_seen) {
-                package_err(L, manifest_path, line, "a [[link]] record takes one path or framework");
-                ok = 0;
-                continue;
-            }
-            link_seen = 1;
-            add_raw_link(rm, package_strndup(val, vlen), line, framework);
+            if (active) add_raw_link(rm, package_strndup(val, vlen), line, framework);
             continue;
         }
         if (in_deps) {
+            // A repeat within one section is always an error; across
+            // sections only when both are active for this target. An
+            // inactive section's entries are kept just for its own check.
             for (int i = 0; i < rm->ndeps; i++)
-                if (strlen(rm->deps[i].alias) == kt && memcmp(rm->deps[i].alias, key, kt) == 0) {
+                if ((i >= dep_first || (active && rm->deps[i].line > 0)) &&
+                    strlen(rm->deps[i].alias) == kt && memcmp(rm->deps[i].alias, key, kt) == 0) {
                     package_err(L, manifest_path, line, "duplicate dependency '%.*s'", (int)kt, key);
                     ok = 0;
                 }
-            add_raw_dep(rm, package_strndup(key, kt), package_strndup(val, vlen), line);
+            add_raw_dep(rm, package_strndup(key, kt), package_strndup(val, vlen), active ? line : -line);
             continue;
         }
 #define FIELD(lit, slot, lslot)                                                \
@@ -294,10 +340,10 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         package_err(L, manifest_path, line, "unknown field '%.*s'", (int)kt, key);
         ok = 0;
     }
-    if (in_link && !link_seen) {
-        package_err(L, manifest_path, link_line, "[[link]] record needs a path or framework");
-        ok = 0;
-    }
+    // Drop inactive sections' entries (marked by a negated line).
+    int kept = 0;
+    for (int i = 0; i < rm->ndeps; i++) if (rm->deps[i].line > 0) rm->deps[kept++] = rm->deps[i];
+    rm->ndeps = kept;
     return ok;
 }
 
@@ -468,12 +514,12 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         RawLink* rl = &rm.links[i];
         if (rl->framework) {
             if (strchr(rl->value, '/')) {
-                package_err(L, manifest, rl->line, "[[link]] framework '%s' must be a bare name", rl->value);
+                package_err(L, manifest, rl->line, "[link] framework '%s' must be a bare name", rl->value);
                 ok = 0;
             }
         } else if (rl->value[0] != '/' && !path_is_contained(rl->value, strlen(rl->value))) {
             package_err(L, manifest, rl->line,
-                    "[[link]] path '%s' must be absolute or a relative path within the package", rl->value);
+                    "[link] path '%s' must be absolute or a relative path within the package", rl->value);
             ok = 0;
         }
     }
@@ -537,11 +583,11 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         if (!rl->framework && value[0] != '/') {
             const char* resolved = canonicalize(join_path(canon, value));
             if (!resolved || !(path_beneath(resolved, canon) || strcmp(resolved, canon) == 0)) {
-                package_err(L, manifest, rl->line, "[[link]] path '%s' does not exist", value);
+                package_err(L, manifest, rl->line, "[link] path '%s' does not exist", value);
                 continue;
             }
             if (!package_contains(canon, resolved)) {
-                package_err(L, manifest, rl->line, "[[link]] path '%s' is inside the reserved pkg/ directory", value);
+                package_err(L, manifest, rl->line, "[link] path '%s' is inside the reserved pkg/ directory", value);
                 continue;
             }
             value = resolved;
@@ -563,9 +609,10 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     return package;
 }
 
-Package* package_resolve(const char* package_dir, Diag* d, Package*** order, int* norder) {
+Package* package_resolve(const char* package_dir, const char* target, Diag* d, Package*** order, int* norder) {
     PackageLoader L = {0};
     L.d = d;
+    L.target = target;
     Package* root = package_load(&L, package_dir, 1, NULL, 0);
     if (!root || d->errors > 0) {
         *order = NULL;
@@ -646,7 +693,7 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
                     if (!chosen) { chosen = q; chosen_pkg = order[j]; continue; }
                     if (strcmp(chosen->value, q->value) != 0) {
                         fprintf(stderr,
-                                "%s:%d: error: [[link]] path '%s' conflicts with %s:%d's '%s'; "
+                                "%s:%d: error: [link] path '%s' conflicts with %s:%d's '%s'; "
                                 "the root package can choose one with its own path\n",
                                 join_path(order[j]->dir, "ace.pkg"), q->line, q->value,
                                 join_path(chosen_pkg->dir, "ace.pkg"), chosen->line, chosen->value);
@@ -657,7 +704,7 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
             if (conflict) continue;
             struct stat st;
             if (stat(chosen->value, &st) != 0 || !S_ISREG(st.st_mode)) {
-                fprintf(stderr, "%s:%d: error: [[link]] path '%s' is not a file\n",
+                fprintf(stderr, "%s:%d: error: [link] path '%s' is not a file\n",
                         join_path(chosen_pkg->dir, "ace.pkg"), chosen->line, chosen->value);
                 d->errors++;
                 continue;
@@ -706,7 +753,7 @@ int package_manifest_add_dep(const char* manifest_path, const char* name, const 
     char entry[512];
     int entry_len = snprintf(entry, sizeof entry, "%s: %s\n", name, version);
 
-    // Find the end of the first "[dependencies]" line; the new entry is
+    // Find the end of the first "[dependency]" line; the new entry is
     // inserted immediately after it, regardless of what else the section
     // already holds.
     const char* p = s.buf;
@@ -718,7 +765,7 @@ int package_manifest_add_dep(const char* manifest_path, const char* name, const 
         size_t tlen;
         const char* t = trim(p, (size_t)(eol - p), &tlen);
         const char* next = nl ? nl + 1 : end;
-        if (tlen == 14 && memcmp(t, "[dependencies]", 14) == 0) { insert_at = next; break; }
+        if (tlen == 12 && memcmp(t, "[dependency]", 12) == 0) { insert_at = next; break; }
         p = next;
     }
 
@@ -738,7 +785,7 @@ int package_manifest_add_dep(const char* manifest_path, const char* name, const 
         // repeated add/remove cycles stay idempotent rather than piling up.
         size_t content_end = s.len;
         while (content_end > 0 && s.buf[content_end - 1] == '\n') content_end--;
-        static const char header[] = "[dependencies]\n";
+        static const char header[] = "[dependency]\n";
         size_t sep_len = content_end > 0 ? 2 : 0; // blank line before the header, unless file is empty
         out_len = content_end + sep_len + (sizeof header - 1) + (size_t)entry_len;
         out = malloc(out_len + 1);
@@ -778,7 +825,7 @@ int package_manifest_remove_dep(const char* manifest_path, const char* name, int
         p = next;
         if (tlen == 0) continue;
         if (tlen >= 2 && t[0] == '/' && t[1] == '/') continue;
-        if (tlen == 14 && memcmp(t, "[dependencies]", 14) == 0) {
+        if (tlen == 12 && memcmp(t, "[dependency]", 12) == 0) {
             in_deps = 1;
             header_line = line_start;
             header_line_end = next;

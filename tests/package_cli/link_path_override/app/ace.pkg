@@ -1,4 +1,4 @@
-// lib_a's [[link]] path does not exist here; the root's own path for the
+// lib_a's [link] path does not exist here; the root's own path for the
 // same file name overrides it, so the build succeeds.
 // expect-build-exit: 0
 
@@ -8,8 +8,8 @@ ace: 0.1
 type: exe
 root: src/main.ace
 
-[dependencies]
+[dependency]
 lib_a: 0.1.0
 
-[[link]]
+[link]
 path: vendor/libz.a

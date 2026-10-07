@@ -5,7 +5,7 @@
  * Layouts, values, and signatures mirror the SDL 3.4 headers; the
  * static_asserts pin them. The manifest links Homebrew's
  * /opt/homebrew/lib/libSDL3.dylib; an app whose SDL3 lives elsewhere names
- * its own file with a [[link]] path of the same file name.
+ * its own file with a [link] path of the same file name.
  */
 
 import str

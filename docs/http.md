@@ -10,7 +10,7 @@ response, and cleanup failures remain explicit in returned errors.
 `http` is a standalone package at [`pkg/http`](../pkg/http), not a `std`
 module — it has no compiler-owned mechanism tying it to the shipped `std/`
 tree. A consumer depends on it like any other package (an `http: 0.1.0`
-`[dependencies]` entry in its own `ace.pkg`, found as the nearest `pkg/http`);
+`[dependency]` entry in its own `ace.pkg`, found as the nearest `pkg/http`);
 the bare `import http` in source stays the same either way. See
 [`demo/http-simple-client`](../demo/http-simple-client) and
 [`demo/http-simple-server`](../demo/http-simple-server) for consuming

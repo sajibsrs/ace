@@ -6,5 +6,5 @@ root: mod.ace
 description: Minimal SDL3 binding: window, renderer, and event polling
 author: Sajidur Rahman <sajibsrs@gmail.com>
 
-[[link]]
+[link: darwin-arm64]
 path: /opt/homebrew/lib/libSDL3.dylib

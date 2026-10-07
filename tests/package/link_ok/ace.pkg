@@ -1,4 +1,4 @@
-// Relative and absolute [[link]] paths and a framework parse; resolving the graph does not
+// Relative and absolute [link] paths and a framework parse; resolving the graph does not
 // check an absolute file, which only the link step uses.
 // expect-ok: link_ok
 
@@ -8,14 +8,11 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[[link]]
+[link]
 path: vendor/libcrypto.a
 
-[[link]]
 path: vendor/x.a
 
-[[link]]
 path: /nonexistent-ace/libx.dylib
 
-[[link]]
 framework: Security

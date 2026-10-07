@@ -4,5 +4,5 @@ ace: 0.1
 type: lib
 root: root.ace
 
-[dependencies]
+[dependency]
 b: 0.1.0

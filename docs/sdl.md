@@ -9,17 +9,17 @@ quit events of a classic `SDL_PollEvent` loop. It covers only what its demos
 need and grows with its users.
 
 `sdl` is a standalone package at [`pkg/sdl`](../pkg/sdl), not a `std`
-module. A consumer lists it under `[dependencies]` in its own `ace.pkg` as
+module. A consumer lists it under `[dependency]` in its own `ace.pkg` as
 `sdl: 0.1.0`, and the source writes a plain `import sdl`. The package
-manifest links Homebrew's Apple Silicon file:
+manifest links Homebrew's Apple Silicon file on that target:
 
 ```
-[[link]]
+[link: darwin-arm64]
 path: /opt/homebrew/lib/libSDL3.dylib
 ```
 
 An app whose SDL3 lives elsewhere names its own file with the same file name
-in its `ace.pkg` (`path: /usr/local/lib/libSDL3.dylib`); the app's path
+in a `[link]` section of its `ace.pkg` (`path: /usr/local/lib/libSDL3.dylib`); the app's path
 overrides the package's.
 
 See [`demo/sdl3-window`](../demo/sdl3-window),

@@ -1,0 +1,13 @@
+// A [dependency] section qualified for another OS is not resolved, so its
+// absent pkg/ghost is no error.
+// target: darwin-arm64
+// expect-ok: dep_target_inactive
+
+name: dep_target_inactive
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependency: linux]
+ghost: 1.0.0

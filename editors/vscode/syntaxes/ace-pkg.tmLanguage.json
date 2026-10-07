@@ -18,21 +18,14 @@
     "header": {
       "patterns": [
         {
-          "match": "^\\s*(\\[\\[)\\s*(link)\\s*(\\]\\])\\s*$",
-          "name": "meta.table-header.ace-pkg",
-          "captures": {
-            "1": { "name": "punctuation.definition.table.array.ace-pkg" },
-            "2": { "name": "entity.name.section.ace-pkg" },
-            "3": { "name": "punctuation.definition.table.array.ace-pkg" }
-          }
-        },
-        {
-          "match": "^\\s*(\\[)\\s*(dependencies)\\s*(\\])\\s*$",
+          "match": "^\\s*(\\[)\\s*(dependency|link)\\s*(?:(:)\\s*((?:darwin|linux)(?:-(?:arm64|x64))?)\\s*)?(\\])\\s*$",
           "name": "meta.section-header.ace-pkg",
           "captures": {
             "1": { "name": "punctuation.definition.table.ace-pkg" },
             "2": { "name": "entity.name.section.ace-pkg" },
-            "3": { "name": "punctuation.definition.table.ace-pkg" }
+            "3": { "name": "punctuation.separator.key-value.ace-pkg" },
+            "4": { "name": "constant.language.target.ace-pkg" },
+            "5": { "name": "punctuation.definition.table.ace-pkg" }
           }
         },
         {

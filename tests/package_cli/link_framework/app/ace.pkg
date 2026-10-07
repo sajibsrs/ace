@@ -1,4 +1,4 @@
-// The app declares no [[link]] of its own; the framework it needs to link
+// The app declares no [link] of its own; the framework it needs to link
 // comes transitively from its lib dependency (Package System #14).
 // expect-host: Darwin
 // expect-build-exit: 9
@@ -9,5 +9,5 @@ ace: 0.1
 type: exe
 root: src/main.ace
 
-[dependencies]
+[dependency]
 greeter: 0.1.0

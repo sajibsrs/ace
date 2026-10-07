@@ -4,5 +4,5 @@ ace: 0.1
 type: lib
 root: src/mod.ace
 
-[[link]]
+[link]
 path: /opt/ace-hint-a/libm.dylib

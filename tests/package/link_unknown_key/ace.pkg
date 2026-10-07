@@ -1,5 +1,5 @@
-// Only 'path' and 'framework' are [[link]] fields (GRAMMAR.md §7); a library name is not.
-// expect-err: unknown [[link]] field 'library'
+// Only 'path' and 'framework' are [link] fields (GRAMMAR.md §7); a library name is not.
+// expect-err: unknown [link] field 'library'
 
 name: link_unknown_key
 version: 0.1.0
@@ -7,5 +7,5 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[[link]]
+[link]
 library: crypto

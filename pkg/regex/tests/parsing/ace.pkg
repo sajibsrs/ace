@@ -5,5 +5,5 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[dependencies]
+[dependency]
 regex: 0.1.0

@@ -334,7 +334,7 @@ static int package_load_and_check(const char* dir, const char* target,
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
-    Package* root_package = package_resolve(dir, &pd, &order, &norder);
+    Package* root_package = package_resolve(dir, target, &pd, &order, &norder);
     if (!root_package || pd.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
         return 1;
@@ -406,7 +406,7 @@ static int package_revalidate_or_restore(const char* dir,
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
-    Package* root = package_resolve(dir, &pd, &order, &norder);
+    Package* root = package_resolve(dir, host_target(), &pd, &order, &norder);
     free(order);
     if (!root || pd.errors > 0) {
         package_manifest_restore(manifest_path, backup, backup_len);
@@ -485,7 +485,7 @@ static int package_cmd_list(int argc, char** argv) {
     Diag pd = {dir, 0};
     Package** order = NULL;
     int norder = 0;
-    Package* root = package_resolve(dir, &pd, &order, &norder);
+    Package* root = package_resolve(dir, host_target(), &pd, &order, &norder);
     if (!root || pd.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
         free(order);
@@ -604,7 +604,7 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
     uint64_t compile_done = show_report ? monotonic_ns() : 0;
 
     // Package System #14: the transitive union of every package's declared
-    // [[link]] inputs, dependency-first (order already matches that from
+    // [link] inputs, dependency-first (order already matches that from
     // package_resolve), deduplicated, conflict-checked.
     int nlinkargs;
     char** link_args = package_collect_links(order, norder, &d, &nlinkargs);
@@ -877,7 +877,7 @@ int main(int argc, char** argv) {
         Diag pd = {package_graph_dir, 0};
         Package** order = NULL;
         int norder = 0;
-        Package* root = package_resolve(package_graph_dir, &pd, &order, &norder);
+        Package* root = package_resolve(package_graph_dir, target, &pd, &order, &norder);
         if (!root || pd.errors > 0) {
             fprintf(stderr, "%s: %d error%s\n", package_graph_dir, pd.errors, pd.errors == 1 ? "" : "s");
             return 1;

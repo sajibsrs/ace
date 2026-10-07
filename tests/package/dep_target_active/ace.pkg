@@ -1,0 +1,15 @@
+// A [dependency] section qualified for the build target is resolved
+// alongside the unqualified one.
+// target: linux-x64
+// expect-ok: dep,dep_target_active
+
+name: dep_target_active
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependency]
+
+[dependency: linux-x64]
+dep: 0.1.0

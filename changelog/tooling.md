@@ -1,5 +1,9 @@
 # Tooling
 
+- Manifest sections are singular, `[dependency]` and `[link]` (a plain
+  section of repeatable `path:`/`framework:` lines), and a header may take one
+  target or OS qualifier (`[link: darwin-arm64]`); sections not selected by
+  the build target are parsed and dropped unchecked.
 - A `[[link]]` record takes one `path: FILE`, an exact file (relative inside
   the package, or absolute), or a platform `framework: NAME`, replacing
   `object`/`search`/`library` and directory paths: no search, suffix order, or

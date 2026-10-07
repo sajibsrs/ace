@@ -3,7 +3,7 @@
 Plain `ace file.ace` compiles one root source with no manifest. An optional
 `ace.pkg` at a directory root groups a package's files under a declared
 `name`, exact `version`, `ace` language version, `type` (`exe` or `lib`), and
-`root` source file, with `[dependencies]` entries naming each dependency and
+`root` source file, with `[dependency]` entries naming each dependency and
 its exact version (`json: 0.1.0`; see `spec/modules-packages.md`'s Package System section for
 the manifest format and dependency rules). Optional `description`, `author`, `license`, and `repository` fields
 hold free-form single-line metadata with no effect on identity, resolution, or
@@ -60,7 +60,7 @@ under it and a relative import cannot reach into it. Nothing fetches packages
 into `pkg/` yet; remote packages await a central registry.
 
 `add NAME VERSION` and `remove NAME` edit the enclosing package's own
-`[dependencies]` section: `add` validates the complete resulting graph — no
+unqualified `[dependency]` section: `add` validates the complete resulting graph — no
 duplicate or colliding name, a matching `lib` at the nearest `pkg/NAME`, no
 cycle, one shared `ace` language version — before writing, and `remove`
 re-validates symmetrically; either restores the manifest to its exact
@@ -75,19 +75,29 @@ working directory.
 
 ## Native link inputs
 
-A `[[link]]` record names one input for an `exe`'s final link: an exact
-file, with the extension it has on disk, or a platform framework:
+A `[link]` section names inputs for an `exe`'s final link, one per line:
+an exact file, with the extension it has on disk, or a platform framework.
+Either key may repeat:
 
 ```
-[[link]]
+[link]
+path: vendor/libfoo.a
+framework: CoreFoundation
+
+[link: darwin-arm64]
 path: /opt/homebrew/lib/libSDL3.dylib
 
-[[link]]
-path: vendor/libfoo.a
-
-[[link]]
-framework: CoreFoundation
+[link: linux]
+path: /usr/lib/libSDL3.so
 ```
+
+A header may carry one target qualifier: a full target (`darwin-arm64`,
+`darwin-x64`, `linux-arm64`, `linux-x64`) or an OS alone (`darwin`, `linux`),
+which matches both architectures. `[dependency: linux]` works the same way.
+Building target T (the host, or `--target=`) uses the unqualified section plus
+those qualified T or T's OS, in file order; the rest are parsed and dropped
+unchecked, so a path that exists only on another platform is no error. An
+unknown qualifier, or the same header twice, is an error.
 
 A relative path stays inside the declaring package and must exist when the
 manifest loads. An absolute path is a host file. Ace never searches for a
@@ -96,7 +106,7 @@ framework is the one exception: a bare name, passed as `-framework NAME`,
 which the toolchain finds in its active SDK, since a platform framework's
 place is fixed by the platform rather than by how it was installed.
 
-An `exe` collects every package's records, dependencies first, so an
+An `exe` collects every package's active link lines, dependencies first, so an
 application depending on a library links what that library declares without
 naming it. Each file name and framework links once. The package being built overrides a
 dependency's path by declaring the same file name at its own path; without

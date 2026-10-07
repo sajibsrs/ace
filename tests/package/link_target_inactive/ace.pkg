@@ -1,0 +1,16 @@
+// A section qualified for another target is dropped unchecked: its missing
+// relative path is no error.
+// target: darwin-arm64
+// expect-ok: link_target_inactive
+
+name: link_target_inactive
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link: linux-x64]
+path: vendor/missing.a
+
+[link: darwin-x64]
+path: vendor/missing.a

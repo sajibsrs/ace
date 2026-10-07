@@ -334,46 +334,48 @@ Package System section.
 
 ```ebnf
 manifest        := line*
-line            := comment | blank | table_header | section_header | field
+line            := comment | blank | section_header | field
 
 comment         := "//" (any – newline)* newline
 blank           := newline
 
-section_header  := "[" "dependencies" "]" newline
-table_header    := "[[" "link" "]]" newline        // repeatable; each
-                                                    // occurrence opens one
-                                                    // new record
+section_header  := "[" section_kind [":" qualifier] "]" newline
+section_kind    := "dependency" | "link"
+qualifier       := os ["-" arch]                   // a target or an OS
+os              := "darwin" | "linux"
+arch            := "arm64" | "x64"
 
 field           := key ":" value newline           // surrounding spaces/tabs
-                                                    // around key and value
-                                                    // are insignificant
+                                                    // around key, qualifier,
+                                                    // and value are
+                                                    // insignificant
 key             := top_key | dep_key | link_key
 top_key         := "name" | "version" | "ace" | "type" | "root"
                   | "description" | "author" | "license" | "repository"
 dep_key         := ident                           // import alias, only
-                                                    // inside [dependencies]
-link_key        := "path" | "framework"            // only inside [[link]],
-                                                    // exactly one per record
+                                                    // inside [dependency]
+link_key        := "path" | "framework"            // only inside [link];
+                                                    // repeatable
 value           := (any – newline)*                [P: escaping/quoting]
 ```
 
 Notes:
 
 1. Context is positional: `top_key` fields are only valid before any header;
-   `dep_key` fields only after `[dependencies]` and before the next header;
-   `link_key` fields only after a `[[link]]` header and before the next
-   header.
-2. `top_key` and `dep_key` (per alias) may each appear at most once in their
-   manifest; `link_key` may appear at most once per `[[link]]` record — a
-   fresh occurrence opens a new record and resets `link_key` availability.
-   Any repeat is an error.
+   `dep_key` fields only after a `[dependency]` header and `link_key` fields
+   only after a `[link]` header, each until the next header.
+2. `top_key` may appear at most once per manifest and `dep_key` (per alias)
+   at most once per section and once among the sections active for the
+   build target. A section header (kind plus qualifier, or
+   none) may appear at most once per manifest (Package System #16). Any
+   repeat is an error.
 3. `description`/`author`/`license`/`repository` alone admit an empty
    `value` (field present, meaning absent); every other `top_key`, every
    `dep_key`, and every `link_key` requires a nonempty `value`.
-4. `[dependencies]`'s `value` is one exact `major.minor.patch` version
+4. A `dep_key`'s `value` is one exact `major.minor.patch` version
    (Package System #4); a `path` value is one exact file, absolute or
    relative to the declaring package's own directory with no `..` traversal
    (Package System #14); a `framework` value is a bare name.
-5. [P] The recognized header and key sets are closed and expected to grow
-   (e.g. a future `authors` as `[[authors]]`); today only `[dependencies]`
-   and `[[link]]` exist, and an unrecognized header or key is an error.
+5. [P] The recognized section kinds and key sets are closed and expected to
+   grow; today only `[dependency]` and `[link]` exist, and an unrecognized
+   header, qualifier, or key is an error.

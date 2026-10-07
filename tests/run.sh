@@ -2457,7 +2457,8 @@ fi
 # failing graph-resolution case must report instead. `// expect-check-ok` and
 # `// expect-check-err: substring` are the --pkg-check equivalents, covering
 # cross-package import resolution (module.c) rather than graph resolution
-# alone. A case may use either pair, or both.
+# alone. A case may use either pair, or both. `// target: NAME` resolves the
+# graph for NAME rather than the host (qualified sections, Package System #16).
 if [ -d tests/package ]; then
     for case_dir in tests/package/*/; do
         if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
@@ -2469,8 +2470,9 @@ if [ -d tests/package ]; then
         err=$(sed -n 's/^\/\/ *expect-err:[[:space:]]*//p' "$f")
         check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
         check_err=$(sed -n 's/^\/\/ *expect-check-err:[[:space:]]*//p' "$f")
+        tgt=$(sed -n 's/^\/\/ *target:[[:space:]]*//p' "$f")
         if [ -n "$ok" ] || [ -n "$err" ]; then
-            out=$("$ACE" --pkg-graph="$dir" 2>/tmp/ace_test_errs)
+            out=$("$ACE" --pkg-graph="$dir" ${tgt:+--target=$tgt} 2>/tmp/ace_test_errs)
             got=$?
             if [ -n "$ok" ]; then
                 if [ "$got" -ne 0 ]; then

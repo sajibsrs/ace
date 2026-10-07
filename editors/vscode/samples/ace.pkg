@@ -4,9 +4,12 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[dependencies]
+[dependency]
 sdl: 0.1.0
 
-// Link SDL3 from Homebrew.
-[[link]]
+// Link SDL3 from Homebrew on Apple Silicon only.
+[link: darwin-arm64]
 path: /opt/homebrew/lib/libSDL3.dylib
+
+[link: darwin]
+framework: CoreFoundation

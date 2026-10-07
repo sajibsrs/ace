@@ -1,4 +1,4 @@
-// lib_a and lib_b give different [[link]] paths for one file name; the
+// lib_a and lib_b give different [link] paths for one file name; the
 // build refuses to pick one (Package System #14) and names both, whether or
 // not either exists, until the root gives its own path.
 // expect-build-err: path '/opt/ace-hint-b/libm.dylib' conflicts with
@@ -9,6 +9,6 @@ ace: 0.1
 type: exe
 root: src/main.ace
 
-[dependencies]
+[dependency]
 lib_a: 0.1.0
 lib_b: 0.1.0

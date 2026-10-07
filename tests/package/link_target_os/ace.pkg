@@ -1,0 +1,12 @@
+// An OS-only qualifier selects every target of that OS, so its path is checked.
+// target: linux-arm64
+// expect-err: [link] path 'vendor/missing.a' does not exist
+
+name: link_target_os
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link: linux]
+path: vendor/missing.a

@@ -353,7 +353,7 @@ struct PackageDep {
     PackageDep* next;
 };
 
-// A native link input declared by a [[link]] record (spec/modules-packages.md
+// A native link input declared on a [link] line (spec/modules-packages.md
 // Package System #14, GRAMMAR.md §7): an exact file linked as written, or a
 // platform framework name.
 typedef struct PackageLink PackageLink;
@@ -381,13 +381,14 @@ struct Package {
 };
 
 // Parse ace.pkg at package_dir and resolve its complete dependency
-// graph. Returns the root package, or NULL if any error was reported through
+// graph for target (selecting qualified sections, Package System #16).
+// Returns the root package, or NULL if any error was reported through
 // d. On success, *order receives every loaded package (including the root)
 // in dependency-first order and *norder its count; the caller owns the
 // returned array (free) but not the Package storage (arena, stable).
-Package* package_resolve(const char* package_dir, Diag* d, Package*** order, int* norder);
+Package* package_resolve(const char* package_dir, const char* target, Diag* d, Package*** order, int* norder);
 
-// Collects every package's [[link]] files and frameworks across order
+// Collects every package's [link] files and frameworks across order
 // (dependency-first, from package_resolve) as linker arguments, once per
 // framework name ("-framework"/name) and once per file name at its first
 // position: the root's path for that name, else the dependencies' one
@@ -410,10 +411,10 @@ int package_valid_name(const char* s, size_t len);
 // the caller re-resolves the graph afterward and restores the manifest's
 // original bytes on failure. Both return 0 on a successful rewrite, 1 if the
 // manifest could not be read or written back (message already printed).
-// add_dep inserts "name: version\n" as a new [dependencies] entry, creating the
+// add_dep inserts "name: version\n" as a new [dependency] entry, creating the
 // section header at end-of-file if absent.
 int package_manifest_add_dep(const char* manifest_path, const char* name, const char* version);
-// remove_dep deletes the [dependencies] entry whose key exactly equals name,
+// remove_dep deletes the [dependency] entry whose key exactly equals name,
 // and the section header too if no other entry remains; *found reports
 // whether such an entry existed (false leaves the manifest untouched).
 int package_manifest_remove_dep(const char* manifest_path, const char* name, int* found);

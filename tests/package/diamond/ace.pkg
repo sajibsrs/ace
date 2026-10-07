@@ -8,6 +8,6 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[dependencies]
+[dependency]
 lib_a: 0.1.0
 lib_b: 0.1.0

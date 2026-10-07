@@ -1,0 +1,11 @@
+// A qualifier must name a target or an OS.
+// expect-err: unknown target qualifier 'windows'
+
+name: link_target_unknown
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link: windows]
+path: vendor/x.a

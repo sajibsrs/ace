@@ -1,6 +1,6 @@
-// A relative [[link]] path that does not exist is an error at manifest
+// A relative [link] path that does not exist is an error at manifest
 // load, not a later link failure.
-// expect-err: [[link]] path 'vendor/libcrypto.a' does not exist
+// expect-err: [link] path 'vendor/libcrypto.a' does not exist
 
 name: link_missing
 version: 0.1.0
@@ -8,5 +8,5 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[[link]]
+[link]
 path: vendor/libcrypto.a

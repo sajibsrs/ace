@@ -1,4 +1,4 @@
-// A dependency's absolute [[link]] path is not checked while resolving the
+// A dependency's absolute [link] path is not checked while resolving the
 // graph: the root may override it before the link step.
 // expect-ok: dep,link_path_deferred
 
@@ -8,5 +8,5 @@ ace: 0.1
 type: exe
 root: main.ace
 
-[dependencies]
+[dependency]
 dep: 0.1.0

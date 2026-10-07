@@ -5,7 +5,7 @@
 # gate core compiler iteration. Run via `make test-packages` or directly as
 # `pkg/sdl/tests/run.sh`.
 #
-# The cases link the SDL3 file pkg/sdl's [[link]] path names; where that
+# The cases link the SDL3 file pkg/sdl's [link] path names; where that
 # file is missing, the suite is skipped, not failed.
 #
 # One directory per case, each its own `app` package depending on `sdl`
@@ -21,7 +21,7 @@ ACE_BIN=${ACE_BIN:-../../../ace}
 ACE_DIR=$(dirname "$ACE_BIN")
 ACE=$(cd "$ACE_DIR" && pwd)/$(basename "$ACE_BIN")
 
-# pkg/sdl's manifest names the SDL3 file ([[link]] path); a host without
+# pkg/sdl's manifest names the SDL3 file ([link] path); a host without
 # it skips the suite rather than failing it.
 lib=$(sed -n 's/^path: *//p' ../ace.pkg)
 if [ ! -e "$lib" ]; then

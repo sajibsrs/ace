@@ -1,0 +1,18 @@
+// One name in two sections active for the target is an error.
+// target: darwin-arm64
+// expect-err: duplicate dependency 'dep'
+
+name: dep_target_duplicate
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[dependency]
+dep: 0.1.0
+
+[dependency: darwin]
+dep: 0.1.0
+
+[dependency: linux]
+dep: 0.1.0

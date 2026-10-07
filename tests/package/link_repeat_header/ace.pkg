@@ -1,0 +1,14 @@
+// A section header may appear once; a second [link] is an error.
+// expect-err: repeated section '[link]'
+
+name: link_repeat_header
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+path: /usr/lib/libcrypto.dylib
+
+[link]
+path: /usr/lib/libssl.dylib
