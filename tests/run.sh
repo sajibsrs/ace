@@ -67,6 +67,25 @@ if ! printf '%s\n' "$unknown_decl" | grep -qF \
     fail=1
 fi
 
+# syntax errors: one per statement or declaration, up to 10 per file
+several=$("$ACE" tests/parser/recovery/several_err.ace 2>&1)
+if [ "$several" != "tests/parser/recovery/several_err.ace:5:14: error: expected expression, got ')'
+tests/parser/recovery/several_err.ace:10:8: error: expected parameter name, got ':'
+tests/parser/recovery/several_err.ace:16:12: error: expected type, got '='
+tests/parser/recovery/several_err.ace: 3 errors" ]; then
+    echo "FAIL: each syntax error should be reported once, and checking blocked"
+    printf '%s\n' "$several"
+    fail=1
+fi
+limit=$("$ACE" tests/parser/recovery/limit_err.ace 2>&1)
+if [ "$(printf '%s\n' "$limit" | grep -c ': error: ')" -ne 10 ] ||
+    [ "$(printf '%s\n' "$limit" | tail -2)" != "tests/parser/recovery/limit_err.ace: stopped at 10 errors; the rest of the file was not parsed
+tests/parser/recovery/limit_err.ace: 10 errors" ]; then
+    echo "FAIL: syntax errors should stop at 10 per file"
+    printf '%s\n' "$limit"
+    fail=1
+fi
+
 for case in empty NUL long; do
     case "$case" in
         empty) file=extern_link_name/empty_err.ace

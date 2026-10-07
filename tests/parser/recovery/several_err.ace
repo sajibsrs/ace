@@ -1,0 +1,19 @@
+// Each statement and declaration with a syntax error is reported once; an
+// unclosed '(' costs only its declaration; a type error elsewhere is not
+// reported, since syntax errors block checking.
+first(): int {
+    x: int = )
+    y: bool = 1
+    return 0
+}
+
+second(: int {
+    return 0
+}
+
+third(): int {
+    if true {
+        z: = 2
+    }
+    return 0
+}

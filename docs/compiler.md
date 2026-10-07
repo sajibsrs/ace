@@ -14,7 +14,9 @@ ace --target=darwin-arm64 program.ace
 ```
 
 The default mode performs parsing, import resolution, and semantic checking
-without emitting code. `-c` writes the target's object beside the root source: Mach-O for
+without emitting code. A file with syntax errors reports each one, up to 10
+per file, and stops there: nothing is checked or emitted until they are
+fixed. `-c` writes the target's object beside the root source: Mach-O for
 `darwin-arm64`, ELF for `linux-x64`.
 `-o NAME` emits an intermediate object and invokes the system C compiler driver
 to link `NAME`. When `NAME` ends in `.ace`, it names the root source itself:
@@ -175,6 +177,14 @@ Manifest-aware building (`ace.pkg`, dependencies, native link inputs, and the
 
 Why the rules in `spec/compiler.md` are shaped as they are.
 
+- Compiler #2, syntax errors: reporting each statement's or declaration's
+  error saves a recompile per mistake, as Go's and Clang's parsers do, while
+  repairing no tree keeps follow-on errors from a guessed repair out of the
+  report. The skip resumes at a newline at bracket depth 0, a block's `}`,
+  or a column-1 token; C compilers resume at `;`, which cannot occur inside
+  parentheses, but an Ace newline can, so the column-1 declaration start of
+  formatted code bounds an unclosed `(` to one declaration. The cap of 10
+  matches Go's.
 - Compiler #2, reachable functions only: code generation was over half of
   compile time, most of it for imported functions a program never calls.
   Following the references compiled code already makes finds every use —

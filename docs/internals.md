@@ -16,7 +16,9 @@ source → lex → parse → merge → check → lower → optimize → select/a
 
 - **`lexer.c`** (pass 1) — one scan of a source file into tokens.
 - **`parser.c`** (pass 2) — recursive-descent tokens → AST; drops inactive
-  `@when` declarations here.
+  `@when` declarations here. A syntax error jumps (`siglongjmp`) to the
+  innermost statement or top-level declaration, which is skipped; parsing
+  continues up to 10 errors.
 - **`module.c`** (pass 3) — resolves imports into one merged compilation unit:
   loads every imported file the same way, renames through one scoped
   reference walk, and merges in dependency order. A module is one file or a

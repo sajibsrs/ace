@@ -107,8 +107,13 @@ typedef struct {
     Diag*  d;
     const char* target;
     NV exports; // functions defined inside the extern block just parsed
-    jmp_buf jb;
+    sigjmp_buf* sync; // innermost statement or declaration being parsed
+    sigjmp_buf stop;  // the error limit: abandon the file
+    int nerr;
+    Token* last;      // the latest error's token; another there is a cascade
 } P;
+
+enum { PARSE_ERROR_LIMIT = 10 };
 
 // --- cursor helpers -----------------------------------------------------------
 
@@ -193,12 +198,23 @@ static const char* gdesc(P* p) {
     }
 }
 
+/* Reports a syntax error and abandons the innermost statement or declaration;
+ * the parser resumes after it to report later errors, up to the limit. No
+ * tree is repaired: any error blocks every later phase.
+ */
 static void vperr_at(P* p, Token* t, const char* fmt, va_list ap) {
-    fprintf(stderr, "%s:%d:%d: error: ", p->d->path, t->line, t->col);
-    vfprintf(stderr, fmt, ap);
-    fputc('\n', stderr);
-    p->d->errors++;
-    longjmp(p->jb, 1);
+    if (t != p->last) {
+        fprintf(stderr, "%s:%d:%d: error: ", p->d->path, t->line, t->col);
+        vfprintf(stderr, fmt, ap);
+        fputc('\n', stderr);
+        p->d->errors++;
+        p->last = t;
+        if (++p->nerr == PARSE_ERROR_LIMIT) {
+            fprintf(stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", p->d->path, PARSE_ERROR_LIMIT);
+            siglongjmp(p->stop, 1);
+        }
+    }
+    siglongjmp(*p->sync, 1);
 }
 
 // Reports at t, for a check made only after the construct it names is parsed.
@@ -1660,6 +1676,51 @@ static Node* parse_expr_stmt(P* p, int ctx) {
     return n;
 }
 
+/* Skips the construct starting at token `start`, bracket-balanced, to the
+ * newline that ends it or the unmatched '}' of its block (left for the block).
+ * In formatted code a token at column 1 starts a declaration or is the '}'
+ * ending one, so the skip also stops there whatever the depth: an unclosed
+ * '(' costs one declaration, not the rest of the file. A declaration's skip
+ * (`top`) takes such a '}' as its own end; a statement's leaves it.
+ */
+static void skip_from(P* p, size_t start, int top) {
+    p->i = start;
+    int depth = 0;
+    for (;; p->i++) {
+        TokKind k = tk(p)->kind;
+        if (k == T_EOF) return;
+        if (k != T_NL && tk(p)->col == 1 && p->i > start) {
+            if (!top || k != T_RBRACE) return;
+            depth = 0;
+            continue;
+        }
+        if (k == T_LPAREN || k == T_LBRACK || k == T_LBRACE) depth++;
+        else if (k == T_RPAREN || k == T_RBRACK) { if (depth > 0) depth--; }
+        else if (k == T_RBRACE) {
+            if (depth == 0) {
+                if (p->i > start) return;
+            } else depth--;
+        } else if (k == T_NL && depth == 0) return;
+    }
+}
+
+// One statement through its terminator, or NULL after a syntax error in it.
+static Node* guarded_stmt(P* p) {
+    size_t start = p->i;
+    sigjmp_buf* outer = p->sync;
+    sigjmp_buf here;
+    if (sigsetjmp(here, 0)) {
+        p->sync = outer;
+        skip_from(p, start, 0);
+        return NULL;
+    }
+    p->sync = &here;
+    Node* n = parse_stmt(p);
+    stmt_end(p);
+    p->sync = outer;
+    return n;
+}
+
 static Node* parse_block(P* p) {
     Node* b = nd(p, N_BLOCK);
     expect(p, T_LBRACE, "'{'");
@@ -1667,8 +1728,8 @@ static Node* parse_block(P* p) {
     skipnl(p);
     while (!at(p, T_RBRACE)) {
         if (at(p, T_EOF)) perr(p, "unexpected end of file, expected '}'");
-        nv_push(p, &stmts, parse_stmt(p));
-        stmt_end(p);
+        Node* n = guarded_stmt(p);
+        if (n) nv_push(p, &stmts, n);
         skipnl(p);
     }
     p->i++; // '}'
@@ -2516,6 +2577,55 @@ static Node* parse_top_named(P* p, int pub) {
     return NULL;
 }
 
+// One top-level item through its newline; after a syntax error, skips it.
+static void top_item(P* p, NV* decls, int* saw_declaration) {
+    size_t start = p->i;
+    sigjmp_buf here;
+    if (sigsetjmp(here, 0)) {
+        skip_from(p, start, 1);
+        p->exports = (NV){0};
+        return;
+    }
+    p->sync = &here;
+    int active = 1, packed = 0, cold = 0;
+    Node* explicit_align = NULL;
+    if (named_attr_at(p, "when")) active = parse_when(p);
+    parse_layout_attrs(p, &packed, &explicit_align, &cold);
+    if (at(p, T_IMPORT)) {
+        if (packed || explicit_align) perr(p, "layout attributes do not apply to imports");
+        if (cold) perr(p, "@cold applies only to function declarations");
+        Node* imp = parse_import(p);
+        if (active) {
+            if (*saw_declaration) perr(p, "imports must precede declarations");
+            nv_push(p, decls, imp);
+        }
+    } else {
+        size_t at_decl = p->i;
+        Node* decl = parse_top(p);
+        if (cold) {
+            if (decl->kind != N_FUNC || (decl->flags & F_EXPO)) {
+                p->i = at_decl;
+                perr(p, "@cold applies only to Ace function declarations");
+            }
+            decl->flags |= F_COLD;
+        }
+        if ((packed || explicit_align) && decl->kind != N_STRUCT)
+            perr(p, "layout attributes apply only to struct declarations");
+        if (decl->kind == N_STRUCT) {
+            if (packed) decl->flags |= F_PACKED;
+            decl->b = explicit_align;
+        }
+        if (!eat(p, T_NL) && !at(p, T_EOF)) perr(p, "expected newline after declaration, got %s", gdesc(p));
+        if (active) {
+            nv_push(p, decls, decl);
+            if (decl->kind == N_EXTERN)
+                for (int j = 0; j < p->exports.n; j++) nv_push(p, decls, p->exports.v[j]);
+            *saw_declaration = 1;
+        }
+        p->exports = (NV){0};
+    }
+}
+
 Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
     P p = {0};
     p.toks = toks;
@@ -2528,48 +2638,12 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target) {
     file->line = 1;
     file->col = 1;
     file->path = d->path;
-    if (setjmp(p.jb)) return file; // syntax error: stop at the first one
+    if (sigsetjmp(p.stop, 0)) return file;
     NV decls = {0};
     skipnl(&p);
     int saw_declaration = 0;
     while (!at(&p, T_EOF)) {
-        int active = 1, packed = 0, cold = 0;
-        Node* explicit_align = NULL;
-        if (named_attr_at(&p, "when")) active = parse_when(&p);
-        parse_layout_attrs(&p, &packed, &explicit_align, &cold);
-        if (at(&p, T_IMPORT)) {
-            if (packed || explicit_align) perr(&p, "layout attributes do not apply to imports");
-            if (cold) perr(&p, "@cold applies only to function declarations");
-            Node* imp = parse_import(&p);
-            if (active) {
-                if (saw_declaration) perr(&p, "imports must precede declarations");
-                nv_push(&p, &decls, imp);
-            }
-        } else {
-            size_t start = p.i;
-            Node* decl = parse_top(&p);
-            if (cold) {
-                if (decl->kind != N_FUNC || (decl->flags & F_EXPO)) {
-                    p.i = start;
-                    perr(&p, "@cold applies only to Ace function declarations");
-                }
-                decl->flags |= F_COLD;
-            }
-            if ((packed || explicit_align) && decl->kind != N_STRUCT)
-                perr(&p, "layout attributes apply only to struct declarations");
-            if (decl->kind == N_STRUCT) {
-                if (packed) decl->flags |= F_PACKED;
-                decl->b = explicit_align;
-            }
-            if (!eat(&p, T_NL) && !at(&p, T_EOF)) perr(&p, "expected newline after declaration, got %s", gdesc(&p));
-            if (active) {
-                nv_push(&p, &decls, decl);
-                if (decl->kind == N_EXTERN)
-                    for (int j = 0; j < p.exports.n; j++) nv_push(&p, &decls, p.exports.v[j]);
-                saw_declaration = 1;
-            }
-            p.exports = (NV){0};
-        }
+        top_item(&p, &decls, &saw_declaration);
         skipnl(&p);
     }
     set_kids(file, &decls);

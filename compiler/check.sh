@@ -1,6 +1,6 @@
 #!/bin/sh
 # Diffs the self-hosted compiler's tokens against `ace --tokens` and its tree
-# against `ace --ast` (stdout, exit status, and the first error line) over
+# against `ace --ast` (stdout, exit status, and every error line) over
 # every repository .ace file, then times the lexers on the largest files. Run
 # from anywhere.
 set -u
@@ -30,7 +30,7 @@ for f in $files; do
     "$tmp/ace-self" --ast "$f" >"$tmp/got" 2>"$tmp/gerr"
     grc=$?
     if [ "$wrc" -ne "$grc" ] || ! cmp -s "$tmp/want" "$tmp/got" ||
-        [ "$(head -1 "$tmp/werr")" != "$(head -1 "$tmp/gerr")" ]; then
+        ! cmp -s "$tmp/werr" "$tmp/gerr"; then
         abad=$((abad + 1))
         echo "AST DIFF $f"
         diff "$tmp/want" "$tmp/got" | head -4

@@ -88,11 +88,12 @@ dump_ast(mut out: Out, src: string, path: string): int {
     defer mut p.wipe()
     if lex_errors > 0 { return summary(path, lex_errors) }
     f: u32 = mut p.parse(TARGET)
-    failed: bool, line: u32, col: u32, message: string = p.error()
-    if failed {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), message)
-        return summary(path, 1)
+    errors: []parser.SyntaxError, stopped: bool = p.errors()
+    for e: parser.SyntaxError in errors {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(e.line), int(e.col), e.message)
     }
+    if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", path, int(parser.ERROR_LIMIT)) }
+    if errors.len > 0 { return summary(path, int(errors.len)) }
     p.dump(mut out, f, 0)
     mut out.flush()
     return 0

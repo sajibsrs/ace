@@ -10,6 +10,7 @@
  * eof, so each loop ends without further checks.
  */
 
+import array
 import fmt
 import mem
 import str
@@ -111,23 +112,34 @@ pub Parser: struct {
     nkid: usize,
     stack: mut []u32 = null,
     nstack: usize,
-    failed: bool,
-    eline: u32,
-    ecol: u32,
+    failed: bool,              // unwinding to the innermost statement or declaration
+    stopped: bool,             // the error limit was reached: abandon the file
+    last: usize,               // the latest error's token; another there is a cascade
     msg: mut []u8 = null,      // storage of `err`
-    err: fmt.Buffer,           // the first error's message
+    err: fmt.Buffer,           // every error's message, back to back
+    errs: array.Array[SyntaxError],
     exports: mut []u32 = null, // an extern block's Ace-defined C symbols
     nexport: usize,
     target: string,            // what @when compares `target` against
 }
+
+/* A syntax error; `message` views the parser's message storage. */
+pub SyntaxError: struct {
+    line: u32,
+    col: u32,
+    message: string,
+}
+
+/* Errors reported per file before the parser gives up, as in C. */
+pub ERROR_LIMIT: const usize = 10
 
 /* Lexes `src` (which must outlive the parser) into a parser over `path`.
  * Lex errors are reported on stderr as `ace --tokens` reports them; the
  * returned count is how many there were. Call `wipe` when done.
  */
 pub Parser.new(src: string, path: string): (Parser, int) {
-    msg: mut []u8 = mem.alloc[u8](256) // the longest message, one name included
-    p: Parser = Parser { path = path, ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, eline = 0, ecol = 0, msg = msg, err = fmt.Buffer.init(msg), nexport = 0, target = "" }
+    msg: mut []u8 = mem.alloc[u8](256 * ERROR_LIMIT) // the longest message, one name included
+    p: Parser = Parser { path = path, ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, stopped = false, last = 0, msg = msg, err = fmt.Buffer.init(msg), errs = array.Array[SyntaxError] {}, nexport = 0, target = "" }
     p.pool = mem.alloc[u8](src.len + 1)
     p.kinds = mem.alloc[Token](64)
     p.toks = mem.alloc[Tok](64)
@@ -173,6 +185,7 @@ pub Parser.wipe(mut self) {
     mem.release[u32](mut self.stack)
     mem.release[u32](mut self.exports)
     mem.release[u8](mut self.msg)
+    mut self.errs.wipe()
 }
 
 /* `s` with doubled capacity; aborts when out of memory, as the C parser's
@@ -201,10 +214,10 @@ report(path: string, line: u32, col: u32, message: string) {
     fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(line), int(col), message)
 }
 
-/* The syntax error, if the parse failed. */
-pub Parser.error(self): (bool, u32, u32, string) {
+/* Every syntax error, in source order, and whether the limit cut them off. */
+pub Parser.errors(self): ([]SyntaxError, bool) {
     assert(self.err.dropped() == 0) // sized to fit any message
-    return self.failed, self.eline, self.ecol, self.err.text()
+    return self.errs.view(), self.stopped
 }
 
 pub Parser.node(self, n: u32): Node {
@@ -241,17 +254,64 @@ Parser.ident_at(self, k: usize, s: string): bool {
     return self.kth(k) == Token.ident && mem.equal(self.toks[self.i + k].text, s)
 }
 
-/* Records the first error, at token `ti`, as the concatenation of `parts`;
- * later errors are dropped.
+/* Records an error at token `ti` as the concatenation of `parts` and unwinds
+ * to the innermost statement or declaration, which `resume` skips; errors
+ * while unwinding, or at the latest error's token, are dropped. No tree is
+ * repaired: any error blocks every later phase.
  */
 Parser.fail_at(mut self, ti: usize, parts: []string) {
     if self.failed { return }
     self.failed = true
     t: usize = ti
     if t >= self.ntok { t = self.ntok - 1 }
-    self.eline = self.toks[t].line
-    self.ecol = self.toks[t].col
+    if self.errs.view().len > 0 && t == self.last { return }
+    self.last = t
+    from: usize = self.err.text().len
     for part: string in parts { mut self.err.printf("%s", part) }
+    e: SyntaxError = SyntaxError { line = self.toks[t].line, col = self.toks[t].col, message = self.err.text()[from..] }
+    if mut self.errs.push(e) != null {
+        report("ace", 0, 0, "out of memory")
+        sys.exit(1)
+    }
+    if self.errs.view().len == ERROR_LIMIT { self.stopped = true }
+}
+
+/* After an error in the construct starting at token `start`, drops its
+ * partial nodes down to stack `mark` and skips it, bracket-balanced, to the
+ * newline that ends it or its block's unmatched '}'. In formatted code a
+ * token at column 1 starts a declaration or is the '}' ending one, so the
+ * skip also stops there whatever the depth; a declaration's skip (`top`)
+ * takes such a '}' as its own end, a statement's leaves it. Past the error
+ * limit the parser stays failed, so the whole file unwinds.
+ */
+Parser.resume(mut self, start: usize, mark: usize, top: bool) {
+    self.nstack = mark
+    if self.stopped { return }
+    self.failed = false
+    self.i = start
+    depth: usize = 0
+    for ; ; self.i += 1 {
+        k: Token = self.kinds[self.i]
+        if k != Token.newline && k != Token.eof && self.toks[self.i].col == 1 && self.i > start {
+            if !top || k != Token.rbrace { return }
+            depth = 0
+            continue
+        }
+        switch k {
+            Token.eof { return }
+            Token.lparen, Token.lbrack, Token.lbrace { depth += 1 }
+            Token.rparen, Token.rbrack { if depth > 0 { depth -= 1 } }
+            Token.rbrace {
+                if depth == 0 {
+                    if self.i > start { return }
+                } else {
+                    depth -= 1
+                }
+            }
+            Token.newline { if depth == 0 { return } }
+            default {}
+        }
+    }
 }
 
 Parser.fail(mut self, message: string) {
@@ -260,19 +320,22 @@ Parser.fail(mut self, message: string) {
 
 /* `prefix` then the current token's description, as C's gdesc writes it. */
 Parser.fail_got(mut self, prefix: string) {
+    mut self.fail_got(prefix, "", "")
+}
+
+/* `lead`, `what`, then `prefix` and the current token. */
+Parser.fail_got(mut self, lead: string, what: string, prefix: string) {
     if self.failed { return }
     switch self.kinds[self.i] {
-        Token.ident { mut self.fail_at(self.i, [prefix, "'", self.toks[self.i].text, "'"]) }
-        Token.string { mut self.fail_at(self.i, [prefix, "string literal"]) }
-        default { mut self.fail_at(self.i, [prefix, "'", lexer.disp(self.kinds[self.i]), "'"]) }
+        Token.ident { mut self.fail_at(self.i, [lead, what, prefix, "'", self.toks[self.i].text, "'"]) }
+        Token.string { mut self.fail_at(self.i, [lead, what, prefix, "string literal"]) }
+        default { mut self.fail_at(self.i, [lead, what, prefix, "'", lexer.disp(self.kinds[self.i]), "'"]) }
     }
 }
 
 /* "expected <what>, got <current token>". */
 Parser.fail_expected(mut self, what: string) {
-    if self.failed { return }
-    mut self.err.printf("expected %s", what)
-    mut self.fail_got(", got ")
+    mut self.fail_got("expected ", what, ", got ")
 }
 
 /* A member name (field, enum member, variant, error entry, method) may be a
@@ -1743,8 +1806,15 @@ pub Parser.block(mut self): u32 {
             mut self.fail("unexpected end of file, expected '}'")
             break
         }
-        mut self.push(mut self.stmt())
+        start: usize = self.i
+        held: usize = self.nstack
+        s: u32 = mut self.stmt()
         mut self.stmt_end()
+        if self.failed {
+            mut self.resume(start, held, false)
+        } else {
+            mut self.push(s)
+        }
         mut self.skipnl()
     }
     self.i += 1 // '}'
@@ -2619,6 +2689,8 @@ pub Parser.parse(mut self, target: string): u32 {
     mut self.skipnl()
     saw_declaration: bool = false
     for !self.at(Token.eof) {
+        item: usize = self.i
+        held: usize = self.nstack
         active: bool = true
         if self.named_attr_at("when") { active = mut self.when() }
         packed: bool, align: u32, cold: bool = mut self.layout_attrs()
@@ -2634,7 +2706,6 @@ pub Parser.parse(mut self, target: string): u32 {
             start: usize = self.i
             self.nexport = 0
             decl: u32 = mut self.top()
-            if self.failed { break }
             x: Node = self.nodes[decl]
             if cold {
                 if x.kind != Kind.func || (x.flags & F_EXPO) != 0 {
@@ -2650,7 +2721,7 @@ pub Parser.parse(mut self, target: string): u32 {
                 self.nodes[decl].b = align
             }
             if !mut self.eat(Token.newline) && !self.at(Token.eof) { mut self.fail_got("expected newline after declaration, got ") }
-            if active {
+            if active && !self.failed {
                 mut self.push(decl)
                 if x.kind == Kind.extern {
                     for j: usize in 0..self.nexport { mut self.push(self.exports[j]) }
@@ -2659,9 +2730,13 @@ pub Parser.parse(mut self, target: string): u32 {
             }
             self.nexport = 0
         }
+        if self.failed {
+            mut self.resume(item, held, true)
+            self.nexport = 0
+        }
         mut self.skipnl()
     }
-    if self.failed {
+    if self.errs.view().len > 0 {
         self.nstack = decls // C returns the file with no declarations
     }
     mut self.close(file, decls)

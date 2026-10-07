@@ -129,3 +129,7 @@
 - A call that resolves to nothing but has one candidate of its arity reports
   that candidate's call-site `mut` mismatch (receiver or named parameter)
   instead of `no method`/`no associated function` (#89).
+- Both parsers report up to 10 syntax errors per file (#107): an error abandons
+  its innermost statement or top-level declaration, skipped bracket-balanced to
+  its newline, its block's `}`, or a column-1 token; no tree is repaired, and
+  any syntax error blocks checking. `compiler/check.sh` compares every line.
