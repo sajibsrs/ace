@@ -1,5 +1,5 @@
 /* Cached powers adapted from Ulf Adams Ryu (Copyright 2018 Ulf Adams).
- * Licensed under Apache-2.0; see LICENSES/Apache-2.0.txt.
+ * Used under the Boost Software License 1.0.
  * Generated upstream by PrintDoubleLookupTable; kept as full tables to make
  * shortest conversion a bounded lookup plus fixed-width arithmetic.
  */

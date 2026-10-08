@@ -2,10 +2,10 @@
  *
  * This is an Ace adaptation of Ulf Adams' Ryu algorithm and lookup tables:
  * https://github.com/ulfjack/ryu
- * Copyright 2018 Ulf Adams. Licensed under Apache-2.0; see
- * LICENSES/Apache-2.0.txt. The implementation is expressed in Ace and returns
- * only a decimal coefficient and exponent; public spelling remains owned by
- * fmt and str.
+ * Copyright 2018 Ulf Adams, used under the Boost Software License 1.0
+ * (upstream offers it alongside Apache-2.0). The implementation is expressed
+ * in Ace and returns only a decimal coefficient and exponent; public spelling
+ * remains owned by fmt and str.
  */
 
 import table: @ryu_table

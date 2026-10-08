@@ -1,6 +1,7 @@
 /* Fixed-width tiers for decimal-to-IEEE conversion, adapted from Daniel
- * Lemire's fast_float implementation (Apache-2.0). The caller retains an
- * exact bigint fallback for inputs outside these proven paths.
+ * Lemire's fast_float implementation (used under the MIT license). The
+ * caller retains an exact bigint fallback for inputs outside these proven
+ * paths.
  */
 
 import bits

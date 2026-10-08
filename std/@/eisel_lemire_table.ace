@@ -1,5 +1,5 @@
 /* Cached powers adapted from fast_float.
- * Copyright Daniel Lemire; licensed under Apache-2.0.
+ * Copyright Daniel Lemire; used under the MIT license.
  * One u128 entry (high, low) for each decimal power -342...308.
  */
 
