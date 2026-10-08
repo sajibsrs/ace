@@ -174,9 +174,10 @@ is_host(host: string): bool {
     return true
 }
 
-/* Parses an absolute HTTP URL into zero-copy host, path, and query views,
- * under an explicitly forced scheme rather than autodetecting one from
- * `url`'s prefix. Returns `UrlErr` for unsupported or malformed input.
+/* Parses an absolute HTTP URL into zero-copy host, path, and query views
+ * into `url`, which owns nothing, under an explicitly forced scheme rather
+ * than autodetecting one from `url`'s prefix. Returns `UrlErr` for
+ * unsupported or malformed input.
  */
 pub Url.parse(url: string, secure: bool): (Url, Error) {
     scheme: string = "http://"

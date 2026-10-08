@@ -183,7 +183,9 @@ is_quantifier(c: u8): bool {
     return c == '*' || c == '+' || c == '?' || c == '{'
 }
 
-/* Parses the complete pattern. A failed parse holds no storage. */
+/* Parses the complete pattern. The tree owns its storage; release it with
+ * `wipe`. A failed parse holds no storage.
+ */
 pub Syntax.parse(pattern: string): (Syntax, Error) {
     diag: fmt.Buffer = fmt.Buffer.init(null)
     syntax: Syntax, err: Error = Syntax.parse(pattern, mut diag)
@@ -246,7 +248,7 @@ pub Syntax.wipe(mut self) {
 pub Syntax.format(self, destination: mut []char): (usize, bool) {
     w: Writer = Writer {
         syntax = self,
-        out = output.Output.new(destination),
+        out = output.Output.init(destination),
     }
     mut w.node(self.root)
     n: usize, ok: bool = w.out.finish()

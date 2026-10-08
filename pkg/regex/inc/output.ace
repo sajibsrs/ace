@@ -11,7 +11,7 @@ pub Output: struct {
     ok: bool,
 }
 
-pub Output.new(destination: mut []char): Output {
+pub Output.init(destination: mut []char): Output {
     return Output {
         out = destination,
         at = 0,

@@ -23,7 +23,7 @@ example.
 ## Matching
 
 ```ace
-re: regex.Regex, err: Error = regex.Regex.new("(\\d+)-(\\d+)")
+re: regex.Regex, err: Error = regex.Regex.compile("(\\d+)-(\\d+)")
 defer mut re.wipe()
 if err != null { return 1 }   // a regex.ParseErr or a regex.CompileErr
 
@@ -37,9 +37,9 @@ for mut re.next(text, mut at) {
 }
 ```
 
-`Regex.new` parses and compiles the pattern and sizes every buffer a search
+`Regex.compile` parses and compiles the pattern and sizes every buffer a search
 needs, so it is the only call that allocates or fails. When it fails with a
-`ParseErr`, `Regex.new(pattern, mut diag)` explains it (see Parsing). A
+`ParseErr`, `Regex.compile(pattern, mut diag)` explains it (see Parsing). A
 search reuses that scratch state, which is why each search method takes
 `mut self`; none of them allocates or can fail.
 
@@ -116,7 +116,7 @@ if err != null {
 ```
 
 `Syntax.parse` reads the complete pattern; on failure the returned `Syntax`
-holds no storage. `Syntax.parse(pattern, mut diag)` and `Regex.new(pattern,
+holds no storage. `Syntax.parse(pattern, mut diag)` and `Regex.compile(pattern,
 mut diag)` also append the failure's context to `diag` (see [error
 context](std/fmt.md)), innermost first: the error at line:column, then each
 enclosing class or group by its opening delimiter. The example prints:

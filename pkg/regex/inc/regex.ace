@@ -35,17 +35,17 @@ pub Regex: struct {
     found: bool = false,
 }
 
-/* Parses and compiles `pattern`. The error is a `ParseErr` or a
- * `CompileErr`.
+/* Parses and compiles `pattern`. The result owns its storage; release it
+ * with `wipe`. The error is a `ParseErr` or a `CompileErr`.
  */
-pub Regex.new(pattern: string): (Regex, Error) {
+pub Regex.compile(pattern: string): (Regex, Error) {
     diag: fmt.Buffer = fmt.Buffer.init(null)
-    regex: Regex, err: Error = Regex.new(pattern, mut diag)
+    regex: Regex, err: Error = Regex.compile(pattern, mut diag)
     return regex, err
 }
 
-/* `new`, appending a `ParseErr`'s context to `diag` as `Syntax.parse` does. */
-pub Regex.new(pattern: string, mut diag: fmt.Buffer): (Regex, Error) {
+/* `compile`, appending a `ParseErr`'s context to `diag` as `Syntax.parse` does. */
+pub Regex.compile(pattern: string, mut diag: fmt.Buffer): (Regex, Error) {
     tree: Syntax, err: Error = Syntax.parse(pattern, mut diag)
     defer mut tree.wipe()
     if err != null { return blank(Regex), err }

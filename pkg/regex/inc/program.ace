@@ -93,7 +93,8 @@ fork(body: u32, out: u32, greedy: bool): Inst {
 }
 
 /* Compiles `tree` into a program that owns its own copy of the classes, so
- * `tree` may be wiped afterward. A failed compilation holds no storage.
+ * `tree` may be wiped afterward. The program owns its storage; release it
+ * with `wipe`. A failed compilation holds no storage.
  */
 pub Program.compile(tree: Syntax): (Program, Error) {
     c: Compiler = Compiler {
@@ -140,7 +141,7 @@ pub Program.wipe(mut self) {
  * and false when `destination` is too small.
  */
 pub Program.format(self, destination: mut []char): (usize, bool) {
-    out: output.Output = output.Output.new(destination)
+    out: output.Output = output.Output.init(destination)
 
     for index: usize, inst: Inst in self.insts.view() {
         mut out.number(u32(index))

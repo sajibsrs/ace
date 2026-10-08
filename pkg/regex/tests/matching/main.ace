@@ -29,7 +29,7 @@ render(spans: []regex.Span, out: mut []char): usize {
 }
 
 compile(pattern: string): regex.Regex {
-    re: regex.Regex, err: Error = regex.Regex.new(pattern)
+    re: regex.Regex, err: Error = regex.Regex.compile(pattern)
     if err != null {
         fmt.print(pattern)
         fmt.print(": ")
@@ -233,14 +233,14 @@ surface(): int {
         fmt.println("a failed find should leave no match for group")
         bad += 1
     }
-    q: regex.Regex, err: Error = regex.Regex.new("a(")
+    q: regex.Regex, err: Error = regex.Regex.compile("a(")
     mut q.wipe()
 
     if err != regex.ParseErr.missing_paren {
         fmt.println("a( should fail with missing_paren")
         bad += 1
     }
-    q, err = regex.Regex.new("((a{1000}){1000}){1000}")
+    q, err = regex.Regex.compile("((a{1000}){1000}){1000}")
     mut q.wipe()
 
     if err != regex.CompileErr.too_large {

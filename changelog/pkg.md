@@ -1,5 +1,9 @@
 # Packages
 
+- `regex.Output.new` is now `Output.init` (it wraps caller storage) and
+  `Regex.new` is now `Regex.compile` (it does work on its input).
+  `AGENTS.md` names memory-only constructors `new`/`init`/`wipe` and keeps a
+  verb (`parse`, `compile`) for functions that do work (#53).
 - `http`'s internal `exchange` takes a `tcp.Conn` and calls `tcp.send_all` and
   `net.receive` directly, replacing the single-instantiation `exchange[C]` and
   its function-value send/receive parameters.
