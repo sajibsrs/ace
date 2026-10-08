@@ -1,0 +1,15 @@
+/* err: a global initializer that calls a function is rejected; there is no
+ * runtime module initialization.
+ */
+
+// error: global initializer must be a compile-time constant
+
+make(): int {
+    return 3
+}
+
+bad: int = make()
+
+main(): int {
+    return bad
+}

@@ -1,5 +1,8 @@
 # Language
 
+- Runtime global initializers and a module-init hook are rejected for good: a
+  global initializer is a compile-time constant (`emit` reports a call or any
+  non-foldable expression), and runtime setup is an explicit call from `main`.
 - In a real overload set an array literal's candidate is the element type its
   elements share under the scalar rule, matching `[]E` and `[N]E`; without
   one it matches nothing. `overload_arg_type` synthesizes the candidate and
