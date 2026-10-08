@@ -981,10 +981,33 @@ static void arg_scalar(Lw* l, Args* g, int v) {
     g->v[g->n++] = v;
 }
 
+// The storage of x, a value that is no place (a call's result, or a field of
+// one): a new stack object holding it, or the field's offset within that.
+static Place temp_place(Lw* l, Node* x) {
+    SType* bt = x->kind == N_FIELD_E ? unwrap(node_ty(x->a)) : NULL;
+    int fi = bt && bt->kind == SK_STRUCT ? find_field(bt, x->str, x->len) : -1;
+    if (fi >= 0 && !is_place(x->a)) {
+        Place p = temp_place(l, x->a);
+        p.off += (int32_t)field_off(bt, fi);
+        p.t = bt->fields[fi].t;
+        return p;
+    }
+    SType* t = node_ty(x);
+    covered(l, t);
+    int slot = new_slot(l, t);
+    store_value(l, x, t, slot, 0);
+    return (Place){ -1, slot, 0, 0, t };
+}
+
 // A call argument: the address of its place for a mut parameter or method
-// receiver, else its leaves at the parameter's type.
+// receiver (of a new stack object when it is no place, a call's result), else
+// its leaves at the parameter's type.
 static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
     if (a->kind == N_MUTARG) a = a->a;
+    if (by_address && !is_place(a)) {
+        arg_scalar(l, g, place_address(l, temp_place(l, a)));
+        return;
+    }
     if (by_address) {
         arg_scalar(l, g, place_address(l, place(l, a)));
         return;
@@ -2332,13 +2355,14 @@ static int is_place(Node* x) {
 }
 
 // The leaves of field x of a value that is no place: a call's result or a
-// literal.
+// literal. One of over 16 leaves, like one with a union, is stored to a new
+// stack object and the field read from it.
 static void field_leaves(Lw* l, Node* x, Agg* out) {
     SType* bt = unwrap(node_ty(x->a));
     if (!bt || bt->kind != SK_STRUCT) unsupported(l, bt ? type_why(bt) : "field access");
     int fi = find_field(bt, x->str, x->len);
     if (fi < 0) unsupported(l, "field access");
-    if (has_union(bt)) { // its words, not its members': stored, then the field read
+    if (has_union(bt) || is_big(bt)) { // its words, not its members': stored, then the field read
         covered(l, bt);
         int slot = new_slot(l, bt);
         store_value(l, x->a, bt, slot, 0);
@@ -3578,6 +3602,10 @@ static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
         if (!ps) unsupported(l, "unresolved parameter");
         Node* a = args[i];
         if (a->kind == N_MUTARG) a = a->a;
+        if (by_address(f, i) && !is_place(a)) { // a call's result, or a field of one: a new stack object
+            var_new(l, ps, IT_VOID, place_address(l, temp_place(l, a)));
+            continue;
+        }
         if (by_address(f, i)) {
             Place p = place(l, a);
             if (p.var >= 0 && unwrap(p.t) == unwrap(ps->type)) { // the argument's own variables

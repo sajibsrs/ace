@@ -1,0 +1,107 @@
+// A field read straight off a call whose result is over 16 leaves: the call
+// writes a stack object through the result address and the field loads from
+// it, as it does from a local bound to the same call. Forms: a return, a call
+// argument, an array field element, a method result, a loop condition, an
+// inline result, and a slice of the array field; and a method called on a
+// call's result (inline or not, a small receiver or a big one).
+
+// expect-exit: 0
+// expect-output: 11
+
+import fmt
+
+Inner: struct { x: u64, y: u64 }
+Inner.sum(self): u64 { return self.x + self.y }
+
+Big: struct {
+    f0: u64,
+    f1: u64,
+    f2: u64,
+    f3: u64,
+    f4: u64,
+    f5: u64,
+    f6: u64,
+    f7: u64,
+    f8: u64,
+    f9: u64,
+    f10: u64,
+    f11: u64,
+    f12: u64,
+    f13: u64,
+    f14: u64,
+    f15: u64,
+    f16: u64,
+    arr: [4]u64,
+    inner: Inner,
+}
+
+make(n: u64): Big {
+    b: Big = blank(Big)
+    b.f0 = n + 100
+    b.f16 = n
+    b.arr[2] = n + 1
+    b.inner = Inner { x = n, y = 5 }
+    return b
+}
+
+inline imake(n: u64): Big {
+    b: Big = blank(Big)
+    b.f16 = n
+    return b
+}
+
+Big.get16(self): u64 { return self.f16 }
+
+Big.bump(self, d: u64): Big {
+    b: Big = self
+    b.f16 = self.f16 + d
+    return b
+}
+
+Pair: struct { a: u64, b: u64 }
+pair(n: u64): Pair { return Pair { a = n, b = n + 1 } }
+Pair.sum(self): u64 { return self.a + self.b }
+Pair.down(self, n: u64): u64 {
+    if n == 0 { return self.a }
+    return self.down(n - 1) + 1
+}
+inline Pair.isum(self): u64 { return self.a + self.b }
+
+Big.total(self, n: u64): u64 {
+    t: u64 = 0
+    for i: u64 in 0 .. n { t += self.f16 + i }
+    return t
+}
+
+twice(x: u64): u64 { return x * 2 }
+
+direct(n: u64): u64 { return make(n).f16 }
+local(n: u64): u64 {
+    b: Big = make(n)
+    return b.f16
+}
+
+main(): int {
+    if direct(3) + local(4) != 7 { return 1 }
+    if make(5).f0 != 105 { return 2 }
+    if twice(make(6).f16) != 12 { return 3 }
+    if make(7).arr[2] != 8 { return 4 }
+    seed: Big = make(1)
+    if seed.bump(2).f16 != 3 { return 5 }
+    hits: u64 = 0
+    for i: int in 0 .. 3 {
+        if make(u64(i)).f16 == 2 { hits += 1 }
+    }
+    if hits != 1 { return 6 }
+    if imake(9).f16 != 9 { return 7 }
+    view: []u64 = make(3).arr[1..3]
+    if view[1] != 4 { return 8 }
+    if make(3).get16() != 3 { return 9 }
+    if make(1).bump(1).f16 != 2 { return 10 }
+    if pair(3).sum() != 7 || pair(3).isum() != 7 { return 11 }
+    if pair(3).down(4) != 7 { return 13 }
+    if make(4).inner.sum() != 9 { return 14 }
+    if make(2).total(3) != 9 { return 12 }
+    fmt.printf("%u\n", make(11).f16)
+    return 0
+}

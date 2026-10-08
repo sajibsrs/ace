@@ -1,5 +1,10 @@
 # Compiler
 
+- A field read off a call whose result is over 16 leaves (`make(n).f16`,
+  `make(n).arr[2]`) stores the result to a stack object through the result
+  address, as `b: Big = make(n)` does, and loads the field from it. A method
+  called on a call's result (`mk(n).sum()`, `get(i).parser.node(id)`) gets the
+  address of such an object, or of the field within it; both were errors.
 - The self-hosted lexer keeps every error in a `Diag` list (`Lexer.diags`)
   with its position and offending byte, and `lexer.report` words each as C
   does (`'$'`, `0xC3`, `'\q'`); consecutive bad bytes no longer drop errors,
