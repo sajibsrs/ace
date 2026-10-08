@@ -10,8 +10,8 @@ states its type. What you read is what the machine does.
 The compiler is written in dependency-free C11 and emits native objects
 directly, with no assembler or LLVM in between.
 
-> **Status:** Pre-alpha. Breaking changes are expected, and pull requests are
-> not yet accepted.
+> **Status:** Pre-alpha. Breaking changes are expected, and neither issues nor
+> pull requests are accepted before v1.
 >
 > **Note:** Ace currently supports only macOS on Apple Silicon (AArch64).
 
