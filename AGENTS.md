@@ -10,15 +10,16 @@ history.
 - Read `spec/README.md`, then only the chapters the task touches; its table
   maps each section (and references such as "Memory #15") to a file. Never
   read every chapter.
-- Design or carving: read `PHILOSOPHY.md`, `spec/queue.md`, and the chapters
-  the decision affects.
-- Compiler work: read `spec/compiler.md`, the chapters for the language
-  feature involved, and `GRAMMAR.md`, then grep `changelog/` and the
-  implementation by topic.
+- Design or carving: read `PHILOSOPHY.md`, `spec/queue.md`, and the affected
+  chapters.
+- Compiler work: read `spec/compiler.md`, the chapters for the feature
+  involved, and `GRAMMAR.md`, then grep `changelog/` and the implementation
+  by topic.
 - Standard-library work: inspect the relevant `std/` modules and their
-  `spec/std/` chapter (`spec/std/README.md` holds the shared rules). Reuse existing operations; do not duplicate parsing,
-  memory, text, or platform utilities. Prefer explicit generics, type-owned
-  methods, or overloads over free helpers when ownership is clearer.
+  `spec/std/` chapter (`spec/std/README.md` holds the shared rules). Reuse
+  existing operations; do not duplicate parsing, memory, text, or platform
+  utilities. Prefer explicit generics, type-owned methods, or overloads over
+  free helpers when ownership is clearer.
 - Planning: read `spec/queue.md` and the relevant GitHub issues
   (`gh issue list -m <milestone>`, `-l <label>`; see `TODO.md`).
 - `docs/` describes implemented behavior; do not use it as design authority.
@@ -33,14 +34,6 @@ history.
   holds even when the change is already agreed in principle (e.g. an open
   issue). Propose language-design decisions (semantics, syntax) before
   implementing them.
-- In a cloud session, whose container is discarded, work only on a topic
-  branch named for the issue or feature it is about (e.g. `linux`,
-  `failure-position`), or the one the owner names, never on `master`, the
-  session's generated branch, or an invented name, and push each approved
-  commit there, since that is the only way work reaches the owner. Author every commit
-  as the owner, `Sajidur Rahman <sajibsrs@gmail.com>`, setting `user.name` and
-  `user.email` before the first one. Deliver reports and measurements in the
-  session reply, never as a repository file or a branch.
 - The owner resolves `[open]` and `[controversial]` items and removes those
   markers. Provisional spelling may change; semantics may not.
 - Confirm each step before proceeding. Implement only what was explicitly
@@ -64,9 +57,8 @@ history.
   design and reviewed the change, before the commit; they are slow.
 - Measure an optimization's gain against `HEAD` (several runs; a hand-edited
   disassembly or microbenchmark against a saved baseline for a quick first
-  estimate) and state it when presenting the change. If the gain is
-  negligible, drop the change: the return on investment is low, and every
-  added line is more surface for bugs and more to extend and maintain.
+  estimate) and state it when presenting the change. Drop a negligible gain:
+  every added line is more surface for bugs and maintenance.
 - Judge a change by whether it is genuinely needed, not by whether existing
   code or tests reach it: a new feature or fix has no callers yet. Keep a
   needed change and add the test that covers it.
@@ -105,10 +97,9 @@ history.
 - Put OS-specific standard-library code behind `std/<module>/mod.ace` in
   `std/<module>/os/<target>.ace`. Reserve `backend` for compiler/code-generation
   backends.
-- By convention (not a requirement), keep a directory module's `mod.ace` at its
-  root and its other implementation files under `std/<module>/inc/`. This is
-  organizational only; `mod.ace` remains the sole external import surface
-  regardless of where its implementation files sit.
+- By convention, keep a directory module's `mod.ace` at its root and its other
+  implementation files under `std/<module>/inc/`; `mod.ace` remains the sole
+  external import surface.
 - A function that only builds or releases memory is named for it:
   `Type.new(...)` (free form `x_new`) when the value owns heap memory that
   must be released, whoever allocates it (`mem` or a C library); a matching
@@ -131,8 +122,7 @@ history.
   on the success path.
 - Module-level `const` declarations use all uppercase (`BACKLOG`). A
   same-named local (e.g. a parameter) may still shadow it per the ordinary
-  nearest-binding rule; that shadowing is not an error, so there is no need for
-  a `DEFAULT_`-style prefix to dodge a collision that cannot occur.
+  nearest-binding rule; that is not an error, so no `DEFAULT_`-style prefix.
 - `.acefmt` is normative; update it with formatting-rule changes.
 - File names are nouns, matching their own import alias (`parsing.ace` as
   `parsing`, not `parse.ace`).
