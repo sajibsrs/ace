@@ -1,0 +1,11 @@
+/* A case range over an enum is rejected: only integers and chars. */
+K: enum { a, b, c }
+
+f(x: K): int {
+    switch x {
+        K.a .. K.c { return 1 }
+        default { return 0 }
+    }
+}
+
+main(): int { return 0 }

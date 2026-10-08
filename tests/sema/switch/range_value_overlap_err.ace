@@ -1,0 +1,10 @@
+/* A case value inside an earlier range is an overlap. */
+f(x: int): int {
+    switch x {
+        0 .. 10 { return 1 }
+        9 { return 2 }
+        default { return 0 }
+    }
+}
+
+main(): int { return f(1) }

@@ -5540,6 +5540,79 @@ static int switch_value_type(SType* t) {
     }
 }
 
+/* Conditions #2: a case value's compile-time value, when it has one: an
+ * integer or character constant, an enum member, a boolean, or null. */
+static int case_const(Node* e, int64_t* out) {
+    if (ut_const(e, out)) return 1;
+    if (e->kind == N_BOOL) { *out = (int64_t)e->ival; return 1; }
+    if (e->kind == N_NULL) { *out = 0; return 1; }
+    Sym* ts = e->kind == N_FIELD_E && e->a && e->a->kind == N_IDENT ? e->a->sym : NULL;
+    if (ts && ts->kind == SYM_TYPE && ts->type && ts->type->kind == SK_ENUM) { *out = (int64_t)e->ival; return 1; }
+    return 0;
+}
+
+/* A constant's position in the switch value type's order, so a signed type's
+ * negatives sort below its non-negatives under one unsigned comparison. */
+static uint64_t case_key(SType* t, int64_t v) {
+    int sig = t->kind == SK_PRIM && t->prim >= P_I8 && t->prim <= P_I64;
+    return sig ? (uint64_t)v ^ 0x8000000000000000ull : (uint64_t)v;
+}
+
+typedef struct { uint64_t lo, hi; } CaseSpan; // closed, in case_key order
+
+/* One case value or `lo .. hi` range of a switch on t: typed to t, constants
+ * checked against every earlier span (spans, *nspans). */
+static void check_case_value(Ck* k, Node* v, SType* t, CaseSpan* spans, int* nspans) {
+    SType* bt = t;
+    while (bt && bt->kind == SK_DISTINCT) bt = bt->base;
+    uint64_t lo, hi;
+    int64_t a, b;
+    if (v->kind == N_RANGE) {
+        if (v->c) {
+            ck_err(k, v->c, "a case range takes no step");
+            return;
+        }
+        if (!bt || !is_int(bt)) {
+            ck_err(k, v, "a case range needs an integer or char switch value, not %s", type_name(t));
+            return;
+        }
+        int ok = coerce(k, v->a, t);
+        ok = coerce(k, v->b, t) && ok;
+        if (!ok) return;
+        if (!case_const(v->a, &a) || !case_const(v->b, &b)) {
+            ck_err(k, v, "case range bounds must be constants");
+            return;
+        }
+        lo = case_key(bt, a);
+        hi = case_key(bt, b);
+        if (lo == hi) {
+            ck_err(k, v, "empty case range: both bounds are the same value");
+            return;
+        }
+        if (lo > hi) { // endpoint order only picks traversal; the set is the same
+            Node* tmp = v->a;
+            v->a = v->b;
+            v->b = tmp;
+            uint64_t kt = lo;
+            lo = hi;
+            hi = kt;
+        }
+        hi -= 1; // half-open [lo, hi) as a closed span
+        v->ty = t;
+    } else {
+        if (!coerce(k, v, t)) return;
+        if (!case_const(v, &a)) return;
+        lo = hi = case_key(bt, a);
+    }
+    for (int i = 0; i < *nspans; i++)
+        if (spans[i].lo <= hi && lo <= spans[i].hi) {
+            ck_err(k, v, "%s overlaps an earlier case", v->kind == N_RANGE ? "case range" : "case value");
+            return;
+        }
+    spans[*nspans].lo = lo;
+    spans[(*nspans)++].hi = hi;
+}
+
 static void check_switch_fallthrough(Ck* k, Node* s, SType* t) {
     for (int i = 0; i < s->nkids; i++) {
         Node* b = s->kids[i]->b;
@@ -6075,10 +6148,14 @@ static void check_stmt(Ck* k, Node* s) {
         }
         int ok = t->kind == SK_ERR || switch_value_type(t);
         if (!ok) ck_err(k, s->a, "cannot switch on %s: the type has no ==", type_name(t));
+        int nvals = 0;
+        for (int i = 0; i < s->nkids; i++) nvals += s->kids[i]->nkids;
+        CaseSpan* spans = (CaseSpan*)arena_alloc((size_t)(nvals ? nvals : 1) * sizeof(CaseSpan));
+        int nspans = 0;
         for (int i = 0; i < s->nkids; i++) {
             Node* c = s->kids[i];
             if (!(c->flags & F_DEFAULT) && ok && t->kind != SK_ERR) {
-                for (int j = 0; j < c->nkids; j++) coerce(k, c->kids[j], t);
+                for (int j = 0; j < c->nkids; j++) check_case_value(k, c->kids[j], t, spans, &nspans);
             }
             scope_push(k);
             check_block(k, c->b);

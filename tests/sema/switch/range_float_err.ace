@@ -1,0 +1,9 @@
+/* A case range needs an integer or char switch value. */
+f(x: f64): int {
+    switch x {
+        0.0 .. 1.0 { return 1 }
+        default { return 0 }
+    }
+}
+
+main(): int { return f(1.0) }

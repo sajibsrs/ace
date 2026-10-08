@@ -54,7 +54,7 @@
 //               F_MUT = `in mut iterable`: the value binder aliases the
 //               element (sema requires writable array/slice storage)
 //   N_RANGE     a = first; b = second; c = optional contextual `step` expression
-//   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns; b = block; F_DEFAULT marks `default`)
+//   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns, each a value, N_VARPAT, or N_RANGE; b = block; F_DEFAULT marks `default`)
 //   N_VARPAT    union-variant case pattern: a = Type.variant (N_FIELD_E);
 //               b = binder N_PARAM (str, a = payload type) or NULL; ival = variant
 //   N_RETURN    a = expr / N_TUPLE_E / NULL
@@ -1391,7 +1391,15 @@ static Node* parse_switch(P* p) {
                 if (dot) {
                     nv_push(p, &pats, parse_variant_pattern(p, dot));
                 } else {
-                    nv_push(p, &pats, expr(p, CTX_NOSLIT));
+                    Node* v = expr(p, CTX_NOSLIT);
+                    if (at(p, T_DOTDOT)) { // `lo .. hi`: the half-open values between
+                        Node* r = nd(p, N_RANGE); // positioned at '..', like a loop range
+                        p->i++;
+                        r->a = v;
+                        r->b = expr(p, CTX_NOSLIT);
+                        v = r;
+                    }
+                    nv_push(p, &pats, v);
                 }
                 if (!at(p, T_COMMA)) break;
                 if (!multi) bare_list_line(p, line);

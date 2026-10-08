@@ -1,0 +1,9 @@
+/* A case range with equal bounds is empty, which is an error. */
+f(x: int): int {
+    switch x {
+        3 .. 3 { return 1 }
+        default { return 0 }
+    }
+}
+
+main(): int { return f(1) }

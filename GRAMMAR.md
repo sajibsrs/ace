@@ -180,7 +180,8 @@ switch_case   := case_pat block
 default_case  := "default" block                          [P]
 case_pat      := case_value ("," case_value)*                 // one line
                | "(" case_value ("," case_value)* [","] ")" // multiline only
-case_value    := union_pattern | expr
+case_value    := union_pattern | case_range | expr
+case_range    := expr ".." expr                        // constant bounds; integer or char scrutinee only
 union_pattern := named_type "." member
                | named_type "." member "(" ident ":" type ")"
 return_stmt   := "return" [expr_list]

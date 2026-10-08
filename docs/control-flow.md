@@ -58,6 +58,25 @@ switch kind {
 A parenthesized list on one line is rejected, so each layout has one
 spelling; `(1 + 2)` alone stays grouping.
 
+A case value may be a range `lo .. hi` over an integer or `char` switch value.
+It is half-open like every range: it matches `lo` up to, not including, `hi`,
+and reversed bounds select the same set. The end bound of a character range is
+the next character, so write `'0' .. '9' + 1` for the digits:
+
+```ace
+switch c {
+    '0' .. '9' + 1 { return 1 }
+    'a' .. 'z' + 1, 'A' .. 'Z' + 1 { return 2 }
+    default { return 0 }
+}
+```
+
+Bounds are constants of the switch value's type. A range over a float, string,
+or enum, a non-constant bound, and an empty range (`3 .. 3`) are errors. A value
+matched by two case values or ranges is an error, so case order never decides
+which case runs. A range ending at the type's maximum cannot be written, since
+`255 + 1` overflows `u8`; list those values singly or test them in an `if`.
+
 `fallthrough` takes no target or condition and must be the case's final
 statement. It is rejected in the final case. The spelling remains an ordinary
 identifier outside this exact statement position.
@@ -447,6 +466,12 @@ Why the rules in `spec/control-flow.md` are shaped as they are.
   meets, so no case after it can look reachable, and a distinct word keeps
   `else` meaning only the alternative branch of `if`. The rule costs one check
   in sema and does not change emitted code.
+- Conditions #2, case ranges: a range reuses the loop range's half-open
+  meaning, so one spelling means one interval everywhere and the end bound of
+  a switch range is the start of the next. Rejecting overlap makes case order
+  irrelevant, which lets a range lower to a single unsigned compare. Floats and
+  strings are left out: a float range needs NaN and signed-zero rules, and a
+  string range needs an ordering the language does not define.
 - Conditions #4: `defer` is expanded inline at each exit (Deferred calls #6),
   so a jump that leaves a frame without passing through one of those exits
   would skip cleanup and leave the leak reporter's accounting wrong. A

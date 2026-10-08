@@ -1,0 +1,9 @@
+/* Case range bounds must be constants. */
+f(x: int, y: int): int {
+    switch x {
+        0 .. y { return 1 }
+        default { return 0 }
+    }
+}
+
+main(): int { return f(1, 2) }

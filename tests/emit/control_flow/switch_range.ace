@@ -1,0 +1,39 @@
+/* Switch range cases: half-open, reversed bounds, signed and full-width values. */
+
+// expect-exit: 0
+
+class_of(c: char): int {
+    switch c {
+        '0' .. '9' + 1 { return 1 }
+        'a' .. 'z' + 1, 'A' .. 'Z' + 1 { return 2 }
+        '_' { return 3 }
+        default { return 0 }
+    }
+}
+
+sign_bucket(x: i32): int {
+    switch x {
+        -10 .. 0 { return 1 }
+        5 .. 0 { return 2 }
+        100 .. 200 { return 3 }
+        default { return 0 }
+    }
+}
+
+wide(x: u8): int {
+    switch x {
+        0 .. 128 { return 1 }
+        200 .. 255 { return 2 }
+        default { return 0 }
+    }
+}
+
+main(): int {
+    if class_of('5') != 1 || class_of('9') != 1 || class_of(':') != 0 || class_of('/') != 0 { return 1 }
+    if class_of('a') != 2 || class_of('z') != 2 || class_of('{') != 0 || class_of('Q') != 2 { return 2 }
+    if class_of('_') != 3 { return 3 }
+    if sign_bucket(-10) != 1 || sign_bucket(-1) != 1 || sign_bucket(0) != 2 || sign_bucket(4) != 2 { return 4 }
+    if sign_bucket(5) != 0 || sign_bucket(-11) != 0 || sign_bucket(100) != 3 || sign_bucket(199) != 3 || sign_bucket(200) != 0 { return 5 }
+    if wide(0) != 1 || wide(127) != 1 || wide(128) != 0 || wide(199) != 0 || wide(200) != 2 || wide(254) != 2 || wide(255) != 0 { return 6 }
+    return 0
+}

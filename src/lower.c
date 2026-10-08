@@ -3905,8 +3905,20 @@ static void switch_stmt(Lw* l, Node* s) {
         for (int j = 0; j < c->nkids; j++) {
             int last = ++k == ntests;
             int next = last ? miss : new_block(l);
-            int p = un ? konst(l, IT_I32, c->kids[j]->ival) : expr(l, c->kids[j], t);
-            terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, v, p), next, body[i]);
+            if (c->kids[j]->kind == N_RANGE) { // lo <= v < hi as one unsigned compare: v - lo < hi - lo
+                Node* r = c->kids[j];
+                int lo = expr(l, r->a, t), hi = expr(l, r->b, t);
+                IrType ut = ir_type_signed(t) ? (IrType)(t + 4) : t; // the same width, unsigned
+                int d = emit2(l, IR_SUB, t, v, lo), w = emit2(l, IR_SUB, t, hi, lo);
+                if (ut != t) {
+                    d = emit2(l, IR_CAST, ut, d, -1);
+                    w = emit2(l, IR_CAST, ut, w, -1);
+                }
+                terminate(l, IR_BR, emit2(l, IR_LT, IT_BOOL, d, w), body[i], next);
+            } else {
+                int p = un ? konst(l, IT_I32, c->kids[j]->ival) : expr(l, c->kids[j], t);
+                terminate(l, IR_BR, emit2(l, IR_NE, IT_BOOL, v, p), next, body[i]);
+            }
             if (!last) {
                 seal(l, next);
                 enter(l, next);

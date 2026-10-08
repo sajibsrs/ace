@@ -1,5 +1,10 @@
 # Language
 
+- A switch case value may be a half-open range `lo .. hi` over an integer or
+  `char` scrutinee (reversed bounds select the same set). Sema requires constant
+  bounds, rejects an empty range, and rejects any value or range matched by two
+  cases (plain duplicate values included); lowering tests a range as one
+  unsigned compare, `v - lo < hi - lo`.
 - Runtime global initializers and a module-init hook are rejected for good: a
   global initializer is a compile-time constant (`emit` reports a call or any
   non-foldable expression), and runtime setup is an explicit call from `main`.

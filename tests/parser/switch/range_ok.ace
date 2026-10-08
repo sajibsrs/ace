@@ -1,0 +1,10 @@
+/* Range case values parse beside plain values. */
+
+f(x: int): int {
+    switch x {
+        0 .. 10, 20 { return 1 }
+        (30 .. 40,
+         50 .. 60) { return 2 }
+        default { return 0 }
+    }
+}

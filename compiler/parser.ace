@@ -1499,7 +1499,15 @@ Parser.parse_switch(mut self): u32 {
                 if self.variant_binder_at() {
                     mut self.push(mut self.variant_pattern())
                 } else {
-                    mut self.push(mut self.expr(NOSLIT))
+                    v: u32 = mut self.expr(NOSLIT)
+                    if self.at(Token.dot_dot) { // `lo .. hi`: the half-open values between
+                        r: u32 = mut self.nd(Kind.range) // at '..', like a loop range
+                        self.i += 1
+                        self.nodes[r].a = v
+                        self.nodes[r].b = mut self.expr(NOSLIT)
+                        v = r
+                    }
+                    mut self.push(v)
                 }
                 if !self.at(Token.comma) { break }
                 if !multi { mut self.bare_list_line(line) }
