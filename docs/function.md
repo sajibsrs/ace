@@ -705,6 +705,13 @@ never cached across a call, since C may change the value. Thread-local C
 variables such as `errno` are reached through the accessor functions C
 libraries provide for them.
 
+Ace code cannot call `setjmp`, and a C `longjmp` that unwinds through an Ace
+frame is undefined behavior because it skips that frame's deferred calls. A
+library that jumps entirely inside C works unchanged. One that makes its
+caller the catch point, as libpng does, needs a small C shim that calls
+`setjmp`, returns normally, and never lets a `longjmp` cross an Ace frame. The
+compiler does not detect a crossing.
+
 ```ace
 extern "c" {
     c_limit: i32

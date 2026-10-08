@@ -83,3 +83,4 @@ Decision: one explicit `extern "c"` boundary in both directions; Ace internals s
    `extern "c" [mut] name: T = value`, which may be `pub`. It is an ordinary
    compile-time-constant global with the same C-ABI type rule, read-only unless
    `mut`, and a read-only one is placed in read-only data.
+7. A C `longjmp` that unwinds through an Ace frame is undefined behavior, since it skips that frame's deferred calls. A `longjmp` whose `setjmp` and every skipped frame are C is ordinary C and unaffected. Ace has no way to establish a jump target, and the compiler does not model a function that returns twice, so `setjmp` is not callable from Ace. A library that makes its caller the catch point is reached through a C shim that calls `setjmp`, returns normally, and never lets a `longjmp` cross an Ace frame; the compiler does not detect a crossing.

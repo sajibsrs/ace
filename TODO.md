@@ -30,5 +30,6 @@ Labels:
 Territory rejected by design gets no issue: manual memory through one fixed
 strategy (no GC, ownership, or allocator values), no exceptions or propagation,
 no inference, no optional type operator, no COW, no iterator contracts, no
-comptime or reflection, no block-scoped defer, no `++`/`--`, no hidden-capture
+comptime or reflection, no block-scoped defer, no non-local jumps (`setjmp`/`longjmp`), no
+`++`/`--`, no hidden-capture
 closures.

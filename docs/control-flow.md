@@ -329,7 +329,9 @@ forever: {
 
 Reaching the closing brace still exits normally. Plain `continue` advances
 the nearest `for`; on a labeled loop, `continue label` starts that loop's
-next iteration instead of restarting a block. Ace has no `goto`.
+next iteration instead of restarting a block. Ace has no `goto` and no
+non-local jump: there is no `setjmp`/`longjmp` equivalent, so a function
+exits only by `return`, falling off its end, or `panic`.
 
 ## Deferred calls
 
@@ -445,6 +447,13 @@ Why the rules in `spec/control-flow.md` are shaped as they are.
   meets, so no case after it can look reachable, and a distinct word keeps
   `else` meaning only the alternative branch of `if`. The rule costs one check
   in sema and does not change emitted code.
+- Conditions #4: `defer` is expanded inline at each exit (Deferred calls #6),
+  so a jump that leaves a frame without passing through one of those exits
+  would skip cleanup and leave the leak reporter's accounting wrong. A
+  `setjmp` target would also be a function that returns twice, which the
+  register allocator and definite-initialization checking do not model and
+  which would force `volatile` locals. Errors as values, `break label`, and
+  `panic` already cover every use.
 - Deferred calls #7: cleanup ordering is what C reaches for `goto` to obtain.
   Anchoring the list at the function keeps the exit set total — every `return`
   plus fall-off — with no block-scoped bookkeeping, which is what makes inline
