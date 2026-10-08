@@ -21,12 +21,13 @@ ace pkg remove NAME
 ace pkg list
 ```
 
-`build`, `run`, and `check` take no path argument: they find the nearest
+Every command but `init` takes no path argument: it finds the nearest
 enclosing `ace.pkg` by walking up from the working directory, the same way a
-nested manifest starts an independent package. `--dir=DIR` on any command but
-`init` starts that walk in `DIR` instead, exactly as a prior `cd DIR` would,
-so `ace pkg run --dir=demo/app -- input.json` also starts the program in
-`demo/app`. `init` already takes its own `[DIR]` and rejects `--dir`. `check` performs a full
+nested manifest starts an independent package. Each such command also accepts
+`--dir=DIR`, which starts that walk in `DIR` instead, exactly as a prior
+`cd DIR` would, so `ace pkg run --dir=demo/app -- input.json` also starts the
+program in `demo/app`. `--dir` is read only before `--`; words after it belong
+to the program. `init` takes its own `[DIR]` and rejects `--dir`. `check` performs a full
 semantic check with cross-package imports resolved, no codegen — the
 manifest-aware counterpart to plain `ace file.ace`'s default mode. `build`
 resolves the dependency graph and fully checks the root file; for a `lib`
