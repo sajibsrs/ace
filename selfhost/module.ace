@@ -145,10 +145,9 @@ Loader.resolve_root(mut self, root_path: string, in_package: bool, pkg: usize): 
     if !found { canon = root_path }
     mi: usize, ok: bool = mut self.load(root_path, canon)
     if !ok { return false }
-    rm: Module = self.mods.get(mi)
-    rm.in_package = in_package
-    rm.package = pkg
-    mut self.mods.set(mi, rm)
+    mods: mut []Module = mut self.mods.view()
+    mods[mi].in_package = in_package
+    mods[mi].package = pkg
     // The root is on the stack so a self-import or root cycle shows its chain.
     fail(mut self.stack.push(mi))
     mut self.resolve_file(mi, true)
@@ -353,8 +352,8 @@ add_member(mut members: array.Array[Member], name: string, is_type: bool, export
         x: Member = members.get(i)
         if x.is_type == is_type && mem.equal(x.name, name) {
             if !exported && x.exported {
-                x.exported = false
-                mut members.set(i, x)
+                live: mut []Member = mut members.view()
+                live[i].exported = false
             }
             return
         }
@@ -832,10 +831,9 @@ Loader.ensure(mut self, mi: usize, imp: Node): (usize, bool) {
     }
     ti: usize, loaded: bool = mut self.load(canon, canon)
     if !loaded { return 0, false }
-    tm: Module = self.mods.get(ti)
-    tm.in_package = in_package
-    tm.package = pkg
-    mut self.mods.set(ti, tm)
+    mods: mut []Module = mut self.mods.view()
+    mods[ti].in_package = in_package
+    mods[ti].package = pkg
     mut self.mark_intrinsics(ti)
     fail(mut self.stack.push(ti))
     mut self.resolve_file(ti, false)
@@ -857,10 +855,9 @@ Loader.resolve_file(mut self, mi: usize, is_root: bool) {
     binds: array.Array[Binding] = array.Array[Binding] {}
     sels: array.Array[Select] = array.Array[Select] {}
     mut self.resolve_imports(mi, is_root, mut binds, mut sels)
-    m: Module = self.mods.get(mi)
-    m.binds = binds
-    m.sels = sels
-    mut self.mods.set(mi, m)
+    mods: mut []Module = mut self.mods.view()
+    mods[mi].binds = binds
+    mods[mi].sels = sels
 }
 
 /* Whether a top-level declaration binds a name in the file's scope. */

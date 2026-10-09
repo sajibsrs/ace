@@ -53,3 +53,6 @@
   connection whose socket is now private (`watch` registers its current
   interest with `poll`). sdl's raw C handles, `Array.len`, `Map.len`, and
   the plain-data `net`, `sys`, and `poll` records mark their fields `pub`.
+- `Array[T].view` is overloaded on the receiver (#111): `view(mut self): mut []T`
+  returns the live elements writable in place, so `mut xs.view()` edits a field
+  without copying the element out and back. The self-hosted loader uses it.

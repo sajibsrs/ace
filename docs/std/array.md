@@ -24,6 +24,9 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
   element.
 - `view(): []T` is the live elements as a slice. It aliases the storage and is
   invalidated by any call that grows the array.
+- `view(mut self): mut []T`, called as `mut xs.view()`, is the same slice
+  writable in place: `live[i].field = v` edits an element without copying it
+  out and back through `get`/`set`.
 - `clear()` drops every live element and keeps the storage.
 - `truncate(count: usize)` drops every live element from `count` onward and
   keeps the storage.

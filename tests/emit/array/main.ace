@@ -1,7 +1,7 @@
 /* array: zero value is a usable empty array, push grows storage past the
  * initial capacity, pop returns the last element and an empty-array error,
  * reserve, truncate, and clear keep storage, and views and element access
- * follow len.
+ * follow len; a mut receiver's view writes elements in place.
  */
 
 // expect-exit: 0
@@ -91,6 +91,11 @@ main(): int {
     })
     r += check(err == null, 21)
     r += check(q.get(0).y == 2 && q.view().len == 1, 22)
+
+    // a mut receiver's view writes elements in place
+    live: mut []Point = mut q.view()
+    live[0].x = 7
+    r += check(q.get(0).x == 7 && q.get(0).y == 2, 23)
     mut q.wipe()
     return r
 }

@@ -48,6 +48,11 @@ pub Array[T].view(self): []T {
     return self.items[..self.len]
 }
 
+/* The live elements, writable in place. Same aliasing as the read-only view. */
+pub Array[T].view(mut self): mut []T {
+    return self.items[..self.len]
+}
+
 pub inline Array[T].get(self, index: usize): T {
     return self.items[..self.len][index]
 }
