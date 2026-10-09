@@ -6081,7 +6081,24 @@ static void check_stmt(Ck* k, Node* s) {
         }
         SType* binds[2] = {0};
         for (int i = 0; i < s->nkids && i < 2; i++) binds[i] = build_type(k, s->kids[i]->a);
-        SType* it = expr_type(k, s->b);
+        SType* it;
+        if (s->b->kind == N_ARRAYLIT) {
+            // The value binder's type is the literal's context: an anonymous
+            // [N]E viewed as []E, as for a plain []E argument (Syntax #8).
+            SType* elem = binds[s->nkids == 2 ? 1 : 0];
+            if (s->flags & F_MUT) {
+                ck_err(k, s->b, "array literal cannot establish a writable view for mut iteration");
+                it = T_ERR;
+            } else if (!elem || elem->kind == SK_ERR) {
+                it = T_ERR;
+            } else {
+                SType* want = st_new(SK_SLICE);
+                want->base = elem;
+                it = coerce(k, s->b, want) ? want : T_ERR;
+            }
+        } else {
+            it = expr_type(k, s->b);
+        }
         if (it->kind != SK_ERR) {
             if (s->b->kind == N_RANGE) {
                 if (s->nkids != 1) ck_err(k, s, "range iteration accepts one value binder, not %d", s->nkids);

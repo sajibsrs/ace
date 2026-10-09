@@ -1,5 +1,9 @@
 # Language
 
+- An array literal may be a `for` iterable (#112): sema coerces it to `[]E`,
+  `E` the value binder's type, through the `[]T` literal path, so constants
+  materialize as `E`; `in mut` rejects it. `Loader.mark_intrinsics` and
+  `pkg/json`'s lookup test iterate literals inline.
 - A switch case value may be a half-open range `lo .. hi` over an integer or
   `char` scrutinee (reversed bounds select the same set). Sema requires constant
   bounds, rejects an empty range, and rejects any value or range matched by two

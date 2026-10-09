@@ -489,7 +489,8 @@ array in one pass; any other value is stored into element 0 and the filled
 prefix is doubled by copies, so generated code grows with `log2(count)`.
 
 Where a plain `[]T` is expected (a parameter, declaration, assignment,
-return, or struct field), an array literal supplies its own length and takes
+return, struct field, or `for` iterable, whose `T` is the value binder's
+type), an array literal supplies its own length and takes
 `T` from the context; it is an anonymous `[N]T` viewed as `[]T`:
 
 ```ace
@@ -504,6 +505,9 @@ primes(): []int {
 }
 
 six: int = total([1, 2, 3])
+
+for name: string in ["mem", "fmt"] { … }
+for c: u8 in [1, 2] { … } // constants materialize as u8
 ```
 
 When every element is a compile-time constant, the array is read-only static
@@ -513,7 +517,7 @@ stack storage of the enclosing function, built exactly as a named
 `tmp: [N]T = [...]` would be, and the view is valid while that function runs.
 An empty literal is the null view. A cast supplies the context too: `[]int([])`
 is a typed empty view and `[2]int([x, y])` an array where no target type is
-expected. The view is plain: a `mut []T` context
+expected. The view is plain: a `mut []T` context or `for … in mut`
 rejects a literal, since nothing could read what is written through it. A
 keyed literal needs its `[E]T`. Overload selection gives a literal the candidate
 element type its elements share (`int` for integers, `f64` for floats, `u8`

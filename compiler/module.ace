@@ -526,9 +526,6 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
     return 0
 }
 
-/* The std modules (std/<name>.ace or mod.ace) that declare builtins. */
-BUILTIN_MODULES: [6]string = ["mem", "fmt", "str", "sys", "bits", "math"]
-
 /* Marks the compiler-backed functions of module `mi` when it is one of the
  * std modules that declare them, and records std/@/formatting's prefix.
  */
@@ -539,7 +536,7 @@ Loader.mark_intrinsics(mut self, mi: usize) {
         return
     }
     m: string = ""
-    for name: string in BUILTIN_MODULES {
+    for name: string in ["mem", "fmt", "str", "sys", "bits", "math"] {
         if self.is_std_named(canon, name, false) { m = name }
     }
     if self.is_std_named(canon, "byte_load", true) { m = "@byte_load" }

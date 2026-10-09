@@ -22,10 +22,8 @@ lookup(): int {
             return 35
         }
     }
-    misses: [9]string = ["a", "/z", "/a/b~1c/3", "/a/b~1c/01", "/a/b~1c/-", "/d/x", "/a/m~2n", "/a/b~", "/a/b~1c/1x"]
-
-    for i: usize in 0 .. misses.len {
-        node: json.Value, found: bool = doc.get(misses[i])
+    for i: usize, miss: string in ["a", "/z", "/a/b~1c/3", "/a/b~1c/01", "/a/b~1c/-", "/d/x", "/a/m~2n", "/a/b~", "/a/b~1c/1x"] {
+        node: json.Value, found: bool = doc.get(miss)
         if found { return 36 + int(i) }
     }
 

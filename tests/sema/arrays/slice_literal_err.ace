@@ -1,4 +1,4 @@
-/* A []T literal is a plain positional view of a temporary. */
+/* A []T literal (argument or for iterable) is a plain positional view of a temporary. */
 
 Color: enum { red, green }
 
@@ -11,5 +11,6 @@ main(): int {
     fill([1, 2])
     names: []string = [Color.red = "r", Color.green = "g"]
     mixed: []int = [1, "a"]
+    for c: u8 in mut [1, 2] { }
     return pick([1, 2])
 }

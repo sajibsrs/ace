@@ -687,7 +687,8 @@ for want in \
     "11:11: error: array literal cannot establish a writable view: mut []i64" \
     "12:24: error: keyed array literal needs an [E]T context, not []string" \
     "13:24: error: type mismatch: string given where i64 expected" \
-    "14:16: error: ambiguous call to overloaded function 'pick'"; do
+    "14:23: error: array literal cannot establish a writable view for mut iteration" \
+    "15:16: error: ambiguous call to overloaded function 'pick'"; do
     if ! printf '%s\n' "$slice_literal_errors" | grep -qF "$want"; then
         echo "FAIL: missing slice literal diagnostic '$want'"
         fail=1

@@ -1,0 +1,15 @@
+/* An array literal as a for iterable takes its element type from the value
+ * binder: constant, runtime, string, indexed, and repeated literals. */
+
+// expect-exit: 42
+
+main(): int {
+    x: int = 5
+    t: int = 0
+    for c: u8 in [u8(1), 2] { t += int(c) }
+    for c: u8 in [1, 2] { t += int(c) }
+    for name: string in ["ab", "c"] { t += int(name.len) }
+    for i: usize, v: int in [x, x + 1] { t += v + int(i) }
+    for v: int in [7 : 3] { t += v }
+    return t
+}
