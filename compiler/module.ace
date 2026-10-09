@@ -74,6 +74,7 @@ pub Loader: struct {
     std_dir: string = "",                   // beside the compiler, as written
     std_root: string = "",                  // its realpath, "" when absent
     pool: path.Pool,
+    roots: path.Roots,                      // where @file paths are shown from
     pub mods: array.Array[Module],          // by load order; the root is 0
     pub order: array.Array[usize],          // completed, dependencies first
     prefixes: array.Array[string],          // every prefix assigned so far
@@ -85,7 +86,7 @@ pub Loader: struct {
  * so std/.
  */
 pub Loader.new(target: string): (Loader, bool) {
-    l: Loader = Loader { target = target, pool = blank(path.Pool), mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {} }
+    l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {} }
     exe: string, ok: bool = path.executable_dir(mut l.pool)
     if !ok {
         fmt.printf(sys.stderr, "ace: cannot locate the ace executable to find std/\n")
@@ -117,6 +118,7 @@ pub Loader.wipe(mut self) {
  * false on any error, each reported on stderr as C reports it.
  */
 pub Loader.resolve(mut self, root_path: string): bool {
+    self.roots = path.Roots.init(mut self.pool, path.dir(root_path))
     canon: string, found: bool = path.canonical(mut self.pool, root_path)
     if !found { canon = root_path }
     mi: usize, ok: bool = mut self.load(root_path, canon)
@@ -180,6 +182,7 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
     failed: bool = lex_errors > 0
     self.errors += lex_errors
     if !failed {
+        p.file = self.roots.show(mut self.pool, shown)
         f = mut p.parse(self.target)
         errors: []parser.SyntaxError, stopped: bool = p.errors()
         for e: parser.SyntaxError in errors {

@@ -139,3 +139,58 @@ pub executable_dir(mut pool: Pool): (string, bool) {
     if !found { return "", false }
     return dir(real), true
 }
+
+/* Where `@file` paths are shown from, as src/module.c's build_roots: the
+ * compiler's std/ and the build root directory, both canonical ("" when
+ * absent).
+ */
+pub Roots: struct {
+    std_root: string = "",
+    root_dir: string = "",
+}
+
+/* The roots for a build whose root file lives in `root_dir`. */
+pub Roots.init(mut pool: Pool, root_dir: string): Roots {
+    r: Roots = Roots {}
+    exe: string, ok: bool = executable_dir(mut pool)
+    if ok {
+        s: string, found: bool = canonical(mut pool, mut pool.join([exe, "/std"]))
+        if found { r.std_root = s }
+    }
+    d: string, found: bool = canonical(mut pool, root_dir)
+    if found { r.root_dir = d }
+    return r
+}
+
+/* `path` as src/module.c's build_path shows it: `std/<rest>` under the std
+ * root, else relative to the root directory (the longest shared prefix at a
+ * component boundary, one `../` per level climbed). Never absolute; `path`
+ * itself when it does not exist or there is no root directory.
+ */
+pub Roots.show(self, mut pool: Pool, path: string): string {
+    canon: string, found: bool = canonical(mut pool, path)
+    if !found { return path }
+    if self.std_root.len > 0 && beneath(canon, self.std_root) {
+        return mut pool.join(["std/", canon[self.std_root.len + 1..]])
+    }
+    root: string = self.root_dir
+    if root.len == 0 { return path }
+    common: usize = 0
+    i: usize = 0
+    for i < canon.len && i < root.len && canon[i] == root[i] {
+        if canon[i] == '/' { common = i }
+        i += 1
+    }
+    if beneath(canon, root) { common = root.len }
+    up: usize = 0
+    if common < root.len {
+        up = 1
+        for j: usize in common + 1..root.len {
+            if root[j] == '/' { up += 1 }
+        }
+    }
+    climb: mut []u8 = mem.alloc[u8](up * 3)
+    defer mem.release[u8](mut climb)
+    for k: usize in 0..up { mem.copy(climb[k * 3..k * 3 + 3], "../") }
+    return mut pool.join([climb, canon[common + 1..]])
+}

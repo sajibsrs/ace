@@ -15,15 +15,13 @@
   (`ival`) as C does. `path.ace` holds the libc glue. `main.ace
   --modules`/`--resolved` dump the result; `check.sh` diffs them against
   `ace --report` and the hidden `ace --resolved` (link names and builtin
-  marks shown), whole tree and errors. Packages and `build_path` are not
-  ported.
+  marks shown), whole tree and errors. `path.Roots` ports `build_roots`/
+  `build_path`: each module's `@file` is `std/<rest>` or root-relative with
+  `../` climbs, in `--ast` too. Packages are not ported.
 - The self-hosted lexer keeps every error in a `Diag` list (`Lexer.diags`)
   with its position and offending byte, and `lexer.report` words each as C
   does (`'$'`, `0xC3`, `'\q'`); consecutive bad bytes no longer drop errors,
   `next` returns only the token, and a run ends with C's `N errors` line.
-- The self-hosted parser writes `@file` as the root file's base name, the
-  path relative to its own directory, as C's `build_path` does; C's `std/<rel>`
-  mapping for files under the compiler's std is not ported.
 - Both parsers parse binary operators by precedence climbing: one `level`
   lookup per operator, not a call per precedence level for every operand.
   The self-hosted parser runs 1.26–1.66x faster (`shader.ace` 1.9x → 1.1x of

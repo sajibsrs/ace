@@ -72,8 +72,6 @@ for f in $files; do
         msema=$((msema + 1))
     fi
     # Resolved: the merged, lowered tree and every error line must match.
-    # (@file in an imported file needs C's build_path, not ported yet.)
-    [ "$f" = tests/modules/location/main.ace ] && continue
     ./ace --resolved "$f" >"$tmp/want" 2>"$tmp/werr"
     wrc=$?
     "$self" --resolved "$f" >"$tmp/got" 2>"$tmp/gerr"

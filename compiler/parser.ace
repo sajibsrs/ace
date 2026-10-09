@@ -101,6 +101,7 @@ Tok: struct {
 
 pub Parser: struct {
     path: string,
+    pub file: string,          // what @file writes; `path`'s base name until set
     kinds: mut []Token = null,
     toks: mut []Tok = null,
     ntok: usize,
@@ -139,7 +140,7 @@ pub ERROR_LIMIT: const usize = 10
  */
 pub Parser.new(src: string, path: string): (Parser, int) {
     msg: mut []u8 = mem.alloc[u8](256 * ERROR_LIMIT) // the longest message, one name included
-    p: Parser = Parser { path = path, ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, stopped = false, last = 0, msg = msg, err = fmt.Buffer.init(msg), errs = array.Array[SyntaxError] {}, nexport = 0, target = "" }
+    p: Parser = Parser { path = path, file = base_name(path), ntok = 0, i = 0, nnode = 1, nkid = 0, nstack = 0, failed = false, stopped = false, last = 0, msg = msg, err = fmt.Buffer.init(msg), errs = array.Array[SyntaxError] {}, nexport = 0, target = "" }
     p.pool = mem.alloc[u8](src.len + 1)
     p.kinds = mem.alloc[Token](64)
     p.toks = mem.alloc[Tok](64)
@@ -200,9 +201,8 @@ grow[T](s: mut []T): mut []T {
     return g
 }
 
-/* `path` relative to its own directory, the root's, as C's build_path writes
- * a root file's `@file`. C also maps a file under the compiler's std/ to
- * `std/<rel>` through realpath; that case is not ported.
+/* `path` relative to its own directory: a root file's `@file` when the caller
+ * sets no other (path.Roots.show gives C's build_path form).
  */
 base_name(path: string): string {
     i: usize = path.len
@@ -1087,7 +1087,7 @@ Parser.primary(mut self, ctx: int): u32 {
             }
             if self.ident_at(1, "file") {
                 x: u32 = mut self.nd(Kind.str_lit)
-                mut self.named(x, base_name(self.path))
+                mut self.named(x, self.file)
                 self.i += 2
                 return x
             }

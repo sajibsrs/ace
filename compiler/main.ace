@@ -13,6 +13,7 @@ import lexer: "./lexer.ace"
 import module: "./module.ace"
 import output: "./output.ace"
 import parser: "./parser.ace"
+import path: "./path.ace"
 
 Token: type = lexer.Token
 Out: type = fmt.Buffer
@@ -89,17 +90,21 @@ summary(path: string, errors: int): int {
 }
 
 /* Parses `src` for the host target and dumps the tree; 1 on any error. */
-dump_ast(mut out: Out, src: string, path: string): int {
-    p: parser.Parser, lex_errors: int = parser.Parser.new(src, path)
+dump_ast(mut out: Out, src: string, src_path: string): int {
+    p: parser.Parser, lex_errors: int = parser.Parser.new(src, src_path)
     defer mut p.wipe()
-    if lex_errors > 0 { return summary(path, lex_errors) }
+    if lex_errors > 0 { return summary(src_path, lex_errors) }
+    pool: path.Pool = blank(path.Pool)
+    defer mut pool.wipe()
+    roots: path.Roots = path.Roots.init(mut pool, path.dir(src_path))
+    p.file = roots.show(mut pool, src_path)
     f: u32 = mut p.parse(TARGET)
     errors: []parser.SyntaxError, stopped: bool = p.errors()
     for e: parser.SyntaxError in errors {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(e.line), int(e.col), e.message)
+        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", src_path, int(e.line), int(e.col), e.message)
     }
-    if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", path, int(parser.ERROR_LIMIT)) }
-    if errors.len > 0 { return summary(path, int(errors.len)) }
+    if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", src_path, int(parser.ERROR_LIMIT)) }
+    if errors.len > 0 { return summary(src_path, int(errors.len)) }
     p.dump(mut out, f, 0)
     mut out.flush()
     return 0
