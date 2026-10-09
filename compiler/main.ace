@@ -1,7 +1,9 @@
 /* Lexes one file and prints its tokens exactly as `ace --tokens` does, or
  * with --ast parses it and prints the tree exactly as `ace --ast` does, or
  * with --modules resolves its imports and prints the loaded modules, or with
- * --resolved prints the merged tree as `ace --resolved` does.
+ * --resolved prints the merged tree as `ace --resolved` does. --pkg-graph=DIR
+ * prints a package's dependency graph and --pkg-check=DIR resolves its imports
+ * through it, as `ace` does, optionally for another --target=T.
  */
 
 import file
@@ -12,6 +14,7 @@ import sys
 import lexer: "./lexer.ace"
 import module: "./module.ace"
 import output: "./output.ace"
+import package: "./package.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
 
@@ -25,6 +28,29 @@ TARGET: const string = "darwin-arm64"
 TARGET: const string = "linux-x64"
 
 main(): int {
+    graph_dir: string = ""
+    check_dir: string = ""
+    target: string = TARGET
+    i: usize = 1
+    for i < sys.argc() {
+        a: string = sys.arg(i)
+        if a.len > 12 && mem.equal(a[..12], "--pkg-graph=") {
+            graph_dir = a[12..]
+        } else if a.len > 12 && mem.equal(a[..12], "--pkg-check=") {
+            check_dir = a[12..]
+        } else if (mem.equal(a, "--pkg-graph") || mem.equal(a, "--pkg-check")) && i + 1 < sys.argc() {
+            i += 1
+            if mem.equal(a, "--pkg-graph") { graph_dir = sys.arg(i) } else { check_dir = sys.arg(i) }
+        } else if a.len > 9 && mem.equal(a[..9], "--target=") {
+            target = a[9..]
+        } else {
+            break
+        }
+        i += 1
+    }
+    if i == sys.argc() && (graph_dir.len > 0 || check_dir.len > 0) {
+        return packages(graph_dir, check_dir, target)
+    }
     ast: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--ast")
     modules: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--modules")
     resolved: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--resolved")
@@ -124,5 +150,36 @@ dump_modules(path: string, tree: bool): int {
     out: Out = Out.init(sys.stdout, storage)
     if tree { l.dump_resolved(mut out) } else { l.dump(mut out) }
     mut out.flush()
+    return 0
+}
+
+/* With `graph_dir`, prints its package graph dependencies first as
+ * `name\tkind\troot`; with `check_dir`, resolves its root's imports through
+ * the graph. 1 on any error, after C's closing count.
+ */
+packages(graph_dir: string, check_dir: string, target: string): int {
+    if graph_dir.len == 0 && !mem.equal(target, "darwin-arm64") && !mem.equal(target, "linux-x64") {
+        fmt.printf(sys.stderr, "ace: unsupported target '%s' (supported: darwin-arm64, linux-x64)\n", target)
+        return 2
+    }
+    l: module.Loader, found: bool = module.Loader.new(target)
+    defer mut l.wipe()
+    if !found { return 1 }
+    dir: string = graph_dir
+    if dir.len == 0 { dir = check_dir }
+    g: package.Graph = package.Graph.init(target, l.std_dir)
+    defer mut g.wipe()
+    root: usize, ok: bool = mut g.resolve(dir)
+    if !ok { return summary(dir, g.errors) }
+    if graph_dir.len > 0 {
+        for pi: usize in g.order.view() {
+            p: package.Package = g.pkgs.get(pi)
+            kind: string = "lib"
+            if p.is_exe { kind = "exe" }
+            fmt.printf("%s\t%s\t%s\n", p.name, kind, p.root_file)
+        }
+        return 0
+    }
+    if !mut l.resolve_package(g, root) { return summary(g.pkgs.get(root).root_file, l.errors) }
     return 0
 }

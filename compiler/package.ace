@@ -1,0 +1,720 @@
+/* package — ace.pkg manifest parsing and dependency-graph resolution, as
+ * src/package.c does it. A manifest is line-based `key: value` fields plus
+ * [dependency] and [link] sections, each optionally qualified by a target.
+ * Every dependency name in a graph is found from the root package's
+ * directory as the nearest <dir>/pkg/<name>; a package's own pkg/ is not
+ * part of it.
+ */
+
+import array
+import file
+import fmt
+import mem
+import str
+import sys
+
+import path: "./path.ace"
+
+/* A direct dependency: its name, which is also its import alias, and the
+ * package's index in the graph.
+ */
+pub Dep: struct {
+    pub name: string,
+    pub package: usize,
+}
+
+/* A [link] input: a canonical path when relative in the manifest, else as
+ * written; or a framework name.
+ */
+pub Link: struct {
+    pub value: string,
+    pub framework: bool,
+    pub line: int,
+}
+
+pub Package: struct {
+    pub dir: string,                        // canonical package root directory
+    pub name: string,
+    pub ver_major: int,
+    pub ver_minor: int,
+    pub ver_patch: int,
+    pub ace_major: int,
+    pub ace_minor: int,
+    pub is_exe: bool,
+    pub root_file: string,                  // canonical path to the root .ace file
+    pub description: string = "",           // "" when absent
+    pub author: string = "",
+    pub license: string = "",
+    pub repository: string = "",
+    pub deps: array.Array[Dep],
+    pub links: array.Array[Link],
+}
+
+/* A manifest field's value and line; line 0 when absent. */
+Field: struct {
+    value: string = "",
+    line: int = 0,
+}
+
+/* A dependency entry; a negative line marks an inactive section's entry. */
+RawDep: struct {
+    alias: string,
+    version: string,
+    line: int,
+}
+
+/* One manifest's fields and entries, unvalidated. */
+Raw: struct {
+    name: Field,
+    version: Field,
+    ace: Field,
+    type: Field,
+    root: Field,
+    description: Field,
+    author: Field,
+    license: Field,
+    repository: Field,
+    deps: array.Array[RawDep],
+    links: array.Array[Link],
+}
+
+Raw.wipe(mut self) {
+    mut self.deps.wipe()
+    mut self.links.wipe()
+}
+
+/* A declared package name and its canonical directory. */
+Name: struct {
+    name: string,
+    dir: string,
+}
+
+pub Graph: struct {
+    pub errors: int = 0,
+    target: string = "",                    // selects qualified sections
+    std_dir: string = "",                   // the compiler's std/, for name collisions
+    pool: path.Pool,
+    pub pkgs: array.Array[Package],
+    pub order: array.Array[usize],          // completed, dependencies first
+    loading: array.Array[usize],            // in progress, for cycles
+    names: array.Array[Name],
+    root_dir: string = "",                  // every dependency resolves from here
+    have_ace: bool = false,
+    ace_major: int = 0,                     // the root's, shared by the whole graph
+    ace_minor: int = 0,
+}
+
+/* An empty graph for `target`, checking names against `std_dir`. */
+pub Graph.init(target: string, std_dir: string): Graph {
+    return Graph { target = target, std_dir = std_dir, pool = blank(path.Pool), pkgs = array.Array[Package] {}, order = array.Array[usize] {}, loading = array.Array[usize] {}, names = array.Array[Name] {} }
+}
+
+pub Graph.wipe(mut self) {
+    for i: usize in 0..self.pkgs.len {
+        p: Package = self.pkgs.get(i)
+        mut p.deps.wipe()
+        mut p.links.wipe()
+    }
+    mut self.pkgs.wipe()
+    mut self.order.wipe()
+    mut self.loading.wipe()
+    mut self.names.wipe()
+    mut self.pool.wipe()
+}
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+/* Opens a diagnostic at `manifest`'s `line`; the caller prints the message. */
+Graph.at(mut self, manifest: string, line: int) {
+    fmt.printf(sys.stderr, "%s:%d: error: ", manifest, line)
+    self.errors += 1
+}
+
+// --- lexical shapes -----------------------------------------------------------
+
+/* `text` without leading blanks and tabs, or trailing blanks, tabs, and CRs. */
+trim(text: string): string {
+    a: usize = 0
+    b: usize = text.len
+    for a < b && (text[a] == ' ' || text[a] == '\t') { a += 1 }
+    for b > a && (text[b - 1] == ' ' || text[b - 1] == '\t' || text[b - 1] == '\r') { b -= 1 }
+    return text[a..b]
+}
+
+alpha(c: u8): bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+digit(c: u8): bool {
+    return c >= '0' && c <= '9'
+}
+
+is_ident(s: string): bool {
+    if s.len == 0 { return false }
+    if !(alpha(s[0]) || s[0] == '_') { return false }
+    for c: u8 in s { if !(alpha(c) || digit(c) || c == '_') { return false } }
+    return true
+}
+
+/* A lowercase identifier: the shape of a package name. */
+pub valid_name(s: string): bool {
+    if !is_ident(s) { return false }
+    for c: u8 in s { if c >= 'A' && c <= 'Z' { return false } }
+    return true
+}
+
+/* A nonempty run of decimal digits no larger than i32's maximum. */
+uint_component(s: string): (int, bool) {
+    if s.len == 0 { return 0, false }
+    v: i64 = 0
+    for c: u8 in s {
+        if !digit(c) { return 0, false }
+        v = v * 10 + i64(c - '0')
+        if v > 0x7fffffff { return 0, false }
+    }
+    return int(v), true
+}
+
+/* Exactly "major.minor.patch": three nonnegative integers, two dots. */
+parse_version(s: string): (int, int, int, bool) {
+    parts: [4]string = blank([4]string)
+    n: usize, fit: bool = str.split(s, '.', mut parts[0..4])
+    if !fit || n != 3 { return 0, 0, 0, false }
+    a: int, oka: bool = uint_component(parts[0])
+    b: int, okb: bool = uint_component(parts[1])
+    c: int, okc: bool = uint_component(parts[2])
+    return a, b, c, oka && okb && okc
+}
+
+/* Exactly "major.minor": two nonnegative integers, one dot. */
+parse_ace_version(s: string): (int, int, bool) {
+    parts: [3]string = blank([3]string)
+    n: usize, fit: bool = str.split(s, '.', mut parts[0..3])
+    if !fit || n != 2 { return 0, 0, false }
+    a: int, oka: bool = uint_component(parts[0])
+    b: int, okb: bool = uint_component(parts[1])
+    return a, b, oka && okb
+}
+
+/* A relative path with no ".." component: it stays within the package
+ * directory that declares it.
+ */
+contained(s: string): bool {
+    if s.len == 0 || s[0] == '/' { return false }
+    for i: usize in 0..s.len {
+        if s[i] == '.' && i + 1 < s.len && s[i + 1] == '.' &&
+            (i == 0 || s[i - 1] == '/') && (i + 2 == s.len || s[i + 2] == '/') {
+            return false
+        }
+    }
+    return true
+}
+
+/* A contained path ending in ".ace": the shape of a package's root file. */
+local_ace(s: string): bool {
+    return s.len >= 4 && mem.equal(s[s.len - 4..], ".ace") && contained(s)
+}
+
+/* Whether canonical `canon` lies in `package_dir`, outside its reserved pkg/. */
+pub contains(package_dir: string, canon: string): bool {
+    if !mem.equal(canon, package_dir) && !path.beneath(canon, package_dir) { return false }
+    rest: string = canon[package_dir.len..]
+    return !(rest.len >= 4 && mem.equal(rest[..4], "/pkg") && (rest.len == 4 || rest[4] == '/'))
+}
+
+/* A section qualifier names a full target or an OS alone. */
+qualifier_valid(q: string): bool {
+    for name: string in ["darwin", "linux", "darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"] {
+        if mem.equal(q, name) { return true }
+    }
+    return false
+}
+
+/* Whether qualifier `q` selects `target`: the target itself or its OS. */
+qualifier_matches(q: string, target: string): bool {
+    os: usize, dash: bool = str.find(target, '-')
+    if !dash { os = target.len }
+    return (q.len == target.len || q.len == os) && q.len <= target.len && mem.equal(q, target[..q.len])
+}
+
+// --- manifests ----------------------------------------------------------------
+
+/* The nearest existing <dir>/pkg/<name>, checking `start` and then each
+ * ancestor directory; false if none exists.
+ */
+Graph.find_in_pkg(mut self, start: string, name: string): (string, bool) {
+    dir: string = start
+    for {
+        base: string = dir
+        if mem.equal(dir, "/") { base = "" }
+        candidate: string = mut self.pool.join([base, "/pkg/", name])
+        if path.is_dir(candidate) { return candidate, true }
+        if mem.equal(dir, "/") { return "", false }
+        at: usize = dir.len
+        for at > 0 && dir[at - 1] != '/' { at -= 1 }
+        if at == 0 { return "", false }
+        if at == 1 { dir = dir[..1] } else { dir = dir[..at - 1] }
+    }
+}
+
+/* Stores `value` at `line` in `f`; a duplicate field is an error. */
+Graph.field(mut self, manifest: string, line: int, mut f: Field, key: string, value: string): bool {
+    if f.line != 0 {
+        mut self.at(manifest, line)
+        fmt.printf(sys.stderr, "duplicate field '%s'\n", key)
+        return false
+    }
+    f.value = mut self.pool.copy(value)
+    f.line = line
+    return true
+}
+
+/* One ace.pkg's text into its raw fields and entries. Diagnoses malformed
+ * lines but keeps scanning, so one pass reports every problem in the file.
+ */
+Graph.parse_manifest(mut self, manifest: string, mut rm: Raw): bool {
+    src: mut []u8, rerr: Error = file.read(manifest)
+    defer mem.release[u8](mut src)
+    if rerr != null {
+        fmt.printf(sys.stderr, "ace: cannot open '%s'\n", manifest)
+        self.errors += 1
+        return false
+    }
+    line: int = 0
+    in_deps: bool = false
+    in_link: bool = false
+    active: bool = true
+    ok: bool = true
+    section: int = 0
+    dep_first: usize = 0                    // the current section's first entry
+    seen: [32]string = blank([32]string)    // headers so far, as "kind:qualifier"
+    nseen: usize = 0
+    rest: string = src
+    for rest.len > 0 {
+        line += 1
+        at: usize, nl: bool = str.find(rest, '\n')
+        raw: string = rest
+        if nl {
+            raw = rest[..at]
+            rest = rest[at + 1..]
+        } else {
+            rest = rest[rest.len..]
+        }
+        t: string = trim(raw)
+        if t.len == 0 { continue }
+        if t.len >= 2 && t[0] == '/' && t[1] == '/' { continue } // comment
+        if t[0] == '[' {
+            in_deps = false
+            in_link = false
+            active = false // fields of a bad header are dropped
+            section += 1
+            dep_first = rm.deps.len
+            closed: bool = t[t.len - 1] == ']'
+            inner_end: usize = t.len
+            if closed { inner_end = t.len - 1 }
+            inner: string = trim(t[1..inner_end])
+            q: usize = 0
+            qcolon: bool = false
+            if closed { q, qcolon = str.find(inner, ':') }
+            kind: string = inner
+            qual: string = ""
+            if qcolon {
+                kind = trim(inner[..q])
+                qual = trim(inner[q + 1..])
+            }
+            is_dep: bool = closed && mem.equal(kind, "dependency")
+            is_link: bool = closed && mem.equal(kind, "link")
+            if !is_dep && !is_link {
+                mut self.at(manifest, line)
+                fmt.printf(sys.stderr, "unknown section '%s'\n", t)
+                ok = false
+                continue
+            }
+            if qcolon && !qualifier_valid(qual) {
+                mut self.at(manifest, line)
+                fmt.printf(sys.stderr, "unknown target qualifier '%s'\n", qual)
+                ok = false
+                continue
+            }
+            name: string = "link"
+            if is_dep { name = "dependency" }
+            key: string = mut self.pool.join([name, ":", qual])
+            repeat: bool = false
+            for i: usize in 0..nseen { if mem.equal(seen[i], key) { repeat = true } }
+            if repeat {
+                mut self.at(manifest, line)
+                fmt.printf(sys.stderr, "repeated section '%s'\n", t)
+                ok = false
+                continue
+            }
+            if nseen < 32 {
+                seen[nseen] = key
+                nseen += 1
+            }
+            in_deps = is_dep
+            in_link = is_link
+            active = !qcolon || qualifier_matches(qual, self.target)
+            continue
+        }
+        if !in_deps && !in_link && section > 0 { continue } // inside a rejected header
+        c: usize, colon: bool = str.find(t, ':')
+        if !colon {
+            mut self.at(manifest, line)
+            fmt.printf(sys.stderr, "expected 'key: value'\n")
+            ok = false
+            continue
+        }
+        key: string = trim(t[..c])
+        val: string = trim(t[c + 1..])
+        if key.len == 0 {
+            mut self.at(manifest, line)
+            fmt.printf(sys.stderr, "expected 'key: value'\n")
+            ok = false
+            continue
+        }
+        if val.len == 0 {
+            // Optional single-line metadata with nothing after the colon, as
+            // `ace pkg init` writes it, means absent rather than an error.
+            if !in_deps && (mem.equal(key, "description") || mem.equal(key, "author") ||
+                mem.equal(key, "license") || mem.equal(key, "repository")) {
+                continue
+            }
+            mut self.at(manifest, line)
+            fmt.printf(sys.stderr, "expected 'key: value'\n")
+            ok = false
+            continue
+        }
+        if in_link {
+            framework: bool = mem.equal(key, "framework")
+            if !framework && !mem.equal(key, "path") {
+                mut self.at(manifest, line)
+                fmt.printf(sys.stderr, "unknown [link] field '%s'\n", key)
+                ok = false
+                continue
+            }
+            if active { fail(mut rm.links.push(Link { value = mut self.pool.copy(val), framework = framework, line = line })) }
+            continue
+        }
+        if in_deps {
+            // A repeat within one section is always an error; across sections
+            // only when both are active for this target. An inactive
+            // section's entries are kept just for its own check.
+            for i: usize in 0..rm.deps.len {
+                d: RawDep = rm.deps.get(i)
+                if (i >= dep_first || (active && d.line > 0)) && mem.equal(d.alias, key) {
+                    mut self.at(manifest, line)
+                    fmt.printf(sys.stderr, "duplicate dependency '%s'\n", key)
+                    ok = false
+                }
+            }
+            dl: int = line
+            if !active { dl = -line }
+            fail(mut rm.deps.push(RawDep { alias = mut self.pool.copy(key), version = mut self.pool.copy(val), line = dl }))
+            continue
+        }
+        stored: bool = true
+        if mem.equal(key, "name") { stored = mut self.field(manifest, line, mut rm.name, key, val) } else if mem.equal(key, "version") { stored = mut self.field(manifest, line, mut rm.version, key, val) } else if mem.equal(key, "ace") { stored = mut self.field(manifest, line, mut rm.ace, key, val) } else if mem.equal(key, "type") { stored = mut self.field(manifest, line, mut rm.type, key, val) } else if mem.equal(key, "root") { stored = mut self.field(manifest, line, mut rm.root, key, val) } else if mem.equal(key, "description") { stored = mut self.field(manifest, line, mut rm.description, key, val) } else if mem.equal(key, "author") { stored = mut self.field(manifest, line, mut rm.author, key, val) } else if mem.equal(key, "license") { stored = mut self.field(manifest, line, mut rm.license, key, val) } else if mem.equal(key, "repository") { stored = mut self.field(manifest, line, mut rm.repository, key, val) } else {
+            mut self.at(manifest, line)
+            fmt.printf(sys.stderr, "unknown field '%s'\n", key)
+            stored = false
+        }
+        if !stored { ok = false }
+    }
+    // Drop inactive sections' entries (marked by a negated line).
+    kept: usize = 0
+    for i: usize in 0..rm.deps.len {
+        d: RawDep = rm.deps.get(i)
+        if d.line > 0 {
+            mut rm.deps.set(kept, d)
+            kept += 1
+        }
+    }
+    mut rm.deps.truncate(kept)
+    return ok
+}
+
+// --- graph --------------------------------------------------------------------
+
+Graph.on_stack(self, canon: string): bool {
+    for i: usize in self.loading.view() { if mem.equal(self.pkgs.get(i).dir, canon) { return true } }
+    return false
+}
+
+Graph.loaded(self, canon: string): (usize, bool) {
+    for i: usize in self.order.view() { if mem.equal(self.pkgs.get(i).dir, canon) { return i, true } }
+    return 0, false
+}
+
+/* The chain from `canon` down the loading stack, newest first. */
+Graph.report_cycle(mut self, manifest: string, line: int, canon: string) {
+    chain: string = canon
+    i: usize = self.loading.len
+    for i > 0 {
+        i -= 1
+        chain = mut self.pool.join([chain, " -> ", self.pkgs.get(self.loading.get(i)).dir])
+    }
+    mut self.at(manifest, line)
+    fmt.printf(sys.stderr, "package dependency cycle: %s\n", chain)
+}
+
+Graph.is_std_module_name(mut self, name: string): bool {
+    flat: string, has_flat: bool = path.canonical(mut self.pool, mut self.pool.join([self.std_dir, "/", name, ".ace"]))
+    dir: string, has_dir: bool = path.canonical(mut self.pool, mut self.pool.join([self.std_dir, "/", name, "/mod.ace"]))
+    return has_flat || has_dir
+}
+
+/* `manifest` when set, else `fallback`: where a dependency's errors point. */
+pick(manifest: string, fallback: string): string {
+    if manifest.len > 0 { return manifest }
+    return fallback
+}
+
+/* The package at `dir_arg` and, recursively, its dependencies; its index, or
+ * false after reporting why not. `dep_manifest` and `dep_line` name the entry
+ * that asked for it ("" and 0 for the root).
+ */
+Graph.load(mut self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line: int): (usize, bool) {
+    canon: string, found: bool = path.canonical(mut self.pool, dir_arg)
+    if found && is_root { self.root_dir = canon }
+    if !found {
+        mut self.at(pick(dep_manifest, dir_arg), dep_line)
+        fmt.printf(sys.stderr, "cannot find package directory '%s'\n", dir_arg)
+        return 0, false
+    }
+    if !path.is_dir(canon) {
+        mut self.at(pick(dep_manifest, dir_arg), dep_line)
+        fmt.printf(sys.stderr, "'%s' is not a directory\n", canon)
+        return 0, false
+    }
+    if self.on_stack(canon) {
+        mut self.report_cycle(pick(dep_manifest, canon), dep_line, canon)
+        return 0, false
+    }
+    existing: usize, done: bool = self.loaded(canon)
+    if done { return existing, true }
+
+    manifest: string = mut self.pool.join([canon, "/ace.pkg"])
+    mk: u32 = path.kind(manifest)
+    if mk == 0 {
+        mut self.at(pick(dep_manifest, canon), dep_line)
+        fmt.printf(sys.stderr, "no ace.pkg at '%s'\n", canon)
+        return 0, false
+    }
+
+    rm: Raw = blank(Raw)
+    defer mut rm.wipe()
+    if !mut self.parse_manifest(manifest, mut rm) { return 0, false }
+
+    ok: bool = true
+    if rm.name.line == 0 {
+        mut self.at(manifest, 1)
+        fmt.printf(sys.stderr, "missing required field 'name'\n")
+        ok = false
+    }
+    if rm.version.line == 0 {
+        mut self.at(manifest, 1)
+        fmt.printf(sys.stderr, "missing required field 'version'\n")
+        ok = false
+    }
+    if rm.ace.line == 0 {
+        mut self.at(manifest, 1)
+        fmt.printf(sys.stderr, "missing required field 'ace'\n")
+        ok = false
+    }
+    if rm.type.line == 0 {
+        mut self.at(manifest, 1)
+        fmt.printf(sys.stderr, "missing required field 'type'\n")
+        ok = false
+    }
+    if rm.root.line == 0 {
+        mut self.at(manifest, 1)
+        fmt.printf(sys.stderr, "missing required field 'root'\n")
+        ok = false
+    }
+    if !ok { return 0, false }
+
+    if !valid_name(rm.name.value) {
+        mut self.at(manifest, rm.name.line)
+        fmt.printf(sys.stderr, "package name '%s' must be a lowercase identifier\n", rm.name.value)
+        ok = false
+    }
+    vmaj: int, vmin: int, vpat: int, vok: bool = parse_version(rm.version.value)
+    if !vok {
+        mut self.at(manifest, rm.version.line)
+        fmt.printf(sys.stderr, "version '%s' must be exactly major.minor.patch\n", rm.version.value)
+        ok = false
+    }
+    amaj: int, amin: int, aok: bool = parse_ace_version(rm.ace.value)
+    if !aok {
+        mut self.at(manifest, rm.ace.line)
+        fmt.printf(sys.stderr, "ace version '%s' must be exactly major.minor\n", rm.ace.value)
+        ok = false
+    } else if !self.have_ace {
+        self.have_ace = true
+        self.ace_major = amaj
+        self.ace_minor = amin
+    } else if amaj != self.ace_major || amin != self.ace_minor {
+        mut self.at(manifest, rm.ace.line)
+        fmt.printf(sys.stderr, "ace version %d.%d does not match the graph's %d.%d\n", amaj, amin, self.ace_major, self.ace_minor)
+        ok = false
+    }
+    is_exe: bool = false
+    if mem.equal(rm.type.value, "exe") {
+        is_exe = true
+    } else if !mem.equal(rm.type.value, "lib") {
+        mut self.at(manifest, rm.type.line)
+        fmt.printf(sys.stderr, "type '%s' must be 'exe' or 'lib'\n", rm.type.value)
+        ok = false
+    }
+    if !is_root && is_exe {
+        mut self.at(manifest, rm.type.line)
+        fmt.printf(sys.stderr, "dependency '%s' is type 'exe'; only a lib package can be a dependency\n", rm.name.value)
+        ok = false
+    }
+    if !local_ace(rm.root.value) {
+        mut self.at(manifest, rm.root.line)
+        fmt.printf(sys.stderr, "root '%s' must be a relative path within the package, ending in '.ace'\n", rm.root.value)
+        ok = false
+    }
+    root_canon: string = ""
+    if ok {
+        rc: string, exists: bool = path.canonical(mut self.pool, mut self.pool.join([canon, "/", rm.root.value]))
+        root_canon = rc
+        if !exists || !(path.beneath(rc, canon) || mem.equal(rc, canon)) {
+            mut self.at(manifest, rm.root.line)
+            fmt.printf(sys.stderr, "root '%s' does not exist\n", rm.root.value)
+            ok = false
+        } else if !contains(canon, rc) {
+            mut self.at(manifest, rm.root.line)
+            fmt.printf(sys.stderr, "root '%s' is inside the reserved pkg/ directory\n", rm.root.value)
+            ok = false
+        }
+    }
+    if ok && mut self.is_std_module_name(rm.name.value) {
+        mut self.at(manifest, rm.name.line)
+        fmt.printf(sys.stderr, "package name '%s' collides with a standard-library module name\n", rm.name.value)
+        ok = false
+    }
+    if ok {
+        seen: bool = false
+        for e: Name in self.names.view() {
+            if mem.equal(e.name, rm.name.value) {
+                seen = true
+                if !mem.equal(e.dir, canon) {
+                    mut self.at(manifest, rm.name.line)
+                    fmt.printf(sys.stderr, "package name '%s' resolves to two different sources: %s and %s\n", rm.name.value, e.dir, canon)
+                    ok = false
+                }
+                break
+            }
+        }
+        if !seen { fail(mut self.names.push(Name { name = rm.name.value, dir = canon })) }
+    }
+    for d: RawDep in rm.deps.view() {
+        if !is_ident(d.alias) {
+            mut self.at(manifest, d.line)
+            fmt.printf(sys.stderr, "dependency alias '%s' must be an identifier\n", d.alias)
+            ok = false
+        }
+        a: int, b: int, c: int, dok: bool = parse_version(d.version)
+        if !dok {
+            mut self.at(manifest, d.line)
+            fmt.printf(sys.stderr, "dependency '%s' version '%s' must be exactly major.minor.patch\n", d.alias, d.version)
+            ok = false
+        }
+    }
+    for l: Link in rm.links.view() {
+        if l.framework {
+            at: usize, slash: bool = str.find(l.value, '/')
+            if slash {
+                mut self.at(manifest, l.line)
+                fmt.printf(sys.stderr, "[link] framework '%s' must be a bare name\n", l.value)
+                ok = false
+            }
+        } else if l.value[0] != '/' && !contained(l.value) {
+            mut self.at(manifest, l.line)
+            fmt.printf(sys.stderr, "[link] path '%s' must be absolute or a relative path within the package\n", l.value)
+            ok = false
+        }
+    }
+    if !ok { return 0, false }
+
+    pi: usize = self.pkgs.len
+    fail(mut self.pkgs.push(Package {
+        dir = canon, name = rm.name.value, ver_major = vmaj, ver_minor = vmin, ver_patch = vpat,
+        ace_major = amaj, ace_minor = amin, is_exe = is_exe, root_file = root_canon,
+        description = rm.description.value, author = rm.author.value,
+        license = rm.license.value, repository = rm.repository.value,
+        deps = array.Array[Dep] {}, links = array.Array[Link] {},
+    }))
+    fail(mut self.loading.push(pi))
+
+    deps: array.Array[Dep] = array.Array[Dep] {}
+    for d: RawDep in rm.deps.view() {
+        target: string, there: bool = mut self.find_in_pkg(self.root_dir, d.alias)
+        if !there {
+            mut self.at(manifest, d.line)
+            fmt.printf(sys.stderr, "dependency '%s' %s not found: no pkg/%s in '%s' or any parent directory\n", d.alias, d.version, d.alias, self.root_dir)
+            continue
+        }
+        di: usize, loaded: bool = mut self.load(target, false, manifest, d.line)
+        if !loaded { continue }
+        dep: Package = self.pkgs.get(di)
+        if !mem.equal(dep.name, d.alias) {
+            mut self.at(manifest, d.line)
+            fmt.printf(sys.stderr, "dependency alias '%s' does not match package name '%s' declared at '%s'\n", d.alias, dep.name, dep.dir)
+            continue
+        }
+        a: int, b: int, c: int, dok: bool = parse_version(d.version)
+        if dep.ver_major != a || dep.ver_minor != b || dep.ver_patch != c {
+            mut self.at(manifest, d.line)
+            fmt.printf(sys.stderr, "dependency '%s' requires version %s, but '%s' declares %d.%d.%d\n", d.alias, d.version, dep.dir, dep.ver_major, dep.ver_minor, dep.ver_patch)
+            continue
+        }
+        fail(mut deps.push(Dep { name = d.alias, package = di }))
+    }
+
+    links: array.Array[Link] = array.Array[Link] {}
+    for l: Link in rm.links.view() {
+        value: string = l.value
+        // A relative path must exist now; an absolute one is checked only if
+        // it is the one linked, since the root may override it.
+        if !l.framework && value[0] != '/' {
+            resolved: string, exists: bool = path.canonical(mut self.pool, mut self.pool.join([canon, "/", value]))
+            if !exists || !(path.beneath(resolved, canon) || mem.equal(resolved, canon)) {
+                mut self.at(manifest, l.line)
+                fmt.printf(sys.stderr, "[link] path '%s' does not exist\n", value)
+                continue
+            }
+            if !contains(canon, resolved) {
+                mut self.at(manifest, l.line)
+                fmt.printf(sys.stderr, "[link] path '%s' is inside the reserved pkg/ directory\n", value)
+                continue
+            }
+            value = resolved
+        }
+        fail(mut links.push(Link { value = value, framework = l.framework, line = l.line }))
+    }
+
+    p: Package = self.pkgs.get(pi)
+    p.deps = deps
+    p.links = links
+    mut self.pkgs.set(pi, p)
+    mut self.loading.truncate(self.loading.len - 1)
+    fail(mut self.order.push(pi)) // completed: its dependencies already precede it
+    return pi, true
+}
+
+/* The graph rooted at the package in `dir`: the root's index, false on any
+ * error, each reported on stderr as C reports it. `order` then lists every
+ * package dependencies first, the root last.
+ */
+pub Graph.resolve(mut self, dir: string): (usize, bool) {
+    root: usize, ok: bool = mut self.load(dir, true, "", 0)
+    return root, ok && self.errors == 0
+}

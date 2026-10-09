@@ -21,6 +21,7 @@ import str
 import sys
 
 import lexer: "./lexer.ace"
+import package: "./package.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
 
@@ -66,12 +67,14 @@ pub Module: struct {
     pub members: array.Array[Member],
     pub binds: array.Array[Binding],
     pub sels: array.Array[Select],
+    pub in_package: bool = false,           // owned by a package of the graph
+    pub package: usize = 0,                 // that package's index
 }
 
 pub Loader: struct {
     pub errors: int = 0,
     target: string = "",
-    std_dir: string = "",                   // beside the compiler, as written
+    pub std_dir: string = "",               // beside the compiler, as written
     std_root: string = "",                  // its realpath, "" when absent
     pool: path.Pool,
     roots: path.Roots,                      // where @file paths are shown from
@@ -80,13 +83,14 @@ pub Loader: struct {
     prefixes: array.Array[string],          // every prefix assigned so far
     stack: array.Array[usize],              // loading now, for cycles
     pub formatting: string = "",            // std/@/formatting's prefix, "" until loaded
+    graph: package.Graph,                   // the package graph, empty outside one; not owned
 }
 
 /* A loader for `target`; false when the OS cannot locate the executable, and
  * so std/.
  */
 pub Loader.new(target: string): (Loader, bool) {
-    l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {} }
+    l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {}, graph = blank(package.Graph) }
     exe: string, ok: bool = path.executable_dir(mut l.pool)
     if !ok {
         fmt.printf(sys.stderr, "ace: cannot locate the ace executable to find std/\n")
@@ -119,10 +123,28 @@ pub Loader.wipe(mut self) {
  */
 pub Loader.resolve(mut self, root_path: string): bool {
     self.roots = path.Roots.init(mut self.pool, path.dir(root_path))
+    return mut self.resolve_root(root_path, false, 0)
+}
+
+/* The root file of package `root` in `graph` and every module it needs,
+ * dependencies' imports resolved through the graph; as `resolve`.
+ */
+pub Loader.resolve_package(mut self, graph: package.Graph, root: usize): bool {
+    self.graph = graph
+    p: package.Package = graph.pkgs.get(root)
+    self.roots = path.Roots.init(mut self.pool, p.dir)
+    return mut self.resolve_root(p.root_file, true, root)
+}
+
+Loader.resolve_root(mut self, root_path: string, in_package: bool, pkg: usize): bool {
     canon: string, found: bool = path.canonical(mut self.pool, root_path)
     if !found { canon = root_path }
     mi: usize, ok: bool = mut self.load(root_path, canon)
     if !ok { return false }
+    rm: Module = self.mods.get(mi)
+    rm.in_package = in_package
+    rm.package = pkg
+    mut self.mods.set(mi, rm)
     // The root is on the stack so a self-import or root cycle shows its chain.
     fail(mut self.stack.push(mi))
     mut self.resolve_file(mi, true)
@@ -615,65 +637,102 @@ Loader.resolve_module_path(mut self, mi: usize, imp: Node, root: string, kind: s
     return mut self.resolve_leaf(mi, imp, cur, kind, segs[segs.len - 1])
 }
 
-/* The target path an import declaration names. */
-Loader.import_target(mut self, mi: usize, imp: Node): (string, bool) {
+/* The target path an import declaration names: a package dependency of the
+ * importer's package first, then std/. With it, whether a package owns the
+ * target (a dependency, or the importer's own for a relative path) and which.
+ */
+Loader.import_target(mut self, mi: usize, imp: Node): (string, bool, bool, usize) {
+    in_package: bool = self.mods.get(mi).in_package
+    pkg: usize = self.mods.get(mi).package
     if imp.a != 0 {
         p: Node = self.node(mi, imp.a)
-        if p.op == Token.at { // @name: compiler-reserved std implementation
-            return mut self.pool.join([self.std_dir, "/@/", p.text, ".ace"]), true
+        if p.op == Token.at { // @name: compiler-reserved std implementation, never package-owned
+            return mut self.pool.join([self.std_dir, "/@/", p.text, ".ace"]), true, false, 0
         }
-        raw: string = p.text
-        if raw.len >= path.MAX {
-            mut self.err(mi, imp, ["module path is too long"])
-            return "", false
-        }
-        if raw.len > 0 && raw[0] == '/' {
-            mut self.err(mi, imp, ["module path '", raw, "' must be relative"])
-            return "", false
-        }
-        dir: string = path.dir(self.mods.get(mi).path)
-        if raw.len >= 5 && str.has(raw, ".ace", true) {
-            if mem.equal(dir, ".") { return raw, true }
-            return mut self.pool.join([dir, "/", raw]), true
-        }
-        // No .ace suffix: a nested-module path from the importer's directory.
-        segs: [64]string = blank([64]string)
-        n: usize = 0
-        rest: string = raw
-        for {
-            at: usize, slash: bool = str.find(rest, '/')
-            seg: string = rest
-            if slash { seg = rest[..at] }
-            if n == 64 {
-                mut self.err(mi, imp, ["module path '", raw, "' has too many segments"])
-                return "", false
+        target: string, ok: bool = mut self.relative_target(mi, imp, p.text)
+        if !ok { return "", false, false, 0 }
+        // A package's relative imports stay in its own directory and out of
+        // its reserved pkg/, which also keeps a consumer from deep-importing a
+        // dependency's internal files.
+        if in_package {
+            own: string = self.graph.pkgs.get(pkg).dir
+            tc: string, found: bool = path.canonical(mut self.pool, target)
+            if found && !mem.equal(tc, own) && !path.beneath(tc, own) {
+                mut self.err(mi, imp, ["relative import '", p.text, "' escapes its package directory '", own, "'"])
+                return "", false, false, 0
             }
-            if seg.len == 0 {
-                mut self.err(mi, imp, ["module path '", raw, "' has an empty segment"])
-                return "", false
+            if found && !package.contains(own, tc) {
+                mut self.err(mi, imp, ["relative import '", p.text, "' reaches into the reserved pkg/ directory of '", own, "'"])
+                return "", false, false, 0
             }
-            segs[n] = seg
-            n += 1
-            if !slash { break }
-            rest = rest[at + 1..]
         }
-        return mut self.resolve_module_path(mi, imp, dir, "module", segs[0..n])
+        return target, true, in_package, pkg
     }
-    // Bare, aliased, or selective import: the standard library.
+    // Bare, aliased, or selective import: a dependency, else the standard library.
     segs: [64]string = blank([64]string)
     n: usize = 0
     s: u32 = imp.c
     for s != 0 {
         if n == 64 {
             mut self.err(mi, imp, ["module path has too many segments"])
-            return "", false
+            return "", false, false, 0
         }
         seg: Node = self.node(mi, s)
         segs[n] = seg.text
         n += 1
         s = seg.a
     }
-    return mut self.resolve_module_path(mi, imp, self.std_dir, "standard library module", segs[0..n])
+    if in_package {
+        for d: package.Dep in self.graph.pkgs.get(pkg).deps.view() {
+            if mem.equal(segs[0], d.name) {
+                dp: package.Package = self.graph.pkgs.get(d.package)
+                if n == 1 { return dp.root_file, true, true, d.package }
+                target: string, ok: bool = mut self.resolve_module_path(mi, imp, dp.dir, "package module", segs[1..n])
+                return target, ok, true, d.package
+            }
+        }
+    }
+    target: string, ok: bool = mut self.resolve_module_path(mi, imp, self.std_dir, "standard library module", segs[0..n])
+    return target, ok, false, 0
+}
+
+/* The file a quoted import path `raw` names, from the importer's directory. */
+Loader.relative_target(mut self, mi: usize, imp: Node, raw: string): (string, bool) {
+    if raw.len >= path.MAX {
+        mut self.err(mi, imp, ["module path is too long"])
+        return "", false
+    }
+    if raw.len > 0 && raw[0] == '/' {
+        mut self.err(mi, imp, ["module path '", raw, "' must be relative"])
+        return "", false
+    }
+    dir: string = path.dir(self.mods.get(mi).path)
+    if raw.len >= 5 && str.has(raw, ".ace", true) {
+        if mem.equal(dir, ".") { return raw, true }
+        return mut self.pool.join([dir, "/", raw]), true
+    }
+    // No .ace suffix: a nested-module path from the importer's directory.
+    segs: [64]string = blank([64]string)
+    n: usize = 0
+    rest: string = raw
+    for {
+        at: usize, slash: bool = str.find(rest, '/')
+        seg: string = rest
+        if slash { seg = rest[..at] }
+        if n == 64 {
+            mut self.err(mi, imp, ["module path '", raw, "' has too many segments"])
+            return "", false
+        }
+        if seg.len == 0 {
+            mut self.err(mi, imp, ["module path '", raw, "' has an empty segment"])
+            return "", false
+        }
+        segs[n] = seg
+        n += 1
+        if !slash { break }
+        rest = rest[at + 1..]
+    }
+    return mut self.resolve_module_path(mi, imp, dir, "module", segs[0..n])
 }
 
 // --- loading ------------------------------------------------------------------
@@ -701,7 +760,7 @@ Loader.is_internal_path(self, mi: usize, imp: Node): bool {
 
 /* The module an import declaration names, loading it once. */
 Loader.ensure(mut self, mi: usize, imp: Node): (usize, bool) {
-    target: string, ok: bool = mut self.import_target(mi, imp)
+    target: string, ok: bool, in_package: bool, pkg: usize = mut self.import_target(mi, imp)
     if !ok { return 0, false }
     canon: string, found: bool = path.canonical(mut self.pool, target)
     if !found {
@@ -742,6 +801,10 @@ Loader.ensure(mut self, mi: usize, imp: Node): (usize, bool) {
     }
     ti: usize, loaded: bool = mut self.load(canon, canon)
     if !loaded { return 0, false }
+    tm: Module = self.mods.get(ti)
+    tm.in_package = in_package
+    tm.package = pkg
+    mut self.mods.set(ti, tm)
     mut self.mark_intrinsics(ti)
     fail(mut self.stack.push(ti))
     mut self.resolve_file(ti, false)

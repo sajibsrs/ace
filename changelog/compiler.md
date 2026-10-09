@@ -20,7 +20,11 @@
   `ace --report` and the hidden `ace --resolved` (link names and builtin
   marks shown), whole tree and errors. `path.Roots` ports `build_roots`/
   `build_path`: each module's `@file` is `std/<rest>` or root-relative with
-  `../` climbs, in `--ast` too. Packages are not ported.
+  `../` climbs, in `--ast` too. `package.ace` ports `src/package.c`'s
+  manifest parser and graph loader, and the loader resolves a package's bare
+  imports through its direct dependencies and keeps its relative imports in
+  its own directory; `main.ace --pkg-graph`/`--pkg-check` match `ace`'s, and
+  `check.sh` diffs both over every repository `ace.pkg`.
 - The self-hosted lexer keeps every error in a `Diag` list (`Lexer.diags`)
   with its position and offending byte, and `lexer.report` words each as C
   does (`'$'`, `0xC3`, `'\q'`); consecutive bad bytes no longer drop errors,
