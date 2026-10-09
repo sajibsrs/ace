@@ -1,5 +1,7 @@
 # Tooling
 
+- The self-hosted compiler lives in `selfhost/` (formerly `compiler/`), naming
+  its role beside `src/`, the C bootstrap compiler.
 - Manifest sections are singular, `[dependency]` and `[link]` (a plain
   section of repeatable `path:`/`framework:` lines), and a header may take one
   target or OS qualifier (`[link: darwin-arm64]`); sections not selected by

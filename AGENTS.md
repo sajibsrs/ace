@@ -135,8 +135,8 @@ history.
   language features), `std/` (standard-library operations), or `package/`
   (first-party packages; not `pkg/`, which is reserved for dependency
   lookup). Benchmarks never live under `tests/`.
-- `compiler/` holds the self-hosted compiler written in Ace, flat (no
-  subdirectories); `src/` remains the C bootstrap compiler. `compiler/check.sh`
+- `selfhost/` holds the self-hosted compiler written in Ace, flat (no
+  subdirectories); `src/` remains the C bootstrap compiler. `selfhost/check.sh`
   diffs its output against `./ace`; it is not part of `make test`.
 - Put Ace programs written to find language flaws under `experiment/<name>/`,
   structured like `demo/`. They are not part of `make test`; an experiment may
