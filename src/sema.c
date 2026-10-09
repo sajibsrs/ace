@@ -2506,7 +2506,18 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         // an unmarked parameter of type `mut []T` still has writable bytes.
         // Arrays are direct storage, so their element writes keep the
         // ordinary descriptor check.
-        SType* peek = check_lvalue(k, e->a, 0);
+        // A view's elements live in the storage it points at, so any
+        // expression of view type indexes into a place, a call result
+        // included (Memory #9); a non-place array is a temporary.
+        Node* a = e->a;
+        int place = a->kind == N_IDENT || a->kind == N_FIELD_E || a->kind == N_INDEX ||
+                    (a->kind == N_UNARY && a->op == T_STAR);
+        SType* peek = place ? check_lvalue(k, a, 0) : expr_type(k, a);
+        if (!place && peek->kind != SK_ERR && peek->kind != SK_SLICE &&
+            !(peek->kind == SK_PRIM && peek->prim == P_STRING)) {
+            ck_err(k, a, "not an assignable target");
+            return T_ERR;
+        }
         SType* b = peek;
         if (peek->kind == SK_STATICMAP) {
             ck_err(k, e, write ? "StaticMap entries are immutable" : "StaticMap lookup is not an assignable place");

@@ -352,8 +352,7 @@ add_member(mut members: array.Array[Member], name: string, is_type: bool, export
         x: Member = members.get(i)
         if x.is_type == is_type && mem.equal(x.name, name) {
             if !exported && x.exported {
-                live: mut []Member = mut members.view()
-                live[i].exported = false
+                (mut members.view())[i].exported = false
             }
             return
         }

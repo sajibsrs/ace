@@ -518,6 +518,27 @@ constant `[]T` literal is static data and may be returned. To return elements,
 return the array by value or copy them into caller-supplied or allocated
 storage.
 
+## Elements of returned views
+
+A view's elements live in the storage it points at, not in the expression
+that produced it, so an element of a returned view is a place:
+
+```ace
+P: struct { f: int }
+g: [4]P
+ms(): mut []P { return mut g[0..4] }
+
+main(): int {
+    ms()[0].f = 1          // writes g[0]
+    q: mut *P = mut &ms()[1]
+    q.f = 2
+    return 0
+}
+```
+
+A plain `[]T` result is read-only, as every plain view is; an element of a
+returned `[N]T` array is a temporary and is not assignable.
+
 ## Current diagnostics
 
 The `mem` declarations are compiler-backed in the current bootstrap. Release
@@ -594,6 +615,10 @@ Why the rules in `spec/memory.md` are shaped as they are.
 - Constant initializers (Values & Passing #12): an initialized constant remains
   a constant across an explicit module boundary, allowing an OS-neutral facade
   to re-export target-selected values without duplicating their machine values.
+- Elements of returned views (Mutability #9): write permission comes from the
+  view's type, never from where the descriptor is held, so requiring a local
+  binding first added nothing but position dependence. Go draws the same line:
+  `f()[i] = v` is legal for a slice and illegal for an array.
 - Mutability (section decision): local mutability is invisible to optimization
   (SSA); mutation through references is what blocks alias analysis. Syntax is
   spent only where the compiler and reader profit.

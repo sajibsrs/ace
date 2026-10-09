@@ -1,0 +1,21 @@
+// expect-exit: 0
+// An element of a view returned by a call is a place (Memory #9): writes,
+// compound writes, and 'mut &' reach the view's storage, calling once.
+
+P: struct { f: int }
+g: [4]P
+calls: int
+ms(): mut []P { calls += 1
+ return mut g[0..4] }
+mp(): mut *P { return mut &g[3] }
+main(): int {
+    ms()[0].f = 5
+    ms()[1] = P{ f = 7 }
+    q: mut *P = mut &ms()[2]
+    q.f = 11
+    ms()[2].f += 1
+    mp().f = 9
+    if g[0].f != 5 || g[1].f != 7 || g[2].f != 12 || g[3].f != 9 { return 1 }
+    if calls != 4 { return 2 }
+    return 0
+}

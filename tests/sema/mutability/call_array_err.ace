@@ -1,0 +1,9 @@
+// An array result is a temporary, not a place.
+P: struct { f: int }
+g: [4]P
+ar(): [4]P { return g }
+
+main(): int {
+    ar()[0].f = 1
+    return 0
+}

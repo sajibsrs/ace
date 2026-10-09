@@ -1,5 +1,9 @@
 # Language
 
+- An element of a view-typed call result is a place (#120): `f()[i] = v`,
+  `f()[i].f = v`, and `mut &f()[i]` follow the view's own permission. Sema
+  types a non-place index base with `expr_type` and keeps "not an assignable
+  target" for array values; lowering already handled a value base.
 - An array literal may be a `for` iterable (#112): sema coerces it to `[]E`,
   `E` the value binder's type, through the `[]T` literal path, so constants
   materialize as `E`; `in mut` rejects it. `Loader.mark_intrinsics` and
