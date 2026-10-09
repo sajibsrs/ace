@@ -1,5 +1,9 @@
 # Compiler
 
+- The self-hosted loader sets `F_SHADOWED` and records each module's display
+  name, directory-module root, and source byte and token totals. `--resolved`
+  prints the flag and a `module` line per import in both compilers;
+  `selfhost/check.sh` also compares the totals against `ace --report`.
 - A member error on `x.m` or `x.m(...)` whose local `x` hides an import
   binding `x` that has a member `m` adds a note naming the hiding local. The
   loader flags the field (`F_SHADOWED`); sema's error printer reads it.

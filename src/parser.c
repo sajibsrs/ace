@@ -2691,6 +2691,7 @@ static void pflags(Node* x) {
     if (x->flags & F_PACKED) printf(" packed");
     if (x->flags & F_VOLATILE) printf(" volatile");
     if (x->flags & F_CABI) printf(" c_abi");
+    if (x->flags & F_SHADOWED) printf(" shadowed");
 }
 
 static int dump_cnames; // --resolved also shows each link name and builtin mark

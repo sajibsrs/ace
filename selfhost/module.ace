@@ -60,6 +60,8 @@ pub Select: struct {
 pub Module: struct {
     pub canon: string,                      // realpath: the module's identity
     pub prefix: string = "",                // unique `name$` of its private identities; the root's is ""
+    pub display: string = "",               // the `mod` name users import it as; the root's is ""
+    pub root: string = "",                  // its directory module's directory, "" for a single-file module
     pub path: string,                       // as diagnostics print it
     src: mut []u8 = null,
     pub parser: parser.Parser,
@@ -84,6 +86,8 @@ pub Loader: struct {
     stack: array.Array[usize],              // loading now, for cycles
     pub formatting: string = "",            // std/@/formatting's prefix, "" until loaded
     graph: package.Graph,                   // the package graph, empty outside one; not owned
+    pub bytes: usize = 0,                   // source bytes read, as `ace --report` counts them
+    pub tokens: usize = 0,                  // tokens lexed, EOF excluded
 }
 
 /* A loader for `target`; false when the OS cannot locate the executable, and
@@ -200,6 +204,8 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
         return 0, false
     }
     p: parser.Parser, lex_errors: int = parser.Parser.new(src, shown)
+    self.bytes += src.len
+    self.tokens += p.tokens()
     f: u32 = 0
     failed: bool = lex_errors > 0
     self.errors += lex_errors
@@ -221,13 +227,38 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
     }
     prefix: string = ""
     if self.mods.len > 0 { prefix = mut self.assign_prefix(canon) }
-    m: Module = Module { canon = canon, prefix = prefix, path = shown, src = src, parser = p, file = f, members = array.Array[Member] {}, binds = array.Array[Binding] {}, sels = array.Array[Select] {} }
+    display: string, root: string = mut self.display(canon)
+    m: Module = Module { canon = canon, prefix = prefix, display = display, root = root, path = shown, src = src, parser = p, file = f, members = array.Array[Member] {}, binds = array.Array[Binding] {}, sels = array.Array[Select] {} }
     mut self.collect_members(mut m)
     fail(mut self.mods.push(m))
     return self.mods.len - 1, true
 }
 
 // --- private identities -------------------------------------------------------
+
+/* The display name and directory-module root of a module being loaded at
+ * `canon`. A directory module (mod.ace) names itself and every file beneath it
+ * that it imports, so an implementation file reads as the module users import.
+ * The root module has neither.
+ */
+Loader.display(mut self, canon: string): (string, string) {
+    if self.mods.len == 0 { return "", "" }
+    s: usize = canon.len
+    for s > 0 && canon[s - 1] != '/' { s -= 1 }
+    base: string = canon[s..]
+    if s > 0 && mem.equal(base, "mod.ace") {
+        root: string = canon[..s - 1]
+        d: usize = root.len
+        for d > 0 && root[d - 1] != '/' { d -= 1 }
+        return root[d..], root
+    }
+    if self.stack.len > 0 {
+        importer: Module = self.mods.get(self.stack.get(self.stack.len - 1))
+        if importer.root.len > 0 && path.beneath(canon, importer.root) { return importer.display, importer.root }
+    }
+    if base.len > 4 && mem.equal(base[base.len - 4..], ".ace") { return base[..base.len - 4], "" }
+    return base, ""
+}
 
 /* A unique `name$` for the module at `canon`: its file name without `.ace`, or
  * for a directory module's mod.ace the directory's; `name2$`, `name3$`... when
@@ -1166,6 +1197,17 @@ Loader.lower_qualified(mut self, mi: usize, mut c: RefLower, n: u32, type_positi
     if base != 0 && c.p.node(base).kind == Kind.ident && (type_position || !c.local_name(c.p.node(base).text, false)) {
         mut self.lower_field(mi, mut c, n)
         if c.p.node(n).kind != Kind.selector { return } // now the member's private name
+    } else if base == x.a && base != 0 && c.p.node(base).kind == Kind.ident {
+        // a local hides the binding; flag it so a member error can say so
+        for b: Binding in c.binds {
+            if !mem.equal(c.p.node(base).text, b.name) { continue }
+            _, value: bool = self.member(b.module, x.text, false)
+            _, is_type: bool = self.member(b.module, x.text, true)
+            if value || is_type {
+                x.flags |= parser.F_SHADOWED
+                mut c.p.update(n, x)
+            }
+        }
     }
     mut self.lower_node(mi, mut c, c.p.node(n).a) // field spelling is member-local
 }
@@ -1459,6 +1501,12 @@ Loader.merge(mut self) {
 pub Loader.dump_resolved(self, mut out: Out) {
     root: Module = self.mods.get(0)
     root.parser.dump_resolved(mut out, root.file)
+    for i: usize in 1..self.mods.len {
+        m: Module = self.mods.get(i)
+        root: string = m.root
+        if root.len == 0 { root = "-" }
+        mut out.printf("module %s display=%s root=%s\n", m.prefix, m.display, root)
+    }
 }
 
 /* Prints each loaded module, dependencies first and the root last, with its
@@ -1467,6 +1515,7 @@ pub Loader.dump_resolved(self, mut out: Out) {
 pub Loader.dump(self, mut out: Out) {
     for i: usize in 0..self.order.len { self.dump_module(mut out, self.order.get(i)) }
     self.dump_module(mut out, 0)
+    mut out.printf("source bytes: %u\ntokens: %u\n", uint(self.bytes), uint(self.tokens))
 }
 
 Loader.dump_module(self, mut out: Out, mi: usize) {

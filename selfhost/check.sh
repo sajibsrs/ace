@@ -52,7 +52,8 @@ for f in $files; do
     fi
     # Modules: C stops after the import stage on an error, so when ours fails
     # the two stderrs must match; when ours succeeds, C must too, or fail
-    # only in a later stage (sema), and then load the same number of files.
+    # only in a later stage (sema), and then load the same number of files with
+    # the same source byte and token totals.
     ./ace --report "$f" >"$tmp/want" 2>"$tmp/werr"
     wrc=$?
     "$self" --modules "$f" >"$tmp/got" 2>"$tmp/gerr"
@@ -66,10 +67,20 @@ for f in $files; do
     elif [ "$wrc" -eq 0 ]; then
         want=$(sed -n 's/^source files: *//p' "$tmp/werr" | tr -d ',')
         got=$(grep -c '^module ' "$tmp/got")
+        differ=0
         if [ "$want" != "$got" ]; then
-            mbad=$((mbad + 1))
+            differ=1
             echo "MODULES COUNT $f: C loaded $want, ours $got"
         fi
+        for stat in 'source bytes' tokens; do
+            want=$(sed -n "s/^$stat: *//p" "$tmp/werr" | tr -d ',')
+            got=$(sed -n "s/^$stat: *//p" "$tmp/got")
+            if [ "$want" != "$got" ]; then
+                differ=1
+                echo "MODULES $stat $f: C $want, ours $got"
+            fi
+        done
+        mbad=$((mbad + differ))
     elif grep -Eq "$import_errors" "$tmp/werr"; then
         mbad=$((mbad + 1))
         echo "MODULES MISSED $f"

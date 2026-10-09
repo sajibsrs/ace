@@ -56,18 +56,19 @@ pub F_ASSOC: const u32 = 262144
 pub F_INLINE: const u32 = 1048576
 pub F_COLD: const u32 = 4194304
 pub F_GROUPED: const u32 = 33554432
+pub F_SHADOWED: const u32 = 268435456
 pub F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
 
 /* Flag dump names, in `ace --ast` order. */
-FLAG_BITS: [18]u32 = [
+FLAG_BITS: [19]u32 = [
     F_PUB, F_EXPO, F_MUT, F_NOALIAS, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
     F_ASSOC, F_SELECT, F_EMBED, F_SPECIALIZED, F_INTRINSIC, F_INLINE, F_COLD,
-    F_PACKED, F_VOLATILE, F_CABI,
+    F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED,
 ]
-FLAG_NAMES: [18]string = [
+FLAG_NAMES: [19]string = [
     " pub", " extern-c", " mut", " noalias", " const", " default", " varargs",
     " method", " assoc", " select", " embed", " specialized", " intrinsic",
-    " inline", " cold", " packed", " volatile", " c_abi",
+    " inline", " cold", " packed", " volatile", " c_abi", " shadowed",
 ]
 
 NOSLIT: const int = 1 // no struct literal at this expression level
@@ -175,6 +176,11 @@ pub Parser.new(src: string, path: string): (Parser, int) {
     }
     for d: lexer.Diag in lx.errors() { lexer.report(path, d) }
     return p, int(lx.errors().len)
+}
+
+/* The tokens lexed, EOF excluded. */
+pub Parser.tokens(self): usize {
+    return self.ntok - 1
 }
 
 pub Parser.wipe(mut self) {

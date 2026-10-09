@@ -578,6 +578,15 @@ static int file_root(const char* path, const char** root) {
     return 0;
 }
 
+// --resolved prints each imported module's display name and directory-module
+// root after the tree. module_new registers both tables together, so entry i
+// of each is the same module.
+void module_dump_displays(void) {
+    for (int i = 0; i < g_ndisplays; i++)
+        printf("module %s display=%s root=%s\n", g_displays[i].prefix, g_displays[i].display,
+               g_files[i].root ? g_files[i].root : "-");
+}
+
 int decl_external(const char* path) {
     const char* root;
     file_root(path, &root);

@@ -960,6 +960,7 @@ int main(int argc, char** argv) {
         if (d.errors > 0) goto done;
         if (dump_resolved) { // --resolved: through import resolution only
             parse_dump_resolved(file);
+            module_dump_displays();
             return 0;
         }
         sema_check(file, &d); // default mode: full semantic check

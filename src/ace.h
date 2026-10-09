@@ -336,6 +336,7 @@ extern const char* formatting_prefix;
 // where module is the directory module's name for any file in its tree, else
 // the file's stem. Names without a module prefix come back unchanged.
 const char* module_display(const char* name);
+void module_dump_displays(void);
 // Modules #2 visibility of a declaration in decl_path marked pub or not, seen
 // from use_path: its own file, else pub in a single-file module or mod.ace,
 // else pub within its directory module only.
