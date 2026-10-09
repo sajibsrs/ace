@@ -1,0 +1,141 @@
+/* path — file-system paths for the module loader, as src/module.c's helpers
+ * handle them: canonical (realpath) identities, the directory of a path, the
+ * directory of the running executable, and a pool that owns built strings.
+ */
+
+import array
+import mem
+import sys
+
+/* The longest path the loader handles, one NUL included, as C's PATH_MAX. */
+pub MAX: const usize = 4096
+
+extern "c" {
+    c_realpath(path: *u8, out: mut *u8): mut *u8 as "realpath"
+}
+
+@when(target == "darwin-arm64")
+extern "c" {
+    c_executable(buf: mut *u8, size: mut *u32): i32 as "_NSGetExecutablePath"
+}
+
+@when(target == "linux-x64")
+extern "c" {
+    c_readlink(path: *u8, buf: mut *u8, size: usize): i64 as "readlink"
+}
+
+/* Strings built while loading; the pool owns them until `wipe`, so a built
+ * string stays valid for as long as the loader that asked for it.
+ */
+pub Pool: struct {
+    blocks: array.Array[mut []u8],
+}
+
+pub Pool.wipe(mut self) {
+    for i: usize in 0..self.blocks.len {
+        block: mut []u8 = self.blocks.get(i)
+        mem.release[u8](mut block)
+    }
+    mut self.blocks.wipe()
+}
+
+/* `parts` concatenated into a pool-owned string. */
+pub Pool.join(mut self, parts: []string): string {
+    total: usize = 0
+    for part: string in parts { total += part.len }
+    block: mut []u8 = mem.alloc[u8](total + 1)
+    if block == null || mut self.blocks.push(block) != null {
+        fmt_abort()
+    }
+    at: usize = 0
+    for part: string in parts {
+        mem.copy(block[at..at + part.len], part)
+        at += part.len
+    }
+    block[total] = 0
+    return block[..total]
+}
+
+pub Pool.copy(mut self, text: string): string {
+    return mut self.join([text])
+}
+
+fmt_abort() {
+    sys.exit(1)
+}
+
+/* `text` NUL-terminated into `buf`; false when it does not fit or holds a NUL. */
+pub cstring(text: string, buf: mut []u8): bool {
+    if text.len >= buf.len { return false }
+    for i: usize in 0..text.len {
+        if text[i] == 0 { return false }
+        buf[i] = text[i]
+    }
+    buf[text.len] = 0
+    return true
+}
+
+/* The bytes of a NUL-terminated buffer before its NUL. */
+pub cview(buf: []u8): string {
+    n: usize = 0
+    for n < buf.len && buf[n] != 0 { n += 1 }
+    return buf[..n]
+}
+
+/* The canonical (symlinks and `.`/`..` resolved) form of `path` in a pool
+ * string, or false when it does not exist.
+ */
+pub canonical(mut pool: Pool, path: string): (string, bool) {
+    in_buf: [4096]u8 = blank([4096]u8)
+    out_buf: [4096]u8 = blank([4096]u8)
+    if !cstring(path, mut in_buf[0..4096]) { return "", false }
+    if c_realpath(&in_buf[0], mut &out_buf[0]) == null { return "", false }
+    return mut pool.copy(cview(out_buf[0..4096])), true
+}
+
+/* The directory part of `path` as a view into it: "dir/file.ace" is "dir",
+ * "file.ace" is ".", "/file.ace" is "/".
+ */
+pub dir(path: string): string {
+    i: usize = path.len
+    for i > 0 && path[i - 1] != '/' { i -= 1 }
+    if i == 0 { return "." }
+    if i == 1 { return path[..1] }
+    return path[..i - 1]
+}
+
+/* True only for descendants, with a path-component boundary after `base`. */
+pub beneath(path: string, base: string): bool {
+    return path.len > base.len && mem.equal(path[..base.len], base) && path[base.len] == '/'
+}
+
+/* The running executable's path, NUL-terminated into `buf`; false when the
+ * OS cannot say.
+ */
+@when(target == "darwin-arm64")
+executable(buf: mut []u8): bool {
+    size: u32 = u32(buf.len)
+    return c_executable(mut &buf[0], mut &size) == 0
+}
+
+@when(target == "linux-x64")
+executable(buf: mut []u8): bool {
+    link: [16]u8 = blank([16]u8)
+    cstring("/proc/self/exe", mut link[0..16])
+    n: i64 = c_readlink(&link[0], mut &buf[0], buf.len - 1)
+    if n <= 0 { return false }
+    buf[usize(n)] = 0
+    return true
+}
+
+/* The directory of the running executable, symlinks resolved (std/ sits
+ * beside the real binary, never beside argv[0]); false when the OS cannot
+ * say.
+ */
+pub executable_dir(mut pool: Pool): (string, bool) {
+    raw: [4096]u8 = blank([4096]u8)
+    if !executable(mut raw[0..4096]) { return "", false }
+    real: string, found: bool = canonical(mut pool, cview(raw[0..4096]))
+    if !found { return "", false }
+    return dir(real), true
+}

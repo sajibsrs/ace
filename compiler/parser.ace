@@ -56,7 +56,7 @@ pub F_ASSOC: const u32 = 262144
 pub F_INLINE: const u32 = 1048576
 pub F_COLD: const u32 = 4194304
 pub F_GROUPED: const u32 = 33554432
-F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
+pub F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
 
 /* Flag dump names, in `ace --ast` order. */
 FLAG_BITS: [18]u32 = [
@@ -73,21 +73,21 @@ FLAG_NAMES: [18]string = [
 NOSLIT: const int = 1 // no struct literal at this expression level
 
 pub Node: struct {
-    kind: Kind,
-    op: Token,     // binary/unary/assign/op operator
-    flags: u32,
-    line: u32,
-    col: u32,
-    text: string,  // name or string bytes, when F_TEXT is set
-    cname: string, // C link name, when a C-boundary declaration renames it
-    ival: u64,     // int/char/bool literal
-    fval: f64,     // float literal
-    a: u32,
-    b: u32,
-    c: u32,
-    d: u32,
-    kids: u32,     // first child in Parser.kids
-    nkids: u32,
+    pub kind: Kind,
+    pub op: Token,     // binary/unary/assign/op operator
+    pub flags: u32,
+    pub line: u32,
+    pub col: u32,
+    pub text: string,  // name or string bytes, when F_TEXT is set
+    pub cname: string, // C link name, when a C-boundary declaration renames it
+    pub ival: u64,     // int/char/bool literal
+    pub fval: f64,     // float literal
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+    pub d: u32,
+    pub kids: u32,     // first child in Parser.kids
+    pub nkids: u32,
 }
 
 /* A token's position and value; its kind lives in Parser.kinds. */
@@ -226,6 +226,57 @@ pub Parser.node(self, n: u32): Node {
 
 pub Parser.kid(self, n: u32, k: u32): u32 {
     return self.kids[self.nodes[n].kids + k]
+}
+
+/* Replaces node `n`, so a later pass can rename or retag it in place. */
+pub Parser.update(mut self, n: u32, x: Node) {
+    self.nodes[n] = x
+}
+
+/* Appends node `x`; its id. */
+pub Parser.add(mut self, x: Node): u32 {
+    if self.nnode == self.nodes.len { self.nodes = grow[Node](self.nodes) }
+    n: u32 = u32(self.nnode)
+    self.nodes[n] = x
+    self.nnode += 1
+    return n
+}
+
+/* Appends every node of `other` to this tree, ids and child links rebased;
+ * the number to add to one of `other`'s ids to name it here. Node text still
+ * views `other`'s storage, which must outlive this parser.
+ */
+pub Parser.adopt(mut self, other: Parser): u32 {
+    off: u32 = u32(self.nnode) - 1
+    koff: u32 = u32(self.nkid)
+    for self.nnode + other.nnode - 1 > self.nodes.len { self.nodes = grow[Node](self.nodes) }
+    for self.nkid + other.nkid > self.kids.len { self.kids = grow[u32](self.kids) }
+    for i: usize in 1..other.nnode {
+        x: Node = other.nodes[i]
+        if x.a != 0 { x.a += off }
+        if x.b != 0 { x.b += off }
+        if x.c != 0 { x.c += off }
+        if x.d != 0 { x.d += off }
+        if x.nkids != 0 { x.kids += koff }
+        self.nodes[self.nnode] = x
+        self.nnode += 1
+    }
+    for j: usize in 0..other.nkid {
+        k: u32 = other.kids[j]
+        if k != 0 { k += off }
+        self.kids[self.nkid + j] = k
+    }
+    self.nkid += other.nkid
+    return off
+}
+
+/* Makes `ids` the children of node `n`. */
+pub Parser.relink(mut self, n: u32, ids: []u32) {
+    for self.nkid + ids.len > self.kids.len { self.kids = grow[u32](self.kids) }
+    mem.copy[u32](self.kids[self.nkid..self.nkid + ids.len], ids)
+    self.nodes[n].kids = u32(self.nkid)
+    self.nodes[n].nkids = u32(ids.len)
+    self.nkid += ids.len
 }
 
 // --- cursor -------------------------------------------------------------------
@@ -2757,6 +2808,17 @@ pub Parser.parse(mut self, target: string): u32 {
 
 /* Prints the tree at `n` as `ace --ast` does. */
 pub Parser.dump(self, mut out: Out, n: u32, ind: usize) {
+    self.dump_tree(mut out, n, ind, false)
+}
+
+/* The same, with each link name and builtin mark shown, as `ace --resolved`
+ * prints.
+ */
+pub Parser.dump_resolved(self, mut out: Out, n: u32) {
+    self.dump_tree(mut out, n, 0, true)
+}
+
+Parser.dump_tree(self, mut out: Out, n: u32, ind: usize, cnames: bool) {
     for j: usize in 0..ind { mut out.printf(" ") }
     if n == 0 {
         mut out.printf("nil\n")
@@ -2780,18 +2842,21 @@ pub Parser.dump(self, mut out: Out, n: u32, ind: usize) {
     for j: usize in 0..FLAG_BITS.len {
         if (x.flags & FLAG_BITS[j]) != 0 { mut out.printf("%s", FLAG_NAMES[j]) }
     }
+    if cnames && x.cname.len > 0 { mut out.printf(" cname='%s'", x.cname) }
+    if cnames && x.kind == Kind.func && x.ival != 0 { mut out.printf(" builtin=%u", uint(x.ival)) }
     mut out.printf(" @%d:%d", int(x.line), int(x.col))
-    // C tests the kids pointer: a contract method's points past its receiver.
-    if x.a == 0 && x.b == 0 && x.c == 0 && x.d == 0 && x.nkids == 0 && x.kind != Kind.method {
+    // C tests the kids pointer: a contract method's points past its receiver,
+    // and a merged file always owns a (possibly empty) kids array.
+    if x.a == 0 && x.b == 0 && x.c == 0 && x.d == 0 && x.nkids == 0 && x.kind != Kind.method && !(cnames && x.kind == Kind.file) {
         mut out.printf(")\n")
         return
     }
     mut out.printf("\n")
-    if x.a != 0 { self.dump(mut out, x.a, ind + 1) }
-    if x.b != 0 { self.dump(mut out, x.b, ind + 1) }
-    if x.c != 0 { self.dump(mut out, x.c, ind + 1) }
-    if x.d != 0 { self.dump(mut out, x.d, ind + 1) }
-    for k: u32 in 0..x.nkids { self.dump(mut out, self.kids[x.kids + k], ind + 1) }
+    if x.a != 0 { self.dump_tree(mut out, x.a, ind + 1, cnames) }
+    if x.b != 0 { self.dump_tree(mut out, x.b, ind + 1, cnames) }
+    if x.c != 0 { self.dump_tree(mut out, x.c, ind + 1, cnames) }
+    if x.d != 0 { self.dump_tree(mut out, x.d, ind + 1, cnames) }
+    for k: u32 in 0..x.nkids { self.dump_tree(mut out, self.kids[x.kids + k], ind + 1, cnames) }
     for j: usize in 0..ind { mut out.printf(" ") }
     mut out.printf(")\n")
 }

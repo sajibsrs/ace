@@ -5,6 +5,18 @@
   address, as `b: Big = make(n)` does, and loads the field from it. A method
   called on a call's result (`mk(n).sum()`, `get(i).parser.node(id)`) gets the
   address of such an object, or of the field within it; both were errors.
+- `compiler/module.ace` ports `src/module.c`'s loader: std and quoted-path
+  resolution, realpath dedup, cycle chains, member tables, the selective and
+  binding checks, unique `name$` prefixes with every imported declaration
+  renamed (link names kept in `cname`), one scoped walk lowering selected
+  names, `mod.name`/`mod.Type` (with their pub and unknown-module errors) and
+  an imported file's own references, and the dependency-first merge into the
+  root's parser (`Parser.adopt` rebases the ids), marking the std builtins
+  (`ival`) as C does. `path.ace` holds the libc glue. `main.ace
+  --modules`/`--resolved` dump the result; `check.sh` diffs them against
+  `ace --report` and the hidden `ace --resolved` (link names and builtin
+  marks shown), whole tree and errors. Packages and `build_path` are not
+  ported.
 - The self-hosted lexer keeps every error in a `Diag` list (`Lexer.diags`)
   with its position and offending byte, and `lexer.report` words each as C
   does (`'$'`, `0xC3`, `'\q'`); consecutive bad bytes no longer drop errors,

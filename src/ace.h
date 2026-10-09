@@ -296,6 +296,7 @@ Node* parse(Token* toks, size_t ntok, Diag* d, const char* target);
 
 // Print an S-expression dump of the AST (stdout).
 void parse_dump(Node* file);
+void parse_dump_resolved(Node* file); // after imports: private names, link names, builtin marks
 
 // Semantic check: types, names, expression typing, in declaration order.
 // Returns the number of errors (also counted in d). Annotates nodes (ty/sym)

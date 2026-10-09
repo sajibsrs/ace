@@ -2693,6 +2693,8 @@ static void pflags(Node* x) {
     if (x->flags & F_CABI) printf(" c_abi");
 }
 
+static int dump_cnames; // --resolved also shows each link name and builtin mark
+
 static void pnode(Node* x, int ind) {
     for (int i = 0; i < ind; i++) putchar(' ');
     if (!x) {
@@ -2707,6 +2709,8 @@ static void pnode(Node* x, int ind) {
         x->kind == N_OP)
         printf(" op='%s'", tok_disp((TokKind)x->op));
     pflags(x);
+    if (dump_cnames && x->cname) printf(" cname='%s'", x->cname);
+    if (dump_cnames && x->kind == N_FUNC && x->ival) printf(" builtin=%llu", (unsigned long long)x->ival);
     printf(" @%d:%d", x->line, x->col);
     if (!x->a && !x->b && !x->c && !x->d && !x->kids) {
         printf(")\n");
@@ -2723,5 +2727,10 @@ static void pnode(Node* x, int ind) {
 }
 
 void parse_dump(Node* file) {
+    pnode(file, 0);
+}
+
+void parse_dump_resolved(Node* file) {
+    dump_cnames = 1;
     pnode(file, 0);
 }

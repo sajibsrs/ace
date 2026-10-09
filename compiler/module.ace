@@ -1,0 +1,1427 @@
+/* module — import resolution, mirroring src/module.c's loader.
+ *
+ * A module is one file or a directory rooted at mod.ace. The loader reads
+ * what each file imports, bare names from the std/ beside the compiler and
+ * quoted paths relative to the importing file, canonicalizes identity by
+ * realpath so a file loads once however it is reached, and reports a cycle
+ * with its chain. Each module keeps its own parsed tree and its member table
+ * (name, namespace, pub); `order` lists the loaded modules dependencies
+ * first, the root last implied. An imported module's declarations take private
+ * `name$member` identities, and once every file resolves the modules' trees
+ * are adopted into the root's parser (a node index is meaningful only in its
+ * own parser) and spliced in dependency order, as C merges them.
+ */
+
+import array
+import file
+import fmt
+import map
+import mem
+import str
+import sys
+
+import lexer: "./lexer.ace"
+import parser: "./parser.ace"
+import path: "./path.ace"
+
+Token: type = lexer.Token
+Kind: type = parser.Kind
+Node: type = parser.Node
+Out: type = fmt.Buffer
+
+/* A module's top-level name. A name has one entry per namespace; overloads
+ * fold into it and it is exported only when every declaration is `pub`.
+ */
+pub Member: struct {
+    pub name: string,
+    pub is_type: bool,
+    pub exported: bool,
+}
+
+/* A whole-module import: `name` qualifies the module at index `module`. */
+pub Binding: struct {
+    pub name: string,
+    pub module: usize,
+    pub line: u32,
+    pub col: u32,
+}
+
+/* A selectively imported name, from the module at index `module`. */
+pub Select: struct {
+    pub name: string,
+    pub identity: string,                   // the member's private name in its module
+    pub module: usize,
+    pub is_type: bool,
+    pub line: u32,
+    pub col: u32,
+}
+
+pub Module: struct {
+    pub canon: string,                      // realpath: the module's identity
+    pub prefix: string = "",                // unique `name$` of its private identities; the root's is ""
+    pub path: string,                       // as diagnostics print it
+    src: mut []u8 = null,
+    pub parser: parser.Parser,
+    pub file: u32 = 0,
+    pub members: array.Array[Member],
+    pub binds: array.Array[Binding],
+    pub sels: array.Array[Select],
+}
+
+pub Loader: struct {
+    pub errors: int = 0,
+    target: string = "",
+    std_dir: string = "",                   // beside the compiler, as written
+    std_root: string = "",                  // its realpath, "" when absent
+    pool: path.Pool,
+    pub mods: array.Array[Module],          // by load order; the root is 0
+    pub order: array.Array[usize],          // completed, dependencies first
+    prefixes: array.Array[string],          // every prefix assigned so far
+    stack: array.Array[usize],              // loading now, for cycles
+    pub formatting: string = "",            // std/@/formatting's prefix, "" until loaded
+}
+
+/* A loader for `target`; false when the OS cannot locate the executable, and
+ * so std/.
+ */
+pub Loader.new(target: string): (Loader, bool) {
+    l: Loader = Loader { target = target, pool = blank(path.Pool), mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {} }
+    exe: string, ok: bool = path.executable_dir(mut l.pool)
+    if !ok {
+        fmt.printf(sys.stderr, "ace: cannot locate the ace executable to find std/\n")
+        return l, false
+    }
+    l.std_dir = mut l.pool.join([exe, "/std"])
+    root: string, found: bool = path.canonical(mut l.pool, l.std_dir)
+    if found { l.std_root = root }
+    return l, true
+}
+
+pub Loader.wipe(mut self) {
+    for i: usize in 0..self.mods.len {
+        m: Module = self.mods.get(i)
+        mem.release[u8](mut m.src)
+        mut m.parser.wipe()
+        mut m.members.wipe()
+        mut m.binds.wipe()
+        mut m.sels.wipe()
+    }
+    mut self.mods.wipe()
+    mut self.order.wipe()
+    mut self.prefixes.wipe()
+    mut self.stack.wipe()
+    mut self.pool.wipe()
+}
+
+/* The root file at `root_path` and, from its imports, every module it needs;
+ * false on any error, each reported on stderr as C reports it.
+ */
+pub Loader.resolve(mut self, root_path: string): bool {
+    canon: string, found: bool = path.canonical(mut self.pool, root_path)
+    if !found { canon = root_path }
+    mi: usize, ok: bool = mut self.load(root_path, canon)
+    if !ok { return false }
+    // The root is on the stack so a self-import or root cycle shows its chain.
+    fail(mut self.stack.push(mi))
+    mut self.resolve_file(mi, true)
+    mut self.stack.truncate(0)
+    if self.errors > 0 { return false }
+    mut self.merge()
+    return true
+}
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+// --- accessors ----------------------------------------------------------------
+
+/* Node `id` of module `mi`'s tree, and child `k` of node `id`. */
+Loader.node(self, mi: usize, id: u32): Node {
+    return self.mods.get(mi).parser.node(id)
+}
+
+Loader.kid(self, mi: usize, id: u32, k: u32): u32 {
+    return self.mods.get(mi).parser.kid(id, k)
+}
+
+/* The top-level node of module `mi`. */
+Loader.top(self, mi: usize): u32 {
+    return self.mods.get(mi).file
+}
+
+// --- diagnostics --------------------------------------------------------------
+
+Loader.err(mut self, mi: usize, n: Node, parts: []string) {
+    fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.mods.get(mi).path, int(n.line), int(n.col))
+    for part: string in parts { fmt.printf(sys.stderr, "%s", part) }
+    fmt.printf(sys.stderr, "\n")
+    self.errors += 1
+}
+
+// --- reading ------------------------------------------------------------------
+
+/* Reads, lexes, and parses `shown` into a new module identified by `canon`;
+ * its index, or false after reporting why not. The file's own errors are
+ * reported as `ace --ast` reports them.
+ */
+Loader.load(mut self, shown: string, canon: string): (usize, bool) {
+    src: mut []u8, rerr: Error = file.read(shown)
+    if rerr != null {
+        fmt.printf(sys.stderr, "ace: cannot open '%s'\n", shown)
+        self.errors += 1
+        return 0, false
+    }
+    p: parser.Parser, lex_errors: int = parser.Parser.new(src, shown)
+    f: u32 = 0
+    failed: bool = lex_errors > 0
+    self.errors += lex_errors
+    if !failed {
+        f = mut p.parse(self.target)
+        errors: []parser.SyntaxError, stopped: bool = p.errors()
+        for e: parser.SyntaxError in errors {
+            fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", shown, int(e.line), int(e.col), e.message)
+        }
+        if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", shown, int(parser.ERROR_LIMIT)) }
+        self.errors += int(errors.len)
+        failed = errors.len > 0
+    }
+    if failed {
+        mut p.wipe()
+        mem.release[u8](mut src)
+        return 0, false
+    }
+    prefix: string = ""
+    if self.mods.len > 0 { prefix = mut self.assign_prefix(canon) }
+    m: Module = Module { canon = canon, prefix = prefix, path = shown, src = src, parser = p, file = f, members = array.Array[Member] {}, binds = array.Array[Binding] {}, sels = array.Array[Select] {} }
+    mut self.collect_members(mut m)
+    fail(mut self.mods.push(m))
+    return self.mods.len - 1, true
+}
+
+// --- private identities -------------------------------------------------------
+
+/* A unique `name$` for the module at `canon`: its file name without `.ace`, or
+ * for a directory module's mod.ace the directory's; `name2$`, `name3$`... when
+ * taken. `$` never occurs in source identifiers, so a prefixed name cannot
+ * collide with a root declaration.
+ */
+Loader.assign_prefix(mut self, canon: string): string {
+    s: usize = canon.len
+    for s > 0 && canon[s - 1] != '/' { s -= 1 }
+    name: string = canon[s..]
+    if name.len > 4 && str.has(name, ".ace", true) { name = name[..name.len - 4] }
+    if name.len == 3 && mem.equal(name, "mod") && s > 0 {
+        p: usize = s - 1
+        for p > 0 && canon[p - 1] != '/' { p -= 1 }
+        if p < s - 1 { name = canon[p..s - 1] }
+    }
+    storage: [512]u8 = blank([512]u8)
+    n: int = 0
+    for {
+        n += 1
+        buf: fmt.Buffer = fmt.Buffer.init(mut storage[0..512])
+        if n == 1 { mut buf.printf("%s$", name) } else { mut buf.printf("%s%d$", name, n) }
+        candidate: string = buf.text()
+        used: bool = false
+        for x: string in self.prefixes.view() { if mem.equal(x, candidate) { used = true } }
+        if used { continue }
+        out: string = mut self.pool.copy(candidate)
+        fail(mut self.prefixes.push(out))
+        return out
+    }
+    return ""
+}
+
+/* Gives every module-level declaration of module `mi` (free functions,
+ * globals, types, extern C bindings) its private identity, recording each in
+ * `rs` by its source name. Methods and associated functions derive theirs from their renamed
+ * owner. Externs and exported functions keep their linker spelling in `cname`
+ * unless an explicit link name set one; error domains keep their source
+ * spelling there for Error.name.
+ */
+Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
+    m: Module = self.mods.get(mi)
+    count: u32 = m.parser.node(m.file).nkids
+    for k: u32 in 0..count {
+        id: u32 = m.parser.kid(m.file, k)
+        n: Node = m.parser.node(id)
+        if n.kind == Kind.extern {
+            for j: u32 in 0..n.nkids {
+                fid: u32 = m.parser.kid(id, j)
+                f: Node = m.parser.node(fid)
+                to: string = mut self.pool.join([m.prefix, f.text])
+                fail(mut rs.set(f.text, to))
+                if f.cname.len == 0 { f.cname = f.text } // an explicit link name wins
+                f.text = to
+                mut m.parser.update(fid, f)
+            }
+            continue
+        }
+        if n.kind == Kind.func && (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 { continue }
+        if !binds_name(n.kind, n.flags) { continue }
+        nid: u32 = id
+        if n.kind == Kind.var { nid = m.parser.kid(id, 0) }
+        original: string = m.parser.node(nid).text
+        if n.kind == Kind.error && n.cname.len == 0 { n.cname = original }
+        if (n.flags & parser.F_EXPO) != 0 && n.cname.len == 0 { n.cname = original } // `extern "c"` keeps its C name
+        mut m.parser.update(id, n)
+        named: Node = m.parser.node(nid)
+        if nid != id { named.cname = n.cname } // an exported global's binder carries it too
+        to: string = mut self.pool.join([m.prefix, original])
+        fail(mut rs.set(original, to))
+        named.text = to
+        mut m.parser.update(nid, named)
+    }
+}
+
+// --- members ------------------------------------------------------------------
+
+/* A module-level name `panic` or `assert` would silently shadow the builtin
+ * for the module's own calls, so no declaration of an imported module may
+ * take it. The root is not checked here: sema rejects its names.
+ */
+Loader.reserved(mut self, m: Module, n: Node, name: string) {
+    if self.mods.len == 0 { return }
+    if mem.equal(name, "panic") || mem.equal(name, "assert") {
+        fmt.printf(sys.stderr, "%s:%d:%d: error: '%s' is a reserved builtin name — no declaration may take it\n", m.path, int(n.line), int(n.col), name)
+        self.errors += 1
+    }
+}
+
+add_member(mut members: array.Array[Member], name: string, is_type: bool, exported: bool) {
+    for i: usize in 0..members.len {
+        x: Member = members.get(i)
+        if x.is_type == is_type && mem.equal(x.name, name) {
+            if !exported && x.exported {
+                x.exported = false
+                mut members.set(i, x)
+            }
+            return
+        }
+    }
+    fail(mut members.push(Member { name = name, is_type = is_type, exported = exported }))
+}
+
+/* The module's member table: original names and pub-ness. Methods and
+ * associated functions bind a qualified name, not a member; C bindings are
+ * module-private.
+ */
+Loader.collect_members(mut self, mut m: Module) {
+    f: Node = m.parser.node(m.file)
+    for k: u32 in 0..f.nkids {
+        id: u32 = m.parser.kid(m.file, k)
+        n: Node = m.parser.node(id)
+        exported: bool = (n.flags & parser.F_PUB) != 0
+        switch n.kind {
+            Kind.func {
+                if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 {
+                    mut self.reserved(m, n, n.text)
+                    add_member(mut m.members, n.text, false, exported)
+                }
+            }
+            Kind.var {
+                name: Node = m.parser.node(m.parser.kid(id, 0))
+                mut self.reserved(m, n, name.text)
+                add_member(mut m.members, name.text, false, exported)
+            }
+            Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.alias, Kind.distinct, Kind.error, Kind.union {
+                mut self.reserved(m, n, n.text)
+                add_member(mut m.members, n.text, true, exported)
+            }
+            Kind.extern {
+                for j: u32 in 0..n.nkids {
+                    c: Node = m.parser.node(m.parser.kid(id, j))
+                    mut self.reserved(m, c, c.text)
+                    add_member(mut m.members, c.text, false, false)
+                }
+            }
+            default {}
+        }
+    }
+}
+
+/* The member of module `mi` named `name` in the given namespace. */
+Loader.member(self, mi: usize, name: string, is_type: bool): (Member, bool) {
+    for x: Member in self.mods.get(mi).members.view() {
+        if x.is_type == is_type && mem.equal(x.name, name) { return x, true }
+    }
+    return blank(Member), false
+}
+
+// --- std layout ---------------------------------------------------------------
+
+Loader.is_std_source(self, canon: string): bool {
+    return self.std_root.len > 0 && path.beneath(canon, self.std_root)
+}
+
+/* std/@/..., the compiler-reserved implementation modules. */
+Loader.is_std_internal(self, canon: string): bool {
+    if self.std_root.len == 0 || !path.beneath(canon, self.std_root) { return false }
+    rest: string = canon[self.std_root.len..]
+    return rest.len >= 3 && mem.equal(rest[..3], "/@/")
+}
+
+/* "std/..." for a path under std/, as C names it in diagnostics. */
+Loader.std_display(mut self, canon: string): string {
+    return mut self.pool.join(["std", canon[self.std_root.len..]])
+}
+
+/* The directory of the nearest std directory module containing `canon`. A
+ * nested module (its own mod.ace) is its own boundary: the deepest ancestor
+ * directory with a mod.ace wins.
+ */
+Loader.std_module_root(mut self, canon: string): (string, bool) {
+    if !self.is_std_source(canon) || self.is_std_internal(canon) { return "", false }
+    rel: string = canon[self.std_root.len + 1..]
+    best: string = ""
+    found: bool = false
+    for i: usize in 0..rel.len {
+        if rel[i] != '/' { continue }
+        root: string = mut self.pool.join([self.std_root, "/", rel[..i]])
+        entry: string = mut self.pool.join([root, "/mod.ace"])
+        c: string, exists: bool = path.canonical(mut self.pool, entry)
+        if exists {
+            best = root
+            found = true
+        }
+    }
+    return best, found
+}
+
+// --- intrinsics ---------------------------------------------------------------
+
+/* Compiler-backed std functions, as src/ace.h numbers them. */
+BI_MEM_ALLOC: const u64 = 2
+BI_MEM_REALLOC: const u64 = 3
+BI_MEM_RELEASE: const u64 = 4
+BI_MEM_COPY: const u64 = 5
+BI_MEM_MOVE: const u64 = 6
+BI_MEM_FILL: const u64 = 7
+BI_MEM_ZERO: const u64 = 8
+BI_MEM_COMPARE: const u64 = 9
+BI_FMT_PRINTF: const u64 = 10
+BI_MEM_ALLOC_T: const u64 = 11
+BI_MEM_REALLOC_T: const u64 = 12
+BI_MEM_RELEASE_T: const u64 = 13
+BI_SYS_ARGC: const u64 = 14
+BI_SYS_ARG: const u64 = 15
+BI_SYS_ENVC: const u64 = 16
+BI_SYS_ENV: const u64 = 17
+BI_MEM_EQUAL: const u64 = 18
+BI_INTERNAL_LOAD_U64: const u64 = 21
+BI_BITS_POP_COUNT: const u64 = 22
+BI_BITS_LEAD_ZEROS: const u64 = 23
+BI_BITS_TRAIL_ZEROS: const u64 = 24
+BI_BITS_BYTE_SWAP: const u64 = 25
+BI_BITS_ROTATE_LEFT: const u64 = 26
+BI_BITS_ROTATE_RIGHT: const u64 = 27
+BI_MEM_ALLOC_SIZE: const u64 = 28
+BI_MATH_SQRT: const u64 = 29
+BI_MATH_FLOOR: const u64 = 30
+BI_MATH_CEIL: const u64 = 31
+BI_MATH_FMA: const u64 = 32
+BI_BITS_WRAP_ADD: const u64 = 33
+BI_BITS_WRAP_SUB: const u64 = 34
+BI_BITS_WRAP_MUL: const u64 = 35
+BI_MEM_ZALLOC_T: const u64 = 36
+BI_STR_FORMAT: const u64 = 37
+BI_FMT_PRINTF_FD: const u64 = 38
+BI_MEM_COPY_T: const u64 = 39
+BI_MEM_MOVE_T: const u64 = 40
+BI_FMT_PRINTF_BUF: const u64 = 41
+
+/* True when `canon` is std/<name>.ace or std/<name>/mod.ace, or with
+ * `internal` std/@/<name>.ace.
+ */
+Loader.is_std_named(self, canon: string, name: string, internal: bool): bool {
+    if self.std_root.len == 0 || !path.beneath(canon, self.std_root) { return false }
+    rest: string = canon[self.std_root.len..]
+    lead: string = "/"
+    if internal { lead = "/@/" }
+    if rest.len < lead.len + name.len || !mem.equal(rest[..lead.len], lead) { return false }
+    if !mem.equal(rest[lead.len..lead.len + name.len], name) { return false }
+    tail: string = rest[lead.len + name.len..]
+    return mem.equal(tail, ".ace") || (!internal && mem.equal(tail, "/mod.ace"))
+}
+
+/* `typed` when the function has a bracket type parameter list, else `raw`:
+ * mem's typed generic overloads and its raw byte forms are both
+ * compiler-backed.
+ */
+pick(n: Node, typed: u64, raw: u64): u64 {
+    if n.c != 0 { return typed }
+    return raw
+}
+
+/* The compiler-backed operation that std module `m`'s top-level function
+ * `id` implements, or 0.
+ */
+builtin(m: string, p: parser.Parser, id: u32): u64 {
+    n: Node = p.node(id)
+    name: string = n.text
+    exported: bool = (n.flags & parser.F_PUB) != 0
+    if mem.equal(m, "mem") {
+        if !exported { return 0 }
+        if mem.equal(name, "alloc") { return pick(n, BI_MEM_ALLOC_T, BI_MEM_ALLOC) }
+        if mem.equal(name, "realloc") { return pick(n, BI_MEM_REALLOC_T, BI_MEM_REALLOC) }
+        if mem.equal(name, "release") { return pick(n, BI_MEM_RELEASE_T, BI_MEM_RELEASE) }
+        if mem.equal(name, "zalloc") { return pick(n, BI_MEM_ZALLOC_T, 0) }
+        if mem.equal(name, "copy") { return pick(n, BI_MEM_COPY_T, BI_MEM_COPY) }
+        if mem.equal(name, "move") { return pick(n, BI_MEM_MOVE_T, BI_MEM_MOVE) }
+        if mem.equal(name, "fill") { return BI_MEM_FILL }
+        if mem.equal(name, "zero") { return BI_MEM_ZERO }
+        if mem.equal(name, "compare") { return BI_MEM_COMPARE }
+        if mem.equal(name, "equal") { return BI_MEM_EQUAL }
+        if mem.equal(name, "usable") { return BI_MEM_ALLOC_SIZE }
+        return 0
+    }
+    if mem.equal(m, "fmt") {
+        if !exported || !mem.equal(name, "printf") { return 0 }
+        if (n.flags & parser.F_METHOD) != 0 { return BI_FMT_PRINTF_BUF } // Buffer.printf(mut self, format)
+        if n.nkids == 2 { return BI_FMT_PRINTF_FD }                     // (fd, format)
+        return BI_FMT_PRINTF                                            // (format)
+    }
+    if mem.equal(m, "str") {
+        // The one format overload whose second parameter is a string: the
+        // formatted form (destination, format, ...), checked like fmt.printf.
+        if !exported || !mem.equal(name, "format") || n.nkids != 2 { return 0 }
+        t: u32 = p.node(p.kid(id, 1)).a
+        if t == 0 { return 0 }
+        x: Node = p.node(t)
+        if x.kind == Kind.named && x.a == 0 && mem.equal(x.text, "string") { return BI_STR_FORMAT }
+        return 0
+    }
+    if mem.equal(m, "sys") {
+        if mem.equal(name, "process_argc") { return BI_SYS_ARGC }
+        if mem.equal(name, "process_arg") { return BI_SYS_ARG }
+        if mem.equal(name, "process_envc") { return BI_SYS_ENVC }
+        if mem.equal(name, "process_env") { return BI_SYS_ENV }
+        return 0
+    }
+    if (n.flags & parser.F_INTRINSIC) == 0 { return 0 }
+    if mem.equal(m, "bits") {
+        if mem.equal(name, "popcount") { return BI_BITS_POP_COUNT }
+        if mem.equal(name, "clz") { return BI_BITS_LEAD_ZEROS }
+        if mem.equal(name, "ctz") { return BI_BITS_TRAIL_ZEROS }
+        if mem.equal(name, "bswap") { return BI_BITS_BYTE_SWAP }
+        if mem.equal(name, "rotl") { return BI_BITS_ROTATE_LEFT }
+        if mem.equal(name, "rotr") { return BI_BITS_ROTATE_RIGHT }
+        if mem.equal(name, "wradd") { return BI_BITS_WRAP_ADD }
+        if mem.equal(name, "wrsub") { return BI_BITS_WRAP_SUB }
+        if mem.equal(name, "wrmul") { return BI_BITS_WRAP_MUL }
+        return 0
+    }
+    if mem.equal(m, "math") {
+        if mem.equal(name, "sqrt") { return BI_MATH_SQRT }
+        if mem.equal(name, "floor") { return BI_MATH_FLOOR }
+        if mem.equal(name, "ceil") { return BI_MATH_CEIL }
+        if mem.equal(name, "fma") { return BI_MATH_FMA }
+        return 0
+    }
+    if mem.equal(m, "@byte_load") && mem.equal(name, "unaligned_u64") { return BI_INTERNAL_LOAD_U64 }
+    return 0
+}
+
+/* The std modules (std/<name>.ace or mod.ace) that declare builtins. */
+BUILTIN_MODULES: [6]string = ["mem", "fmt", "str", "sys", "bits", "math"]
+
+/* Marks the compiler-backed functions of module `mi` when it is one of the
+ * std modules that declare them, and records std/@/formatting's prefix.
+ */
+Loader.mark_intrinsics(mut self, mi: usize) {
+    canon: string = self.mods.get(mi).canon
+    if self.is_std_named(canon, "formatting", true) {
+        self.formatting = self.mods.get(mi).prefix
+        return
+    }
+    m: string = ""
+    for name: string in BUILTIN_MODULES {
+        if self.is_std_named(canon, name, false) { m = name }
+    }
+    if self.is_std_named(canon, "byte_load", true) { m = "@byte_load" }
+    if m.len == 0 { return }
+    mod: Module = self.mods.get(mi)
+    f: Node = mod.parser.node(mod.file)
+    for k: u32 in 0..f.nkids {
+        id: u32 = mod.parser.kid(mod.file, k)
+        n: Node = mod.parser.node(id)
+        if n.kind != Kind.func { continue }
+        v: u64 = builtin(m, mod.parser, id)
+        if v == 0 { continue }
+        n.ival = v
+        mut mod.parser.update(id, n)
+    }
+}
+
+// --- path resolution ----------------------------------------------------------
+
+/* `<root>/<leaf>.ace` or `<root>/<leaf>/mod.ace`; an error when both exist or
+ * neither does. `kind` names what is being resolved, for diagnostics.
+ */
+Loader.resolve_leaf(mut self, mi: usize, imp: Node, root: string, kind: string, leaf: string): (string, bool) {
+    flat: string = mut self.pool.join([root, "/", leaf, ".ace"])
+    directory: string = mut self.pool.join([root, "/", leaf, "/mod.ace"])
+    flat_canon: string, has_flat: bool = path.canonical(mut self.pool, flat)
+    dir_canon: string, has_dir: bool = path.canonical(mut self.pool, directory)
+    if has_flat && has_dir {
+        mut self.err(mi, imp, [kind, " '", leaf, "' is ambiguous (found ", flat, " and ", directory, ")"])
+        return "", false
+    }
+    if has_dir { return dir_canon, true }
+    if has_flat { return flat_canon, true }
+    mut self.err(mi, imp, [kind, " '", leaf, "' not found (tried ", flat, " and ", directory, ")"])
+    return "", false
+}
+
+/* `segs` joined with '/'. */
+Loader.joined(mut self, segs: []string): string {
+    out: string = ""
+    for i: usize in 0..segs.len {
+        if i == 0 { out = segs[i] } else { out = mut self.pool.join([out, "/", segs[i]]) }
+    }
+    return out
+}
+
+/* A full module path under `root`. Every non-leaf segment must be a nested
+ * module (`<dir>/mod.ace`); a subdirectory without one stays private to its
+ * enclosing module. A non-leaf "." or ".." is plain navigation from a quoted
+ * path's own prefix. The leaf resolves as a single name does.
+ */
+Loader.resolve_module_path(mut self, mi: usize, imp: Node, root: string, kind: string, segs: []string): (string, bool) {
+    for seg: string in segs {
+        if seg.len >= 400 {
+            mut self.err(mi, imp, ["module path segment '", seg, "' is too long"])
+            return "", false
+        }
+    }
+    cur: string = root
+    for i: usize in 0..segs.len - 1 {
+        seg: string = segs[i]
+        if mem.equal(seg, ".") { continue }
+        if !mem.equal(seg, "..") {
+            probe: string = mut self.pool.join([cur, "/", seg, "/mod.ace"])
+            c: string, exists: bool = path.canonical(mut self.pool, probe)
+            if !exists {
+                mut self.err(mi, imp, ["'", seg, "' has no mod.ace — '", mut self.joined(segs), "' is not a nested module"])
+                return "", false
+            }
+        }
+        cur = mut self.pool.join([cur, "/", seg])
+    }
+    return mut self.resolve_leaf(mi, imp, cur, kind, segs[segs.len - 1])
+}
+
+/* The target path an import declaration names. */
+Loader.import_target(mut self, mi: usize, imp: Node): (string, bool) {
+    if imp.a != 0 {
+        p: Node = self.node(mi, imp.a)
+        if p.op == Token.at { // @name: compiler-reserved std implementation
+            return mut self.pool.join([self.std_dir, "/@/", p.text, ".ace"]), true
+        }
+        raw: string = p.text
+        if raw.len >= path.MAX {
+            mut self.err(mi, imp, ["module path is too long"])
+            return "", false
+        }
+        if raw.len > 0 && raw[0] == '/' {
+            mut self.err(mi, imp, ["module path '", raw, "' must be relative"])
+            return "", false
+        }
+        dir: string = path.dir(self.mods.get(mi).path)
+        if raw.len >= 5 && str.has(raw, ".ace", true) {
+            if mem.equal(dir, ".") { return raw, true }
+            return mut self.pool.join([dir, "/", raw]), true
+        }
+        // No .ace suffix: a nested-module path from the importer's directory.
+        segs: [64]string = blank([64]string)
+        n: usize = 0
+        rest: string = raw
+        for {
+            at: usize, slash: bool = str.find(rest, '/')
+            seg: string = rest
+            if slash { seg = rest[..at] }
+            if n == 64 {
+                mut self.err(mi, imp, ["module path '", raw, "' has too many segments"])
+                return "", false
+            }
+            if seg.len == 0 {
+                mut self.err(mi, imp, ["module path '", raw, "' has an empty segment"])
+                return "", false
+            }
+            segs[n] = seg
+            n += 1
+            if !slash { break }
+            rest = rest[at + 1..]
+        }
+        return mut self.resolve_module_path(mi, imp, dir, "module", segs[0..n])
+    }
+    // Bare, aliased, or selective import: the standard library.
+    segs: [64]string = blank([64]string)
+    n: usize = 0
+    s: u32 = imp.c
+    for s != 0 {
+        if n == 64 {
+            mut self.err(mi, imp, ["module path has too many segments"])
+            return "", false
+        }
+        seg: Node = self.node(mi, s)
+        segs[n] = seg.text
+        n += 1
+        s = seg.a
+    }
+    return mut self.resolve_module_path(mi, imp, self.std_dir, "standard library module", segs[0..n])
+}
+
+// --- loading ------------------------------------------------------------------
+
+/* The cycle a module closing on itself makes, in import order, without the
+ * modules above it that merely led there.
+ */
+Loader.report_cycle(mut self, mi: usize, imp: Node, canon: string) {
+    chain: string = canon
+    at: usize = 0
+    for i: usize in 0..self.stack.len {
+        if mem.equal(self.mods.get(self.stack.get(i)).canon, canon) { at = i }
+    }
+    for i: usize in at + 1..self.stack.len {
+        chain = mut self.pool.join([chain, " -> ", self.mods.get(self.stack.get(i)).canon])
+    }
+    mut self.err(mi, imp, ["import cycle: ", chain, " -> ", canon])
+}
+
+/* Whether the import names a compiler-reserved module (`@name`). */
+Loader.is_internal_path(self, mi: usize, imp: Node): bool {
+    p: Node = self.node(mi, imp.a)
+    return p.op == Token.at
+}
+
+/* The module an import declaration names, loading it once. */
+Loader.ensure(mut self, mi: usize, imp: Node): (usize, bool) {
+    target: string, ok: bool = mut self.import_target(mi, imp)
+    if !ok { return 0, false }
+    canon: string, found: bool = path.canonical(mut self.pool, target)
+    if !found {
+        shown: string = imp.text
+        if imp.a != 0 {
+            p: Node = self.node(mi, imp.a)
+            shown = p.text
+        }
+        mut self.err(mi, imp, ["cannot load module '", shown, "' from ", self.mods.get(mi).path, ": no such file"])
+        return 0, false
+    }
+    importer: string = self.mods.get(mi).canon
+    root: string, in_module: bool = mut self.std_module_root(canon)
+    if in_module {
+        entry: string = mut self.pool.join([root, "/mod.ace"])
+        same: bool = mem.equal(importer, entry) || path.beneath(importer, root)
+        if !mem.equal(canon, entry) && !same {
+            mut self.err(mi, imp, ["implementation file '", mut self.std_display(canon), "' is private to directory module '", mut self.std_display(entry), "'"])
+            return 0, false
+        }
+    }
+    if self.is_std_internal(canon) && !self.is_std_source(importer) {
+        mut self.err(mi, imp, ["compiler-reserved standard-library implementation '", mut self.std_display(canon), "' may be imported only by standard-library sources"])
+        return 0, false
+    }
+    if self.is_std_internal(canon) && (imp.a == 0 || !self.is_internal_path(mi, imp)) {
+        mut self.err(mi, imp, ["compiler-reserved standard-library implementation must use @name import syntax"])
+        return 0, false
+    }
+    for i: usize in 0..self.stack.len {
+        if mem.equal(self.mods.get(self.stack.get(i)).canon, canon) {
+            mut self.report_cycle(mi, imp, canon)
+            return 0, false
+        }
+    }
+    for i: usize in 0..self.mods.len {
+        if mem.equal(self.mods.get(i).canon, canon) { return i, true } // loaded once, aliased freely
+    }
+    ti: usize, loaded: bool = mut self.load(canon, canon)
+    if !loaded { return 0, false }
+    mut self.mark_intrinsics(ti)
+    fail(mut self.stack.push(ti))
+    mut self.resolve_file(ti, false)
+    mut self.stack.truncate(self.stack.len - 1)
+    fail(mut self.order.push(ti)) // completed: its own dependencies are already in order
+    return ti, true
+}
+
+// --- bindings -----------------------------------------------------------------
+
+/* True when `name` is already bound by a whole-module or selective import. */
+bound(binds: array.Array[Binding], sels: array.Array[Select], name: string): bool {
+    for b: Binding in binds.view() { if mem.equal(b.name, name) { return true } }
+    for s: Select in sels.view() { if mem.equal(s.name, name) { return true } }
+    return false
+}
+
+Loader.resolve_file(mut self, mi: usize, is_root: bool) {
+    binds: array.Array[Binding] = array.Array[Binding] {}
+    sels: array.Array[Select] = array.Array[Select] {}
+    mut self.resolve_imports(mi, is_root, mut binds, mut sels)
+    m: Module = self.mods.get(mi)
+    m.binds = binds
+    m.sels = sels
+    mut self.mods.set(mi, m)
+}
+
+/* Whether a top-level declaration binds a name in the file's scope. */
+binds_name(kind: Kind, flags: u32): bool {
+    switch kind {
+        Kind.func { return (flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 }
+        Kind.var, Kind.extern, Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.alias, Kind.distinct, Kind.error, Kind.union { return true }
+        default { return false }
+    }
+}
+
+/* Whether declaration `id` (node `n`) of module `mi` declares `name`; an
+ * extern block declares each of its functions and variables.
+ */
+Loader.declares(self, mi: usize, id: u32, n: Node, name: string): bool {
+    if n.kind == Kind.extern {
+        for j: u32 in 0..n.nkids {
+            if mem.equal(self.mods.get(mi).parser.node(self.kid(mi, id, j)).text, name) { return true }
+        }
+        return false
+    }
+    if n.kind == Kind.var { return mem.equal(self.mods.get(mi).parser.node(self.kid(mi, id, 0)).text, name) }
+    return mem.equal(n.text, name)
+}
+
+Loader.resolve_imports(mut self, mi: usize, is_root: bool, mut binds: array.Array[Binding], mut sels: array.Array[Select]) {
+    top: u32 = self.top(mi)
+    nkids: u32 = self.node(mi, top).nkids
+    // Imports precede declarations (parser), so the first other node ends them.
+    for k: u32 in 0..nkids {
+        id: u32 = self.kid(mi, top, k)
+        imp: Node = self.node(mi, id)
+        if imp.kind != Kind.import { break }
+        ti: usize, ok: bool = mut self.ensure(mi, imp)
+        if !ok { continue }
+        if (imp.flags & parser.F_SELECT) != 0 {
+            mut self.select_members(mi, id, imp, ti, binds, mut sels)
+        } else {
+            mut self.bind(mi, imp, ti, mut binds, sels)
+        }
+    }
+    if self.errors > 0 { return }
+    mut self.check_select_collisions(mi, binds, sels)
+    if self.errors > 0 { return }
+    renames: map.Map[string, string] = map.Map[string, string] {}
+    defer mut renames.wipe()
+    if !is_root {
+        mut self.check_binding_collisions(mi, binds)
+        if self.errors > 0 { return }
+        mut self.rename_decls(mi, mut renames)
+    }
+    // One walk lowers every reference to a selected name, a `binding.member`,
+    // and, in an imported file, the file's own declarations.
+    mut self.lower(mi, is_root, binds, sels, renames)
+}
+
+/* A selected name may not collide with another import or a declaration. */
+Loader.check_select_collisions(mut self, mi: usize, binds: array.Array[Binding], sels: array.Array[Select]) {
+    top: u32 = self.top(mi)
+    nkids: u32 = self.node(mi, top).nkids
+    for s: Select in sels.view() {
+        for b: Binding in binds.view() {
+            if mem.equal(b.name, s.name) {
+                mut self.err_at(mi, s.line, s.col, ["import binding '", s.name, "' collides with another import"])
+            }
+        }
+        for k: u32 in 0..nkids {
+            id: u32 = self.kid(mi, top, k)
+            n: Node = self.node(mi, id)
+            if binds_name(n.kind, n.flags) && self.declares(mi, id, n, s.name) {
+                mut self.err_at(mi, s.line, s.col, ["imported name '", s.name, "' collides with a declaration"])
+            }
+        }
+    }
+}
+
+/* A binding that collides with one of the module's own declarations would
+ * silently lose the import once the module's bindings are dropped.
+ */
+Loader.check_binding_collisions(mut self, mi: usize, binds: array.Array[Binding]) {
+    top: u32 = self.top(mi)
+    nkids: u32 = self.node(mi, top).nkids
+    for b: Binding in binds.view() {
+        for k: u32 in 0..nkids {
+            id: u32 = self.kid(mi, top, k)
+            n: Node = self.node(mi, id)
+            if n.kind == Kind.import || !binds_name(n.kind, n.flags) { continue }
+            if self.declares(mi, id, n, b.name) {
+                mut self.err_at(mi, b.line, b.col, ["import binding '", b.name, "' collides with a declaration in this module"])
+            }
+        }
+    }
+}
+
+Loader.err_at(mut self, mi: usize, line: u32, col: u32, parts: []string) {
+    at: Node = blank(Node)
+    at.line = line
+    at.col = col
+    mut self.err(mi, at, parts)
+}
+
+Loader.bind(mut self, mi: usize, imp: Node, target: usize, mut binds: array.Array[Binding], sels: array.Array[Select]) {
+    if bound(binds, sels, imp.text) {
+        mut self.err(mi, imp, ["duplicate import binding '", imp.text, "'"])
+        return
+    }
+    fail(mut binds.push(Binding { name = imp.text, module = target, line = imp.line, col = imp.col }))
+}
+
+/* `import a, b from module`: each name must be a public member, and may be
+ * bound only once.
+ */
+Loader.select_members(mut self, mi: usize, id: u32, imp: Node, target: usize, binds: array.Array[Binding], mut sels: array.Array[Select]) {
+    for i: u32 in 0..imp.nkids {
+        name: Node = self.node(mi, self.kid(mi, id, i))
+        vm: Member, has_value: bool = self.member(target, name.text, false)
+        tm: Member, has_type: bool = self.member(target, name.text, true)
+        if !has_value && !has_type {
+            mut self.err(mi, name, ["module has no public member '", name.text, "'"])
+            continue
+        }
+        x: Member = vm
+        if !has_value { x = tm } // sema rejects a module declaring both
+        if !x.exported {
+            mut self.err(mi, name, ["member '", name.text, "' is not public"])
+            continue
+        }
+        if bound(binds, sels, name.text) {
+            mut self.err(mi, name, ["duplicate import binding '", name.text, "'"])
+            continue
+        }
+        fail(mut sels.push(Select { name = name.text, identity = mut self.pool.join([self.mods.get(target).prefix, name.text]), module = target, is_type = !has_value, line = name.line, col = name.col }))
+    }
+}
+
+// --- reference lowering -------------------------------------------------------
+
+/* One lexically scoped walk lowers every reference a file makes by name: a
+ * selected import, a `binding.member`, and, in an imported file, its own
+ * module-level declarations. A parameter or local shadows any of them in value
+ * position; a generic type parameter shadows them in type position.
+ */
+
+/* A parameter, local, or type parameter in scope. */
+LocalName: struct {
+    name: string,
+    depth: int,
+    is_type: bool,
+}
+
+RefLower: struct {
+    p: parser.Parser,                       // the module's tree, edited in place
+    binds: []Binding,                       // whole-module bindings for `binding.member`
+    sels: []Select,
+    renames: map.Map[string, string],       // this imported file's declarations
+    own: bool,                              // an imported file: lower its own names too
+    locals: array.Array[LocalName],
+    depth: int,
+}
+
+/* The selected import named `name`; a value position may name a selected type. */
+find_select(sels: []Select, name: string, is_type: bool): (Select, bool) {
+    for s: Select in sels {
+        if mem.equal(s.name, name) && (s.is_type || !is_type) { return s, true }
+    }
+    return blank(Select), false
+}
+
+RefLower.local_name(self, name: string, is_type: bool): bool {
+    for x: LocalName in self.locals.view() {
+        if x.is_type == is_type && mem.equal(x.name, name) { return true }
+    }
+    return false
+}
+
+RefLower.push(mut self) {
+    self.depth += 1
+}
+
+RefLower.pop(mut self) {
+    for self.locals.len > 0 && self.locals.get(self.locals.len - 1).depth == self.depth {
+        mut self.locals.truncate(self.locals.len - 1)
+    }
+    self.depth -= 1
+}
+
+/* The private name an unshadowed reference lowers to: a selected import's, else
+ * this imported file's own declaration's. A type parameter shadows a type a
+ * value position names (`T.make()`). Selections never collide with the file's
+ * declarations, so the order is not observable.
+ */
+RefLower.lowered_name(self, name: string, is_type: bool): (string, bool) {
+    s: Select, has_select: bool = find_select(self.sels, name, is_type)
+    if !has_select && !self.own { return "", false }
+    if self.local_name(name, is_type) || self.local_name(name, true) { return "", false }
+    if has_select { return s.identity, true }
+    return self.renames.get(name)
+}
+
+/* Renames node `n` to `name`. */
+RefLower.rename(mut self, n: u32, name: string) {
+    x: Node = self.p.node(n)
+    x.text = name
+    mut self.p.update(n, x)
+}
+
+/* A local or type parameter may shadow a selected name of its own namespace,
+ * never one of the other: a type and a value never share a name (Names &
+ * Scoping #2). Sema cannot see this clash once the selection is renamed.
+ */
+Loader.bind_local(mut self, mi: usize, mut c: RefLower, at: u32, is_type: bool) {
+    x: Node = c.p.node(at)
+    s: Select, found: bool = find_select(c.sels, x.text, false)
+    if found && s.is_type != is_type {
+        if is_type {
+            mut self.err(mi, x, ["'", x.text, "' names a value; a type may not share its name"])
+        } else {
+            mut self.err(mi, x, ["'", x.text, "' names a type; a value may not share its name"])
+        }
+    }
+    fail(mut c.locals.push(LocalName { name = x.text, depth = c.depth, is_type = is_type }))
+}
+
+/* A fresh identifier node `name` at `from`'s position. */
+ident_at(mut p: parser.Parser, from: Node, name: string): u32 {
+    x: Node = blank(Node)
+    x.kind = Kind.ident
+    x.flags = parser.F_TEXT
+    x.line = from.line
+    x.col = from.col
+    x.text = name
+    return mut p.add(x)
+}
+
+/* `math.Vec[int]` in type position: collapse the qualifier chain to the
+ * prefixed type name, keeping generic arguments.
+ */
+Loader.lower_named(mut self, mi: usize, mut c: RefLower, t: u32) {
+    x: Node = c.p.node(t)
+    if x.a == 0 { return }
+    base: Node = c.p.node(x.a) // the qualifier ident (kept as `named` by the parser)
+    if base.a != 0 {
+        mut self.err(mi, x, ["qualified type paths deeper than 'module.Type' are not supported"])
+        return
+    }
+    for b: Binding in c.binds {
+        if !mem.equal(base.text, b.name) { continue }
+        m: Member, found: bool = self.member(b.module, x.text, true)
+        if !found {
+            mut self.err(mi, x, ["module '", b.name, "' has no type '", x.text, "'"])
+        } else if !m.exported {
+            mut self.err(mi, x, ["type '", x.text, "' of module '", b.name, "' is not public"])
+        } else {
+            x.text = mut self.pool.join([self.mods.get(b.module).prefix, x.text])
+            x.a = 0
+            x.line = base.line
+            x.col = base.col
+            mut c.p.update(t, x)
+        }
+        return
+    }
+    mut self.err(mi, x, ["unknown module '", base.text, "' in qualified type"])
+}
+
+/* `binding.member` in expression position: a value member (function, overload
+ * set, global, type constructor or cast) becomes a plain prefixed ident. The
+ * enum-constant form `binding.Type.member` turns the inner `binding.Type` into
+ * the prefixed type ident and keeps the outer access for the checker.
+ */
+Loader.lower_field(mut self, mi: usize, mut c: RefLower, e: u32) {
+    x: Node = c.p.node(e)
+    a: Node = c.p.node(x.a)
+    if a.kind == Kind.selector && a.a != 0 && c.p.node(a.a).kind == Kind.ident {
+        for b: Binding in c.binds {
+            if !mem.equal(c.p.node(a.a).text, b.name) { continue }
+            m: Member, found: bool = self.member(b.module, a.text, true)
+            if !found {
+                mut self.err(mi, a, ["module '", b.name, "' has no type '", a.text, "'"])
+            } else if !m.exported {
+                mut self.err(mi, a, ["type '", a.text, "' of module '", b.name, "' is not public"])
+            } else {
+                x.a = ident_at(mut c.p, a, mut self.pool.join([self.mods.get(b.module).prefix, a.text]))
+                mut c.p.update(e, x)
+            }
+            return
+        }
+        return // not a binding: ordinary nested field access
+    }
+    if a.kind != Kind.ident { return }
+    for b: Binding in c.binds {
+        if !mem.equal(a.text, b.name) { continue }
+        m: Member, found: bool = self.member(b.module, x.text, false)
+        if !found { m, found = self.member(b.module, x.text, true) }
+        if !found {
+            mut self.err(mi, x, ["module '", b.name, "' has no member '", x.text, "'"])
+        } else if !m.exported {
+            mut self.err(mi, x, ["member '", x.text, "' of module '", b.name, "' is not public"])
+        } else {
+            y: Node = blank(Node)
+            y.kind = Kind.ident
+            y.flags = parser.F_TEXT
+            y.line = x.line
+            y.col = x.col
+            y.text = mut self.pool.join([self.mods.get(b.module).prefix, x.text])
+            mut c.p.update(e, y)
+        }
+        return
+    }
+}
+
+Loader.lower_type(mut self, mi: usize, mut c: RefLower, t: u32) {
+    if t == 0 { return }
+    if c.p.node(t).kind == Kind.named && c.p.node(t).a != 0 { mut self.lower_named(mi, mut c, t) } // `math.Vec`
+    x: Node = c.p.node(t)
+    if x.kind == Kind.named && x.a == 0 {
+        to: string, found: bool = c.lowered_name(x.text, true)
+        if found { mut c.rename(t, to) }
+    }
+    mut self.lower_type(mi, mut c, x.a)
+    if x.kind == Kind.staticmap_t { mut self.lower_type(mi, mut c, x.b) }
+    if x.kind == Kind.array_t { mut self.lower_node(mi, mut c, x.b) } // length: an expression, not a type
+    for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.kid(t, k)) }
+}
+
+/* `binding.member`, or the enum-constant form `binding.Type.member`: a module
+ * member unless, in value position, a local shadows the binding. A type
+ * position (`binding.T{...}`, a sizeof operand) names a type, which no value
+ * local shadows.
+ */
+Loader.lower_qualified(mut self, mi: usize, mut c: RefLower, n: u32, type_position: bool) {
+    x: Node = c.p.node(n)
+    base: u32 = x.a
+    if x.a != 0 && c.p.node(x.a).kind == Kind.selector { base = c.p.node(x.a).a }
+    if base != 0 && c.p.node(base).kind == Kind.ident && (type_position || !c.local_name(c.p.node(base).text, false)) {
+        mut self.lower_field(mi, mut c, n)
+        if c.p.node(n).kind != Kind.selector { return } // now the member's private name
+    }
+    mut self.lower_node(mi, mut c, c.p.node(n).a) // field spelling is member-local
+}
+
+/* A type named as an expression operand: `sizeof(pkg.T)`, `typeid(tcp.Err)`. */
+Loader.lower_type_ref(mut self, mi: usize, mut c: RefLower, n: u32) {
+    if n == 0 { return }
+    x: Node = c.p.node(n)
+    if x.kind == Kind.named {
+        mut self.lower_type(mi, mut c, n)
+        return
+    }
+    if x.kind == Kind.slice_t || x.kind == Kind.array_t || x.kind == Kind.ptr || x.kind == Kind.const_t || x.kind == Kind.tuple_t || x.kind == Kind.func_t || x.kind == Kind.staticmap_t { // inline operand, e.g. alignof([]pkg.T)
+        mut self.lower_type_ref(mi, mut c, x.a)
+        if x.kind == Kind.array_t { mut self.lower_node(mi, mut c, x.b) } // length expression
+        if x.kind == Kind.staticmap_t { mut self.lower_type_ref(mi, mut c, x.b) }
+        for k: u32 in 0..x.nkids { mut self.lower_type_ref(mi, mut c, c.p.kid(n, k)) }
+        return
+    }
+    name: u32 = n
+    if x.kind == Kind.index { name = x.a }
+    if name != 0 {
+        y: Node = c.p.node(name)
+        if y.kind == Kind.selector {
+            mut self.lower_qualified(mi, mut c, name, true) // e.g. typeid(tcp.Err)
+        } else if y.kind == Kind.ident {
+            to: string, found: bool = c.lowered_name(y.text, true)
+            if found { mut c.rename(name, to) }
+        }
+    }
+    if x.kind == Kind.index {
+        mut self.lower_type_ref(mi, mut c, x.b)
+        for k: u32 in 0..x.nkids { mut self.lower_type_ref(mi, mut c, c.p.kid(n, k)) }
+    }
+}
+
+Loader.lower_block(mut self, mi: usize, mut c: RefLower, b: u32) {
+    mut c.push()
+    for k: u32 in 0..c.p.node(b).nkids { mut self.lower_node(mi, mut c, c.p.kid(b, k)) }
+    mut c.pop()
+}
+
+Loader.lower_func(mut self, mi: usize, mut c: RefLower, f: u32) {
+    x: Node = c.p.node(f)
+    mut c.push()
+    if x.c != 0 {
+        for k: u32 in 0..c.p.node(x.c).nkids { mut self.bind_local(mi, mut c, c.p.kid(x.c, k), true) }
+    }
+    if x.d != 0 { mut self.lower_type(mi, mut c, x.d) }
+    for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(f, k)).a) }
+    mut self.lower_type(mi, mut c, x.a)
+    mut c.push()
+    for k: u32 in 0..x.nkids { mut self.bind_local(mi, mut c, c.p.kid(f, k), false) }
+    if x.b != 0 { mut self.lower_block(mi, mut c, x.b) }
+    mut c.pop()
+    mut c.pop()
+}
+
+Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
+    if n == 0 { return }
+    x: Node = c.p.node(n)
+    switch x.kind {
+        Kind.import { return }
+        Kind.ident {
+            to: string, found: bool = c.lowered_name(x.text, false)
+            if found { mut c.rename(n, to) }
+            return
+        }
+        Kind.named {
+            mut self.lower_type(mi, mut c, n)
+            return
+        }
+        Kind.func {
+            mut self.lower_func(mi, mut c, n)
+            return
+        }
+        Kind.block {
+            mut self.lower_block(mi, mut c, n)
+            return
+        }
+        Kind.var {
+            // A typed name is in scope from its declarator, its own initializer
+            // included; a bare name of a multi-name `=` reassigns what it names.
+            for k: u32 in 0..x.nkids {
+                binder: u32 = c.p.kid(n, k)
+                if c.p.node(binder).kind != Kind.param { mut self.lower_node(mi, mut c, binder) }
+            }
+            for k: u32 in 0..x.nkids {
+                binder: u32 = c.p.kid(n, k)
+                if c.p.node(binder).kind != Kind.param { continue }
+                mut self.lower_type(mi, mut c, c.p.node(binder).a)
+                mut self.bind_local(mi, mut c, binder, false)
+            }
+            mut self.lower_node(mi, mut c, x.b)
+            return
+        }
+        Kind.for {
+            if (x.flags & parser.F_FORGEN) != 0 {
+                // General head: one select scope covers init, cond, post, and
+                // body; a head declaration binds through its `var` statement.
+                mut c.push()
+                mut self.lower_node(mi, mut c, x.a)
+                mut self.lower_node(mi, mut c, x.b)
+                mut self.lower_node(mi, mut c, x.c)
+                mut self.lower_node(mi, mut c, x.d)
+                mut c.pop()
+                return
+            }
+            for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(n, k)).a) }
+            mut self.lower_node(mi, mut c, x.b)
+            mut c.push()
+            for k: u32 in 0..x.nkids { mut self.bind_local(mi, mut c, c.p.kid(n, k), false) }
+            mut self.lower_node(mi, mut c, x.c)
+            mut c.pop()
+            return
+        }
+        Kind.struct, Kind.bits, Kind.contract, Kind.alias, Kind.union {
+            mut c.push()
+            if x.c != 0 {
+                for k: u32 in 0..c.p.node(x.c).nkids { mut self.bind_local(mi, mut c, c.p.kid(x.c, k), true) }
+            }
+            if x.kind == Kind.alias || x.kind == Kind.bits {
+                mut self.lower_type(mi, mut c, x.a)
+            } else if x.kind == Kind.union {
+                for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(n, k)).a) } // variant payload types
+            } else {
+                for k: u32 in 0..x.nkids {
+                    member: u32 = c.p.kid(n, k)
+                    m: Node = c.p.node(member)
+                    for j: u32 in 0..m.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(member, j)).a) }
+                    mut self.lower_type(mi, mut c, m.a)
+                    if x.kind == Kind.struct {
+                        mut self.lower_node(mi, mut c, m.b) // field @align expression
+                        mut self.lower_node(mi, mut c, m.c) // field default
+                    }
+                }
+            }
+            if x.kind == Kind.struct { mut self.lower_node(mi, mut c, x.b) } // struct @align expression
+            mut c.pop()
+            return
+        }
+        Kind.distinct {
+            mut self.lower_type(mi, mut c, x.a)
+            return
+        }
+        Kind.error { return }
+        Kind.enum {
+            mut self.lower_type(mi, mut c, x.a)
+            for k: u32 in 0..x.nkids { mut self.lower_node(mi, mut c, c.p.node(c.p.kid(n, k)).a) }
+            return // member names themselves are declarations, not references
+        }
+        Kind.signing {
+            mut c.push()
+            if x.c != 0 {
+                for k: u32 in 0..c.p.node(x.c).nkids { mut self.bind_local(mi, mut c, c.p.kid(x.c, k), true) }
+            }
+            mut self.lower_type(mi, mut c, x.a)
+            for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(n, k)).a) }
+            mut c.pop()
+            return
+        }
+        Kind.extern {
+            for k: u32 in 0..x.nkids {
+                f: u32 = c.p.kid(n, k)
+                fnode: Node = c.p.node(f)
+                for j: u32 in 0..fnode.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(f, j)).a) }
+                mut self.lower_type(mi, mut c, fnode.a)
+            }
+            return
+        }
+        Kind.selector {
+            mut self.lower_qualified(mi, mut c, n, false)
+            return
+        }
+        Kind.case {
+            // A variant pattern's payload binder is a local of its case block.
+            mut c.push()
+            for k: u32 in 0..x.nkids {
+                pat: u32 = c.p.kid(n, k)
+                pn: Node = c.p.node(pat)
+                if pn.kind != Kind.varpat {
+                    mut self.lower_node(mi, mut c, pat)
+                    continue
+                }
+                mut self.lower_node(mi, mut c, pn.a)
+                mut self.lower_type(mi, mut c, c.p.node(pn.b).a)
+                mut self.bind_local(mi, mut c, pn.b, false)
+            }
+            mut self.lower_node(mi, mut c, x.b)
+            mut c.pop()
+            return
+        }
+        Kind.fieldinit {
+            mut self.lower_node(mi, mut c, x.a) // initializer name is struct-local
+            return
+        }
+        Kind.structlit {
+            mut self.lower_type_ref(mi, mut c, x.a)
+            for k: u32 in 0..x.nkids { mut self.lower_node(mi, mut c, c.p.kid(n, k)) }
+            return
+        }
+        Kind.call {
+            if x.a != 0 && c.p.node(x.a).kind == Kind.ident {
+                callee: string = c.p.node(x.a).text
+                _, renamed: bool = c.lowered_name(callee, false)
+                if !c.local_name(callee, false) && !renamed && type_operand(callee) {
+                    if x.nkids > 0 { mut self.lower_type_ref(mi, mut c, c.p.kid(n, 0)) }
+                    return
+                }
+            }
+        }
+        Kind.asm {
+            for k: u32 in 0..x.nkids {
+                b: u32 = c.p.kid(n, k)
+                bn: Node = c.p.node(b)
+                if mem.equal(bn.text, "clobbers") { continue }
+                for j: u32 = 1; j < bn.nkids; j += 2 { mut self.lower_node(mi, mut c, c.p.kid(b, j)) }
+            }
+            return
+        }
+        default {}
+    }
+    mut self.lower_node(mi, mut c, x.a)
+    mut self.lower_node(mi, mut c, x.b)
+    mut self.lower_node(mi, mut c, x.c)
+    mut self.lower_node(mi, mut c, x.d)
+    for k: u32 in 0..x.nkids { mut self.lower_node(mi, mut c, c.p.kid(n, k)) }
+}
+
+/* The builtins whose operand is a type. */
+type_operand(name: string): bool {
+    return mem.equal(name, "sizeof") || mem.equal(name, "alignof") || mem.equal(name, "blank") || mem.equal(name, "offsetof") || mem.equal(name, "typeid")
+}
+
+/* Lowers every reference in module `mi`'s declarations. */
+Loader.lower(mut self, mi: usize, is_root: bool, binds: array.Array[Binding], sels: array.Array[Select], renames: map.Map[string, string]) {
+    m: Module = self.mods.get(mi)
+    top: u32 = m.file
+    count: u32 = m.parser.node(top).nkids
+    c: RefLower = RefLower { p = m.parser, binds = binds.view(), sels = sels.view(), renames = renames, own = !is_root, locals = array.Array[LocalName] {}, depth = 0 }
+    defer mut c.locals.wipe()
+    for k: u32 in 0..count {
+        id: u32 = c.p.kid(top, k)
+        if c.p.node(id).kind == Kind.import { continue }
+        mut c.locals.clear()
+        c.depth = 0
+        mut self.lower_node(mi, mut c, id)
+    }
+    m = self.mods.get(mi)
+    m.parser = c.p // nodes added while lowering
+    mut self.mods.set(mi, m)
+}
+
+// --- merge --------------------------------------------------------------------
+
+/* Splices the modules into the root's tree: its whole-module imports, then each
+ * module's declarations dependencies first, then its own declarations. Its
+ * selective imports were lowered, and every imported file's import nodes are
+ * dropped, their bindings having been lowered to private identities.
+ */
+Loader.merge(mut self) {
+    root: Module = self.mods.get(0)
+    ids: array.Array[u32] = array.Array[u32] {}
+    defer mut ids.wipe()
+    count: u32 = root.parser.node(root.file).nkids
+    for k: u32 in 0..count {
+        id: u32 = root.parser.kid(root.file, k)
+        n: Node = root.parser.node(id)
+        if n.kind == Kind.import && (n.flags & parser.F_SELECT) == 0 { fail(mut ids.push(id)) }
+    }
+    for i: usize in 0..self.order.len {
+        mi: usize = self.order.get(i)
+        off: u32 = mut root.parser.adopt(self.mods.view()[mi].parser)
+        top: u32 = self.mods.view()[mi].file
+        for k: u32 in 0..self.node(mi, top).nkids {
+            id: u32 = self.kid(mi, top, k)
+            if self.node(mi, id).kind != Kind.import { fail(mut ids.push(id + off)) }
+        }
+    }
+    for k: u32 in 0..count {
+        id: u32 = root.parser.kid(root.file, k)
+        if root.parser.node(id).kind != Kind.import { fail(mut ids.push(id)) }
+    }
+    mut root.parser.relink(root.file, ids.view())
+    mut self.mods.set(0, root)
+}
+
+// --- dump ---------------------------------------------------------------------
+
+/* Prints the merged tree as `ace --resolved` does. */
+pub Loader.dump_resolved(self, mut out: Out) {
+    root: Module = self.mods.get(0)
+    root.parser.dump_resolved(mut out, root.file)
+}
+
+/* Prints each loaded module, dependencies first and the root last, with its
+ * members and import bindings.
+ */
+pub Loader.dump(self, mut out: Out) {
+    for i: usize in 0..self.order.len { self.dump_module(mut out, self.order.get(i)) }
+    self.dump_module(mut out, 0)
+}
+
+Loader.dump_module(self, mut out: Out, mi: usize) {
+    m: Module = self.mods.get(mi)
+    mut out.printf("module %s\n", m.canon)
+    for x: Member in m.members.view() {
+        kind: string = "value"
+        if x.is_type { kind = "type" }
+        vis: string = "private"
+        if x.exported { vis = "pub" }
+        mut out.printf("  %s %s %s\n", vis, kind, x.name)
+    }
+    for b: Binding in m.binds.view() {
+        mut out.printf("  bind %s %s\n", b.name, self.mods.get(b.module).canon)
+    }
+    for s: Select in m.sels.view() {
+        kind: string = "value"
+        if s.is_type { kind = "type" }
+        mut out.printf("  select %s %s %s\n", kind, s.name, self.mods.get(s.module).canon)
+    }
+}

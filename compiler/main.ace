@@ -1,5 +1,7 @@
 /* Lexes one file and prints its tokens exactly as `ace --tokens` does, or
- * with --ast parses it and prints the tree exactly as `ace --ast` does.
+ * with --ast parses it and prints the tree exactly as `ace --ast` does, or
+ * with --modules resolves its imports and prints the loaded modules, or with
+ * --resolved prints the merged tree as `ace --resolved` does.
  */
 
 import file
@@ -8,6 +10,7 @@ import mem
 import sys
 
 import lexer: "./lexer.ace"
+import module: "./module.ace"
 import output: "./output.ace"
 import parser: "./parser.ace"
 
@@ -22,11 +25,14 @@ TARGET: const string = "linux-x64"
 
 main(): int {
     ast: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--ast")
-    if sys.argc() != 2 && !ast {
-        fmt.printf(sys.stderr, "usage: ace-self [--ast] file.ace\n")
+    modules: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--modules")
+    resolved: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--resolved")
+    if sys.argc() != 2 && !ast && !modules && !resolved {
+        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved] file.ace\n")
         return 2
     }
     path: string = sys.arg(sys.argc() - 1)
+    if modules || resolved { return dump_modules(path, resolved) }
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
@@ -95,6 +101,23 @@ dump_ast(mut out: Out, src: string, path: string): int {
     if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", path, int(parser.ERROR_LIMIT)) }
     if errors.len > 0 { return summary(path, int(errors.len)) }
     p.dump(mut out, f, 0)
+    mut out.flush()
+    return 0
+}
+
+/* Resolves `path`'s imports for the host target and dumps the modules, or the
+ * merged tree; 1 on any error.
+ */
+dump_modules(path: string, tree: bool): int {
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer mut l.wipe()
+    if !found { return 1 }
+    ok: bool = mut l.resolve(path)
+    if !ok { return summary(path, l.errors) }
+    storage: mut []u8 = mem.alloc[u8](65536)
+    defer mem.release[u8](mut storage)
+    out: Out = Out.init(sys.stdout, storage)
+    if tree { l.dump_resolved(mut out) } else { l.dump(mut out) }
     mut out.flush()
     return 0
 }

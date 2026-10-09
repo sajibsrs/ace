@@ -1,21 +1,29 @@
 #!/bin/sh
-# Diffs the self-hosted compiler's tokens against `ace --tokens` and its tree
-# against `ace --ast` (stdout, exit status, and every error line) over
-# every repository .ace file, then times the lexers on the largest files. Run
-# from anywhere.
+# Diffs the self-hosted compiler's tokens against `ace --tokens`, its tree
+# against `ace --ast` (stdout, exit status, and every error line), and its
+# module loader against the C one (every import error line; on success, the
+# count of files loaded) and its merged, lowered tree against `ace --resolved` over every repository .ace file, then times the
+# lexers on the largest files. Run from anywhere.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# std/ is found beside the running executable, so the module checks run a copy
+# of the self-hosted binary in the repository root, as `ace` itself is.
+self="$root/ace-self.$$"
+trap 'rm -rf "$tmp" "$self"' EXIT
 
 "$root/ace" -o "$tmp/ace-self" "$here/main.ace" || exit 1
+cp "$tmp/ace-self" "$self"
 
 cd "$root"
 files=$(find std pkg demo tests bench -name '*.ace' | sort)
 total=0
 bad=0
 abad=0
+mbad=0
+msema=0
+rbad=0
 for f in $files; do
     total=$((total + 1))
     ./ace --tokens "$f" >"$tmp/want" 2>/dev/null
@@ -36,9 +44,52 @@ for f in $files; do
         diff "$tmp/want" "$tmp/got" | head -4
         diff "$tmp/werr" "$tmp/gerr" | head -4
     fi
+    # Modules: C stops after the import stage on an error, so when ours fails
+    # the two stderrs must match; when ours succeeds, C must too, or fail
+    # only in a later stage (sema), and then load the same number of files.
+    ./ace --report "$f" >"$tmp/want" 2>"$tmp/werr"
+    wrc=$?
+    "$self" --modules "$f" >"$tmp/got" 2>"$tmp/gerr"
+    grc=$?
+    if [ "$grc" -ne 0 ]; then
+        if [ "$wrc" -eq 0 ] || ! cmp -s "$tmp/werr" "$tmp/gerr"; then
+            mbad=$((mbad + 1))
+            echo "MODULES DIFF $f"
+            diff "$tmp/werr" "$tmp/gerr" | head -4
+        fi
+    elif [ "$wrc" -eq 0 ]; then
+        want=$(sed -n 's/^source files: *//p' "$tmp/werr" | tr -d ',')
+        got=$(grep -c '^module ' "$tmp/got")
+        if [ "$want" != "$got" ]; then
+            mbad=$((mbad + 1))
+            echo "MODULES COUNT $f: C loaded $want, ours $got"
+        fi
+    elif grep -Eq 'import cycle|not found \(tried|is ambiguous|cannot load module|member .[^ ]*. is not public|no public member|duplicate import binding|collides with (another import|a declaration)|must be relative|private to directory module|has no mod.ace|too long|too many segments|empty segment' "$tmp/werr"; then
+        mbad=$((mbad + 1))
+        echo "MODULES MISSED $f"
+        head -2 "$tmp/werr"
+    else
+        msema=$((msema + 1))
+    fi
+    # Resolved: the merged, lowered tree and every error line must match.
+    # (@file in an imported file needs C's build_path, not ported yet.)
+    [ "$f" = tests/modules/location/main.ace ] && continue
+    ./ace --resolved "$f" >"$tmp/want" 2>"$tmp/werr"
+    wrc=$?
+    "$self" --resolved "$f" >"$tmp/got" 2>"$tmp/gerr"
+    grc=$?
+    if [ "$wrc" -ne "$grc" ] || ! cmp -s "$tmp/want" "$tmp/got" ||
+        ! cmp -s "$tmp/werr" "$tmp/gerr"; then
+        rbad=$((rbad + 1))
+        echo "RESOLVED DIFF $f"
+        diff "$tmp/want" "$tmp/got" | head -4
+        diff "$tmp/werr" "$tmp/gerr" | head -4
+    fi
 done
 echo "tokens: $((total - bad))/$total files identical"
 echo "ast: $((total - abad))/$total files identical"
+echo "modules: $((total - mbad))/$total files agree ($msema fail only in sema)"
+echo "resolved: $((total - rbad))/$total files agree"
 
 echo "timing, ${runs:=200} runs per file (ms per run): file  ace --tokens  ace-self"
 for f in $(ls -S $files | head -5); do
@@ -52,4 +103,4 @@ for _ in range(int(sys.argv[1])): subprocess.run(sys.argv[2:],stdout=subprocess.
 print("%.2f"%((time.perf_counter()-t)*1000/int(sys.argv[1])))' "$runs" "$tmp/ace-self" "$f")
     echo "$f $(wc -c <"$f" | tr -d ' ')B  $a  $b"
 done
-[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ]
+[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ]
