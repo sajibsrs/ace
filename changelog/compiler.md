@@ -1,5 +1,8 @@
 # Compiler
 
+- A member error on `x.m` or `x.m(...)` whose local `x` hides an import
+  binding `x` that has a member `m` adds a note naming the hiding local. The
+  loader flags the field (`F_SHADOWED`); sema's error printer reads it.
 - A field read off a call whose result is over 16 leaves (`make(n).f16`,
   `make(n).arr[2]`) stores the result to a stack object through the result
   address, as `b: Big = make(n)` does, and loads the field from it. A method

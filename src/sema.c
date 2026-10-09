@@ -363,6 +363,13 @@ static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
+    // a call's error is reported on the call: look through it to its callee
+    Node* f = n;
+    while (f && (f->kind == N_CALL || f->kind == N_INDEX)) f = f->a;
+    if (f && f->kind == N_FIELD_E && (f->flags & F_SHADOWED))
+        fprintf(stderr, "%s:%d:%d: note: local '%.*s' hides the imported module '%.*s'\n",
+                f->a->path ? f->a->path : k->d->path, f->a->line, f->a->col,
+                (int)f->a->len, f->a->str, (int)f->a->len, f->a->str);
     for (Inst* in = k->inst; in; in = in->outer) {
         Node* g = in->decl;
         fprintf(stderr, "%s:%d:%d: note: in '", in->at->path ? in->at->path : k->d->path, in->at->line, in->at->col);

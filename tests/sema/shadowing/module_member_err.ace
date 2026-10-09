@@ -1,0 +1,8 @@
+/* A local named like an import hides it; a member error says so. */
+import mem
+
+copy(mem: string): bool {
+    return mem.equal("a", "a")
+}
+
+main(): int { return 0 }

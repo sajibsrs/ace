@@ -1309,6 +1309,13 @@ static void lower_qualified_field(Node* n, RefLower* c, int type_position) {
         lower_field(c->L, n, c->binds);
         if (n->kind != N_FIELD_E) return; // now the member's private name
     }
+    else if (base == n->a && base && base->kind == N_IDENT) {
+        // a local hides the binding; flag it so a member error can say so
+        for (Binding* b = c->binds; b; b = b->next)
+            if (text_is(base->str, base->len, b->name) &&
+                (find_member(b->mod, n->str, n->len, 0) || find_member(b->mod, n->str, n->len, 1)))
+                n->flags |= F_SHADOWED;
+    }
     lower_refs(n->a, c); // field spelling is member-local
 }
 

@@ -183,6 +183,7 @@ enum {
     F_GROUPED = 33554432, // a field expression written in parentheses: (x.f)
     F_STATICLIT = 67108864, // a []T array literal of constant elements: static data
     F_REEXPORTED = 134217728, // a struct a facade's pub alias makes visible to importers
+    F_SHADOWED = 268435456, // `x.m` whose local x hides an import binding x with a member m
 };
 
 // Compiler-backed standard-module functions. These markers live only on the
