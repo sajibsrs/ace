@@ -558,6 +558,17 @@ static int value_names_type(Ck* k, Node* at, const char* name, uint32_t len) {
     return 1;
 }
 
+static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len);
+
+// A typed `_` in a binding list: say the rule where it applies, then fall back to declare_val.
+static Sym* declare_binder(Ck* k, Node* list, Node* binder) {
+    if (list->nkids > 1 && is_discard_name(binder->str, binder->len)) {
+        ck_err(k, binder, "'_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'");
+        return NULL;
+    }
+    return declare_val(k, binder, SYM_VAR, binder->str, binder->len);
+}
+
 static Sym* declare_val(Ck* k, Node* at, uint8_t kind, const char* name, uint32_t len) {
     if (is_discard_name(name, len)) {
         ck_err(k, at, "'_' discards a value and declares nothing");
@@ -5807,7 +5818,7 @@ static void check_stmt(Ck* k, Node* s) {
             for (int i = 0; i < s->nkids; i++) {
                 Node* binder = s->kids[i];
                 if (binder->kind != N_PARAM || old[i]) continue;
-                Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
+                Sym* v = declare_binder(k, s, binder);
                 if (v) {
                     v->type = wants[i];
                     v->is_const = (s->flags & F_CONST) != 0;
@@ -5842,7 +5853,7 @@ static void check_stmt(Ck* k, Node* s) {
             if (t && t->kind == SK_ERROR_DOMAIN)
                 ck_err(k, binder, "error-domain names are identities, not value types; use Error");
             wants[i] = t;
-            Sym* v = declare_val(k, binder, SYM_VAR, binder->str, binder->len);
+            Sym* v = declare_binder(k, s, binder);
             if (v) {
                 v->type = t;
                 v->is_const = (s->flags & F_CONST) != 0;

@@ -147,6 +147,8 @@ tests/parser/receiver/leading_mut_err.ace|2:1: error: a top-level declaration ta
 tests/parser/receiver/contract_double_mut_err.ace|2:5: error: a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'
 tests/parser/associated/coloncolon_err.ace|6:13: error: '::' is not an operator; a type's functions are reached with '.'
 tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self' or 'mut self'
+tests/sema/discard/typed_err.ace|6:5: error: '_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'
+tests/sema/discard/mixed_typed_err.ace|7:5: error: '_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'
 tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]i64
 tests/sema/shadowing/module_member_err.ace|5:12: note: local 'mem' hides the imported module 'mem'
 tests/sema/mutability/receiver_call_err.ace|8:11: error: method 'wipe' takes 'mut self'; it needs 'mut' at the call: mut x.wipe(...)

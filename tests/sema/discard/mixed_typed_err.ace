@@ -1,0 +1,10 @@
+/* err: `_` binds nothing, so it takes no type in a mixed list either. */
+
+pair(): (int, bool) { return 7, true }
+
+main(): int {
+    ok: bool = false
+    _: int, ok = pair()
+    if ok { return 0 }
+    return 1
+}

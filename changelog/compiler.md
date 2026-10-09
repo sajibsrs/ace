@@ -159,3 +159,6 @@
   its innermost statement or top-level declaration, skipped bracket-balanced to
   its newline, its block's `}`, or a column-1 token; no tree is repaired, and
   any syntax error blocks checking. `compiler/check.sh` compares every line.
+- A typed `_` in a typed or mixed binding list (`_: int, ok: bool = f()`)
+  reports that `_` there takes no type and shows the bare form (#119); other
+  positions keep "'_' discards a value and declares nothing".
