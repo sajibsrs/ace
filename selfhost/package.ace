@@ -499,8 +499,8 @@ Graph.load(mut self, dir_arg: string, is_root: bool, dep_manifest: string, dep_l
     if done { return existing, true }
 
     manifest: string = mut self.pool.join([canon, "/ace.pkg"])
-    mk: u32 = path.kind(manifest)
-    if mk == 0 {
+    _, merr: Error = sys.stat(manifest)
+    if merr != null {
         mut self.at(pick(dep_manifest, canon), dep_line)
         fmt.printf(sys.stderr, "no ace.pkg at '%s'\n", canon)
         return 0, false

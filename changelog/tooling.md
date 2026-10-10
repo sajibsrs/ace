@@ -1,5 +1,7 @@
 # Tooling
 
+- selfhost asks `sys.stat` for a path's type instead of declaring C `stat`
+  and reading `st_mode` at a hard-coded offset per target.
 - The self-hosted compiler lives in `selfhost/` (formerly `compiler/`), naming
   its role beside `src/`, the C bootstrap compiler.
 - Manifest sections are singular, `[dependency]` and `[link]` (a plain

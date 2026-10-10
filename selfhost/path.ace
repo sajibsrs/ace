@@ -12,18 +12,7 @@ pub MAX: const usize = 4096
 
 extern "c" {
     c_realpath(path: *u8, out: mut *u8): mut *u8 as "realpath"
-    c_stat(path: *u8, buf: mut *u8): i32 as "stat"
 }
-
-/* Where `struct stat` keeps st_mode, and its width in bytes. */
-@when(target == "darwin-arm64")
-MODE_AT: const usize = 4
-@when(target == "darwin-arm64")
-MODE_SIZE: const usize = 2
-@when(target == "linux-x64")
-MODE_AT: const usize = 24
-@when(target == "linux-x64")
-MODE_SIZE: const usize = 4
 
 @when(target == "darwin-arm64")
 extern "c" {
@@ -104,27 +93,10 @@ pub canonical(mut pool: Pool, path: string): (string, bool) {
     return mut pool.copy(cview(out_buf[0..4096])), true
 }
 
-/* The file-type bits of `path`'s st_mode, following symlinks; 0 when it does
- * not exist.
- */
-pub kind(path: string): u32 {
-    in_buf: [4096]u8 = blank([4096]u8)
-    st: [256]u8 = blank([256]u8)
-    if !cstring(path, mut in_buf[0..4096]) { return 0 }
-    if c_stat(&in_buf[0], mut &st[0]) != 0 { return 0 }
-    mode: u32 = 0
-    for i: usize in 0..MODE_SIZE { mode |= u32(st[MODE_AT + i]) << u32(8 * i) }
-    return mode & 0xF000
-}
-
-/* Whether `path` names a directory, as C's S_ISDIR. */
+/* Whether `path` names a directory, following symlinks. */
 pub is_dir(path: string): bool {
-    return kind(path) == 0x4000
-}
-
-/* Whether `path` names a regular file, as C's S_ISREG. */
-pub is_file(path: string): bool {
-    return kind(path) == 0x8000
+    info: sys.FileInfo, err: Error = sys.stat(path)
+    return err == null && info.file_type == sys.FileType.directory
 }
 
 /* The directory part of `path` as a view into it: "dir/file.ace" is "dir",
