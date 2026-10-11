@@ -82,3 +82,6 @@
 - selfhost checks `mut` arguments (`check_mut_args`): an addressable place,
   never a bit field; a contract-typed `mut` argument stops as unported until
   const-backed provenance arrives with contract construction.
+- selfhost checks field visibility across modules (`field_visible`): a field
+  is public only with its struct, a facade's `pub` alias re-exports a `pub`
+  struct (kept in a side table, C's `F_REEXPORTED`), else `decl_visible`.

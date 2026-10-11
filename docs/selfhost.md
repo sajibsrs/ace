@@ -66,7 +66,8 @@ labels, `break`, `continue`, `return`, and `defer`, address-of,
 dereference, `volatile`, pointer arithmetic, ranges, indexing, slicing,
 local-storage escapes, and the `typeid`, `bitcast`, `assert`,
 `static_assert`, and `panic` builtins, error construction
-`Domain(code?)`, extern variadic arguments, and `mut` arguments. It stops
+`Domain(code?)`, extern variadic arguments, `mut` arguments, and field
+visibility across modules, including a facade's re-exporting alias. It stops
 with `does not yet support` on `switch`, `asm`, method and other calls of
 computed callees, function values, memory and format builtins, static maps,
 unions, and contracts, including a contract value passed as a `mut`

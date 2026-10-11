@@ -200,6 +200,7 @@ pub Sema: struct {
     insts: array.Array[TInst],
     inst_heads: map.Map[u32, u32],      // a generic declaration's newest instance, plus one
     signings: map.Map[u32, u32],        // a struct declaration's registered signing (C's decl->d)
+    reexported: map.Map[u32, bool],     // struct declarations a facade's pub alias re-exports (F_REEXPORTED)
     stamps: array.Array[Stamp],         // the generic stamps in progress, outermost first
     cabi: array.Array[u32],             // the structs is_c_abi_type is inside
     nty: array.Array[u32],              // per node: its checked type,
@@ -220,7 +221,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -247,6 +248,7 @@ pub Sema.wipe(mut self) {
     mut self.insts.wipe()
     mut self.inst_heads.wipe()
     mut self.signings.wipe()
+    mut self.reexported.wipe()
     mut self.frames.wipe()
     mut self.locals.wipe()
     mut self.stamps.wipe()
@@ -1192,6 +1194,14 @@ Sema.resolve_top(mut self, s: u32) {
             x = self.sym(s)
             if !x.in_cycle { x.ty = actual }
             mut self.update(s, x)
+            // Modules #2: a facade's pub alias re-exports the struct, so its
+            // pub fields reach every importer (Modules #3)
+            if actual != 0 && (n.flags & parser.F_PUB) != 0 && self.ty(actual).kind == TypeKind.struct {
+                d: u32 = self.ty(actual).decl
+                if d != 0 && self.node(d).kind == Kind.struct && (self.node(d).flags & parser.F_PUB) != 0 && self.l.decl_external(self.l.module_of(x.top)) {
+                    fail(mut self.reexported.set(d, true))
+                }
+            }
         }
         Kind.distinct { mut self.resolve_distinct(x.top, x.ty) }
         Kind.error { mut self.check_error_domain(x.top) }
@@ -2069,7 +2079,7 @@ Sema.check_selector(mut self, e: u32): u32 {
     if t.kind == TypeKind.struct {
         for i: u32 in 0..t.nfields {
             if mem.equal(self.field(t, i).name, n.text) {
-                mut self.check_field_visible(b, e)
+                mut self.check_field_visible(b, i, e)
                 return self.field(t, i).ty
             }
         }
@@ -2080,13 +2090,16 @@ Sema.check_selector(mut self, e: u32): u32 {
     return self.t_err
 }
 
-/* A field of struct `t` named at `at` in another module waits for the
- * loader's visibility rule (#115); within its own module it is visible.
+/* Modules #3: field `i` of struct `t` is visible at `at` exactly where a
+ * declaration with its own `pub` mark, never wider than its struct's, is.
  */
-Sema.check_field_visible(mut self, t: u32, at: u32) {
+Sema.check_field_visible(mut self, t: u32, i: u32, at: u32) {
     d: u32 = self.ty(t).decl
-    if d == 0 || self.node(d).kind != Kind.struct || at == 0 { return }
-    if self.l.module_of(d) != self.l.module_of(at) { _ = mut self.unported("field visibility across modules") }
+    if d == 0 || self.node(d).kind != Kind.struct || i >= self.node(d).nkids || at == 0 { return }
+    public: bool = (self.node(self.kid(d, i)).flags & parser.F_PUB) != 0 && (self.node(d).flags & parser.F_PUB) != 0
+    if public && self.reexported.has(d) { return }
+    if self.l.decl_visible(self.l.module_of(d), public, self.l.module_of(at)) { return }
+    mut self.err(at, ["field '", self.field(self.ty(t), i).name, "' of '", mut self.type_name(t), "' is private"])
 }
 
 /* A call by name: an ordinary call through its overload set, a cast, blank,
@@ -2423,7 +2436,7 @@ Sema.check_offsetof(mut self, call: u32): u32 {
         for fi: u32 in 0..st.nfields {
             f: SField = self.field(st, fi)
             if mem.equal(f.name, self.node(part).text) {
-                mut self.check_field_visible(t, part)
+                mut self.check_field_visible(t, fi, part)
                 total += u64(f.offset)
                 t = f.ty
                 found = true
@@ -2475,7 +2488,7 @@ Sema.check_structlit(mut self, lit: u32, want: u32) {
                 mut self.err(fid, ["too many fields: ", mut self.type_name(want), " has ", mut self.num(w.nfields)])
                 return
             }
-            mut self.check_field_visible(want, fid)
+            mut self.check_field_visible(want, i, fid)
             _ = mut self.coerce(fi.a, self.field(w, i).ty)
             continue
         }
@@ -2499,7 +2512,7 @@ Sema.check_structlit(mut self, lit: u32, want: u32) {
             continue
         }
         mut seen.set(usize(found), true)
-        if (fi.flags & parser.F_DEFAULT) == 0 { mut self.check_field_visible(want, fid) }
+        if (fi.flags & parser.F_DEFAULT) == 0 { mut self.check_field_visible(want, found, fid) }
         _ = mut self.coerce(fi.a, self.field(w, found).ty)
     }
     if positional && n < w.nfields {
@@ -5053,7 +5066,7 @@ Sema.check_field_lvalue(mut self, e: u32, write: bool): u32 {
         TypeKind.struct {
             for i: u32 in 0..t.nfields {
                 if mem.equal(self.field(t, i).name, n.text) {
-                    mut self.check_field_visible(b, e)
+                    mut self.check_field_visible(b, i, e)
                     return self.field(t, i).ty
                 }
             }
