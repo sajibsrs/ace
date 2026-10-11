@@ -303,6 +303,14 @@ tests/sema/defaults/calls/main_err.ace|54:25: error: mut parameter needs 'mut' a
 tests/sema/defaults/calls/main_err.ace|55:22: error: type mismatch: u8 given where i64 expected (casts are explicit)
 tests/sema/defaults/calls/main_err.ace|57:29: error: the overload of 'other.pick' matching these arguments is private
 tests/sema/defaults/calls/main_err.ace|58:23: error: 'VALUE' is not callable
+tests/sema/defaults/generic_calls_err.ace|52:22: error: 'one' is not generic; call it without type arguments
+tests/sema/defaults/generic_calls_err.ace|53:28: error: 'VALUE' is not a generic function
+tests/sema/defaults/generic_calls_err.ace|56:27: error: type mismatch: string given where u8 expected (casts are explicit)
+tests/sema/defaults/generic_calls_err.ace|56:26: error: type mismatch: u8 given where i64 expected (casts are explicit)
+tests/sema/defaults/generic_calls_err.ace|57:29: error: call 'only[i64]' matches no specialization — 'only' is declared 'specialized' (no default body) at line 29
+tests/sema/defaults/generic_calls_err.ace|58:32: error: no matching generic overload 'pick' for these arguments
+tests/sema/defaults/generic_calls_err.ace|59:30: error: ambiguous call to generic overload 'amb'
+tests/sema/defaults/generic_calls_err.ace|60:33: error: overloaded function 'two' needs an explicit function-value type: 'take' is overloaded
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared

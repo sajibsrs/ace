@@ -170,6 +170,8 @@ Scope.insert(mut self, types: bool, name: string, id: u32) {
 
 pub Sema: struct {
     pub errors: int = 0,
+    quiet: bool = false,                // count errors in quiet_errors instead of reporting them
+    quiet_errors: int = 0,
     l: module.Loader,                   // the loader of the merged tree; not owned
     p: parser.Parser,                   // the merged tree, the loader's; not owned
     file: u32,
@@ -298,6 +300,10 @@ identity_char(c: u8): bool {
  * written (Loader.shown), as C's ck_err does through diag_printf.
  */
 Sema.err(mut self, at: u32, parts: []string) {
+    if self.quiet {
+        self.quiet_errors += 1
+        return
+    }
     n: Node = self.node(at)
     msg: string = mut self.pool.join(parts)
     fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
@@ -2036,6 +2042,9 @@ Sema.check_field_visible(mut self, t: u32, at: u32) {
 Sema.check_call(mut self, call: u32): u32 {
     n: Node = self.node(call)
     callee: Node = self.node(n.a)
+    if callee.kind == Kind.index && callee.a != 0 && self.node(callee.a).kind == Kind.ident {
+        return mut self.check_generic_call(call)
+    }
     if callee.kind != Kind.ident { return mut self.unported("calls of computed callees") }
     name: string = callee.text
     s: u32 = mut self.lookup_val(name)
@@ -3691,6 +3700,124 @@ Sema.check_direct_call(mut self, call: u32, s: u32): u32 {
     }
     mut self.err(call, ["no matching overload '", name, "' for these argument types"])
     return self.t_err
+}
+
+/* Whether any overload of `head` visible from `at` takes type arguments. */
+Sema.has_generic_form(self, head: u32, at: u32): bool {
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        if self.sym(s).is_generic && !self.ov_hidden(s, at) { return true }
+    }
+    return false
+}
+
+/* A generic overload's signature under the run `args` of `nargs` written type
+ * arguments, built only to compare: 0 when they do not fit it, reporting
+ * nothing, so another overload may still match.
+ */
+Sema.candidate_func_type(mut self, f: u32, args: u32, nargs: u32): u32 {
+    quiet: bool = self.quiet
+    errors: int = self.quiet_errors
+    self.quiet = true
+    self.quiet_errors = 0
+    ft: u32 = mut self.build_func_type(f, true, args, nargs)
+    bad: bool = self.quiet_errors != 0
+    self.quiet = quiet
+    self.quiet_errors = errors
+    if bad { return 0 }
+    return ft
+}
+
+/* A generic instantiation call `f[T](...)`: a specialization whose type
+ * arguments equal the written ones wins (Generics #10), then the template
+ * with that type-argument count matching the arguments exactly.
+ */
+Sema.check_generic_call(mut self, call: u32): u32 {
+    callee: u32 = self.node(call).a
+    ix: Node = self.node(callee)
+    named: u32 = mut self.indexed_named_type(callee)
+    if named != 0 && self.ty(named).kind == TypeKind.contract {
+        return mut self.unported("contract construction in compile-time expressions")
+    }
+    name: string = self.node(ix.a).text
+    head: u32 = mut self.lookup_val(name)
+    if head == 0 || self.sym(head).kind != SymKind.func {
+        mut self.err(call, ["'", name, "' is not a generic function"])
+        return self.t_err
+    }
+    if !self.has_generic_form(head, call) {
+        mut self.err(callee, ["'", name, "' is not generic; call it without type arguments"])
+        return self.t_err
+    }
+    nargs: u32 = ix.nkids
+    if ix.b != 0 { nargs = 1 }
+    targs: u32 = u32(self.params.len)
+    for i: u32 in 0..nargs { fail(mut self.params.push(0)) }
+    for i: u32 in 0..nargs {
+        w: u32 = ix.b
+        if w == 0 { w = self.kid(callee, i) }
+        mut self.params.set(usize(targs + i), mut self.build_type_or_void(w))
+    }
+    actual: array.Array[u32] = array.Array[u32] {}
+    defer mut actual.wipe()
+    for i: u32 in 0..self.node(call).nkids { fail(mut actual.push(mut self.overload_arg_type(self.kid(call, i)))) }
+    spec: u32 = 0
+    sole_spec: u32 = 0
+    nspec: u32 = 0
+    for g: u32 = head; g != 0; g = self.sym(g).overload {
+        for s: u32 = self.sym(g).specs; s != 0; s = self.sym(s).spec_next {
+            x: Sym = self.sym(s)
+            if self.ov_hidden(s, call) || x.spec_nargs != nargs { continue }
+            same: bool = true
+            for i: u32 = 0; i < nargs && same; i += 1 {
+                same = self.same_type(self.params.get(usize(x.spec_args + i)), self.params.get(usize(targs + i)))
+            }
+            if !same { continue }
+            nspec += 1
+            sole_spec = s
+            if !self.call_fits(call, x.decl, x.ty, actual.view(), false) { continue }
+            if spec != 0 {
+                mut self.err(call, ["ambiguous call to specialized overload '", name, "'"])
+                return self.t_err
+            }
+            spec = s
+        }
+    }
+    if spec == 0 && nspec == 1 && self.ty(self.sym(sole_spec).ty).nparams == self.node(call).nkids {
+        spec = sole_spec // sole tuple match: literals coerce below
+    }
+    if spec != 0 {
+        mut self.finish_direct_call(call, spec)
+        return self.call_ret(spec)
+    }
+    chosen: u32 = 0
+    sole: u32 = 0
+    eligible: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        d: u32 = self.sym(s).decl
+        if self.ov_hidden(s, call) || !self.sym(s).is_generic || self.node(d).c == 0 || self.node(self.node(d).c).nkids != nargs { continue }
+        eligible += 1
+        sole = s
+        cand: u32 = mut self.candidate_func_type(d, targs, nargs)
+        if cand == 0 || !self.call_fits(call, d, cand, actual.view(), false) { continue }
+        if chosen != 0 {
+            mut self.err(call, ["ambiguous call to generic overload '", name, "'"])
+            return self.t_err
+        }
+        chosen = s
+    }
+    if chosen == 0 && eligible == 1 { chosen = sole }
+    if chosen == 0 {
+        if eligible > 1 && mut self.overloaded_arg_err(call, head, name) { return self.t_err }
+        mut self.err(call, ["no matching generic overload '", name, "' for these arguments"])
+        return self.t_err
+    }
+    d: Node = self.node(self.sym(chosen).decl)
+    if (d.flags & parser.F_SPECIALIZED) != 0 {
+        mut self.err(call, ["call '", name, mut self.args_name(targs, nargs), "' matches no specialization — '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
+        return self.t_err
+    }
+    if d.ival != 0 { return mut self.unported("memory and format builtin calls") }
+    return mut self.unported("generic function bodies") // stamping checks the body
 }
 
 // --- signatures ---------------------------------------------------------------

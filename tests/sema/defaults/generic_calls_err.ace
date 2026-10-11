@@ -1,0 +1,61 @@
+/* Generic calls in defaults: selected, checked, then rejected. */
+
+VALUE: const i64 = 3
+
+one(v: i64): i64 {
+    return v
+}
+
+two(v: i64): i64 {
+    return v
+}
+
+two(v: f64): i64 {
+    return 0
+}
+
+pick[T](v: T): T {
+    return v
+}
+
+pick[i64](v: i64): i64 {
+    return v
+}
+
+pick[u8](v: u8): u8 {
+    return v
+}
+
+only[T](v: T): i64 specialized
+
+only[f64](v: f64): i64 {
+    return 0
+}
+
+amb[T](v: T): i64 {
+    return 0
+}
+
+amb[T](v: i64): i64 {
+    return 1
+}
+
+take[T](v: T): i64 {
+    return 0
+}
+
+take[T](v: T, w: T): i64 {
+    return 1
+}
+
+Calls: struct {
+    plain: i64 = one[i64](1),
+    named: i64 = VALUE[i64](1),
+    spec: i64 = pick[i64](1),
+    coerced: u8 = pick[u8](7),
+    wrong: i64 = pick[u8]("x"),
+    missing: i64 = only[i64](1),
+    count: i64 = pick[i64, i64](1),
+    ambiguous: i64 = amb[i64](1),
+    overloaded: i64 = take[i64](two),
+}

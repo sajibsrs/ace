@@ -61,3 +61,7 @@
   `select_call_overload` (constant ranks, array-literal candidates, shrink
   matches, per-overload visibility via `ov_hidden`) and checks their
   arguments and `mut` marks, keeping C's `F_REPORTED` as a side table.
+- selfhost selects specializations at generic calls `f[T](...)` (exact
+  type-argument tuple, then the sole tuple match), then the template whose
+  quietly built candidate signature fits (`candidate_func_type`), with C's
+  not-generic, no-match, ambiguity, and missing-specialization diagnostics.

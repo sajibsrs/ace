@@ -47,8 +47,12 @@ An ordinary call there resolves its overload as C does (exact types with
 int/f64/u8 constant defaults and array-literal candidates, then one
 shrink-compatible match, skipping overloads the call site cannot see) and
 checks its arguments before the default is rejected as not compile-time.
-Selfhost stops with `does not yet support` on anything else there, such as a
-generic call or a memory or format builtin.
+A generic call `f[T](...)` first takes the specialization whose type
+arguments equal the written ones, then the template whose signature under
+them fits the arguments exactly, reporting a missing specialization of a
+`specialized` template. Selfhost stops with `does not yet support` on
+anything else there, such as a call that stamps a template (its body is
+checked) or a memory or format builtin.
 
 ## Checking
 
