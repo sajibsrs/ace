@@ -36,8 +36,13 @@ error, both compilers print only the errors.
 
 Type completion stamps generic types as C does: one memoized instance per
 declaration and argument list, its errors followed by an `instantiated here`
-note per enclosing stamp. It does not yet check field defaults or global
-initializers beyond const integer arithmetic.
+note per enclosing stamp. Its compile-time expressions (array lengths,
+`@align` and `@offset`, enum values, error codes, field defaults, and the
+initializers of the globals they name) go through the compile-time subset of
+C's expression checker: literals, names, operators, member access, struct
+and array literals, casts, `blank`, `sizeof`, `alignof`, and `offsetof`.
+Selfhost stops with `does not yet support` on anything else there, such as a
+call to a function, which needs signatures.
 
 ## Checking
 

@@ -1,0 +1,28 @@
+/* Casts and layout builtins in defaults. */
+
+Shape: union { none, value: i32 }
+Flag: enum { off, on }
+Fault: error { 1: bad = "bad" }
+Inner: struct { v: u8 }
+Outer: struct { inner: Inner, n: u32 }
+Mode: bits u8 { low: 4, high: 4 }
+
+Casts: struct {
+    text: i32 = i32("a"),
+    two: i32 = i32(1, 2),
+    shape: Shape = Shape(1),
+    flag: Flag = Flag(7),
+    size: usize = sizeof(nothing),
+    align: usize = alignof(Fault),
+    zero: Inner = blank(Fault),
+    path: usize = offsetof(Outer, n.v),
+    field: usize = offsetof(Outer, missing),
+    member: Flag = Flag.middle,
+    entry: Error = Fault.worse,
+    code: bool = Fault.bad.size == 0,
+    builtin: bool = panic,
+    discard: int = _,
+    mode: Mode = { low = 16 },
+    anonymous: Mode = { 1 },
+    nothing: Mode = { wide = 1 },
+}

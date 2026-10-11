@@ -4,7 +4,10 @@
  * the file scope, or for the root's whole-module imports the import scope,
  * with the checks its declaration alone decides; a type gets its nominal
  * shell. Then type completion: every type declaration resolves in order,
- * with its layout. `dump` prints both scopes as `ace --symbols` does.
+ * with its layout, its compile-time expressions (array lengths, @align and
+ * @offset, enum values, field defaults, and the globals they name) checked
+ * by the expression checker's compile-time subset. `dump` prints both
+ * scopes as `ace --symbols` does.
  */
 
 import array
@@ -186,8 +189,15 @@ pub Sema: struct {
     inst_heads: map.Map[u32, u32],      // a generic declaration's newest instance, plus one
     stamps: array.Array[Stamp],         // the generic stamps in progress, outermost first
     cabi: array.Array[u32],             // the structs is_c_abi_type is inside
+    nty: array.Array[u32],              // per node: its checked type,
+    nsym: array.Array[u32],             // the symbol it names,
+    nival: array.Array[u64],            // and its constant, as C keeps them on the node
     t_err: u32 = 0,
     t_void: u32 = 0,
+    t_error: u32 = 0,                   // the predeclared Error
+    t_ut_int: u32 = 0,                  // untyped constants: an integer or float literal, null
+    t_ut_float: u32 = 0,
+    t_ut_null: u32 = 0,
     t_mut_string: u32 = 0,
     prims: u32 = 0,                     // the first of the 14 primitives, in P_ order
     pub unsupported: string = "",       // a construct not yet ported, when nonempty
@@ -196,7 +206,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -205,6 +215,9 @@ pub Sema.new(l: module.Loader): Sema {
     for i: u32 in 0..14 { _ = mut s.layout(s.prims + i) }
     s.t_mut_string = mut s.new_type(SType { kind = TypeKind.prim, prim = P_STRING, is_mut = true, size = 16, align = 8 })
     s.t_void = mut s.new_type(SType { kind = TypeKind.void })
+    s.t_ut_int = mut s.new_type(SType { kind = TypeKind.ut, name = "integer literal" })
+    s.t_ut_float = mut s.new_type(SType { kind = TypeKind.ut, name = "float literal" })
+    s.t_ut_null = mut s.new_type(SType { kind = TypeKind.ut, name = "null" })
     return s
 }
 
@@ -221,6 +234,9 @@ pub Sema.wipe(mut self) {
     mut self.inst_heads.wipe()
     mut self.stamps.wipe()
     mut self.cabi.wipe()
+    mut self.nty.wipe()
+    mut self.nsym.wipe()
+    mut self.nival.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
@@ -717,10 +733,14 @@ Sema.enter_specialization(mut self, f: u32) {
 /* src/sema.h's P_ primitives, in its order. */
 P_BOOL: const u8 = 0
 P_I8: const u8 = 1
+P_I16: const u8 = 2
 P_I32: const u8 = 3
 P_I64: const u8 = 4
 P_U8: const u8 = 5
+P_U16: const u8 = 6
+P_U32: const u8 = 7
 P_U64: const u8 = 8
+P_F32: const u8 = 9
 P_F64: const u8 = 10
 P_STRING: const u8 = 11
 P_USIZE: const u8 = 12
@@ -816,6 +836,7 @@ Sema.type_name(mut self, id: u32): string {
         }
         TypeKind.error { return "Error" }
         TypeKind.void { return "no value" }
+        TypeKind.ut { return t.name }
         TypeKind.template { return t.name }
         default { return "?" }
     }
@@ -1142,7 +1163,7 @@ Sema.resolve_top(mut self, s: u32) {
 }
 
 /* A global's type, and whether it is const. Its initializer is not yet
- * checked; a const one is read by `const_value`.
+ * checked as C's resolve_global does; a const one is read by `ut_const`.
  */
 Sema.resolve_global(mut self, s: u32) {
     x: Sym = self.sym(s)
@@ -1154,46 +1175,243 @@ Sema.resolve_global(mut self, s: u32) {
     if self.ty(t).kind == TypeKind.error_domain {
         mut self.err(binder, ["error-domain names are identities, not value types; use Error"])
     }
+    if (n.flags & parser.F_EXPO) != 0 && self.ty(t).kind != TypeKind.err && !mut self.is_c_abi_type(t, CABI_FIELD, 0) { // an exported C global (C Interop #6)
+        b: Node = self.node(binder)
+        mut self.err(b.a, ["C global '", b.text, "' has type ", mut self.type_name(t), ", which is not C-ABI compatible"])
+    }
+    k: TypeKind = self.ty(t).kind
     x = self.sym(s)
     x.ty = t
-    x.is_const = (n.flags & parser.F_CONST) != 0 || self.ty(t).kind == TypeKind.staticmap
+    x.is_const = (n.flags & parser.F_CONST) != 0 || k == TypeKind.staticmap
     mut self.update(s, x)
-    if n.b == 0 && self.ty(t).kind != TypeKind.staticmap && (n.flags & parser.F_CONST) != 0 {
+    if n.b != 0 {
+        v: Node = self.node(n.b)
+        if k == TypeKind.staticmap {
+            _ = mut self.unported("StaticMap declarations")
+        } else if v.kind == Kind.structlit && v.a == 0 && (k == TypeKind.struct || k == TypeKind.bits) {
+            mut self.check_structlit(n.b, t)
+        } else if v.kind == Kind.arraylit && k == TypeKind.array {
+            mut self.check_arraylit(n.b, t)
+        } else {
+            _ = mut self.coerce(n.b, t)
+        }
+    } else if k == TypeKind.staticmap {
+        if (n.flags & parser.F_CONST) != 0 { mut self.err(x.top, ["const is not permitted on a StaticMap declaration"]) }
+        mut self.err(x.top, ["StaticMap declaration requires a brace initializer"])
+    } else if (n.flags & parser.F_CONST) != 0 {
         mut self.err(x.top, ["const declaration requires an initializer"])
     }
 }
 
-/* The integer value of compile-time expression `e`, as C's ut_const reads it:
- * literals, consts, unary minus and complement, and integer arithmetic.
+
+// --- compile-time expressions -------------------------------------------------
+
+/* The facts C's checker writes onto an expression node, which later queries
+ * (ut_const, compile_time_expr) read back: its type, the symbol it names,
+ * and a constant (sizeof's value, an array's .len, an enum member's value).
  */
-Sema.const_value(mut self, e: u32): (i64, bool) {
+Sema.grow(mut self, e: u32) {
+    for self.nty.len <= usize(e) {
+        fail(mut self.nty.push(0))
+        fail(mut self.nsym.push(0))
+        fail(mut self.nival.push(0))
+    }
+}
+
+Sema.node_ty(self, e: u32): u32 {
+    if usize(e) >= self.nty.len { return 0 }
+    return self.nty.get(usize(e))
+}
+
+Sema.node_sym(self, e: u32): u32 {
+    if usize(e) >= self.nsym.len { return 0 }
+    return self.nsym.get(usize(e))
+}
+
+Sema.node_ival(self, e: u32): u64 {
+    if usize(e) >= self.nival.len { return 0 }
+    return self.nival.get(usize(e))
+}
+
+Sema.set_node_ty(mut self, e: u32, t: u32) {
+    mut self.grow(e)
+    mut self.nty.set(usize(e), t)
+}
+
+Sema.set_node_sym(mut self, e: u32, s: u32) {
+    mut self.grow(e)
+    mut self.nsym.set(usize(e), s)
+}
+
+Sema.set_node_ival(mut self, e: u32, v: u64) {
+    mut self.grow(e)
+    mut self.nival.set(usize(e), v)
+}
+
+/* Records `what` as not yet ported; the poisoned result keeps checking quiet. */
+Sema.unported(mut self, what: string): u32 {
+    if self.unsupported.len == 0 { self.unsupported = what }
+    return self.t_err
+}
+
+Sema.is_int(self, t: u32): bool {
+    x: SType = self.ty(t)
+    return x.kind == TypeKind.prim && ((x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_USIZE)
+}
+
+Sema.is_float(self, t: u32): bool {
+    x: SType = self.ty(t)
+    return x.kind == TypeKind.prim && (x.prim == P_F32 || x.prim == P_F64)
+}
+
+Sema.is_num(self, t: u32): bool {
+    return self.is_int(t) || self.is_float(t)
+}
+
+Sema.is_bool(self, t: u32): bool {
+    x: SType = self.ty(t)
+    return x.kind == TypeKind.prim && x.prim == P_BOOL
+}
+
+Sema.is_prim(self, t: u32, p: u8): bool {
+    x: SType = self.ty(t)
+    return x.kind == TypeKind.prim && x.prim == p
+}
+
+/* Implicit permission shrink (Mutability #9): `mut string`, `mut []T`, and
+ * `mut *T` convert to their plain forms at the same level, never back.
+ */
+Sema.shrink_ok(self, f: u32, t: u32): bool {
+    if f == 0 || t == 0 { return false }
+    a: SType = self.ty(f)
+    b: SType = self.ty(t)
+    if !a.is_mut || b.is_mut { return false }
+    if a.kind != b.kind {
+        has_string: bool = self.is_prim(f, P_STRING) || self.is_prim(t, P_STRING)
+        sl: u32 = 0
+        if a.kind == TypeKind.slice { sl = f } else if b.kind == TypeKind.slice { sl = t }
+        return has_string && sl != 0 && self.ty(sl).base != 0 && self.is_prim(self.ty(sl).base, P_U8)
+    }
+    switch a.kind {
+        TypeKind.ptr, TypeKind.slice { return self.same_type(a.base, b.base) }
+        TypeKind.prim { return a.prim == b.prim } // only view prims carry is_mut (string)
+        default { return false }
+    }
+}
+
+Sema.same_modulo_shrink(self, a: u32, b: u32): bool {
+    return self.same_type(a, b) || self.shrink_ok(a, b) || self.shrink_ok(b, a)
+}
+
+Sema.accepts_null(self, t: u32): bool {
+    if t == 0 { return false }
+    x: SType = self.ty(t)
+    switch x.kind {
+        TypeKind.ptr, TypeKind.slice, TypeKind.func, TypeKind.contract, TypeKind.error { return true }
+        TypeKind.prim { return x.prim == P_STRING || x.prim == P_TYPEID }
+        default { return false }
+    }
+}
+
+/* Union equality compares tag and payload; it exists only when every
+ * payload supports equality.
+ */
+Sema.union_supports_equality(self, id: u32): bool {
+    t: u32 = id
+    for t != 0 && self.ty(t).kind == TypeKind.distinct { t = self.ty(t).base }
+    if t == 0 { return false }
+    x: SType = self.ty(t)
+    switch x.kind {
+        TypeKind.prim { return x.prim != P_STRING }
+        TypeKind.ptr, TypeKind.func, TypeKind.enum, TypeKind.bits, TypeKind.contract, TypeKind.error { return true }
+        TypeKind.union {
+            for i: u32 in 0..x.nfields {
+                f: u32 = self.field(x, i).ty
+                if f != 0 && !self.union_supports_equality(f) { return false }
+            }
+            return true
+        }
+        default { return false }
+    }
+}
+
+Sema.castable(self, f: u32, t: u32): bool {
+    a: SType = self.ty(f)
+    b: SType = self.ty(t)
+    if a.kind == TypeKind.err || b.kind == TypeKind.err { return true }
+    if self.same_type(f, t) || self.shrink_ok(f, t) { return true } // a mut view casts to its plain form
+    if a.kind == TypeKind.bits { return self.same_type(a.base, t) }
+    if b.kind == TypeKind.bits { return self.same_type(f, b.base) }
+    if f == self.t_ut_int { return self.is_num(t) || b.kind == TypeKind.enum || (b.kind == TypeKind.distinct && self.castable(f, b.base)) }
+    if f == self.t_ut_float { return self.is_float(t) || (b.kind == TypeKind.distinct && self.castable(f, b.base)) }
+    if b.kind == TypeKind.distinct { return self.castable(f, b.base) }
+    if a.kind == TypeKind.distinct { return self.castable(a.base, t) }
+    if a.kind == TypeKind.enum { return self.is_int(t) }
+    if b.kind == TypeKind.enum { return self.is_int(f) }
+    if a.kind == TypeKind.ptr && b.kind == TypeKind.ptr { return true }
+    // string/[]char/[]u8 share a descriptor; arrays reach it only by slicing
+    if self.is_prim(t, P_STRING) && a.kind == TypeKind.slice && a.base == self.prim(P_U8) { return true }
+    return self.is_num(f) && self.is_num(t)
+}
+
+Sema.enum_member_value(self, e: u32, v: i64): bool {
+    x: SType = self.ty(e)
+    for i: u32 in 0..x.nfields {
+        if self.field(x, i).value == v { return true }
+    }
+    return false
+}
+
+/* The initializer a const global's value is read from, or 0. */
+Sema.sym_init(self, s: u32): u32 {
+    x: Sym = self.sym(s)
+    if x.kind != SymKind.var || x.top == 0 || self.node(x.top).kind != Kind.var { return 0 }
+    return self.node(x.top).b
+}
+
+Sema.sym_const(self, s: u32): (i64, bool) {
+    if s == 0 { return 0, false }
+    x: Sym = self.sym(s)
+    init: u32 = self.sym_init(s)
+    if !x.is_const || init == 0 || x.in_cycle { return 0, false }
+    return self.ut_const(init)
+}
+
+/* The integer value of checked compile-time expression `e`, as C's ut_const
+ * reads it: literals, consts, sizeof/alignof/offsetof, an array's .len,
+ * unary minus and complement, and integer arithmetic.
+ */
+Sema.ut_const(self, e: u32): (i64, bool) {
     n: Node = self.node(e)
     switch n.kind {
         Kind.int_lit, Kind.char_lit { return i64(n.ival), true }
-        Kind.ident {
-            s: u32 = mut self.lookup_val(n.text)
-            if s == 0 { return 0, false }
-            x: Sym = self.sym(s)
-            if !x.is_const || x.kind != SymKind.var || x.in_cycle || self.node(x.top).kind != Kind.var { return 0, false }
-            init: u32 = self.node(x.top).b
-            if init == 0 { return 0, false }
-            saved: bool = self.in_module
-            self.in_module = self.in_imported(x.top)
-            v: i64, ok: bool = mut self.const_value(init)
-            self.in_module = saved
-            return v, ok
+        Kind.ident { return self.sym_const(self.node_sym(e)) }
+        Kind.call {
+            if n.a != 0 && self.node(n.a).kind == Kind.ident && self.node_sym(e) == 0 {
+                c: string = self.node(n.a).text
+                if mem.equal(c, "sizeof") || mem.equal(c, "alignof") || mem.equal(c, "offsetof") { return i64(self.node_ival(e)), true }
+            }
+            return 0, false
+        }
+        Kind.selector {
+            if mem.equal(n.text, "len") && n.a != 0 {
+                b: u32 = self.node_ty(n.a)
+                if b != 0 && self.ty(b).kind == TypeKind.array { return i64(self.ty(b).count), true }
+                if self.node(n.a).kind == Kind.str_lit { return i64(self.node(n.a).text.len), true }
+            }
+            return self.sym_const(self.node_sym(e))
         }
         Kind.unary {
-            v: i64, ok: bool = mut self.const_value(n.a)
+            v: i64, ok: bool = self.ut_const(n.a)
             if !ok { return 0, false }
             if n.op == lexer.Token.minus { return i64(bits.wrsub(u64(0), u64(v))), true } // unsigned negate: defined at i64 min
             if n.op == lexer.Token.tilde { return ~v, true }
             return 0, false
         }
         Kind.binary {
-            a: i64, aok: bool = mut self.const_value(n.a)
+            a: i64, aok: bool = self.ut_const(n.a)
             if !aok { return 0, false }
-            b: i64, bok: bool = mut self.const_value(n.b)
+            b: i64, bok: bool = self.ut_const(n.b)
             if !bok { return 0, false }
             switch n.op {
                 lexer.Token.plus { return i64(bits.wradd(u64(a), u64(b))), true }
@@ -1217,6 +1435,973 @@ Sema.const_value(mut self, e: u32): (i64, bool) {
 }
 
 I64_MIN: const i64 = -9223372036854775807 - 1
+
+/* Whether checked expression `e` is compile-time: structural, since
+ * checking has already told const names, enum members, casts, and builtins
+ * from ordinary calls.
+ */
+Sema.compile_time_expr(self, e: u32): bool {
+    if e == 0 { return false }
+    n: Node = self.node(e)
+    switch n.kind {
+        Kind.int_lit, Kind.float_lit, Kind.char_lit, Kind.bool, Kind.str_lit, Kind.null { return true }
+        Kind.ident {
+            s: u32 = self.node_sym(e)
+            if s == 0 { return false }
+            x: Sym = self.sym(s)
+            return x.is_const && x.is_global && self.sym_init(s) != 0 && self.compile_time_expr(self.sym_init(s))
+        }
+        Kind.selector {
+            if mem.equal(n.text, "len") && n.a != 0 {
+                b: u32 = self.node_ty(n.a)
+                if (b != 0 && self.ty(b).kind == TypeKind.array) || self.node(n.a).kind == Kind.str_lit { return true }
+            }
+            if n.a == 0 { return false }
+            s: u32 = self.node_sym(n.a)
+            return s != 0 && self.sym(s).kind == SymKind.type
+        }
+        Kind.unary { return self.compile_time_expr(n.a) }
+        Kind.binary { return self.compile_time_expr(n.a) && self.compile_time_expr(n.b) }
+        Kind.cmpchain, Kind.tuple {
+            for i: u32 in 0..n.nkids {
+                if !self.compile_time_expr(self.kid(e, i)) { return false }
+            }
+            return true
+        }
+        Kind.arraylit {
+            if n.a != 0 { return self.compile_time_expr(n.a) }
+            for i: u32 in 0..n.nkids {
+                k: u32 = self.kid(e, i)
+                if self.node(k).kind == Kind.mapentry { k = self.node(k).b }
+                if !self.compile_time_expr(k) { return false }
+            }
+            return true
+        }
+        Kind.structlit {
+            for i: u32 in 0..n.nkids {
+                if !self.compile_time_expr(self.node(self.kid(e, i)).a) { return false }
+            }
+            return true
+        }
+        Kind.call {
+            if self.node_sym(e) != 0 { return false } // an ordinary function call
+            for i: u32 in 0..n.nkids {
+                if !self.compile_time_expr(self.kid(e, i)) { return false }
+            }
+            return true // a type cast or layout builtin
+        }
+        default { return false }
+    }
+}
+
+/* Whether untyped constant `e` fits `want`, reporting when not. */
+Sema.ut_fits(mut self, e: u32, want: u32): bool {
+    n: Node = self.node(e)
+    if self.is_float(want) {
+        d: f64 = 0.0
+        if n.kind == Kind.float_lit { d = n.fval } else if n.kind == Kind.int_lit { d = f64(n.ival) }
+        if self.ty(want).prim == P_F32 && (d > 3.402823466e38 || d < -3.402823466e38) {
+            mut self.err(e, ["float literal out of range for f32"])
+            return false
+        }
+        return true
+    }
+    v: i64, ok: bool = self.ut_const(e)
+    if !ok { return true }
+    fit: u32 = want
+    if self.ty(want).kind == TypeKind.enum {
+        fit = self.ty(want).base
+        if fit == 0 { fit = self.prim(P_I32) }
+    }
+    lit: bool = n.kind == Kind.int_lit
+    u: u64 = u64(v)
+    over: bool = false
+    switch self.ty(fit).prim {
+        1 { over = (lit && n.ival > 127) || v < -128 || v > 127 }
+        2 { over = (lit && n.ival > 32767) || v < -32768 || v > 32767 }
+        3 { over = (lit && n.ival > 2147483647) || v < -2147483648 || v > 2147483647 }
+        4 { over = lit && n.ival > 9223372036854775807 }
+        5 { over = u > 255 }
+        6 { over = u > 65535 }
+        7 { over = u > 4294967295 }
+        8, 12 { over = v < 0 && !lit }
+        default {}
+    }
+    if !over { return true }
+    mut self.err(e, ["integer literal ", mut self.num64(v), " out of range for ", mut self.type_name(fit)])
+    return false
+}
+
+/* An untyped operand beside a typed one takes its type: a plain or negated
+ * literal directly, a compound constant through coerce.
+ */
+Sema.settle_operand(mut self, e: u32, want: u32): bool {
+    n: Node = self.node(e)
+    if n.kind == Kind.unary && (self.node(n.a).kind == Kind.int_lit || self.node(n.a).kind == Kind.float_lit) {
+        mut self.set_node_ty(n.a, want) // a negated literal is still a literal
+    } else if n.kind == Kind.binary || n.kind == Kind.unary {
+        return mut self.coerce(e, want)
+    }
+    mut self.set_node_ty(e, want)
+    return true
+}
+
+/* Checks `e` against `want`, settling an untyped constant at it. */
+Sema.coerce(mut self, e: u32, want: u32): bool {
+    n: Node = self.node(e)
+    wk: TypeKind = TypeKind.err
+    if want != 0 { wk = self.ty(want).kind }
+    if n.kind == Kind.arraylit && wk == TypeKind.slice { return mut self.coerce_slicelit(e, want) }
+    if n.kind == Kind.arraylit && wk == TypeKind.array {
+        mut self.check_arraylit(e, want)
+        return self.node_ty(e) != self.t_err
+    }
+    if n.kind == Kind.structlit && n.a == 0 && (wk == TypeKind.struct || wk == TypeKind.bits) {
+        mut self.check_structlit(e, want)
+        return self.node_ty(e) != self.t_err
+    }
+    if n.kind == Kind.tuple && wk == TypeKind.tuple {
+        w: SType = self.ty(want)
+        if n.nkids != w.nfields {
+            mut self.err(e, ["tuple has ", mut self.num(n.nkids), " values where ", mut self.num(w.nfields), " expected"])
+            return false
+        }
+        ok: bool = true // each member meets its declared member type
+        for i: u32 in 0..n.nkids {
+            if !mut self.coerce(self.kid(e, i), self.field(w, i).ty) { ok = false }
+        }
+        if ok { mut self.set_node_ty(e, want) } else { mut self.set_node_ty(e, self.t_err) }
+        return ok
+    }
+    if wk == TypeKind.func && (n.kind == Kind.index || (n.kind == Kind.ident && mut self.names_func(n.text))) {
+        _ = mut self.unported("function values")
+        return false
+    }
+    t: u32 = mut self.expr_type(e)
+    if self.same_type(t, want) || self.shrink_ok(t, want) { return true } // shrink, never widening
+    if wk == TypeKind.err || self.ty(t).kind == TypeKind.err { return true }
+    if t == self.t_ut_null {
+        if self.accepts_null(want) {
+            mut self.set_node_ty(e, want)
+            return true
+        }
+        mut self.err(e, ["null is not a value of ", mut self.type_name(want)])
+        return false
+    }
+    w: SType = self.ty(want)
+    if t == self.t_ut_int && (self.is_int(want) || wk == TypeKind.enum || (wk == TypeKind.distinct && self.is_int(w.base))) {
+        fit: u32 = want
+        if wk == TypeKind.distinct { fit = w.base }
+        if !mut self.ut_fits(e, fit) { return false }
+        part: u32 = want // an enum constant is checked whole; its operands are integers
+        if wk == TypeKind.enum {
+            part = w.base
+            if part == 0 { part = self.prim(P_I32) }
+            cv: i64, known: bool = self.ut_const(e)
+            if known && !self.enum_member_value(want, cv) { // Safety #2, #4: an enum value is always a member
+                mut self.err(e, [mut self.num64(cv), " is not a member of ", mut self.type_name(want)])
+                return false
+            }
+        }
+        mut self.settle_parts(e, part)
+        mut self.set_node_ty(e, want) // an untyped literal takes its expected type here
+        return true
+    }
+    if t == self.t_ut_float && (self.is_float(want) || (wk == TypeKind.distinct && self.is_float(w.base))) {
+        fit: u32 = want
+        if wk == TypeKind.distinct { fit = w.base }
+        if !mut self.ut_fits(e, fit) { return false }
+        mut self.settle_parts(e, want)
+        mut self.set_node_ty(e, want)
+        return true
+    }
+    mut self.err(e, ["type mismatch: ", mut self.type_name(t), " given where ", mut self.type_name(want), " expected (casts are explicit)"])
+    return false
+}
+
+/* The operands of an untyped constant `e` settled at `part`; a literal
+ * operand of a unary is a magnitude (i64 min negates 9223372036854775808).
+ */
+Sema.settle_parts(mut self, e: u32, part: u32) {
+    n: Node = self.node(e)
+    if n.kind == Kind.binary {
+        _ = mut self.coerce(n.a, part)
+        _ = mut self.coerce(n.b, part)
+    } else if n.kind == Kind.unary {
+        k: Kind = self.node(n.a).kind
+        if k == Kind.int_lit || k == Kind.float_lit { mut self.set_node_ty(n.a, part) } else { _ = mut self.coerce(n.a, part) }
+    }
+}
+
+/* Whether `name` reaches a function as a value. */
+Sema.names_func(mut self, name: string): bool {
+    s: u32 = mut self.lookup_val(name)
+    return s != 0 && self.sym(s).kind == SymKind.func
+}
+
+/* An array literal where []T is expected: an anonymous [N]T, viewed as []T. */
+Sema.coerce_slicelit(mut self, e: u32, want: u32): bool {
+    mut self.set_node_ty(e, self.t_err)
+    n: Node = self.node(e)
+    w: SType = self.ty(want)
+    if w.is_mut {
+        mut self.err(e, ["array literal cannot establish a writable view: ", mut self.type_name(want), " needs storage that is written"])
+        return false
+    }
+    if n.nkids > 0 && self.node(self.kid(e, 0)).kind == Kind.mapentry {
+        mut self.err(e, ["keyed array literal needs an [E]T context, not ", mut self.type_name(want)])
+        return false
+    }
+    count: i64 = i64(n.nkids)
+    if n.a != 0 {
+        _ = mut self.coerce(n.b, self.prim(P_USIZE))
+        c: i64, ok: bool = self.ut_const(n.b)
+        if !ok || c < 0 {
+            mut self.err(n.b, ["array repetition count must be a compile-time usize expression"])
+            return false
+        }
+        count = c
+    }
+    at: u32 = mut self.new_type(SType { kind = TypeKind.array, count = u64(count), base = w.base })
+    mut self.check_arraylit(e, at)
+    if self.node_ty(e) == self.t_err { return false }
+    mut self.set_node_ty(e, want)
+    return true
+}
+
+Sema.layout_or_cycle(mut self, at: u32, t: u32): bool {
+    if mut self.layout(t) { return true }
+    if !self.ty(t).invalid_layout { mut self.err(at, ["type '", mut self.type_name(t), "' depends on its own layout"]) }
+    return false
+}
+
+/* Checks expression `e`, recording its type on it (C's expr_type). */
+Sema.expr_type(mut self, e: u32): u32 {
+    t: u32 = mut self.expr_type_raw(e)
+    mut self.set_node_ty(e, t)
+    return t
+}
+
+Sema.expr_type_raw(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    switch n.kind {
+        Kind.int_lit, Kind.char_lit { return self.t_ut_int }
+        Kind.float_lit { return self.t_ut_float }
+        Kind.str_lit { return self.prim(P_STRING) }
+        Kind.bool { return self.prim(P_BOOL) }
+        Kind.null { return self.t_ut_null }
+        Kind.ident { return mut self.check_ident(e) }
+        Kind.tuple {
+            tu: SType = SType { kind = TypeKind.tuple, fields = mut self.new_fields(n.nkids), nfields = n.nkids }
+            for i: u32 in 0..n.nkids {
+                f: SField = SField { ty = mut self.expr_type(self.kid(e, i)) }
+                mut self.set_field(tu, i, f)
+            }
+            return mut self.new_type(tu)
+        }
+        Kind.unary { return mut self.check_unary(e) }
+        Kind.binary { return mut self.check_binary(e) }
+        Kind.cmpchain { return mut self.check_cmpchain(e) }
+        Kind.selector { return mut self.check_selector(e) }
+        Kind.structlit {
+            if n.a == 0 {
+                mut self.err(e, ["bare struct literal needs its type from context"])
+                return self.t_err
+            }
+            t: u32 = mut self.build_type(n.a)
+            k: TypeKind = self.ty(t).kind
+            if k == TypeKind.err { return t }
+            if k == TypeKind.struct || k == TypeKind.bits {
+                mut self.check_structlit(e, t)
+            } else {
+                mut self.err(e, [mut self.type_name(t), " does not take a literal"])
+            }
+            return t
+        }
+        Kind.arraylit {
+            mut self.err(e, ["array literal needs its array type from context"])
+            return self.t_err
+        }
+        Kind.call { return mut self.check_call(e) }
+        Kind.mutarg { return mut self.expr_type(n.a) }
+        Kind.range, Kind.index, Kind.slice { return mut self.unported("indexing and ranges in compile-time expressions") }
+        default {
+            mut self.err(e, ["unsupported expression in checker"])
+            return self.t_err
+        }
+    }
+}
+
+Sema.check_ident(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    s: u32 = mut self.lookup_val(n.text)
+    if s == 0 {
+        if is_reserved(n.text) {
+            mut self.err(e, ["'", n.text, "' is a builtin call, not a value"])
+            return self.t_err
+        }
+        if mem.equal(n.text, "_") {
+            mut self.err(e, ["'_' discards a value and cannot be read"])
+            return self.t_err
+        }
+        mut self.err(e, ["unknown name '", n.text, "'"])
+        return self.t_err
+    }
+    x: Sym = self.sym(s)
+    if x.kind == SymKind.module {
+        mut self.err(e, ["module '", n.text, "' used as a value"])
+        return self.t_err
+    }
+    if x.kind == SymKind.func { return mut self.unported("function values") }
+    mut self.set_node_sym(e, s)
+    if x.ty == 0 { return self.t_err }
+    return x.ty
+}
+
+Sema.check_unary(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    if n.op == lexer.Token.amp || n.op == lexer.Token.star || n.op == lexer.Token.volatile {
+        return mut self.unported("addresses in compile-time expressions")
+    }
+    t: u32 = mut self.expr_type(n.a)
+    if self.ty(t).kind == TypeKind.err || t == self.t_ut_int { return t }
+    if t == self.t_ut_float && n.op == lexer.Token.minus { return t }
+    switch n.op {
+        lexer.Token.bang { if self.is_bool(t) { return t } }
+        lexer.Token.tilde { if self.is_int(t) { return t } }
+        lexer.Token.minus {
+            if self.is_float(t) { return t }
+            if self.is_int(t) {
+                p: u8 = self.ty(t).prim
+                if p >= P_U8 && p <= P_U64 {
+                    mut self.err(e, ["cannot negate unsigned ", mut self.type_name(t)])
+                    return self.t_err
+                }
+                return t
+            }
+        }
+        default {}
+    }
+    mut self.err(e, ["invalid operand for '", lexer.disp(n.op), "': ", mut self.type_name(t)])
+    return self.t_err
+}
+
+Sema.check_binary(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    op: lexer.Token = n.op
+    a: u32 = mut self.expr_type(n.a)
+    b: u32 = mut self.expr_type(n.b)
+    if self.ty(a).kind == TypeKind.err || self.ty(b).kind == TypeKind.err { return self.t_err }
+    if op == lexer.Token.and_and || op == lexer.Token.or_or {
+        if self.is_bool(a) && self.is_bool(b) { return self.prim(P_BOOL) }
+        mut self.err(e, ["'", lexer.disp(op), "' needs bool operands, got ", mut self.type_name(a), " and ", mut self.type_name(b)])
+        return self.t_err
+    }
+    additive: bool = op == lexer.Token.plus || op == lexer.Token.minus
+    if (self.ty(a).kind == TypeKind.ptr || self.ty(b).kind == TypeKind.ptr) && additive {
+        return mut self.unported("pointer arithmetic in compile-time expressions")
+    }
+    ut_a: bool = self.ty(a).kind == TypeKind.ut
+    ut_b: bool = self.ty(b).kind == TypeKind.ut
+    if a == self.t_ut_int && b != self.t_ut_int && !ut_b {
+        fit: u32 = b
+        if !self.is_int(b) { fit = self.prim(P_I64) }
+        if !mut self.ut_fits(n.a, fit) { return self.t_err }
+        a = b
+        if !mut self.settle_operand(n.a, a) { return self.t_err }
+    } else if b == self.t_ut_int && a != self.t_ut_int && !ut_a {
+        fit: u32 = a
+        if !self.is_int(a) { fit = self.prim(P_I64) }
+        if !mut self.ut_fits(n.b, fit) { return self.t_err }
+        b = a
+        if !mut self.settle_operand(n.b, b) { return self.t_err }
+    } else if a == self.t_ut_float && self.is_float(b) {
+        if !mut self.ut_fits(n.a, b) { return self.t_err }
+        a = b
+        if !mut self.settle_operand(n.a, a) { return self.t_err }
+    } else if b == self.t_ut_float && self.is_float(a) {
+        if !mut self.ut_fits(n.b, a) { return self.t_err }
+        b = a
+        if !mut self.settle_operand(n.b, b) { return self.t_err }
+    }
+    // remainder, bitwise, and shift operators take integers only
+    if op == lexer.Token.percent || op == lexer.Token.shl || op == lexer.Token.shr || op == lexer.Token.amp || op == lexer.Token.pipe || op == lexer.Token.caret {
+        if a == self.t_ut_int && b == self.t_ut_int { return self.t_ut_int }
+        if self.is_int(a) && self.is_int(b) && self.same_type(a, b) { return a }
+        mut self.err(e, ["'", lexer.disp(op), "' needs integer operands of one type, got ", mut self.type_name(a), " and ", mut self.type_name(b)])
+        return self.t_err
+    }
+    equality: bool = op == lexer.Token.eq_eq || op == lexer.Token.bang_eq
+    cmp: bool = equality || op == lexer.Token.lt || op == lexer.Token.le || op == lexer.Token.gt || op == lexer.Token.ge
+    // two untyped operands compare at their natural type; the result is bool
+    if cmp && a == b && (a == self.t_ut_int || a == self.t_ut_float) {
+        nat: u32 = self.prim(P_I64)
+        if a == self.t_ut_float { nat = self.prim(P_F64) }
+        if !mut self.coerce(n.a, nat) || !mut self.coerce(n.b, nat) { return self.t_err }
+        return self.prim(P_BOOL)
+    }
+    if a == self.t_ut_int && b == self.t_ut_int { return self.t_ut_int }
+    if a == self.t_ut_float && b == self.t_ut_float { return self.t_ut_float }
+    ka: TypeKind = self.ty(a).kind
+    if cmp {
+        if equality && self.same_type(a, b) && (ka == TypeKind.error || ka == TypeKind.bits || self.is_prim(a, P_TYPEID)) { return self.prim(P_BOOL) }
+        if equality && self.same_type(a, b) && self.union_supports_equality(a) { // tag plus active payload
+            ua: u32 = a
+            for ua != 0 && self.ty(ua).kind == TypeKind.distinct { ua = self.ty(ua).base }
+            if ua != 0 && self.ty(ua).kind == TypeKind.union { return self.prim(P_BOOL) }
+        }
+        if self.same_modulo_shrink(a, b) && (self.is_num(a) || self.is_bool(a) || (ka == TypeKind.ptr && equality) || ka == TypeKind.func || ka == TypeKind.enum || ka == TypeKind.contract || ka == TypeKind.distinct || (ka == TypeKind.prim && self.ty(a).prim != P_STRING)) {
+            return self.prim(P_BOOL)
+        }
+        if equality && a == self.t_ut_null && self.accepts_null(b) {
+            mut self.set_node_ty(n.a, b)
+            return self.prim(P_BOOL)
+        }
+        if equality && b == self.t_ut_null && self.accepts_null(a) {
+            mut self.set_node_ty(n.b, a)
+            return self.prim(P_BOOL)
+        }
+        mut self.err(e, ["cannot compare ", mut self.type_name(a), " and ", mut self.type_name(b)])
+        return self.t_err
+    }
+    if self.is_num(a) && self.is_num(b) && self.same_type(a, b) { return a }
+    if self.same_type(a, b) {
+        mut self.err(e, ["operator ", lexer.disp(op), " does not apply to ", mut self.type_name(a)])
+        return self.t_err
+    }
+    mut self.err(e, ["type mismatch: ", mut self.type_name(a), " ", lexer.disp(op), " ", mut self.type_name(b), " — operands need one type (casts are explicit)"])
+    return self.t_err
+}
+
+/* One operand type for the whole chain: the first typed operand's, or the
+ * natural int/f64 when every operand is an untyped constant.
+ */
+Sema.check_cmpchain(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    want: u32 = 0
+    ut: u32 = 0
+    for i: u32 in 0..n.nkids {
+        u: u32 = mut self.expr_type(self.kid(e, i))
+        if self.ty(u).kind == TypeKind.err { return self.t_err }
+        if u == self.t_ut_int || u == self.t_ut_float {
+            if ut == 0 { ut = u }
+        } else if want == 0 {
+            want = u
+        }
+    }
+    if want == 0 {
+        want = self.prim(P_I64)
+        if ut == self.t_ut_float { want = self.prim(P_F64) }
+    }
+    for i: u32 in 0..n.nkids {
+        k: u32 = self.kid(e, i)
+        u: u32 = self.node_ty(k)
+        if (u == self.t_ut_int && self.is_int(want)) || (u == self.t_ut_float && self.is_float(want)) {
+            if !mut self.coerce(k, want) { return self.t_err }
+            u = want
+        }
+        if !self.same_type(u, want) || !self.is_num(want) {
+            mut self.err(e, ["comparison chain needs one numeric type, got ", mut self.type_name(want), " and ", mut self.type_name(u)])
+            return self.t_err
+        }
+    }
+    return self.prim(P_BOOL)
+}
+
+/* `a.name`: an enum member, an error entry, a .len, or a field. */
+Sema.check_selector(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    base: Node = self.node(n.a)
+    if base.kind == Kind.ident {
+        ts: u32 = mut self.lookup_type(base.text)
+        tt: u32 = 0
+        if ts != 0 { tt = self.sym(ts).ty }
+        if tt != 0 && self.ty(tt).kind == TypeKind.enum {
+            t: SType = self.ty(tt)
+            for i: u32 in 0..t.nfields {
+                m: SField = self.field(t, i)
+                if mem.equal(m.name, n.text) {
+                    mut self.set_node_sym(n.a, ts) // an enum-constant marker
+                    mut self.set_node_ival(e, u64(m.value))
+                    return tt
+                }
+            }
+            mut self.err(e, ["enum ", mut self.type_name(tt), " has no member '", n.text, "'"])
+            return self.t_err
+        }
+        if tt != 0 && self.ty(tt).kind == TypeKind.error_domain {
+            t: SType = self.ty(tt)
+            for i: u32 in 0..t.nfields {
+                if mem.equal(self.field(t, i).name, n.text) {
+                    mut self.set_node_sym(n.a, ts)
+                    mut self.set_node_ty(n.a, tt)
+                    return self.t_error
+                }
+            }
+            mut self.err(e, ["error domain ", mut self.type_name(tt), " has no entry '", n.text, "'"])
+            return self.t_err
+        }
+        if tt != 0 && self.ty(tt).kind == TypeKind.union { return mut self.unported("union variants in compile-time expressions") }
+    }
+    if base.kind == Kind.index { return mut self.unported("union variants in compile-time expressions") }
+    if base.kind == Kind.ident {
+        ms: u32 = mut self.lookup_val(base.text)
+        if ms != 0 && self.sym(ms).kind == SymKind.module {
+            mut self.err(e, ["module member '", base.text, ".", n.text, "' needs the stdlib (not yet linked)"])
+            return self.t_err
+        }
+    }
+    b: u32 = mut self.expr_type(n.a)
+    if self.ty(b).kind == TypeKind.err { return self.t_err }
+    bk: TypeKind = self.ty(b).kind
+    if mem.equal(n.text, "len") && (bk == TypeKind.array || bk == TypeKind.slice || self.is_prim(b, P_STRING)) {
+        if bk == TypeKind.array { mut self.set_node_ival(e, self.ty(b).count) } else if base.kind == Kind.str_lit { mut self.set_node_ival(e, u64(base.text.len)) }
+        return self.prim(P_USIZE)
+    }
+    for self.ty(b).kind == TypeKind.ptr { b = self.ty(b).base } // p.x auto-derefs
+    t: SType = self.ty(b)
+    if t.kind == TypeKind.error {
+        if mem.equal(n.text, "domain") { return self.prim(P_TYPEID) }
+        if mem.equal(n.text, "code") { return self.prim(P_I32) }
+        if mem.equal(n.text, "name") || mem.equal(n.text, "message") { return self.prim(P_STRING) }
+        mut self.err(e, ["type Error has no field '", n.text, "'"])
+        return self.t_err
+    }
+    if t.kind == TypeKind.enum && mem.equal(n.text, "name") { return self.prim(P_STRING) } // Type System #14
+    if t.kind == TypeKind.contract { return mut self.unported("contract methods in compile-time expressions") }
+    if t.kind == TypeKind.bits {
+        for i: u32 in 0..t.nfields {
+            f: SField = self.field(t, i)
+            if !f.bit_anonymous && mem.equal(f.name, n.text) {
+                mut self.set_node_ival(e, u64(i))
+                return f.ty
+            }
+        }
+        mut self.err(e, ["bits type ", mut self.type_name(b), " has no accessible field '", n.text, "'"])
+        return self.t_err
+    }
+    if t.kind == TypeKind.struct {
+        for i: u32 in 0..t.nfields {
+            if mem.equal(self.field(t, i).name, n.text) {
+                mut self.check_field_visible(b, e)
+                return self.field(t, i).ty
+            }
+        }
+        mut self.err(e, ["type ", mut self.type_name(b), " has no field '", n.text, "'"])
+        return self.t_err
+    }
+    mut self.err(e, ["type ", mut self.type_name(b), " has no member '", n.text, "'"])
+    return self.t_err
+}
+
+/* A field of struct `t` named at `at` in another module waits for the
+ * loader's visibility rule (#115); within its own module it is visible.
+ */
+Sema.check_field_visible(mut self, t: u32, at: u32) {
+    d: u32 = self.ty(t).decl
+    if d == 0 || self.node(d).kind != Kind.struct || at == 0 { return }
+    if self.l.module_of(d) != self.l.module_of(at) { _ = mut self.unported("field visibility across modules") }
+}
+
+/* The calls a compile-time expression may hold: casts, blank, and the
+ * layout builtins. An ordinary call waits for signatures (step 3).
+ */
+Sema.check_call(mut self, call: u32): u32 {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    if callee.kind != Kind.ident { return mut self.unported("function calls in compile-time expressions") }
+    name: string = callee.text
+    if mut self.lookup_val(name) != 0 { return mut self.unported("function calls in compile-time expressions") }
+    p: u32 = self.prim_by_name(name)
+    ts: u32 = mut self.lookup_type(name)
+    if p != 0 || ts != 0 { return mut self.check_cast(call, p, ts) }
+    if mem.equal(name, "blank") {
+        if n.nkids != 1 {
+            mut self.err(call, ["blank takes one type name"])
+            return self.t_err
+        }
+        arg: u32 = self.kid(call, 0)
+        t: u32 = mut self.build_type(arg)
+        if self.ty(t).kind == TypeKind.err { return self.t_err }
+        if self.ty(t).kind == TypeKind.error_domain {
+            mut self.err(arg, ["error-domain names have no value layout; use Error"])
+            return self.t_err
+        }
+        if !mut self.layout_or_cycle(arg, t) { return self.t_err }
+        return t
+    }
+    if mem.equal(name, "sizeof") || mem.equal(name, "alignof") {
+        if n.nkids == 1 {
+            arg: u32 = self.kid(call, 0)
+            a: Node = self.node(arg)
+            t: u32 = 0
+            if a.kind == Kind.ident {
+                t = self.prim_by_name(a.text)
+                if t == 0 {
+                    s2: u32 = mut self.lookup_type(a.text)
+                    if s2 != 0 { t = self.sym(s2).ty }
+                }
+            } else { // an inline type: []T, [N]T, *T, ...
+                t = mut self.build_type(arg)
+                if self.ty(t).kind == TypeKind.err { return self.t_err }
+            }
+            if t != 0 && self.ty(t).kind == TypeKind.error_domain {
+                mut self.err(arg, ["error-domain names have no value layout; use Error"])
+                return self.t_err
+            }
+            if t != 0 && self.ty(t).kind != TypeKind.err {
+                if !mut self.layout_or_cycle(arg, t) { return self.t_err }
+                v: u32 = self.ty(t).size
+                if mem.equal(name, "alignof") { v = self.ty(t).align }
+                mut self.set_node_ival(call, u64(v)) // a constant for the emitter
+                return self.prim(P_USIZE)
+            }
+        }
+        mut self.err(call, [name, " takes one type name"])
+        return self.t_err
+    }
+    if mem.equal(name, "offsetof") { return mut self.check_offsetof(call) }
+    return mut self.unported("builtin calls in compile-time expressions")
+}
+
+/* `T(x)`: a cast to primitive `p` or declared type `ts`. */
+Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
+    n: Node = self.node(call)
+    if ts != 0 && self.sym(ts).ty != 0 && self.ty(self.sym(ts).ty).kind == TypeKind.error_domain {
+        return mut self.unported("error construction in compile-time expressions")
+    }
+    if n.nkids != 1 {
+        mut self.err(call, ["a cast takes exactly one argument"])
+        return self.t_err
+    }
+    want: u32 = p
+    if want == 0 { want = mut self.build_type(n.a) }
+    wk: TypeKind = self.ty(want).kind
+    if wk == TypeKind.contract { return mut self.unported("contract construction in compile-time expressions") }
+    if wk == TypeKind.union {
+        mut self.err(call, ["unions have no constructor call — construct a variant: ", mut self.type_name(want), ".<variant>(...)"])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    from: u32 = mut self.expr_type(arg)
+    if wk == TypeKind.err || self.ty(from).kind == TypeKind.err { return self.t_err }
+    // an explicit legacy cast between the byte-view aliases keeps write permission
+    fs: SType = self.ty(from)
+    if self.is_prim(want, P_STRING) && fs.kind == TypeKind.slice && fs.base == self.prim(P_U8) && fs.is_mut { want = self.t_mut_string }
+    if !(self.is_prim(want, P_USIZE) && fs.kind == TypeKind.ptr) && !self.castable(from, want) {
+        mut self.err(call, ["cannot cast ", mut self.type_name(from), " to ", mut self.type_name(want)])
+        return self.t_err
+    }
+    w: SType = self.ty(want)
+    ak: Kind = self.node(arg).kind
+    // a compound untyped constant under a float cast: float math at the target, integer math as int
+    if (from == self.t_ut_float || from == self.t_ut_int) && (self.is_float(want) || (w.kind == TypeKind.distinct && self.is_float(w.base))) && (ak == Kind.unary || ak == Kind.binary) {
+        at: u32 = self.prim(P_I64)
+        if from == self.t_ut_float { at = want }
+        if !mut self.coerce(arg, at) { return self.t_err }
+    }
+    mut self.set_node_sym(n.a, ts) // the named-type cast marker
+    mut self.set_node_ty(n.a, want)
+    if from == self.t_ut_int {
+        fit: u32 = want
+        if w.kind == TypeKind.distinct {
+            fit = w.base
+            if !self.is_int(w.base) { fit = self.prim(P_I64) }
+        }
+        if !mut self.ut_fits(arg, fit) { return self.t_err }
+    }
+    if w.kind == TypeKind.enum {
+        cv: i64, known: bool = self.ut_const(arg)
+        if known && !self.enum_member_value(want, cv) { // Safety #2, #4: an enum value is always a member
+            mut self.err(call, [mut self.num64(cv), " is not a member of ", mut self.type_name(want)])
+            return self.t_err
+        }
+    }
+    return want
+}
+
+/* `offsetof(T, a.b)`: the byte offset of a field path through inline structs. */
+Sema.check_offsetof(mut self, call: u32): u32 {
+    n: Node = self.node(call)
+    if n.nkids != 2 {
+        mut self.err(call, ["offsetof takes one struct type and one field path"])
+        return self.t_err
+    }
+    t: u32 = mut self.build_type(self.kid(call, 0))
+    if self.ty(t).kind == TypeKind.err { return self.t_err }
+    if !mut self.layout_or_cycle(self.kid(call, 0), t) { return self.t_err }
+    parts: array.Array[u32] = array.Array[u32] {}
+    defer mut parts.wipe()
+    path: u32 = self.kid(call, 1)
+    for path != 0 && self.node(path).kind == Kind.selector && parts.len < 64 {
+        fail(mut parts.push(path))
+        path = self.node(path).a
+    }
+    if path != 0 && self.node(path).kind == Kind.ident && parts.len < 64 { fail(mut parts.push(path)) }
+    total: u64 = 0
+    for k: usize = parts.len; k > 0; k -= 1 {
+        part: u32 = parts.get(k - 1)
+        if self.ty(t).kind != TypeKind.struct {
+            mut self.err(part, ["offsetof field paths traverse inline structs only"])
+            return self.t_err
+        }
+        st: SType = self.ty(t)
+        found: bool = false
+        for fi: u32 in 0..st.nfields {
+            f: SField = self.field(st, fi)
+            if mem.equal(f.name, self.node(part).text) {
+                mut self.check_field_visible(t, part)
+                total += u64(f.offset)
+                t = f.ty
+                found = true
+                break
+            }
+        }
+        if !found {
+            mut self.err(part, ["type ", mut self.type_name(t), " has no field '", self.node(part).text, "'"])
+            return self.t_err
+        }
+    }
+    mut self.set_node_ival(call, total)
+    return self.prim(P_USIZE)
+}
+
+/* A struct or bits literal against `want`; omitted fields with defaults are
+ * filled where the literal is lowered, not here.
+ */
+Sema.check_structlit(mut self, lit: u32, want: u32) {
+    mut self.set_node_ty(lit, want)
+    w: SType = self.ty(want)
+    if w.kind == TypeKind.struct && w.is_overlap {
+        mut self.err(lit, ["overlapping struct ", mut self.type_name(want), " has no literal; declare it and assign a member"])
+        return
+    }
+    if w.kind == TypeKind.bits {
+        mut self.check_bitslit(lit, want)
+        return
+    }
+    if w.kind != TypeKind.struct {
+        mut self.err(lit, ["struct literal used where ", mut self.type_name(want), " expected"])
+        return
+    }
+    l: Node = self.node(lit)
+    n: u32 = l.nkids
+    positional: bool = n > 0 && self.node(self.kid(lit, 0)).text.len == 0
+    seen: array.Array[bool] = array.Array[bool] {}
+    defer mut seen.wipe()
+    for i: u32 in 0..w.nfields { fail(mut seen.push(false)) }
+    for i: u32 in 0..n {
+        fid: u32 = self.kid(lit, i)
+        fi: Node = self.node(fid)
+        if positional {
+            if fi.text.len != 0 {
+                mut self.err(fid, ["cannot mix named and positional fields"])
+                return
+            }
+            if i >= w.nfields {
+                mut self.err(fid, ["too many fields: ", mut self.type_name(want), " has ", mut self.num(w.nfields)])
+                return
+            }
+            mut self.check_field_visible(want, fid)
+            _ = mut self.coerce(fi.a, self.field(w, i).ty)
+            continue
+        }
+        if fi.text.len == 0 {
+            mut self.err(fid, ["cannot mix named and positional fields"])
+            return
+        }
+        found: u32 = w.nfields
+        for j: u32 in 0..w.nfields {
+            if mem.equal(self.field(w, j).name, fi.text) {
+                found = j
+                break
+            }
+        }
+        if found == w.nfields {
+            mut self.err(fid, ["type ", mut self.type_name(want), " has no field '", fi.text, "'"])
+            continue
+        }
+        if seen.get(usize(found)) {
+            mut self.err(fid, ["duplicate field '", fi.text, "' in ", mut self.type_name(want), " literal"])
+            continue
+        }
+        mut seen.set(usize(found), true)
+        if (fi.flags & parser.F_DEFAULT) == 0 { mut self.check_field_visible(want, fid) }
+        _ = mut self.coerce(fi.a, self.field(w, found).ty)
+    }
+    if positional && n < w.nfields {
+        mut self.err(lit, ["missing fields: ", mut self.type_name(want), " has ", mut self.num(w.nfields), ", literal has ", mut self.num(n)])
+    }
+    if positional { return }
+    for i: u32 in 0..w.nfields {
+        f: SField = self.field(w, i)
+        if !seen.get(usize(i)) && f.default_value == 0 {
+            mut self.err(lit, ["missing field '", f.name, "' in ", mut self.type_name(want), " literal"])
+        }
+    }
+}
+
+/* A bits literal: named fields only; omitted ones stay zero. */
+Sema.check_bitslit(mut self, lit: u32, want: u32) {
+    w: SType = self.ty(want)
+    seen: array.Array[bool] = array.Array[bool] {}
+    defer mut seen.wipe()
+    for i: u32 in 0..w.nfields { fail(mut seen.push(false)) }
+    for i: u32 in 0..self.node(lit).nkids {
+        fid: u32 = self.kid(lit, i)
+        fi: Node = self.node(fid)
+        if fi.text.len == 0 {
+            mut self.err(fid, ["bits literals require named fields"])
+            continue
+        }
+        found: u32 = w.nfields
+        for j: u32 in 0..w.nfields {
+            f: SField = self.field(w, j)
+            if !f.bit_anonymous && mem.equal(f.name, fi.text) {
+                found = j
+                break
+            }
+        }
+        if found == w.nfields {
+            mut self.err(fid, ["bits type ", mut self.type_name(want), " has no accessible field '", fi.text, "'"])
+            continue
+        }
+        if seen.get(usize(found)) {
+            mut self.err(fid, ["duplicate field '", fi.text, "' in ", mut self.type_name(want), " literal"])
+            continue
+        }
+        mut seen.set(usize(found), true)
+        f: SField = self.field(w, found)
+        v: i64, known: bool = self.ut_const(fi.a)
+        if known {
+            ok: bool = false
+            if f.bit_signed {
+                lo: i64 = I64_MIN
+                hi: i64 = 9223372036854775807
+                if f.bit_width < 64 {
+                    lo = -(i64(1) << i64(f.bit_width - 1))
+                    hi = (i64(1) << i64(f.bit_width - 1)) - 1
+                }
+                ok = v >= lo && v <= hi
+            } else {
+                ok = v >= 0 && (f.bit_width == 64 || u64(v) < (u64(1) << u64(f.bit_width)))
+            }
+            if !ok {
+                sign: string = "unsigned"
+                if f.bit_signed { sign = "signed" }
+                mut self.err(fi.a, ["constant does not fit ", mut self.type_name(want), ".", f.name, " ", sign, " ", mut self.num(f.bit_width), "-bit field"])
+            }
+        }
+        _ = mut self.coerce(fi.a, f.ty)
+    }
+}
+
+Sema.check_arraylit(mut self, lit: u32, want: u32) {
+    mut self.set_node_ty(lit, want)
+    w: SType = self.ty(want)
+    if w.kind != TypeKind.array {
+        mut self.err(lit, ["array literal used where ", mut self.type_name(want), " expected"])
+        return
+    }
+    l: Node = self.node(lit)
+    if l.a != 0 {
+        _ = mut self.coerce(l.b, self.prim(P_USIZE))
+        count: i64, ok: bool = self.ut_const(l.b)
+        if !ok {
+            mut self.err(l.b, ["array repetition count must be a compile-time usize expression"])
+            return
+        }
+        if count < 0 || u64(count) != w.count {
+            mut self.err(lit, ["array repetition count is ", mut self.num64(count), ", expected ", mut self.num64(i64(w.count)), " for ", mut self.type_name(want)])
+            return
+        }
+        _ = mut self.coerce(l.a, w.base)
+        return
+    }
+    if l.nkids > 0 && self.node(self.kid(lit, 0)).kind == Kind.mapentry {
+        mut self.check_keyed_arraylit(lit, want)
+        return
+    }
+    if w.key != 0 {
+        mut self.err(lit, [mut self.type_name(want), " takes a keyed literal ([", mut self.type_name(w.key), ".member = value, ...]), not a positional one"])
+        return
+    }
+    if u64(l.nkids) != w.count {
+        mut self.err(lit, ["array length is ", mut self.num64(i64(w.count)), ", literal has ", mut self.num(l.nkids), " elements"])
+        return
+    }
+    for i: u32 in 0..l.nkids { _ = mut self.coerce(self.kid(lit, i), w.base) }
+}
+
+/* Syntax & Parsing #16: each key is a member of E written in full, every
+ * member exactly once.
+ */
+Sema.check_keyed_arraylit(mut self, lit: u32, want: u32) {
+    w: SType = self.ty(want)
+    if w.key == 0 {
+        mut self.err(lit, ["keys apply only to an enum-indexed array, not ", mut self.type_name(want)])
+        return
+    }
+    seen: array.Array[bool] = array.Array[bool] {}
+    defer mut seen.wipe()
+    for i: u64 in 0..w.count { fail(mut seen.push(false)) }
+    ok: bool = true
+    for i: u32 in 0..self.node(lit).nkids {
+        en: Node = self.node(self.kid(lit, i))
+        kt: u32 = mut self.expr_type(en.a)
+        if self.ty(kt).kind == TypeKind.err {
+            ok = false
+            continue
+        }
+        slot: u64, exact: bool = self.static_key_int(en.a)
+        if !self.same_type(kt, w.key) || self.node(en.a).kind != Kind.selector || !exact {
+            if self.same_type(kt, w.key) {
+                mut self.err(en.a, ["a key of ", mut self.type_name(want), " is a member written in full (", mut self.type_name(w.key), ".name), not a runtime value"])
+            } else {
+                mut self.err(en.a, ["a key of ", mut self.type_name(want), " is a ", mut self.type_name(w.key), " member, not ", mut self.type_name(kt)])
+            }
+            ok = false
+            continue
+        }
+        if seen.get(usize(slot)) {
+            mut self.err(en.a, ["member ", mut self.type_name(w.key), ".", self.node(en.a).text, " is keyed twice"])
+            ok = false
+            continue
+        }
+        mut seen.set(usize(slot), true)
+        _ = mut self.coerce(en.b, w.base)
+    }
+    if !ok { return }
+    e: SType = self.ty(w.key)
+    for i: u32 in 0..e.nfields {
+        m: SField = self.field(e, i)
+        if !seen.get(usize(m.value)) {
+            mut self.err(lit, ["keyed literal of ", mut self.type_name(want), " is missing member ", mut self.type_name(w.key), ".", m.name])
+        }
+    }
+}
+
+/* A key known exactly at compile time: a bool or an enum member. */
+Sema.static_key_int(self, e: u32): (u64, bool) {
+    n: Node = self.node(e)
+    if n.kind == Kind.bool {
+        if n.ival != 0 { return 1, true }
+        return 0, true
+    }
+    if n.kind == Kind.selector && n.a != 0 {
+        ts: u32 = self.node_sym(n.a)
+        if ts != 0 && self.sym(ts).kind == SymKind.type && self.sym(ts).ty != 0 && self.ty(self.sym(ts).ty).kind == TypeKind.enum {
+            return self.node_ival(e), true
+        }
+    }
+    if n.kind == Kind.call && self.node_sym(e) == 0 && n.nkids == 1 { return self.static_key_int(self.kid(e, 0)) } // a cast
+    if n.kind == Kind.ident {
+        s: u32 = self.node_sym(e)
+        if s != 0 && self.sym(s).is_const && self.sym(s).is_global && self.sym_init(s) != 0 { return self.static_key_int(self.sym_init(s)) }
+    }
+    v: i64, ok: bool = self.ut_const(e)
+    return u64(v), ok
+}
 
 // --- building types -----------------------------------------------------------
 
@@ -1597,7 +2782,10 @@ Sema.build_array(mut self, id: u32): u32 {
     if b.kind == Kind.ident && !bound && (self.prim_by_name(b.text) != 0 || mut self.lookup_type(b.text) != 0) {
         return mut self.enum_array(id)
     }
-    len: i64, ok: bool = mut self.const_value(t.b)
+    errors: int = self.errors
+    _ = mut self.coerce(t.b, self.prim(P_USIZE))
+    if self.errors != errors { return self.t_err } // already reported
+    len: i64, ok: bool = self.ut_const(t.b)
     if !ok {
         if !self.names_cycle(t.b) { mut self.err(t.b, ["array length must be a compile-time usize expression"]) }
         return self.t_err
@@ -1650,7 +2838,8 @@ Sema.enum_array(mut self, id: u32): u32 {
 
 Sema.checked_layout_align(mut self, expr: u32, subject: string): u32 {
     if expr == 0 { return 0 }
-    v: i64, ok: bool = mut self.const_value(expr)
+    _ = mut self.coerce(expr, self.prim(P_USIZE))
+    v: i64, ok: bool = self.ut_const(expr)
     if !ok {
         mut self.err(expr, [subject, " @align value must be a compile-time usize expression"])
         return 0
@@ -1663,7 +2852,8 @@ Sema.checked_layout_align(mut self, expr: u32, subject: string): u32 {
 }
 
 Sema.checked_layout_offset(mut self, expr: u32): u32 {
-    v: i64, ok: bool = mut self.const_value(expr)
+    _ = mut self.coerce(expr, self.prim(P_USIZE))
+    v: i64, ok: bool = self.ut_const(expr)
     if !ok {
         mut self.err(expr, ["field @offset value must be a compile-time usize expression"])
         return 0
@@ -1833,7 +3023,20 @@ Sema.fill_struct(mut self, decl: u32, id: u32) {
         if (fd.flags & parser.F_EMBED) != 0 && k != TypeKind.struct && k != TypeKind.err {
             mut self.err(fid, ["embedded field '", f.name, "' must have a struct type"])
         }
-        // field defaults are checked with compile-time expressions (not yet ported)
+        if fd.c != 0 {
+            v: Node = self.node(fd.c)
+            k: TypeKind = self.ty(f.ty).kind
+            if v.kind == Kind.structlit && v.a == 0 && k == TypeKind.struct {
+                mut self.check_structlit(fd.c, f.ty)
+            } else if v.kind == Kind.arraylit && k == TypeKind.array {
+                mut self.check_arraylit(fd.c, f.ty)
+            } else {
+                _ = mut self.coerce(fd.c, f.ty)
+            }
+            if !self.compile_time_expr(fd.c) {
+                mut self.err(fd.c, ["default for field '", f.name, "' must be a compile-time expression"])
+            }
+        }
     }
     for i: u32 in 0..t.nfields {
         for j: u32 in i + 1..t.nfields {
@@ -1951,30 +3154,6 @@ Sema.check_contract(mut self, decl: u32) {
     }
 }
 
-/* Whether literal `e` fits integer type `want`, reporting when not. */
-Sema.ut_fits(mut self, e: u32, want: u32): bool {
-    v: i64, ok: bool = mut self.const_value(e)
-    if !ok { return true }
-    n: Node = self.node(e)
-    lit: bool = n.kind == Kind.int_lit
-    u: u64 = u64(v)
-    over: bool = false
-    switch self.ty(want).prim {
-        1 { over = (lit && n.ival > 127) || v < -128 || v > 127 }
-        2 { over = (lit && n.ival > 32767) || v < -32768 || v > 32767 }
-        3 { over = (lit && n.ival > 2147483647) || v < -2147483648 || v > 2147483647 }
-        4 { over = lit && n.ival > 9223372036854775807 }
-        5 { over = u > 255 }
-        6 { over = u > 65535 }
-        7 { over = u > 4294967295 }
-        8, 12 { over = v < 0 && !lit }
-        default {}
-    }
-    if !over { return true }
-    mut self.err(e, ["integer literal ", mut self.num64(v), " out of range for ", mut self.type_name(want)])
-    return false
-}
-
 Sema.check_enum(mut self, decl: u32, id: u32) {
     d: Node = self.node(decl)
     base: u32 = self.prim(P_I32)
@@ -2002,7 +3181,8 @@ Sema.check_enum(mut self, decl: u32, id: u32) {
         next: i64 = 0
         if i > 0 { next = i64(bits.wradd(u64(previous), u64(1))) }
         if m.a != 0 {
-            v: i64, ok: bool = mut self.const_value(m.a)
+            _ = mut self.expr_type(m.a)
+            v: i64, ok: bool = self.ut_const(m.a)
             value = v
             if !ok {
                 mut self.err(m.a, ["enum discriminant must be a compile-time integer expression"])
@@ -2062,7 +3242,8 @@ Sema.check_error_domain(mut self, decl: u32) {
         exact: bool = a.kind == Kind.int_lit || (a.kind == Kind.unary && a.op == lexer.Token.minus && a.a != 0 && self.node(a.a).kind == Kind.int_lit)
         code: i64 = 0
         ok: bool = false
-        if exact { code, ok = mut self.const_value(entry.a) }
+        _ = mut self.expr_type(entry.a)
+        if exact { code, ok = self.ut_const(entry.a) }
         if !ok {
             code = 0
             mut self.err(entry.a, ["error code must be an exact integer literal"])
@@ -2125,6 +3306,7 @@ pub Sema.enter(mut self) {
     error: u32 = mut self.new_sym(SymKind.type, "Error")
     x: Sym = self.sym(error)
     x.ty = mut self.new_type(SType { kind = TypeKind.error, name = "Error", size = 8, align = 8 })
+    self.t_error = x.ty
     mut self.update(error, x)
     mut self.files.insert(true, "Error", error)
 

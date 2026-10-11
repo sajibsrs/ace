@@ -1,0 +1,24 @@
+/* Struct and array literals in defaults meet their field's type. */
+
+Point: struct { x: int, y: int }
+Pair: struct { a: int = 1, b: int }
+Color: enum { red, green }
+
+Shapes: struct {
+    unknown: Point = { x = 1, z = 2 },
+    twice: Point = { x = 1, x = 2, y = 3 },
+    mixed: Point = { x = 1, 2 },
+    extra: Point = { 1, 2, 3 },
+    short: Point = { 1 },
+    missing: Pair = { a = 2 },
+    bare: int = { x = 1 },
+    named: int = int { x = 1 },
+    list: [2]int = [1, 2, 3],
+    repeat: [2]int = [0 : 3],
+    keyed: [Color]int = [1, 2],
+    loose: [2]int = [Color.red = 1, Color.green = 2],
+    twice_keyed: [Color]int = [Color.red = 1, Color.red = 2],
+    partial: [Color]int = [Color.red = 1],
+    wrong_key: [Color]int = [1 = 1, 2 = 2],
+    tuple: (int, int) = (1, 2, 3),
+}

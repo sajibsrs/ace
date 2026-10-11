@@ -1,0 +1,20 @@
+/* Null, slice views, and overlapping structs in defaults. */
+
+Word: struct {
+    @offset(0)
+    value: u32,
+    @offset(0)
+    bytes: [4]u8,
+}
+Color: enum { red, green }
+Point: struct { x: int, y: int }
+
+Views: struct {
+    nothing: int = null,
+    writable: mut []int = [1, 2],
+    keyed: []int = [Color.red = 1],
+    point: [2]int = { x = 1 },
+    list: Point = [1, 2],
+    word: [1]Word = [{ value = 1 }],
+    compared: bool = Point { x = 1, y = 2 } == Point { x = 1, y = 2 },
+}

@@ -239,6 +239,60 @@ tests/sema/generics/field_stamp_note_err.ace|8:25: note: in 'Outer[[4]u8]' insta
 tests/sema/c_abi/function_pointer_err.ace|7:33: error: C function-pointer parameter type [2]u8 is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|7:40: error: C function-pointer return type string is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|8:29: error: C function-pointer parameter type *Fat is not C-ABI compatible
+tests/sema/defaults/operators_err.ace|7:23: error: '&&' needs bool operands, got bool and integer literal
+tests/sema/defaults/operators_err.ace|8:20: error: '%' needs integer operands of one type, got integer literal and float literal
+tests/sema/defaults/operators_err.ace|9:19: error: cannot negate unsigned u8
+tests/sema/defaults/operators_err.ace|10:21: error: invalid operand for '~': bool
+tests/sema/defaults/operators_err.ace|11:26: error: comparison chain needs one numeric type, got string and string
+tests/sema/defaults/operators_err.ace|12:23: error: comparison chain needs one numeric type, got u8 and float literal
+tests/sema/defaults/operators_err.ace|13:26: error: type mismatch: i64 + u8 — operands need one type (casts are explicit)
+tests/sema/defaults/operators_err.ace|14:26: error: operator + does not apply to bool
+tests/sema/defaults/operators_err.ace|15:19: error: float literal out of range for f32
+tests/sema/defaults/operators_err.ace|16:16: error: integer literal 300 out of range for u8
+tests/sema/defaults/operators_err.ace|17:20: error: 5 is not a member of Flag
+tests/sema/defaults/operators_err.ace|18:19: error: type mismatch: integer literal given where *u8 expected (casts are explicit)
+tests/sema/defaults/literals_err.ace|8:31: error: type Point has no field 'z'
+tests/sema/defaults/literals_err.ace|8:22: error: missing field 'y' in Point literal
+tests/sema/defaults/literals_err.ace|9:29: error: duplicate field 'x' in Point literal
+tests/sema/defaults/literals_err.ace|10:29: error: cannot mix named and positional fields
+tests/sema/defaults/literals_err.ace|11:28: error: too many fields: Point has 2
+tests/sema/defaults/literals_err.ace|12:20: error: missing fields: Point has 2, literal has 1
+tests/sema/defaults/literals_err.ace|13:21: error: missing field 'b' in Pair literal
+tests/sema/defaults/literals_err.ace|14:17: error: bare struct literal needs its type from context
+tests/sema/defaults/literals_err.ace|15:22: error: i64 does not take a literal
+tests/sema/defaults/literals_err.ace|16:21: error: array length is 2, literal has 3 elements
+tests/sema/defaults/literals_err.ace|17:23: error: array repetition count is 3, expected 2 for [2]i64
+tests/sema/defaults/literals_err.ace|18:26: error: [Color]i64 takes a keyed literal ([Color.member = value, ...]), not a positional one
+tests/sema/defaults/literals_err.ace|19:22: error: keys apply only to an enum-indexed array, not [2]i64
+tests/sema/defaults/literals_err.ace|20:53: error: member Color.red is keyed twice
+tests/sema/defaults/literals_err.ace|21:28: error: keyed literal of [Color]i64 is missing member Color.green
+tests/sema/defaults/literals_err.ace|22:30: error: a key of [Color]i64 is a Color member, not integer literal
+tests/sema/defaults/literals_err.ace|22:37: error: a key of [Color]i64 is a Color member, not integer literal
+tests/sema/defaults/literals_err.ace|23:25: error: tuple has 3 values where 2 expected
+tests/sema/defaults/casts_err.ace|11:20: error: cannot cast string to i32
+tests/sema/defaults/casts_err.ace|12:19: error: a cast takes exactly one argument
+tests/sema/defaults/casts_err.ace|13:25: error: unions have no constructor call — construct a variant: Shape.<variant>(...)
+tests/sema/defaults/casts_err.ace|14:22: error: 7 is not a member of Flag
+tests/sema/defaults/casts_err.ace|15:26: error: unknown type 'nothing'
+tests/sema/defaults/casts_err.ace|16:28: error: error-domain names have no value layout; use Error
+tests/sema/defaults/casts_err.ace|17:25: error: error-domain names have no value layout; use Error
+tests/sema/defaults/casts_err.ace|18:37: error: offsetof field paths traverse inline structs only
+tests/sema/defaults/casts_err.ace|19:36: error: type Outer has no field 'missing'
+tests/sema/defaults/casts_err.ace|20:25: error: enum Flag has no member 'middle'
+tests/sema/defaults/casts_err.ace|21:26: error: error domain Fault has no entry 'worse'
+tests/sema/defaults/casts_err.ace|22:28: error: type Error has no field 'size'
+tests/sema/defaults/casts_err.ace|23:21: error: 'panic' is a builtin call, not a value
+tests/sema/defaults/casts_err.ace|24:20: error: '_' discards a value and cannot be read
+tests/sema/defaults/casts_err.ace|25:26: error: constant does not fit Mode.low unsigned 4-bit field
+tests/sema/defaults/casts_err.ace|26:25: error: bits literals require named fields
+tests/sema/defaults/casts_err.ace|27:23: error: bits type Mode has no accessible field 'wide'
+tests/sema/defaults/views_err.ace|13:24: error: null is not a value of i64
+tests/sema/defaults/views_err.ace|14:28: error: array literal cannot establish a writable view: mut []i64 needs storage that is written
+tests/sema/defaults/views_err.ace|15:21: error: keyed array literal needs an [E]T context, not []i64
+tests/sema/defaults/views_err.ace|16:21: error: bare struct literal needs its type from context
+tests/sema/defaults/views_err.ace|17:20: error: array literal needs its array type from context
+tests/sema/defaults/views_err.ace|18:22: error: overlapping struct Word has no literal; declare it and assign a member
+tests/sema/defaults/views_err.ace|19:45: error: cannot compare Point and Point
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared

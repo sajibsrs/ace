@@ -49,3 +49,7 @@
   substitution environment, memoized per declaration and argument list with
   C's `same_type`, and notes each enclosing stamp on an error; `extern "c"`
   function types check their parameters and return with `is_c_abi_type`.
+- selfhost checks the compile-time expressions type completion reaches
+  (array lengths, layout attributes, enum values, field defaults, and named
+  globals' initializers) with C's `coerce`/`expr_type` subset, keeping each
+  node's type, symbol, and constant in side tables that `ut_const` reads.

@@ -1,0 +1,19 @@
+/* Field defaults are checked as expressions: operators need operands of one
+ * fitting type. */
+
+Flag: enum { off, on }
+
+Ops: struct {
+    both: bool = true && 1,
+    mixed: i32 = 1 % 2.0,
+    negated: u8 = -u8(1),
+    flipped: bool = ~true,
+    compared: bool = "a" < "b",
+    chained: bool = 1 < 2.5 < u8(3),
+    joined: i64 = i64(1) + u8(2),
+    applied: bool = true + true,
+    narrow: f32 = 1.0e39,
+    wide: u8 = 300,
+    member: Flag = 5,
+    absent: *u8 = 1,
+}
