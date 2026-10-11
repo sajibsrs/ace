@@ -82,6 +82,27 @@ pub SType: struct {
     pub nfields: u32 = 0,
     pub params: u32 = 0,
     pub nparams: u32 = 0,
+    pub args: u32 = 0,                  // a generic instance's type arguments, a run of Sema.params
+    pub nargs: u32 = 0,
+}
+
+/* A generic type's memoized instance (C's STypeInst): `result` 0 marks an
+ * alias expansion in progress. `next` chains the declaration's instances,
+ * newest first, as indexes in Sema.insts plus one.
+ */
+TInst: struct {
+    args: u32 = 0,
+    nargs: u32 = 0,
+    result: u32 = 0,
+    next: u32 = 0,
+}
+
+/* A generic stamp in progress (C's Inst): an error inside it names this site. */
+Stamp: struct {
+    at: u32 = 0,                        // the written instantiation
+    decl: u32 = 0,                      // the generic declaration stamped
+    args: u32 = 0,
+    nargs: u32 = 0,
 }
 
 pub SField: struct {
@@ -158,7 +179,15 @@ pub Sema: struct {
     in_module: bool = false,            // resolving an imported file's declaration: root names are unseen
     layout_blocked: bool = false,       // why the last layout failed
     layout_poisoned: bool = false,
+    tnames: array.Array[string],        // the substitution environment: type parameter names
+    ttypes: array.Array[u32],           // and their types; the current one starts at `sub`
+    sub: u32 = 0,
+    insts: array.Array[TInst],
+    inst_heads: map.Map[u32, u32],      // a generic declaration's newest instance, plus one
+    stamps: array.Array[Stamp],         // the generic stamps in progress, outermost first
+    cabi: array.Array[u32],             // the structs is_c_abi_type is inside
     t_err: u32 = 0,
+    t_void: u32 = 0,
     t_mut_string: u32 = 0,
     prims: u32 = 0,                     // the first of the 14 primitives, in P_ order
     pub unsupported: string = "",       // a construct not yet ported, when nonempty
@@ -167,7 +196,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -175,6 +204,7 @@ pub Sema.new(l: module.Loader): Sema {
     for i: u8 in 0..14 { _ = mut s.new_type(SType { kind = TypeKind.prim, prim = i }) }
     for i: u32 in 0..14 { _ = mut s.layout(s.prims + i) }
     s.t_mut_string = mut s.new_type(SType { kind = TypeKind.prim, prim = P_STRING, is_mut = true, size = 16, align = 8 })
+    s.t_void = mut s.new_type(SType { kind = TypeKind.void })
     return s
 }
 
@@ -185,6 +215,12 @@ pub Sema.wipe(mut self) {
     mut self.params.wipe()
     mut self.resolving.wipe()
     mut self.deferred.wipe()
+    mut self.tnames.wipe()
+    mut self.ttypes.wipe()
+    mut self.insts.wipe()
+    mut self.inst_heads.wipe()
+    mut self.stamps.wipe()
+    mut self.cabi.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
@@ -243,6 +279,20 @@ Sema.err(mut self, at: u32, parts: []string) {
     n: Node = self.node(at)
     msg: string = mut self.pool.join(parts)
     fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
+    mut self.print_shown(msg)
+    fmt.printf(sys.stderr, "\n")
+    for k: usize = self.stamps.len; k > 0; k -= 1 {
+        st: Stamp = self.stamps.get(k - 1)
+        sn: Node = self.node(st.at)
+        fmt.printf(sys.stderr, "%s:%d:%d: note: in '", self.l.mods.get(self.l.module_of(st.at)).path, int(sn.line), int(sn.col))
+        mut self.print_shown(mut self.pool.join([self.node(st.decl).text, mut self.args_name(st.args, st.nargs)]))
+        fmt.printf(sys.stderr, "' instantiated here\n")
+    }
+    self.errors += 1
+}
+
+/* `msg` with each module-private identity in it as written. */
+Sema.print_shown(mut self, msg: string) {
     i: usize = 0
     for i < msg.len {
         if !identity_char(msg[i]) {
@@ -261,8 +311,34 @@ Sema.err(mut self, at: u32, parts: []string) {
         fmt.printf(sys.stderr, "%s", word)
         i = j
     }
-    fmt.printf(sys.stderr, "\n")
-    self.errors += 1
+}
+
+/* `[int, string]`: type arguments as a stamp note spells them, cut to C's
+ * 256-byte buffer (spec_tuple_name).
+ */
+Sema.args_name(mut self, args: u32, nargs: u32): string {
+    parts: array.Array[string] = array.Array[string] {}
+    defer mut parts.wipe()
+    fail(mut parts.push("["))
+    o: usize = 1
+    for i: u32 in 0..nargs {
+        if o + 2 >= 255 { break }
+        if i > 0 {
+            fail(mut parts.push(", "))
+            o += 2
+        }
+        a: u32 = self.params.get(usize(args + i))
+        tn: string = "void" // written as a type argument
+        if self.ty(a).kind != TypeKind.void { tn = mut self.type_name(a) }
+        if o + tn.len + 2 >= 255 {
+            fail(mut parts.push(".."))
+            break
+        }
+        fail(mut parts.push(tn))
+        o += tn.len
+    }
+    fail(mut parts.push("]"))
+    return mut self.pool.join(parts.view())
 }
 
 /* `v` in decimal, pool-owned. */
@@ -1170,12 +1246,16 @@ Sema.build_named(mut self, id: u32): u32 {
         mut self.err(id, ["module-qualified types need the stdlib (not yet linked)"])
         return self.t_err
     }
-    return mut self.build_ident(id, t.nkids != 0)
+    return mut self.build_ident(id, true)
 }
 
-/* A type name: N_IDENT, or N_NAMED without its qualifiers. */
-Sema.build_ident(mut self, id: u32, generic_args: bool): u32 {
+/* A type name: N_IDENT, or N_NAMED (`named`) without its qualifiers, whose
+ * type arguments instantiate a generic.
+ */
+Sema.build_ident(mut self, id: u32, named: bool): u32 {
     t: Node = self.node(id)
+    ti: u32, bound: bool = self.type_param_index(t.text) // stamping substitutes first
+    if bound { return mut self.substituted_value_type(id, ti) }
     if self.is_void(id) { return mut self.void_misplaced(id) }
     p: u32 = self.prim_by_name(t.text)
     if p != 0 { return p }
@@ -1184,10 +1264,7 @@ Sema.build_ident(mut self, id: u32, generic_args: bool): u32 {
         mut self.err(id, ["unknown type '", t.text, "'"])
         return self.t_err
     }
-    if generic_args { // generic instantiation in type position: Vec[int]
-        if self.unsupported.len == 0 { self.unsupported = "generic type instantiation" }
-        return self.t_err
-    }
+    if named && t.nkids > 0 { return mut self.build_generic(id, s) } // generic instantiation in type position: Vec[int]
     if self.sym(s).is_generic {
         mut self.err(id, ["generic type '", t.text, "' needs explicit type arguments"])
         return self.t_err
@@ -1195,13 +1272,40 @@ Sema.build_ident(mut self, id: u32, generic_args: bool): u32 {
     return self.sym(s).ty
 }
 
+/* `G[A, B]` as named type `id` writes it, G being type symbol `s`. */
+Sema.build_generic(mut self, id: u32, s: u32): u32 {
+    args: array.Array[u32] = array.Array[u32] {}
+    defer mut args.wipe()
+    for i: u32 in 0..self.node(id).nkids { fail(mut args.push(mut self.build_type_or_void(self.kid(id, i)))) }
+    return mut self.instantiate(self.ty(self.sym(s).ty).decl, args.view(), id)
+}
+
 Sema.build_type(mut self, id: u32): u32 {
     t: Node = self.node(id)
     switch t.kind {
         Kind.named { return mut self.build_named(id) }
         Kind.ident { return mut self.build_ident(id, false) }
-        Kind.index {
-            if self.unsupported.len == 0 { self.unsupported = "generic type instantiation" }
+        Kind.index { // expression-position generic instantiation: Vec[int]
+            if t.a == 0 || self.node(t.a).kind != Kind.ident {
+                mut self.err(id, ["expected a type"])
+                return self.t_err
+            }
+            it: u32 = mut self.indexed_named_type(id)
+            if it != 0 { return it }
+            name: string = self.node(t.a).text
+            ts: u32 = mut self.lookup_type(name)
+            if ts == 0 || self.sym(ts).ty == 0 {
+                mut self.err(t.a, ["unknown type '", name, "'"])
+            } else if self.sym(ts).is_generic {
+                d: Node = self.node(self.ty(self.sym(ts).ty).decl)
+                want: u32 = 0
+                if d.c != 0 { want = self.node(d.c).nkids }
+                plural: string = "s"
+                if want == 1 { plural = "" }
+                mut self.err(id, ["generic type '", name, "' expects ", mut self.num(want), " type argument", plural])
+            } else {
+                mut self.err(t.a, ["type '", name, "' is not generic"])
+            }
             return self.t_err
         }
         Kind.ptr, Kind.slice_t {
@@ -1233,8 +1337,18 @@ Sema.build_type(mut self, id: u32): u32 {
                 p: u32 = mut self.build_type(self.kid(id, i))
                 mut self.params.set(usize(f.params + i), p)
             }
-            if t.a != 0 && !self.is_void(t.a) { f.ret = mut self.build_type(t.a) }
-            if f.is_c_abi && self.unsupported.len == 0 { self.unsupported = "C function-pointer types" }
+            f.ret = mut self.build_return_type(t.a)
+            if f.is_c_abi {
+                for i: u32 in 0..f.nparams {
+                    p: u32 = self.params.get(usize(f.params + i))
+                    if self.ty(p).kind != TypeKind.err && !mut self.is_c_abi_type(p, CABI_DIRECT, 0) {
+                        mut self.err(self.kid(id, i), ["C function-pointer parameter type ", mut self.type_name(p), " is not C-ABI compatible"])
+                    }
+                }
+                if f.ret != 0 && self.ty(f.ret).kind != TypeKind.err && !mut self.is_c_abi_type(f.ret, CABI_DIRECT, 0) {
+                    mut self.err(t.a, ["C function-pointer return type ", mut self.type_name(f.ret), " is not C-ABI compatible"])
+                }
+            }
             return mut self.new_type(f)
         }
         default {
@@ -1244,11 +1358,243 @@ Sema.build_type(mut self, id: u32): u32 {
     }
 }
 
+/* The index of the type parameter `name` binds under the current
+ * substitution, when it binds one.
+ */
+Sema.type_param_index(self, name: string): (u32, bool) {
+    for i: u32 in self.sub..u32(self.tnames.len) {
+        if mem.equal(self.tnames.get(usize(i)), name) { return i - self.sub, true }
+    }
+    return 0, false
+}
+
+/* A type parameter bound to 'void' names no value: it stands only where the
+ * generic's own return or a function type's return stands.
+ */
+Sema.substituted_value_type(mut self, at: u32, i: u32): u32 {
+    t: u32 = self.ttypes.get(usize(self.sub + i))
+    if self.ty(t).kind != TypeKind.void { return t }
+    mut self.err(at, ["'void' (as ", self.tnames.get(usize(self.sub + i)), ") is allowed only as a function type's return or a type argument"])
+    return self.t_err
+}
+
+/* A return or type-argument position, where 'void', written or bound to a
+ * type parameter, is admitted.
+ */
+Sema.build_type_or_void(mut self, id: u32): u32 {
+    if self.is_void(id) { return self.t_void }
+    t: Node = self.node(id)
+    if (t.kind == Kind.named || t.kind == Kind.ident) && t.a == 0 && t.nkids == 0 {
+        i: u32, bound: bool = self.type_param_index(t.text)
+        if bound && self.ty(self.ttypes.get(usize(self.sub + i))).kind == TypeKind.void { return self.t_void }
+    }
+    return mut self.build_type(id)
+}
+
+/* A return position: 'void' there is no value (0), as an omitted clause. */
+Sema.build_return_type(mut self, id: u32): u32 {
+    if id == 0 { return 0 }
+    r: u32 = mut self.build_type_or_void(id)
+    if self.ty(r).kind == TypeKind.void { return 0 }
+    return r
+}
+
+/* `G[A, B]` in expression position over a generic type G, instantiated;
+ * 0 when `ix` names no generic type.
+ */
+Sema.indexed_named_type(mut self, ix: u32): u32 {
+    n: Node = self.node(ix)
+    if n.kind != Kind.index || n.a == 0 || self.node(n.a).kind != Kind.ident { return 0 }
+    ts: u32 = mut self.lookup_type(self.node(n.a).text)
+    if ts == 0 || !self.sym(ts).is_generic || self.sym(ts).ty == 0 || self.ty(self.sym(ts).ty).decl == 0 { return 0 }
+    args: array.Array[u32] = array.Array[u32] {}
+    defer mut args.wipe()
+    if n.b != 0 {
+        fail(mut args.push(mut self.build_type_or_void(n.b)))
+    } else {
+        for i: u32 in 0..n.nkids { fail(mut args.push(mut self.build_type_or_void(self.kid(ix, i)))) }
+    }
+    return mut self.instantiate(self.ty(self.sym(ts).ty).decl, args.view(), ix)
+}
+
+/* Whether `a` and `b` are one type, as C's same_type decides. */
+Sema.same_type(self, a: u32, b: u32): bool {
+    if a == b { return true }
+    if a == 0 || b == 0 { return false }
+    x: SType = self.ty(a)
+    y: SType = self.ty(b)
+    if x.kind == TypeKind.err || y.kind == TypeKind.err { return true } // poison-tolerant
+    if x.kind != y.kind { // string, []char, and []u8: one read-only byte view
+        str_t: SType = x
+        sl: SType = y
+        if y.kind == TypeKind.prim {
+            str_t = y
+            sl = x
+        }
+        return str_t.kind == TypeKind.prim && str_t.prim == P_STRING && sl.kind == TypeKind.slice && str_t.is_mut == sl.is_mut && sl.base != 0 && self.ty(sl.base).kind == TypeKind.prim && self.ty(sl.base).prim == P_U8
+    }
+    switch x.kind {
+        TypeKind.prim { return x.prim == y.prim && x.is_mut == y.is_mut }
+        TypeKind.ptr, TypeKind.slice { return x.is_mut == y.is_mut && self.same_type(x.base, y.base) }
+        TypeKind.array { return x.count == y.count && x.key == y.key && self.same_type(x.base, y.base) }
+        TypeKind.staticmap { return self.same_type(x.base, y.base) && self.same_type(x.ret, y.ret) }
+        TypeKind.tuple {
+            if x.nfields != y.nfields { return false }
+            for i: u32 in 0..x.nfields {
+                if !self.same_type(self.field(x, i).ty, self.field(y, i).ty) { return false }
+            }
+            return true
+        }
+        TypeKind.func {
+            if x.is_c_abi != y.is_c_abi || x.nparams != y.nparams { return false }
+            for i: u32 in 0..x.nparams {
+                if !self.same_type(self.params.get(usize(x.params + i)), self.params.get(usize(y.params + i))) { return false }
+            }
+            return self.same_type(x.ret, y.ret)
+        }
+        TypeKind.struct, TypeKind.enum, TypeKind.bits, TypeKind.contract, TypeKind.distinct, TypeKind.error_domain, TypeKind.union {
+            if x.decl != y.decl || x.nargs != y.nargs { return false }
+            for i: u32 in 0..x.nargs {
+                if !self.same_type(self.params.get(usize(x.args + i)), self.params.get(usize(y.args + i))) { return false }
+            }
+            return true // nominal identity plus exact generic arguments
+        }
+        TypeKind.error { return true }
+        TypeKind.typeparam { return x.name.len > 0 && mem.equal(x.name, y.name) }
+        default { return false }
+    }
+}
+
+/* Generic declaration `decl` stamped under `args`, written at `at`: memoized
+ * per declaration and argument list. A nominal shell is memoized before its
+ * fields are built, so a self-recursive pointer resolves to it; an alias
+ * memoizes its expansion once built.
+ */
+Sema.instantiate(mut self, decl: u32, args: []u32, at: u32): u32 {
+    d: Node = self.node(decl)
+    if decl == 0 || d.c == 0 { return self.t_err }
+    tp: Node = self.node(d.c)
+    nargs: u32 = u32(args.len)
+    if tp.nkids != nargs {
+        mut self.err(decl, ["generic type expects ", mut self.num(tp.nkids), " type arguments, got ", mut self.num(nargs)])
+        return self.t_err
+    }
+    head: u32, _ = self.inst_heads.get(decl)
+    for it: u32 = head; it != 0; it = self.insts.get(usize(it - 1)).next {
+        inst: TInst = self.insts.get(usize(it - 1))
+        same: bool = true
+        for i: u32 in 0..nargs {
+            if !same { break }
+            same = self.same_type(self.params.get(usize(inst.args + i)), args[i])
+        }
+        if !same { continue }
+        if inst.result == 0 {
+            mut self.err(decl, ["generic alias '", d.text, "' has a recursive expansion"])
+            return self.t_err
+        }
+        return inst.result
+    }
+    run: u32 = u32(self.params.len)
+    for a: u32 in args { fail(mut self.params.push(a)) }
+    t: u32 = 0
+    if d.kind != Kind.alias {
+        t = mut self.new_type(SType { kind = nominal_kind(d.kind), name = d.text, decl = decl, args = run, nargs = nargs })
+    }
+    fail(mut self.insts.push(TInst { args = run, nargs = nargs, result = t, next = head }))
+    slot: u32 = u32(self.insts.len)
+    fail(mut self.inst_heads.set(decl, slot))
+    saved: u32 = self.sub
+    self.sub = u32(self.tnames.len)
+    for i: u32 in 0..nargs {
+        fail(mut self.tnames.push(self.node(self.kid(d.c, i)).text))
+        fail(mut self.ttypes.push(args[i]))
+    }
+    fail(mut self.stamps.push(Stamp { at = at, decl = decl, args = run, nargs = nargs }))
+    switch d.kind {
+        Kind.alias {
+            r: u32 = mut self.build_type(d.a)
+            inst: TInst = self.insts.get(usize(slot - 1))
+            inst.result = r
+            mut self.insts.set(usize(slot - 1), inst)
+            t = r
+        }
+        Kind.struct { mut self.fill_struct(decl, t) }
+        Kind.contract { _ = mut self.layout(t) }
+        Kind.union { mut self.fill_union(decl, t) }
+        default { t = self.t_err }
+    }
+    mut self.stamps.truncate(self.stamps.len - 1)
+    mut self.tnames.truncate(usize(self.sub))
+    mut self.ttypes.truncate(usize(self.sub))
+    self.sub = saved
+    return t
+}
+
+/* C-ABI positions (C Interop #3): boundary parameters and returns, struct
+ * members, pointer targets, and members of a pointed-to struct.
+ */
+CABI_DIRECT: const u8 = 0
+CABI_FIELD: const u8 = 1
+CABI_POINTEE: const u8 = 2
+CABI_POINTEE_FIELD: const u8 = 3
+
+Sema.has_special_struct_layout(self, t: SType): bool {
+    if t.kind != TypeKind.struct { return false }
+    if t.is_packed || t.requested_align != 0 { return true }
+    for i: u32 in 0..t.nfields {
+        f: SField = self.field(t, i)
+        if f.requested_align != 0 || f.has_offset { return true }
+    }
+    return false
+}
+
+/* The C-ABI whitelist, positive and position-aware: arrays only nested in
+ * aggregates or behind pointers. `cabi` holds the `depth` structs in
+ * progress; a repeat is a cycle through a pointer, so compatible.
+ */
+Sema.is_c_abi_type(mut self, id: u32, pos: u8, depth: u32): bool {
+    if id == 0 { return true } // no-value shape: legal only as a return
+    t: SType = self.ty(id)
+    switch t.kind {
+        TypeKind.err { return true } // already diagnosed; do not cascade
+        TypeKind.prim { return t.prim != P_STRING && t.prim != P_TYPEID }
+        TypeKind.ptr { return mut self.is_c_abi_type(t.base, CABI_POINTEE, depth) }
+        TypeKind.distinct { return mut self.is_c_abi_type(t.base, pos, depth) }
+        TypeKind.enum { return t.decl != 0 && self.node(t.decl).a != 0 && mut self.is_c_abi_type(t.base, pos, depth) }
+        TypeKind.array { return pos != CABI_DIRECT && mut self.is_c_abi_type(t.base, pos, depth) }
+        TypeKind.func {
+            if !t.is_c_abi { return false }
+            for i: u32 in 0..t.nparams {
+                if !mut self.is_c_abi_type(self.params.get(usize(t.params + i)), CABI_DIRECT, depth) { return false }
+            }
+            return mut self.is_c_abi_type(t.ret, CABI_DIRECT, depth)
+        }
+        TypeKind.struct {
+            if self.has_special_struct_layout(t) && pos != CABI_POINTEE && pos != CABI_POINTEE_FIELD { return false } // pointer-only initially
+            if t.nargs != 0 || (t.decl != 0 && self.node(t.decl).c != 0) { return false } // generic shapes
+            for i: u32 in 0..depth {
+                if self.cabi.get(usize(i)) == id { return true } // a cycle through a pointer
+            }
+            if depth >= 512 { return false }
+            mut self.cabi.truncate(usize(depth))
+            fail(mut self.cabi.push(id))
+            field_pos: u8 = CABI_FIELD
+            if pos == CABI_POINTEE || pos == CABI_POINTEE_FIELD { field_pos = CABI_POINTEE_FIELD }
+            for i: u32 in 0..t.nfields {
+                if !mut self.is_c_abi_type(self.field(t, i).ty, field_pos, depth + 1) { return false }
+            }
+            return true
+        }
+        default { return false } // slices, tuples, Ace function values, default enums, contracts, unions, ...
+    }
+}
+
 /* `[N]T`, or `[E]T` over a dense enum E (Type System #13). */
 Sema.build_array(mut self, id: u32): u32 {
     t: Node = self.node(id)
     b: Node = self.node(t.b)
-    if b.kind == Kind.ident && (self.prim_by_name(b.text) != 0 || mut self.lookup_type(b.text) != 0) {
+    _, bound: bool = self.type_param_index(b.text)
+    if b.kind == Kind.ident && !bound && (self.prim_by_name(b.text) != 0 || mut self.lookup_type(b.text) != 0) {
         return mut self.enum_array(id)
     }
     len: i64, ok: bool = mut self.const_value(t.b)

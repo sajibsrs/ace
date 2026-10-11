@@ -1,0 +1,9 @@
+/* An extern "c" function type takes C-ABI parameter and return types: no
+ * Ace strings, no bare arrays, nothing reaching them behind a pointer. */
+
+Fat: struct { text: string }
+
+Callbacks: struct {
+    by_value: extern "c" (Fat, [2]u8): string,
+    by_pointer: extern "c" (*Fat, i32): void,
+}

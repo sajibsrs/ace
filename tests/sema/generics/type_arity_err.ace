@@ -1,0 +1,6 @@
+/* A generic type in a field's type takes exactly as many type arguments as
+ * it declares. */
+
+Box[T]: struct { value: T }
+
+Pair: struct { box: Box[int, u8] }

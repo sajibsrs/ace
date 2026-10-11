@@ -45,3 +45,7 @@
   checks, const integer evaluation, and their diagnostics. `--symbols` now
   dumps each completed type's layout and parts in both compilers; C's runs
   through the new `complete_types`, split out of `sema_check`.
+- selfhost stamps generic struct, union, contract, and alias types under a
+  substitution environment, memoized per declaration and argument list with
+  C's `same_type`, and notes each enclosing stamp on an error; `extern "c"`
+  function types check their parameters and return with `is_c_abi_type`.

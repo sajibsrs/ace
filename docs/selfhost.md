@@ -30,12 +30,14 @@ type's `base`, and then its parts: a struct `field` with type, size,
 effective alignment, and offset; a bits `field` with bit offset and width; a
 union `variant` with its payload's size and alignment; an enum `member` or an
 error `entry` with its value; or an alias's `= target`. A generic type has no
-layout of its own. On an error, both compilers print only the errors.
+layout of its own; an instance a field names shows as its declaration's name
+(`Box`) with the instance's size, since instances live in no scope. On an
+error, both compilers print only the errors.
 
-Type completion does not yet check field defaults or global initializers
-beyond const integer arithmetic, nor stamp generic types; selfhost stops with
-`does not yet support` on a generic instantiation or an `extern "c"` function
-type.
+Type completion stamps generic types as C does: one memoized instance per
+declaration and argument list, its errors followed by an `instantiated here`
+note per enclosing stamp. It does not yet check field defaults or global
+initializers beyond const integer arithmetic.
 
 ## Checking
 

@@ -1,0 +1,5 @@
+/* A generic alias whose expansion reaches itself has no terminal type. */
+
+Loop[T]: type = *Loop[T]
+
+Holder: struct { p: Loop[int] }

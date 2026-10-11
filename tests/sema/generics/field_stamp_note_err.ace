@@ -1,0 +1,8 @@
+/* An error inside a type stamped for a field names each instantiation site,
+ * innermost first. */
+
+Inner[T]: struct { value: T, bad: Missing }
+
+Outer[U]: struct { inner: Inner[U] }
+
+Holder: struct { outer: Outer[[4]u8] }

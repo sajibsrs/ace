@@ -231,6 +231,14 @@ tests/sema/generics/instantiation_site_err.ace|9:12: note: in 'inner[string]' in
 tests/sema/generics/instantiation_site_err.ace|26:17: note: in 'outer[string]' instantiated here
 tests/sema/generics/instantiation_site_err.ace|28:19: note: in 'Box[string].get' instantiated here
 tests/sema/generics/instantiation_site_err.ace|29:29: note: in 'Box[string].make' instantiated here
+tests/sema/generics/type_arity_err.ace|4:1: error: generic type expects 1 type arguments, got 2
+tests/sema/generics/alias_recursive_err.ace|3:1: error: generic alias 'Loop' has a recursive expansion
+tests/sema/generics/alias_recursive_err.ace|5:21: note: in 'Loop[i64]' instantiated here
+tests/sema/generics/field_stamp_note_err.ace|6:27: note: in 'Inner[[4]u8]' instantiated here
+tests/sema/generics/field_stamp_note_err.ace|8:25: note: in 'Outer[[4]u8]' instantiated here
+tests/sema/c_abi/function_pointer_err.ace|7:33: error: C function-pointer parameter type [2]u8 is not C-ABI compatible
+tests/sema/c_abi/function_pointer_err.ace|7:40: error: C function-pointer return type string is not C-ABI compatible
+tests/sema/c_abi/function_pointer_err.ace|8:29: error: C function-pointer parameter type *Fat is not C-ABI compatible
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared
