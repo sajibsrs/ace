@@ -1,0 +1,36 @@
+/* Signing registration: owner, module, uniqueness, type parameters, contracts. */
+
+import Far from "./other.ace"
+
+Shape: contract {
+    area(self): i64
+}
+
+Point: struct {
+    x: i64,
+}
+
+Box[T]: struct {
+    v: T,
+}
+
+Pair[A, B]: struct {
+    a: A,
+    b: B,
+}
+
+Mode: enum {
+    on,
+}
+
+Point signs Shape
+Point signs Shape
+Mode signs Shape
+Missing signs Shape
+Box signs Shape
+Pair[A, C] signs Shape
+Point2: struct {
+    x: i64,
+}
+Point2 signs Point
+Far signs Shape

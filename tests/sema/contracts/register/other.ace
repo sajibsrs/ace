@@ -1,0 +1,3 @@
+pub Far: struct {
+    v: i64,
+}

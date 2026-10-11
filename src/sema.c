@@ -8342,6 +8342,8 @@ static void dump_flags(Sym* s, int hidden, const char* sig) {
  * members, or entries. */
 static void dump_type(Sym* s) {
     SType* t = s->type;
+    if (s->top && s->top->kind == N_STRUCT && s->top->d)
+        printf("  signing @%d:%d\n", s->top->d->line, s->top->d->col);
     if (s->is_generic) return; // stamped at each use
     if (s->top && s->top->kind == N_ALIAS) {
         printf("  = %s\n", type_name(t));
@@ -8431,7 +8433,7 @@ int sema_dump_symbols(Node* file, Diag* d) {
     if (d->errors) return d->errors;
     complete_types(&k, file);
     if (d->errors) return d->errors;
-    resolve_signatures(&k, file, 0);
+    resolve_signatures(&k, file, 1);
     if (d->errors) return d->errors;
     g_dump_root = file->path;
     dump_list(file_scope.types, "type");

@@ -19,14 +19,15 @@ documentation once selfhost is complete.
 | Sema: type completion | `sema.ace` | `--symbols` | `src/sema.c` (`complete_types`) |
 
 `--symbols` prints the scopes once every top-level name is entered
-(Compiler #5), every type is complete, and every function signature is
-resolved (signings not yet): the file scope's types, then its values, then
-the root's whole-module imports. Each line names the symbol, its kind (a
+(Compiler #5), every type is complete, every function signature is
+resolved, and every signing is registered: the file scope's types, then its
+values, then the root's whole-module imports. Each line names the symbol, its kind (a
 type's kind; an alias shows its target's), its flags (`entered` until
 something resolves it), and its declaration's position; a function lists each
 overload, bound specializations included, as a `member`, flagged `hidden`
 when the root file cannot see it (Modules #2) and followed by its signature
-unless generic, and each specialization still waiting to bind as a `spec`. Below a completed type come its `size` and `align` (with `packed`,
+unless generic, and each specialization still waiting to bind as a `spec`.
+A struct with a registered signing shows it as `signing @line:col`. Below a completed type come its `size` and `align` (with `packed`,
 `overlap`, and an explicit `@align`), an enum's, bits type's, or distinct
 type's `base`, and then its parts: a struct `field` with type, size,
 effective alignment, and offset; a bits `field` with bit offset and width; a

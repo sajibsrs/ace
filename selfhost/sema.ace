@@ -193,6 +193,7 @@ pub Sema: struct {
     sub: u32 = 0,
     insts: array.Array[TInst],
     inst_heads: map.Map[u32, u32],      // a generic declaration's newest instance, plus one
+    signings: map.Map[u32, u32],        // a struct declaration's registered signing (C's decl->d)
     stamps: array.Array[Stamp],         // the generic stamps in progress, outermost first
     cabi: array.Array[u32],             // the structs is_c_abi_type is inside
     nty: array.Array[u32],              // per node: its checked type,
@@ -213,7 +214,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -239,6 +240,7 @@ pub Sema.wipe(mut self) {
     mut self.ttypes.wipe()
     mut self.insts.wipe()
     mut self.inst_heads.wipe()
+    mut self.signings.wipe()
     mut self.stamps.wipe()
     mut self.cabi.wipe()
     mut self.nty.wipe()
@@ -4130,7 +4132,13 @@ pub Sema.signatures(mut self) {
     for k: u32 in 0..self.node(self.file).nkids {
         id: u32 = self.kid(self.file, k)
         n: Node = self.node(id)
-        if n.kind == Kind.signing { continue } // registered with signings
+        if n.kind == Kind.signing {
+            saved: bool = self.in_module
+            self.in_module = self.in_imported(id)
+            mut self.register_signing(id)
+            self.in_module = saved
+            continue
+        }
         nf: u32 = 0
         if n.kind == Kind.extern { nf = n.nkids } else if n.kind == Kind.func { nf = 1 }
         for j: u32 in 0..nf {
@@ -4142,6 +4150,53 @@ pub Sema.signatures(mut self) {
             _ = mut self.resolved(self.files.find(false, key))
         }
     }
+}
+
+/* Registers `signing` as its struct's one canonical signing, before any body
+ * is checked; its method sets are checked once every body is.
+ */
+Sema.register_signing(mut self, signing: u32) {
+    n: Node = self.node(signing)
+    owner: string = self.node(n.a).text
+    cs: u32 = mut self.lookup_type(owner)
+    if cs == 0 || self.sym(cs).ty == 0 || self.ty(self.sym(cs).ty).kind != TypeKind.struct {
+        mut self.err(n.a, ["signing owner '", owner, "' is not a declared struct"])
+        return
+    }
+    decl: u32 = self.ty(self.sym(cs).ty).decl
+    if self.l.module_of(decl) != self.l.module_of(signing) {
+        mut self.err(signing, ["a signing must be in the struct's defining module"])
+        return
+    }
+    if self.signings.has(decl) {
+        mut self.err(signing, ["signing for ", mut self.type_name(self.sym(cs).ty), " was already declared once"])
+        return
+    }
+    tp: u32 = self.node(decl).c
+    want: u32 = 0
+    if tp != 0 { want = self.node(tp).nkids }
+    got: u32 = 0
+    if n.c != 0 { got = self.node(n.c).nkids }
+    if want != got {
+        mut self.err(signing, ["signing owner must repeat the struct's ", mut self.num(want), " type parameters"])
+    } else {
+        for i: u32 in 0..want {
+            w: string = self.node(self.kid(tp, i)).text
+            g: u32 = self.kid(n.c, i)
+            if !mem.equal(w, self.node(g).text) {
+                mut self.err(g, ["signing owner must repeat type parameter '", w, "'"])
+            }
+        }
+    }
+    for i: u32 in 0..n.nkids {
+        it: u32 = self.node(self.kid(signing, i)).a
+        name: string = self.node(it).text
+        is: u32 = mut self.lookup_type(name)
+        if is == 0 || self.sym(is).ty == 0 || self.ty(self.sym(is).ty).kind != TypeKind.contract {
+            mut self.err(it, ["signed contract '", name, "' must be a declared contract"])
+        }
+    }
+    fail(mut self.signings.set(decl, signing))
 }
 
 // --- entry --------------------------------------------------------------------
@@ -4328,6 +4383,10 @@ Sema.dump_sym(mut self, mut out: Out, what: string, s: u32) {
  * members, or entries.
  */
 Sema.dump_type(mut self, mut out: Out, x: Sym) {
+    sg: u32, signed: bool = self.signings.get(x.top)
+    if signed && self.node(x.top).kind == Kind.struct {
+        mut out.printf("  signing @%u:%u\n", uint(self.node(sg).line), uint(self.node(sg).col))
+    }
     if x.is_generic { return } // stamped at each use
     if self.node(x.top).kind == Kind.alias {
         mut out.printf("  = %s\n", mut self.type_name(x.ty))

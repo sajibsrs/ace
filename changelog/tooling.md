@@ -65,3 +65,7 @@
   type-argument tuple, then the sole tuple match), then the template whose
   quietly built candidate signature fits (`candidate_func_type`), with C's
   not-generic, no-match, ambiguity, and missing-specialization diagnostics.
+- selfhost registers signings (`register_signing`: owner, defining module,
+  uniqueness, repeated type parameters, declared contracts) in its
+  signatures pass; both compilers' `--symbols` now register them and print
+  each struct's signing as `signing @line:col`.

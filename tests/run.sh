@@ -311,6 +311,13 @@ tests/sema/defaults/generic_calls_err.ace|57:29: error: call 'only[i64]' matches
 tests/sema/defaults/generic_calls_err.ace|58:32: error: no matching generic overload 'pick' for these arguments
 tests/sema/defaults/generic_calls_err.ace|59:30: error: ambiguous call to generic overload 'amb'
 tests/sema/defaults/generic_calls_err.ace|60:33: error: overloaded function 'two' needs an explicit function-value type: 'take' is overloaded
+tests/sema/contracts/register/main_err.ace|27:1: error: signing for Point was already declared once
+tests/sema/contracts/register/main_err.ace|28:1: error: signing owner 'Mode' is not a declared struct
+tests/sema/contracts/register/main_err.ace|29:1: error: signing owner 'Missing' is not a declared struct
+tests/sema/contracts/register/main_err.ace|30:1: error: signing owner must repeat the struct's 1 type parameters
+tests/sema/contracts/register/main_err.ace|31:9: error: signing owner must repeat type parameter 'B'
+tests/sema/contracts/register/main_err.ace|35:14: error: signed contract 'Point' must be a declared contract
+tests/sema/contracts/register/main_err.ace|36:1: error: a signing must be in the struct's defining module
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared
