@@ -2158,19 +2158,48 @@ Sema.check_member_call(mut self, call: u32): u32 {
     n: Node = self.node(call)
     callee: Node = self.node(n.a)
     base: Node = self.node(callee.a)
+    bound: u32 = 0
     if base.kind == Kind.ident {
-        ts: u32 = mut self.lookup_type(base.text)
-        if ts != 0 && (self.sym(ts).ty == 0 || self.ty(self.sym(ts).ty).kind == TypeKind.struct || mut self.lookup_val(base.text) == 0) {
-            return mut self.unported("calls of computed callees") // associated call or union variant
+        i: u32, isparam: bool = self.type_param_index(base.text)
+        if isparam { bound = mut self.substituted_value_type(callee.a, i) }
+    }
+    if bound != 0 || mut self.struct_type_base(callee.a) { // Type.f(...): associated-function dispatch
+        owner: u32 = bound
+        if bound != 0 {
+            if self.ty(bound).kind == TypeKind.err { return self.t_err }
+            if self.ty(bound).kind != TypeKind.struct {
+                mut self.err(call, ["'", base.text, "' is ", mut self.type_name(bound), ", which has no associated functions"])
+                return self.t_err
+            }
+        } else if base.kind == Kind.ident {
+            ts: u32 = mut self.lookup_type(base.text)
+            if self.sym(ts).is_generic {
+                mut self.err(call, ["generic type '", base.text, "' needs explicit type arguments"])
+                return self.t_err
+            }
+            owner = self.sym(ts).ty
+        } else {
+            owner = mut self.indexed_named_type(callee.a)
+            if owner == 0 {
+                mut self.err(call, ["'", self.node(base.a).text, "' is not generic and takes no type arguments"])
+                return self.t_err
+            }
+            if self.ty(owner).kind == TypeKind.err { return self.t_err }
         }
+        mut self.set_node_ty(callee.a, owner)
+        return mut self.check_assoc_call(call, owner)
+    }
+    if base.kind == Kind.ident || base.kind == Kind.index { // variant construction: Event.key(42), Pair[int].ok(v)
+        ub: u32 = mut self.union_base_type(callee.a)
+        if ub == self.t_err { return self.t_err }
+        if ub != 0 { return mut self.check_variant_call(call, ub) }
+    }
+    if base.kind == Kind.ident {
         ms: u32 = mut self.lookup_val(base.text)
         if ms != 0 && self.sym(ms).kind == SymKind.module {
             mut self.err(call, ["module member '", base.text, ".", callee.text, "' needs the stdlib (not yet linked)"])
             return self.t_err
         }
-    }
-    if base.kind == Kind.index && base.a != 0 && self.node(base.a).kind == Kind.ident && mut self.lookup_type(self.node(base.a).text) != 0 {
-        return mut self.unported("calls of computed callees") // on a generic owner
     }
     b: u32 = mut self.expr_type(callee.a)
     if self.ty(b).kind == TypeKind.err { return self.t_err }
@@ -2307,7 +2336,7 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
     }
     if found == 0 {
         if mut self.overloaded_arg_err(call, head, callee.text) { return self.t_err }
-        if mut self.method_mut_mismatch(call, head) { return self.t_err }
+        if mut self.mut_mismatch_err(call, head, 1) { return self.t_err }
         mut self.err(call, ["no method '", callee.text, "' for ", mut self.type_name(b)])
         return self.t_err
     }
@@ -2339,33 +2368,124 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
     return ft.ret
 }
 
-/* Resolution found no method. When exactly one candidate takes this many
- * arguments, a call-site `mut` that does not fit it (receiver or argument)
- * is the likely cause; name it rather than report a missing method.
+/* Whether `base` names a struct type, plain (`Type`) or indexed (`Type[T]`). */
+Sema.struct_type_base(mut self, base: u32): bool {
+    id: u32 = base
+    if self.node(base).kind == Kind.index { id = self.node(base).a }
+    if id == 0 || self.node(id).kind != Kind.ident { return false }
+    ts: u32 = mut self.lookup_type(self.node(id).text)
+    return ts != 0 && self.sym(ts).ty != 0 && self.ty(self.sym(ts).ty).kind == TypeKind.struct
+}
+
+/* An associated-function call `Owner.f(...)` on struct type `owner`. */
+Sema.check_assoc_call(mut self, call: u32, owner: u32): u32 {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    oname: string = ""
+    if self.ty(owner).decl != 0 { oname = self.node(self.ty(owner).decl).text }
+    head: u32 = mut self.lookup_val(mut self.pool.join([oname, "$", callee.text]))
+    if head != 0 && (self.node(self.sym(head).decl).flags & parser.F_METHOD) != 0 {
+        mut self.err(call, ["methods are called on a value: x.", callee.text, "(...), not ", mut self.type_name(owner), ".", callee.text, "(...)"])
+        return self.t_err
+    }
+    if self.ty(owner).nargs != 0 { return mut self.unported("associated functions of generic owners") }
+    found: u32, ambiguous: bool = mut self.select_call_overload(call, head, 0)
+    if ambiguous {
+        mut self.err(call, ["ambiguous associated-function call '", callee.text, "'"])
+        return self.t_err
+    }
+    if found != 0 {
+        x: Sym = self.sym(found)
+        if !x.is_pub && x.decl != 0 && self.l.module_of(x.decl) != self.l.module_of(call) {
+            mut self.err(call, ["associated function '", callee.text, "' is private"])
+        }
+        mut self.finish_direct_call(call, found)
+        return self.call_ret(found)
+    }
+    if mut self.overloaded_arg_err(call, head, callee.text) { return self.t_err }
+    if mut self.mut_mismatch_err(call, head, 0) { return self.t_err }
+    mut self.err(call, ["no associated function '", callee.text, "' for ", mut self.type_name(owner)])
+    return self.t_err
+}
+
+/* A variant construction `U.v(payload)` on union type `u`. */
+Sema.check_variant_call(mut self, call: u32, u: u32): u32 {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    vi: u32, ok: bool = mut self.union_variant_index(call, u, callee.text)
+    if !ok { return self.t_err }
+    pt: u32 = self.field(self.ty(u), vi).ty
+    if pt == 0 {
+        base: Node = self.node(callee.a)
+        bname: string = base.text
+        if base.kind != Kind.ident { bname = self.node(base.a).text }
+        mut self.err(call, ["variant '", callee.text, "' carries no payload — use the plain value ", bname, ".", callee.text])
+        return self.t_err
+    }
+    if n.nkids != 1 {
+        mut self.err(call, ["variant construction takes exactly one payload value"])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    if self.node(arg).kind == Kind.mutarg {
+        mut self.err(arg, ["'mut' marks mut parameters; variant payloads are read-only"])
+        return self.t_err
+    }
+    mut self.coerce_payload(arg, pt)
+    mut self.set_node_ty(n.a, u)
+    mut self.set_node_ival(n.a, u64(vi))
+    return u
+}
+
+/* A variant payload argument takes composite shape from the payload type
+ * exactly as a variable initializer does.
  */
-Sema.method_mut_mismatch(mut self, call: u32, head: u32): bool {
+Sema.coerce_payload(mut self, arg: u32, pt: u32) {
+    a: Node = self.node(arg)
+    t: SType = self.ty(pt)
+    if t.kind == TypeKind.tuple && a.kind == Kind.tuple && a.nkids == t.nfields {
+        for i: u32 in 0..a.nkids { _ = mut self.coerce(self.kid(arg, i), self.field(t, i).ty) }
+        mut self.set_node_ty(arg, pt)
+        return
+    }
+    if a.kind == Kind.structlit && a.a == 0 && (t.kind == TypeKind.struct || t.kind == TypeKind.bits) {
+        mut self.check_structlit(arg, pt)
+        return
+    }
+    if a.kind == Kind.arraylit && t.kind == TypeKind.array {
+        mut self.check_arraylit(arg, pt)
+        return
+    }
+    _ = mut self.coerce(arg, pt)
+}
+
+/* Resolution found no candidate. When exactly one takes this many arguments
+ * (plus `recv`, 1 for a method's receiver), a call-site `mut` that does not
+ * fit it is the likely cause; name it rather than report a missing callee.
+ */
+Sema.mut_mismatch_err(mut self, call: u32, head: u32, recv: u32): bool {
     n: Node = self.node(call)
     callee: Node = self.node(n.a)
     decl: u32 = 0
     for f: u32 = head; f != 0; f = self.sym(f).overload {
         d: u32 = self.sym(f).decl
-        if d == 0 || self.node(d).nkids != n.nkids + 1 { continue }
+        if d == 0 || self.node(d).nkids != n.nkids + recv { continue }
         if decl != 0 { return false }
         decl = d
     }
     if decl == 0 { return false }
     rmut: bool = (self.node(decl).flags & parser.F_MUT) != 0
     cmut: bool = (n.flags & parser.F_MUT) != 0
-    if rmut && !cmut {
+    if recv != 0 && rmut && !cmut {
         mut self.err(call, ["method '", callee.text, "' takes 'mut self'; it needs 'mut' at the call: mut x.", callee.text, "(...)"])
         return true
     }
-    if !rmut && cmut {
+    if recv != 0 && !rmut && cmut {
         mut self.err(call, ["'mut' marks mutating methods; '", callee.text, "' is read-only"])
         return true
     }
     for i: u32 in 0..n.nkids {
-        p: Node = self.node(self.kid(decl, i + 1))
+        p: Node = self.node(self.kid(decl, i + recv))
         am: bool = self.node(self.kid(call, i)).kind == Kind.mutarg
         pm: bool = (p.flags & parser.F_MUT) != 0
         if am && !pm {

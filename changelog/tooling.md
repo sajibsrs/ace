@@ -102,3 +102,7 @@
   intrinsics, and `fmt.printf`/`str.format`/`Buffer.printf` with the format
   parsed at check time and each conversion's piece writer looked up by exact
   specialization in std's formatting module.
+- selfhost checks associated calls `Type.f(...)` and union payload construction
+  (`Event.key(k)`, `Pair[int].some(x)`) in C's dispatch order; method and
+  associated calls share one `mut`-mismatch diagnostic. Associated functions of
+  generic owners still stop as unported.
