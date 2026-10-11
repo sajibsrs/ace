@@ -15,6 +15,8 @@ pub ReadErr: type = os.ReadErr
 pub WriteErr: type = os.WriteErr
 pub CloseErr: type = os.CloseErr
 pub StatErr: type = os.StatErr
+pub CanonicalErr: type = os.CanonicalErr
+pub ExecutableErr: type = os.ExecutableErr
 pub MkdirErr: type = os.MkdirErr
 pub RenameErr: type = os.RenameErr
 pub UnlinkErr: type = os.UnlinkErr
@@ -177,6 +179,21 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 pub stat(path: string): (FileInfo, Error) {
     info: FileInfo, err: Error = os.stat(path)
     return info, err
+}
+
+pub lstat(path: string): (FileInfo, Error) {
+    info: FileInfo, err: Error = os.lstat(path)
+    return info, err
+}
+
+pub canonical(path: string, buf: mut []u8): (usize, Error) {
+    count: usize, err: Error = os.canonical(path, buf)
+    return count, err
+}
+
+pub executable(buf: mut []u8): (usize, Error) {
+    count: usize, err: Error = os.executable(buf)
+    return count, err
 }
 
 pub mkdir(path: string, mode: u32): Error {

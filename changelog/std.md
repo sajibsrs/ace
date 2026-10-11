@@ -1,5 +1,8 @@
 # Standard library
 
+- Added `sys.lstat`, `sys.canonical`, and `sys.executable`: the kernel
+  resolves paths (darwin `getattrlist`, linux `/proc/self/fd`), so selfhost
+  drops its `realpath`, `_NSGetExecutablePath`, and `readlink` externs.
 - Added typed `mem.copy[T]` and `mem.move[T]`, lowered like the byte forms
   with the length scaled by `sizeof(T)`; debug checks compare element counts.
   A 1000-element `u32` copy loop runs 7.5x faster. The self-hosted parser and

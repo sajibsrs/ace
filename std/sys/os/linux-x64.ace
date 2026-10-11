@@ -135,6 +135,22 @@ pub OpendirErr: error {
     40: loop = "too many symbolic links",
 }
 
+pub CanonicalErr: error {
+    2: not_found = "path does not exist",
+    13: access = "permission denied",
+    20: not_directory = "path component is not a directory",
+    23: system_limit = "system descriptor limit reached",
+    24: process_limit = "process descriptor limit reached",
+    34: capacity = "path storage is too small",
+    36: name_too_long = "path is too long",
+    40: loop = "too many symbolic links",
+}
+
+pub ExecutableErr: error {
+    2: not_found = "executable path does not exist",
+    34: capacity = "path storage is too small",
+}
+
 pub ReaddirErr: error {
     5: malformed = "operating-system directory data is malformed",
     9: inactive = "directory is not active",
@@ -230,6 +246,8 @@ extern "c" {
     c_write(fd: i32, buf: *u8, size: usize): i64 as "write"
     // glibc 2.33 and later export stat itself, not only __xstat.
     c_stat(path: *u8, info: mut *LinuxStat): i32 as "stat"
+    c_lstat(path: *u8, info: mut *LinuxStat): i32 as "lstat"
+    c_readlink(path: *u8, buf: mut *u8, size: usize): i64 as "readlink"
     c_mkdir(path: *u8, mode: u32): i32 as "mkdir"
     c_rename(old_path: *u8, new_path: *u8): i32 as "rename"
     c_unlink(path: *u8): i32 as "unlink"
@@ -254,6 +272,8 @@ pub O_CREAT: const i32 = 0x0040
 pub O_TRUNC: const i32 = 0x0200
 pub O_EXCL: const i32 = 0x0080
 O_DIRECTORY: const i32 = 0x00010000
+O_PATH: const i32 = 0x00200000
+O_CLOEXEC: const i32 = 0x00080000
 
 // Public retry-policy errno values on Linux.
 pub EINTR: const i32 = 4
@@ -464,6 +484,16 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 }
 
 pub stat(path: string): (FileInfo, Error) {
+    info: FileInfo, err: Error = file_info(path, true)
+    return info, err
+}
+
+pub lstat(path: string): (FileInfo, Error) {
+    info: FileInfo, err: Error = file_info(path, false)
+    return info, err
+}
+
+file_info(path: string, follow: bool): (FileInfo, Error) {
     path_buf: [4096]u8
     zero: FileInfo = FileInfo {
         size = 0,
@@ -472,12 +502,68 @@ pub stat(path: string): (FileInfo, Error) {
 
     if !path_copy(path, mut path_buf[0..4096]) { return zero, StatErr(errno()) }
     raw: LinuxStat = blank(LinuxStat)
-    if c_stat(&path_buf[0], mut &raw) == -1 { return zero, StatErr(errno()) }
+    result: i32 = 0
+    if follow {
+        result = c_stat(&path_buf[0], mut &raw)
+    } else {
+        result = c_lstat(&path_buf[0], mut &raw)
+    }
+    if result == -1 { return zero, StatErr(errno()) }
     info: FileInfo = FileInfo {
         size = u64(raw.size),
         file_type = file_type_from_mode(raw.mode),
     }
     return info, null
+}
+
+/* The target of the NUL-terminated symlink `link` copied into `buf`; the
+ * byte count, or -1 with errno set (ERANGE when it does not fit).
+ */
+link_target(link: []u8, buf: mut []u8): int {
+    target: [4096]u8
+    out: mut []u8 = mut target[0..4096]
+    count: i64 = c_readlink(&link[0], mut &out[0], 4096)
+    if count == -1 { return -1 }
+    if count == 4096 || usize(count) > buf.len {
+        errno_set(34)
+        return -1
+    }
+    for i: usize in 0 .. usize(count) { buf[i] = target[i] }
+    return int(count)
+}
+
+/* The kernel resolves `path` once on an O_PATH descriptor, which needs no
+ * read permission, and /proc/self/fd/N names what it resolved to.
+ */
+pub canonical(path: string, buf: mut []u8): (usize, Error) {
+    path_buf: [4096]u8
+    if !path_copy(path, mut path_buf[0..4096]) { return 0, CanonicalErr(errno()) }
+    fd: i32 = c_open(&path_buf[0], O_PATH | O_CLOEXEC, u32(0))
+    defer c_close(fd)
+    if fd == -1 { return 0, CanonicalErr(errno()) }
+
+    prefix: string = "/proc/self/fd/"
+    link: [32]u8 = blank([32]u8)
+    for i: usize in 0 .. prefix.len { link[i] = prefix[i] }
+    digits: usize = 1
+    for rest: i32 = fd / 10; rest != 0; rest /= 10 { digits += 1 }
+    value: i32 = fd
+    for i: usize in 0 .. digits {
+        link[prefix.len + digits - 1 - i] = u8('0' + u8(value % 10))
+        value /= 10
+    }
+    count: int = link_target(link[0..32], buf)
+    if count < 0 { return 0, CanonicalErr(errno()) }
+    return usize(count), null
+}
+
+pub executable(buf: mut []u8): (usize, Error) {
+    link: [16]u8 = blank([16]u8)
+    name: string = "/proc/self/exe"
+    for i: usize in 0 .. name.len { link[i] = name[i] }
+    count: int = link_target(link[0..16], buf)
+    if count < 0 { return 0, ExecutableErr(errno()) }
+    return usize(count), null
 }
 
 pub mkdir(path: string, mode: u32): Error {

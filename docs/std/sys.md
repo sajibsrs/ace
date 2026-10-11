@@ -57,7 +57,13 @@ main(): int {
   target operations rather than an OS-independent device-control abstraction.
 - `stat(path: string): (FileInfo, Error)` follows symbolic links and returns
   byte size plus a `FileType` of `unknown`, `regular`, `directory`, `symlink`,
-  or `other`.
+  or `other`. `lstat(path: string): (FileInfo, Error)` is the same query
+  without following a final symlink.
+- `canonical(path: string, buf: mut []u8): (usize, Error)` writes the absolute
+  path of an existing file, symlinks and `.`/`..` resolved, into `buf` (no NUL)
+  and returns its length; `CanonicalErr.capacity` when `buf` is too small.
+  `executable(buf: mut []u8): (usize, Error)` writes the running executable's
+  canonical path the same way.
 - `mkdir(path: string): Error` is the portable creation form. It requests all
   ordinary permissions (`0777` on POSIX), after which the process umask chooses
   the effective permissions. It creates one directory and does not create
@@ -240,6 +246,12 @@ Why the rules in `spec/std/sys.md` are shaped as they are.
 - `sys` imports nothing, and keeps its own NUL-terminating path copy rather
   than using `str.cstring`: importing `str` made a `sys`-only program compile
   15 files instead of 3 (about 1.9 ms to 11.7 ms) for a six-line loop.
+
+- `canonical` asks the kernel instead of walking components in Ace (Go
+  `filepath.EvalSymlinks`) or calling libc `realpath`, which is a userspace
+  algorithm C Interop #4 rules out: one or two syscalls, no race with a tree
+  changing mid-walk, and no read permission needed. Zig's `realpath` takes the
+  same route.
 
 - Stdlib: `sys` and `time` #10: distinct-typed handles prevent silent integer
   misuse where the OS cannot diagnose it; flags and POSIX permission bits stay
