@@ -88,3 +88,6 @@
 - selfhost checks payloadless union variant values on a plain or explicitly
   instantiated base (`union_base_type`, `union_variant_index`), marking the
   base with the union so they count as compile-time constants.
+- selfhost checks calls through a function-typed variable: arguments against
+  its type, no variadics, and `mut` rejected (`check_no_mut_args`); naming a
+  function as a value still stops as unported.

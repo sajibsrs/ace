@@ -3967,6 +3967,16 @@ Sema.check_mut_args(mut self, call: u32, decl: u32) {
     }
 }
 
+/* An indirect call never targets a mut parameter (a function with one is no
+ * callable value), so a 'mut' mark on its arguments is always wrong.
+ */
+Sema.check_no_mut_args(mut self, call: u32) {
+    for i: u32 in 0..self.node(call).nkids {
+        arg: u32 = self.kid(call, i)
+        if self.node(arg).kind == Kind.mutarg { mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"]) }
+    }
+}
+
 /* A call naming value `s`: an ordinary call through its overload set. */
 Sema.check_direct_call(mut self, call: u32, s: u32): u32 {
     x: Sym = self.sym(s)
@@ -3981,7 +3991,16 @@ Sema.check_direct_call(mut self, call: u32, s: u32): u32 {
             }
         }
     }
-    if x.kind == SymKind.var && x.ty != 0 && self.ty(x.ty).kind == TypeKind.func { return mut self.unported("function values") }
+    if x.kind == SymKind.var && x.ty != 0 && self.ty(x.ty).kind == TypeKind.func { // through a function value
+        mut self.check_args(call, x.ty, false)
+        mut self.check_no_mut_args(call)
+        mut self.set_node_sym(self.node(call).a, s)
+        mut self.set_node_ty(self.node(call).a, x.ty)
+        mut self.set_node_sym(call, s)
+        r: u32 = self.ty(x.ty).ret
+        if r == 0 { return self.t_void }
+        return r
+    }
     if x.kind != SymKind.func {
         mut self.err(call, ["'", name, "' is not callable"])
         return self.t_err

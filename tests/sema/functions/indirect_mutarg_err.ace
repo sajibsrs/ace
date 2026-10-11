@@ -1,0 +1,9 @@
+/* A function value never has a mut parameter, so 'mut' on its call is wrong. */
+
+apply(f: (int): int, x: int): int {
+    return f(mut x)
+}
+
+main(): int {
+    return 0
+}

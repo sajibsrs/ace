@@ -68,9 +68,10 @@ local-storage escapes, and the `typeid`, `bitcast`, `assert`,
 `static_assert`, and `panic` builtins, error construction
 `Domain(code?)`, extern variadic arguments, `mut` arguments, and field
 visibility across modules, including a facade's re-exporting alias, and
-payloadless union variant values (`Event.quit`, `Pair[int].none`). It stops
-with `does not yet support` on `switch`, `asm`, method and other calls of
-computed callees (union payload construction among them), function values,
+payloadless union variant values (`Event.quit`, `Pair[int].none`), and
+calls through a function-typed variable. It stops with `does not yet
+support` on `switch`, `asm`, method and other calls of computed callees
+(union payload construction among them), naming a function as a value,
 memory and format builtins, static maps, and contracts, including a contract value passed as a `mut`
 argument (whether it is const-backed).
 
