@@ -147,6 +147,8 @@ tests/parser/receiver/leading_mut_err.ace|2:1: error: a top-level declaration ta
 tests/parser/receiver/contract_double_mut_err.ace|2:5: error: a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'
 tests/parser/associated/coloncolon_err.ace|6:13: error: '::' is not an operator; a type's functions are reached with '.'
 tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self' or 'mut self'
+tests/sema/unions/payload_value_pattern_err.ace|8:18: error: match the union variant, not a payload value: Type.variant(binder: type)
+tests/sema/unions/non_variant_pattern_err.ace|8:9: error: union switch cases must name Event variants (Type.variant)
 tests/sema/functions/indirect_mutarg_err.ace|4:14: error: 'mut' marks mut parameters; parameter 1 is read-only
 tests/sema/unions/generic_payload_bare_err.ace|6:34: error: variant 'ok' carries a payload — construct it with a payload argument
 tests/sema/layout/bits_mutarg_err.ace|13:16: error: bit fields cannot supply mut arguments

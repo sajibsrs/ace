@@ -62,7 +62,8 @@ errors, as `ace --check` does: `sema_check` without its end-of-file checks
 initialization). Like `sema_check`, it keeps going after an error in an
 earlier stage. Selfhost checks locals in block scopes, declarations and
 binding lists, assignments and their targets, `if`, every `for` form,
-labels, `break`, `continue`, `return`, and `defer`, address-of,
+labels, `break`, `continue`, `return`, and `defer`, value and union
+`switch` with `fallthrough` placement, address-of,
 dereference, `volatile`, pointer arithmetic, ranges, indexing, slicing,
 local-storage escapes, and the `typeid`, `bitcast`, `assert`,
 `static_assert`, and `panic` builtins, error construction
@@ -70,10 +71,10 @@ local-storage escapes, and the `typeid`, `bitcast`, `assert`,
 visibility across modules, including a facade's re-exporting alias, and
 payloadless union variant values (`Event.quit`, `Pair[int].none`), and
 calls through a function-typed variable. It stops with `does not yet
-support` on `switch`, `asm`, method and other calls of computed callees
+support` on `asm`, method and other calls of computed callees
 (union payload construction among them), naming a function as a value,
-memory and format builtins, static maps, and contracts, including a contract value passed as a `mut`
-argument (whether it is const-backed).
+memory and format builtins, static maps, and contracts, including a
+contract value passed as a `mut` argument (whether it is const-backed).
 
 ## Checking
 

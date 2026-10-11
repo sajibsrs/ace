@@ -91,3 +91,6 @@
 - selfhost checks calls through a function-typed variable: arguments against
   its type, no variadics, and `mut` rejected (`check_no_mut_args`); naming a
   function as a value still stops as unported.
+- selfhost checks `switch` statements: `default` last, `fallthrough`
+  placement, value cases with constant-overlap spans (`case_key`), and union
+  cases with variant coverage and typed payload binders.

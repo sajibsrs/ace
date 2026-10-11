@@ -1,0 +1,12 @@
+/* A union case names a variant as Type.variant. */
+
+Event: union { none, quit }
+
+main(): int {
+    e: Event = Event.none
+    switch e {
+        none {}
+        default {}
+    }
+    return 0
+}

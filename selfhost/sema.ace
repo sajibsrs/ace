@@ -4306,6 +4306,263 @@ Sema.check_block(mut self, b: u32) {
     for i: u32 in 0..self.node(b).nkids { mut self.check_stmt(self.kid(b, i)) }
 }
 
+/* `switch v { ... }`: a value switch over a type with `==`, or a union
+ * switch over its variants; `default` comes last, `fallthrough` ends a
+ * non-final value case.
+ */
+Sema.check_switch(mut self, s: u32) {
+    n: Node = self.node(s)
+    t: u32 = mut self.expr_type(n.a)
+    mut self.check_switch_fallthrough(s, t)
+    for i: u32 = 0; i + 1 < n.nkids; i += 1 {
+        if (self.node(self.kid(s, i)).flags & parser.F_DEFAULT) != 0 {
+            mut self.err(self.kid(s, i + 1), ["'default' must be the last case"])
+            break
+        }
+    }
+    if self.ty(t).kind == TypeKind.union {
+        mut self.check_union_switch(s, t)
+        return
+    }
+    ok: bool = self.ty(t).kind == TypeKind.err || self.switch_value_type(t)
+    if !ok { mut self.err(n.a, ["cannot switch on ", mut self.type_name(t), ": the type has no =="]) }
+    los: array.Array[u64] = array.Array[u64] {} // each earlier case's closed span, in case_key order
+    defer mut los.wipe()
+    his: array.Array[u64] = array.Array[u64] {}
+    defer mut his.wipe()
+    for i: u32 in 0..n.nkids {
+        c: u32 = self.kid(s, i)
+        if (self.node(c).flags & parser.F_DEFAULT) == 0 && ok && self.ty(t).kind != TypeKind.err {
+            for j: u32 in 0..self.node(c).nkids { mut self.check_case_value(self.kid(c, j), t, mut los, mut his) }
+        }
+        mut self.check_scoped(self.node(c).b)
+    }
+}
+
+Sema.check_switch_fallthrough(mut self, s: u32, t: u32) {
+    n: Node = self.node(s)
+    for i: u32 in 0..n.nkids {
+        b: u32 = self.node(self.kid(s, i)).b
+        if b == 0 { continue }
+        for j: u32 in 0..self.node(b).nkids {
+            st: u32 = self.kid(b, j)
+            if self.node(st).kind != Kind.fallthrough { continue }
+            if j != self.node(b).nkids - 1 { mut self.err(st, ["fallthrough must be the final statement of a switch case"]) }
+            if i == n.nkids - 1 { mut self.err(st, ["fallthrough is not allowed in the final switch case"]) }
+            if t != 0 && self.ty(t).kind == TypeKind.union { mut self.err(st, ["fallthrough is not allowed in a tagged-union switch"]) }
+        }
+    }
+}
+
+/* Whether a switch can compare a value of `t` with `==` (Conditions #2). */
+Sema.switch_value_type(self, t: u32): bool {
+    if t == 0 { return false }
+    if t == self.t_ut_int || t == self.t_ut_float { return true }
+    x: SType = self.ty(t)
+    switch x.kind {
+        TypeKind.distinct { return self.switch_value_type(x.base) }
+        TypeKind.prim { return x.prim != P_STRING }
+        TypeKind.ptr, TypeKind.func, TypeKind.enum, TypeKind.bits, TypeKind.contract, TypeKind.error { return true }
+        default { return false }
+    }
+}
+
+/* A case value's compile-time value: an integer or char constant, an enum
+ * member, a boolean, or null (Conditions #2).
+ */
+Sema.case_const(self, e: u32): (i64, bool) {
+    v: i64, ok: bool = self.ut_const(e)
+    if ok { return v, true }
+    n: Node = self.node(e)
+    if n.kind == Kind.bool { return i64(n.ival), true }
+    if n.kind == Kind.null { return 0, true }
+    if n.kind == Kind.selector && n.a != 0 && self.node(n.a).kind == Kind.ident {
+        ts: u32 = self.node_sym(n.a)
+        if ts != 0 && self.sym(ts).kind == SymKind.type && self.sym(ts).ty != 0 && self.ty(self.sym(ts).ty).kind == TypeKind.enum { return i64(self.node_ival(e)), true }
+    }
+    return 0, false
+}
+
+/* A constant's position in `t`'s order: a signed type's negatives sort below
+ * its non-negatives under one unsigned comparison.
+ */
+Sema.case_key(self, t: u32, v: i64): u64 {
+    x: SType = self.ty(t)
+    if x.kind == TypeKind.prim && x.prim >= P_I8 && x.prim <= P_I64 { return u64(v) ^ 0x8000000000000000 }
+    return u64(v)
+}
+
+/* One case value or `lo .. hi` range of a switch on `t`, its constants
+ * checked against every earlier span.
+ */
+Sema.check_case_value(mut self, v: u32, t: u32, mut los: array.Array[u64], mut his: array.Array[u64]) {
+    bt: u32 = t
+    for bt != 0 && self.ty(bt).kind == TypeKind.distinct { bt = self.ty(bt).base }
+    n: Node = self.node(v)
+    lo: u64 = 0
+    hi: u64 = 0
+    if n.kind == Kind.range {
+        if n.c != 0 {
+            mut self.err(n.c, ["a case range takes no step"])
+            return
+        }
+        if bt == 0 || !self.is_int(bt) {
+            mut self.err(v, ["a case range needs an integer or char switch value, not ", mut self.type_name(t)])
+            return
+        }
+        ok: bool = mut self.coerce(n.a, t)
+        ok = mut self.coerce(n.b, t) && ok
+        if !ok { return }
+        a: i64, oka: bool = self.case_const(n.a)
+        b: i64, okb: bool = self.case_const(n.b)
+        if !oka || !okb {
+            mut self.err(v, ["case range bounds must be constants"])
+            return
+        }
+        lo = self.case_key(bt, a)
+        hi = self.case_key(bt, b)
+        if lo == hi {
+            mut self.err(v, ["empty case range: both bounds are the same value"])
+            return
+        }
+        if lo > hi { // endpoint order only picks traversal; the set is the same
+            k: u64 = lo
+            lo = hi
+            hi = k
+        }
+        hi -= 1 // half-open [lo, hi) as a closed span
+        mut self.set_node_ty(v, t)
+    } else {
+        if !mut self.coerce(v, t) { return }
+        a: i64, ok: bool = self.case_const(v)
+        if !ok { return }
+        lo = self.case_key(bt, a)
+        hi = lo
+    }
+    for i: usize in 0..los.len {
+        if los.get(i) <= hi && lo <= his.get(i) {
+            what: string = "case value"
+            if n.kind == Kind.range { what = "case range" }
+            mut self.err(v, [what, " overlaps an earlier case"])
+            return
+        }
+    }
+    fail(mut los.push(lo))
+    fail(mut his.push(hi))
+}
+
+/* The union type a construction or pattern base names (`Event`,
+ * `Pair[int]`), 0 when it names none, or t_err for a generic union named
+ * without its type arguments.
+ */
+Sema.union_base_type(mut self, base: u32): u32 {
+    b: Node = self.node(base)
+    t: u32 = 0
+    if b.kind == Kind.ident || (b.kind == Kind.selector && b.a == 0) { // the pattern parser's plain base
+        if mut self.lookup_val(b.text) != 0 { return 0 } // a value shadows
+        ts: u32 = mut self.lookup_type(b.text)
+        if ts == 0 || self.sym(ts).ty == 0 { return 0 }
+        if self.sym(ts).is_generic {
+            mut self.err(base, ["generic type '", b.text, "' needs explicit type arguments"])
+            return self.t_err
+        }
+        t = self.sym(ts).ty
+        mut self.set_node_sym(base, ts)
+    } else if b.kind == Kind.index {
+        t = mut self.indexed_named_type(base)
+        if t == 0 || self.ty(t).kind == TypeKind.err { return 0 }
+    }
+    if t == 0 { return 0 }
+    mut self.set_node_ty(base, t)
+    if self.ty(t).kind == TypeKind.union { return t }
+    return 0
+}
+
+/* A union switch: each case names one variant (`Type.variant`, with an
+ * explicitly typed payload binder when it carries one); every variant is
+ * covered once, or `default` covers the rest.
+ */
+Sema.check_union_switch(mut self, s: u32, u: u32) {
+    covered: array.Array[bool] = array.Array[bool] {}
+    defer mut covered.wipe()
+    for i: u32 in 0..self.ty(u).nfields { fail(mut covered.push(false)) }
+    has_default: bool = false
+    for i: u32 in 0..self.node(s).nkids {
+        c: u32 = self.kid(s, i)
+        if (self.node(c).flags & parser.F_DEFAULT) != 0 {
+            has_default = true
+        } else {
+            if self.node(c).nkids != 1 { mut self.err(c, ["union switch cases name exactly one variant"]) }
+            for j: u32 in 0..self.node(c).nkids {
+                pat: u32 = self.kid(c, j)
+                pk: Kind = self.node(pat).kind
+                if pk == Kind.call {
+                    mut self.err(pat, ["match the union variant, not a payload value: Type.variant(binder: type)"])
+                    continue
+                }
+                r: u32 = pat
+                if pk == Kind.varpat { r = self.node(pat).a }
+                ref: Node = self.node(r)
+                if ref.kind != Kind.selector || ref.a == 0 || (self.node(ref.a).kind != Kind.ident && self.node(ref.a).kind != Kind.index) {
+                    mut self.err(pat, ["union switch cases must name ", mut self.type_name(u), " variants (Type.variant)"])
+                    continue
+                }
+                ub: u32 = mut self.union_base_type(ref.a)
+                if ub == self.t_err { return }
+                if ub == 0 || !self.same_type(ub, u) {
+                    mut self.err(pat, ["case pattern is not a variant of ", mut self.type_name(u)])
+                    continue
+                }
+                vi: u32, found: bool = mut self.union_variant_index(pat, u, ref.text)
+                if !found { continue }
+                f: SField = self.field(self.ty(u), vi)
+                if covered.get(usize(vi)) {
+                    mut self.err(pat, ["duplicate case for variant '", f.name, "'"])
+                    continue
+                }
+                mut covered.set(usize(vi), true)
+                mut self.set_node_ival(r, u64(vi))
+                if pk != Kind.varpat && f.ty != 0 {
+                    mut self.err(pat, ["variant '", f.name, "' carries ", mut self.type_name(f.ty), " and needs a payload binder"])
+                } else if pk == Kind.varpat {
+                    mut self.set_node_ival(pat, u64(vi))
+                    binder: u32 = self.node(pat).b
+                    if binder != 0 && self.node(binder).a == 0 {
+                        bn: string = self.node(binder).text
+                        mut self.err(binder, ["variant pattern binder '", bn, "' needs an explicit type: ", mut self.type_name(u), ".", ref.text, "(", bn, ": type)"])
+                    } else if binder != 0 {
+                        bt: u32 = mut self.build_type(self.node(binder).a)
+                        if f.ty == 0 {
+                            mut self.err(binder, ["variant '", f.name, "' carries no payload"])
+                        } else if !self.same_type(bt, f.ty) {
+                            mut self.err(binder, ["variant '", f.name, "' payload is ", mut self.type_name(f.ty), ", binder is ", mut self.type_name(bt)])
+                        }
+                    }
+                }
+            }
+        }
+        mut self.scope_push()
+        if (self.node(c).flags & parser.F_DEFAULT) == 0 {
+            for j: u32 in 0..self.node(c).nkids {
+                pat: u32 = self.kid(c, j)
+                binder: u32 = self.node(pat).b
+                if self.node(pat).kind != Kind.varpat || binder == 0 || self.node(binder).a == 0 { continue }
+                v: u32 = mut self.declare_local(binder, self.node(binder).text)
+                if v != 0 { mut self.bind_local(v, mut self.build_type(self.node(binder).a), binder, false) }
+            }
+        }
+        mut self.check_block(self.node(c).b)
+        mut self.scope_pop()
+    }
+    if !has_default {
+        for i: u32 in 0..self.ty(u).nfields {
+            if !covered.get(usize(i)) {
+                mut self.err(s, ["switch on ", mut self.type_name(u), " is missing variant '", self.field(self.ty(u), i).name, "' (or add default)"])
+            }
+        }
+    }
+}
+
 /* A nested block in its own scope. */
 Sema.check_scoped(mut self, b: u32) {
     mut self.scope_push()
@@ -4340,7 +4597,7 @@ Sema.check_stmt(mut self, s: u32) {
             }
         }
         Kind.for { mut self.check_for(s) }
-        Kind.switch { _ = mut self.unported("switch statements") }
+        Kind.switch { mut self.check_switch(s) }
         Kind.fallthrough {} // placement was validated by the enclosing switch
         Kind.return { mut self.check_return(s) }
         Kind.break, Kind.continue {

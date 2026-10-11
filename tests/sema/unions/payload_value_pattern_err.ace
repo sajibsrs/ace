@@ -1,0 +1,12 @@
+/* A union case matches a variant, never a payload value. */
+
+Event: union { none, key: int }
+
+main(): int {
+    e: Event = Event.none
+    switch e {
+        Event.key(3) {}
+        default {}
+    }
+    return 0
+}
