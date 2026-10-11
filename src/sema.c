@@ -352,6 +352,14 @@ static SType* candidate_func_type(Ck* k, Node* f, SType** args, int nargs) {
     return bad ? NULL : ft;
 }
 
+// A declared name as written: an imported member's identity m$f reads m.f.
+static const char* shown_name(const char* name, uint32_t len) {
+    char* nm = (char*)arena_alloc(len + 1);
+    memcpy(nm, name, len);
+    nm[len] = 0;
+    return module_display(nm);
+}
+
 static void ck_err(Ck* k, Node* n, const char* fmt, ...) {
     if (k->quiet) {
         k->quiet_errors++;
@@ -1750,16 +1758,16 @@ static Sym* bind_specialization(Ck* k, Sym* s, Sym* head) {
     }
     if (!bind) {
         ck_err(k, f,
-               "specialization '%.*s%s' does not conform to any generic overload of '%.*s' — parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied",
-               (int)f->len, f->str, spec_tuple_name(targs, nargs),
-               (int)f->len, f->str);
+               "specialization '%s%s' does not conform to any generic overload of '%s' — parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied",
+               shown_name(f->str, f->len), spec_tuple_name(targs, nargs),
+               shown_name(f->str, f->len));
         return NULL;
     }
     if (nbind > 1) {
         ck_err(k, f,
-               "specialization '%.*s%s' conforms to more than one generic overload of '%.*s'",
-               (int)f->len, f->str, spec_tuple_name(targs, nargs),
-               (int)f->len, f->str);
+               "specialization '%s%s' conforms to more than one generic overload of '%s'",
+               shown_name(f->str, f->len), spec_tuple_name(targs, nargs),
+               shown_name(f->str, f->len));
         return NULL;
     }
     for (Sym* sp = bind->specs; sp; sp = sp->spec_next) {
@@ -2081,8 +2089,8 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
         int new_nt = f->c ? f->c->nkids : 0;
         if (old_nt == new_nt && same_param_signature(old->type, old->decl, ft, f)) {
             ck_err(k, f,
-                   "duplicate overload '%.*s': parameter signatures must differ (return type is not considered)",
-                   (int)f->len, f->str);
+                   "duplicate overload '%s': parameter signatures must differ (return type is not considered)",
+                   shown_name(f->str, f->len));
             return 0;
         }
     }
@@ -2309,15 +2317,15 @@ static int coerce(Ck* k, Node* e, SType* want) {
             for (Sym* s = head; s; s = s->overload) {
                 if (ov_hidden(s, e) || s->is_generic || !same_type(s->type, want)) continue;
                 if (found) {
-                    ck_err(k, e, "ambiguous overloaded function value '%.*s'",
-                           (int)e->len, e->str);
+                    ck_err(k, e, "ambiguous overloaded function value '%s'",
+                           shown_name(e->str, e->len));
                     e->ty = T_ERR;
                     return 0;
                 }
                 found = s;
             }
             if (!found) {
-                ck_err(k, e, "no overload of '%.*s' has the required function type", (int)e->len, e->str);
+                ck_err(k, e, "no overload of '%s' has the required function type", shown_name(e->str, e->len));
                 e->ty = T_ERR;
                 return 0;
             }
@@ -2741,8 +2749,8 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         if (s->kind == SYM_FUNC && visible_count(s, e) > 1) {
             ck_err(k, e,
-                   "overloaded function '%.*s' needs a call or an explicit function-value type",
-                   (int)e->len, e->str);
+                   "overloaded function '%s' needs a call or an explicit function-value type",
+                   shown_name(e->str, e->len));
             return T_ERR;
         }
         if (s->kind == SYM_FUNC && has_mut_param(s->decl)) {
@@ -3345,7 +3353,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
         for (int i = 0; i < nargs && same; i++) same = same_type(s->spec_args[i], targs[i]);
         if (!same || (want && !same_type(s->type, want))) continue;
         if (chosen) {
-            ck_err(k, e, "ambiguous specialized function value '%.*s'", (int)e->a->len, e->a->str);
+            ck_err(k, e, "ambiguous specialized function value '%s'", shown_name(e->a->str, e->a->len));
             return T_ERR;
         }
         chosen = s;
@@ -3371,7 +3379,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
             if (!candidate || !same_type(candidate, want)) continue;
         }
         if (chosen) {
-            ck_err(k, e, "ambiguous generic function value '%.*s'", (int)e->a->len, e->a->str);
+            ck_err(k, e, "ambiguous generic function value '%s'", shown_name(e->a->str, e->a->len));
             return T_ERR;
         }
         chosen = s;
@@ -3379,8 +3387,8 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     if (!chosen && eligible == 1) chosen = sole; // the consumer reports a mismatch
     if (!chosen) {
         if (eligible)
-            ck_err(k, e, "no generic overload of '%.*s' has the required function type",
-                   (int)e->a->len, e->a->str);
+            ck_err(k, e, "no generic overload of '%s' has the required function type",
+                   shown_name(e->a->str, e->a->len));
         else
             ck_err(k, e, "no generic '%.*s' takes %d type argument%s", (int)e->a->len, e->a->str,
                    nargs, nargs == 1 ? "" : "s");
@@ -3545,8 +3553,8 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
     for (int i = 0; i < call->nkids; i++) {
         Node* raw = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
         if (!overloaded_func_name(k, raw)) continue;
-        ck_err(k, raw, "overloaded function '%.*s' needs an explicit function-value type: '%.*s' is overloaded",
-               (int)raw->len, raw->str, (int)len, name);
+        ck_err(k, raw, "overloaded function '%s' needs an explicit function-value type: '%s' is overloaded",
+               shown_name(raw->str, raw->len), shown_name(name, len));
         return 1;
     }
     return 0;
@@ -5092,7 +5100,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
         int ambiguous = 0;
         Sym* chosen = select_call_overload(k, call, s, call, &ambiguous);
         if (ambiguous) {
-            ck_err(k, call, "ambiguous call to overloaded function '%.*s'", (int)callee->len, callee->str);
+            ck_err(k, call, "ambiguous call to overloaded function '%s'", shown_name(callee->str, callee->len));
             return T_ERR;
         }
         if (chosen) {
@@ -5100,15 +5108,13 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return chosen->type->ret;
         }
         if (overloaded_arg_err(k, call, s, callee->str, callee->len)) return T_ERR;
+        const char* shown = shown_name(callee->str, callee->len);
         Sym* hidden = select_call_overload(k, call, s, NULL, &ambiguous);
         if (hidden && ov_hidden(hidden, call)) {
-            char nm[256];
-            snprintf(nm, sizeof nm, "%.*s", (int)callee->len, callee->str);
-            ck_err(k, call, "the overload of '%s' matching these arguments is private", module_display(nm));
+            ck_err(k, call, "the overload of '%s' matching these arguments is private", shown);
             return T_ERR;
         }
-        ck_err(k, call, "no matching overload '%.*s' for these argument types",
-               (int)callee->len, callee->str);
+        ck_err(k, call, "no matching overload '%s' for these argument types", shown);
         return T_ERR;
     }
     // Array-shaped identity cast; an array literal takes it as its context.
@@ -5251,8 +5257,8 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if (!call_exact_ft(call, s->decl, s->type, actual)) continue;
                 if (spec) {
                     ck_err(k, call,
-                           "ambiguous call to specialized overload '%.*s'",
-                           (int)callee->a->len, callee->a->str);
+                           "ambiguous call to specialized overload '%s'",
+                           shown_name(callee->a->str, callee->a->len));
                     return T_ERR;
                 }
                 spec = s;
@@ -5275,8 +5281,8 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 SType* candidate = candidate_func_type(k, s->decl, targs, nargs);
                 if (!candidate || !call_exact_ft(call, s->decl, candidate, actual)) continue;
                 if (chosen) {
-                    ck_err(k, call, "ambiguous call to generic overload '%.*s'",
-                           (int)callee->a->len, callee->a->str);
+                    ck_err(k, call, "ambiguous call to generic overload '%s'",
+                           shown_name(callee->a->str, callee->a->len));
                     return T_ERR;
                 }
                 chosen = s;
@@ -5286,8 +5292,8 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if (eligible > 1 &&
                     overloaded_arg_err(k, call, head, callee->a->str, callee->a->len))
                     return T_ERR;
-                ck_err(k, call, "no matching generic overload '%.*s' for these arguments",
-                       (int)callee->a->len, callee->a->str);
+                ck_err(k, call, "no matching generic overload '%s' for these arguments",
+                       shown_name(callee->a->str, callee->a->len));
                 return T_ERR;
             }
             // Generics #13: a 'specialized' template has no default body, so

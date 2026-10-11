@@ -201,6 +201,7 @@ tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides 
 tests/modules/selective_type_value/main.ace|3:8: error: imported name 'Thing' collides with a declaration
 tests/modules/selective_value_type/main.ace|3:8: error: imported name 'make' collides with a declaration
 tests/modules/selective_local_type/main.ace|6:5: error: 'Thing' names a type; a value may not share its name
+tests/modules/overload_mismatch/main.ace|6:21: error: no matching overload 'util.pick' for these argument types
 tests/modules/overload_private/main.ace|6:22: error: the overload of 'util.scale' matching these arguments is private
 tests/modules/field_private/main.ace|10:46: error: field 'tag' of 'geo.Point' is private
 tests/modules/field_private/main.ace|11:7: error: field 'tag' of 'geo.Point' is private

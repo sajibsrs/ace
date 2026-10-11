@@ -1,0 +1,9 @@
+/* Companion module for the Overload mismatch fixture. */
+
+pub pick(x: int): int {
+    return x
+}
+
+pub pick(x: bool): int {
+    return 0
+}

@@ -1,0 +1,7 @@
+/* A failed overloaded call names the member as written, not its identity. */
+
+import util: "./util.ace"
+
+main(): int {
+    return util.pick("x")
+}

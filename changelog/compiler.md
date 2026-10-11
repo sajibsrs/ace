@@ -162,3 +162,6 @@
 - A typed `_` in a typed or mixed binding list (`_: int, ok: bool = f()`)
   reports that `_` there takes no type and shows the bare form (#119); other
   positions keep "'_' discards a value and declares nothing".
+- Overload diagnostics (mismatch, ambiguity, duplicate, function value,
+  specialization) name a module member as written (`util.pick`) through
+  `shown_name`/`module_display`, never its module-private identity `util$pick`.
