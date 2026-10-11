@@ -214,6 +214,8 @@ pub Sema: struct {
     t_ut_float: u32 = 0,
     t_ut_null: u32 = 0,
     t_mut_string: u32 = 0,
+    t_byte_slice: u32 = 0,              // []u8 and mut []u8, the memory builtins' views
+    t_mut_byte_slice: u32 = 0,
     prims: u32 = 0,                     // the first of the 14 primitives, in P_ order
     pub unsupported: string = "",       // a construct not yet ported, when nonempty
 }
@@ -230,6 +232,10 @@ pub Sema.new(l: module.Loader): Sema {
     for i: u32 in 0..14 { _ = mut s.layout(s.prims + i) }
     s.t_mut_string = mut s.new_type(SType { kind = TypeKind.prim, prim = P_STRING, is_mut = true, size = 16, align = 8 })
     s.t_void = mut s.new_type(SType { kind = TypeKind.void })
+    s.t_byte_slice = mut s.new_type(SType { kind = TypeKind.slice, base = s.prims + u32(P_U8) })
+    _ = mut s.layout(s.t_byte_slice)
+    s.t_mut_byte_slice = mut s.new_type(SType { kind = TypeKind.slice, base = s.prims + u32(P_U8), is_mut = true })
+    _ = mut s.layout(s.t_mut_byte_slice)
     s.t_ut_int = mut s.new_type(SType { kind = TypeKind.ut, name = "integer literal" })
     s.t_ut_float = mut s.new_type(SType { kind = TypeKind.ut, name = "float literal" })
     s.t_ut_null = mut s.new_type(SType { kind = TypeKind.ut, name = "null" })
@@ -2258,7 +2264,18 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
         mut self.err(call, ["'", callee.text, "' is an associated function, called on the type: ", mut self.type_name(b), ".", callee.text, "(...)"])
         return self.t_err
     }
-    if head != 0 && self.node(self.sym(head).decl).ival == BI_FMT_PRINTF_BUF { return mut self.unported("memory and format builtin calls") }
+    if head != 0 && self.node(self.sym(head).decl).ival == BI_FMT_PRINTF_BUF { // mut buffer.printf("format", ...)
+        if (n.flags & parser.F_MUT) == 0 {
+            mut self.err(call, ["Buffer.printf appends to the buffer; it needs 'mut' at the call"])
+            return self.t_err
+        }
+        if last != 0 {
+            if !self.ty(last).is_mut { mut self.err(n.a, ["write through read-only pointer — use 'mut *T' and 'mut &value'"]) }
+        } else {
+            _ = mut self.check_lvalue(callee.a, true)
+        }
+        return mut self.check_format_call(call, head, BI_FMT_PRINTF_BUF)
+    }
     found: u32, amb: bool = mut self.method_match(call, head, b)
     if self.unsupported.len != 0 { return self.t_err }
     if amb {
@@ -2361,6 +2378,595 @@ Sema.method_mut_mismatch(mut self, call: u32, head: u32): bool {
         }
     }
     return false
+}
+
+/* Whether `t` is a byte sequence: [N]u8, []u8, or string. */
+Sema.is_byte_sequence(self, t: u32): bool {
+    if t == 0 { return false }
+    x: SType = self.ty(t)
+    if x.kind == TypeKind.prim { return x.prim == P_STRING }
+    return (x.kind == TypeKind.array || x.kind == TypeKind.slice) && x.base != 0 && self.is_prim(x.base, P_U8)
+}
+
+/* The type a release's mut argument was declared with: a narrowed local
+ * reads back through its declaration's own symbol.
+ */
+Sema.declared_type(self, raw: u32, visible: u32): u32 {
+    if self.node(raw).kind != Kind.ident { return visible }
+    current: u32 = self.node_sym(raw)
+    if current == 0 || self.sym(current).decl == 0 { return visible }
+    original: u32 = self.node_sym(self.sym(current).decl)
+    if original != 0 && self.sym(original).ty != 0 { return self.sym(original).ty }
+    return visible
+}
+
+/* A raw byte-form memory intrinsic call: mem.equal, usable, alloc, realloc,
+ * release, copy, move, fill, zero, or compare.
+ */
+Sema.check_memory_call(mut self, call: u32, f: u32, bi: u64): u32 {
+    n: Node = self.node(call)
+    mut self.set_node_sym(n.a, f)
+    mut self.set_node_ty(n.a, self.sym(f).ty)
+    mut self.set_node_sym(call, f)
+    if bi == BI_MEM_EQUAL {
+        if n.nkids != 2 {
+            mut self.err(call, ["mem.equal takes exactly 2 arguments"])
+            return self.t_err
+        }
+        for i: u32 in 0..2 {
+            arg: u32 = self.kid(call, i)
+            if self.node(arg).kind == Kind.mutarg {
+                mut self.err(arg, ["'mut' marks mut parameters; mem.equal parameter ", mut self.num(i + 1), " is read-only"])
+                arg = self.node(arg).a
+            }
+            t: u32 = mut self.expr_type(arg)
+            if self.ty(t).kind != TypeKind.err && !self.is_byte_sequence(t) {
+                mut self.err(arg, ["mem.equal requires byte sequences ([N]u8, []u8, or string), got ", mut self.type_name(t)])
+            }
+        }
+        return self.prim(P_BOOL)
+    }
+    if bi == BI_MEM_ALLOC_SIZE {
+        if n.nkids != 1 {
+            mut self.err(call, ["mem.usable takes exactly one allocation slice"])
+            return self.t_err
+        }
+        data: u32 = self.kid(call, 0)
+        if self.node(data).kind == Kind.mutarg {
+            mut self.err(data, ["'mut' marks mut parameters; mem.usable's argument is read-only"])
+            data = self.node(data).a
+        }
+        _ = mut self.coerce(data, self.t_byte_slice)
+        return self.prim(P_USIZE)
+    }
+    if bi == BI_MEM_ALLOC {
+        if n.nkids != 2 {
+            mut self.err(call, ["mem.alloc takes exactly size and alignment"])
+            return self.t_err
+        }
+        for i: u32 in 0..2 {
+            arg: u32 = self.kid(call, i)
+            if self.node(arg).kind == Kind.mutarg {
+                mut self.err(arg, ["'mut' marks mut parameters; mem.alloc arguments are read-only"])
+                arg = self.node(arg).a
+            }
+            _ = mut self.coerce(arg, self.prim(P_I64))
+        }
+        return self.t_mut_byte_slice
+    }
+    if bi == BI_MEM_REALLOC {
+        if n.nkids != 2 {
+            mut self.err(call, ["mem.realloc takes exactly data and new size"])
+            return self.t_err
+        }
+        data: u32 = self.kid(call, 0)
+        size: u32 = self.kid(call, 1)
+        if self.node(data).kind == Kind.mutarg {
+            mut self.err(data, ["'mut' marks mut parameters; mem.realloc arguments are read-only"])
+            data = self.node(data).a
+        }
+        if self.node(size).kind == Kind.mutarg {
+            mut self.err(size, ["'mut' marks mut parameters; mem.realloc arguments are read-only"])
+            size = self.node(size).a
+        }
+        _ = mut self.coerce(data, self.t_byte_slice)
+        _ = mut self.coerce(size, self.prim(P_I64))
+        return self.t_mut_byte_slice
+    }
+    if bi == BI_MEM_RELEASE {
+        if n.nkids != 1 {
+            mut self.err(call, ["mem.release takes exactly one mut allocation slice"])
+            return self.t_err
+        }
+        arg: u32 = self.kid(call, 0)
+        if self.node(arg).kind != Kind.mutarg {
+            mut self.err(arg, ["mem.release needs 'mut' at the call site: release(mut data)"])
+            return self.t_err
+        }
+        raw: u32 = self.node(arg).a
+        visible: u32 = mut self.check_lvalue(raw, true)
+        declared: u32 = self.declared_type(raw, visible)
+        if !self.same_type(declared, self.t_byte_slice) && !self.shrink_ok(declared, self.t_byte_slice) {
+            if self.ty(declared).kind == TypeKind.slice {
+                mut self.err(raw, ["mem.release requires a mutable []u8 allocation variable — a typed slice states its element type: mem.release[T](mut data)"])
+            } else {
+                mut self.err(raw, ["mem.release requires a mutable []u8 allocation variable"])
+            }
+            return self.t_err
+        }
+        return self.t_void
+    }
+    name: string = "compare"
+    if bi == BI_MEM_COPY { name = "copy" } else if bi == BI_MEM_MOVE { name = "move" } else if bi == BI_MEM_FILL { name = "fill" } else if bi == BI_MEM_ZERO { name = "zero" }
+    want: u32 = 2
+    if bi == BI_MEM_ZERO { want = 1 }
+    if n.nkids != want {
+        plural: string = "s"
+        if want == 1 { plural = "" }
+        mut self.err(call, ["mem.", name, " takes exactly ", mut self.num(want), " argument", plural])
+        return self.t_err
+    }
+    writes: bool = bi != BI_MEM_COMPARE
+    for i: u32 in 0..n.nkids {
+        arg: u32 = self.kid(call, i)
+        is_dst: bool = writes && i == 0
+        // content-write destinations carry type-position `mut` (Memory #15)
+        if self.node(arg).kind == Kind.mutarg {
+            if is_dst {
+                mut self.err(arg, ["mem.", name, "'s destination is a writable view — pass 'mut []u8'; no call-site 'mut'"])
+            } else {
+                mut self.err(arg, ["'mut' marks mut parameters; mem.", name, " parameter ", mut self.num(i + 1), " is read-only"])
+            }
+            arg = self.node(arg).a
+        }
+        wt: u32 = self.t_byte_slice
+        if is_dst { wt = self.t_mut_byte_slice }
+        if bi == BI_MEM_FILL && i == 1 { wt = self.prim(P_U8) }
+        _ = mut self.coerce(arg, wt)
+    }
+    if bi == BI_MEM_COMPARE { return self.prim(P_I64) }
+    return self.t_void
+}
+
+/* A typed allocation bi, mem.alloc/zalloc/realloc/copy/move/release[T]:
+ * checked and lowered directly, never stamped.
+ */
+Sema.check_memory_generic_call(mut self, call: u32, f: u32, elem: u32, bi: u64): u32 {
+    n: Node = self.node(call)
+    if elem != 0 && self.ty(elem).kind == TypeKind.void {
+        mut self.err(call, ["'void' names no value and cannot be a memory element type"])
+        return self.t_err
+    }
+    mut self.set_node_sym(n.a, f)
+    mut self.set_node_sym(call, f)
+    what: string = "mem.release[T]"
+    if bi == BI_MEM_ALLOC_T { what = "mem.alloc[T]" } else if bi == BI_MEM_ZALLOC_T { what = "mem.zalloc[T]" } else if bi == BI_MEM_REALLOC_T { what = "mem.realloc[T]" } else if bi == BI_MEM_COPY_T { what = "mem.copy[T]" } else if bi == BI_MEM_MOVE_T { what = "mem.move[T]" }
+    if elem == 0 || self.ty(elem).kind == TypeKind.err { return self.t_err }
+    if self.ty(elem).kind == TypeKind.typeparam {
+        mut self.err(n.a, [what, " needs a concrete element type at the instantiation"])
+        return self.t_err
+    }
+    if !mut self.layout(elem) { return self.t_err }
+    slice: u32 = mut self.new_type(SType { kind = TypeKind.slice, base = elem })
+    _ = mut self.layout(slice)
+    mut_slice: u32 = mut self.new_type(SType { kind = TypeKind.slice, base = elem, is_mut = true })
+    _ = mut self.layout(mut_slice)
+    if bi == BI_MEM_RELEASE_T { mut self.set_node_ty(n.a, slice) } else { mut self.set_node_ty(n.a, mut_slice) }
+    if bi == BI_MEM_COPY_T || bi == BI_MEM_MOVE_T {
+        if n.nkids != 2 {
+            mut self.err(call, [what, " takes exactly 2 arguments"])
+            return self.t_err
+        }
+        for i: u32 in 0..2 {
+            arg: u32 = self.kid(call, i)
+            // as for the byte forms (Memory #15): type-position `mut` only
+            if self.node(arg).kind == Kind.mutarg {
+                if i == 0 {
+                    mut self.err(arg, [what, "'s destination is a writable view — pass 'mut []", mut self.type_name(elem), "'; no call-site 'mut'"])
+                } else {
+                    mut self.err(arg, ["'mut' marks mut parameters; ", what, " parameter 2 is read-only"])
+                }
+                arg = self.node(arg).a
+            }
+            wt: u32 = slice
+            if i == 0 { wt = mut_slice }
+            _ = mut self.coerce(arg, wt)
+        }
+        return self.t_void
+    }
+    if bi == BI_MEM_ALLOC_T || bi == BI_MEM_ZALLOC_T {
+        if n.nkids != 1 {
+            mut self.err(call, [what, " takes exactly one element count"])
+            return self.t_err
+        }
+        count: u32 = self.kid(call, 0)
+        if self.node(count).kind == Kind.mutarg {
+            mut self.err(count, ["'mut' marks mut parameters; ", what, " arguments are read-only"])
+            count = self.node(count).a
+        }
+        _ = mut self.coerce(count, self.prim(P_USIZE))
+        return mut_slice
+    }
+    if bi == BI_MEM_REALLOC_T {
+        if n.nkids != 2 {
+            mut self.err(call, [what, " takes exactly data and a new element count"])
+            return self.t_err
+        }
+        data: u32 = self.kid(call, 0)
+        count: u32 = self.kid(call, 1)
+        if self.node(data).kind == Kind.mutarg {
+            mut self.err(data, ["'mut' marks mut parameters; ", what, " data is read-only"])
+            data = self.node(data).a
+        }
+        if self.node(count).kind == Kind.mutarg {
+            mut self.err(count, ["'mut' marks mut parameters; ", what, " arguments are read-only"])
+            count = self.node(count).a
+        }
+        _ = mut self.coerce(data, slice)
+        _ = mut self.coerce(count, self.prim(P_USIZE))
+        return mut_slice
+    }
+    if n.nkids != 1 {
+        mut self.err(call, [what, " takes exactly one mut typed allocation slice"])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    if self.node(arg).kind != Kind.mutarg {
+        mut self.err(arg, [what, " needs 'mut' at the call site: mem.release[T](mut data)"])
+        return self.t_err
+    }
+    raw: u32 = self.node(arg).a
+    visible: u32 = mut self.check_lvalue(raw, true)
+    declared: u32 = self.declared_type(raw, visible)
+    if !self.same_type(declared, slice) && !self.shrink_ok(declared, slice) {
+        mut self.err(raw, [what, " requires a mutable []", mut self.type_name(elem), " allocation variable — the instantiation must match the slice's element type exactly"])
+        return self.t_err
+    }
+    return self.t_void
+}
+
+/* A string literal, or the initializer a static-literal const string global
+ * reads from, else 0.
+ */
+Sema.static_string_expr(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    if n.kind == Kind.str_lit { return e }
+    if n.kind == Kind.ident {
+        s: u32 = mut self.lookup_val(n.text)
+        if s != 0 && self.sym(s).is_global && self.sym(s).is_const && self.sym(s).ty == self.prim(P_STRING) {
+            init: u32 = self.sym_init(s)
+            if init != 0 { return mut self.static_string_expr(init) }
+        }
+    }
+    return 0
+}
+
+/* A format conversion's value kind, as C's PF_* enumerators. */
+PF_TEXT: const u8 = 0
+PF_SIGNED: const u8 = 1
+PF_UNSIGNED: const u8 = 2
+PF_BINARY: const u8 = 3
+PF_OCTAL: const u8 = 4
+PF_HEX_LOWER: const u8 = 5
+PF_HEX_UPPER: const u8 = 6
+PF_FIXED: const u8 = 7
+PF_SCIENTIFIC: const u8 = 8
+PF_GENERAL: const u8 = 9
+PF_STRING: const u8 = 10
+PF_BYTE: const u8 = 11
+PF_LITERAL_BYTE: const u8 = 12
+
+/* One conversion of a format plan: its kind, its decoded byte offset, and
+ * the call argument it consumes.
+ */
+FormatPart: struct {
+    kind: u8,
+    off: u32,
+    arg: u32 = 0,
+}
+
+/* A format helper beside the public function or in std's formatting module:
+ * the plain function `prefix name` with no type arguments, else its
+ * specialization for `arg`; reports a missing one.
+ */
+Sema.format_helper(mut self, prefix: string, who: string, name: string, arg: u32, at: u32): u32 {
+    full: string = mut self.pool.join([prefix, name])
+    head: u32 = mut self.lookup_val(full)
+    for g: u32 = head; g != 0; g = self.sym(g).overload {
+        if arg == 0 { return g }
+        for s: u32 = self.sym(g).specs; s != 0; s = self.sym(s).spec_next {
+            if self.sym(s).spec_nargs == 1 && self.same_type(self.params.get(usize(self.sym(s).spec_args)), arg) { return s }
+        }
+    }
+    tuple: string = ""
+    if arg != 0 {
+        run: u32 = u32(self.params.len)
+        fail(mut self.params.push(arg))
+        tuple = mut self.args_name(run, 1)
+    }
+    mut self.err(at, ["internal ", who, " helper '", full, tuple, "' has no specialization"])
+    return 0
+}
+
+/* The type argument `arg` of a `kind` conversion prints as, or 0 when it
+ * does not fit, with the expected type's name; `skip` when it has no value.
+ */
+Sema.format_arg_type(mut self, arg: u32, kind: u8): (u32, string, bool) {
+    errors: int = self.errors
+    t: u32 = mut self.expr_type(arg)
+    // a value-less argument (a panic call) is poison without an error of its own
+    if self.ty(t).kind == TypeKind.err && self.errors == errors { return 0, "", true }
+    want: u32 = 0
+    expected: string = "value"
+    if kind == PF_SIGNED {
+        want = self.prim(P_I64)
+        expected = "int"
+    } else if kind == PF_UNSIGNED || kind == PF_BINARY || kind == PF_OCTAL || kind == PF_HEX_LOWER || kind == PF_HEX_UPPER {
+        expected = "uint or usize"
+        if t == self.t_ut_int {
+            if !mut self.ut_fits(arg, self.prim(P_U64)) { return 0, expected, false }
+            t = self.prim(P_U64)
+            mut self.set_node_ty(arg, t)
+        }
+        if self.same_type(t, self.prim(P_U64)) || self.same_type(t, self.prim(P_USIZE)) { return t, expected, false }
+        return 0, expected, false
+    } else if kind == PF_FIXED || kind == PF_SCIENTIFIC || kind == PF_GENERAL {
+        expected = "f32 or f64"
+        if t == self.t_ut_float {
+            if !mut self.ut_fits(arg, self.prim(P_F64)) { return 0, expected, false }
+            t = self.prim(P_F64)
+            mut self.set_node_ty(arg, t)
+        }
+        if self.same_type(t, self.prim(P_F32)) || self.same_type(t, self.prim(P_F64)) { return t, expected, false }
+        return 0, expected, false
+    } else if kind == PF_STRING {
+        want = self.prim(P_STRING)
+        expected = "string"
+    } else if kind == PF_BYTE {
+        want = self.prim(P_U8)
+        expected = "u8"
+    } else {
+        return 0, expected, false
+    }
+    if t == self.t_ut_int && self.is_int(want) {
+        if !mut self.ut_fits(arg, want) { return 0, expected, false }
+        t = want
+        mut self.set_node_ty(arg, t)
+    }
+    if self.same_type(t, want) || self.shrink_ok(t, want) { return t, expected, false } // mut string prints as string
+    return 0, expected, false
+}
+
+/* A checked format call: fmt.printf(format, ...), fmt.printf(fd, format,
+ * ...), mut buffer.printf(format, ...), or str.format(destination, format,
+ * ...). The format is parsed into conversions, each argument checked
+ * against its conversion and a piece-writer specialization looked up for it.
+ */
+Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
+    n: Node = self.node(call)
+    who: string = "fmt.printf"
+    open: string = "print_open"
+    close: string = "print_close"
+    fi: u32 = 0
+    if bi == BI_FMT_PRINTF_FD {
+        fi = 1
+        open = "print_to_open"
+    } else if bi == BI_FMT_PRINTF_BUF {
+        who = "Buffer.printf"
+    } else if bi == BI_STR_FORMAT {
+        fi = 1
+        who = "str.format"
+        open = "put_open"
+        close = "put_close"
+    }
+    mut self.set_node_sym(n.a, f)
+    mut self.set_node_ty(n.a, self.sym(f).ty)
+    mut self.set_node_sym(call, f)
+    if fi == 1 { // the writable destination comes first
+        if n.nkids < 1 {
+            mut self.err(call, [who, " requires a destination and a compile-time-static format string"])
+            return self.t_err
+        }
+        dest: u32 = self.kid(call, 0)
+        if self.node(dest).kind == Kind.mutarg {
+            if bi == BI_FMT_PRINTF_FD {
+                mut self.err(dest, [who, " writes to the descriptor; it takes no 'mut'"])
+            } else {
+                mut self.err(dest, [who, " writes through the destination slice's own permission; it takes no 'mut'"])
+            }
+            dest = self.node(dest).a
+        }
+        if !mut self.coerce(dest, self.params.get(usize(self.ty(self.sym(f).ty).params))) { return self.t_err }
+    }
+    if n.nkids < fi + 1 {
+        mut self.err(call, [who, " requires a compile-time-static format string"])
+        return self.t_err
+    }
+    format_arg: u32 = self.kid(call, fi)
+    if self.node(format_arg).kind == Kind.mutarg {
+        mut self.err(format_arg, [who, " format is read-only"])
+        format_arg = self.node(format_arg).a
+    }
+    if !mut self.coerce(format_arg, self.prim(P_STRING)) { return self.t_err }
+    fnode: u32 = mut self.static_string_expr(format_arg)
+    if fnode == 0 {
+        mut self.err(format_arg, [who, " format must be a string literal or static-literal const global"])
+        for i: u32 = fi + 1; i < n.nkids; i += 1 {
+            a: u32 = self.kid(call, i)
+            if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
+            _ = mut self.expr_type(a)
+        }
+        return self.t_err
+    }
+    text: string = self.node(fnode).text
+    parts: array.Array[FormatPart] = array.Array[FormatPart] {}
+    defer mut parts.wipe()
+    literal: usize = 0
+    next_arg: u32 = fi + 1
+    i: usize = 0
+    for i < text.len {
+        if text[i] != '%' {
+            i += 1
+            continue
+        }
+        if i > literal { fail(mut parts.push(FormatPart { kind = PF_TEXT, off = u32(literal), arg = u32(i - literal) })) }
+        conv_off: u32 = u32(i)
+        i += 1
+        if i >= text.len {
+            mut self.err(format_arg, ["incomplete ", who, " conversion at decoded byte ", mut self.num(conv_off)])
+            return self.t_err
+        }
+        if text[i] == '%' {
+            fail(mut parts.push(FormatPart { kind = PF_LITERAL_BYTE, off = conv_off }))
+            i += 1
+            literal = i
+            continue
+        }
+        zero: bool = false
+        width: u64 = 0
+        if text[i] == '0' {
+            zero = true
+            i += 1
+            if i >= text.len || text[i] < '1' || text[i] > '9' {
+                mut self.err(format_arg, [who, " zero flag needs a width at decoded byte ", mut self.num(conv_off)])
+                return self.t_err
+            }
+        }
+        for i < text.len && text[i] >= '0' && text[i] <= '9' {
+            if width <= 1000000 { width = width * 10 + u64(text[i] - '0') }
+            i += 1
+        }
+        if width > 1000000 {
+            mut self.err(format_arg, [who, " width ", mut self.num64(i64(width)), " exceeds the limit 1000000"])
+            return self.t_err
+        }
+        if i >= text.len {
+            mut self.err(format_arg, ["incomplete ", who, " conversion at decoded byte ", mut self.num(conv_off)])
+            return self.t_err
+        }
+        has_precision: bool = false
+        if text[i] == '.' {
+            has_precision = true
+            i += 1
+            if i < text.len && text[i] == '*' {
+                mut self.err(format_arg, [who, " dynamic '*' precision is not supported (decoded byte ", mut self.num(conv_off), ")"])
+                return self.t_err
+            }
+            if i >= text.len || text[i] < '0' || text[i] > '9' {
+                mut self.err(format_arg, [who, " precision needs decimal digits at decoded byte ", mut self.num(conv_off)])
+                return self.t_err
+            }
+            p: u64 = 0
+            for i < text.len && text[i] >= '0' && text[i] <= '9' {
+                if p <= 1000000 { p = p * 10 + u64(text[i] - '0') }
+                i += 1
+            }
+            if p > 324 {
+                mut self.err(format_arg, [who, " precision ", mut self.num64(i64(p)), " exceeds the fixed-buffer limit 324"])
+                return self.t_err
+            }
+            if i >= text.len {
+                mut self.err(format_arg, ["incomplete ", who, " conversion at decoded byte ", mut self.num(conv_off)])
+                return self.t_err
+            }
+        } else if text[i] == '*' || text[i] == '+' || text[i] == '-' || text[i] == '#' || text[i] == ' ' {
+            mut self.err(format_arg, [who, " flags other than '0', '*', and positional arguments are not supported (decoded byte ", mut self.num(conv_off), ")"])
+            return self.t_err
+        }
+        kind: u8 = PF_TEXT
+        switch text[i] {
+            'd' { kind = PF_SIGNED }
+            'u' { kind = PF_UNSIGNED }
+            'b' { kind = PF_BINARY }
+            'o' { kind = PF_OCTAL }
+            'x' { kind = PF_HEX_LOWER }
+            'X' { kind = PF_HEX_UPPER }
+            'f' { kind = PF_FIXED }
+            'e' { kind = PF_SCIENTIFIC }
+            'g' { kind = PF_GENERAL }
+            's' { kind = PF_STRING }
+            'c' { kind = PF_BYTE }
+            default {
+                mut self.err(format_arg, ["unsupported ", who, " conversion '%", text[i..i + 1], "' at decoded byte ", mut self.num(conv_off)])
+                return self.t_err
+            }
+        }
+        if has_precision && kind != PF_FIXED && kind != PF_SCIENTIFIC && kind != PF_GENERAL {
+            mut self.err(format_arg, [who, " precision is supported only for %f, %e, and %g (decoded byte ", mut self.num(conv_off), ")"])
+            return self.t_err
+        }
+        if zero && (kind == PF_STRING || kind == PF_BYTE) {
+            mut self.err(format_arg, [who, " zero padding is supported only for numeric conversions (decoded byte ", mut self.num(conv_off), ")"])
+            return self.t_err
+        }
+        fail(mut parts.push(FormatPart { kind = kind, off = conv_off, arg = next_arg }))
+        next_arg += 1
+        i += 1
+        literal = i
+    }
+    expected_count: u32 = next_arg - (fi + 1)
+    provided_count: u32 = 0
+    if n.nkids > fi + 1 { provided_count = n.nkids - (fi + 1) }
+    if provided_count < expected_count {
+        missing: u32 = 0
+        for p: FormatPart in parts.view() {
+            if p.kind != PF_TEXT && p.kind != PF_LITERAL_BYTE && p.arg == fi + provided_count + 1 {
+                missing = p.off
+                break
+            }
+        }
+        plural: string = "s"
+        if expected_count == 1 { plural = "" }
+        mut self.err(call, [who, " format requires ", mut self.num(expected_count), " value argument", plural, ", got ", mut self.num(provided_count), "; missing argument ", mut self.num(provided_count + 1), " for conversion at decoded byte ", mut self.num(missing)])
+    } else if provided_count > expected_count {
+        mut self.err(self.kid(call, fi + expected_count + 1), ["extra ", who, " argument ", mut self.num(expected_count + 1), " is not consumed by the format"])
+    }
+    name: string = self.sym(f).name
+    own: string = name[..name.len - 6] // the module prefix before "printf" or "format"
+    rendering: string = self.l.formatting
+    _ = mut self.format_helper(own, who, open, 0, call)
+    _ = mut self.format_helper(own, who, close, 0, call)
+    _ = mut self.format_helper(rendering, who, "piece", self.prim(P_STRING), call)
+    _ = mut self.format_helper(rendering, who, "piece", self.prim(P_U8), call)
+    for p: FormatPart in parts.view() {
+        if p.kind == PF_TEXT || p.kind == PF_LITERAL_BYTE || p.arg >= n.nkids { continue }
+        arg: u32 = self.kid(call, p.arg)
+        if self.node(arg).kind == Kind.mutarg {
+            mut self.err(arg, [who, " value arguments are read-only"])
+            arg = self.node(arg).a
+        }
+        actual: u32, expected: string, skip: bool = mut self.format_arg_type(arg, p.kind)
+        if skip {
+            mut self.err(arg, [who, " argument has no value"])
+            continue
+        }
+        if actual == 0 {
+            got: u32 = self.node_ty(arg)
+            gotname: string = "unknown"
+            if got != 0 { gotname = mut self.type_name(got) }
+            mut self.err(arg, [who, " argument ", mut self.num(p.arg - fi), " for conversion at decoded byte ", mut self.num(p.off), " requires ", expected, ", got ", gotname])
+            continue
+        }
+        generic: string = "piece"
+        if p.kind == PF_BINARY || p.kind == PF_OCTAL || p.kind == PF_HEX_LOWER || p.kind == PF_HEX_UPPER {
+            generic = "piece_radix"
+        } else if p.kind == PF_FIXED {
+            generic = "piece_precision"
+        } else if p.kind == PF_SCIENTIFIC {
+            generic = "piece_scientific"
+        } else if p.kind == PF_GENERAL {
+            generic = "piece_general"
+        }
+        _ = mut self.format_helper(rendering, who, generic, actual, call)
+    }
+    for k: u32 = fi + expected_count + 1; k < n.nkids; k += 1 {
+        a: u32 = self.kid(call, k)
+        if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
+        if self.node_ty(a) == 0 { _ = mut self.expr_type(a) }
+    }
+    r: u32 = self.ty(self.sym(f).ty).ret
+    if r == 0 { return self.t_void }
+    return r
 }
 
 /* A call by name: an ordinary call through its overload set, a cast, blank,
@@ -3841,6 +4447,18 @@ BI_MEM_ALLOC_SIZE: const u64 = 28
 BI_STR_FORMAT: const u64 = 37
 BI_FMT_PRINTF_FD: const u64 = 38
 BI_FMT_PRINTF_BUF: const u64 = 41
+BI_MEM_REALLOC: const u64 = 3
+BI_MEM_RELEASE: const u64 = 4
+BI_MEM_COPY: const u64 = 5
+BI_MEM_MOVE: const u64 = 6
+BI_MEM_FILL: const u64 = 7
+BI_MEM_ZERO: const u64 = 8
+BI_MEM_ALLOC_T: const u64 = 11
+BI_MEM_REALLOC_T: const u64 = 12
+BI_MEM_RELEASE_T: const u64 = 13
+BI_MEM_ZALLOC_T: const u64 = 36
+BI_MEM_COPY_T: const u64 = 39
+BI_MEM_MOVE_T: const u64 = 40
 
 /* Modules #2/#7: visibility is per overload. An overload the use site `at`
  * cannot see is skipped as if undeclared; `at` 0 sees every one.
@@ -4208,12 +4826,44 @@ Sema.check_direct_call(mut self, call: u32, s: u32): u32 {
     x: Sym = self.sym(s)
     name: string = self.node(self.node(call).a).text
     if x.kind == SymKind.func {
+        // raw byte-form memory intrinsics; typed forms need [T]
         for it: u32 = s; it != 0; it = self.sym(it).overload {
             d: u32 = self.sym(it).decl
             if d == 0 { continue }
             id: u64 = self.node(d).ival
-            if (id >= BI_MEM_ALLOC && id <= BI_MEM_COMPARE) || id == BI_MEM_EQUAL || id == BI_MEM_ALLOC_SIZE || id == BI_FMT_PRINTF || id == BI_FMT_PRINTF_FD || id == BI_FMT_PRINTF_BUF || id == BI_STR_FORMAT {
-                return mut self.unported("memory and format builtin calls")
+            if (id >= BI_MEM_ALLOC && id <= BI_MEM_COMPARE) || id == BI_MEM_EQUAL || id == BI_MEM_ALLOC_SIZE {
+                return mut self.check_memory_call(call, it, id)
+            }
+        }
+        n: Node = self.node(call)
+        hid: u64 = 0
+        if x.decl != 0 { hid = self.node(x.decl).ival }
+        if hid == BI_FMT_PRINTF || hid == BI_FMT_PRINTF_FD {
+            // fmt.printf(fd, "format", ...): a first argument of the descriptor type selects it
+            plain: u32 = 0
+            to_fd: u32 = 0
+            for it: u32 = s; it != 0; it = self.sym(it).overload {
+                d: u32 = self.sym(it).decl
+                if d != 0 && self.node(d).ival == BI_FMT_PRINTF { plain = it }
+                if d != 0 && self.node(d).ival == BI_FMT_PRINTF_FD { to_fd = it }
+            }
+            if to_fd != 0 && n.nkids >= 1 {
+                ft: u32 = mut self.overload_arg_type(self.kid(call, 0))
+                if ft != 0 && self.same_type(ft, self.params.get(usize(self.ty(self.sym(to_fd).ty).params))) {
+                    return mut self.check_format_call(call, to_fd, BI_FMT_PRINTF_FD)
+                }
+            }
+            if plain != 0 { return mut self.check_format_call(call, plain, BI_FMT_PRINTF) }
+        }
+        if n.nkids >= 2 { // str.format(destination, "format", ...)
+            for it: u32 = s; it != 0; it = self.sym(it).overload {
+                d: u32 = self.sym(it).decl
+                if d == 0 || self.node(d).ival != BI_STR_FORMAT { continue }
+                st: u32 = mut self.overload_arg_type(self.kid(call, 1))
+                if st != 0 && (self.same_type(st, self.prim(P_STRING)) || self.shrink_ok(st, self.prim(P_STRING))) {
+                    return mut self.check_format_call(call, it, BI_STR_FORMAT)
+                }
+                break
             }
         }
     }
@@ -4376,7 +5026,9 @@ Sema.check_generic_call(mut self, call: u32): u32 {
         mut self.err(call, ["call '", name, mut self.args_name(targs, nargs), "' matches no specialization — '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
         return self.t_err
     }
-    if d.ival != 0 { return mut self.unported("memory and format builtin calls") }
+    if d.ival == BI_MEM_ALLOC_T || d.ival == BI_MEM_ZALLOC_T || d.ival == BI_MEM_REALLOC_T || d.ival == BI_MEM_RELEASE_T || d.ival == BI_MEM_COPY_T || d.ival == BI_MEM_MOVE_T {
+        return mut self.check_memory_generic_call(call, chosen, self.params.get(usize(targs)), d.ival)
+    }
     return mut self.unported("generic function bodies") // stamping checks the body
 }
 

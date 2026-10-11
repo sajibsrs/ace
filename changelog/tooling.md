@@ -98,3 +98,7 @@
   pointer receivers auto-deref, receiver `mut` selects the overload, embedded
   fields promote exact methods, and private methods stay file-local; generic
   owners still stop as unported. `Sema.err` prints the shadowed-module note.
+- selfhost checks memory and format builtins: byte-form and typed `mem`
+  intrinsics, and `fmt.printf`/`str.format`/`Buffer.printf` with the format
+  parsed at check time and each conversion's piece writer looked up by exact
+  specialization in std's formatting module.
