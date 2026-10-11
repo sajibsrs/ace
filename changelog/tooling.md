@@ -112,3 +112,6 @@
 - selfhost stamps generic functions at calls and as values: the signature is
   memoized per type-argument list before the body is checked once per
   instantiation, in the generic's own scope with the caller's locals set aside.
+- selfhost checks method and associated calls on generic owners: candidates
+  match under the owner's type arguments and the winner is stamped once per
+  owner instantiation; instantiation notes name it `Owner[T].f`, as C does.

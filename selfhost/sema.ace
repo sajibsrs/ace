@@ -338,7 +338,12 @@ Sema.err(mut self, at: u32, parts: []string) {
         st: Stamp = self.stamps.get(k - 1)
         sn: Node = self.node(st.at)
         fmt.printf(sys.stderr, "%s:%d:%d: note: in '", self.l.mods.get(self.l.module_of(st.at)).path, int(sn.line), int(sn.col))
-        mut self.print_shown(mut self.pool.join([self.node(st.decl).text, mut self.args_name(st.args, st.nargs)]))
+        g: Node = self.node(st.decl)
+        if g.kind == Kind.func && (g.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 && g.d != 0 { // the owner takes the type arguments
+            mut self.print_shown(mut self.pool.join([self.node(g.d).text, mut self.args_name(st.args, st.nargs), ".", g.text]))
+        } else {
+            mut self.print_shown(mut self.pool.join([g.text, mut self.args_name(st.args, st.nargs)]))
+        }
         fmt.printf(sys.stderr, "' instantiated here\n")
     }
     self.errors += 1
@@ -2483,7 +2488,8 @@ Sema.check_member_call(mut self, call: u32): u32 {
 }
 
 /* The method of `m`'s set matching `call` on receiver type `b` exactly, or a
- * sole candidate; `amb` when two match. Generic owners stop as unported.
+ * sole candidate; `amb` when two match. A generic owner's candidates are
+ * matched under its type arguments.
  */
 Sema.method_match(mut self, call: u32, head: u32, b: u32): (u32, bool) {
     n: Node = self.node(call)
@@ -2491,14 +2497,12 @@ Sema.method_match(mut self, call: u32, head: u32, b: u32): (u32, bool) {
     found: u32 = 0
     for f: u32 = head; f != 0; f = self.sym(f).overload {
         x: Sym = self.sym(f)
+        sig: u32 = x.ty
         if x.is_generic {
-            if self.ty(b).nargs != 0 {
-                _ = mut self.unported("methods of generic owners")
-                return 0, true
-            }
-            continue
+            if self.ty(b).nargs == 0 { continue }
+            sig = mut self.build_func_type(x.decl, true, self.ty(b).args, self.ty(b).nargs)
         }
-        ft: SType = self.ty(x.ty)
+        ft: SType = self.ty(sig)
         if ft.nparams != n.nkids + 1 || !self.same_type(self.params.get(usize(ft.params)), b) { continue }
         if ((self.node(x.decl).flags & parser.F_MUT) != 0) != cmut { continue }
         exact: bool = true
@@ -2580,7 +2584,14 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
         return self.t_err
     }
     x: Sym = self.sym(found)
-    ft: SType = self.ty(x.ty)
+    sig: u32 = x.ty
+    if x.is_generic {
+        owner: u32 = b
+        if promoted != 0 { owner = promoted }
+        sig = mut self.instantiate_func(found, self.ty(owner).args, self.ty(owner).nargs, call)
+        if self.ty(sig).kind == TypeKind.err { return self.t_err }
+    }
+    ft: SType = self.ty(sig)
     if (self.node(x.decl).flags & parser.F_MUT) != 0 {
         // the receiver is written in place: the base itself, or the storage
         // the innermost pointer reaches
@@ -2602,7 +2613,7 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
         mut self.err(call, ["method '", callee.text, "' is private"])
     }
     mut self.set_node_sym(call, found)
-    mut self.set_node_ty(n.a, x.ty)
+    mut self.set_node_ty(n.a, sig)
     if ft.ret == 0 { return self.t_void }
     return ft.ret
 }
@@ -2627,7 +2638,7 @@ Sema.check_assoc_call(mut self, call: u32, owner: u32): u32 {
         mut self.err(call, ["methods are called on a value: x.", callee.text, "(...), not ", mut self.type_name(owner), ".", callee.text, "(...)"])
         return self.t_err
     }
-    if self.ty(owner).nargs != 0 { return mut self.unported("associated functions of generic owners") }
+    if self.ty(owner).nargs != 0 { return mut self.check_generic_assoc_call(call, owner, head) }
     found: u32, ambiguous: bool = mut self.select_call_overload(call, head, 0)
     if ambiguous {
         mut self.err(call, ["ambiguous associated-function call '", callee.text, "'"])
@@ -2645,6 +2656,67 @@ Sema.check_assoc_call(mut self, call: u32, owner: u32): u32 {
     if mut self.mut_mismatch_err(call, head, 0) { return self.t_err }
     mut self.err(call, ["no associated function '", callee.text, "' for ", mut self.type_name(owner)])
     return self.t_err
+}
+
+/* An associated-function call on generic owner `owner` (`Map[K, V].new()`):
+ * each candidate's signature is rebuilt under the owner's type arguments
+ * before matching, as a method call's generic branch does.
+ */
+Sema.check_generic_assoc_call(mut self, call: u32, owner: u32, head: u32): u32 {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    o: SType = self.ty(owner)
+    found: u32 = 0
+    for f: u32 = head; f != 0; f = self.sym(f).overload {
+        x: Sym = self.sym(f)
+        sig: u32 = x.ty
+        if x.is_generic { sig = mut self.build_func_type(x.decl, true, o.args, o.nargs) }
+        if sig == 0 { continue }
+        ft: SType = self.ty(sig)
+        if ft.nparams != n.nkids { continue }
+        exact: bool = true
+        for i: u32 in 0..ft.nparams {
+            arg: u32 = self.kid(call, i)
+            at: u32 = mut self.overload_arg_type(arg)
+            p: u32 = self.params.get(usize(ft.params + i))
+            if (self.node(arg).kind == Kind.mutarg) != self.param_mut(x.decl, i) {
+                exact = false
+            } else if !self.exact_arg_type(arg, at, p) && (at == 0 || !self.shrink_ok(at, p)) {
+                exact = false
+            }
+        }
+        if !exact && self.overload_count(head) > 1 { continue }
+        if found != 0 {
+            mut self.err(call, ["ambiguous associated-function call '", callee.text, "'"])
+            return self.t_err
+        }
+        found = f
+    }
+    if found == 0 {
+        if mut self.overloaded_arg_err(call, head, callee.text) { return self.t_err }
+        if mut self.mut_mismatch_err(call, head, 0) { return self.t_err }
+        mut self.err(call, ["no associated function '", callee.text, "' for ", mut self.type_name(owner)])
+        return self.t_err
+    }
+    x: Sym = self.sym(found)
+    sig: u32 = x.ty
+    if x.is_generic {
+        sig = mut self.instantiate_func(found, o.args, o.nargs, call)
+        if self.ty(sig).kind == TypeKind.err { return self.t_err }
+    }
+    ft: SType = self.ty(sig)
+    for i: u32 in 0..n.nkids {
+        raw: u32 = self.kid(call, i)
+        if self.node(raw).kind == Kind.mutarg { raw = self.node(raw).a }
+        _ = mut self.coerce(raw, self.params.get(usize(ft.params + i)))
+    }
+    if !x.is_pub && x.decl != 0 && self.l.module_of(x.decl) != self.l.module_of(call) {
+        mut self.err(call, ["associated function '", callee.text, "' is private"])
+    }
+    mut self.set_node_sym(call, found)
+    mut self.set_node_ty(n.a, sig)
+    if ft.ret == 0 { return self.t_void }
+    return ft.ret
 }
 
 /* A variant construction `U.v(payload)` on union type `u`. */
