@@ -94,3 +94,7 @@
 - selfhost checks `switch` statements: `default` last, `fallthrough`
   placement, value cases with constant-overlap spans (`case_key`), and union
   cases with variant coverage and typed payload binders.
+- selfhost checks method calls and calls through function-typed struct fields:
+  pointer receivers auto-deref, receiver `mut` selects the overload, embedded
+  fields promote exact methods, and private methods stay file-local; generic
+  owners still stop as unported. `Sema.err` prints the shadowed-module note.

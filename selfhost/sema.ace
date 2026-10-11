@@ -321,6 +321,13 @@ Sema.err(mut self, at: u32, parts: []string) {
     fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
     mut self.print_shown(msg)
     fmt.printf(sys.stderr, "\n")
+    // a call's error is reported on the call: look through it to its callee
+    f: u32 = at
+    for f != 0 && (self.node(f).kind == Kind.call || self.node(f).kind == Kind.index) { f = self.node(f).a }
+    if f != 0 && self.node(f).kind == Kind.selector && (self.node(f).flags & parser.F_SHADOWED) != 0 {
+        b: Node = self.node(self.node(f).a)
+        fmt.printf(sys.stderr, "%s:%d:%d: note: local '%s' hides the imported module '%s'\n", self.l.mods.get(self.l.module_of(self.node(f).a)).path, int(b.line), int(b.col), b.text, b.text)
+    }
     for k: usize = self.stamps.len; k > 0; k -= 1 {
         st: Stamp = self.stamps.get(k - 1)
         sn: Node = self.node(st.at)
@@ -2138,6 +2145,224 @@ Sema.check_field_visible(mut self, t: u32, i: u32, at: u32) {
     mut self.err(at, ["field '", self.field(self.ty(t), i).name, "' of '", mut self.type_name(t), "' is private"])
 }
 
+/* A call `x.m(...)`: a stored function value in a struct field, else a method
+ * of the receiver's struct type, with pointer receivers auto-dereferenced.
+ */
+Sema.check_member_call(mut self, call: u32): u32 {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    base: Node = self.node(callee.a)
+    if base.kind == Kind.ident {
+        ts: u32 = mut self.lookup_type(base.text)
+        if ts != 0 && (self.sym(ts).ty == 0 || self.ty(self.sym(ts).ty).kind == TypeKind.struct || mut self.lookup_val(base.text) == 0) {
+            return mut self.unported("calls of computed callees") // associated call or union variant
+        }
+        ms: u32 = mut self.lookup_val(base.text)
+        if ms != 0 && self.sym(ms).kind == SymKind.module {
+            mut self.err(call, ["module member '", base.text, ".", callee.text, "' needs the stdlib (not yet linked)"])
+            return self.t_err
+        }
+    }
+    if base.kind == Kind.index && base.a != 0 && self.node(base.a).kind == Kind.ident && mut self.lookup_type(self.node(base.a).text) != 0 {
+        return mut self.unported("calls of computed callees") // on a generic owner
+    }
+    b: u32 = mut self.expr_type(callee.a)
+    if self.ty(b).kind == TypeKind.err { return self.t_err }
+    // p.m() auto-derefs like p.x, once per pointer level
+    last: u32 = 0
+    for self.ty(b).kind == TypeKind.ptr {
+        last = b
+        b = self.ty(b).base
+    }
+    // fields and methods share one namespace: a field never competes with a method
+    if self.ty(b).kind == TypeKind.struct {
+        t: SType = self.ty(b)
+        for i: u32 in 0..t.nfields {
+            if !mem.equal(self.field(t, i).name, callee.text) { continue }
+            ft: u32 = self.field(t, i).ty
+            mut self.set_node_ty(n.a, ft)
+            if ft == 0 || self.ty(ft).kind == TypeKind.err { return self.t_err }
+            if self.ty(ft).kind != TypeKind.func {
+                mut self.err(call, ["field '", callee.text, "' of type ", mut self.type_name(ft), " is not callable"])
+                return self.t_err
+            }
+            if (n.flags & parser.F_MUT) != 0 {
+                mut self.err(call, ["'mut' marks mutating methods; field '", callee.text, "' holds a function value"])
+            }
+            mut self.check_args(call, ft, false)
+            mut self.check_no_mut_args(call)
+            r: u32 = self.ty(ft).ret
+            if r == 0 { return self.t_void }
+            return r
+        }
+    }
+    if (callee.flags & parser.F_GROUPED) != 0 {
+        mut self.err(call, ["'", callee.text, "' is not a field of ", mut self.type_name(b), "; methods are not values"])
+        return self.t_err
+    }
+    if self.ty(b).kind == TypeKind.contract { return mut self.unported("calls of computed callees") }
+    if self.ty(b).kind != TypeKind.struct {
+        mut self.err(call, ["no method '", callee.text, "' for ", mut self.type_name(b)])
+        return self.t_err
+    }
+    return mut self.check_method_call(call, b, last)
+}
+
+/* The method of `m`'s set matching `call` on receiver type `b` exactly, or a
+ * sole candidate; `amb` when two match. Generic owners stop as unported.
+ */
+Sema.method_match(mut self, call: u32, head: u32, b: u32): (u32, bool) {
+    n: Node = self.node(call)
+    cmut: bool = (n.flags & parser.F_MUT) != 0
+    found: u32 = 0
+    for f: u32 = head; f != 0; f = self.sym(f).overload {
+        x: Sym = self.sym(f)
+        if x.is_generic {
+            if self.ty(b).nargs != 0 {
+                _ = mut self.unported("methods of generic owners")
+                return 0, true
+            }
+            continue
+        }
+        ft: SType = self.ty(x.ty)
+        if ft.nparams != n.nkids + 1 || !self.same_type(self.params.get(usize(ft.params)), b) { continue }
+        if ((self.node(x.decl).flags & parser.F_MUT) != 0) != cmut { continue }
+        exact: bool = true
+        for i: u32 in 1..ft.nparams {
+            arg: u32 = self.kid(call, i - 1)
+            at: u32 = mut self.overload_arg_type(arg)
+            p: u32 = self.params.get(usize(ft.params + i))
+            if (self.node(arg).kind == Kind.mutarg) != self.param_mut(x.decl, i) {
+                exact = false
+            } else if !self.exact_arg_type(arg, at, p) && (at == 0 || !self.shrink_ok(at, p)) {
+                exact = false
+            }
+        }
+        if !exact && self.overload_count(head) > 1 { continue }
+        if found != 0 { return 0, true }
+        found = f
+    }
+    return found, false
+}
+
+/* A method call on struct type `b`; `last` is the innermost pointer an
+ * auto-dereferenced receiver went through, 0 for a direct one.
+ */
+Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    owner: string = ""
+    if self.ty(b).decl != 0 { owner = self.node(self.ty(b).decl).text }
+    head: u32 = mut self.lookup_val(mut self.pool.join([owner, "$", callee.text]))
+    if head != 0 && (self.node(self.sym(head).decl).flags & parser.F_ASSOC) != 0 {
+        mut self.err(call, ["'", callee.text, "' is an associated function, called on the type: ", mut self.type_name(b), ".", callee.text, "(...)"])
+        return self.t_err
+    }
+    if head != 0 && self.node(self.sym(head).decl).ival == BI_FMT_PRINTF_BUF { return mut self.unported("memory and format builtin calls") }
+    found: u32, amb: bool = mut self.method_match(call, head, b)
+    if self.unsupported.len != 0 { return self.t_err }
+    if amb {
+        mut self.err(call, ["ambiguous method call '", callee.text, "'"])
+        return self.t_err
+    }
+    recv: u32 = callee.a
+    promoted: u32 = 0
+    if found == 0 && self.ty(b).decl != 0 { // one embedded field may promote an exact method
+        t: SType = self.ty(b)
+        for fi: u32 in 0..t.nfields {
+            fd: u32 = self.kid(t.decl, fi)
+            eb: u32 = self.field(t, fi).ty
+            if (self.node(fd).flags & parser.F_EMBED) == 0 || eb == 0 || self.ty(eb).kind != TypeKind.struct { continue }
+            eowner: string = ""
+            if self.ty(eb).decl != 0 { eowner = self.node(self.ty(eb).decl).text }
+            ehead: u32 = mut self.lookup_val(mut self.pool.join([eowner, "$", callee.text]))
+            f: u32, eamb: bool = mut self.method_match(call, ehead, eb)
+            if self.unsupported.len != 0 { return self.t_err }
+            if eamb || (f != 0 && found != 0) {
+                mut self.err(call, ["ambiguous promoted method call '", callee.text, "'"])
+                return self.t_err
+            }
+            if f != 0 {
+                found = f
+                promoted = eb
+            }
+        }
+    }
+    if found == 0 {
+        if mut self.overloaded_arg_err(call, head, callee.text) { return self.t_err }
+        if mut self.method_mut_mismatch(call, head) { return self.t_err }
+        mut self.err(call, ["no method '", callee.text, "' for ", mut self.type_name(b)])
+        return self.t_err
+    }
+    x: Sym = self.sym(found)
+    ft: SType = self.ty(x.ty)
+    if (self.node(x.decl).flags & parser.F_MUT) != 0 {
+        // the receiver is written in place: the base itself, or the storage
+        // the innermost pointer reaches
+        if last != 0 {
+            if !self.ty(last).is_mut { mut self.err(n.a, ["write through read-only pointer — use 'mut *T' and 'mut &value'"]) }
+        } else {
+            _ = mut self.check_lvalue(recv, true)
+        }
+    } else if last == 0 && promoted == 0 {
+        _ = mut self.coerce(recv, b)
+    }
+    for i: u32 in 0..n.nkids {
+        arg: u32 = self.kid(call, i)
+        raw: u32 = arg
+        if self.node(arg).kind == Kind.mutarg { raw = self.node(arg).a }
+        _ = mut self.coerce(raw, self.params.get(usize(ft.params + i + 1)))
+    }
+    if !x.is_pub && x.decl != 0 && self.l.module_of(x.decl) != self.l.module_of(call) {
+        mut self.err(call, ["method '", callee.text, "' is private"])
+    }
+    mut self.set_node_sym(call, found)
+    mut self.set_node_ty(n.a, x.ty)
+    if ft.ret == 0 { return self.t_void }
+    return ft.ret
+}
+
+/* Resolution found no method. When exactly one candidate takes this many
+ * arguments, a call-site `mut` that does not fit it (receiver or argument)
+ * is the likely cause; name it rather than report a missing method.
+ */
+Sema.method_mut_mismatch(mut self, call: u32, head: u32): bool {
+    n: Node = self.node(call)
+    callee: Node = self.node(n.a)
+    decl: u32 = 0
+    for f: u32 = head; f != 0; f = self.sym(f).overload {
+        d: u32 = self.sym(f).decl
+        if d == 0 || self.node(d).nkids != n.nkids + 1 { continue }
+        if decl != 0 { return false }
+        decl = d
+    }
+    if decl == 0 { return false }
+    rmut: bool = (self.node(decl).flags & parser.F_MUT) != 0
+    cmut: bool = (n.flags & parser.F_MUT) != 0
+    if rmut && !cmut {
+        mut self.err(call, ["method '", callee.text, "' takes 'mut self'; it needs 'mut' at the call: mut x.", callee.text, "(...)"])
+        return true
+    }
+    if !rmut && cmut {
+        mut self.err(call, ["'mut' marks mutating methods; '", callee.text, "' is read-only"])
+        return true
+    }
+    for i: u32 in 0..n.nkids {
+        p: Node = self.node(self.kid(decl, i + 1))
+        am: bool = self.node(self.kid(call, i)).kind == Kind.mutarg
+        pm: bool = (p.flags & parser.F_MUT) != 0
+        if am && !pm {
+            mut self.err(self.kid(call, i), ["'mut' marks mut parameters; parameter '", p.text, "' of '", callee.text, "' is not one"])
+            return true
+        }
+        if pm && !am {
+            mut self.err(self.kid(call, i), ["mut parameter '", p.text, "' of '", callee.text, "' needs 'mut' at the call site"])
+            return true
+        }
+    }
+    return false
+}
+
 /* A call by name: an ordinary call through its overload set, a cast, blank,
  * or a layout builtin.
  */
@@ -2147,6 +2372,7 @@ Sema.check_call(mut self, call: u32): u32 {
     if callee.kind == Kind.index && callee.a != 0 && self.node(callee.a).kind == Kind.ident {
         return mut self.check_generic_call(call)
     }
+    if callee.kind == Kind.selector { return mut self.check_member_call(call) }
     if callee.kind != Kind.ident { return mut self.unported("calls of computed callees") }
     name: string = callee.text
     s: u32 = mut self.lookup_val(name)
