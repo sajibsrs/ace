@@ -1,0 +1,4 @@
+/* A type in an array's bracket must be an enum. */
+
+// error: an array's bracket holds a length or an enum, not i32
+S: struct { a: [i32]u8 }

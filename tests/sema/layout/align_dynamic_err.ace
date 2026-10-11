@@ -1,0 +1,9 @@
+/* @align takes a compile-time value. */
+
+n: usize = 8
+
+S: struct {
+    // error: field @align value must be a compile-time usize expression
+    @align(n)
+    x: i32,
+}

@@ -3,14 +3,19 @@
  * Ported so far: top-level entry (Compiler #5). Every top-level name enters
  * the file scope, or for the root's whole-module imports the import scope,
  * with the checks its declaration alone decides; a type gets its nominal
- * shell. `dump` prints both scopes as `ace --symbols` does.
+ * shell. Then type completion: every type declaration resolves in order,
+ * with its layout. `dump` prints both scopes as `ace --symbols` does.
  */
 
 import array
+import bits
 import fmt
 import map
 import mem
+import str
 import sys
+
+import lexer: "./lexer.ace"
 
 import module: "./module.ace"
 import parser: "./parser.ace"
@@ -42,6 +47,8 @@ pub Sym: struct {
     pub is_global: bool = false,
     pub is_root: bool = false,          // top-level in the root file: unseen from imported files
     pub entered: bool = false,          // entered, not yet resolved (Compiler #5)
+    pub resolving: bool = false,
+    pub in_cycle: bool = false,         // its dependency cycle is reported
     pub decl: u32 = 0,
     pub top: u32 = 0,                   // the top-level declaration resolved on demand
     pub ty: u32 = 0,                    // index in Sema.types
@@ -49,12 +56,48 @@ pub Sym: struct {
     pub entered_specs: u32 = 0,         // set head: specializations entered, not yet bound
 }
 
+/* A type. Field and parameter lists are runs of `Sema.fields` and
+ * `Sema.params`; type ids index `Sema.types`, 0 is none.
+ */
 pub SType: struct {
     pub kind: TypeKind,
+    pub prim: u8 = 0,
     pub name: string = "",
     pub decl: u32 = 0,
     pub size: u32 = 0,
     pub align: u32 = 0,
+    pub requested_align: u32 = 0,       // explicit aggregate @align
+    pub is_mut: bool = false,
+    pub is_c_abi: bool = false,         // func: an extern "c" callable shape
+    pub is_packed: bool = false,
+    pub is_overlap: bool = false,       // struct: some fields share bytes (@offset)
+    pub calc: bool = false,             // layout in progress (cycle guard)
+    pub building: bool = false,         // fields still being built
+    pub invalid_layout: bool = false,
+    pub base: u32 = 0,
+    pub key: u32 = 0,                   // array: the dense enum of an [E]T
+    pub ret: u32 = 0,
+    pub count: u64 = 0,
+    pub fields: u32 = 0,                // struct/tuple fields, union variants, enum members, error entries
+    pub nfields: u32 = 0,
+    pub params: u32 = 0,
+    pub nparams: u32 = 0,
+}
+
+pub SField: struct {
+    pub name: string = "",
+    pub ty: u32 = 0,                    // 0 for a payloadless variant
+    pub default_value: u32 = 0,
+    pub requested_align: u32 = 0,
+    pub requested_offset: u32 = 0,
+    pub has_offset: bool = false,
+    pub effective_align: u32 = 0,
+    pub offset: u32 = 0,
+    pub bit_offset: u32 = 0,
+    pub bit_width: u32 = 0,
+    pub bit_signed: bool = false,
+    pub bit_anonymous: bool = false,
+    pub value: i64 = 0,                 // enum discriminant or error code
 }
 
 /* One scope's two namespaces, each in entry order and by name. */
@@ -108,20 +151,40 @@ pub Sema: struct {
     files: Scope,
     imports: Scope,                     // the root's whole-module imports, under `files`
     in_imports: bool = false,           // declaring into `imports`
+    fields: array.Array[SField],
+    params: array.Array[u32],
+    resolving: array.Array[u32],        // the declarations being resolved, outermost first
+    deferred: array.Array[u32],         // pairs: a declaration and its type, whose layout waits
+    in_module: bool = false,            // resolving an imported file's declaration: root names are unseen
+    layout_blocked: bool = false,       // why the last layout failed
+    layout_poisoned: bool = false,
+    t_err: u32 = 0,
+    t_mut_string: u32 = 0,
+    prims: u32 = 0,                     // the first of the 14 primitives, in P_ order
+    pub unsupported: string = "",       // a construct not yet ported, when nonempty
 }
 
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init() }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
+    s.t_err = mut s.new_type(SType { kind = TypeKind.err })
+    s.prims = u32(s.types.len)
+    for i: u8 in 0..14 { _ = mut s.new_type(SType { kind = TypeKind.prim, prim = i }) }
+    for i: u32 in 0..14 { _ = mut s.layout(s.prims + i) }
+    s.t_mut_string = mut s.new_type(SType { kind = TypeKind.prim, prim = P_STRING, is_mut = true, size = 16, align = 8 })
     return s
 }
 
 pub Sema.wipe(mut self) {
     mut self.syms.wipe()
     mut self.types.wipe()
+    mut self.fields.wipe()
+    mut self.params.wipe()
+    mut self.resolving.wipe()
+    mut self.deferred.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
@@ -573,6 +636,1125 @@ Sema.enter_specialization(mut self, f: u32) {
     mut self.check_cold_decl(f)
 }
 
+// --- types --------------------------------------------------------------------
+
+/* src/sema.h's P_ primitives, in its order. */
+P_BOOL: const u8 = 0
+P_I8: const u8 = 1
+P_I32: const u8 = 3
+P_I64: const u8 = 4
+P_U8: const u8 = 5
+P_U64: const u8 = 8
+P_F64: const u8 = 10
+P_STRING: const u8 = 11
+P_USIZE: const u8 = 12
+P_TYPEID: const u8 = 13
+
+PRIM_SPELLINGS: [14]string = [
+    "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid",
+]
+
+/* `int`/`uint` are the arm64 platform word; `char` shares u8's identity. */
+PRIM_OF_NAME: [18]u8 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 4, 8, 5]
+
+MAX_RESOLVING: const u32 = 256
+MAX_PARAMS: const u32 = 64
+
+Sema.ty(self, id: u32): SType {
+    return self.types.get(usize(id))
+}
+
+Sema.set_ty(mut self, id: u32, t: SType) {
+    mut self.types.set(usize(id), t)
+}
+
+Sema.field(self, t: SType, i: u32): SField {
+    return self.fields.get(usize(t.fields + i))
+}
+
+Sema.set_field(mut self, t: SType, i: u32, f: SField) {
+    mut self.fields.set(usize(t.fields + i), f)
+}
+
+/* `n` blank fields, contiguous before any nested type claims its own; the first. */
+Sema.new_fields(mut self, n: u32): u32 {
+    first: u32 = u32(self.fields.len)
+    for i: u32 in 0..n { fail(mut self.fields.push(SField {})) }
+    return first
+}
+
+Sema.prim(self, p: u8): u32 {
+    return self.prims + u32(p)
+}
+
+Sema.prim_by_name(self, name: string): u32 {
+    for i: usize in 0..18 {
+        if mem.equal(PRIM_NAMES[i], name) { return self.prim(PRIM_OF_NAME[i]) }
+    }
+    return 0
+}
+
+/* `v` in decimal, pool-owned. */
+Sema.num64(mut self, v: i64): string {
+    digits: [24]u8 = blank([24]u8)
+    buf: fmt.Buffer = fmt.Buffer.init(mut digits[..])
+    mut buf.printf("%d", int(v))
+    return mut self.pool.join([buf.text()])
+}
+
+/* A type as diagnostics and dumps spell it, as C's type_name does. */
+Sema.type_name(mut self, id: u32): string {
+    if id == 0 { return "?" }
+    t: SType = self.ty(id)
+    switch t.kind {
+        TypeKind.prim {
+            if t.prim == P_STRING && t.is_mut { return "mut string" }
+            return PRIM_SPELLINGS[t.prim]
+        }
+        TypeKind.ptr, TypeKind.slice {
+            m: string = ""
+            if t.is_mut { m = "mut " }
+            shape: string = "*"
+            if t.kind == TypeKind.slice { shape = "[]" }
+            return mut self.pool.join([m, shape, mut self.type_name(t.base)])
+        }
+        TypeKind.array {
+            n: string = ""
+            if t.key != 0 { n = mut self.type_name(t.key) } else { n = mut self.num64(i64(t.count)) }
+            return mut self.pool.join(["[", n, "]", mut self.type_name(t.base)])
+        }
+        TypeKind.staticmap {
+            return mut self.pool.join(["StaticMap[", mut self.type_name(t.base), "]", mut self.type_name(t.ret)])
+        }
+        TypeKind.tuple { return mut self.list_name("(", t, false) }
+        TypeKind.func {
+            head: string = "("
+            if t.is_c_abi { head = "extern \"c\" (" }
+            ret: string = "void"
+            if t.ret != 0 && self.ty(t.ret).kind != TypeKind.void { ret = mut self.type_name(t.ret) }
+            return mut self.pool.join([mut self.list_name(head, t, true), ": ", ret])
+        }
+        TypeKind.struct, TypeKind.enum, TypeKind.contract, TypeKind.union, TypeKind.bits, TypeKind.distinct, TypeKind.error_domain {
+            if t.name.len == 0 { return t.kind.name }
+            return self.l.shown(mut self.pool, t.name)
+        }
+        TypeKind.error { return "Error" }
+        TypeKind.void { return "no value" }
+        TypeKind.template { return t.name }
+        default { return "?" }
+    }
+}
+
+/* `head` and a type list, `a, b)`: a function's parameters or a tuple's fields. */
+Sema.list_name(mut self, head: string, t: SType, params: bool): string {
+    parts: array.Array[string] = array.Array[string] {}
+    defer mut parts.wipe()
+    fail(mut parts.push(head))
+    n: u32 = t.nfields
+    if params { n = t.nparams }
+    for i: u32 in 0..n {
+        if i > 0 { fail(mut parts.push(", ")) }
+        part: u32 = 0
+        if params { part = self.params.get(usize(t.params + i)) } else { part = self.field(t, i).ty }
+        fail(mut parts.push(mut self.type_name(part)))
+    }
+    fail(mut parts.push(")"))
+    return mut self.pool.join(parts.view())
+}
+
+align_to(v: u32, a: u32): u32 {
+    if a == 0 { return v }
+    return (v + a - 1) / a * a
+}
+
+/* Size and alignment in declaration order with natural alignment; false
+ * when the layout cannot be computed yet (`layout_blocked`) or failed before
+ * (`layout_poisoned`), or closes a cycle. Mirrors C's layout().
+ */
+Sema.layout(mut self, id: u32): bool {
+    t: SType = self.ty(id)
+    if t.invalid_layout {
+        self.layout_poisoned = true
+        return false
+    }
+    if t.size != 0 { return true }
+    if t.building {
+        self.layout_blocked = true
+        return false
+    }
+    if t.calc || t.kind == TypeKind.template { return false }
+    switch t.kind {
+        TypeKind.prim {
+            switch t.prim {
+                1, 5, 0 { t.size = 1 }
+                2, 6 { t.size = 2 }
+                3, 7, 9 { t.size = 4 }
+                4, 8, 10, 12, 13 { t.size = 8 }
+                11 { t.size = 16 }
+                default { t.size = 1 }
+            }
+            t.align = t.size
+            if t.align > 8 { t.align = 8 }
+        }
+        TypeKind.ptr, TypeKind.func, TypeKind.typeparam {
+            t.size = 8
+            t.align = 8
+        }
+        TypeKind.slice {
+            t.size = 16
+            t.align = 8
+        }
+        TypeKind.staticmap {
+            t.size = 1
+            t.align = 1
+        }
+        TypeKind.contract {
+            t.size = 16
+            t.align = 8
+        }
+        TypeKind.error {
+            t.size = 8
+            t.align = 8
+        }
+        TypeKind.array, TypeKind.distinct {
+            t.calc = true
+            mut self.set_ty(id, t)
+            ok: bool = mut self.layout(t.base)
+            t = self.ty(id)
+            t.calc = false
+            if ok {
+                b: SType = self.ty(t.base)
+                t.align = b.align
+                t.size = b.size
+                if t.kind == TypeKind.array { t.size = u32(u64(b.size) * t.count) }
+            }
+            mut self.set_ty(id, t)
+            return ok
+        }
+        TypeKind.enum, TypeKind.bits {
+            if t.base == 0 {
+                t.base = self.prim(P_I32)
+                mut self.set_ty(id, t)
+            }
+            if !mut self.layout(t.base) { return false }
+            t = self.ty(id)
+            b: SType = self.ty(t.base)
+            t.size = b.size
+            t.align = b.align
+        }
+        TypeKind.struct, TypeKind.tuple { return mut self.layout_struct(id) }
+        TypeKind.union { return mut self.layout_union(id) }
+        default {
+            t.size = 1
+            t.align = 1
+        }
+    }
+    mut self.set_ty(id, t)
+    return true
+}
+
+Sema.layout_struct(mut self, id: u32): bool {
+    t: SType = self.ty(id)
+    t.calc = true
+    mut self.set_ty(id, t)
+    off: u32 = 0
+    end: u32 = 0
+    maxa: u32 = 1
+    for i: u32 in 0..t.nfields {
+        f: SField = self.field(t, i)
+        if self.ty(f.ty).kind == TypeKind.err {
+            t.calc = false
+            t.size = 1
+            t.align = 1
+            mut self.set_ty(id, t)
+            return true
+        }
+        if !mut self.layout(f.ty) {
+            t = self.ty(id)
+            t.calc = false
+            mut self.set_ty(id, t)
+            return false
+        }
+        ft: SType = self.ty(f.ty)
+        a: u32 = ft.align
+        if t.is_packed { a = 1 }
+        if f.requested_align != 0 { a = f.requested_align }
+        f.effective_align = a
+        if maxa < a { maxa = a }
+        // @offset places a field exactly; others follow the preceding field
+        if f.has_offset { off = f.requested_offset } else { off = align_to(off, a) }
+        f.offset = off
+        mut self.set_field(t, i, f)
+        off += ft.size
+        if end < off { end = off }
+    }
+    t = self.ty(id)
+    if t.requested_align > maxa { maxa = t.requested_align }
+    t.align = maxa
+    t.size = align_to(end, maxa)
+    t.calc = false
+    mut self.set_ty(id, t)
+    return true
+}
+
+/* An i32 tag at offset 0, then inline storage for the largest payload. */
+Sema.layout_union(mut self, id: u32): bool {
+    t: SType = self.ty(id)
+    t.calc = true
+    mut self.set_ty(id, t)
+    maxs: u32 = 0
+    maxa: u32 = 1
+    for i: u32 in 0..t.nfields {
+        f: SField = self.field(t, i)
+        if f.ty == 0 { continue } // payloadless variant
+        if self.ty(f.ty).kind == TypeKind.err {
+            t.calc = false
+            t.size = 1
+            t.align = 1
+            mut self.set_ty(id, t)
+            return true
+        }
+        if !mut self.layout(f.ty) {
+            t = self.ty(id)
+            t.calc = false
+            mut self.set_ty(id, t)
+            return false
+        }
+        ft: SType = self.ty(f.ty)
+        if maxs < ft.size { maxs = ft.size }
+        if maxa < ft.align { maxa = ft.align }
+    }
+    t = self.ty(id)
+    t.align = 4
+    if maxa > 4 { t.align = maxa }
+    t.size = align_to(align_to(4, maxa) + maxs, t.align)
+    t.calc = false
+    mut self.set_ty(id, t)
+    return true
+}
+
+Sema.size_of(mut self, id: u32): u32 {
+    _ = mut self.layout(id)
+    return self.ty(id).size
+}
+
+Sema.align_of(mut self, id: u32): u32 {
+    _ = mut self.layout(id)
+    return self.ty(id).align
+}
+
+// --- resolution ---------------------------------------------------------------
+
+/* A top-level declaration is resolved by the first lookup that reaches it. */
+Sema.resolved(mut self, s: u32): u32 {
+    x: Sym = self.sym(s)
+    if x.entered || x.resolving { mut self.resolve_top(s) }
+    return s
+}
+
+/* The type named `name` as the declaration being resolved sees it: a root
+ * name is unseen from an imported file. 0 when there is none.
+ */
+Sema.lookup_type(mut self, name: string): u32 {
+    s: u32 = self.files.find(true, name)
+    if s == 0 || (self.sym(s).is_root && self.in_module) { return 0 }
+    return mut self.resolved(s)
+}
+
+Sema.lookup_val(mut self, name: string): u32 {
+    s: u32 = self.files.find(false, name)
+    if s == 0 || (self.sym(s).is_root && self.in_module) { return 0 }
+    return mut self.resolved(s)
+}
+
+/* A declaration's name as written: a method's key Owner$m reads Owner.m. */
+Sema.decl_name(mut self, s: u32): string {
+    name: string = self.sym(s).name
+    sep: usize, found: bool = str.find(name, '$')
+    if !found { return name }
+    return mut self.pool.join([name[..sep], ".", name[sep + 1..]])
+}
+
+Sema.resolve_site(self, s: u32): u32 {
+    x: Sym = self.sym(s)
+    if self.node(x.top).kind == Kind.var { return x.decl }
+    return x.top
+}
+
+Sema.report_cycle(mut self, s: u32) {
+    if self.sym(s).in_cycle { return }
+    from: usize = self.resolving.len - 1
+    for from > 0 && self.resolving.get(from) != s { from -= 1 }
+    parts: array.Array[string] = array.Array[string] {}
+    defer mut parts.wipe()
+    name: string = mut self.decl_name(s)
+    fail(mut parts.push("'"))
+    fail(mut parts.push(name))
+    fail(mut parts.push("' depends on itself: "))
+    for i: usize in from..self.resolving.len {
+        r: u32 = self.resolving.get(i)
+        x: Sym = self.sym(r)
+        x.in_cycle = true // reported once
+        mut self.update(r, x)
+        fail(mut parts.push("'"))
+        fail(mut parts.push(mut self.decl_name(r)))
+        fail(mut parts.push("' -> "))
+    }
+    x: Sym = self.sym(s)
+    x.in_cycle = true
+    mut self.update(s, x)
+    fail(mut parts.push("'"))
+    fail(mut parts.push(name))
+    fail(mut parts.push("'"))
+    mut self.err(self.resolve_site(s), parts.view())
+}
+
+/* Resolves top-level declaration `s` in its own top-level context, whatever
+ * reached it. Functions resolve with their signatures (not yet ported).
+ */
+Sema.resolve_top(mut self, s: u32) {
+    x: Sym = self.sym(s)
+    n: Node = self.node(x.top)
+    if x.resolving {
+        if n.kind == Kind.alias || n.kind == Kind.var || n.kind == Kind.externvar { mut self.report_cycle(s) }
+        return
+    }
+    if n.kind == Kind.func || n.kind == Kind.externfn { return }
+    if u32(self.resolving.len) == MAX_RESOLVING {
+        mut self.err(self.resolve_site(s), ["declarations nest too deeply to resolve '", x.name, "'"])
+        return
+    }
+    x.resolving = true
+    mut self.update(s, x)
+    fail(mut self.resolving.push(s))
+    saved: bool = self.in_module
+    self.in_module = self.in_imported(x.top)
+    switch n.kind {
+        Kind.var { mut self.resolve_global(s) }
+        Kind.externvar {
+            x = self.sym(s)
+            x.ty = self.t_err
+            mut self.update(s, x)
+            t: u32 = mut self.build_type(n.a)
+            x = self.sym(s)
+            x.ty = t
+            mut self.update(s, x)
+        }
+        Kind.struct { if !x.is_generic { mut self.fill_struct(x.top, x.ty) } }
+        Kind.bits { mut self.fill_bits(x.top, x.ty) }
+        Kind.union { if !x.is_generic { mut self.fill_union(x.top, x.ty) } }
+        Kind.enum { mut self.check_enum(x.top, x.ty) }
+        Kind.contract { mut self.check_contract(x.top) }
+        Kind.alias {
+            x.ty = self.t_err // the alias is not visible in its own expansion
+            mut self.update(s, x)
+            actual: u32 = mut self.build_type(n.a)
+            x = self.sym(s)
+            if !x.in_cycle { x.ty = actual }
+            mut self.update(s, x)
+        }
+        Kind.distinct { mut self.resolve_distinct(x.top, x.ty) }
+        Kind.error { mut self.check_error_domain(x.top) }
+        default {}
+    }
+    self.in_module = saved
+    mut self.resolving.truncate(self.resolving.len - 1)
+    x = self.sym(s)
+    x.resolving = false
+    x.entered = false
+    mut self.update(s, x)
+}
+
+/* A global's type, and whether it is const. Its initializer is not yet
+ * checked; a const one is read by `const_value`.
+ */
+Sema.resolve_global(mut self, s: u32) {
+    x: Sym = self.sym(s)
+    n: Node = self.node(x.top)
+    x.ty = self.t_err // a reference while its type is built is a cycle
+    mut self.update(s, x)
+    binder: u32 = self.kid(x.top, 0)
+    t: u32 = mut self.build_type(self.node(binder).a)
+    if self.ty(t).kind == TypeKind.error_domain {
+        mut self.err(binder, ["error-domain names are identities, not value types; use Error"])
+    }
+    x = self.sym(s)
+    x.ty = t
+    x.is_const = (n.flags & parser.F_CONST) != 0 || self.ty(t).kind == TypeKind.staticmap
+    mut self.update(s, x)
+    if n.b == 0 && self.ty(t).kind != TypeKind.staticmap && (n.flags & parser.F_CONST) != 0 {
+        mut self.err(x.top, ["const declaration requires an initializer"])
+    }
+}
+
+/* The integer value of compile-time expression `e`, as C's ut_const reads it:
+ * literals, consts, unary minus and complement, and integer arithmetic.
+ */
+Sema.const_value(mut self, e: u32): (i64, bool) {
+    n: Node = self.node(e)
+    switch n.kind {
+        Kind.int_lit, Kind.char_lit { return i64(n.ival), true }
+        Kind.ident {
+            s: u32 = mut self.lookup_val(n.text)
+            if s == 0 { return 0, false }
+            x: Sym = self.sym(s)
+            if !x.is_const || x.kind != SymKind.var || x.in_cycle || self.node(x.top).kind != Kind.var { return 0, false }
+            init: u32 = self.node(x.top).b
+            if init == 0 { return 0, false }
+            saved: bool = self.in_module
+            self.in_module = self.in_imported(x.top)
+            v: i64, ok: bool = mut self.const_value(init)
+            self.in_module = saved
+            return v, ok
+        }
+        Kind.unary {
+            v: i64, ok: bool = mut self.const_value(n.a)
+            if !ok { return 0, false }
+            if n.op == lexer.Token.minus { return i64(bits.wrsub(u64(0), u64(v))), true } // unsigned negate: defined at i64 min
+            if n.op == lexer.Token.tilde { return ~v, true }
+            return 0, false
+        }
+        Kind.binary {
+            a: i64, aok: bool = mut self.const_value(n.a)
+            if !aok { return 0, false }
+            b: i64, bok: bool = mut self.const_value(n.b)
+            if !bok { return 0, false }
+            switch n.op {
+                lexer.Token.plus { return i64(bits.wradd(u64(a), u64(b))), true }
+                lexer.Token.minus { return i64(bits.wrsub(u64(a), u64(b))), true }
+                lexer.Token.star { return i64(bits.wrmul(u64(a), u64(b))), true }
+                lexer.Token.slash, lexer.Token.percent {
+                    if b == 0 || (a == I64_MIN && b == -1) { return 0, false }
+                    if n.op == lexer.Token.slash { return a / b, true }
+                    return a % b, true
+                }
+                lexer.Token.shl { return i64(u64(a) << (u64(b) & 63)), true }
+                lexer.Token.shr { return a >> (b & 63), true }
+                lexer.Token.amp { return a & b, true }
+                lexer.Token.pipe { return a | b, true }
+                lexer.Token.caret { return a ^ b, true }
+                default { return 0, false }
+            }
+        }
+        default { return 0, false }
+    }
+}
+
+I64_MIN: const i64 = -9223372036854775807 - 1
+
+// --- building types -----------------------------------------------------------
+
+Sema.check_param_count(mut self, at: u32, n: u32, receiver: bool) {
+    if n <= MAX_PARAMS { return }
+    with: string = ""
+    if receiver { with = ", the receiver included" }
+    mut self.err(at, ["too many parameters: ", mut self.num(n), with, " (max 64)"])
+}
+
+Sema.void_misplaced(mut self, at: u32): u32 {
+    mut self.err(at, ["'void' is allowed only as a function type's return or a type argument"])
+    return self.t_err
+}
+
+/* A declared or primitive type by name, as C's build_named does. */
+Sema.build_named(mut self, id: u32): u32 {
+    t: Node = self.node(id)
+    if (t.flags & parser.F_MUT) != 0 { // `mut string`: the only mut-qualified named type
+        if t.a != 0 || t.nkids != 0 || !mem.equal(t.text, "string") {
+            mut self.err(id, ["'mut' marks writable views ('mut *T', 'mut []T', 'mut string'), not '", t.text, "'"])
+            return self.t_err
+        }
+        return self.t_mut_string
+    }
+    if t.a != 0 {
+        mut self.err(id, ["module-qualified types need the stdlib (not yet linked)"])
+        return self.t_err
+    }
+    return mut self.build_ident(id, t.nkids != 0)
+}
+
+/* A type name: N_IDENT, or N_NAMED without its qualifiers. */
+Sema.build_ident(mut self, id: u32, generic_args: bool): u32 {
+    t: Node = self.node(id)
+    if self.is_void(id) { return mut self.void_misplaced(id) }
+    p: u32 = self.prim_by_name(t.text)
+    if p != 0 { return p }
+    s: u32 = mut self.lookup_type(t.text)
+    if s == 0 || self.sym(s).ty == 0 {
+        mut self.err(id, ["unknown type '", t.text, "'"])
+        return self.t_err
+    }
+    if generic_args { // generic instantiation in type position: Vec[int]
+        if self.unsupported.len == 0 { self.unsupported = "generic type instantiation" }
+        return self.t_err
+    }
+    if self.sym(s).is_generic {
+        mut self.err(id, ["generic type '", t.text, "' needs explicit type arguments"])
+        return self.t_err
+    }
+    return self.sym(s).ty
+}
+
+Sema.build_type(mut self, id: u32): u32 {
+    t: Node = self.node(id)
+    switch t.kind {
+        Kind.named { return mut self.build_named(id) }
+        Kind.ident { return mut self.build_ident(id, false) }
+        Kind.index {
+            if self.unsupported.len == 0 { self.unsupported = "generic type instantiation" }
+            return self.t_err
+        }
+        Kind.ptr, Kind.slice_t {
+            kind: TypeKind = TypeKind.ptr
+            if t.kind == Kind.slice_t { kind = TypeKind.slice }
+            base: u32 = mut self.build_type(t.a)
+            return mut self.new_type(SType { kind = kind, is_mut = (t.flags & parser.F_MUT) != 0, base = base })
+        }
+        Kind.array_t { return mut self.build_array(id) }
+        Kind.staticmap_t {
+            base: u32 = mut self.build_type(t.a)
+            ret: u32 = mut self.build_type(t.b)
+            return mut self.new_type(SType { kind = TypeKind.staticmap, base = base, ret = ret })
+        }
+        Kind.const_t { return mut self.build_type(t.a) }
+        Kind.tuple_t {
+            tu: SType = SType { kind = TypeKind.tuple, fields = mut self.new_fields(t.nkids), nfields = t.nkids }
+            for i: u32 in 0..t.nkids {
+                f: SField = SField { ty = mut self.build_type(self.kid(id, i)) }
+                mut self.set_field(tu, i, f)
+            }
+            return mut self.new_type(tu)
+        }
+        Kind.func_t {
+            mut self.check_param_count(id, t.nkids, false)
+            f: SType = SType { kind = TypeKind.func, is_c_abi = (t.flags & parser.F_CABI) != 0, params = u32(self.params.len), nparams = t.nkids }
+            for i: u32 in 0..t.nkids { fail(mut self.params.push(0)) }
+            for i: u32 in 0..t.nkids {
+                p: u32 = mut self.build_type(self.kid(id, i))
+                mut self.params.set(usize(f.params + i), p)
+            }
+            if t.a != 0 && !self.is_void(t.a) { f.ret = mut self.build_type(t.a) }
+            if f.is_c_abi && self.unsupported.len == 0 { self.unsupported = "C function-pointer types" }
+            return mut self.new_type(f)
+        }
+        default {
+            mut self.err(id, ["expected a type"])
+            return self.t_err
+        }
+    }
+}
+
+/* `[N]T`, or `[E]T` over a dense enum E (Type System #13). */
+Sema.build_array(mut self, id: u32): u32 {
+    t: Node = self.node(id)
+    b: Node = self.node(t.b)
+    if b.kind == Kind.ident && (self.prim_by_name(b.text) != 0 || mut self.lookup_type(b.text) != 0) {
+        return mut self.enum_array(id)
+    }
+    len: i64, ok: bool = mut self.const_value(t.b)
+    if !ok {
+        if !self.names_cycle(t.b) { mut self.err(t.b, ["array length must be a compile-time usize expression"]) }
+        return self.t_err
+    }
+    if len <= 0 {
+        mut self.err(t.b, ["array length must be positive"])
+        return self.t_err
+    }
+    base: u32 = mut self.build_type(t.a)
+    return mut self.new_type(SType { kind = TypeKind.array, count = u64(len), base = base })
+}
+
+/* Whether expression `e` names a declaration of a reported cycle. */
+Sema.names_cycle(self, e: u32): bool {
+    if e == 0 { return false }
+    n: Node = self.node(e)
+    if n.kind == Kind.ident {
+        s: u32 = self.files.find(false, n.text)
+        if s != 0 && self.sym(s).in_cycle { return true }
+    }
+    if self.names_cycle(n.a) || self.names_cycle(n.b) { return true }
+    for i: u32 in 0..n.nkids {
+        if self.names_cycle(self.kid(e, i)) { return true }
+    }
+    return false
+}
+
+Sema.enum_array(mut self, id: u32): u32 {
+    t: Node = self.node(id)
+    e: u32 = mut self.build_type(t.b)
+    et: SType = self.ty(e)
+    if et.kind == TypeKind.err { return self.t_err }
+    if et.kind != TypeKind.enum {
+        mut self.err(t.b, ["an array's bracket holds a length or an enum, not ", mut self.type_name(e)])
+        return self.t_err
+    }
+    n: u32 = et.nfields
+    for i: u32 in 0..n {
+        m: SField = self.field(et, i)
+        if m.value < 0 || m.value >= i64(n) {
+            mut self.err(t.b, ["enum ", mut self.type_name(e), " is not dense: '", m.name, "' is ", mut self.num64(m.value), ", outside 0..", mut self.num64(i64(n) - 1)])
+            return self.t_err
+        }
+    }
+    base: u32 = mut self.build_type(t.a)
+    return mut self.new_type(SType { kind = TypeKind.array, count = u64(n), key = e, base = base })
+}
+
+// --- completing types ---------------------------------------------------------
+
+Sema.checked_layout_align(mut self, expr: u32, subject: string): u32 {
+    if expr == 0 { return 0 }
+    v: i64, ok: bool = mut self.const_value(expr)
+    if !ok {
+        mut self.err(expr, [subject, " @align value must be a compile-time usize expression"])
+        return 0
+    }
+    if v <= 0 || v > 16 || (v & (v - 1)) != 0 {
+        mut self.err(expr, [subject, " @align value must be a positive power of two no greater than 16"])
+        return 0
+    }
+    return u32(v)
+}
+
+Sema.checked_layout_offset(mut self, expr: u32): u32 {
+    v: i64, ok: bool = mut self.const_value(expr)
+    if !ok {
+        mut self.err(expr, ["field @offset value must be a compile-time usize expression"])
+        return 0
+    }
+    if v < 0 || v > 4294967295 {
+        mut self.err(expr, ["field @offset value ", mut self.num64(v), " is out of range"])
+        return 0
+    }
+    return u32(v)
+}
+
+/* Plain bits: scalars, pointers, C function pointers, and aggregates of them. */
+Sema.plain_bits(mut self, id: u32): bool {
+    t: SType = self.ty(id)
+    switch t.kind {
+        TypeKind.prim { return t.prim != P_STRING && t.prim != P_TYPEID }
+        TypeKind.ptr, TypeKind.enum, TypeKind.bits { return true }
+        TypeKind.func { return t.is_c_abi }
+        TypeKind.array, TypeKind.distinct { return mut self.plain_bits(t.base) }
+        TypeKind.struct {
+            for i: u32 in 0..t.nfields {
+                if !mut self.plain_bits(self.field(t, i).ty) { return false }
+            }
+            return true
+        }
+        default { return false }
+    }
+}
+
+/* After layout: each @offset meets its field's effective alignment, and a
+ * struct whose fields share bytes holds only plain bits and no defaults.
+ */
+Sema.check_struct_offsets(mut self, decl: u32, id: u32) {
+    t: SType = self.ty(id)
+    any: bool = false
+    for i: u32 in 0..t.nfields {
+        f: SField = self.field(t, i)
+        if !f.has_offset { continue }
+        any = true
+        if f.requested_offset % f.effective_align != 0 {
+            mut self.err(self.node(self.kid(decl, i)).d, ["field '", f.name, "' @offset(", mut self.num(f.requested_offset), ") is not a multiple of its alignment ", mut self.num(f.effective_align)])
+        }
+    }
+    if !any { return }
+    for i: u32 in 0..t.nfields {
+        if t.is_overlap { break }
+        a: SField = self.field(t, i)
+        for j: u32 in i + 1..t.nfields {
+            b: SField = self.field(t, j)
+            asz: u32 = self.ty(a.ty).size
+            bsz: u32 = self.ty(b.ty).size
+            if asz != 0 && bsz != 0 && a.offset < b.offset + bsz && b.offset < a.offset + asz {
+                t.is_overlap = true
+                break
+            }
+        }
+    }
+    mut self.set_ty(id, t)
+    if !t.is_overlap { return }
+    name: string = self.node(decl).text
+    for i: u32 in 0..t.nfields {
+        f: SField = self.field(t, i)
+        if !mut self.plain_bits(f.ty) {
+            mut self.err(self.kid(decl, i), ["field '", f.name, "' of overlapping struct ", name, " must be plain bits, got ", mut self.type_name(f.ty)])
+        }
+        if f.default_value != 0 {
+            mut self.err(f.default_value, ["field '", f.name, "' of overlapping struct ", name, " cannot have a default"])
+        }
+    }
+}
+
+/* The layout-dependent checks of a struct, union, or distinct type whose
+ * fields are built. A layout blocked by a type further out still being built
+ * waits until every type is built; a recursive layout is reported once, at
+ * the type whose own layout closes it.
+ */
+Sema.finish_layout(mut self, decl: u32, id: u32, may_defer: bool) {
+    self.layout_blocked = false
+    self.layout_poisoned = false
+    t: SType = self.ty(id)
+    ready: bool = true
+    if t.kind == TypeKind.distinct {
+        ready = mut self.layout(t.base)
+    } else {
+        for i: u32 in 0..t.nfields {
+            if !ready { break }
+            f: SField = self.field(t, i)
+            if f.ty != 0 && self.ty(f.ty).kind != TypeKind.err { ready = mut self.layout(f.ty) }
+        }
+    }
+    if !ready && self.layout_blocked && may_defer {
+        fail(mut self.deferred.push(decl))
+        fail(mut self.deferred.push(id))
+        return
+    }
+    if t.kind == TypeKind.struct {
+        base_align: u32 = 1
+        for i: u32 in 0..t.nfields {
+            f: SField = self.field(t, i)
+            if f.requested_align != 0 && !t.is_packed && mut self.layout(f.ty) && f.requested_align < self.ty(f.ty).align {
+                natural: u32 = self.ty(f.ty).align
+                mut self.err(self.node(self.kid(decl, i)).b, ["field @align(", mut self.num(f.requested_align), ") cannot reduce natural alignment ", mut self.num(natural), " outside a packed struct"])
+                f.requested_align = natural
+                mut self.set_field(t, i, f)
+            }
+            a: u32 = mut self.align_of(f.ty)
+            if t.is_packed { a = 1 }
+            if f.requested_align != 0 { a = f.requested_align }
+            if base_align < a { base_align = a }
+        }
+        t = self.ty(id)
+        if t.requested_align != 0 && t.requested_align < base_align {
+            mut self.err(self.node(decl).b, ["struct @align(", mut self.num(t.requested_align), ") cannot reduce computed alignment ", mut self.num(base_align)])
+            t.requested_align = base_align
+            mut self.set_ty(id, t)
+        }
+    }
+    self.layout_blocked = false
+    self.layout_poisoned = false
+    if mut self.layout(id) {
+        if self.ty(id).kind == TypeKind.struct { mut self.check_struct_offsets(decl, id) }
+        return
+    }
+    if !self.layout_blocked && !self.layout_poisoned {
+        mut self.err(decl, ["type '", self.node(decl).text, "' has a recursive value layout; use a pointer to break the cycle"])
+    }
+    t = self.ty(id)
+    t.invalid_layout = true
+    t.size = 1 // poison recovery after the required diagnostic
+    t.align = 1
+    t.calc = false
+    mut self.set_ty(id, t)
+}
+
+Sema.finish_deferred_layouts(mut self) {
+    for self.deferred.len > 0 {
+        n: usize = self.deferred.len
+        decl: u32 = self.deferred.get(n - 2)
+        id: u32 = self.deferred.get(n - 1)
+        mut self.deferred.truncate(n - 2)
+        mut self.finish_layout(decl, id, false)
+    }
+}
+
+Sema.fill_struct(mut self, decl: u32, id: u32) {
+    d: Node = self.node(decl)
+    t: SType = self.ty(id)
+    t.size = 0
+    t.align = 0
+    t.is_packed = (d.flags & parser.F_PACKED) != 0
+    t.building = true
+    t.nfields = d.nkids
+    t.fields = mut self.new_fields(d.nkids)
+    mut self.set_ty(id, t)
+    for i: u32 in 0..d.nkids {
+        fid: u32 = self.kid(decl, i)
+        fd: Node = self.node(fid)
+        f: SField = SField { name = fd.text, default_value = fd.c }
+        f.ty = mut self.build_type(fd.a)
+        f.requested_align = mut self.checked_layout_align(fd.b, "field")
+        if fd.d != 0 {
+            f.has_offset = true
+            f.requested_offset = mut self.checked_layout_offset(fd.d)
+        }
+        mut self.set_field(t, i, f)
+        k: TypeKind = self.ty(f.ty).kind
+        if (fd.flags & parser.F_EMBED) != 0 && k != TypeKind.struct && k != TypeKind.err {
+            mut self.err(fid, ["embedded field '", f.name, "' must have a struct type"])
+        }
+        // field defaults are checked with compile-time expressions (not yet ported)
+    }
+    for i: u32 in 0..t.nfields {
+        for j: u32 in i + 1..t.nfields {
+            if mem.equal(self.field(t, i).name, self.field(t, j).name) {
+                mut self.err(decl, ["duplicate field '", self.field(t, i).name, "' in struct ", d.text])
+            }
+        }
+    }
+    requested: u32 = mut self.checked_layout_align(d.b, "struct")
+    t = self.ty(id)
+    t.requested_align = requested
+    t.building = false
+    mut self.set_ty(id, t)
+    mut self.finish_layout(decl, id, true)
+}
+
+Sema.fill_bits(mut self, decl: u32, id: u32) {
+    d: Node = self.node(decl)
+    base: u32 = mut self.build_type(d.a)
+    b: SType = self.ty(base)
+    if !(b.kind == TypeKind.prim && b.prim >= P_U8 && b.prim <= P_U64) {
+        mut self.err(d.a, ["bits backing type must be exactly u8, u16, u32, or u64"])
+        base = self.prim(P_U8)
+    }
+    backing_bits: u32 = mut self.size_of(base) * 8
+    t: SType = self.ty(id)
+    t.base = base
+    t.nfields = d.nkids
+    t.fields = mut self.new_fields(d.nkids)
+    mut self.set_ty(id, t)
+    total: u32 = 0
+    for i: u32 in 0..d.nkids {
+        fid: u32 = self.kid(decl, i)
+        fd: Node = self.node(fid)
+        f: SField = SField { name = fd.text, bit_offset = total & 255, bit_width = u32(fd.ival & 255), bit_signed = (fd.flags & parser.F_CONST) != 0, bit_anonymous = mem.equal(fd.text, "_") }
+        if fd.ival == 0 || fd.ival > u64(backing_bits) || u64(total) + fd.ival > u64(backing_bits) {
+            mut self.err(fid, ["bit-field width must be positive and fit within the ", mut self.num(backing_bits), "-bit backing integer"])
+        }
+        total += u32(fd.ival)
+        p: u8 = self.ty(base).prim
+        if f.bit_signed { p = P_I8 + (p - P_U8) }
+        f.ty = self.prim(p)
+        mut self.set_field(t, i, f)
+    }
+    if total != backing_bits {
+        mut self.err(decl, ["bits fields total ", mut self.num(total), " bits; backing type requires exactly ", mut self.num(backing_bits)])
+    }
+    for i: u32 in 0..t.nfields {
+        if self.field(t, i).bit_anonymous { continue }
+        for j: u32 in i + 1..t.nfields {
+            fj: SField = self.field(t, j)
+            if !fj.bit_anonymous && mem.equal(self.field(t, i).name, fj.name) {
+                mut self.err(self.kid(decl, j), ["duplicate bit-field '", fj.name, "' in ", d.text])
+            }
+        }
+    }
+    _ = mut self.layout(id)
+}
+
+Sema.fill_union(mut self, decl: u32, id: u32) {
+    d: Node = self.node(decl)
+    if d.nkids == 0 { mut self.err(decl, ["a union needs at least one variant"]) }
+    t: SType = self.ty(id)
+    t.size = 0
+    t.align = 0
+    t.building = true
+    t.nfields = d.nkids
+    t.fields = mut self.new_fields(d.nkids)
+    mut self.set_ty(id, t)
+    for i: u32 in 0..d.nkids {
+        vd: Node = self.node(self.kid(decl, i))
+        f: SField = SField { name = vd.text }
+        if vd.a != 0 { f.ty = mut self.build_type(vd.a) }
+        mut self.set_field(t, i, f)
+    }
+    for i: u32 in 0..t.nfields {
+        for j: u32 in i + 1..t.nfields {
+            if mem.equal(self.field(t, i).name, self.field(t, j).name) {
+                mut self.err(decl, ["duplicate variant '", self.field(t, i).name, "' in union ", d.text])
+            }
+        }
+    }
+    t = self.ty(id)
+    t.building = false
+    mut self.set_ty(id, t)
+    mut self.finish_layout(decl, id, true)
+}
+
+/* A distinct type's layout is its base's; its own cycle is reported like a struct's. */
+Sema.resolve_distinct(mut self, decl: u32, id: u32) {
+    t: SType = self.ty(id)
+    t.building = true
+    mut self.set_ty(id, t)
+    base: u32 = mut self.build_type(self.node(decl).a)
+    t = self.ty(id)
+    t.base = base
+    t.building = false
+    mut self.set_ty(id, t)
+    mut self.finish_layout(decl, id, true)
+}
+
+/* A contract method dispatches through a vtable slot, which cannot validate
+ * a mut parameter at the call site.
+ */
+Sema.check_contract(mut self, decl: u32) {
+    d: Node = self.node(decl)
+    for mi: u32 in 0..d.nkids {
+        m: u32 = self.kid(decl, mi)
+        mn: Node = self.node(m)
+        mut self.check_param_count(m, mn.nkids + 1, true) // the receiver the slot passes
+        for pi: u32 in 0..mn.nkids {
+            p: u32 = self.kid(m, pi)
+            if (self.node(p).flags & parser.F_MUT) != 0 { mut self.err(p, ["contract method parameter cannot be mut"]) }
+        }
+    }
+}
+
+/* Whether literal `e` fits integer type `want`, reporting when not. */
+Sema.ut_fits(mut self, e: u32, want: u32): bool {
+    v: i64, ok: bool = mut self.const_value(e)
+    if !ok { return true }
+    n: Node = self.node(e)
+    lit: bool = n.kind == Kind.int_lit
+    u: u64 = u64(v)
+    over: bool = false
+    switch self.ty(want).prim {
+        1 { over = (lit && n.ival > 127) || v < -128 || v > 127 }
+        2 { over = (lit && n.ival > 32767) || v < -32768 || v > 32767 }
+        3 { over = (lit && n.ival > 2147483647) || v < -2147483648 || v > 2147483647 }
+        4 { over = lit && n.ival > 9223372036854775807 }
+        5 { over = u > 255 }
+        6 { over = u > 65535 }
+        7 { over = u > 4294967295 }
+        8, 12 { over = v < 0 && !lit }
+        default {}
+    }
+    if !over { return true }
+    mut self.err(e, ["integer literal ", mut self.num64(v), " out of range for ", mut self.type_name(want)])
+    return false
+}
+
+Sema.check_enum(mut self, decl: u32, id: u32) {
+    d: Node = self.node(decl)
+    base: u32 = self.prim(P_I32)
+    if d.a != 0 { base = mut self.build_type(d.a) }
+    b: SType = self.ty(base)
+    if !(b.kind == TypeKind.prim && b.prim >= P_I8 && b.prim <= P_U64) {
+        at: u32 = d.a
+        if at == 0 { at = decl }
+        mut self.err(at, ["enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64"])
+        base = self.prim(P_I32)
+    }
+    p: u8 = self.ty(base).prim
+    unsigned: bool = p >= P_U8
+    t: SType = self.ty(id)
+    t.base = base
+    t.nfields = d.nkids
+    t.fields = mut self.new_fields(d.nkids)
+    mut self.set_ty(id, t)
+    previous: i64 = -1
+    for i: u32 in 0..d.nkids {
+        mid: u32 = self.kid(decl, i)
+        m: Node = self.node(mid)
+        value: i64 = 0
+        valid: bool = true
+        next: i64 = 0
+        if i > 0 { next = i64(bits.wradd(u64(previous), u64(1))) }
+        if m.a != 0 {
+            v: i64, ok: bool = mut self.const_value(m.a)
+            value = v
+            if !ok {
+                mut self.err(m.a, ["enum discriminant must be a compile-time integer expression"])
+                value = next
+                valid = false
+            } else if unsigned && value < 0 && self.node(m.a).kind != Kind.int_lit {
+                mut self.err(m.a, ["negative enum discriminant does not fit ", mut self.type_name(base)])
+                valid = false
+            } else {
+                valid = mut self.ut_fits(m.a, base)
+            }
+        } else if i > 0 && u64(previous) == enum_max(p) {
+            mut self.err(mid, ["implicit enum discriminant overflows ", mut self.type_name(base)])
+            value = previous
+            valid = false
+        } else {
+            value = next
+        }
+        mut self.set_field(t, i, SField { name = m.text, value = value })
+        if valid && i == 0 && value != 0 { mut self.err(mid, ["first enum member must have discriminant zero"]) }
+        for j: u32 in 0..i {
+            if !valid { break }
+            if u64(self.field(t, j).value) == u64(value) {
+                mut self.err(mid, ["duplicate enum discriminant ", mut self.num64(value)])
+                break
+            }
+        }
+        previous = value
+    }
+    _ = mut self.layout(id)
+}
+
+enum_max(p: u8): u64 {
+    switch p {
+        1 { return 127 }
+        2 { return 32767 }
+        3 { return 2147483647 }
+        4 { return 9223372036854775807 }
+        5 { return 255 }
+        6 { return 65535 }
+        7 { return 4294967295 }
+        default { return 18446744073709551615 }
+    }
+}
+
+Sema.check_error_domain(mut self, decl: u32) {
+    d: Node = self.node(decl)
+    t: SType = self.ty(self.sym(self.files.find(true, d.text)).ty)
+    tid: u32 = self.sym(self.files.find(true, d.text)).ty
+    t.nfields = d.nkids
+    t.fields = mut self.new_fields(d.nkids)
+    mut self.set_ty(tid, t)
+    for i: u32 in 0..d.nkids {
+        eid: u32 = self.kid(decl, i)
+        entry: Node = self.node(eid)
+        a: Node = self.node(entry.a)
+        exact: bool = a.kind == Kind.int_lit || (a.kind == Kind.unary && a.op == lexer.Token.minus && a.a != 0 && self.node(a.a).kind == Kind.int_lit)
+        code: i64 = 0
+        ok: bool = false
+        if exact { code, ok = mut self.const_value(entry.a) }
+        if !ok {
+            code = 0
+            mut self.err(entry.a, ["error code must be an exact integer literal"])
+        } else if code < -2147483648 || code > 2147483647 {
+            mut self.err(entry.a, ["error code ", mut self.num64(code), " is outside i32"])
+        }
+        mut self.set_field(t, i, SField { name = entry.text, value = code })
+        if entry.b == 0 || self.node(entry.b).kind != Kind.str_lit {
+            at: u32 = entry.b
+            if at == 0 { at = eid }
+            mut self.err(at, ["error message must be a string literal"])
+        }
+        for j: u32 in 0..i {
+            prior: SField = self.field(t, j)
+            if mem.equal(prior.name, entry.text) { mut self.err(eid, ["duplicate error entry name '", entry.text, "'"]) }
+            if prior.value == code { mut self.err(eid, ["duplicate error code ", mut self.num64(code)]) }
+        }
+    }
+}
+
+/* Completes every type of the unit in declaration order (Compiler #5),
+ * then the layouts that waited on a type further out.
+ */
+pub Sema.complete(mut self) {
+    for k: u32 in 0..self.node(self.file).nkids {
+        id: u32 = self.kid(self.file, k)
+        n: Node = self.node(id)
+        switch n.kind {
+            Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.union, Kind.distinct, Kind.error, Kind.alias {
+                s: u32 = self.files.find(true, n.text)
+                if s != 0 && self.sym(s).top == id { _ = mut self.resolved(s) }
+            }
+            default {}
+        }
+    }
+    mut self.finish_deferred_layouts()
+}
+
 // --- entry --------------------------------------------------------------------
 
 /* The SType kind of a nominal type declaration. */
@@ -715,13 +1897,13 @@ Sema.mark_root(mut self, s: u32) {
 /* Prints both scopes in entry order as `ace --symbols` does: the file
  * scope's types and values, then the import scope.
  */
-pub Sema.dump(self, mut out: Out) {
-    for s: u32 in self.files.types.view() { self.dump_sym(mut out, "type", s) }
-    for s: u32 in self.files.values.view() { self.dump_sym(mut out, "value", s) }
-    for s: u32 in self.imports.values.view() { self.dump_sym(mut out, "import", s) }
+pub Sema.dump(mut self, mut out: Out) {
+    for s: u32 in self.files.types.view() { mut self.dump_sym(mut out, "type", s) }
+    for s: u32 in self.files.values.view() { mut self.dump_sym(mut out, "value", s) }
+    for s: u32 in self.imports.values.view() { mut self.dump_sym(mut out, "import", s) }
 }
 
-Sema.dump_sym(self, mut out: Out, what: string, s: u32) {
+Sema.dump_sym(mut self, mut out: Out, what: string, s: u32) {
     x: Sym = self.sym(s)
     mut out.printf("%s %s", what, x.name)
     if x.kind == SymKind.type {
@@ -733,6 +1915,7 @@ Sema.dump_sym(self, mut out: Out, what: string, s: u32) {
     }
     if x.kind != SymKind.func {
         self.dump_flags(mut out, x)
+        if x.kind == SymKind.type && x.ty != 0 { mut self.dump_type(mut out, x) }
         return
     }
     mut out.printf("\n")
@@ -743,6 +1926,44 @@ Sema.dump_sym(self, mut out: Out, what: string, s: u32) {
     for m: u32 = x.entered_specs; m != 0; m = self.sym(m).overload {
         mut out.printf("  spec")
         self.dump_flags(mut out, self.sym(m))
+    }
+}
+
+/* A completed type's layout and parts: an alias names its target; a
+ * nominal type gives its size and alignment, then its fields, variants,
+ * members, or entries.
+ */
+Sema.dump_type(mut self, mut out: Out, x: Sym) {
+    if x.is_generic { return } // stamped at each use
+    if self.node(x.top).kind == Kind.alias {
+        mut out.printf("  = %s\n", mut self.type_name(x.ty))
+        return
+    }
+    _ = mut self.layout(x.ty)
+    t: SType = self.ty(x.ty)
+    mut out.printf("  size %u align %u", uint(t.size), uint(t.align))
+    if t.is_packed { mut out.printf(" packed") }
+    if t.is_overlap { mut out.printf(" overlap") }
+    if t.requested_align != 0 { mut out.printf(" @align(%u)", uint(t.requested_align)) }
+    mut out.printf("\n")
+    if t.kind == TypeKind.enum || t.kind == TypeKind.bits || t.kind == TypeKind.distinct {
+        mut out.printf("  base %s\n", mut self.type_name(t.base))
+    }
+    for i: u32 in 0..t.nfields {
+        f: SField = self.field(t, i)
+        switch t.kind {
+            TypeKind.enum { mut out.printf("  member %s %d\n", f.name, int(f.value)) }
+            TypeKind.error_domain { mut out.printf("  entry %s %d\n", f.name, int(f.value)) }
+            TypeKind.bits { mut out.printf("  field %s %s bit %u width %u\n", f.name, mut self.type_name(f.ty), uint(f.bit_offset), uint(f.bit_width)) }
+            TypeKind.union {
+                if f.ty == 0 {
+                    mut out.printf("  variant %s\n", f.name)
+                } else {
+                    mut out.printf("  variant %s %s size %u align %u\n", f.name, mut self.type_name(f.ty), uint(mut self.size_of(f.ty)), uint(mut self.align_of(f.ty)))
+                }
+            }
+            default { mut out.printf("  field %s %s size %u align %u offset %u\n", f.name, mut self.type_name(f.ty), uint(mut self.size_of(f.ty)), uint(f.effective_align), uint(f.offset)) }
+        }
     }
 }
 

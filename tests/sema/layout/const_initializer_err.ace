@@ -1,0 +1,6 @@
+/* A const has a value. */
+
+// error: const declaration requires an initializer
+N: const usize
+
+S: struct { a: [N]u8 }

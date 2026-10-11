@@ -1,0 +1,4 @@
+/* A bits type is backed by an unsigned integer. */
+
+// error: bits backing type must be exactly u8, u16, u32, or u64
+B: bits i8 { a: 8 }

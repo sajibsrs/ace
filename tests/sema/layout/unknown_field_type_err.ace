@@ -1,0 +1,4 @@
+/* A field names a declared type. */
+
+// error: unknown type 'Missing'
+S: struct { x: Missing }

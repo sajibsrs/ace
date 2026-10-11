@@ -1,0 +1,6 @@
+/* An array length is a compile-time value. */
+
+n: usize = 4
+
+// error: array length must be a compile-time usize expression
+S: struct { a: [n]u8 }

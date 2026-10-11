@@ -1,0 +1,4 @@
+/* An array holds at least one element. */
+
+// error: array length must be positive
+S: struct { a: [0]u8 }

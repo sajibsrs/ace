@@ -8315,6 +8315,8 @@ static const char* const SK_NAMES[] = {
     "error_domain", "typeparam", "error", "union", "bits", "staticmap", "void", "ut", "template", "err",
 };
 
+static void complete_types(Ck* k, Node* file);
+
 static void dump_flags(Sym* s) {
     if (s->is_const) fputs(" const", stdout);
     if (s->is_mut) fputs(" mut", stdout);
@@ -8327,6 +8329,41 @@ static void dump_flags(Sym* s) {
     if (s->top) printf(" @%d:%d", s->top->line, s->top->col);
     else if (s->decl) printf(" @%d:%d", s->decl->line, s->decl->col);
     fputc('\n', stdout);
+}
+
+/* A completed type's layout and parts: an alias names its target; a
+ * nominal type gives its size and alignment, then its fields, variants,
+ * members, or entries. */
+static void dump_type(Sym* s) {
+    SType* t = s->type;
+    if (s->is_generic) return; // stamped at each use
+    if (s->top && s->top->kind == N_ALIAS) {
+        printf("  = %s\n", type_name(t));
+        return;
+    }
+    layout(t);
+    printf("  size %u align %u%s%s", t->size, t->align, t->is_packed ? " packed" : "", t->is_overlap ? " overlap" : "");
+    if (t->requested_align) printf(" @align(%u)", t->requested_align);
+    fputc('\n', stdout);
+    if (t->kind == SK_ENUM || t->kind == SK_BITS || t->kind == SK_DISTINCT) printf("  base %s\n", type_name(t->base));
+    if (t->kind == SK_ENUM || t->kind == SK_ERROR_DOMAIN) {
+        for (int i = 0; i < t->decl->nkids; i++)
+            printf("  %s %.*s %lld\n", t->kind == SK_ENUM ? "member" : "entry", (int)t->decl->kids[i]->len,
+                   t->decl->kids[i]->str, (long long)t->decl->kids[i]->ival);
+        return;
+    }
+    for (int i = 0; i < t->nfields; i++) {
+        SField* f = &t->fields[i];
+        if (t->kind == SK_BITS) {
+            printf("  field %s %s bit %u width %u\n", f->name, type_name(f->t), f->bit_offset, f->bit_width);
+        } else if (t->kind == SK_UNION) {
+            if (f->t) printf("  variant %s %s size %u align %u\n", f->name, type_name(f->t), sema_size(f->t), sema_align(f->t));
+            else printf("  variant %s\n", f->name);
+        } else {
+            printf("  field %s %s size %u align %u offset %u\n", f->name, type_name(f->t), sema_size(f->t),
+                   f->effective_align, f->offset);
+        }
+    }
 }
 
 static const char* const SYM_NAMES[] = { "var", "func", "type", "module" };
@@ -8343,6 +8380,7 @@ static void dump_list(Sym* s, const char* what) {
     }
     if (s->kind != SYM_FUNC) {
         dump_flags(s);
+        if (s->kind == SYM_TYPE && s->type) dump_type(s);
         return;
     }
     fputc('\n', stdout);
@@ -8360,16 +8398,16 @@ int sema_dump_symbols(Node* file, Diag* d) {
     Ck k = {0};
     sema_enter(&k, file, d);
     if (d->errors) return d->errors;
+    complete_types(&k, file);
+    if (d->errors) return d->errors;
     dump_list(file_scope.types, "type");
     dump_list(file_scope.values, "value");
     dump_list(import_scope.values, "import");
     return 0;
 }
 
-int sema_check(Node* file, Diag* d) {
-    Ck k = {0};
-    sema_enter(&k, file, d);
-    // every type is complete before any function or global is checked
+// Every type of the unit complete, its layout known, in declaration order.
+static void complete_types(Ck* k, Node* file) {
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
@@ -8378,9 +8416,16 @@ int sema_check(Node* file, Diag* d) {
         default: continue;
         }
         Sym* s = scope_find(&file_scope, 1, n->str, n->len);
-        if (s && s->top == n) resolved(&k, s);
+        if (s && s->top == n) resolved(k, s);
     }
-    finish_deferred_layouts(&k);
+    finish_deferred_layouts(k);
+}
+
+int sema_check(Node* file, Diag* d) {
+    Ck k = {0};
+    sema_enter(&k, file, d);
+    // every type is complete before any function or global is checked
+    complete_types(&k, file);
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         if (n->kind != N_STRUCT) continue;

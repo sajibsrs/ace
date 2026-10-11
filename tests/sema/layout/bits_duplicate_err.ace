@@ -1,0 +1,4 @@
+/* Named bit-fields are unique; `_` may repeat. */
+
+// error: duplicate bit-field 'a' in B
+B: bits u8 { a: 4, _: 2, a: 2 }

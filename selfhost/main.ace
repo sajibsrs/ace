@@ -169,10 +169,16 @@ dump_symbols(path: string): int {
     defer mut s.wipe()
     mut s.enter()
     if s.errors > 0 { return summary(path, s.errors) }
+    mut s.complete()
+    if s.unsupported.len > 0 {
+        fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
+        return 1
+    }
+    if s.errors > 0 { return summary(path, s.errors) }
     storage: mut []u8 = mem.alloc[u8](65536)
     defer mem.release[u8](mut storage)
     out: Out = Out.init(sys.stdout, storage)
-    s.dump(mut out)
+    mut s.dump(mut out)
     mut out.flush()
     return 0
 }

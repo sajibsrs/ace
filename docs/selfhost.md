@@ -16,14 +16,26 @@ documentation once selfhost is complete.
 | Merge | `module.ace` | `--resolved` | `src/module.c` |
 | Packages | `package.ace` | `--pkg-graph=DIR`, `--pkg-check=DIR` | `src/package.c` |
 | Sema: top-level entry | `sema.ace` | `--symbols` | `src/sema.c` (`enter_top_level`) |
+| Sema: type completion | `sema.ace` | `--symbols` | `src/sema.c` (`complete_types`) |
 
-`--symbols` prints the scopes after every top-level name is entered
-(Compiler #5) and before anything resolves: the file scope's types, then its
+`--symbols` prints the scopes once every top-level name is entered
+(Compiler #5) and every type is complete: the file scope's types, then its
 values, then the root's whole-module imports. Each line names the symbol, its
-kind (a type's nominal kind, or `alias` for an alias not yet expanded), its
-flags, and its declaration's position; a function lists each overload as a
-`member` and each specialization still waiting to bind as a `spec`. On an
-entry error, both compilers print only the errors.
+kind (a type's kind; an alias shows its target's), its flags (`entered` until
+something resolves it), and its declaration's position; a function lists each
+overload as a `member` and each specialization still waiting to bind as a
+`spec`. Below a completed type come its `size` and `align` (with `packed`,
+`overlap`, and an explicit `@align`), an enum's, bits type's, or distinct
+type's `base`, and then its parts: a struct `field` with type, size,
+effective alignment, and offset; a bits `field` with bit offset and width; a
+union `variant` with its payload's size and alignment; an enum `member` or an
+error `entry` with its value; or an alias's `= target`. A generic type has no
+layout of its own. On an error, both compilers print only the errors.
+
+Type completion does not yet check field defaults or global initializers
+beyond const integer arithmetic, nor stamp generic types; selfhost stops with
+`does not yet support` on a generic instantiation or an `extern "c"` function
+type.
 
 ## Checking
 

@@ -3,7 +3,7 @@
 # against `ace --ast` (stdout, exit status, and every error line), its module
 # loader against the C one (every import error line; on success, the count of
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
-# entered top-level scopes against `ace --symbols` over every repository .ace
+# entered scopes and completed types against `ace --symbols` over every repository .ace
 # file, then its package graph against `ace --pkg-graph` and its cross-package
 # imports against `ace --pkg-check` over every repository ace.pkg, then times
 # the lexers on the largest files. Run from anywhere.

@@ -1,0 +1,5 @@
+/* A struct @align cannot go below its fields' computed alignment. */
+
+// error: struct @align(2) cannot reduce computed alignment 8
+@align(2)
+S: struct { x: i64 }

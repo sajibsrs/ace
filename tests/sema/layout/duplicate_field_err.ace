@@ -1,0 +1,4 @@
+/* Field names are unique within a struct. */
+
+// error: duplicate field 'x' in struct S
+S: struct { x: i32, x: u8 }

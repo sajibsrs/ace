@@ -1,0 +1,6 @@
+/* A generic type is named with its type arguments. */
+
+G[T]: struct { x: T }
+
+// error: generic type 'G' needs explicit type arguments
+S: struct { g: G }

@@ -1,0 +1,6 @@
+/* An error code is an integer literal, not a const. */
+
+C: const i32 = 3
+
+// error: error code must be an exact integer literal
+E: error { C: bad = "bad" }

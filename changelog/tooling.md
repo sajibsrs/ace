@@ -40,3 +40,8 @@
   and import scopes, `Sym` and nominal `SType` shells, and entry diagnostics,
   shown through `Loader.shown` (C's `module_display`). `--symbols`, in both
   compilers, prints the entered scopes; `check.sh` diffs it.
+- selfhost completes types: struct, bits, union, enum, distinct, alias,
+  contract, and error-domain declarations, with layout and its deferred
+  checks, const integer evaluation, and their diagnostics. `--symbols` now
+  dumps each completed type's layout and parts in both compilers; C's runs
+  through the new `complete_types`, split out of `sema_check`.

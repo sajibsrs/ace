@@ -1,0 +1,6 @@
+/* `[E]T` needs E's discriminants to be exactly 0..n-1. */
+
+E: enum { a, b = 5 }
+
+// error: enum E is not dense: 'b' is 5, outside 0..1
+S: struct { a: [E]u8 }
