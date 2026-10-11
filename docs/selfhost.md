@@ -67,10 +67,11 @@ dereference, `volatile`, pointer arithmetic, ranges, indexing, slicing,
 local-storage escapes, and the `typeid`, `bitcast`, `assert`,
 `static_assert`, and `panic` builtins, error construction
 `Domain(code?)`, extern variadic arguments, `mut` arguments, and field
-visibility across modules, including a facade's re-exporting alias. It stops
+visibility across modules, including a facade's re-exporting alias, and
+payloadless union variant values (`Event.quit`, `Pair[int].none`). It stops
 with `does not yet support` on `switch`, `asm`, method and other calls of
-computed callees, function values, memory and format builtins, static maps,
-unions, and contracts, including a contract value passed as a `mut`
+computed callees (union payload construction among them), function values,
+memory and format builtins, static maps, and contracts, including a contract value passed as a `mut`
 argument (whether it is const-backed).
 
 ## Checking

@@ -2004,6 +2004,16 @@ Sema.check_cmpchain(mut self, e: u32): u32 {
     return self.prim(P_BOOL)
 }
 
+/* The index of union `u`'s variant `name`, reporting at `at` when none. */
+Sema.union_variant_index(mut self, at: u32, u: u32, name: string): (u32, bool) {
+    t: SType = self.ty(u)
+    for i: u32 in 0..t.nfields {
+        if mem.equal(self.field(t, i).name, name) { return i, true }
+    }
+    mut self.err(at, ["union ", mut self.type_name(u), " has no variant '", name, "'"])
+    return 0, false
+}
+
 /* `a.name`: an enum member, an error entry, a .len, or a field. */
 Sema.check_selector(mut self, e: u32): u32 {
     n: Node = self.node(e)
@@ -2037,9 +2047,35 @@ Sema.check_selector(mut self, e: u32): u32 {
             mut self.err(e, ["error domain ", mut self.type_name(tt), " has no entry '", n.text, "'"])
             return self.t_err
         }
-        if tt != 0 && self.ty(tt).kind == TypeKind.union { return mut self.unported("union variants in compile-time expressions") }
+        if tt != 0 && self.ty(tt).kind == TypeKind.union { // a payloadless variant value: Event.quit
+            vi: u32, ok: bool = mut self.union_variant_index(e, tt, n.text)
+            if !ok { return self.t_err }
+            if self.field(self.ty(tt), vi).ty != 0 {
+                mut self.err(e, ["variant '", n.text, "' carries a payload — construct it: ", base.text, ".", n.text, "(...)"])
+                return self.t_err
+            }
+            mut self.set_node_sym(n.a, ts) // the union type on the base
+            mut self.set_node_ty(n.a, tt)
+            mut self.set_node_sym(e, ts)
+            mut self.set_node_ival(e, u64(vi))
+            return tt
+        }
     }
-    if base.kind == Kind.index { return mut self.unported("union variants in compile-time expressions") }
+    if base.kind == Kind.index { // on a generic base: Pair[int].none
+        ub: u32 = mut self.indexed_named_type(n.a)
+        if ub != 0 && self.ty(ub).kind != TypeKind.err { mut self.set_node_ty(n.a, ub) }
+        if ub != 0 && self.ty(ub).kind == TypeKind.union {
+            vi: u32, ok: bool = mut self.union_variant_index(e, ub, n.text)
+            if !ok { return self.t_err }
+            if self.field(self.ty(ub), vi).ty != 0 {
+                mut self.err(e, ["variant '", n.text, "' carries a payload — construct it with a payload argument"])
+                return self.t_err
+            }
+            mut self.set_node_sym(e, self.node_sym(base.a))
+            mut self.set_node_ival(e, u64(vi))
+            return ub
+        }
+    }
     if base.kind == Kind.ident {
         ms: u32 = mut self.lookup_val(base.text)
         if ms != 0 && self.sym(ms).kind == SymKind.module {

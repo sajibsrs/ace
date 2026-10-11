@@ -1,0 +1,9 @@
+/* A generic union's payload variant is constructed, never named bare. */
+
+Result[T]: union { fail, ok: T }
+
+main(): int {
+    r: Result[int] = Result[int].ok
+    _ = r
+    return 0
+}

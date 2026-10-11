@@ -147,6 +147,7 @@ tests/parser/receiver/leading_mut_err.ace|2:1: error: a top-level declaration ta
 tests/parser/receiver/contract_double_mut_err.ace|2:5: error: a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'
 tests/parser/associated/coloncolon_err.ace|6:13: error: '::' is not an operator; a type's functions are reached with '.'
 tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self' or 'mut self'
+tests/sema/unions/generic_payload_bare_err.ace|6:34: error: variant 'ok' carries a payload — construct it with a payload argument
 tests/sema/layout/bits_mutarg_err.ace|13:16: error: bit fields cannot supply mut arguments
 tests/sema/functions/extern_vararg_mut_err.ace|9:28: error: 'mut' marks declared parameters, not variadics
 tests/sema/errors/construct_arity_err.ace|4:23: error: error-domain construction takes zero or one i32 code

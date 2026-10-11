@@ -85,3 +85,6 @@
 - selfhost checks field visibility across modules (`field_visible`): a field
   is public only with its struct, a facade's `pub` alias re-exports a `pub`
   struct (kept in a side table, C's `F_REEXPORTED`), else `decl_visible`.
+- selfhost checks payloadless union variant values on a plain or explicitly
+  instantiated base (`union_base_type`, `union_variant_index`), marking the
+  base with the union so they count as compile-time constants.
