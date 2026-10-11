@@ -852,6 +852,21 @@ if ! printf '%s\n' "$duplicate_spec_error" | grep -qF \
     echo "FAIL: missing duplicate-specialization diagnostic"
     fail=1
 fi
+ambiguous_spec_error=$("$ACE" tests/sema/specialization/ambiguous_err.ace 2>&1)
+if ! printf '%s\n' "$ambiguous_spec_error" | grep -qF \
+    "11:1: error: specialization 'pick[i64]' conforms to more than one generic overload of 'pick'"; then
+    echo "FAIL: missing ambiguous-specialization diagnostic"
+    fail=1
+fi
+domain_signature_error=$("$ACE" tests/sema/errors/domain_signature_err.ace 2>&1)
+for want in \
+    "2:8: error: error-domain names are identities, not return types; use Error" \
+    "4:6: error: error-domain names are identities, not parameter types; use Error"; do
+    if ! printf '%s\n' "$domain_signature_error" | grep -qF "$want"; then
+        echo "FAIL: missing error-domain signature diagnostic '$want'"
+        fail=1
+    fi
+done
 missing_generic_error=$("$ACE" tests/sema/specialization/missing_generic_err.ace 2>&1)
 if ! printf '%s\n' "$missing_generic_error" | grep -qF \
     "no generic declaration of 'pick' in this file"; then

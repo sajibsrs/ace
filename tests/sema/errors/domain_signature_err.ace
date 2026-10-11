@@ -1,3 +1,5 @@
 OpenErr: error
 bad(): OpenErr {
 }
+take(e: OpenErr) {
+}

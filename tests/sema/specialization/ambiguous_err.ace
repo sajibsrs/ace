@@ -1,0 +1,17 @@
+/* A specialization conforming to two generic overloads binds to neither. */
+
+pick[T](a: T): T {
+    return a
+}
+
+pick[T](a: i64): i64 {
+    return a
+}
+
+pick[i64](a: i64): i64 {
+    return a + 1
+}
+
+main(): int {
+    return 0
+}

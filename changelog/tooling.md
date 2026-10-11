@@ -53,3 +53,7 @@
   (array lengths, layout attributes, enum values, field defaults, and named
   globals' initializers) with C's `coerce`/`expr_type` subset, keeping each
   node's type, symbol, and constant in side tables that `ut_const` reads.
+- selfhost resolves function signatures and overload sets in declaration
+  order, binding specializations by substituted-signature conformance, and
+  ports `decl_visible`/`decl_external`; both compilers' `--symbols` share
+  C's new `resolve_signatures` and print each member's signature and `hidden`.

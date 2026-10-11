@@ -170,6 +170,7 @@ dump_symbols(path: string): int {
     mut s.enter()
     if s.errors > 0 { return summary(path, s.errors) }
     mut s.complete()
+    if s.errors == 0 { mut s.signatures() }
     if s.unsupported.len > 0 {
         fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
         return 1

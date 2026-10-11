@@ -57,6 +57,10 @@ pub Sym: struct {
     pub ty: u32 = 0,                    // index in Sema.types
     pub overload: u32 = 0,              // the overload set's next member
     pub entered_specs: u32 = 0,         // set head: specializations entered, not yet bound
+    pub specs: u32 = 0,                 // generic overload: its bound specializations, newest first
+    pub spec_next: u32 = 0,             // the next of those
+    pub spec_args: u32 = 0,             // specialization: its type arguments, a run of Sema.params
+    pub spec_nargs: u32 = 0,
 }
 
 /* A type. Field and parameter lists are runs of `Sema.fields` and
@@ -663,6 +667,7 @@ Sema.enter_func(mut self, f: u32, is_extern: bool): u32 {
     x.is_pub = (n.flags & parser.F_PUB) != 0
     x.entered = true
     mut self.update(s, x)
+    mut self.set_node_sym(f, s)
     if head == 0 {
         mut self.files.insert(false, key, s)
     } else {
@@ -822,13 +827,13 @@ Sema.type_name(mut self, id: u32): string {
         TypeKind.staticmap {
             return mut self.pool.join(["StaticMap[", mut self.type_name(t.base), "]", mut self.type_name(t.ret)])
         }
-        TypeKind.tuple { return mut self.list_name("(", t, false) }
+        TypeKind.tuple { return bounded(mut self.list_name("(", t, false)) }
         TypeKind.func {
             head: string = "("
             if t.is_c_abi { head = "extern \"c\" (" }
             ret: string = "void"
             if t.ret != 0 && self.ty(t.ret).kind != TypeKind.void { ret = mut self.type_name(t.ret) }
-            return mut self.pool.join([mut self.list_name(head, t, true), ": ", ret])
+            return bounded(mut self.pool.join([mut self.list_name(head, t, true), ": ", ret]))
         }
         TypeKind.struct, TypeKind.enum, TypeKind.contract, TypeKind.union, TypeKind.bits, TypeKind.distinct, TypeKind.error_domain {
             if t.name.len == 0 { return t.kind.name }
@@ -840,6 +845,14 @@ Sema.type_name(mut self, id: u32): string {
         TypeKind.template { return t.name }
         default { return "?" }
     }
+}
+
+/* A tuple or function name as C's 256-byte type_name buffer holds it: its
+ * first 255 bytes.
+ */
+bounded(name: string): string {
+    if name.len <= 255 { return name }
+    return name[..255]
 }
 
 /* `head` and a type list, `a, b)`: a function's parameters or a tuple's fields. */
@@ -1113,10 +1126,11 @@ Sema.resolve_top(mut self, s: u32) {
     x: Sym = self.sym(s)
     n: Node = self.node(x.top)
     if x.resolving {
-        if n.kind == Kind.alias || n.kind == Kind.var || n.kind == Kind.externvar { mut self.report_cycle(s) }
+        if n.kind == Kind.alias || n.kind == Kind.var || n.kind == Kind.externvar || n.kind == Kind.func || n.kind == Kind.externfn {
+            mut self.report_cycle(s)
+        }
         return
     }
-    if n.kind == Kind.func || n.kind == Kind.externfn { return }
     if u32(self.resolving.len) == MAX_RESOLVING {
         mut self.err(self.resolve_site(s), ["declarations nest too deeply to resolve '", x.name, "'"])
         return
@@ -1152,6 +1166,7 @@ Sema.resolve_top(mut self, s: u32) {
         }
         Kind.distinct { mut self.resolve_distinct(x.top, x.ty) }
         Kind.error { mut self.check_error_domain(x.top) }
+        Kind.func, Kind.externfn { mut self.resolve_func_set(s) }
         default {}
     }
     self.in_module = saved
@@ -3282,6 +3297,330 @@ pub Sema.complete(mut self) {
     mut self.finish_deferred_layouts()
 }
 
+// --- signatures ---------------------------------------------------------------
+
+/* src/ace.h's compiler-provided intrinsic ids that resolve_func checks. */
+BI_INTERNAL_LOAD_U64: const u64 = 21
+BI_BITS_POP_COUNT: const u64 = 22
+BI_BITS_TRAIL_ZEROS: const u64 = 24
+BI_BITS_BYTE_SWAP: const u64 = 25
+BI_BITS_ROTATE_LEFT: const u64 = 26
+BI_BITS_ROTATE_RIGHT: const u64 = 27
+BI_MATH_SQRT: const u64 = 29
+BI_MATH_CEIL: const u64 = 31
+BI_MATH_FMA: const u64 = 32
+BI_BITS_WRAP_ADD: const u64 = 33
+BI_BITS_WRAP_MUL: const u64 = 35
+
+/* Function declaration `f`'s signature. With `bound`, the run `args` of
+ * `nargs` types is substituted for its type parameters; otherwise each
+ * stands as a fresh parameter `$i`.
+ */
+Sema.build_func_type(mut self, f: u32, bound: bool, args: u32, nargs: u32): u32 {
+    n: Node = self.node(f)
+    saved: u32 = self.sub
+    if n.c != 0 {
+        self.sub = u32(self.tnames.len)
+        for i: u32 in 0..self.node(n.c).nkids {
+            fail(mut self.tnames.push(self.node(self.kid(n.c, i)).text))
+            t: u32 = 0
+            if bound && i < nargs {
+                t = self.params.get(usize(args + i))
+            } else {
+                t = mut self.new_type(SType { kind = TypeKind.typeparam, name = mut self.pool.join(["$", mut self.num(i)]) })
+            }
+            fail(mut self.ttypes.push(t))
+        }
+    }
+    ft: SType = SType { kind = TypeKind.func, params = u32(self.params.len), nparams = n.nkids }
+    for i: u32 in 0..n.nkids { fail(mut self.params.push(0)) }
+    for i: u32 in 0..n.nkids {
+        pk: u32 = self.kid(f, i)
+        p: u32 = mut self.build_type(self.node(pk).a)
+        mut self.params.set(usize(ft.params + i), p)
+        if self.ty(p).kind == TypeKind.error_domain {
+            mut self.err(pk, ["error-domain names are identities, not parameter types; use Error"])
+        }
+    }
+    ft.ret = mut self.build_return_type(n.a)
+    if ft.ret != 0 && self.ty(ft.ret).kind == TypeKind.error_domain {
+        mut self.err(n.a, ["error-domain names are identities, not return types; use Error"])
+    }
+    if n.c != 0 {
+        mut self.tnames.truncate(usize(self.sub))
+        mut self.ttypes.truncate(usize(self.sub))
+        self.sub = saved
+    }
+    return mut self.new_type(ft)
+}
+
+/* Whether parameter `i` of declaration `d` is `mut`. */
+Sema.param_mut(self, d: u32, i: u32): bool {
+    return d != 0 && i < self.node(d).nkids && (self.node(self.kid(d, i)).flags & parser.F_MUT) != 0
+}
+
+/* Whether signatures `a` of `ad` and `b` of `bd` take the same parameters,
+ * `mut` positions included.
+ */
+Sema.same_param_signature(self, a: u32, ad: u32, b: u32, bd: u32): bool {
+    if a == 0 || b == 0 { return false }
+    x: SType = self.ty(a)
+    y: SType = self.ty(b)
+    if x.kind != TypeKind.func || y.kind != TypeKind.func || x.nparams != y.nparams { return false }
+    for i: u32 in 0..x.nparams {
+        if !self.same_type(self.params.get(usize(x.params + i)), self.params.get(usize(y.params + i))) { return false }
+        if self.param_mut(ad, i) != self.param_mut(bd, i) { return false }
+    }
+    return true
+}
+
+Sema.overload_count(self, head: u32): u32 {
+    n: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload { n += 1 }
+    return n
+}
+
+/* Whether `t` is the primitive of `like`, itself a primitive. */
+Sema.same_prim(self, t: u32, like: u32): bool {
+    return t != 0 && like != 0 && self.ty(like).kind == TypeKind.prim && self.is_prim(t, self.ty(like).prim)
+}
+
+Sema.is_real(self, t: u32): bool {
+    return t != 0 && (self.is_prim(t, P_F32) || self.is_prim(t, P_F64))
+}
+
+/* Whether signature `ft` is the one compiler-provided intrinsic `id` has. */
+Sema.intrinsic_fits(self, ft: u32, id: u64): bool {
+    t: SType = self.ty(ft)
+    r: u32 = t.ret
+    np: u32 = t.nparams
+    p0: u32 = 0
+    p1: u32 = 0
+    p2: u32 = 0
+    if np >= 1 { p0 = self.params.get(usize(t.params)) }
+    if np >= 2 { p1 = self.params.get(usize(t.params + 1)) }
+    if np >= 3 { p2 = self.params.get(usize(t.params + 2)) }
+    fixed: bool = p0 != 0 && (self.is_prim(p0, P_U8) || self.is_prim(p0, P_U16) || self.is_prim(p0, P_U32) || self.is_prim(p0, P_U64))
+    if id == BI_INTERNAL_LOAD_U64 {
+        return np == 2 && self.is_prim(p0, P_STRING) && self.is_prim(p1, P_USIZE) && r != 0 && self.is_prim(r, P_U64)
+    }
+    if id >= BI_BITS_POP_COUNT && id <= BI_BITS_TRAIL_ZEROS { return fixed && np == 1 && r != 0 && self.is_prim(r, P_U64) }
+    if id == BI_BITS_BYTE_SWAP { return fixed && np == 1 && self.same_prim(r, p0) }
+    if id == BI_BITS_ROTATE_LEFT || id == BI_BITS_ROTATE_RIGHT {
+        return fixed && np == 2 && self.is_prim(p1, P_U64) && self.same_prim(r, p0)
+    }
+    if id >= BI_BITS_WRAP_ADD && id <= BI_BITS_WRAP_MUL { return fixed && np == 2 && self.same_prim(p1, p0) && self.same_prim(r, p0) }
+    if id >= BI_MATH_SQRT && id <= BI_MATH_CEIL { return np == 1 && self.is_real(p0) && self.same_prim(r, p0) }
+    if id == BI_MATH_FMA {
+        return np == 3 && self.is_real(p0) && self.same_prim(r, p0) && self.same_prim(p1, p0) && self.same_prim(p2, p0)
+    }
+    return false
+}
+
+/* One overload's signature, checked; false when it duplicates an earlier
+ * member's parameters.
+ */
+Sema.resolve_func(mut self, s: u32, head: u32): bool {
+    x: Sym = self.sym(s)
+    f: u32 = x.decl
+    n: Node = self.node(f)
+    boundary: bool = x.is_extern || (n.flags & parser.F_EXPO) != 0
+    mut self.check_param_count(f, n.nkids, (n.flags & parser.F_METHOD) != 0)
+    ft: u32 = mut self.build_func_type(f, false, 0, 0)
+    t: SType = self.ty(ft)
+    t.is_c_abi = boundary
+    mut self.set_ty(ft, t)
+    if (n.flags & parser.F_INTRINSIC) != 0 && n.ival != 0 && !self.intrinsic_fits(ft, n.ival) {
+        mut self.err(f, ["intrinsic declaration '", n.text, "' does not match a compiler-provided signature"])
+    }
+    if boundary && n.c != 0 {
+        mut self.err(f, ["C-boundary function '", n.text, "' cannot be generic"])
+    } else if boundary {
+        if t.ret != 0 && self.ty(t.ret).kind != TypeKind.err && !mut self.is_c_abi_type(t.ret, CABI_DIRECT, 0) {
+            at: u32 = n.a
+            if at == 0 { at = f }
+            mut self.err(at, ["C-boundary return type ", mut self.type_name(t.ret), " is not C-ABI compatible"])
+        }
+        for i: u32 in 0..t.nparams {
+            pk: u32 = self.kid(f, i)
+            pn: Node = self.node(pk)
+            if (pn.flags & parser.F_MUT) != 0 {
+                mut self.err(pk, ["C-boundary parameter '", pn.text, "' is 'mut' — mut parameters stay internal; pass a mut *T instead"])
+                continue
+            }
+            p: u32 = self.params.get(usize(t.params + i))
+            if self.ty(p).kind != TypeKind.err && !mut self.is_c_abi_type(p, CABI_DIRECT, 0) {
+                at: u32 = pn.a
+                if at == 0 { at = pk }
+                mut self.err(at, ["C-boundary parameter '", pn.text, "' has type ", mut self.type_name(p), ", which is not C-ABI compatible"])
+            }
+        }
+    }
+    x = self.sym(s)
+    x.ty = ft
+    mut self.update(s, x)
+    nt: u32 = 0
+    if n.c != 0 { nt = self.node(n.c).nkids }
+    for old: u32 = head; old != s; old = self.sym(old).overload {
+        o: Sym = self.sym(old)
+        old_nt: u32 = 0
+        if o.decl != 0 && self.node(o.decl).c != 0 { old_nt = self.node(self.node(o.decl).c).nkids }
+        if old_nt == nt && self.same_param_signature(o.ty, o.decl, ft, f) {
+            mut self.err(f, ["duplicate overload '", n.text, "': parameter signatures must differ (return type is not considered)"])
+            return false
+        }
+    }
+    return true
+}
+
+/* Resolves a whole overload set when a lookup first reaches its head: each
+ * member's signature in source order (a duplicate is unlinked; the head,
+ * first, never is), then its specializations, bound by conformance and
+ * appended after the members.
+ */
+Sema.resolve_func_set(mut self, head: u32) {
+    for s: u32 = head; s != 0; s = self.sym(s).overload { // a use while building is a cycle
+        x: Sym = self.sym(s)
+        x.ty = self.t_err
+        mut self.update(s, x)
+    }
+    prev: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        if mut self.resolve_func(s, head) {
+            prev = s
+            continue
+        }
+        p: Sym = self.sym(prev)
+        p.overload = self.sym(s).overload
+        mut self.update(prev, p)
+        mut self.set_node_sym(self.sym(s).decl, 0)
+        x: Sym = self.sym(s)
+        x.entered = false
+        mut self.update(s, x)
+    }
+    count: u32 = self.overload_count(head)
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        x: Sym = self.sym(s)
+        n: Node = self.node(x.decl)
+        if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 || !mem.equal(n.text, "main") { continue }
+        spells_int: bool = n.a != 0 && self.node(n.a).kind == Kind.named && mem.equal(self.node(n.a).text, "int")
+        if x.is_generic || n.nkids != 0 || !spells_int || count != 1 {
+            mut self.err(x.decl, ["entry function must be main(): int"])
+        }
+    }
+    sp: u32 = self.sym(head).entered_specs
+    for sp != 0 {
+        next: u32 = self.sym(sp).overload
+        mut self.bind_specialization(sp, head)
+        sp = next
+    }
+    h: Sym = self.sym(head)
+    h.entered_specs = 0
+    mut self.update(head, h)
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        x: Sym = self.sym(s)
+        x.entered = false
+        mut self.update(s, x)
+    }
+}
+
+/* Generics #10: a specialization's parameters, `mut` positions, and return
+ * equal the substituted generic signature.
+ */
+Sema.spec_conforms(self, sub: u32, gdecl: u32, ft: u32, fdecl: u32): bool {
+    if sub == 0 || ft == 0 { return false }
+    a: SType = self.ty(sub)
+    b: SType = self.ty(ft)
+    if a.kind != TypeKind.func || b.kind != TypeKind.func || a.nparams != b.nparams { return false }
+    if !self.same_param_signature(sub, gdecl, ft, fdecl) { return false }
+    if (a.ret == 0) != (b.ret == 0) { return false }
+    return a.ret == 0 || self.same_type(a.ret, b.ret)
+}
+
+/* Binds specialization `s` to exactly one generic overload of `head`'s set
+ * by substituted-signature conformance (Generics #9–12), appending it to the
+ * set.
+ */
+Sema.bind_specialization(mut self, s: u32, head: u32) {
+    f: u32 = self.sym(s).decl
+    n: Node = self.node(f)
+    nargs: u32 = self.node(n.c).nkids
+    targs: u32 = u32(self.params.len)
+    for i: u32 in 0..nargs { fail(mut self.params.push(0)) }
+    for i: u32 in 0..nargs {
+        a: u32 = mut self.build_type_or_void(self.kid(n.c, i))
+        mut self.params.set(usize(targs + i), a)
+    }
+    ft: u32 = mut self.build_func_type(f, true, targs, nargs)
+    bind: u32 = 0
+    nbind: u32 = 0
+    for old: u32 = head; old != 0; old = self.sym(old).overload {
+        o: Sym = self.sym(old)
+        if !o.is_generic || self.node(o.decl).c == 0 || self.node(self.node(o.decl).c).nkids != nargs { continue }
+        sub: u32 = mut self.build_func_type(o.decl, true, targs, nargs)
+        if !self.spec_conforms(sub, o.decl, ft, f) { continue }
+        nbind += 1
+        bind = old
+    }
+    if bind == 0 {
+        mut self.err(f, ["specialization '", n.text, mut self.args_name(targs, nargs), "' does not conform to any generic overload of '", n.text, "' — parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied"])
+        return
+    }
+    if nbind > 1 {
+        mut self.err(f, ["specialization '", n.text, mut self.args_name(targs, nargs), "' conforms to more than one generic overload of '", n.text, "'"])
+        return
+    }
+    for sp: u32 = self.sym(bind).specs; sp != 0; sp = self.sym(sp).spec_next {
+        p: Sym = self.sym(sp)
+        same: bool = p.spec_nargs == nargs
+        for i: u32 = 0; i < nargs && same; i += 1 {
+            same = self.same_type(self.params.get(usize(p.spec_args + i)), self.params.get(usize(targs + i)))
+        }
+        if same {
+            mut self.err(f, ["duplicate specialization '", n.text, mut self.args_name(targs, nargs), "' — one exact type-argument tuple per generic overload (first declared at line ", mut self.num(self.node(p.decl).line), ")"])
+            return
+        }
+    }
+    x: Sym = self.sym(s)
+    x.ty = ft
+    x.spec_args = targs
+    x.spec_nargs = nargs
+    x.spec_next = self.sym(bind).specs
+    x.overload = 0
+    mut self.update(s, x)
+    b: Sym = self.sym(bind)
+    b.specs = s
+    mut self.update(bind, b)
+    mut self.set_node_sym(f, s)
+    tail: u32 = head
+    for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
+    t: Sym = self.sym(tail)
+    t.overload = s
+    mut self.update(tail, t)
+}
+
+/* Every function signature of the merged tree resolved, in declaration
+ * order, as C's sema_check does before any body; signings are not yet
+ * registered.
+ */
+pub Sema.signatures(mut self) {
+    for k: u32 in 0..self.node(self.file).nkids {
+        id: u32 = self.kid(self.file, k)
+        n: Node = self.node(id)
+        if n.kind == Kind.signing { continue } // registered with signings
+        nf: u32 = 0
+        if n.kind == Kind.extern { nf = n.nkids } else if n.kind == Kind.func { nf = 1 }
+        for j: u32 in 0..nf {
+            f: u32 = id
+            if n.kind == Kind.extern { f = self.kid(id, j) }
+            s: u32 = self.node_sym(f)
+            if s == 0 || self.node(f).kind == Kind.externvar || !self.sym(s).entered { continue }
+            key: string = mut self.func_key(f)
+            _ = mut self.resolved(self.files.find(false, key))
+        }
+    }
+}
+
 // --- entry --------------------------------------------------------------------
 
 /* The SType kind of a nominal type declaration. */
@@ -3442,18 +3781,22 @@ Sema.dump_sym(mut self, mut out: Out, what: string, s: u32) {
         mut out.printf(" %s", x.kind.name)
     }
     if x.kind != SymKind.func {
-        self.dump_flags(mut out, x)
+        self.dump_flags(mut out, x, false, "")
         if x.kind == SymKind.type && x.ty != 0 { mut self.dump_type(mut out, x) }
         return
     }
     mut out.printf("\n")
     for m: u32 = s; m != 0; m = self.sym(m).overload {
         mut out.printf("  member")
-        self.dump_flags(mut out, self.sym(m))
+        y: Sym = self.sym(m)
+        sig: string = ""
+        if !y.is_generic && y.ty != 0 && self.ty(y.ty).kind == TypeKind.func { sig = mut self.type_name(y.ty) }
+        hidden: bool = y.decl != 0 && !self.l.decl_visible(self.l.module_of(y.decl), y.is_pub, 0)
+        self.dump_flags(mut out, y, hidden, sig)
     }
     for m: u32 = x.entered_specs; m != 0; m = self.sym(m).overload {
         mut out.printf("  spec")
-        self.dump_flags(mut out, self.sym(m))
+        self.dump_flags(mut out, self.sym(m), false, "")
     }
 }
 
@@ -3495,7 +3838,10 @@ Sema.dump_type(mut self, mut out: Out, x: Sym) {
     }
 }
 
-Sema.dump_flags(self, mut out: Out, x: Sym) {
+/* A symbol's flags and position; a function member adds whether the root
+ * file cannot see it and its signature, when not generic.
+ */
+Sema.dump_flags(self, mut out: Out, x: Sym, hidden: bool, sig: string) {
     if x.is_const { mut out.printf(" const") }
     if x.is_mut { mut out.printf(" mut") }
     if x.is_pub { mut out.printf(" pub") }
@@ -3504,11 +3850,13 @@ Sema.dump_flags(self, mut out: Out, x: Sym) {
     if x.is_global { mut out.printf(" global") }
     if x.is_root { mut out.printf(" root") }
     if x.entered { mut out.printf(" entered") }
+    if hidden { mut out.printf(" hidden") }
     at: u32 = x.top
     if at == 0 { at = x.decl }
     if at != 0 {
         n: Node = self.node(at)
         mut out.printf(" @%d:%d", int(n.line), int(n.col))
     }
+    if sig.len > 0 { mut out.printf(" %s", sig) }
     mut out.printf("\n")
 }

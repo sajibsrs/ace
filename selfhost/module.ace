@@ -1506,6 +1506,27 @@ pub Loader.module_of(self, id: u32): usize {
     return best
 }
 
+/* Whether module `mi`'s `pub` declarations are its external surface: a
+ * single-file module's, a directory module's mod.ace's, and the root's.
+ */
+pub Loader.decl_external(self, mi: usize): bool {
+    if mi == 0 { return true }
+    m: Module = self.mods.get(mi)
+    if m.root.len == 0 { return true }
+    return m.canon.len == m.root.len + 8 && str.has(m.canon, m.root, false) && str.has(m.canon, "/mod.ace", true)
+}
+
+/* Whether a declaration in module `decl`, `pub` or not, is visible from
+ * module `use` (Modules #2): its own file always, and a `pub` one from
+ * outside its directory module only on the external surface.
+ */
+pub Loader.decl_visible(self, decl: usize, is_pub: bool, use: usize): bool {
+    if decl == use { return true }
+    if !is_pub { return false }
+    if self.decl_external(decl) { return true }
+    return use != 0 && mem.equal(self.mods.get(use).root, self.mods.get(decl).root)
+}
+
 /* `name` as written: a module-private identity `m$f` or `m$Owner$f` reads
  * `m.f` or `m.Owner.f`, with the module's display name; other text is as is.
  */

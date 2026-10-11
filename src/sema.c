@@ -8317,7 +8317,11 @@ static const char* const SK_NAMES[] = {
 
 static void complete_types(Ck* k, Node* file);
 
-static void dump_flags(Sym* s) {
+static const char* g_dump_root; // the file --symbols shows visibility from
+
+/* A symbol's flags and position; a function member adds whether the root
+ * file cannot see it and its signature, when not generic. */
+static void dump_flags(Sym* s, int hidden, const char* sig) {
     if (s->is_const) fputs(" const", stdout);
     if (s->is_mut) fputs(" mut", stdout);
     if (s->is_pub) fputs(" pub", stdout);
@@ -8326,8 +8330,10 @@ static void dump_flags(Sym* s) {
     if (s->is_global) fputs(" global", stdout);
     if (s->is_root) fputs(" root", stdout);
     if (s->decl_state == DECL_ENTERED) fputs(" entered", stdout);
+    if (hidden) fputs(" hidden", stdout);
     if (s->top) printf(" @%d:%d", s->top->line, s->top->col);
     else if (s->decl) printf(" @%d:%d", s->decl->line, s->decl->col);
+    if (sig) printf(" %s", sig);
     fputc('\n', stdout);
 }
 
@@ -8379,18 +8385,43 @@ static void dump_list(Sym* s, const char* what) {
         printf(" %s", SYM_NAMES[s->kind]);
     }
     if (s->kind != SYM_FUNC) {
-        dump_flags(s);
+        dump_flags(s, 0, NULL);
         if (s->kind == SYM_TYPE && s->type) dump_type(s);
         return;
     }
     fputc('\n', stdout);
     for (Sym* m = s; m; m = m->overload) {
         fputs("  member", stdout);
-        dump_flags(m);
+        int hidden = m->decl && !decl_visible(m->decl->path, m->is_pub, g_dump_root);
+        dump_flags(m, hidden, !m->is_generic && m->type && m->type->kind == SK_FUNC ? type_name(m->type) : NULL);
     }
     for (Sym* m = s->entered_specs; m; m = m->overload) {
         fputs("  spec", stdout);
-        dump_flags(m);
+        dump_flags(m, 0, NULL);
+    }
+}
+
+// Every function signature, and with `signings` every signing, resolved in
+// declaration order.
+static void resolve_signatures(Ck* k, Node* file, int signings) {
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (n->kind == N_SIGNING) {
+            if (!signings) continue;
+            k->in_module = in_imported(n);
+            register_signing(k, n);
+            k->in_module = 0;
+            continue;
+        }
+        int nf = n->kind == N_EXTERN ? n->nkids : n->kind == N_FUNC;
+        for (int j = 0; j < nf; j++) {
+            Node* f = n->kind == N_EXTERN ? n->kids[j] : n;
+            Sym* s = node_sym(f);
+            if (!s || f->kind == N_EXTERNVAR || s->decl_state == DECL_DONE) continue;
+            uint32_t key_len;
+            const char* key = func_key(f, &key_len);
+            resolved(k, scope_find(&file_scope, 0, key, key_len));
+        }
     }
 }
 
@@ -8400,6 +8431,9 @@ int sema_dump_symbols(Node* file, Diag* d) {
     if (d->errors) return d->errors;
     complete_types(&k, file);
     if (d->errors) return d->errors;
+    resolve_signatures(&k, file, 0);
+    if (d->errors) return d->errors;
+    g_dump_root = file->path;
     dump_list(file_scope.types, "type");
     dump_list(file_scope.values, "value");
     dump_list(import_scope.values, "import");
@@ -8433,24 +8467,7 @@ int sema_check(Node* file, Diag* d) {
         if (s && s->top == n) check_promoted_collisions(&k, &file_scope, s->type);
     }
     // every signature and signing is known before any body is checked
-    for (int i = 0; i < file->nkids; i++) {
-        Node* n = file->kids[i];
-        if (n->kind == N_SIGNING) {
-            k.in_module = in_imported(n);
-            register_signing(&k, n);
-            k.in_module = 0;
-            continue;
-        }
-        int nf = n->kind == N_EXTERN ? n->nkids : n->kind == N_FUNC;
-        for (int j = 0; j < nf; j++) {
-            Node* f = n->kind == N_EXTERN ? n->kids[j] : n;
-            Sym* s = node_sym(f);
-            if (!s || f->kind == N_EXTERNVAR || s->decl_state == DECL_DONE) continue;
-            uint32_t key_len;
-            const char* key = func_key(f, &key_len);
-            resolved(&k, scope_find(&file_scope, 0, key, key_len));
-        }
-    }
+    resolve_signatures(&k, file, 1);
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         switch (n->kind) {
