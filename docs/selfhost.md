@@ -43,8 +43,12 @@ note per enclosing stamp. Its compile-time expressions (array lengths,
 initializers of the globals they name) go through the compile-time subset of
 C's expression checker: literals, names, operators, member access, struct
 and array literals, casts, `blank`, `sizeof`, `alignof`, and `offsetof`.
+An ordinary call there resolves its overload as C does (exact types with
+int/f64/u8 constant defaults and array-literal candidates, then one
+shrink-compatible match, skipping overloads the call site cannot see) and
+checks its arguments before the default is rejected as not compile-time.
 Selfhost stops with `does not yet support` on anything else there, such as a
-call to a function, which needs overload resolution.
+generic call or a memory or format builtin.
 
 ## Checking
 

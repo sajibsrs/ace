@@ -293,6 +293,16 @@ tests/sema/defaults/views_err.ace|16:21: error: bare struct literal needs its ty
 tests/sema/defaults/views_err.ace|17:20: error: array literal needs its array type from context
 tests/sema/defaults/views_err.ace|18:22: error: overlapping struct Word has no literal; declare it and assign a member
 tests/sema/defaults/views_err.ace|19:45: error: cannot compare Point and Point
+tests/sema/defaults/calls/main_err.ace|48:21: error: wrong number of arguments: 2 given, 1 expected
+tests/sema/defaults/calls/main_err.ace|49:20: error: no matching overload 'two' for these argument types
+tests/sema/defaults/calls/main_err.ace|50:21: error: ambiguous call to overloaded function 'amb'
+tests/sema/defaults/calls/main_err.ace|51:23: error: generic function 'gen' needs type arguments: gen[T](...)
+tests/sema/defaults/calls/main_err.ace|52:23: error: overloaded function 'two' needs an explicit function-value type: 'two' is overloaded
+tests/sema/defaults/calls/main_err.ace|53:23: error: 'mut' marks mut parameters; parameter 1 is read-only
+tests/sema/defaults/calls/main_err.ace|54:25: error: mut parameter needs 'mut' at the call site
+tests/sema/defaults/calls/main_err.ace|55:22: error: type mismatch: u8 given where i64 expected (casts are explicit)
+tests/sema/defaults/calls/main_err.ace|57:29: error: the overload of 'other.pick' matching these arguments is private
+tests/sema/defaults/calls/main_err.ace|58:23: error: 'VALUE' is not callable
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared

@@ -195,7 +195,8 @@ pub Sema: struct {
     cabi: array.Array[u32],             // the structs is_c_abi_type is inside
     nty: array.Array[u32],              // per node: its checked type,
     nsym: array.Array[u32],             // the symbol it names,
-    nival: array.Array[u64],            // and its constant, as C keeps them on the node
+    nival: array.Array[u64],            // and its constant, as C keeps them on the node,
+    nrep: array.Array[bool],            // and whether its error is already reported (F_REPORTED)
     t_err: u32 = 0,
     t_void: u32 = 0,
     t_error: u32 = 0,                   // the predeclared Error
@@ -210,7 +211,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -241,6 +242,7 @@ pub Sema.wipe(mut self) {
     mut self.nty.wipe()
     mut self.nsym.wipe()
     mut self.nival.wipe()
+    mut self.nrep.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
@@ -1230,6 +1232,7 @@ Sema.grow(mut self, e: u32) {
         fail(mut self.nty.push(0))
         fail(mut self.nsym.push(0))
         fail(mut self.nival.push(0))
+        fail(mut self.nrep.push(false))
     }
 }
 
@@ -1256,6 +1259,11 @@ Sema.set_node_ty(mut self, e: u32, t: u32) {
 Sema.set_node_sym(mut self, e: u32, s: u32) {
     mut self.grow(e)
     mut self.nsym.set(usize(e), s)
+}
+
+Sema.set_node_reported(mut self, e: u32) {
+    mut self.grow(e)
+    mut self.nrep.set(usize(e), true)
 }
 
 Sema.set_node_ival(mut self, e: u32, v: u64) {
@@ -1692,6 +1700,10 @@ Sema.layout_or_cycle(mut self, at: u32, t: u32): bool {
 
 /* Checks expression `e`, recording its type on it (C's expr_type). */
 Sema.expr_type(mut self, e: u32): u32 {
+    if usize(e) < self.nrep.len && self.nrep.get(usize(e)) {
+        mut self.set_node_ty(e, self.t_err)
+        return self.t_err
+    }
     t: u32 = mut self.expr_type_raw(e)
     mut self.set_node_ty(e, t)
     return t
@@ -2018,15 +2030,16 @@ Sema.check_field_visible(mut self, t: u32, at: u32) {
     if self.l.module_of(d) != self.l.module_of(at) { _ = mut self.unported("field visibility across modules") }
 }
 
-/* The calls a compile-time expression may hold: casts, blank, and the
- * layout builtins. An ordinary call waits for signatures (step 3).
+/* A call by name: an ordinary call through its overload set, a cast, blank,
+ * or a layout builtin.
  */
 Sema.check_call(mut self, call: u32): u32 {
     n: Node = self.node(call)
     callee: Node = self.node(n.a)
-    if callee.kind != Kind.ident { return mut self.unported("function calls in compile-time expressions") }
+    if callee.kind != Kind.ident { return mut self.unported("calls of computed callees") }
     name: string = callee.text
-    if mut self.lookup_val(name) != 0 { return mut self.unported("function calls in compile-time expressions") }
+    s: u32 = mut self.lookup_val(name)
+    if s != 0 { return mut self.check_direct_call(call, s) }
     p: u32 = self.prim_by_name(name)
     ts: u32 = mut self.lookup_type(name)
     if p != 0 || ts != 0 { return mut self.check_cast(call, p, ts) }
@@ -3295,6 +3308,389 @@ pub Sema.complete(mut self) {
         }
     }
     mut self.finish_deferred_layouts()
+}
+
+// --- calls --------------------------------------------------------------------
+
+/* src/ace.h's builtin ids whose calls take their own checks, not yet ported. */
+BI_MEM_ALLOC: const u64 = 2
+BI_MEM_COMPARE: const u64 = 9
+BI_FMT_PRINTF: const u64 = 10
+BI_MEM_EQUAL: const u64 = 18
+BI_MEM_ALLOC_SIZE: const u64 = 28
+BI_STR_FORMAT: const u64 = 37
+BI_FMT_PRINTF_FD: const u64 = 38
+BI_FMT_PRINTF_BUF: const u64 = 41
+
+/* Modules #2/#7: visibility is per overload. An overload the use site `at`
+ * cannot see is skipped as if undeclared; `at` 0 sees every one.
+ */
+Sema.ov_hidden(self, s: u32, at: u32): bool {
+    x: Sym = self.sym(s)
+    return at != 0 && x.kind == SymKind.func && x.decl != 0 && !self.l.decl_visible(self.l.module_of(x.decl), x.is_pub, self.l.module_of(at))
+}
+
+Sema.overloaded_func_name(mut self, e: u32): bool {
+    n: Node = self.node(e)
+    if n.kind != Kind.ident { return false }
+    s: u32 = mut self.lookup_val(n.text)
+    return s != 0 && self.sym(s).kind == SymKind.func && self.overload_count(s) > 1
+}
+
+/* Candidates agree when equal past `depth` levels of nested literals, whose
+ * lengths may differ.
+ */
+Sema.arraylit_same(self, a: u32, b: u32, depth: u32): bool {
+    x: u32 = a
+    y: u32 = b
+    for d: u32 = depth; d > 0; d -= 1 {
+        x = self.ty(x).base
+        y = self.ty(y).base
+    }
+    return self.same_type(x, y)
+}
+
+/* A constant's kind (1 integer, 2 character, 3 float) to its natural type. */
+Sema.const_rank_type(self, rank: u32): u32 {
+    if rank == 3 { return self.prim(P_F64) }
+    if rank == 2 { return self.prim(P_U8) }
+    return self.prim(P_I64)
+}
+
+/* `t` with its type `depth` levels down replaced by `leaf`. */
+Sema.with_innermost(mut self, t: u32, depth: u32, leaf: u32): u32 {
+    if depth == 0 { return leaf }
+    base: u32 = mut self.with_innermost(self.ty(t).base, depth - 1, leaf)
+    return mut self.new_type(SType { kind = TypeKind.array, base = base })
+}
+
+/* An array literal's overload candidate (Names & Scoping #6): an array of E
+ * when every element has the same candidate type E, recursively for nested
+ * literals of any lengths; otherwise none (0). A literal of untyped
+ * constants alone takes the natural type of its highest kind instead
+ * (integer < character). Also returns the nesting below this literal and
+ * that highest kind (0 when any leaf is typed).
+ */
+Sema.overload_arraylit_cand(mut self, lit: u32): (u32, u32, u32) {
+    l: Node = self.node(lit)
+    n: u32 = l.nkids
+    if l.a != 0 { n = 1 }
+    if n == 0 || (l.a == 0 && self.node(self.kid(lit, 0)).kind == Kind.mapentry) { return 0, 0, 0 }
+    elem: u32 = 0
+    d: u32 = 0
+    r: u32 = 3
+    mixed: bool = false
+    for i: u32 in 0..n {
+        e: u32 = l.a
+        if e == 0 { e = self.kid(lit, i) }
+        t: u32 = 0
+        ed: u32 = 0
+        er: u32 = 0
+        if self.node(e).kind == Kind.arraylit {
+            t, ed, er = mut self.overload_arraylit_cand(e)
+            ed += 1
+        } else {
+            t, er = mut self.overload_leaf_type(e)
+        }
+        if t == 0 || t == self.t_err || t == self.t_ut_null { return 0, 0, 0 }
+        if elem != 0 && ed != d { return 0, 0, 0 }
+        if elem != 0 && !self.arraylit_same(elem, t, d) { mixed = true }
+        // r tracks the highest kind, or 0 once a typed leaf appears; a float
+        // and an integer never meet, since casts are explicit
+        if er == 0 || (i > 0 && (r == 0 || (er == 3) != (r == 3))) {
+            r = 0
+        } else if i == 0 || er > r {
+            r = er
+        }
+        elem = t
+        d = ed
+    }
+    if mixed && r == 0 { return 0, 0, 0 }
+    if r != 0 { elem = mut self.with_innermost(elem, d, self.const_rank_type(r)) }
+    return mut self.new_type(SType { kind = TypeKind.array, base = elem }), d, r
+}
+
+/* Whether array literal `lit`, with candidate `cand`, matches `param`
+ * exactly: a []T level takes literals of any length, a [N]T level exactly N
+ * elements, and the innermost element type matches or shrinks.
+ */
+Sema.arraylit_fits(self, lit: u32, cand: u32, param: u32): bool {
+    if param == 0 { return false }
+    p: SType = self.ty(param)
+    if p.base == 0 || (p.kind != TypeKind.slice && p.kind != TypeKind.array) { return false }
+    l: Node = self.node(lit)
+    if l.nkids > 0 && self.node(self.kid(lit, 0)).kind == Kind.mapentry { return false }
+    count: u64 = u64(l.nkids)
+    if l.a != 0 { count = l.ival }
+    if p.kind == TypeKind.array && count != p.count { return false }
+    n: u32 = l.nkids
+    if l.a != 0 { n = 1 }
+    nested: bool = false
+    for i: u32 in 0..n {
+        e: u32 = l.a
+        if e == 0 { e = self.kid(lit, i) }
+        if self.node(e).kind != Kind.arraylit { break } // agreement makes every element a leaf
+        nested = true
+        if !self.arraylit_fits(e, self.ty(cand).base, p.base) { return false }
+    }
+    if nested { return true }
+    return self.same_type(self.ty(cand).base, p.base) || self.shrink_ok(self.ty(cand).base, p.base)
+}
+
+/* An argument's overload candidate type, 0 for none. */
+Sema.overload_arg_type(mut self, arg: u32): u32 {
+    raw: u32 = arg
+    if self.node(arg).kind == Kind.mutarg { raw = self.node(arg).a }
+    t: u32 = 0
+    if self.node(raw).kind == Kind.arraylit {
+        t, _, _ = mut self.overload_arraylit_cand(raw)
+        return t
+    }
+    t, _ = mut self.overload_leaf_type(raw)
+    return t
+}
+
+/* Whether untyped constant expression `e` has character kind: a character
+ * literal, or an operation on one (a shift by its left operand), as in Go.
+ */
+Sema.const_is_char(self, e: u32): bool {
+    n: Node = self.node(e)
+    switch n.kind {
+        Kind.char_lit { return true }
+        Kind.unary { return n.a != 0 && self.const_is_char(n.a) }
+        Kind.binary {
+            if n.op == lexer.Token.shl || n.op == lexer.Token.shr { return self.const_is_char(n.a) }
+            return self.const_is_char(n.a) || self.const_is_char(n.b)
+        }
+        default { return false }
+    }
+}
+
+/* A non-literal argument's overload candidate and constant kind, as
+ * overload_arraylit_cand's.
+ */
+Sema.overload_leaf_type(mut self, raw: u32): (u32, u32) {
+    n: Node = self.node(raw)
+    if n.kind == Kind.structlit && n.a == 0 { return 0, 0 } // bare literal: the parameter supplies its type
+    // matches no candidate exactly: only a sole candidate's parameter selects it
+    if mut self.overloaded_func_name(raw) { return 0, 0 }
+    errors: int = self.errors
+    t: u32 = mut self.expr_type(raw)
+    // the chosen candidate checks the argument again; report its error once
+    if self.errors != errors { mut self.set_node_reported(raw) }
+    rank: u32 = 0
+    if t == self.t_ut_int {
+        rank = 1
+        if self.const_is_char(raw) { rank = 2 }
+    }
+    if t == self.t_ut_float { rank = 3 }
+    if rank != 0 { return self.const_rank_type(rank), rank }
+    return t, 0
+}
+
+/* A failed overloaded call caused by an overloaded function name argument:
+ * only a sole candidate's parameter type selects one of its overloads.
+ */
+Sema.overloaded_arg_err(mut self, call: u32, head: u32, name: string): bool {
+    if self.overload_count(head) < 2 { return false }
+    for i: u32 in 0..self.node(call).nkids {
+        raw: u32 = self.kid(call, i)
+        if self.node(raw).kind == Kind.mutarg { raw = self.node(raw).a }
+        if !mut self.overloaded_func_name(raw) { continue }
+        r: string = self.node(raw).text
+        mut self.err(raw, ["overloaded function '", r, "' needs an explicit function-value type: '", name, "' is overloaded"])
+        return true
+    }
+    return false
+}
+
+Sema.exact_arg_type(self, arg: u32, actual: u32, param: u32): bool {
+    raw: u32 = arg
+    if self.node(arg).kind == Kind.mutarg { raw = self.node(arg).a }
+    r: Node = self.node(raw)
+    if r.kind == Kind.arraylit {
+        if actual == 0 || (param != 0 && self.ty(param).kind == TypeKind.slice && self.ty(param).is_mut) { return false } // a plain []T views it
+        return self.arraylit_fits(raw, actual, param)
+    }
+    if r.kind == Kind.structlit && r.a == 0 {
+        return param != 0 && (self.ty(param).kind == TypeKind.struct || self.ty(param).kind == TypeKind.bits)
+    }
+    if actual == self.t_ut_null { return param != 0 && self.accepts_null(param) } // as a plain call coerces it
+    return actual != 0 && param != 0 && self.same_type(actual, param)
+}
+
+/* Whether `call` matches signature `ft` of `decl` exactly; with `shrink`, a
+ * mut-qualified argument may also bind to the plain parameter form
+ * (Mutability #9).
+ */
+Sema.call_fits(self, call: u32, decl: u32, ft: u32, actual: []u32, shrink: bool): bool {
+    c: Node = self.node(call)
+    if ft == 0 || self.ty(ft).kind != TypeKind.func || c.nkids != self.ty(ft).nparams { return false }
+    t: SType = self.ty(ft)
+    for i: u32 in 0..c.nkids {
+        arg: u32 = self.kid(call, i)
+        if (self.node(arg).kind == Kind.mutarg) != self.param_mut(decl, i) { return false }
+        p: u32 = self.params.get(usize(t.params + i))
+        if self.exact_arg_type(arg, actual[i], p) { continue }
+        if !shrink || actual[i] == 0 || !self.shrink_ok(actual[i], p) { return false }
+    }
+    return true
+}
+
+Sema.call_exact_match(self, call: u32, s: u32, actual: []u32): bool {
+    x: Sym = self.sym(s)
+    return !x.is_generic && !x.is_extern && self.call_fits(call, x.decl, x.ty, actual, false)
+}
+
+/* A non-generic direct-call overload of `head`'s set visible from `at`, and
+ * whether the call is ambiguous: a sole declaration keeps Ace's ordinary
+ * expected-literal typing; a real overload set uses exact types and int/f64
+ * literal defaults.
+ */
+Sema.select_call_overload(mut self, call: u32, head: u32, at: u32): (u32, bool) {
+    if head == 0 || self.sym(head).kind != SymKind.func { return 0, false }
+    actual: array.Array[u32] = array.Array[u32] {}
+    defer mut actual.wipe()
+    for i: u32 in 0..self.node(call).nkids { fail(mut actual.push(mut self.overload_arg_type(self.kid(call, i)))) }
+    found: u32 = 0
+    nongeneric: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        if self.sym(s).is_generic || self.ov_hidden(s, at) { continue }
+        nongeneric += 1
+        if !self.call_exact_match(call, s, actual.view()) { continue }
+        if found != 0 { return 0, true }
+        found = s
+    }
+    if found == 0 { // no exact match: one shrink-compatible overload may win
+        for s: u32 = head; s != 0; s = self.sym(s).overload {
+            x: Sym = self.sym(s)
+            if x.is_generic || self.ov_hidden(s, at) { continue }
+            if !self.call_fits(call, x.decl, x.ty, actual.view(), true) { continue }
+            if found != 0 { return 0, true }
+            found = s
+        }
+    }
+    if found == 0 && nongeneric == 1 {
+        for s: u32 = head; s != 0; s = self.sym(s).overload {
+            if !self.sym(s).is_generic && !self.ov_hidden(s, at) { found = s }
+        }
+        // the sole visible overload keeps literal typing as if the hidden
+        // ones were absent; when its arity cannot fit and a hidden overload
+        // matches outright, name that cause instead
+        f: Sym = self.sym(found)
+        fits: bool = (self.node(f.decl).flags & parser.F_VARARGS) != 0 || self.ty(f.ty).nparams == self.node(call).nkids
+        for s: u32 = head; at != 0 && !fits && s != 0; s = self.sym(s).overload {
+            x: Sym = self.sym(s)
+            if self.ov_hidden(s, at) && !x.is_generic && (self.call_exact_match(call, s, actual.view()) || self.call_fits(call, x.decl, x.ty, actual.view(), true)) {
+                return 0, false
+            }
+        }
+    }
+    return found, false
+}
+
+/* Checks a direct call's arguments against chosen overload `s`. */
+Sema.finish_direct_call(mut self, call: u32, s: u32) {
+    x: Sym = self.sym(s)
+    variadic: bool = x.is_extern && x.decl != 0 && (self.node(x.decl).flags & parser.F_VARARGS) != 0
+    mut self.check_args(call, x.ty, variadic)
+    mut self.check_mut_args(call, x.decl)
+    mut self.set_node_sym(call, s)
+    mut self.set_node_ty(call, self.call_ret(s))
+}
+
+/* What a call of overload `s` gives: its return type, or no value. */
+Sema.call_ret(self, s: u32): u32 {
+    r: u32 = self.ty(self.sym(s).ty).ret
+    if r == 0 { return self.t_void }
+    return r
+}
+
+Sema.check_args(mut self, call: u32, ft: u32, variadic: bool) {
+    t: SType = self.ty(ft)
+    want: u32 = t.nparams
+    got: u32 = self.node(call).nkids
+    if (variadic && got < want) || (!variadic && got != want) {
+        plus: string = ""
+        if variadic { plus = " (plus variadics)" }
+        mut self.err(call, ["wrong number of arguments: ", mut self.num(got), " given, ", mut self.num(want), " expected", plus])
+        return
+    }
+    for i: u32 in 0..got {
+        if i >= want {
+            _ = mut self.unported("variadic arguments")
+            return
+        }
+        raw: u32 = self.kid(call, i)
+        if self.node(raw).kind == Kind.mutarg { raw = self.node(raw).a }
+        _ = mut self.coerce(raw, self.params.get(usize(t.params + i)))
+    }
+}
+
+Sema.check_mut_args(mut self, call: u32, decl: u32) {
+    if decl == 0 { return }
+    for i: u32 = 0; i < self.node(call).nkids && i < self.node(decl).nkids; i += 1 {
+        arg: u32 = self.kid(call, i)
+        am: bool = self.node(arg).kind == Kind.mutarg
+        pm: bool = self.param_mut(decl, i)
+        if am && !pm {
+            mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"])
+        } else if pm && !am {
+            mut self.err(arg, ["mut parameter needs 'mut' at the call site"])
+        } else if am {
+            _ = mut self.unported("mut arguments") // their address needs lvalue checking
+        }
+    }
+}
+
+/* A call naming value `s`: an ordinary call through its overload set. */
+Sema.check_direct_call(mut self, call: u32, s: u32): u32 {
+    x: Sym = self.sym(s)
+    name: string = self.node(self.node(call).a).text
+    if x.kind == SymKind.func {
+        for it: u32 = s; it != 0; it = self.sym(it).overload {
+            d: u32 = self.sym(it).decl
+            if d == 0 { continue }
+            id: u64 = self.node(d).ival
+            if (id >= BI_MEM_ALLOC && id <= BI_MEM_COMPARE) || id == BI_MEM_EQUAL || id == BI_MEM_ALLOC_SIZE || id == BI_FMT_PRINTF || id == BI_FMT_PRINTF_FD || id == BI_FMT_PRINTF_BUF || id == BI_STR_FORMAT {
+                return mut self.unported("memory and format builtin calls")
+            }
+        }
+    }
+    if x.kind == SymKind.var && x.ty != 0 && self.ty(x.ty).kind == TypeKind.func { return mut self.unported("function values") }
+    if x.kind != SymKind.func {
+        mut self.err(call, ["'", name, "' is not callable"])
+        return self.t_err
+    }
+    has_plain: bool = false
+    for it: u32 = s; it != 0; it = self.sym(it).overload {
+        has_plain = has_plain || (!self.sym(it).is_generic && !self.ov_hidden(it, call))
+    }
+    if !has_plain {
+        mut self.err(call, ["generic function '", name, "' needs type arguments: ", name, "[T](...)"])
+        return self.t_err
+    }
+    if x.is_extern && x.overload == 0 {
+        mut self.finish_direct_call(call, s)
+        return self.call_ret(s)
+    }
+    chosen: u32, ambiguous: bool = mut self.select_call_overload(call, s, call)
+    if ambiguous {
+        mut self.err(call, ["ambiguous call to overloaded function '", name, "'"])
+        return self.t_err
+    }
+    if chosen != 0 {
+        mut self.finish_direct_call(call, chosen)
+        return self.call_ret(chosen)
+    }
+    if mut self.overloaded_arg_err(call, s, name) { return self.t_err }
+    hidden: u32, _ = mut self.select_call_overload(call, s, 0)
+    if hidden != 0 && self.ov_hidden(hidden, call) {
+        mut self.err(call, ["the overload of '", name, "' matching these arguments is private"])
+        return self.t_err
+    }
+    mut self.err(call, ["no matching overload '", name, "' for these argument types"])
+    return self.t_err
 }
 
 // --- signatures ---------------------------------------------------------------

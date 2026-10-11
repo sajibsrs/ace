@@ -57,3 +57,7 @@
   order, binding specializations by substituted-signature conformance, and
   ports `decl_visible`/`decl_external`; both compilers' `--symbols` share
   C's new `resolve_signatures` and print each member's signature and `hidden`.
+- selfhost resolves ordinary calls in compile-time expressions with C's
+  `select_call_overload` (constant ranks, array-literal candidates, shrink
+  matches, per-overload visibility via `ov_hidden`) and checks their
+  arguments and `mut` marks, keeping C's `F_REPORTED` as a side table.

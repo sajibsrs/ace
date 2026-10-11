@@ -1,0 +1,7 @@
+pub pick(v: i64): i64 {
+    return v
+}
+
+pick(a: string, b: string): i64 {
+    return 0
+}

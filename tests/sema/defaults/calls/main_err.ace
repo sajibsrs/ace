@@ -1,0 +1,63 @@
+/* Ordinary calls in defaults: resolved, checked, then rejected. */
+
+import other: "./other.ace"
+
+VALUE: const i64 = 3
+
+one(v: i64): i64 {
+    return v
+}
+
+two(v: i64): i64 {
+    return v
+}
+
+two(v: f64): i64 {
+    return 0
+}
+
+two(v: u8): u8 {
+    return v
+}
+
+amb(p: *u8): i64 {
+    return 0
+}
+
+amb(p: *i64): i64 {
+    return 1
+}
+
+gen[T](v: T): T {
+    return v
+}
+
+grid(v: [2]i64): i64 {
+    return 0
+}
+
+grid(v: []u8): u8 {
+    return 1
+}
+
+bump(mut v: i64): i64 {
+    return v
+}
+
+Calls: struct {
+    count: i64 = one(1, 2),
+    none: i64 = two("x"),
+    nulls: i64 = amb(null),
+    generic: i64 = gen(1),
+    passed: i64 = two(two),
+    marked: i64 = one(mut VALUE),
+    missing: i64 = bump(1),
+    letter: i64 = two('a'),
+    array: i64 = grid([1, 2]),
+    hidden: i64 = other.pick("a", "b"),
+    plain: i64 = VALUE(1),
+}
+
+main(): int {
+    return 0
+}
