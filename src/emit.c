@@ -127,7 +127,7 @@ static void em_err(Em* e, Node* n, const char* fmt, ...) {
     va_list ap;
     fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : e->o.d->path, n ? n->line : 0, n ? n->col : 0);
     va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
+    diag_vprintf(fmt, ap);
     va_end(ap);
     fputc('\n', stderr);
     e->o.d->errors++;
@@ -1477,7 +1477,8 @@ const char* vtable_name(SType* conc, SType* contract) {
 }
 
 static void obj_err(Obj* o, Node* n, const char* msg) {
-    fprintf(stderr, "%s:%d:%d: error: %s\n", n && n->path ? n->path : o->d->path, n ? n->line : 0, n ? n->col : 0, msg);
+    fprintf(stderr, "%s:%d:%d: error: ", n && n->path ? n->path : o->d->path, n ? n->line : 0, n ? n->col : 0);
+    diag_printf("%s\n", msg);
     o->d->errors++;
 }
 

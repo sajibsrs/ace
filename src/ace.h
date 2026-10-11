@@ -3,6 +3,7 @@
 #define ACE_H
 
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdint.h>
 
 // Token kinds. X-macro: name, display string (used for diagnostics/dumps).
@@ -336,6 +337,10 @@ extern const char* formatting_prefix;
 // where module is the directory module's name for any file in its tree, else
 // the file's stem. Names without a module prefix come back unchanged.
 const char* module_display(const char* name);
+// Diagnostic text to stderr with each module-prefixed name shown as
+// module_display writes it, so no message leaks a module-private identity.
+void diag_printf(const char* fmt, ...);
+void diag_vprintf(const char* fmt, va_list ap);
 void module_dump_displays(void);
 // Modules #2 visibility of a declaration in decl_path marked pub or not, seen
 // from use_path: its own file, else pub in a single-file module or mod.ace,

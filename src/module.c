@@ -520,6 +520,53 @@ const char* module_display(const char* name) {
     return name;
 }
 
+static int identity_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+           c == '_' || c == '-' || c == '$';
+}
+
+/* Prints a message with each module-private identity (m$f, m$Owner$m) as
+ * written (m.f, m.Owner.m); module_display leaves other '$' text alone. */
+static void put_shown(const char* msg) {
+    const char* p = msg;
+    while (*p) {
+        if (!identity_char(*p)) {
+            fputc(*p++, stderr);
+            continue;
+        }
+        const char* q = p;
+        int dollar = 0;
+        while (identity_char(*q)) dollar |= *q++ == '$';
+        if (dollar) {
+            char* word = (char*)arena_alloc((size_t)(q - p) + 1);
+            memcpy(word, p, (size_t)(q - p));
+            word[q - p] = 0;
+            fputs(module_display(word), stderr);
+        } else {
+            fwrite(p, 1, (size_t)(q - p), stderr);
+        }
+        p = q;
+    }
+}
+
+void diag_vprintf(const char* fmt, va_list ap) {
+    va_list again;
+    va_copy(again, ap);
+    int need = vsnprintf(NULL, 0, fmt, ap);
+    size_t size = (size_t)(need > 0 ? need : 0) + 1;
+    char* msg = (char*)arena_alloc(size);
+    vsnprintf(msg, size, fmt, again);
+    va_end(again);
+    put_shown(msg);
+}
+
+void diag_printf(const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    diag_vprintf(fmt, ap);
+    va_end(ap);
+}
+
 // A directory module (mod.ace) names itself and every file beneath it that it
 // imports, so an implementation file reads as the module users import.
 static void module_set_display(Loader* L, Module* m) {

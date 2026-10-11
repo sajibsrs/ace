@@ -1,0 +1,7 @@
+/* Companion module for the Error display fixture. */
+
+count: int = 1
+
+pub run(): int {
+    return count()
+}

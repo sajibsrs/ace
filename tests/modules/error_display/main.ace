@@ -1,0 +1,7 @@
+/* An error inside an imported module names its members as written. */
+
+import util: "./util.ace"
+
+main(): int {
+    return util.run()
+}

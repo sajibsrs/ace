@@ -118,9 +118,9 @@ static void refuse(X64* a, const char* what) {
     if (a->failed) return;
     a->failed = 1;
     Node* d = a->fn->decl;
-    fprintf(stderr, "%s:%d:%d: error: cannot compile '%.*s' for linux-x64: %s not supported yet\n",
-            d && d->path ? d->path : a->o->d->path, d ? d->line : 0, d ? d->col : 0,
-            d ? (int)d->len : 0, d ? d->str : "", what);
+    fprintf(stderr, "%s:%d:%d: error: ", d && d->path ? d->path : a->o->d->path, d ? d->line : 0, d ? d->col : 0);
+    diag_printf("cannot compile '%.*s' for linux-x64: %s not supported yet\n", d ? (int)d->len : 0,
+                d ? d->str : "", what);
     a->o->d->errors++;
 }
 
