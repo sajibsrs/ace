@@ -76,3 +76,6 @@
 - selfhost checks error construction `Domain(code?)` (`check_error_construct`):
   at most one code, coerced to `i32`, yielding `Error`; the runtime type
   identity the compiler records has no selfhost reader yet.
+- selfhost checks extern variadic arguments (`check_args`): untyped
+  literals default to `i64`/`f64`, each extra must be a C-variadic scalar,
+  and `mut` is rejected on extras.

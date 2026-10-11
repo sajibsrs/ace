@@ -3862,13 +3862,34 @@ Sema.check_args(mut self, call: u32, ft: u32, variadic: bool) {
         return
     }
     for i: u32 in 0..got {
-        if i >= want {
-            _ = mut self.unported("variadic arguments")
-            return
+        arg: u32 = self.kid(call, i)
+        am: bool = self.node(arg).kind == Kind.mutarg
+        raw: u32 = arg
+        if am { raw = self.node(arg).a }
+        if i < want {
+            _ = mut self.coerce(raw, self.params.get(usize(t.params + i)))
+            continue
         }
-        raw: u32 = self.kid(call, i)
-        if self.node(raw).kind == Kind.mutarg { raw = self.node(raw).a }
-        _ = mut self.coerce(raw, self.params.get(usize(t.params + i)))
+        // a variadic extra has no declared type: untyped constants default
+        at: u32 = mut self.expr_type(raw)
+        if at == self.t_ut_float { _ = mut self.coerce(raw, self.prim(P_F64)) } else if at == self.t_ut_int { _ = mut self.coerce(raw, self.prim(P_I64)) }
+        at = self.node_ty(raw)
+        if !self.is_c_variadic_scalar(at) {
+            mut self.err(raw, ["variadic argument has type ", mut self.type_name(at), ", which is not supported at the C boundary"])
+        }
+        if am { mut self.err(arg, ["'mut' marks declared parameters, not variadics"]) }
+    }
+}
+
+/* Whether `t` passes through C's `...`: a pointer, bool, or a sized number. */
+Sema.is_c_variadic_scalar(self, t: u32): bool {
+    if t == 0 { return false }
+    x: SType = self.ty(t)
+    switch x.kind {
+        TypeKind.distinct { return self.is_c_variadic_scalar(x.base) }
+        TypeKind.ptr { return true }
+        TypeKind.prim { return x.prim <= P_F64 || x.prim == P_USIZE }
+        default { return false }
     }
 }
 
