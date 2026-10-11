@@ -118,3 +118,6 @@
 - selfhost checks type casts: `*T(x)` from a usize address or a plain-bits
   pointer without widening, `[N]T(x)` identity casts, and `[]T(x)` casts or
   `[]T(pointer, count)` construction with constant extent checks.
+- selfhost checks contract construction and contract method calls: `T(&x)`
+  and `T[A](&x)` find the struct's signing item, and const-backed provenance
+  follows bindings, assignments, returns, and read-only contract parameters.

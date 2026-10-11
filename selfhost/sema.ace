@@ -50,6 +50,7 @@ pub Sym: struct {
     pub is_global: bool = false,
     pub is_param: bool = false,
     pub is_literal_backed: bool = false, // a string binding over literal bytes (Mutability #11)
+    pub is_const_backed: bool = false,  // a contract binding that may wrap const storage
     pub is_root: bool = false,          // top-level in the root file: unseen from imported files
     pub entered: bool = false,          // entered, not yet resolved (Compiler #5)
     pub resolving: bool = false,
@@ -207,6 +208,8 @@ pub Sema: struct {
     nsym: array.Array[u32],             // the symbol it names,
     nival: array.Array[u64],            // and its constant, as C keeps them on the node,
     nrep: array.Array[bool],            // and whether its error is already reported (F_REPORTED)
+    ncon: array.Array[bool],            // a contract value over const storage; a function returning one (F_CONST)
+    cur_fn: u32 = 0,                    // the checked function's declaration
     t_err: u32 = 0,
     t_void: u32 = 0,
     t_error: u32 = 0,                   // the predeclared Error
@@ -223,7 +226,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {} }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -263,6 +266,7 @@ pub Sema.wipe(mut self) {
     mut self.nsym.wipe()
     mut self.nival.wipe()
     mut self.nrep.wipe()
+    mut self.ncon.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
@@ -1267,6 +1271,11 @@ Sema.resolve_global(mut self, s: u32) {
         } else {
             _ = mut self.coerce(n.b, t)
         }
+        if k == TypeKind.contract && self.node_const(n.b) {
+            x = self.sym(s)
+            x.is_const_backed = true
+            mut self.update(s, x)
+        }
     } else if k == TypeKind.staticmap {
         if (n.flags & parser.F_CONST) != 0 { mut self.err(x.top, ["const is not permitted on a StaticMap declaration"]) }
         mut self.err(x.top, ["StaticMap declaration requires a brace initializer"])
@@ -1288,6 +1297,7 @@ Sema.grow(mut self, e: u32) {
         fail(mut self.nsym.push(0))
         fail(mut self.nival.push(0))
         fail(mut self.nrep.push(false))
+        fail(mut self.ncon.push(false))
     }
 }
 
@@ -1314,6 +1324,15 @@ Sema.set_node_ty(mut self, e: u32, t: u32) {
 Sema.set_node_sym(mut self, e: u32, s: u32) {
     mut self.grow(e)
     mut self.nsym.set(usize(e), s)
+}
+
+Sema.node_const(self, e: u32): bool {
+    return usize(e) < self.ncon.len && self.ncon.get(usize(e))
+}
+
+Sema.set_node_const(mut self, e: u32) {
+    mut self.grow(e)
+    mut self.ncon.set(usize(e), true)
 }
 
 Sema.set_node_reported(mut self, e: u32) {
@@ -2078,6 +2097,7 @@ Sema.check_ident(mut self, e: u32): u32 {
         x = self.sym(s)
     }
     mut self.set_node_sym(e, s)
+    if x.is_const_backed { mut self.set_node_const(e) }
     if x.ty == 0 { return self.t_err }
     return x.ty
 }
@@ -2479,7 +2499,30 @@ Sema.check_member_call(mut self, call: u32): u32 {
         mut self.err(call, ["'", callee.text, "' is not a field of ", mut self.type_name(b), "; methods are not values"])
         return self.t_err
     }
-    if self.ty(b).kind == TypeKind.contract { return mut self.unported("calls of computed callees") }
+    if self.ty(b).kind == TypeKind.contract {
+        m: u32 = self.contract_method(b, callee.text)
+        if m == 0 {
+            mut self.err(call, ["contract ", mut self.type_name(b), " has no method '", callee.text, "'"])
+            return self.t_err
+        }
+        mmut: bool = (self.node(m).flags & parser.F_MUT) != 0
+        cmut: bool = (n.flags & parser.F_MUT) != 0
+        if mmut && !cmut { mut self.err(call, ["mutating method needs 'mut' at the call: mut x.", callee.text, "(...)"]) }
+        if !mmut && cmut { mut self.err(call, ["'mut' marks mutating methods; '", callee.text, "' is read-only"]) }
+        if mmut {
+            _ = mut self.check_lvalue(callee.a, true)
+            if self.node(callee.a).kind == Kind.ident {
+                iv: u32 = mut self.lookup_val(self.node(callee.a).text)
+                if iv != 0 && self.sym(iv).is_const_backed { mut self.err(call, ["cannot call a mutating contract method on const backing storage"]) }
+            }
+        }
+        ft: u32 = mut self.contract_method_type(b, m)
+        mut self.check_args(call, ft, false)
+        mut self.check_no_mut_args(call)
+        r: u32 = self.ty(ft).ret
+        if r == 0 { return self.t_void }
+        return r
+    }
     if self.ty(b).kind != TypeKind.struct {
         mut self.err(call, ["no method '", callee.text, "' for ", mut self.type_name(b)])
         return self.t_err
@@ -3809,6 +3852,103 @@ Sema.bool_const(self, e: u32): (bool, bool) {
     }
 }
 
+/* Binds type-parameter list `tp`'s names to the run `args` of `nargs`
+ * types when the counts agree; the substitution to restore after.
+ */
+Sema.bind_type_args(mut self, tp: u32, args: u32, nargs: u32): u32 {
+    saved: u32 = self.sub
+    if tp == 0 || self.node(tp).nkids != nargs { return saved }
+    self.sub = u32(self.tnames.len)
+    for i: u32 in 0..nargs {
+        fail(mut self.tnames.push(self.node(self.kid(tp, i)).text))
+        fail(mut self.ttypes.push(self.params.get(usize(args + i))))
+    }
+    return saved
+}
+
+Sema.unbind_type_args(mut self, saved: u32) {
+    mut self.tnames.truncate(usize(self.sub))
+    mut self.ttypes.truncate(usize(self.sub))
+    self.sub = saved
+}
+
+/* The item of struct type `conc`'s signing that names contract type `want`, or 0. */
+Sema.find_conformance(mut self, conc: u32, want: u32): u32 {
+    c: SType = self.ty(conc)
+    if c.kind != TypeKind.struct || c.decl == 0 { return 0 }
+    signing: u32, signed: bool = self.signings.get(c.decl)
+    if !signed { return 0 }
+    saved: u32 = mut self.bind_type_args(self.node(signing).c, c.args, c.nargs)
+    found: u32 = 0
+    for i: u32 in 0..self.node(signing).nkids {
+        item: u32 = self.kid(signing, i)
+        if self.same_type(mut self.build_type(self.node(item).a), want) {
+            found = item
+            break
+        }
+    }
+    mut self.unbind_type_args(saved)
+    return found
+}
+
+/* `Contract(&x)`: a contract value over a pointer to a struct that signed
+ * it; over const storage it is const-backed.
+ */
+Sema.check_contract_construct(mut self, call: u32, want: u32): u32 {
+    if self.node(call).nkids != 1 {
+        mut self.err(call, ["contract construction takes exactly one pointer"])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    from: u32 = mut self.expr_type(arg)
+    f: SType = self.ty(from)
+    if f.kind != TypeKind.ptr || f.base == 0 || self.ty(f.base).kind != TypeKind.struct {
+        mut self.err(arg, ["contract construction needs a pointer to a struct"])
+        return self.t_err
+    }
+    if mut self.find_conformance(f.base, want) == 0 {
+        mut self.err(call, ["type ", mut self.type_name(f.base), " has not signed contract ", mut self.type_name(want)])
+        return self.t_err
+    }
+    signing: u32, _ = self.signings.get(self.ty(f.base).decl)
+    if (self.node(signing).flags & parser.F_PUB) == 0 && self.l.module_of(signing) != self.l.module_of(call) {
+        mut self.err(call, ["signing for ", mut self.type_name(f.base), " is private"])
+        return self.t_err
+    }
+    a: Node = self.node(arg)
+    if a.kind == Kind.unary && a.op == lexer.Token.amp && mut self.const_lvalue(a.a) { mut self.set_node_const(call) }
+    return want
+}
+
+/* Whether place `e` is rooted in a const or const-backed binding. */
+Sema.const_lvalue(mut self, place: u32): bool {
+    e: u32 = place
+    for e != 0 && (self.node(e).kind == Kind.selector || self.node(e).kind == Kind.index) { e = self.node(e).a }
+    if e == 0 || self.node(e).kind != Kind.ident { return false }
+    s: u32 = mut self.lookup_val(self.node(e).text)
+    return s != 0 && (self.sym(s).is_const || self.sym(s).is_const_backed)
+}
+
+/* Contract type `want`'s method `name`, or 0. */
+Sema.contract_method(self, want: u32, name: string): u32 {
+    decl: u32 = self.ty(want).decl
+    if decl == 0 { return 0 }
+    for i: u32 in 0..self.node(decl).nkids {
+        m: u32 = self.kid(decl, i)
+        if mem.equal(self.node(m).text, name) { return m }
+    }
+    return 0
+}
+
+/* Method `m`'s signature under contract type `want`'s type arguments. */
+Sema.contract_method_type(mut self, want: u32, m: u32): u32 {
+    c: SType = self.ty(want)
+    saved: u32 = mut self.bind_type_args(self.node(c.decl).c, c.args, c.nargs)
+    ft: u32 = mut self.build_func_type(m, false, 0, 0)
+    mut self.unbind_type_args(saved)
+    return ft
+}
+
 /* `T(x)`: a cast to primitive `p` or declared type `ts`. */
 Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
     n: Node = self.node(call)
@@ -3827,7 +3967,11 @@ Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
     want: u32 = p
     if want == 0 { want = mut self.build_type(n.a) }
     wk: TypeKind = self.ty(want).kind
-    if wk == TypeKind.contract { return mut self.unported("contract construction in compile-time expressions") }
+    if wk == TypeKind.contract {
+        mut self.set_node_sym(n.a, ts)
+        mut self.set_node_ty(n.a, want)
+        return mut self.check_contract_construct(call, want)
+    }
     if wk == TypeKind.union {
         mut self.err(call, ["unions have no constructor call — construct a variant: ", mut self.type_name(want), ".<variant>(...)"])
         return self.t_err
@@ -5331,6 +5475,7 @@ Sema.finish_direct_call(mut self, call: u32, s: u32) {
     mut self.check_mut_args(call, x.decl)
     mut self.set_node_sym(call, s)
     mut self.set_node_ty(call, self.call_ret(s))
+    if x.decl != 0 && self.node_const(x.decl) { mut self.set_node_const(call) }
 }
 
 /* What a call of overload `s` gives: its return type, or no value. */
@@ -5399,8 +5544,8 @@ Sema.check_mut_args(mut self, call: u32, decl: u32) {
             if bitsf { mut self.err(raw, ["bit fields cannot supply mut arguments"]) }
             if self.node(raw).kind == Kind.ident {
                 v: u32 = mut self.lookup_val(self.node(raw).text)
-                if v != 0 && self.sym(v).ty != 0 && self.ty(self.sym(v).ty).kind == TypeKind.contract {
-                    _ = mut self.unported("const-backed contract provenance")
+                if v != 0 && self.sym(v).is_const_backed {
+                    mut self.err(raw, ["const-backed contract cannot be passed to a mut parameter"])
                 }
             }
         }
@@ -5542,7 +5687,8 @@ Sema.check_generic_call(mut self, call: u32): u32 {
     ix: Node = self.node(callee)
     named: u32 = mut self.indexed_named_type(callee)
     if named != 0 && self.ty(named).kind == TypeKind.contract {
-        return mut self.unported("contract construction in compile-time expressions")
+        mut self.set_node_ty(callee, named)
+        return mut self.check_contract_construct(call, named)
     }
     name: string = self.node(ix.a).text
     head: u32 = mut self.lookup_val(name)
@@ -5755,6 +5901,8 @@ Sema.bind_local(mut self, s: u32, t: u32, decl: u32, is_const: bool) {
 /* Checks function `f`'s body with its parameters in scope. */
 Sema.check_func_body(mut self, f: u32) {
     saved_ret: u32 = self.ret
+    saved_fn: u32 = self.cur_fn
+    self.cur_fn = f
     saved_module: bool = self.in_module
     self.in_module = self.in_imported(f)
     mut self.scope_push()
@@ -5771,6 +5919,7 @@ Sema.check_func_body(mut self, f: u32) {
             x.ty = t
             x.is_mut = (self.node(pa).flags & parser.F_MUT) != 0
             x.is_param = true
+            x.is_const_backed = self.ty(t).kind == TypeKind.contract && !x.is_mut // a read-only contract param may wrap const
             x.decl = pa
             mut self.update(s, x)
             mut self.set_node_sym(pa, s)
@@ -5780,6 +5929,7 @@ Sema.check_func_body(mut self, f: u32) {
     mut self.check_block(n.b)
     mut self.scope_pop()
     self.ret = saved_ret
+    self.cur_fn = saved_fn
     self.in_module = saved_module
 }
 
@@ -6194,6 +6344,11 @@ Sema.check_var_stmt(mut self, s: u32) {
         }
         // literal provenance for string bindings (Mutability #11)
         v: u32 = mut self.lookup_val(self.node(self.kid(s, 0)).text)
+        if v != 0 && wk == TypeKind.contract && self.node_const(init) {
+            x: Sym = self.sym(v)
+            x.is_const_backed = true
+            mut self.update(v, x)
+        }
         if v != 0 && self.is_prim(w0, P_STRING) && !self.ty(w0).is_mut && mut self.literal_backed(init) {
             x: Sym = self.sym(v)
             x.is_literal_backed = true
@@ -6371,6 +6526,14 @@ Sema.check_assign(mut self, s: u32) {
         return
     }
     if mut self.coerce(rhs, t) { mut self.check_store_escape(target, rhs) } // compound ops check as x = x op y
+    if tk == TypeKind.contract && self.node(target).kind == Kind.ident {
+        v: u32 = mut self.lookup_val(self.node(target).text)
+        if v != 0 {
+            x: Sym = self.sym(v)
+            x.is_const_backed = self.node_const(rhs)
+            mut self.update(v, x)
+        }
+    }
 }
 
 /* A pointer offset `rhs` of type `rhs_type` added to or taken from pointer type `t` at `at`; with
@@ -6629,6 +6792,7 @@ Sema.check_return(mut self, s: u32) {
         return
     }
     if mut self.coerce(n.a, rt) { mut self.check_return_escape(n.a) }
+    if self.ty(rt).kind == TypeKind.contract && self.node_const(n.a) && self.cur_fn != 0 { mut self.set_node_const(self.cur_fn) } // conservative return-capability summary
 }
 
 /* `lo..hi` with an optional step: its element type, the unified integer type. */
