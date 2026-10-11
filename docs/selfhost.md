@@ -65,10 +65,11 @@ binding lists, assignments and their targets, `if`, every `for` form,
 labels, `break`, `continue`, `return`, and `defer`, address-of,
 dereference, `volatile`, pointer arithmetic, ranges, indexing, slicing,
 local-storage escapes, and the `typeid`, `bitcast`, `assert`,
-`static_assert`, and `panic` builtins. It stops with `does not yet support`
+`static_assert`, and `panic` builtins, and error construction
+`Domain(code?)`. It stops with `does not yet support`
 on `switch`, `asm`, method and other calls of computed callees, function
 values, `mut` arguments, memory and format builtins, static maps, unions,
-contracts, and error construction.
+and contracts.
 
 ## Checking
 

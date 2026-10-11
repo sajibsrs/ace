@@ -73,3 +73,6 @@
   statements, lvalues, local-storage escapes, pointer arithmetic, ranges,
   indexing, slicing, and the small reserved builtins. `ace --check` stops
   `sema_check` before its end-of-file checks, and `check.sh` diffs the two.
+- selfhost checks error construction `Domain(code?)` (`check_error_construct`):
+  at most one code, coerced to `i32`, yielding `Error`; the runtime type
+  identity the compiler records has no selfhost reader yet.

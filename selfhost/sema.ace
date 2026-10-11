@@ -2336,7 +2336,12 @@ Sema.bool_const(self, e: u32): (bool, bool) {
 Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
     n: Node = self.node(call)
     if ts != 0 && self.sym(ts).ty != 0 && self.ty(self.sym(ts).ty).kind == TypeKind.error_domain {
-        return mut self.unported("error construction in compile-time expressions")
+        if n.nkids > 1 {
+            mut self.err(call, ["error-domain construction takes zero or one i32 code"])
+            return self.t_err
+        }
+        if n.nkids == 1 && !mut self.coerce(self.kid(call, 0), self.prim(P_I32)) { return self.t_err }
+        return self.t_error
     }
     if n.nkids != 1 {
         mut self.err(call, ["a cast takes exactly one argument"])

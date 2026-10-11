@@ -1,0 +1,7 @@
+OpenErr: error
+
+main(): int {
+    e: Error = OpenErr(1, 2)
+    _ = e
+    return 0
+}
