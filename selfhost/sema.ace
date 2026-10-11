@@ -3400,6 +3400,168 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
     return r
 }
 
+/* `*T(x)`: a data pointer from a usize address, or another data pointer's
+ * plain bits reinterpreted without widening permission.
+ */
+Sema.check_pointer_cast(mut self, call: u32): u32 {
+    n: Node = self.node(call)
+    want: u32 = mut self.build_type(n.a)
+    if self.ty(want).kind == TypeKind.err { return self.t_err }
+    if n.nkids != 1 {
+        mut self.err(call, ["a data-pointer conversion takes exactly one usize address or pointer"])
+        return self.t_err
+    }
+    base: u32 = self.ty(want).base
+    if !mut self.layout(base) || self.ty(base).size == 0 {
+        mut self.err(call, ["data-pointer conversion requires a complete, nonzero-sized pointee, got ", mut self.type_name(base)])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    from: u32 = mut self.expr_type(arg)
+    f: SType = self.ty(from)
+    if f.kind == TypeKind.err { return self.t_err }
+    if f.kind == TypeKind.ptr {
+        if !mut self.plain_bits(f.base) || !mut self.plain_bits(base) {
+            mut self.err(call, ["pointer reinterpretation requires plain-bits pointees, got ", mut self.type_name(from), " to ", mut self.type_name(want)])
+            return self.t_err
+        }
+        if self.ty(want).is_mut && !f.is_mut {
+            mut self.err(call, ["pointer reinterpretation cannot widen ", mut self.type_name(from), " to ", mut self.type_name(want)])
+            return self.t_err
+        }
+        mut self.set_node_ty(n.a, want)
+        return want
+    }
+    if f.kind != TypeKind.prim || f.prim != P_USIZE {
+        mut self.err(call, ["data-pointer conversion requires usize, got ", mut self.type_name(from)])
+        return self.t_err
+    }
+    address: u64, known: bool = self.usize_const(arg)
+    if known && address != 0 && address % u64(self.ty(base).align) != 0 {
+        digits: [24]u8 = blank([24]u8)
+        buf: fmt.Buffer = fmt.Buffer.init(mut digits[..])
+        mut buf.printf("0x%x", uint(address))
+        mut self.err(arg, ["address ", buf.text(), " is not aligned for ", mut self.type_name(base)])
+        return self.t_err
+    }
+    mut self.set_node_ty(n.a, want)
+    return want
+}
+
+/* `[N]T(x)`: an identity cast; an array literal takes it as its context. */
+Sema.check_array_cast(mut self, call: u32): u32 {
+    n: Node = self.node(call)
+    want: u32 = mut self.build_type(n.a)
+    if self.ty(want).kind == TypeKind.err { return self.t_err }
+    if n.nkids != 1 {
+        mut self.err(call, ["an array cast takes exactly one argument"])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    if self.node(arg).kind == Kind.mutarg {
+        mut self.err(arg, ["'mut' marks mut parameters; a cast takes no call-site 'mut'"])
+        return self.t_err
+    }
+    if self.node(arg).kind == Kind.arraylit {
+        if !mut self.coerce(arg, want) { return self.t_err }
+    } else {
+        from: u32 = mut self.expr_type(arg)
+        if self.ty(from).kind == TypeKind.err { return self.t_err }
+        if !self.same_type(from, want) {
+            mut self.err(call, ["cannot cast ", mut self.type_name(from), " to ", mut self.type_name(want)])
+            return self.t_err
+        }
+    }
+    mut self.set_node_ty(n.a, want)
+    return want
+}
+
+/* `[]T(x)`: an identity cast, or `[]T(pointer, count)` constructing a view. */
+Sema.check_slice_cast(mut self, call: u32): u32 {
+    n: Node = self.node(call)
+    want: u32 = mut self.build_type(n.a)
+    if self.ty(want).kind == TypeKind.err { return self.t_err }
+    w: SType = self.ty(want)
+    if n.nkids == 2 {
+        if !mut self.layout(w.base) || self.ty(w.base).size == 0 {
+            mut self.err(call, ["slice construction requires a complete, nonzero-sized element type, got ", mut self.type_name(w.base)])
+            return self.t_err
+        }
+        p0: u32 = self.kid(call, 0)
+        p1: u32 = self.kid(call, 1)
+        pointer: u32 = 0
+        if self.node(p0).kind == Kind.null {
+            pointer = mut self.new_type(SType { kind = TypeKind.ptr, is_mut = w.is_mut, base = w.base })
+            mut self.set_node_ty(p0, pointer)
+        } else {
+            pointer = mut self.expr_type(p0)
+        }
+        count: u32 = mut self.expr_type(p1)
+        if self.ty(pointer).kind == TypeKind.err || self.ty(count).kind == TypeKind.err { return self.t_err }
+        pt: SType = self.ty(pointer)
+        exact: bool = pt.kind == TypeKind.ptr && self.same_type(pt.base, w.base)
+        if !exact || (w.is_mut && !pt.is_mut) {
+            writable: string = ""
+            if w.is_mut { writable = "writable " }
+            mut self.err(p0, [mut self.type_name(want), " construction requires an exact ", writable, "pointer to ", mut self.type_name(w.base), ", got ", mut self.type_name(pointer)])
+            return self.t_err
+        }
+        if self.ty(count).kind != TypeKind.prim || self.ty(count).prim != P_USIZE {
+            mut self.err(p1, ["slice element count must be usize, got ", mut self.type_name(count)])
+            return self.t_err
+        }
+        size: u64 = u64(self.ty(w.base).size)
+        c: u64, kn: bool = self.usize_const(p1)
+        address: u64, ka: bool = self.address_const(p0)
+        if kn && c > ~u64(0) / size {
+            mut self.err(p1, ["slice byte extent count * sizeof(", mut self.type_name(w.base), ") overflows usize"])
+            return self.t_err
+        }
+        if ka && kn && c != 0 && address == 0 {
+            mut self.err(call, ["null pointer cannot construct a non-empty slice"])
+            return self.t_err
+        }
+        if ka && kn && c != 0 && address > ~u64(0) - c * size {
+            mut self.err(call, ["slice end address overflows usize"])
+            return self.t_err
+        }
+        mut self.set_node_ty(n.a, want)
+        return want
+    }
+    if n.nkids != 1 {
+        mut self.err(call, ["a slice cast takes one argument; construction takes pointer and count"])
+        return self.t_err
+    }
+    arg: u32 = self.kid(call, 0)
+    if self.node(arg).kind == Kind.mutarg {
+        mut self.err(arg, ["'mut' marks mut parameters; a cast takes no call-site 'mut'"])
+        return self.t_err
+    }
+    if self.node(arg).kind == Kind.arraylit { // the cast's view type is its context
+        if !mut self.coerce(arg, want) { return self.t_err }
+        mut self.set_node_ty(n.a, want)
+        return want
+    }
+    from: u32 = mut self.expr_type(arg)
+    if self.ty(from).kind == TypeKind.err { return self.t_err }
+    if !self.same_type(from, want) && !self.shrink_ok(from, want) {
+        mut self.err(call, ["cannot cast ", mut self.type_name(from), " to ", mut self.type_name(want)])
+        return self.t_err
+    }
+    mut self.set_node_ty(n.a, want)
+    if self.ty(from).is_mut { return self.t_mut_byte_slice }
+    return want
+}
+
+/* Exact machine addresses visible at a local construction site. */
+Sema.address_const(self, e: u32): (u64, bool) {
+    if e == 0 { return 0, false }
+    n: Node = self.node(e)
+    if n.kind == Kind.null { return 0, true }
+    if n.kind == Kind.call && n.a != 0 && self.node(n.a).kind == Kind.ptr && n.nkids == 1 { return self.usize_const(self.kid(e, 0)) }
+    return 0, false
+}
+
 /* A call by name: an ordinary call through its overload set, a cast, blank,
  * or a layout builtin.
  */
@@ -3410,6 +3572,9 @@ Sema.check_call(mut self, call: u32): u32 {
         return mut self.check_generic_call(call)
     }
     if callee.kind == Kind.selector { return mut self.check_member_call(call) }
+    if callee.kind == Kind.ptr { return mut self.check_pointer_cast(call) }
+    if callee.kind == Kind.array_t { return mut self.check_array_cast(call) }
+    if callee.kind == Kind.slice_t { return mut self.check_slice_cast(call) }
     if callee.kind != Kind.ident { return mut self.unported("calls of computed callees") }
     name: string = callee.text
     s: u32 = mut self.lookup_val(name)

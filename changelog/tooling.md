@@ -115,3 +115,6 @@
 - selfhost checks method and associated calls on generic owners: candidates
   match under the owner's type arguments and the winner is stamped once per
   owner instantiation; instantiation notes name it `Owner[T].f`, as C does.
+- selfhost checks type casts: `*T(x)` from a usize address or a plain-bits
+  pointer without widening, `[N]T(x)` identity casts, and `[]T(x)` casts or
+  `[]T(pointer, count)` construction with constant extent checks.
