@@ -1835,12 +1835,8 @@ Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
     d: Node = self.node(self.sym(chosen).decl)
     if d.ival != 0 { // typed memory builtins: lowered at the call, no body
         short: string = d.text
-        for i: usize in 0..short.len {
-            if short[i] == '$' {
-                short = short[i + 1..]
-                break
-            }
-        }
+        sep: usize, found: bool = str.find(short, '$')
+        if found { short = short[sep + 1..] }
         mut self.err(e, ["mem.", short, "[T] is direct-call-only: it has no body to take as a value"])
         return self.t_err
     }
@@ -1852,7 +1848,68 @@ Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
         mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
         return self.t_err
     }
-    return mut self.unported("generic function bodies") // stamping checks the body
+    ft: u32 = mut self.instantiate_func(chosen, targs, nargs, e)
+    if self.ty(ft).kind != TypeKind.err { mut self.set_node_sym(e, chosen) }
+    return ft
+}
+
+/* Generic function `gs` stamped under the run `args` of `nargs` types,
+ * written at `at`: its signature, memoized per argument list before its body
+ * is checked, so a self-recursive instantiation terminates. The body is
+ * checked once per instantiation, in the generic's own scope.
+ */
+Sema.instantiate_func(mut self, gs: u32, args: u32, nargs: u32, at: u32): u32 {
+    f: u32 = self.sym(gs).decl
+    tp: u32 = self.node(f).c
+    if tp == 0 || self.node(tp).nkids != nargs {
+        have: u32 = 0
+        if tp != 0 { have = self.node(tp).nkids }
+        mut self.err(at, ["generic function expects ", mut self.num(have), " type arguments, got ", mut self.num(nargs)])
+        return self.t_err
+    }
+    head: u32, _ = self.inst_heads.get(f)
+    for it: u32 = head; it != 0; it = self.insts.get(usize(it - 1)).next {
+        inst: TInst = self.insts.get(usize(it - 1))
+        same: bool = true
+        for i: u32 = 0; i < nargs && same; i += 1 {
+            same = self.same_type(self.params.get(usize(inst.args + i)), self.params.get(usize(args + i)))
+        }
+        if same { return inst.result }
+    }
+    errors: int = self.errors + self.quiet_errors
+    site: u32 = at // positioned at the generic's written name
+    if (self.node(at).kind == Kind.index || self.node(at).kind == Kind.call) && self.node(at).a != 0 { site = self.node(at).a }
+    fail(mut self.stamps.push(Stamp { at = site, decl = f, args = args, nargs = nargs }))
+    ft: u32 = mut self.build_func_type(f, true, args, nargs)
+    fail(mut self.insts.push(TInst { args = args, nargs = nargs, result = ft, next = head }))
+    fail(mut self.inst_heads.set(f, u32(self.insts.len)))
+    // a signature that does not hold under these arguments has said so; its
+    // body would only repeat it
+    if (self.node(f).flags & parser.F_SPECIALIZED) == 0 && self.errors + self.quiet_errors == errors {
+        saved: u32 = self.sub
+        self.sub = u32(self.tnames.len)
+        for i: u32 in 0..nargs {
+            fail(mut self.tnames.push(self.node(self.kid(tp, i)).text))
+            fail(mut self.ttypes.push(self.params.get(usize(args + i))))
+        }
+        frames: array.Array[Frame] = self.frames // the caller's locals are out of scope
+        locals: array.Array[u32] = self.locals
+        root_body: bool = self.root_body
+        self.frames = array.Array[Frame] {}
+        self.locals = array.Array[u32] {}
+        self.root_body = !self.in_imported(f)
+        mut self.check_func_body(f)
+        mut self.frames.wipe()
+        mut self.locals.wipe()
+        self.frames = frames
+        self.locals = locals
+        self.root_body = root_body
+        mut self.tnames.truncate(usize(self.sub))
+        mut self.ttypes.truncate(usize(self.sub))
+        self.sub = saved
+    }
+    mut self.stamps.truncate(self.stamps.len - 1)
+    return ft
 }
 
 /* Whether declaration `d` takes any `mut` parameter. */
@@ -5331,7 +5388,14 @@ Sema.check_generic_call(mut self, call: u32): u32 {
     if d.ival == BI_MEM_ALLOC_T || d.ival == BI_MEM_ZALLOC_T || d.ival == BI_MEM_REALLOC_T || d.ival == BI_MEM_RELEASE_T || d.ival == BI_MEM_COPY_T || d.ival == BI_MEM_MOVE_T {
         return mut self.check_memory_generic_call(call, chosen, self.params.get(usize(targs)), d.ival)
     }
-    return mut self.unported("generic function bodies") // stamping checks the body
+    ft: u32 = mut self.instantiate_func(chosen, targs, nargs, callee)
+    if self.ty(ft).kind == TypeKind.err { return self.t_err }
+    mut self.check_args(call, ft, false)
+    mut self.check_mut_args(call, self.sym(chosen).decl)
+    mut self.set_node_sym(callee, chosen)
+    mut self.set_node_ty(callee, ft)
+    if self.ty(ft).ret == 0 { return self.t_void }
+    return self.ty(ft).ret
 }
 
 /* A struct field named like a method promoted from one of its embedded

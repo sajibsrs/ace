@@ -109,3 +109,6 @@
 - selfhost checks function values: a bare name, an overloaded name selected
   by the wanted function type, and `f[T]` by specialization or generic
   overload; templates that need stamping still stop as generic function bodies.
+- selfhost stamps generic functions at calls and as values: the signature is
+  memoized per type-argument list before the body is checked once per
+  instantiation, in the generic's own scope with the caller's locals set aside.
