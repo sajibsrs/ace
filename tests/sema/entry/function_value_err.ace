@@ -1,0 +1,12 @@
+/* A function name cannot share its scope with a variable (Names & Scoping #3). */
+
+count(): int {
+    return 0
+}
+
+// error: duplicate name 'count' in this scope
+count: int = 1
+
+main(): int {
+    return count()
+}

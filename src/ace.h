@@ -305,6 +305,7 @@ void parse_dump_resolved(Node* file); // after imports: private names, link name
 // for the emitter; generic stamp bodies are re-annotated on demand via
 // sema.h's sema_stamp_body().
 int sema_check(Node* file, Diag* d);
+int sema_dump_symbols(Node* file, Diag* d); // top-level entry, then its scopes on stdout
 
 // Load supported imports and merge their declarations into the compilation
 // unit. Qualified and selectively imported references are lowered to private

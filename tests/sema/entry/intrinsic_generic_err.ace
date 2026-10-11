@@ -1,0 +1,8 @@
+/* Intrinsic declarations are neither generic nor specialized. */
+
+// error: intrinsic declaration 'fake' cannot be generic or specialized
+pub fake[T](value: T): T intrinsic
+
+main(): int {
+    return 0
+}

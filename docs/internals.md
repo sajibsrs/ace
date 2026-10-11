@@ -125,6 +125,8 @@ repeated in each additional backend.
   rationale.
 - `docs/compiler.md` — user-facing CLI usage (`--ir`, `--ast`, `-c`, `-o`,
   build modes).
+- `docs/selfhost.md` — the Ace compiler in `selfhost/`, its stages, and their
+  dumps (`--resolved`, `--symbols`) diffed against this compiler.
 - `changelog/` — the IR migration's history, in the entries recording each
   step that moved a function shape off the old AST emitter and onto passes
   5-10.

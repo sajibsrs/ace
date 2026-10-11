@@ -793,7 +793,7 @@ static int package_main(int argc, char** argv) {
 
 int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2);
-    int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
+    int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_symbols = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_RELEASE;
     const char* path = NULL;
@@ -808,6 +808,7 @@ int main(int argc, char** argv) {
         if (strcmp(a, "--tokens") == 0) dump_tok = 1;
         else if (strcmp(a, "--ast") == 0) dump_ast = 1;
         else if (strcmp(a, "--resolved") == 0) dump_resolved = 1;
+        else if (strcmp(a, "--symbols") == 0) dump_symbols = 1;
         else if (strcmp(a, "--ir") == 0) dump_ir = 1;
         else if (strcmp(a, "--debug") == 0) {
             if (mode_seen && emit_mode != EMIT_DEBUG) cli_error("--debug and --release are mutually exclusive");
@@ -961,6 +962,10 @@ int main(int argc, char** argv) {
         if (dump_resolved) { // --resolved: through import resolution only
             parse_dump_resolved(file);
             module_dump_displays();
+            return 0;
+        }
+        if (dump_symbols) { // --symbols: through top-level entry only
+            if (sema_dump_symbols(file, &d) > 0) goto done;
             return 0;
         }
         sema_check(file, &d); // default mode: full semantic check

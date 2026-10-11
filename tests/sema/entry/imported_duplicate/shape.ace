@@ -1,0 +1,5 @@
+/* An imported module's duplicate is reported under its module name. */
+
+pub Point: struct { x: int }
+// error: duplicate type 'shape.Point'
+pub Point: struct { y: int }

@@ -1,0 +1,16 @@
+/* A method and an associated function never share owner and name. */
+
+Counter: struct { n: int }
+
+Counter.reset(mut self) {
+    self.n = 0
+}
+
+// error: 'reset' is already declared as a method on this type — associated functions and methods cannot share a name
+Counter.reset(): Counter {
+    return Counter { n = 0 }
+}
+
+main(): int {
+    return 0
+}

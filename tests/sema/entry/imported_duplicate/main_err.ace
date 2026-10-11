@@ -1,0 +1,7 @@
+/* An entry error in an imported file shows its names as written. */
+
+import shape: "./shape.ace"
+
+main(): int {
+    return 0
+}

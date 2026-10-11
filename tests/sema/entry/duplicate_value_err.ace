@@ -1,0 +1,9 @@
+/* A top-level value name is declared once. */
+
+LIMIT: const int = 1
+// error: duplicate name 'LIMIT' in this scope
+LIMIT: const int = 2
+
+main(): int {
+    return LIMIT
+}

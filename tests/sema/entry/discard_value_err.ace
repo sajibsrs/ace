@@ -1,0 +1,8 @@
+/* `_` discards; it is never a declared name. */
+
+// error: '_' discards a value and declares nothing
+_: const int = 1
+
+main(): int {
+    return 0
+}

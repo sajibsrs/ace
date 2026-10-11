@@ -1,0 +1,8 @@
+/* 'specialized' marks a generic template only. */
+
+// error: 'specialized' marks a generic template; 'load' declares no type parameters
+load(text: string): int specialized
+
+main(): int {
+    return 0
+}

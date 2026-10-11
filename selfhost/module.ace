@@ -67,6 +67,7 @@ pub Module: struct {
     src: mut []u8 = null,
     pub parser: parser.Parser,
     pub file: u32 = 0,
+    pub first: u32 = 1,                     // its first node's id in the merged tree
     pub members: array.Array[Member],
     pub binds: array.Array[Binding],
     pub sels: array.Array[Select],
@@ -1478,6 +1479,9 @@ Loader.merge(mut self) {
     for i: usize in 0..self.order.len {
         mi: usize = self.order.get(i)
         off: u32 = mut root.parser.adopt(self.mods.view()[mi].parser)
+        adopted: Module = self.mods.get(mi)
+        adopted.first = off + 1
+        mut self.mods.set(mi, adopted)
         top: u32 = self.mods.view()[mi].file
         for k: u32 in 0..self.node(mi, top).nkids {
             id: u32 = self.kid(mi, top, k)
@@ -1490,6 +1494,47 @@ Loader.merge(mut self) {
     }
     mut root.parser.relink(root.file, ids.view())
     mut self.mods.set(0, root)
+}
+
+/* The module whose file holds node `id` of the merged tree. */
+pub Loader.module_of(self, id: u32): usize {
+    best: usize = 0
+    for mi: usize in self.order.view() {
+        first: u32 = self.mods.get(mi).first
+        if first <= id && first > self.mods.get(best).first { best = mi }
+    }
+    return best
+}
+
+/* `name` as written: a module-private identity `m$f` or `m$Owner$f` reads
+ * `m.f` or `m.Owner.f`, with the module's display name; other text is as is.
+ */
+pub Loader.shown(self, mut pool: path.Pool, name: string): string {
+    sep: usize, found: bool = str.find(name, '$')
+    if !found { return name }
+    display: string = ""
+    known: bool = false
+    for m: Module in self.mods.view() {
+        if m.prefix.len == sep + 1 && mem.equal(m.prefix, name[..sep + 1]) {
+            display = m.display
+            known = true
+            break
+        }
+    }
+    if !known { return name }
+    parts: array.Array[string] = array.Array[string] {}
+    defer mut parts.wipe()
+    fail(mut parts.push(display))
+    from: usize = sep + 1
+    for i: usize in sep + 1..name.len {
+        if name[i] != '$' { continue }
+        fail(mut parts.push("."))
+        fail(mut parts.push(name[from..i]))
+        from = i + 1
+    }
+    fail(mut parts.push("."))
+    fail(mut parts.push(name[from..]))
+    return mut pool.join(parts.view())
 }
 
 // --- dump ---------------------------------------------------------------------

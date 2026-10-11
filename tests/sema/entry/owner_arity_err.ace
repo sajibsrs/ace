@@ -1,0 +1,12 @@
+/* A method's owner repeats its struct's type parameters. */
+
+Box[T]: struct { value: T }
+
+// error: method owner must repeat the struct's 1 type parameters
+Box.size(self): int {
+    return 1
+}
+
+main(): int {
+    return 0
+}

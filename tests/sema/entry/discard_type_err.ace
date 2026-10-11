@@ -1,0 +1,8 @@
+/* `_` discards; it is never a declared name. */
+
+// error: '_' discards a value and cannot name a type
+_: struct { x: int }
+
+main(): int {
+    return 0
+}

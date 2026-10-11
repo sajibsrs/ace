@@ -1,0 +1,9 @@
+/* A top-level type name is declared once. */
+
+Point: struct { x: int }
+// error: duplicate type 'Point'
+Point: struct { y: int }
+
+main(): int {
+    return 0
+}

@@ -1,0 +1,765 @@
+/* sema — semantic checking of the merged tree, mirroring src/sema.c.
+ *
+ * Ported so far: top-level entry (Compiler #5). Every top-level name enters
+ * the file scope, or for the root's whole-module imports the import scope,
+ * with the checks its declaration alone decides; a type gets its nominal
+ * shell. `dump` prints both scopes as `ace --symbols` does.
+ */
+
+import array
+import fmt
+import map
+import mem
+import sys
+
+import module: "./module.ace"
+import parser: "./parser.ace"
+import path: "./path.ace"
+
+Kind: type = parser.Kind
+Node: type = parser.Node
+Out: type = fmt.Buffer
+
+pub SymKind: enum u8 { var, func, type, module }
+
+/* src/sema.h's SK_ kinds, in its order. */
+pub TypeKind: enum u8 {
+    prim, ptr, slice, array, tuple, func, struct, enum, contract, distinct,
+    error_domain, typeparam, error, union, bits, staticmap, void, ut, template, err,
+}
+
+/* A declared name. Node and symbol ids index the merged tree and
+ * `Sema.syms`; 0 is none.
+ */
+pub Sym: struct {
+    pub name: string,
+    pub kind: SymKind,
+    pub is_const: bool = false,
+    pub is_mut: bool = false,
+    pub is_pub: bool = false,
+    pub is_generic: bool = false,
+    pub is_extern: bool = false,
+    pub is_global: bool = false,
+    pub is_root: bool = false,          // top-level in the root file: unseen from imported files
+    pub entered: bool = false,          // entered, not yet resolved (Compiler #5)
+    pub decl: u32 = 0,
+    pub top: u32 = 0,                   // the top-level declaration resolved on demand
+    pub ty: u32 = 0,                    // index in Sema.types
+    pub overload: u32 = 0,              // the overload set's next member
+    pub entered_specs: u32 = 0,         // set head: specializations entered, not yet bound
+}
+
+pub SType: struct {
+    pub kind: TypeKind,
+    pub name: string = "",
+    pub decl: u32 = 0,
+    pub size: u32 = 0,
+    pub align: u32 = 0,
+}
+
+/* One scope's two namespaces, each in entry order and by name. */
+Scope: struct {
+    values: array.Array[u32],
+    types: array.Array[u32],
+    value_ids: map.Map[string, u32],
+    type_ids: map.Map[string, u32],
+}
+
+Scope.init(): Scope {
+    return Scope { values = array.Array[u32] {}, types = array.Array[u32] {}, value_ids = map.Map[string, u32] {}, type_ids = map.Map[string, u32] {} }
+}
+
+Scope.wipe(mut self) {
+    mut self.values.wipe()
+    mut self.types.wipe()
+    mut self.value_ids.wipe()
+    mut self.type_ids.wipe()
+}
+
+Scope.find(self, types: bool, name: string): u32 {
+    if types {
+        id: u32, found: bool = self.type_ids.get(name)
+        if found { return id }
+        return 0
+    }
+    id: u32, found: bool = self.value_ids.get(name)
+    if found { return id }
+    return 0
+}
+
+Scope.insert(mut self, types: bool, name: string, id: u32) {
+    if types {
+        fail(mut self.types.push(id))
+        fail(mut self.type_ids.set(name, id))
+    } else {
+        fail(mut self.values.push(id))
+        fail(mut self.value_ids.set(name, id))
+    }
+}
+
+pub Sema: struct {
+    pub errors: int = 0,
+    l: module.Loader,                   // the loader of the merged tree; not owned
+    p: parser.Parser,                   // the merged tree, the loader's; not owned
+    file: u32,
+    pool: path.Pool,
+    syms: array.Array[Sym],
+    types: array.Array[SType],
+    files: Scope,
+    imports: Scope,                     // the root's whole-module imports, under `files`
+    in_imports: bool = false,           // declaring into `imports`
+}
+
+/* A checker over `l`'s merged tree, which must outlive it. */
+pub Sema.new(l: module.Loader): Sema {
+    root: module.Module = l.mods.get(0)
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init() }
+    fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
+    fail(mut s.types.push(SType { kind = TypeKind.err }))
+    return s
+}
+
+pub Sema.wipe(mut self) {
+    mut self.syms.wipe()
+    mut self.types.wipe()
+    mut self.files.wipe()
+    mut self.imports.wipe()
+    mut self.pool.wipe()
+}
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+// --- accessors ----------------------------------------------------------------
+
+Sema.node(self, id: u32): Node {
+    return self.p.node(id)
+}
+
+Sema.kid(self, id: u32, k: u32): u32 {
+    return self.p.kid(id, k)
+}
+
+/* Whether node `id` is in an imported file rather than the root. */
+Sema.in_imported(self, id: u32): bool {
+    return id != 0 && self.l.module_of(id) != 0
+}
+
+Sema.sym(self, id: u32): Sym {
+    return self.syms.get(usize(id))
+}
+
+Sema.update(mut self, id: u32, s: Sym) {
+    mut self.syms.set(usize(id), s)
+}
+
+Sema.new_sym(mut self, kind: SymKind, name: string): u32 {
+    fail(mut self.syms.push(Sym { name = name, kind = kind }))
+    return u32(self.syms.len - 1)
+}
+
+Sema.new_type(mut self, t: SType): u32 {
+    fail(mut self.types.push(t))
+    return u32(self.types.len - 1)
+}
+
+// --- diagnostics --------------------------------------------------------------
+
+identity_char(c: u8): bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '$'
+}
+
+/* Reports `parts` at node `at`, each module-private identity in it as
+ * written (Loader.shown), as C's ck_err does through diag_printf.
+ */
+Sema.err(mut self, at: u32, parts: []string) {
+    n: Node = self.node(at)
+    msg: string = mut self.pool.join(parts)
+    fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
+    i: usize = 0
+    for i < msg.len {
+        if !identity_char(msg[i]) {
+            fmt.printf(sys.stderr, "%c", msg[i])
+            i += 1
+            continue
+        }
+        j: usize = i
+        dollar: bool = false
+        for j < msg.len && identity_char(msg[j]) {
+            dollar = dollar || msg[j] == '$'
+            j += 1
+        }
+        word: string = msg[i..j]
+        if dollar { word = self.l.shown(mut self.pool, word) }
+        fmt.printf(sys.stderr, "%s", word)
+        i = j
+    }
+    fmt.printf(sys.stderr, "\n")
+    self.errors += 1
+}
+
+/* `v` in decimal, pool-owned. */
+Sema.num(mut self, v: u32): string {
+    digits: [10]u8 = blank([10]u8)
+    buf: fmt.Buffer = fmt.Buffer.init(mut digits[..])
+    mut buf.printf("%u", uint(v))
+    return mut self.pool.join([buf.text()])
+}
+
+// --- names --------------------------------------------------------------------
+
+/* Type names the language predeclares, `void` and StaticMap aside. */
+PRIM_NAMES: [19]string = [
+    "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64",
+    "float", "string", "usize", "typeid", "int", "uint", "char", "",
+]
+
+is_prim_name(name: string): bool {
+    for p: string in PRIM_NAMES[..18] {
+        if mem.equal(p, name) { return true }
+    }
+    return false
+}
+
+/* `panic`, `assert`, `static_assert`, and `bitcast`: no binding may take one. */
+is_reserved(name: string): bool {
+    return mem.equal(name, "panic") || mem.equal(name, "assert") || mem.equal(name, "static_assert") || mem.equal(name, "bitcast")
+}
+
+Sema.is_void(self, id: u32): bool {
+    t: Node = self.node(id)
+    return (t.kind == Kind.named || t.kind == Kind.ident) && t.a == 0 && t.nkids == 0 && (t.flags & parser.F_MUT) == 0 && mem.equal(t.text, "void")
+}
+
+/* Names & Scoping #2: whether `name` is visible in the namespace, as lookup
+ * finds it, without resolving it.
+ */
+Sema.name_visible(self, types: bool, name: string): bool {
+    if self.in_imports && self.imports.find(types, name) != 0 { return true }
+    return self.files.find(types, name) != 0
+}
+
+Sema.value_names_type(mut self, at: u32, name: string): bool {
+    if !self.name_visible(true, name) && !is_prim_name(name) { return false }
+    mut self.err(at, ["'", name, "' names a type; a value may not share its name"])
+    return true
+}
+
+Sema.scope_find(self, types: bool, name: string): u32 {
+    if self.in_imports { return self.imports.find(types, name) }
+    return self.files.find(types, name)
+}
+
+Sema.scope_insert(mut self, types: bool, name: string, id: u32) {
+    if self.in_imports {
+        mut self.imports.insert(types, name, id)
+    } else {
+        mut self.files.insert(types, name, id)
+    }
+}
+
+Sema.declare_val(mut self, at: u32, kind: SymKind, name: string): u32 {
+    if mem.equal(name, "_") {
+        mut self.err(at, ["'_' discards a value and declares nothing"])
+        return 0
+    }
+    if is_reserved(name) {
+        mut self.err(at, ["'", name, "' is a reserved builtin name — no declaration may take it"])
+        return 0
+    }
+    if self.scope_find(false, name) != 0 {
+        mut self.err(at, ["duplicate name '", name, "' in this scope"])
+        return 0
+    }
+    if mut self.value_names_type(at, name) { return 0 }
+    s: u32 = mut self.new_sym(kind, name)
+    mut self.scope_insert(false, name, s)
+    return s
+}
+
+Sema.declare_type(mut self, at: u32, name: string): u32 {
+    if mem.equal(name, "StaticMap") || is_prim_name(name) || mem.equal(name, "void") {
+        mut self.err(at, ["'", name, "' is a predeclared type name and cannot be redeclared"])
+        return 0
+    }
+    if is_reserved(name) {
+        mut self.err(at, ["'", name, "' is a reserved builtin name — no declaration may take it"])
+        return 0
+    }
+    if mem.equal(name, "_") {
+        mut self.err(at, ["'_' discards a value and cannot name a type"])
+        return 0
+    }
+    if self.scope_find(true, name) != 0 {
+        mut self.err(at, ["duplicate type '", name, "'"])
+        return 0
+    }
+    // root imports live in a child of the file scope, out of the upward walk
+    if self.name_visible(false, name) || self.imports.find(false, name) != 0 {
+        mut self.err(at, ["'", name, "' names a value; a type may not share its name"])
+        return 0
+    }
+    s: u32 = mut self.new_sym(SymKind.type, name)
+    mut self.scope_insert(true, name, s)
+    return s
+}
+
+// --- functions ----------------------------------------------------------------
+
+/* A function's overload-set name: a method's or associated function's is
+ * `Owner$name`.
+ */
+Sema.func_key(mut self, f: u32): string {
+    n: Node = self.node(f)
+    if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 { return n.text }
+    owner: string = ""
+    if n.d != 0 { owner = self.node(n.d).text }
+    return mut self.pool.join([owner, "$", n.text])
+}
+
+/* Generics #12: the first bracket identifier naming a primitive, void, or a
+ * type of the unit, which makes the brackets specialization arguments; 0 when
+ * they are type parameters.
+ */
+Sema.spec_bracket_ident(self, f: u32, is_extern: bool): u32 {
+    n: Node = self.node(f)
+    if is_extern || (n.flags & (parser.F_EXPO | parser.F_METHOD | parser.F_ASSOC)) != 0 || n.c == 0 { return 0 }
+    for i: u32 in 0..self.node(n.c).nkids {
+        id: u32 = self.kid(n.c, i)
+        text: string = self.node(id).text
+        if is_prim_name(text) || self.is_void(id) { return id }
+        // root names stay unseen from imported modules (Sym.is_root is not yet set)
+        s: u32 = self.files.find(true, text)
+        if s == 0 { continue }
+        top: u32 = self.sym(s).top
+        if !(top != 0 && !self.in_imported(top) && self.in_imported(f)) { return id }
+    }
+    return 0
+}
+
+/* A method's or associated function's owner, checked from its entered
+ * declaration alone.
+ */
+Sema.check_func_owner(mut self, f: u32): bool {
+    n: Node = self.node(f)
+    kindname: string = "method"
+    if (n.flags & parser.F_ASSOC) != 0 { kindname = "associated-function" }
+    d: Node = self.node(n.d)
+    owner: u32 = self.files.find(true, d.text)
+    od: u32 = 0
+    if owner != 0 && self.sym(owner).top != 0 && self.node(self.sym(owner).top).kind == Kind.struct { od = self.sym(owner).top }
+    if od == 0 {
+        mut self.err(n.d, [kindname, " owner '", d.text, "' is not a declared struct"])
+        return false
+    }
+    if self.l.module_of(od) != self.l.module_of(f) {
+        mut self.err(f, [kindname, "s must be declared in the struct's defining module"])
+        return false
+    }
+    o: Node = self.node(od)
+    want: u32 = 0
+    if o.c != 0 { want = self.node(o.c).nkids }
+    got: u32 = 0
+    if n.c != 0 { got = self.node(n.c).nkids }
+    if want != got {
+        mut self.err(f, [kindname, " owner must repeat the struct's ", mut self.num(want), " type parameters"])
+        return false
+    }
+    for i: u32 in 0..want {
+        if !mem.equal(self.node(self.kid(o.c, i)).text, self.node(self.kid(n.c, i)).text) {
+            mut self.err(f, [kindname, " owner must repeat the struct's type parameter names"])
+            return false
+        }
+    }
+    // fields and methods share one namespace (Names & Scoping #11)
+    if (n.flags & parser.F_METHOD) != 0 {
+        for i: u32 in 0..o.nkids {
+            if mem.equal(self.node(self.kid(od, i)).text, n.text) {
+                mut self.err(f, ["method '", n.text, "' collides with a field of ", o.text])
+                return false
+            }
+        }
+    }
+    return true
+}
+
+/* The first `defer` or inline assembly under node `id`, or 0. */
+Sema.inline_body_bad(self, id: u32): u32 {
+    if id == 0 { return 0 }
+    n: Node = self.node(id)
+    if n.kind == Kind.defer || n.kind == Kind.asm { return id }
+    d: u32 = 0
+    if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { d = n.d }
+    for part: u32 in [n.a, n.b, n.c, d] {
+        bad: u32 = self.inline_body_bad(part)
+        if bad != 0 { return bad }
+    }
+    for i: u32 in 0..n.nkids {
+        bad: u32 = self.inline_body_bad(self.kid(id, i))
+        if bad != 0 { return bad }
+    }
+    return 0
+}
+
+Sema.is_main(self, n: Node): bool {
+    return (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main")
+}
+
+Sema.check_inline_decl(mut self, f: u32) {
+    n: Node = self.node(f)
+    if (n.flags & parser.F_INLINE) == 0 { return }
+    if (n.flags & parser.F_INTRINSIC) != 0 {
+        mut self.err(f, ["'inline' cannot mark intrinsic declaration '", n.text, "'"])
+        return
+    }
+    if (n.flags & parser.F_SPECIALIZED) != 0 {
+        mut self.err(f, ["'inline' needs a body; '", n.text, "' is marked 'specialized'"])
+        return
+    }
+    if self.is_main(n) {
+        mut self.err(f, ["the entry function cannot be 'inline'"])
+        return
+    }
+    for i: u32 in 0..n.nkids {
+        p: u32 = self.kid(f, i)
+        if (self.node(p).flags & parser.F_NOALIAS) != 0 {
+            mut self.err(p, ["inline function '", n.text, "' cannot take a noalias parameter"])
+        }
+    }
+    bad: u32 = self.inline_body_bad(n.b)
+    if bad != 0 {
+        what: string = "inline assembly"
+        if self.node(bad).kind == Kind.defer { what = "'defer'" }
+        mut self.err(bad, ["inline function '", n.text, "' cannot contain ", what])
+    }
+}
+
+/* @cold marks a function with a body; expansion would remove its calls. */
+Sema.check_cold_decl(mut self, f: u32) {
+    n: Node = self.node(f)
+    if (n.flags & parser.F_COLD) == 0 { return }
+    if (n.flags & parser.F_INLINE) != 0 {
+        mut self.err(f, ["inline function '", n.text, "' cannot be @cold"])
+    } else if (n.flags & (parser.F_INTRINSIC | parser.F_SPECIALIZED)) != 0 {
+        mut self.err(f, ["@cold needs a body; '", n.text, "' has none"])
+    } else if self.is_main(n) {
+        mut self.err(f, ["the entry function cannot be @cold"])
+    }
+}
+
+/* Enters function `f` into its overload set, in source order, with the checks
+ * its syntax alone decides; 0 when it is rejected.
+ */
+Sema.enter_func(mut self, f: u32, is_extern: bool): u32 {
+    n: Node = self.node(f)
+    owned: bool = (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0
+    if owned && !mut self.check_func_owner(f) { return 0 }
+    if !owned && is_reserved(n.text) {
+        mut self.err(f, ["'", n.text, "' is a reserved builtin name — no declaration may take it"])
+        return 0
+    }
+    key: string = mut self.func_key(f)
+    head: u32 = self.files.find(false, key)
+    if head != 0 && self.sym(head).kind != SymKind.func {
+        mut self.err(f, ["duplicate name '", n.text, "' in this scope"])
+        return 0
+    }
+    // a method and an associated function never share owner and name
+    if head != 0 && owned && (self.node(self.sym(head).decl).flags & parser.F_ASSOC) != (n.flags & parser.F_ASSOC) {
+        if (n.flags & parser.F_ASSOC) != 0 {
+            mut self.err(f, ["'", n.text, "' is already declared as a method on this type — associated functions and methods cannot share a name"])
+        } else {
+            mut self.err(f, ["'", n.text, "' is already declared as an associated function on this type — associated functions and methods cannot share a name"])
+        }
+        return 0
+    }
+    old_c_boundary: bool = false
+    for old: u32 = head; old != 0; old = self.sym(old).overload {
+        o: Sym = self.sym(old)
+        old_c_boundary = old_c_boundary || o.is_extern || (o.decl != 0 && (self.node(o.decl).flags & parser.F_EXPO) != 0)
+    }
+    if head != 0 && (is_extern || old_c_boundary || (n.flags & parser.F_EXPO) != 0) {
+        mut self.err(f, ["C-boundary function '", n.text, "' cannot be overloaded"])
+        return 0
+    }
+    if (n.flags & parser.F_SPECIALIZED) != 0 && n.c == 0 {
+        mut self.err(f, ["'specialized' marks a generic template; '", n.text, "' declares no type parameters"])
+        return 0
+    }
+    if (n.flags & parser.F_INTRINSIC) != 0 {
+        if n.ival == 0 { mut self.err(f, ["'intrinsic' declarations are restricted to compiler-provided standard-library operations"]) }
+        if (n.flags & parser.F_PUB) == 0 { mut self.err(f, ["intrinsic declaration '", n.text, "' must be public"]) }
+        if (n.flags & (parser.F_EXPO | parser.F_METHOD | parser.F_ASSOC)) != 0 {
+            mut self.err(f, ["intrinsic declaration '", n.text, "' cannot be a method, associated function, or C export"])
+        }
+        if n.c != 0 { mut self.err(f, ["intrinsic declaration '", n.text, "' cannot be generic or specialized"]) }
+    }
+    if head == 0 && !owned && mut self.value_names_type(f, key) { return 0 }
+    s: u32 = mut self.new_sym(SymKind.func, key)
+    x: Sym = self.sym(s)
+    x.decl = f
+    x.top = f
+    x.is_generic = n.c != 0
+    x.is_extern = is_extern
+    x.is_pub = (n.flags & parser.F_PUB) != 0
+    x.entered = true
+    mut self.update(s, x)
+    if head == 0 {
+        mut self.files.insert(false, key, s)
+    } else {
+        tail: u32 = head
+        for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
+        t: Sym = self.sym(tail)
+        t.overload = s
+        mut self.update(tail, t)
+    }
+    mut self.check_inline_decl(f)
+    mut self.check_cold_decl(f)
+    return s
+}
+
+/* A specialization joins its set's entered specializations, to be bound once
+ * the set resolves.
+ */
+Sema.enter_specialization(mut self, f: u32) {
+    n: Node = self.node(f)
+    if is_reserved(n.text) {
+        mut self.err(f, ["'", n.text, "' is a reserved builtin name — no declaration may take it"])
+        return
+    }
+    head: u32 = self.files.find(false, n.text)
+    if head != 0 && self.sym(head).kind != SymKind.func {
+        mut self.err(f, ["duplicate name '", n.text, "' in this scope"])
+        return
+    }
+    has_generic: bool = false
+    for old: u32 = head; old != 0 && !has_generic; old = self.sym(old).overload {
+        has_generic = self.sym(old).is_generic
+    }
+    if !has_generic {
+        id: u32 = self.spec_bracket_ident(f, false)
+        if id != 0 && !is_prim_name(self.node(id).text) && !self.is_void(id) {
+            mut self.err(f, ["no generic declaration of '", n.text, "' in this file; '", self.node(id).text, "' names a type here — rename the type parameter to declare a generic"])
+        } else {
+            mut self.err(f, ["no generic declaration of '", n.text, "' in this file"])
+        }
+        return
+    }
+    if (n.flags & parser.F_SPECIALIZED) != 0 {
+        mut self.err(f, ["a specialization provides its own body — 'specialized' marks only a generic template"])
+        return
+    }
+    s: u32 = mut self.new_sym(SymKind.func, n.text)
+    x: Sym = self.sym(s)
+    x.decl = f
+    x.is_pub = (n.flags & parser.F_PUB) != 0
+    mut self.update(s, x)
+    h: Sym = self.sym(head)
+    if h.entered_specs == 0 {
+        h.entered_specs = s
+        mut self.update(head, h)
+    } else {
+        tail: u32 = h.entered_specs
+        for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
+        t: Sym = self.sym(tail)
+        t.overload = s
+        mut self.update(tail, t)
+    }
+    mut self.check_inline_decl(f)
+    mut self.check_cold_decl(f)
+}
+
+// --- entry --------------------------------------------------------------------
+
+/* The SType kind of a nominal type declaration. */
+nominal_kind(k: Kind): TypeKind {
+    switch k {
+        Kind.struct { return TypeKind.struct }
+        Kind.bits { return TypeKind.bits }
+        Kind.enum { return TypeKind.enum }
+        Kind.union { return TypeKind.union }
+        Kind.distinct { return TypeKind.distinct }
+        Kind.error { return TypeKind.error_domain }
+        default { return TypeKind.contract }
+    }
+}
+
+/* Enters every top-level name of the merged tree (Compiler #5): the
+ * predeclared Error, then values, imports, and types in source order, then
+ * functions, then specializations once each set is complete. Errors are
+ * reported on stderr and counted in `errors`.
+ */
+pub Sema.enter(mut self) {
+    error: u32 = mut self.new_sym(SymKind.type, "Error")
+    x: Sym = self.sym(error)
+    x.ty = mut self.new_type(SType { kind = TypeKind.error, name = "Error", size = 8, align = 8 })
+    mut self.update(error, x)
+    mut self.files.insert(true, "Error", error)
+
+    fn_names: map.Map[string, bool] = map.Map[string, bool] {}
+    defer mut fn_names.wipe()
+    count: u32 = self.node(self.file).nkids
+    for k: u32 in 0..count {
+        id: u32 = self.kid(self.file, k)
+        n: Node = self.node(id)
+        switch n.kind {
+            Kind.import {
+                self.in_imports = true
+                _ = mut self.declare_val(id, SymKind.module, n.text)
+                self.in_imports = false
+            }
+            Kind.func {
+                if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 { fail(mut fn_names.set(n.text, true)) }
+            }
+            Kind.extern {
+                for j: u32 in 0..n.nkids {
+                    fid: u32 = self.kid(id, j)
+                    f: Node = self.node(fid)
+                    if f.kind != Kind.externvar {
+                        fail(mut fn_names.set(f.text, true))
+                        continue
+                    }
+                    if fn_names.has(f.text) {
+                        mut self.err(fid, ["duplicate name '", f.text, "' in this scope"])
+                        continue
+                    }
+                    s: u32 = mut self.declare_val(fid, SymKind.var, f.text)
+                    if s == 0 { continue }
+                    v: Sym = self.sym(s)
+                    v.is_mut = (f.flags & parser.F_MUT) != 0
+                    v.is_global = true
+                    v.is_extern = true
+                    v.decl = fid
+                    v.top = fid
+                    v.entered = true
+                    mut self.update(s, v)
+                }
+            }
+            Kind.var {
+                binder: u32 = self.kid(id, 0)
+                name: string = self.node(binder).text
+                if fn_names.has(name) {
+                    mut self.err(id, ["duplicate name '", name, "' in this scope"])
+                    continue
+                }
+                s: u32 = mut self.declare_val(id, SymKind.var, name)
+                if s == 0 { continue }
+                v: Sym = self.sym(s)
+                v.is_const = (n.flags & parser.F_CONST) != 0
+                v.is_pub = (n.flags & parser.F_PUB) != 0
+                v.is_mut = (n.flags & parser.F_MUT) != 0
+                v.is_global = true
+                v.decl = binder
+                v.top = id
+                v.entered = true
+                mut self.update(s, v)
+            }
+            Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.union, Kind.distinct, Kind.error, Kind.alias {
+                s: u32 = mut self.declare_type(id, n.text)
+                if s == 0 { continue }
+                t: Sym = self.sym(s)
+                t.decl = id
+                t.top = id
+                t.is_generic = n.c != 0
+                t.entered = true
+                if n.kind == Kind.alias {
+                    if t.is_generic { // stamped at each use; nothing to resolve
+                        t.ty = mut self.new_type(SType { kind = TypeKind.template, name = n.text, decl = id })
+                        t.entered = false
+                    }
+                } else {
+                    shell: SType = SType { kind = nominal_kind(n.kind), name = n.text, decl = id }
+                    if n.kind == Kind.error {
+                        shell.size = 8
+                        shell.align = 8
+                    }
+                    t.ty = mut self.new_type(shell)
+                }
+                mut self.update(s, t)
+            }
+            default {}
+        }
+    }
+    for k: u32 in 0..count {
+        id: u32 = self.kid(self.file, k)
+        n: Node = self.node(id)
+        if n.kind == Kind.func {
+            if self.spec_bracket_ident(id, false) == 0 { _ = mut self.enter_func(id, false) }
+        } else if n.kind == Kind.extern {
+            for j: u32 in 0..n.nkids {
+                fid: u32 = self.kid(id, j)
+                if self.node(fid).kind != Kind.externvar { _ = mut self.enter_func(fid, true) }
+            }
+        }
+    }
+    for k: u32 in 0..count {
+        id: u32 = self.kid(self.file, k)
+        if self.node(id).kind == Kind.func && self.spec_bracket_ident(id, false) != 0 { mut self.enter_specialization(id) }
+    }
+    for s: u32 in self.files.values.view() { mut self.mark_root(s) }
+    for s: u32 in self.files.types.view() { mut self.mark_root(s) }
+}
+
+Sema.mark_root(mut self, s: u32) {
+    x: Sym = self.sym(s)
+    x.is_root = x.top != 0 && !self.in_imported(x.top)
+    mut self.update(s, x)
+}
+
+// --- dump ---------------------------------------------------------------------
+
+/* Prints both scopes in entry order as `ace --symbols` does: the file
+ * scope's types and values, then the import scope.
+ */
+pub Sema.dump(self, mut out: Out) {
+    for s: u32 in self.files.types.view() { self.dump_sym(mut out, "type", s) }
+    for s: u32 in self.files.values.view() { self.dump_sym(mut out, "value", s) }
+    for s: u32 in self.imports.values.view() { self.dump_sym(mut out, "import", s) }
+}
+
+Sema.dump_sym(self, mut out: Out, what: string, s: u32) {
+    x: Sym = self.sym(s)
+    mut out.printf("%s %s", what, x.name)
+    if x.kind == SymKind.type {
+        kind: string = "alias"
+        if x.ty != 0 { kind = self.types.get(usize(x.ty)).kind.name }
+        mut out.printf(" %s", kind)
+    } else {
+        mut out.printf(" %s", x.kind.name)
+    }
+    if x.kind != SymKind.func {
+        self.dump_flags(mut out, x)
+        return
+    }
+    mut out.printf("\n")
+    for m: u32 = s; m != 0; m = self.sym(m).overload {
+        mut out.printf("  member")
+        self.dump_flags(mut out, self.sym(m))
+    }
+    for m: u32 = x.entered_specs; m != 0; m = self.sym(m).overload {
+        mut out.printf("  spec")
+        self.dump_flags(mut out, self.sym(m))
+    }
+}
+
+Sema.dump_flags(self, mut out: Out, x: Sym) {
+    if x.is_const { mut out.printf(" const") }
+    if x.is_mut { mut out.printf(" mut") }
+    if x.is_pub { mut out.printf(" pub") }
+    if x.is_generic { mut out.printf(" generic") }
+    if x.is_extern { mut out.printf(" extern") }
+    if x.is_global { mut out.printf(" global") }
+    if x.is_root { mut out.printf(" root") }
+    if x.entered { mut out.printf(" entered") }
+    at: u32 = x.top
+    if at == 0 { at = x.decl }
+    if at != 0 {
+        n: Node = self.node(at)
+        mut out.printf(" @%d:%d", int(n.line), int(n.col))
+    }
+    mut out.printf("\n")
+}

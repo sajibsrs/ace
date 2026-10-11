@@ -8280,9 +8280,11 @@ static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
     for (Sym* s = fs->types; s; s = s->next) s->is_root = s->top && !in_imported(s->top);
 }
 
-int sema_check(Node* file, Diag* d) {
-    static Scope file_scope; // static: outlives the call for stamp re-checks
-    static Scope import_scope; // likewise: root generics stamp under it
+static Scope file_scope; // static: outlives the check for stamp re-checks
+static Scope import_scope; // likewise: root generics stamp under it
+
+// Fresh file and import scopes with every top-level name entered.
+static void sema_enter(Ck* k, Node* file, Diag* d) {
     memset(&file_scope, 0, sizeof file_scope);
     memset(&import_scope, 0, sizeof import_scope);
     g_file_scope = &file_scope;
@@ -8303,10 +8305,70 @@ int sema_check(Node* file, Diag* d) {
     // import_scope: root's own aliased imports; see is_root_node
     import_scope.parent = &file_scope;
     g_import_scope = &import_scope;
+    k->d = d;
+    k->scope = &file_scope;
+    enter_top_level(k, file, &file_scope, &import_scope);
+}
+
+static const char* const SK_NAMES[] = {
+    "prim", "ptr", "slice", "array", "tuple", "func", "struct", "enum", "contract", "distinct",
+    "error_domain", "typeparam", "error", "union", "bits", "staticmap", "void", "ut", "template", "err",
+};
+
+static void dump_flags(Sym* s) {
+    if (s->is_const) fputs(" const", stdout);
+    if (s->is_mut) fputs(" mut", stdout);
+    if (s->is_pub) fputs(" pub", stdout);
+    if (s->is_generic) fputs(" generic", stdout);
+    if (s->is_extern) fputs(" extern", stdout);
+    if (s->is_global) fputs(" global", stdout);
+    if (s->is_root) fputs(" root", stdout);
+    if (s->decl_state == DECL_ENTERED) fputs(" entered", stdout);
+    if (s->top) printf(" @%d:%d", s->top->line, s->top->col);
+    else if (s->decl) printf(" @%d:%d", s->decl->line, s->decl->col);
+    fputc('\n', stdout);
+}
+
+static const char* const SYM_NAMES[] = { "var", "func", "type", "module" };
+
+// A scope list is newest first; the dump is in entry order.
+static void dump_list(Sym* s, const char* what) {
+    if (!s) return;
+    dump_list(s->next, what);
+    printf("%s %.*s", what, (int)s->len, s->name);
+    if (s->kind == SYM_TYPE) {
+        printf(" %s", s->type ? SK_NAMES[s->type->kind] : "alias");
+    } else {
+        printf(" %s", SYM_NAMES[s->kind]);
+    }
+    if (s->kind != SYM_FUNC) {
+        dump_flags(s);
+        return;
+    }
+    fputc('\n', stdout);
+    for (Sym* m = s; m; m = m->overload) {
+        fputs("  member", stdout);
+        dump_flags(m);
+    }
+    for (Sym* m = s->entered_specs; m; m = m->overload) {
+        fputs("  spec", stdout);
+        dump_flags(m);
+    }
+}
+
+int sema_dump_symbols(Node* file, Diag* d) {
     Ck k = {0};
-    k.d = d;
-    k.scope = &file_scope;
-    enter_top_level(&k, file, &file_scope, &import_scope);
+    sema_enter(&k, file, d);
+    if (d->errors) return d->errors;
+    dump_list(file_scope.types, "type");
+    dump_list(file_scope.values, "value");
+    dump_list(import_scope.values, "import");
+    return 0;
+}
+
+int sema_check(Node* file, Diag* d) {
+    Ck k = {0};
+    sema_enter(&k, file, d);
     // every type is complete before any function or global is checked
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];

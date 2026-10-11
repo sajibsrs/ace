@@ -1,0 +1,12 @@
+/* Methods belong to structs. */
+
+Color: enum { red, green }
+
+// error: method owner 'Color' is not a declared struct
+Color.name(self): string {
+    return "color"
+}
+
+main(): int {
+    return 0
+}

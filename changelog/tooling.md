@@ -36,3 +36,7 @@
 - `--tokens` prints a string token escaped as an Ace literal that lexes back
   to the same bytes, instead of raw `%.*s`, which stopped at a NUL byte and
   let an embedded newline split the line.
+- selfhost begins sema (`selfhost/sema.ace`, #123) with top-level entry: file
+  and import scopes, `Sym` and nominal `SType` shells, and entry diagnostics,
+  shown through `Loader.shown` (C's `module_display`). `--symbols`, in both
+  compilers, prints the entered scopes; `check.sh` diffs it.

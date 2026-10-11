@@ -1,0 +1,10 @@
+/* A specialization has its own body; 'specialized' marks only the template. */
+
+load[T](text: string): T specialized
+
+// error: a specialization provides its own body — 'specialized' marks only a generic template
+load[int](text: string): int specialized
+
+main(): int {
+    return 0
+}
