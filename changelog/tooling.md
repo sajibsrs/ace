@@ -79,3 +79,6 @@
 - selfhost checks extern variadic arguments (`check_args`): untyped
   literals default to `i64`/`f64`, each extra must be a C-variadic scalar,
   and `mut` is rejected on extras.
+- selfhost checks `mut` arguments (`check_mut_args`): an addressable place,
+  never a bit field; a contract-typed `mut` argument stops as unported until
+  const-backed provenance arrives with contract construction.

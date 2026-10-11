@@ -3903,8 +3903,17 @@ Sema.check_mut_args(mut self, call: u32, decl: u32) {
             mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"])
         } else if pm && !am {
             mut self.err(arg, ["mut parameter needs 'mut' at the call site"])
-        } else if am {
-            _ = mut self.unported("mut arguments") // their address needs lvalue checking
+        } else if am { // mut passes the caller's address: the argument needs one
+            raw: u32 = self.node(arg).a
+            _ = mut self.check_lvalue(raw, false)
+            _, _, bitsf: bool = self.bits_field(raw)
+            if bitsf { mut self.err(raw, ["bit fields cannot supply mut arguments"]) }
+            if self.node(raw).kind == Kind.ident {
+                v: u32 = mut self.lookup_val(self.node(raw).text)
+                if v != 0 && self.sym(v).ty != 0 && self.ty(self.sym(v).ty).kind == TypeKind.contract {
+                    _ = mut self.unported("const-backed contract provenance")
+                }
+            }
         }
     }
 }

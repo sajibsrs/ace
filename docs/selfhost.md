@@ -66,10 +66,11 @@ labels, `break`, `continue`, `return`, and `defer`, address-of,
 dereference, `volatile`, pointer arithmetic, ranges, indexing, slicing,
 local-storage escapes, and the `typeid`, `bitcast`, `assert`,
 `static_assert`, and `panic` builtins, error construction
-`Domain(code?)`, and extern variadic arguments. It stops with `does not yet support`
-on `switch`, `asm`, method and other calls of computed callees, function
-values, `mut` arguments, memory and format builtins, static maps, unions,
-and contracts.
+`Domain(code?)`, extern variadic arguments, and `mut` arguments. It stops
+with `does not yet support` on `switch`, `asm`, method and other calls of
+computed callees, function values, memory and format builtins, static maps,
+unions, and contracts, including a contract value passed as a `mut`
+argument (whether it is const-backed).
 
 ## Checking
 
