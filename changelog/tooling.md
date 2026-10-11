@@ -106,3 +106,6 @@
   (`Event.key(k)`, `Pair[int].some(x)`) in C's dispatch order; method and
   associated calls share one `mut`-mismatch diagnostic. Associated functions of
   generic owners still stop as unported.
+- selfhost checks function values: a bare name, an overloaded name selected
+  by the wanted function type, and `f[T]` by specialization or generic
+  overload; templates that need stamping still stop as generic function bodies.

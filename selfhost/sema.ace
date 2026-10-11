@@ -1647,11 +1647,18 @@ Sema.coerce(mut self, e: u32, want: u32): bool {
         if ok { mut self.set_node_ty(e, want) } else { mut self.set_node_ty(e, self.t_err) }
         return ok
     }
-    if wk == TypeKind.func && (n.kind == Kind.index || (n.kind == Kind.ident && mut self.names_func(n.text))) {
-        _ = mut self.unported("function values")
-        return false
+    if wk == TypeKind.func && n.kind == Kind.ident { // an overloaded name: the wanted type selects one
+        head: u32 = mut self.lookup_val(n.text)
+        if head != 0 && self.sym(head).kind == SymKind.func && self.visible_count(head, e) > 1 {
+            return mut self.coerce_overloaded_value(e, head, want)
+        }
     }
-    t: u32 = mut self.expr_type(e)
+    t: u32 = 0
+    if wk == TypeKind.func && n.kind == Kind.index {
+        t = mut self.generic_func_value(e, want)
+        if t != 0 { mut self.set_node_ty(e, t) }
+    }
+    if t == 0 { t = mut self.expr_type(e) }
     if self.same_type(t, want) || self.shrink_ok(t, want) { return true } // shrink, never widening
     if wk == TypeKind.err || self.ty(t).kind == TypeKind.err { return true }
     if t == self.t_ut_null {
@@ -1707,10 +1714,162 @@ Sema.settle_parts(mut self, e: u32, part: u32) {
     }
 }
 
-/* Whether `name` reaches a function as a value. */
-Sema.names_func(mut self, name: string): bool {
-    s: u32 = mut self.lookup_val(name)
-    return s != 0 && self.sym(s).kind == SymKind.func
+/* The overload of `head`'s set visible from `e` whose type is exactly
+ * function-value type `want`.
+ */
+Sema.coerce_overloaded_value(mut self, e: u32, head: u32, want: u32): bool {
+    name: string = self.node(e).text
+    found: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        if self.ov_hidden(s, e) || self.sym(s).is_generic || !self.same_type(self.sym(s).ty, want) { continue }
+        if found != 0 {
+            mut self.err(e, ["ambiguous overloaded function value '", name, "'"])
+            mut self.set_node_ty(e, self.t_err)
+            return false
+        }
+        found = s
+    }
+    if found == 0 {
+        mut self.err(e, ["no overload of '", name, "' has the required function type"])
+        mut self.set_node_ty(e, self.t_err)
+        return false
+    }
+    bi: u64 = 0
+    if self.sym(found).decl != 0 { bi = self.node(self.sym(found).decl).ival }
+    if bi == BI_FMT_PRINTF || bi == BI_FMT_PRINTF_FD || bi == BI_STR_FORMAT {
+        what: string = "fmt.printf"
+        if bi == BI_STR_FORMAT { what = "str.format" }
+        mut self.err(e, [what, " is direct-call-only because its checked arguments depend on the static format"])
+        mut self.set_node_ty(e, self.t_err)
+        return false
+    }
+    if self.has_mut_param(self.sym(found).decl) {
+        mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
+        mut self.set_node_ty(e, self.t_err)
+        return false
+    }
+    mut self.set_node_sym(e, found)
+    mut self.set_node_ty(e, self.sym(found).ty)
+    return true
+}
+
+/* `f[T]` as a value: a written specialization with these type arguments
+ * wins, else the template with that type-argument count; a wanted
+ * function-value type `want` (0 for none) selects among same-arity overloads
+ * but never supplies a type argument. 0 when `e` names no function.
+ */
+Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
+    n: Node = self.node(e)
+    if n.a == 0 || self.node(n.a).kind != Kind.ident { return 0 }
+    name: string = self.node(n.a).text
+    head: u32 = mut self.lookup_val(name)
+    if head == 0 || self.sym(head).kind != SymKind.func { return 0 }
+    if !self.has_generic_form(head, e) {
+        mut self.err(e, ["'", name, "' is not generic; name it without type arguments"])
+        return self.t_err
+    }
+    nargs: u32 = n.nkids
+    if n.b != 0 { nargs = 1 }
+    targs: u32 = u32(self.params.len)
+    for i: u32 in 0..nargs { fail(mut self.params.push(0)) }
+    for i: u32 in 0..nargs {
+        w: u32 = n.b
+        if w == 0 { w = self.kid(e, i) }
+        t: u32 = mut self.build_type_or_void(w)
+        if self.ty(t).kind == TypeKind.err { return self.t_err }
+        mut self.params.set(usize(targs + i), t)
+    }
+    chosen: u32 = 0
+    for g: u32 = head; g != 0; g = self.sym(g).overload {
+        for s: u32 = self.sym(g).specs; s != 0; s = self.sym(s).spec_next {
+            x: Sym = self.sym(s)
+            if self.ov_hidden(s, e) || x.spec_nargs != nargs { continue }
+            same: bool = true
+            for i: u32 = 0; i < nargs && same; i += 1 {
+                same = self.same_type(self.params.get(usize(x.spec_args + i)), self.params.get(usize(targs + i)))
+            }
+            if !same || (want != 0 && !self.same_type(x.ty, want)) { continue }
+            if chosen != 0 {
+                mut self.err(e, ["ambiguous specialized function value '", name, "'"])
+                return self.t_err
+            }
+            chosen = s
+        }
+    }
+    if chosen != 0 {
+        if self.has_mut_param(self.sym(chosen).decl) {
+            mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
+            return self.t_err
+        }
+        mut self.set_node_sym(e, chosen)
+        return self.sym(chosen).ty
+    }
+    sole: u32 = 0
+    eligible: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        d: u32 = self.sym(s).decl
+        if self.ov_hidden(s, e) || !self.sym(s).is_generic || self.node(d).c == 0 || self.node(self.node(d).c).nkids != nargs { continue }
+        eligible += 1
+        sole = s
+        if want != 0 {
+            cand: u32 = mut self.candidate_func_type(d, targs, nargs)
+            if cand == 0 || !self.same_type(cand, want) { continue }
+        }
+        if chosen != 0 {
+            mut self.err(e, ["ambiguous generic function value '", name, "'"])
+            return self.t_err
+        }
+        chosen = s
+    }
+    if chosen == 0 && eligible == 1 { chosen = sole } // the consumer reports a mismatch
+    if chosen == 0 {
+        if eligible != 0 {
+            mut self.err(e, ["no generic overload of '", name, "' has the required function type"])
+        } else {
+            plural: string = "s"
+            if nargs == 1 { plural = "" }
+            mut self.err(e, ["no generic '", name, "' takes ", mut self.num(nargs), " type argument", plural])
+        }
+        return self.t_err
+    }
+    d: Node = self.node(self.sym(chosen).decl)
+    if d.ival != 0 { // typed memory builtins: lowered at the call, no body
+        short: string = d.text
+        for i: usize in 0..short.len {
+            if short[i] == '$' {
+                short = short[i + 1..]
+                break
+            }
+        }
+        mut self.err(e, ["mem.", short, "[T] is direct-call-only: it has no body to take as a value"])
+        return self.t_err
+    }
+    if (d.flags & parser.F_SPECIALIZED) != 0 {
+        mut self.err(e, ["'", name, mut self.args_name(targs, nargs), "' matches no specialization — '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
+        return self.t_err
+    }
+    if self.has_mut_param(self.sym(chosen).decl) {
+        mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
+        return self.t_err
+    }
+    return mut self.unported("generic function bodies") // stamping checks the body
+}
+
+/* Whether declaration `d` takes any `mut` parameter. */
+Sema.has_mut_param(self, d: u32): bool {
+    for i: u32 = 0; d != 0 && i < self.node(d).nkids; i += 1 {
+        if (self.node(self.kid(d, i)).flags & parser.F_MUT) != 0 { return true }
+    }
+    return false
+}
+
+/* How many overloads of `head`'s set the use site `at` sees. */
+Sema.visible_count(self, head: u32, at: u32): u32 {
+    c: u32 = 0
+    for s: u32 = head; s != 0; s = self.sym(s).overload {
+        if !self.ov_hidden(s, at) { c += 1 }
+    }
+    return c
 }
 
 /* An array literal where []T is expected: an anonymous [N]T, viewed as []T. */
@@ -1832,7 +1991,30 @@ Sema.check_ident(mut self, e: u32): u32 {
         mut self.err(e, ["module '", n.text, "' used as a value"])
         return self.t_err
     }
-    if x.kind == SymKind.func { return mut self.unported("function values") }
+    if x.kind == SymKind.func {
+        bi: u64 = 0
+        if x.decl != 0 { bi = self.node(x.decl).ival }
+        if bi == BI_FMT_PRINTF || bi == BI_FMT_PRINTF_FD {
+            mut self.err(e, ["fmt.printf is direct-call-only because its checked arguments depend on the static format"])
+            return self.t_err
+        }
+        if self.visible_count(s, e) == 1 {
+            for self.ov_hidden(s, e) { s = self.sym(s).overload }
+        }
+        if self.sym(s).is_generic {
+            mut self.err(e, ["'", n.text, "' is a type or generic — used bare here"])
+            return self.t_err
+        }
+        if self.visible_count(s, e) > 1 {
+            mut self.err(e, ["overloaded function '", n.text, "' needs a call or an explicit function-value type"])
+            return self.t_err
+        }
+        if self.has_mut_param(self.sym(s).decl) {
+            mut self.err(e, ["'", n.text, "' has a mut parameter and cannot be used as a function value"])
+            return self.t_err
+        }
+        x = self.sym(s)
+    }
     mut self.set_node_sym(e, s)
     if x.ty == 0 { return self.t_err }
     return x.ty
@@ -6188,10 +6370,8 @@ Sema.check_range(mut self, e: u32): u32 {
 /* `a[i]`: an element of an array, slice, or string. */
 Sema.check_index(mut self, e: u32): u32 {
     n: Node = self.node(e)
-    if self.node(n.a).kind == Kind.ident {
-        s: u32 = mut self.lookup_val(self.node(n.a).text)
-        if s != 0 && self.sym(s).kind == SymKind.func { return mut self.unported("function values") }
-    }
+    gv: u32 = mut self.generic_func_value(e, 0)
+    if gv != 0 { return gv }
     b: u32 = mut self.expr_type(n.a)
     if self.ty(b).kind == TypeKind.staticmap { return mut self.unported("StaticMap lookups") }
     ix: u32 = mut self.expr_type(n.b)
