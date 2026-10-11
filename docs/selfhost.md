@@ -17,6 +17,7 @@ documentation once selfhost is complete.
 | Packages | `package.ace` | `--pkg-graph=DIR`, `--pkg-check=DIR` | `src/package.c` |
 | Sema: top-level entry | `sema.ace` | `--symbols` | `src/sema.c` (`enter_top_level`) |
 | Sema: type completion | `sema.ace` | `--symbols` | `src/sema.c` (`complete_types`) |
+| Sema: body checks | `sema.ace` | `--check` | `src/sema.c` (`check_func_body`) |
 
 `--symbols` prints the scopes once every top-level name is entered
 (Compiler #5), every type is complete, every function signature is
@@ -55,11 +56,27 @@ them fits the arguments exactly, reporting a missing specialization of a
 anything else there, such as a call that stamps a template (its body is
 checked) or a memory or format builtin.
 
+`--check` runs every sema stage through function bodies and prints only the
+errors, as `ace --check` does: `sema_check` without its end-of-file checks
+(specialized templates, signing method sets, inline cycles, definite
+initialization). Like `sema_check`, it keeps going after an error in an
+earlier stage. Selfhost checks locals in block scopes, declarations and
+binding lists, assignments and their targets, `if`, every `for` form,
+labels, `break`, `continue`, `return`, and `defer`, address-of,
+dereference, `volatile`, pointer arithmetic, ranges, indexing, slicing,
+local-storage escapes, and the `typeid`, `bitcast`, `assert`,
+`static_assert`, and `panic` builtins. It stops with `does not yet support`
+on `switch`, `asm`, method and other calls of computed callees, function
+values, `mut` arguments, memory and format builtins, static maps, unions,
+contracts, and error construction.
+
 ## Checking
 
 `selfhost/check.sh` builds selfhost with `./ace` and diffs every stage
 against the C compiler over every repository `.ace` file and `ace.pkg`,
-printing one agreement count per stage. It is not part of `make test`.
+printing one agreement count per stage. A `--check` file on which selfhost
+stops with `does not yet support` is counted apart, as not yet ported. It is
+not part of `make test`.
 
 ## Design rationale
 

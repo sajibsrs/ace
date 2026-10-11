@@ -318,6 +318,32 @@ tests/sema/contracts/register/main_err.ace|30:1: error: signing owner must repea
 tests/sema/contracts/register/main_err.ace|31:9: error: signing owner must repeat type parameter 'B'
 tests/sema/contracts/register/main_err.ace|35:14: error: signed contract 'Point' must be a declared contract
 tests/sema/contracts/register/main_err.ace|36:1: error: a signing must be in the struct's defining module
+tests/sema/functions/body_statements_err.ace|24:5: error: parameter 'e' is read-only — mark it 'mut' in the signature
+tests/sema/functions/body_statements_err.ace|24:7: error: Error fields are read-only
+tests/sema/functions/body_statements_err.ace|29:8: error: unknown name 'b'
+tests/sema/functions/body_statements_err.ace|36:6: error: assignment binds 3 names but the right side has 2 values
+tests/sema/functions/body_statements_err.ace|40:12: error: bit fields are non-addressable
+tests/sema/functions/body_statements_err.ace|45:11: error: can only slice arrays, slices, and strings, not i64
+tests/sema/functions/body_statements_err.ace|50:11: error: cannot index i64
+tests/sema/functions/body_statements_err.ace|55:9: error: defer statement must appear at the top level of the function body
+tests/sema/functions/body_statements_err.ace|60:5: error: error-domain names are identities, not value types; use Error
+tests/sema/functions/body_statements_err.ace|60:23: error: error-domain names have no value layout; use Error
+tests/sema/functions/body_statements_err.ace|64:19: error: for-in iterates slices, arrays, strings, or ranges — not integer literal
+tests/sema/functions/body_statements_err.ace|69:5: error: function returns nothing
+tests/sema/functions/body_statements_err.ace|74:11: error: index must be an integer, not float literal
+tests/sema/functions/body_statements_err.ace|78:17: error: type mismatch: null + integer literal — operands need one type (casts are explicit)
+tests/sema/functions/body_statements_err.ace|83:10: error: pointer compound-assignment offset must be usize, not i64
+tests/sema/functions/body_statements_err.ace|87:10: error: pointer offset must be a nonnegative usize
+tests/sema/functions/body_statements_err.ace|93:21: error: range bounds must be one integer type, got i64 and u8
+tests/sema/functions/body_statements_err.ace|98:5: error: range loop variable must be an integer type, not f64
+tests/sema/functions/body_statements_err.ace|104:14: error: returned value views storage of this function, which ends when it returns
+tests/sema/functions/body_statements_err.ace|109:11: error: slice bound must be an integer
+tests/sema/functions/body_statements_err.ace|113:18: error: static_assert takes exactly one bool condition
+tests/sema/functions/body_statements_err.ace|120:12: error: stored value views storage of this function, which ends when it returns
+tests/sema/functions/body_statements_err.ace|124:16: error: typeid takes one exact named type
+tests/sema/functions/body_statements_err.ace|128:5: error: untyped literal expression has no effect — bind it to a type
+tests/sema/functions/body_statements_err.ace|132:20: error: volatile access is allowed only on a complete bits value
+tests/sema/functions/body_statements_err.ace|136:16: error: volatile access requires an eligible scalar place, got Point
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared

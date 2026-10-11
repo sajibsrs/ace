@@ -69,3 +69,7 @@
   uniqueness, repeated type parameters, declared contracts) in its
   signatures pass; both compilers' `--symbols` now register them and print
   each struct's signing as `signing @line:col`.
+- selfhost checks function bodies (`--check`): block-scoped locals,
+  statements, lvalues, local-storage escapes, pointer arithmetic, ranges,
+  indexing, slicing, and the small reserved builtins. `ace --check` stops
+  `sema_check` before its end-of-file checks, and `check.sh` diffs the two.

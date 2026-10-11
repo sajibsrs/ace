@@ -306,6 +306,7 @@ void parse_dump_resolved(Node* file); // after imports: private names, link name
 // sema.h's sema_stamp_body().
 int sema_check(Node* file, Diag* d);
 int sema_dump_symbols(Node* file, Diag* d); // top-level entry, then its scopes on stdout
+int sema_check_bodies(Node* file, Diag* d); // sema_check without end-of-file checks
 
 // Load supported imports and merge their declarations into the compilation
 // unit. Qualified and selectively imported references are lowered to private

@@ -8457,7 +8457,8 @@ static void complete_types(Ck* k, Node* file) {
     finish_deferred_layouts(k);
 }
 
-int sema_check(Node* file, Diag* d) {
+// With `end` 0, stops after body checks (`--check`), before end-of-file checks.
+static int check_file(Node* file, Diag* d, int end) {
     Ck k = {0};
     sema_enter(&k, file, d);
     // every type is complete before any function or global is checked
@@ -8504,6 +8505,7 @@ int sema_check(Node* file, Diag* d) {
     }
 
     finish_deferred_layouts(&k); // types first built while checking bodies
+    if (!end) return d->errors;
 
     // Generics #13: a 'specialized' template with zero specializations in the
     // compiled program is a declaration error.
@@ -8539,3 +8541,7 @@ int sema_check(Node* file, Diag* d) {
     if (d->errors == 0) check_definite_initialization(file, d);
     return d->errors;
 }
+
+int sema_check(Node* file, Diag* d) { return check_file(file, d, 1); }
+
+int sema_check_bodies(Node* file, Diag* d) { return check_file(file, d, 0); }

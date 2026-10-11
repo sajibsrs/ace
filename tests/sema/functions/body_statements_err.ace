@@ -1,0 +1,137 @@
+/* Statement, lvalue, and expression checks in function bodies. */
+
+Flags: bits u8 {
+    low: 4,
+    high: 4,
+}
+
+Domain: error {
+    1: bad = "bad",
+}
+
+Point: struct {
+    x: i64,
+}
+
+pair(): (i64, i64) {
+    return 1, 2
+}
+
+void_fn() {
+}
+
+errors(e: Error) {
+    e.code = 1
+}
+
+binds() {
+    a: i64 = 0
+    a, b = pair()
+}
+
+counts() {
+    a: i64 = 0
+    c: i64 = 0
+    d: i64 = 0
+    a, c, d = pair()
+}
+
+bits_address(mut f: Flags): *u8 {
+    return &f.low
+}
+
+slice_scalar() {
+    v: i64 = 3
+    _ = v[0..1]
+}
+
+index_scalar() {
+    v: i64 = 3
+    _ = v[0]
+}
+
+late_defer() {
+    if true {
+        defer void_fn()
+    }
+}
+
+domain_value() {
+    d: Domain = blank(Domain)
+}
+
+iterate_scalar() {
+    for v: i64 in 7 {
+    }
+}
+
+nothing() {
+    return 1
+}
+
+index_float() {
+    a: [4]i64 = [1, 2, 3, 4]
+    _ = a[1.5]
+}
+
+null_offset(): *u8 {
+    return null + 1
+}
+
+offset_type(mut p: *u8) {
+    n: i64 = 1
+    p += n
+}
+
+offset_negative(mut p: *u8) {
+    p += -1
+}
+
+range_mixed() {
+    lo: i64 = 0
+    hi: u8 = 3
+    for i: i64 in lo..hi {
+    }
+}
+
+range_float() {
+    for f: f64 in 0..3 {
+    }
+}
+
+local_slice(): []i64 {
+    a: [4]i64 = [1, 2, 3, 4]
+    return a[0..2]
+}
+
+slice_float() {
+    s: []u8 = "abc"
+    _ = s[0.5..1]
+}
+
+static_count() {
+    static_assert(true, false)
+}
+
+kept: *i64 = null
+
+store_local() {
+    v: i64 = 1
+    kept = &v
+}
+
+typeid_literal() {
+    _ = typeid(3)
+}
+
+untyped() {
+    1 + 2
+}
+
+volatile_bits(mut f: Flags) {
+    volatile f.low = 1
+}
+
+volatile_point(mut p: Point) {
+    volatile p = Point { x = 1 }
+}

@@ -3,8 +3,8 @@
 # against `ace --ast` (stdout, exit status, and every error line), its module
 # loader against the C one (every import error line; on success, the count of
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
-# entered scopes and completed types against `ace --symbols` over every repository .ace
-# file, then its package graph against `ace --pkg-graph` and its cross-package
+# entered scopes and completed types against `ace --symbols`, and its function
+# body checks against `ace --check` over every repository .ace file, then its package graph against `ace --pkg-graph` and its cross-package
 # imports against `ace --pkg-check` over every repository ace.pkg, then times
 # the lexers on the largest files. Run from anywhere.
 set -u
@@ -32,6 +32,8 @@ mbad=0
 msema=0
 rbad=0
 sbad=0
+cbad=0
+cport=0
 for f in $files; do
     total=$((total + 1))
     ./ace --tokens "$f" >"$tmp/want" 2>/dev/null
@@ -114,6 +116,19 @@ for f in $files; do
         diff "$tmp/want" "$tmp/got" | head -4
         diff "$tmp/werr" "$tmp/gerr" | head -4
     fi
+    # Check: every error line must match, unless selfhost stops on a construct
+    # it does not port yet; those files are counted apart.
+    ./ace --check "$f" >"$tmp/want" 2>"$tmp/werr"
+    wrc=$?
+    "$self" --check "$f" >"$tmp/got" 2>"$tmp/gerr"
+    grc=$?
+    if grep -q 'selfhost does not yet support' "$tmp/gerr"; then
+        cport=$((cport + 1))
+    elif [ "$wrc" -ne "$grc" ] || ! cmp -s "$tmp/werr" "$tmp/gerr"; then
+        cbad=$((cbad + 1))
+        echo "CHECK DIFF $f"
+        diff "$tmp/werr" "$tmp/gerr" | head -4
+    fi
 done
 # Packages: every ace.pkg as a root, for its manifest's target. The graph must
 # match exactly; a check that fails must fail as C's does, and one that passes
@@ -164,6 +179,7 @@ echo "ast: $((total - abad))/$total files identical"
 echo "modules: $((total - mbad))/$total files agree ($msema fail only in sema)"
 echo "resolved: $((total - rbad))/$total files agree"
 echo "symbols: $((total - sbad))/$total files agree"
+echo "check: $((total - cbad))/$total files agree ($cport not yet ported)"
 echo "graph: $((ptotal - gbad))/$ptotal packages identical"
 echo "packages: $((ptotal - pbad))/$ptotal packages agree ($psema fail only in sema)"
 
@@ -179,4 +195,4 @@ for _ in range(int(sys.argv[1])): subprocess.run(sys.argv[2:],stdout=subprocess.
 print("%.2f"%((time.perf_counter()-t)*1000/int(sys.argv[1])))' "$runs" "$tmp/ace-self" "$f")
     echo "$f $(wc -c <"$f" | tr -d ' ')B  $a  $b"
 done
-[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ] && [ "$sbad" -eq 0 ] && [ "$gbad" -eq 0 ] && [ "$pbad" -eq 0 ]
+[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ] && [ "$sbad" -eq 0 ] && [ "$cbad" -eq 0 ] && [ "$gbad" -eq 0 ] && [ "$pbad" -eq 0 ]

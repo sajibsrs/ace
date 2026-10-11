@@ -2,7 +2,8 @@
  * with --ast parses it and prints the tree exactly as `ace --ast` does, or
  * with --modules resolves its imports and prints the loaded modules, or with
  * --resolved prints the merged tree as `ace --resolved` does, or with
- * --symbols enters its top-level names and prints them as `ace --symbols` does. --pkg-graph=DIR
+ * --symbols enters its top-level names and prints them as `ace --symbols` does, or
+ * with --check checks it through its function bodies as `ace --check` does. --pkg-graph=DIR
  * prints a package's dependency graph and --pkg-check=DIR resolves its imports
  * through it, as `ace` does, optionally for another --target=T.
  */
@@ -57,13 +58,15 @@ main(): int {
     modules: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--modules")
     resolved: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--resolved")
     symbols: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--symbols")
-    if sys.argc() != 2 && !ast && !modules && !resolved && !symbols {
-        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved|--symbols] file.ace\n")
+    check: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--check")
+    if sys.argc() != 2 && !ast && !modules && !resolved && !symbols && !check {
+        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved|--symbols|--check] file.ace\n")
         return 2
     }
     path: string = sys.arg(sys.argc() - 1)
     if modules || resolved { return dump_modules(path, resolved) }
     if symbols { return dump_symbols(path) }
+    if check { return check_bodies(path) }
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
@@ -181,6 +184,27 @@ dump_symbols(path: string): int {
     out: Out = Out.init(sys.stdout, storage)
     mut s.dump(mut out)
     mut out.flush()
+    return 0
+}
+
+/* Checks `path` through its function bodies; 1 on any error. */
+check_bodies(path: string): int {
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer mut l.wipe()
+    if !found { return 1 }
+    if !mut l.resolve(path) { return summary(path, l.errors) }
+    s: sema.Sema = sema.Sema.new(l)
+    defer mut s.wipe()
+    mut s.enter() // as C's sema_check, every stage runs whatever came before
+    mut s.complete()
+    mut s.promoted_collisions()
+    mut s.signatures()
+    mut s.check_bodies()
+    if s.unsupported.len > 0 {
+        fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
+        return 1
+    }
+    if s.errors > 0 { return summary(path, s.errors) }
     return 0
 }
 
