@@ -1,0 +1,9 @@
+/* Companion module for the Overload private fixture. */
+
+pub scale(x: int): int {
+    return scale(x, 10)
+}
+
+scale(x: int, by: int): int {
+    return x * by
+}

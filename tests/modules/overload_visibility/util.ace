@@ -1,0 +1,21 @@
+/* Companion module for the Overload visibility fixture. */
+
+pub scale(x: int): int {
+    return scale(x, 10)
+}
+
+scale(x: int, by: int): int {
+    return x * by
+}
+
+pub narrow(x: u8): int {
+    return 1
+}
+
+narrow(x: i32): int {
+    return 2
+}
+
+pub inner(): int {
+    return narrow(i32(0))
+}

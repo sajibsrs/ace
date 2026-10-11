@@ -1,0 +1,16 @@
+/* Visibility is per overload: an importer sees only the pub members of an
+ * overload set, qualified and selected alike, as if the rest were absent.
+ */
+
+/* expect-exit: 0 */
+// expect-output: 30 30 30 1 2
+
+import fmt
+import util: "./util.ace"
+import scale from "./util.ace"
+
+main(): int {
+    f: (int): int = util.scale
+    fmt.printf("%d %d %d %d %d\n", util.scale(3), scale(3), f(3), util.narrow(3), util.inner())
+    return 0
+}

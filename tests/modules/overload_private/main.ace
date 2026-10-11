@@ -1,0 +1,7 @@
+/* A call matching only a private overload names it as private. */
+
+import util: "./util.ace"
+
+main(): int {
+    return util.scale(3, 2)
+}

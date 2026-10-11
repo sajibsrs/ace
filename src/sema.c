@@ -722,6 +722,18 @@ static int overload_count(Sym* head) {
     return n;
 }
 
+/* Modules #2/#7: visibility is per overload. An overload the use site at `at`
+ * cannot see is skipped as if undeclared, before resolution. */
+static int ov_hidden(Sym* s, Node* at) {
+    return at && s->kind == SYM_FUNC && s->decl && !decl_visible(s->decl->path, s->is_pub, at->path);
+}
+
+static int visible_count(Sym* head, Node* at) {
+    int n = 0;
+    for (Sym* s = head; s; s = s->overload) n += !ov_hidden(s, at);
+    return n;
+}
+
 static int castable(SType* f, SType* t) {
     if (f->kind == SK_ERR || t->kind == SK_ERR) return 1;
     if (same_type(f, t)) return 1;
@@ -2292,10 +2304,10 @@ static int coerce(Ck* k, Node* e, SType* want) {
     }
     if (e->kind == N_IDENT && want && want->kind == SK_FUNC) {
         Sym* head = lookup_val(k, e->str, e->len);
-        if (head && head->kind == SYM_FUNC && overload_count(head) > 1) {
+        if (head && head->kind == SYM_FUNC && visible_count(head, e) > 1) {
             Sym* found = NULL;
             for (Sym* s = head; s; s = s->overload) {
-                if (s->is_generic || !same_type(s->type, want)) continue;
+                if (ov_hidden(s, e) || s->is_generic || !same_type(s->type, want)) continue;
                 if (found) {
                     ck_err(k, e, "ambiguous overloaded function value '%.*s'",
                            (int)e->len, e->str);
@@ -2721,11 +2733,13 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             ck_err(k, e, "fmt.printf is direct-call-only because its checked arguments depend on the static format");
             return T_ERR;
         }
+        if (s->kind == SYM_FUNC && visible_count(s, e) == 1)
+            while (ov_hidden(s, e)) s = s->overload;
         if (s->kind == SYM_TYPE || (s->kind == SYM_FUNC && s->is_generic)) {
             ck_err(k, e, "'%.*s' is a type or generic — used bare here", (int)e->len, e->str);
             return T_ERR;
         }
-        if (s->kind == SYM_FUNC && overload_count(s) > 1) {
+        if (s->kind == SYM_FUNC && visible_count(s, e) > 1) {
             ck_err(k, e,
                    "overloaded function '%.*s' needs a call or an explicit function-value type",
                    (int)e->len, e->str);
@@ -3295,9 +3309,9 @@ static SType* instantiate_generic_func(Ck* k, Sym* gs, Node* index_node) {
 }
 
 // whether any overload of a function name takes type arguments
-static int has_generic_form(Sym* head) {
+static int has_generic_form(Sym* head, Node* at) {
     for (Sym* s = head; s; s = s->overload)
-        if (s->is_generic || s->spec_args) return 1;
+        if (!ov_hidden(s, at) && (s->is_generic || s->spec_args)) return 1;
     return 0;
 }
 
@@ -3314,7 +3328,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     if (!e->a || e->a->kind != N_IDENT) return NULL;
     Sym* head = lookup_val(k, e->a->str, e->a->len);
     if (!head || head->kind != SYM_FUNC) return NULL;
-    if (!has_generic_form(head)) {
+    if (!has_generic_form(head, e)) {
         ck_err(k, e, "'%.*s' is not generic; name it without type arguments", (int)e->a->len, e->a->str);
         return T_ERR;
     }
@@ -3326,7 +3340,7 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     }
     Sym* chosen = NULL;
     for (Sym* s = head; s; s = s->overload) {
-        if (!s->spec_args || s->spec_nargs != nargs) continue;
+        if (ov_hidden(s, e) || !s->spec_args || s->spec_nargs != nargs) continue;
         int same = 1;
         for (int i = 0; i < nargs && same; i++) same = same_type(s->spec_args[i], targs[i]);
         if (!same || (want && !same_type(s->type, want))) continue;
@@ -3348,7 +3362,8 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
     Sym* sole = NULL;
     int eligible = 0;
     for (Sym* s = head; s; s = s->overload) {
-        if (!s->is_generic || s->spec_args || !s->decl->c || s->decl->c->nkids != nargs) continue;
+        if (ov_hidden(s, e) || !s->is_generic || s->spec_args || !s->decl->c || s->decl->c->nkids != nargs)
+            continue;
         eligible++;
         sole = s;
         if (want) {
@@ -3630,7 +3645,7 @@ static int call_exact_match(Node* call, Sym* s, SType** actual) {
 // Select a non-generic direct-call overload: a sole declaration retains Ace's
 // ordinary expected-literal typing; a real overload set uses exact types and
 // int/f64 literal defaults.
-static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int* ambiguous) {
+static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* ambiguous) {
     *ambiguous = 0;
     if (!head || head->kind != SYM_FUNC) return NULL;
     int nactual = call->nkids;
@@ -3640,7 +3655,7 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int* ambiguous) {
     Sym* found = NULL;
     int nongeneric = 0;
     for (Sym* s = head; s; s = s->overload) {
-        if (s->is_generic) continue;
+        if (s->is_generic || ov_hidden(s, at)) continue;
         nongeneric++;
         if (!call_exact_match(call, s, actual)) continue;
         if (found) {
@@ -3651,7 +3666,7 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int* ambiguous) {
     }
     if (!found) { // no exact match: one shrink-compatible overload may win
         for (Sym* s = head; s; s = s->overload) {
-            if (s->is_generic) continue;
+            if (s->is_generic || ov_hidden(s, at)) continue;
             if (!call_shrink_ft(call, s->decl, s->type, actual)) continue;
             if (found) {
                 *ambiguous = 1;
@@ -3661,7 +3676,15 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, int* ambiguous) {
         }
     }
     if (!found && nongeneric == 1) {
-        for (Sym* s = head; s; s = s->overload) if (!s->is_generic) return s;
+        for (Sym* s = head; s; s = s->overload) if (!s->is_generic && !ov_hidden(s, at)) found = s;
+        // the sole visible overload keeps literal typing as if the hidden
+        // ones were absent; when its arity cannot fit and a hidden overload
+        // matches outright, name that cause instead
+        int fits = (found->decl->flags & F_VARARGS) || found->type->nparams == call->nkids;
+        for (Sym* s = head; at && !fits && s; s = s->overload)
+            if (ov_hidden(s, at) && !s->is_generic &&
+                (call_exact_match(call, s, actual) || call_shrink_ft(call, s->decl, s->type, actual)))
+                return NULL;
     }
     return found;
 }
@@ -4624,7 +4647,7 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
     }
     if (owner->nargs) return check_generic_assoc_call(k, call, owner, head);
     int ambiguous = 0;
-    Sym* found = select_call_overload(k, call, head, &ambiguous);
+    Sym* found = select_call_overload(k, call, head, NULL, &ambiguous);
     if (ambiguous) {
         ck_err(k, call, "ambiguous associated-function call '%.*s'", (int)callee->len, callee->str);
         return T_ERR;
@@ -5056,7 +5079,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return T_ERR;
         }
         int has_plain = 0;
-        for (Sym* it = s; it; it = it->overload) has_plain |= !it->is_generic;
+        for (Sym* it = s; it; it = it->overload) has_plain |= !it->is_generic && !ov_hidden(it, call);
         if (!has_plain) {
             ck_err(k, call, "generic function '%.*s' needs type arguments: %.*s[T](...)",
                    (int)callee->len, callee->str, (int)callee->len, callee->str);
@@ -5067,7 +5090,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return s->type->ret;
         }
         int ambiguous = 0;
-        Sym* chosen = select_call_overload(k, call, s, &ambiguous);
+        Sym* chosen = select_call_overload(k, call, s, call, &ambiguous);
         if (ambiguous) {
             ck_err(k, call, "ambiguous call to overloaded function '%.*s'", (int)callee->len, callee->str);
             return T_ERR;
@@ -5077,6 +5100,13 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return chosen->type->ret;
         }
         if (overloaded_arg_err(k, call, s, callee->str, callee->len)) return T_ERR;
+        Sym* hidden = select_call_overload(k, call, s, NULL, &ambiguous);
+        if (hidden && ov_hidden(hidden, call)) {
+            char nm[256];
+            snprintf(nm, sizeof nm, "%.*s", (int)callee->len, callee->str);
+            ck_err(k, call, "the overload of '%s' matching these arguments is private", module_display(nm));
+            return T_ERR;
+        }
         ck_err(k, call, "no matching overload '%.*s' for these argument types",
                (int)callee->len, callee->str);
         return T_ERR;
@@ -5193,7 +5223,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return check_contract_construct(k, call, named);
         }
         Sym* head = lookup_val(k, callee->a->str, callee->a->len);
-        if (head && head->kind == SYM_FUNC && !has_generic_form(head)) {
+        if (head && head->kind == SYM_FUNC && !has_generic_form(head, call)) {
             ck_err(k, callee, "'%.*s' is not generic; call it without type arguments",
                    (int)callee->a->len, callee->a->str);
             return T_ERR;
@@ -5211,7 +5241,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             Sym* sole_spec = NULL;
             int nspec = 0;
             for (Sym* s = head; s; s = s->overload) {
-                if (!s->spec_args || s->spec_nargs != nargs) continue;
+                if (ov_hidden(s, call) || !s->spec_args || s->spec_nargs != nargs) continue;
                 int same = 1;
                 for (int i = 0; i < nargs && same; i++)
                     same = same_type(s->spec_args[i], targs[i]);
@@ -5238,7 +5268,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             Sym* sole = NULL;
             int eligible = 0;
             for (Sym* s = head; s; s = s->overload) {
-                if (!s->is_generic || !s->decl->c || s->decl->c->nkids != nargs)
+                if (ov_hidden(s, call) || !s->is_generic || !s->decl->c || s->decl->c->nkids != nargs)
                     continue;
                 eligible++;
                 sole = s;

@@ -542,16 +542,16 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
 }
 
 pub stat(path: string): (FileInfo, Error) {
-    info: FileInfo, err: Error = file_info(path, true)
+    info: FileInfo, err: Error = stat(path, true)
     return info, err
 }
 
 pub lstat(path: string): (FileInfo, Error) {
-    info: FileInfo, err: Error = file_info(path, false)
+    info: FileInfo, err: Error = stat(path, false)
     return info, err
 }
 
-file_info(path: string, follow: bool): (FileInfo, Error) {
+stat(path: string, follow: bool): (FileInfo, Error) {
     path_buf: [1024]u8
     zero: FileInfo = FileInfo {
         size = 0,

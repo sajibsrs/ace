@@ -31,7 +31,8 @@ Node: type = parser.Node
 Out: type = fmt.Buffer
 
 /* A module's top-level name. A name has one entry per namespace; overloads
- * fold into it and it is exported only when every declaration is `pub`.
+ * fold into it and it is exported when any declaration is `pub`; sema
+ * filters the set per overload (Modules #7).
  */
 pub Member: struct {
     pub name: string,
@@ -351,8 +352,8 @@ add_member(mut members: array.Array[Member], name: string, is_type: bool, export
     for i: usize in 0..members.len {
         x: Member = members.get(i)
         if x.is_type == is_type && mem.equal(x.name, name) {
-            if !exported && x.exported {
-                (mut members.view())[i].exported = false
+            if exported && !x.exported {
+                (mut members.view())[i].exported = true
             }
             return
         }

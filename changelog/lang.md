@@ -150,3 +150,7 @@
   loader's `decl_visible`, which a facade's `pub` alias also widens. A field
   outside that set cannot be read, written, or named in a literal; `T {}` and
   `blank(T)` stay open.
+- Visibility is per overload (Modules #7): a module member is public when any
+  overload is `pub`, and sema drops overloads `decl_visible` hides from the use
+  site before resolving a call, function value, or generic instantiation. A
+  call fitting only a hidden overload by arity reports it as private.

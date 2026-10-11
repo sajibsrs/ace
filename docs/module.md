@@ -101,7 +101,7 @@ both, since a type and a value may not share a name in overlapping scopes.
 
 A module exports any top-level declaration marked `pub`:
 
-- functions, including exact-signature overload sets,
+- functions, each overload of a set exported on its own,
 - globals (`x: int = 0` and `x: const int = 0`),
 - types: structs, contracts, enums, aliases, and distinct types,
 - type-owned methods and canonical signings. Each is private by
@@ -138,7 +138,8 @@ main(): int {
 }
 ```
 
-Selecting a function imports its complete public overload set. If a module
+Selecting a function imports its complete public overload set; its private
+overloads stay hidden. If a module
 exports a type and value with the same spelling, both are selected and remain
 separate by context, just like local declarations.
 
@@ -182,8 +183,24 @@ pub Fd: type = os.Fd
 Code outside the directory module cannot import an implementation file, even
 through `..` components or symlinks. It can import only `mod.ace`.
 
-Visibility is decided per member **name and namespace**. Mark every overload
-`pub` to export a value overload set. A type and value sharing a spelling are
+Visibility is decided per declaration, so each function overload carries its
+own `pub`. An importer sees only the `pub` overloads of a set, qualified or
+selected alike, and resolves calls and function values as if the private ones
+were absent; the declaring module sees them all. A name with no `pub`
+overload is not public. A call whose argument count fits no public overload
+but matches a private one reports that overload as private:
+
+```ace
+// util.ace
+pub scale(x: int): int { return scale(x, 10) }
+scale(x: int, by: int): int { return x * by }
+
+// main.ace
+util.scale(3)    // 30
+util.scale(3, 2) // error: the overload of 'util.scale' matching these arguments is private
+```
+
+A type and value sharing a spelling are
 considered independently, so selecting the spelling may import either or both,
 depending on which declarations are public. `extern "c"` declarations are
 always module-private.
@@ -289,6 +306,13 @@ Why the rules in `spec/modules-packages.md` are shaped as they are.
   plain data marks its fields `pub`. Like Go's `pkg.T{}`, the empty literal
   and `blank(T)` stay open, because every Ace type's canonical zero is
   already a valid value and the type's own defaults are its author's choice.
+
+- Modules #7: visibility per overload lets a public entry point share its
+  name with private variants (`stat` over a private `stat(path, follow)`)
+  without inventing a helper name, as C++, Swift, C#, and Kotlin set access
+  per overload. Hidden overloads drop out before resolution rather than
+  failing after it (C++'s order), so private declarations never change which
+  public overload an importer gets, nor make its call ambiguous.
 
 - Modules #11: platform replacement changes the target layer without spreading
   kernel ABI, constants, structures, or link names through callers, while the

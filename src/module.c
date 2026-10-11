@@ -35,7 +35,7 @@ struct Member {
     const char* name;
     uint32_t    len;
     int         is_type; // lives in the type namespace (struct/contract/…)
-    int         pub;     // every declaration with this name is pub
+    int         pub;     // some declaration with this name is pub
     Member*     next;
 };
 
@@ -291,12 +291,12 @@ static void check_reserved_name(Loader* L, Node* at, const char* name, uint32_t 
 
 // The member surface of a module: name + namespace + pub-ness. Names are
 // unique per namespace inside a module (the checker enforces it after the
-// merge), so overloads of one name fold into a single member entry whose
-// pub-ness is the AND over its declarations — strict start, relax later.
+// merge), so overloads of one name fold into a single member entry, public
+// when any declaration is pub; sema filters the set per overload (Modules #7).
 static void add_member(Module* m, const char* name, uint32_t len, int is_type, int pub) {
     for (Member* x = m->members; x; x = x->next) {
         if (x->is_type == is_type && x->len == len && memcmp(x->name, name, len) == 0) {
-            if (!pub) x->pub = 0;
+            if (pub) x->pub = 1;
             return;
         }
     }
