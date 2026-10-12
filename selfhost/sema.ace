@@ -6341,7 +6341,7 @@ Sema.check_stmt(mut self, s: u32) {
             mut self.check_block(n.a)
             mut self.scope_pop()
         }
-        Kind.asm { _ = mut self.unported("asm statements") }
+        Kind.asm { mut self.check_asm(s) }
         Kind.block { mut self.check_scoped(s) }
         default { mut self.err(s, ["unsupported statement in checker"]) }
     }
@@ -6918,6 +6918,103 @@ Sema.check_range(mut self, e: u32): u32 {
         }
     }
     return range
+}
+
+ARM64_ASM_REG: [31]string = [
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
+    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30",
+]
+X64_ASM_REG: [14]string = [
+    "rax", "rcx", "rdx", "rbx", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+]
+
+/* An asm binding's register: one the target names (Inline Assembly #2). */
+Sema.is_asm_reg_name(self, r: u32): bool {
+    n: Node = self.node(r)
+    if n.kind != Kind.ident { return false }
+    if mem.equal(self.l.target, "linux-x64") {
+        for name: string in X64_ASM_REG { if mem.equal(name, n.text) { return true } }
+        return false
+    }
+    for name: string in ARM64_ASM_REG { if mem.equal(name, n.text) { return true } }
+    return false
+}
+
+/* The v1 mini-assembler's instructions (Inline Assembly #1): nop, svc #imm,
+ * brk #imm on arm64; nop, syscall, int3 on x64.
+ */
+Sema.check_asm_insn(mut self, s: u32) {
+    p: string = self.node(s).text
+    i: usize = 0
+    for i < p.len && (p[i] == ' ' || p[i] == '\t') { i += 1 }
+    start: usize = i
+    for i < p.len && p[i] != ' ' && p[i] != '\t' && p[i] != '#' { i += 1 }
+    word: string = p[start..i]
+    if mem.equal(self.l.target, "linux-x64") {
+        for i < p.len && (p[i] == ' ' || p[i] == '\t') { i += 1 }
+        if i != p.len || !(mem.equal(word, "nop") || mem.equal(word, "syscall") || mem.equal(word, "int3")) {
+            mut self.err(s, ["supported asm instructions: nop, syscall, int3"])
+        }
+        return
+    }
+    if mem.equal(word, "nop") { return }
+    if !mem.equal(word, "svc") && !mem.equal(word, "brk") {
+        mut self.err(s, ["supported asm instructions: nop, svc #imm, brk #imm"])
+        return
+    }
+    for i < p.len && (p[i] == ' ' || p[i] == '\t' || p[i] == '#') { i += 1 }
+    if i >= p.len || p[i] < '0' || p[i] > '9' { mut self.err(s, ["svc/brk need an immediate"]) }
+}
+
+/* `asm "insn" { in: r = v, out: r = v, clobbers: r }`: registers the target
+ * names, and in/out values that are scalar locals or parameters.
+ */
+Sema.check_asm(mut self, s: u32) {
+    mut self.check_asm_insn(s)
+    for i: u32 in 0..self.node(s).nkids {
+        bnd: u32 = self.kid(s, i)
+        b: Node = self.node(bnd)
+        isclob: bool = mem.equal(b.text, "clobbers")
+        is_in: bool = mem.equal(b.text, "in")
+        step: u32 = 2
+        if isclob { step = 1 }
+        j: u32 = 0
+        for j < b.nkids { // clobbers: names; in/out: reg, value pairs
+            if !self.is_asm_reg_name(self.kid(bnd, j)) {
+                if mem.equal(self.l.target, "linux-x64") {
+                    mut self.err(self.kid(bnd, j), ["asm bindings name x64 registers (rax-r15, not rsp or rbp)"])
+                } else {
+                    mut self.err(self.kid(bnd, j), ["asm bindings name x registers (x0-x30)"])
+                }
+            }
+            j += step
+        }
+        if isclob { continue }
+        j = 0
+        for j + 1 < b.nkids {
+            val: u32 = self.kid(bnd, j + 1)
+            j += 2
+            v: Node = self.node(val)
+            if !is_in && v.kind != Kind.ident { // the parser takes a name or an integer
+                mut self.err(val, ["asm 'out' needs a local or a parameter"])
+                continue
+            }
+            if v.kind != Kind.ident { continue }
+            vs: u32 = mut self.lookup_val(v.text)
+            if vs == 0 || self.sym(vs).kind != SymKind.var || self.sym(vs).is_global {
+                mut self.err(val, ["asm binding '", v.text, "' is not a local or parameter"])
+                continue
+            }
+            bt: u32 = self.sym(vs).ty
+            for bt != 0 && self.ty(bt).kind == TypeKind.distinct { bt = self.ty(bt).base }
+            if bt == 0 { continue }
+            k: TypeKind = self.ty(bt).kind
+            if k == TypeKind.struct || k == TypeKind.tuple || k == TypeKind.array || k == TypeKind.slice ||
+                k == TypeKind.union || k == TypeKind.contract || (k == TypeKind.prim && self.ty(bt).prim == P_STRING) {
+                mut self.err(val, ["asm binding '", v.text, "' must be a scalar, not ", mut self.type_name(self.sym(vs).ty)])
+            }
+        }
+    }
 }
 
 /* `a[i]`: an element of an array, slice, or string. */

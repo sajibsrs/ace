@@ -126,3 +126,6 @@
   with duplicate detection, and module-level-only construction.
 - selfhost checks StaticMap lookups: the table must be a module-level
   binding, and the key must have the exact key type or be an untyped constant.
+- selfhost checks `asm` statements: the target's mini-assembler
+  instructions, its register names in every binding, and scalar local or
+  parameter values for `in`/`out`.

@@ -77,7 +77,7 @@ pub Module: struct {
 
 pub Loader: struct {
     pub errors: int = 0,
-    target: string = "",
+    pub target: string = "",
     pub std_dir: string = "",               // beside the compiler, as written
     std_root: string = "",                  // its realpath, "" when absent
     pool: path.Pool,
