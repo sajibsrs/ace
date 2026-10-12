@@ -121,3 +121,6 @@
 - selfhost checks contract construction and contract method calls: `T(&x)`
   and `T[A](&x)` find the struct's signing item, and const-backed provenance
   follows bindings, assignments, returns, and read-only contract parameters.
+- selfhost checks StaticMap declarations: allowed key types, constant
+  entries reduced to string or integer keys (`typeid` keys by type identity)
+  with duplicate detection, and module-level-only construction.

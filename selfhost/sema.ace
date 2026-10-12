@@ -1263,7 +1263,8 @@ Sema.resolve_global(mut self, s: u32) {
     if n.b != 0 {
         v: Node = self.node(n.b)
         if k == TypeKind.staticmap {
-            _ = mut self.unported("StaticMap declarations")
+            if (n.flags & parser.F_CONST) != 0 { mut self.err(x.top, ["const is not permitted on a StaticMap declaration"]) }
+            mut self.check_staticmap(n.b, t)
         } else if v.kind == Kind.structlit && v.a == 0 && (k == TypeKind.struct || k == TypeKind.bits) {
             mut self.check_structlit(n.b, t)
         } else if v.kind == Kind.arraylit && k == TypeKind.array {
@@ -3638,6 +3639,7 @@ Sema.check_call(mut self, call: u32): u32 {
             return self.t_err
         }
         if t == 0 || self.ty(t).kind == TypeKind.err { return self.t_err }
+        mut self.set_node_ival(call, u64(t)) // the type's identity, a StaticMap key (C's type_identity)
         return self.prim(P_TYPEID)
     }
     p: u32 = self.prim_by_name(name)
@@ -4288,13 +4290,98 @@ Sema.static_key_int(self, e: u32): (u64, bool) {
             return self.node_ival(e), true
         }
     }
-    if n.kind == Kind.call && self.node_sym(e) == 0 && n.nkids == 1 { return self.static_key_int(self.kid(e, 0)) } // a cast
+    if n.kind == Kind.call && self.node_sym(e) == 0 {
+        if n.a != 0 && self.node(n.a).kind == Kind.ident && mem.equal(self.node(n.a).text, "typeid") && self.node_ival(e) != 0 { return self.node_ival(e), true }
+        if n.nkids == 1 { return self.static_key_int(self.kid(e, 0)) } // a cast
+    }
     if n.kind == Kind.ident {
         s: u32 = self.node_sym(e)
         if s != 0 && self.sym(s).is_const && self.sym(s).is_global && self.sym_init(s) != 0 { return self.static_key_int(self.sym_init(s)) }
     }
     v: i64, ok: bool = self.ut_const(e)
     return u64(v), ok
+}
+
+/* A string key known exactly at compile time, as its literal node, or 0. */
+Sema.static_key_string(self, e: u32): u32 {
+    if e == 0 { return 0 }
+    n: Node = self.node(e)
+    if n.kind == Kind.str_lit { return e }
+    if n.kind == Kind.ident {
+        s: u32 = self.node_sym(e)
+        if s != 0 && self.sym(s).is_const && self.sym(s).is_global && self.sym_init(s) != 0 { return self.static_key_string(self.sym_init(s)) }
+    }
+    if n.kind == Kind.call && self.node_sym(e) == 0 && n.nkids == 1 { return self.static_key_string(self.kid(e, 0)) } // a cast
+    return 0
+}
+
+Sema.staticmap_key_type(self, id: u32): bool {
+    t: u32 = id
+    for t != 0 && self.ty(t).kind == TypeKind.distinct { t = self.ty(t).base }
+    if t == 0 { return false }
+    x: SType = self.ty(t)
+    if x.kind == TypeKind.enum { return true }
+    if x.kind != TypeKind.prim { return false }
+    return x.prim == P_BOOL || (x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_STRING || x.prim == P_USIZE || x.prim == P_TYPEID
+}
+
+/* A StaticMap's brace literal: allowed key type, complete value layout,
+ * constant entries, and distinct keys (C's check_staticmap).
+ */
+Sema.check_staticmap(mut self, lit: u32, map: u32) {
+    if lit == 0 || self.node(lit).kind != Kind.staticmaplit {
+        mut self.err(lit, ["StaticMap requires a brace literal of key: value entries"])
+        return
+    }
+    m: SType = self.ty(map)
+    if !self.staticmap_key_type(m.base) { mut self.err(lit, [mut self.type_name(m.base), " is not an allowed StaticMap key type"]) }
+    if !mut self.layout(m.ret) { mut self.err(lit, ["StaticMap value type ", mut self.type_name(m.ret), " must have a complete layout"]) }
+    key: u32 = m.base
+    for key != 0 && self.ty(key).kind == TypeKind.distinct { key = self.ty(key).base }
+    strings: bool = key != 0 && self.ty(key).kind == TypeKind.prim && self.ty(key).prim == P_STRING
+    rk: TypeKind = self.ty(m.ret).kind
+    for i: u32 in 0..self.node(lit).nkids {
+        entry: Node = self.node(self.kid(lit, i))
+        _ = mut self.coerce(entry.a, m.base)
+        v: Node = self.node(entry.b)
+        if v.kind == Kind.structlit && v.a == 0 && (rk == TypeKind.struct || rk == TypeKind.bits) {
+            mut self.check_structlit(entry.b, m.ret)
+        } else if v.kind == Kind.arraylit && rk == TypeKind.array {
+            mut self.check_arraylit(entry.b, m.ret)
+        } else {
+            _ = mut self.coerce(entry.b, m.ret)
+        }
+        if !self.compile_time_expr(entry.a) { mut self.err(entry.a, ["StaticMap key must be a global constant expression"]) }
+        if !self.compile_time_expr(entry.b) { mut self.err(entry.b, ["StaticMap value must be a global constant expression"]) }
+        text: u32 = 0
+        bits: u64 = 0
+        ok: bool = false
+        if strings {
+            text = self.static_key_string(entry.a)
+            ok = text != 0
+        } else {
+            bits, ok = self.static_key_int(entry.a)
+        }
+        if !ok {
+            mut self.err(entry.a, ["StaticMap key must be reducible at compile time"])
+            continue
+        }
+        for j: u32 in 0..i {
+            pa: u32 = self.node(self.kid(lit, j)).a
+            equal: bool = false
+            if strings {
+                pt: u32 = self.static_key_string(pa)
+                equal = pt != 0 && mem.equal(self.node(pt).text, self.node(text).text)
+            } else {
+                pb: u64, pok: bool = self.static_key_int(pa)
+                equal = pok && pb == bits
+            }
+            if equal {
+                mut self.err(entry.a, ["duplicate StaticMap key"])
+                break
+            }
+        }
+    }
 }
 
 // --- building types -----------------------------------------------------------
@@ -6319,12 +6406,10 @@ Sema.check_var_stmt(mut self, s: u32) {
         mut self.bind_local(mut self.declare_binder(s, binder), t, binder, is_const)
     }
     w0: u32 = wants.get(0)
-    if self.ty(w0).kind == TypeKind.staticmap {
-        _ = mut self.unported("StaticMap declarations")
-        return
-    }
     if n.b == 0 {
-        if is_const {
+        if self.ty(w0).kind == TypeKind.staticmap {
+            mut self.err(s, ["StaticMap construction requires a module-level brace initializer"])
+        } else if is_const {
             mut self.err(s, ["const declaration requires an initializer"])
         } else if n.nkids > 1 {
             mut self.err(s, ["destructuring declaration requires an initializer"])
@@ -6335,7 +6420,10 @@ Sema.check_var_stmt(mut self, s: u32) {
         init: u32 = n.b
         ik: Kind = self.node(init).kind
         wk: TypeKind = self.ty(w0).kind
-        if ik == Kind.structlit && self.node(init).a == 0 && (wk == TypeKind.struct || wk == TypeKind.bits) {
+        if wk == TypeKind.staticmap {
+            mut self.err(s, ["StaticMap construction is allowed only in a module-level declaration"])
+            mut self.check_staticmap(init, w0)
+        } else if ik == Kind.structlit && self.node(init).a == 0 && (wk == TypeKind.struct || wk == TypeKind.bits) {
             mut self.check_structlit(init, w0)
         } else if ik == Kind.arraylit && wk == TypeKind.array {
             mut self.check_arraylit(init, w0)
