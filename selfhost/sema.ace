@@ -6926,7 +6926,22 @@ Sema.check_index(mut self, e: u32): u32 {
     gv: u32 = mut self.generic_func_value(e, 0)
     if gv != 0 { return gv }
     b: u32 = mut self.expr_type(n.a)
-    if self.ty(b).kind == TypeKind.staticmap { return mut self.unported("StaticMap lookups") }
+    if self.ty(b).kind == TypeKind.staticmap {
+        ts: u32 = 0
+        if n.a != 0 && self.node(n.a).kind == Kind.ident { ts = self.node_sym(n.a) }
+        if ts == 0 || !self.sym(ts).is_global {
+            mut self.err(e, ["StaticMap lookup requires a module-level table binding"])
+            return self.t_err
+        }
+        m: SType = self.ty(b)
+        kx: u32 = mut self.expr_type(n.b)
+        if kx == self.t_ut_int || kx == self.t_ut_float || kx == self.t_ut_null {
+            _ = mut self.coerce(n.b, m.base)
+        } else if !self.same_type(kx, m.base) {
+            mut self.err(n.b, ["StaticMap key is ", mut self.type_name(kx), ", not the table's exact key type ", mut self.type_name(m.base)])
+        }
+        return m.ret
+    }
     ix: u32 = mut self.expr_type(n.b)
     if self.ty(b).kind == TypeKind.err || self.ty(ix).kind == TypeKind.err { return self.t_err }
     mut self.check_index_type(e, b, ix)

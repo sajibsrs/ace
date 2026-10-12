@@ -124,3 +124,5 @@
 - selfhost checks StaticMap declarations: allowed key types, constant
   entries reduced to string or integer keys (`typeid` keys by type identity)
   with duplicate detection, and module-level-only construction.
+- selfhost checks StaticMap lookups: the table must be a module-level
+  binding, and the key must have the exact key type or be an untyped constant.
