@@ -4404,20 +4404,17 @@ Sema.build_ident(mut self, id: u32, named: bool): u32 {
         mut self.err(id, ["unknown type '", t.text, "'"])
         return self.t_err
     }
-    if named && t.nkids > 0 { return mut self.build_generic(id, s) } // generic instantiation in type position: Vec[int]
+    if named && t.nkids > 0 { // generic instantiation in type position: Vec[int]
+        args: array.Array[u32] = array.Array[u32] {}
+        defer mut args.wipe()
+        for i: u32 in 0..t.nkids { fail(mut args.push(mut self.build_type_or_void(self.kid(id, i)))) }
+        return mut self.instantiate(self.ty(self.sym(s).ty).decl, args.view(), id)
+    }
     if self.sym(s).is_generic {
         mut self.err(id, ["generic type '", t.text, "' needs explicit type arguments"])
         return self.t_err
     }
     return self.sym(s).ty
-}
-
-/* `G[A, B]` as named type `id` writes it, G being type symbol `s`. */
-Sema.build_generic(mut self, id: u32, s: u32): u32 {
-    args: array.Array[u32] = array.Array[u32] {}
-    defer mut args.wipe()
-    for i: u32 in 0..self.node(id).nkids { fail(mut args.push(mut self.build_type_or_void(self.kid(id, i)))) }
-    return mut self.instantiate(self.ty(self.sym(s).ty).decl, args.view(), id)
 }
 
 Sema.build_type(mut self, id: u32): u32 {
@@ -5880,7 +5877,6 @@ Frame: struct {
     label: string = "",
     has_label: bool = false,
     is_loop: bool = false,
-    is_fnbody: bool = false,           // the function's outermost body block
 }
 
 Sema.scope_push(mut self) {
@@ -5964,7 +5960,6 @@ Sema.check_func_body(mut self, f: u32) {
     saved_module: bool = self.in_module
     self.in_module = self.in_imported(f)
     mut self.scope_push()
-    mut self.frame().is_fnbody = true // `defer` is legal only as a direct statement here
     n: Node = self.node(f)
     for i: u32 in 0..n.nkids {
         pa: u32 = self.kid(f, i)
@@ -6262,7 +6257,6 @@ Sema.check_stmt(mut self, s: u32) {
         Kind.assign { mut self.check_assign(s) }
         Kind.exprstmt { mut self.check_expr_stmt(s, n.a) }
         Kind.defer {
-            if !self.frame().is_fnbody { mut self.err(s, ["defer statement must appear at the top level of the function body"]) }
             if self.node(n.a).kind != Kind.call {
                 mut self.err(n.a, ["defer operand must be a call"])
                 return
@@ -8300,10 +8294,6 @@ Sema.check_definite_initialization(mut self) {
  * call cycles and then definite initialization when nothing has failed yet.
  */
 pub Sema.check_end(mut self) {
-    path: array.Array[u32] = array.Array[u32] {} // the inline walk's state
-    defer mut path.wipe()
-    done: map.Map[u32, bool] = map.Map[u32, bool] {}
-    defer mut done.wipe()
     // Generics #13: a 'specialized' template with zero specializations in the
     // compiled program is a declaration error.
     for k: u32 in 0..self.node(self.file).nkids {
@@ -8324,6 +8314,10 @@ pub Sema.check_end(mut self) {
     }
     self.in_module = false
     if self.errors == 0 { // every call now names its target
+        path: array.Array[u32] = array.Array[u32] {} // the inline walk's state
+        defer mut path.wipe()
+        done: map.Map[u32, bool] = map.Map[u32, bool] {}
+        defer mut done.wipe()
         for k: u32 in 0..self.node(self.file).nkids {
             id: u32 = self.kid(self.file, k)
             if self.node(id).kind == Kind.func && (self.node(id).flags & parser.F_INLINE) != 0 {

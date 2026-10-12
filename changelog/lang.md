@@ -162,3 +162,7 @@
   body once per selected value, counting at the range's unified bound type.
   The parser turns a leading expression followed by `..` into the range head;
   lowering keeps its hidden cursor and skips the binder copy.
+- `defer` is legal in any block and runs when control leaves it (Deferred
+  calls #2): the block's end, `return`, `break`, `continue`, a labeled restart,
+  or `fallthrough`. Lowering keeps one defer stack with a floor per block and
+  per loop/label target; each exit re-emits the calls above its target's floor.

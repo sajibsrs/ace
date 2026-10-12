@@ -305,7 +305,6 @@ typedef struct Scope {
     uint32_t      nvalues, ntypes;
     const char*   label;
     int           is_loop;
-    int           is_fnbody; // the function's outermost body block
 } Scope;
 
 enum { DECL_DONE, DECL_ENTERED, DECL_RESOLVING };
@@ -6088,12 +6087,6 @@ static void check_stmt(Ck* k, Node* s) {
         return;
     }
     case N_DEFER: {
-        // Hard restriction: `defer` is a direct statement of the function's
-        // top-level body block only. Every nested block pushes its own scope
-        // (if/for/switch case/label/bare block), while check_block pushes
-        // none — so the innermost scope is the body scope exactly when the
-        // defer sits at the top level.
-        if (!k->scope->is_fnbody) ck_err(k, s, "defer statement must appear at the top level of the function body");
         if (s->a->kind != N_CALL) {
             ck_err(k, s->a, "defer operand must be a call");
             return;
@@ -7288,7 +7281,6 @@ static void check_func_body(Ck* k, Node* f) {
     int saved_in_module = k->in_module;
     k->in_module = in_imported(f);
     scope_push(k);
-    k->scope->is_fnbody = 1; // `defer` is legal only as a direct statement here
     for (int i = 0; i < f->nkids; i++) {
         Node* pa = f->kids[i];
         Sym* s = declare_val(k, pa, SYM_VAR, pa->str, pa->len);

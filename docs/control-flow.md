@@ -367,10 +367,9 @@ exits only by `return`, falling off its end, or `panic`.
 
 ## Deferred calls
 
-`defer` schedules one call to run when the surrounding function exits. The
-statement is legal only as a direct statement of the function's top-level body
-block — not inside an `if`, `for`, a switch case, or a labeled block — and its
-operand must be a call:
+`defer` schedules one call to run when the enclosing block exits. It may appear
+in any block — the function body, an `if`, a loop body, a switch case, or a
+labeled block — and its operand must be a call:
 
 ```ace
 finish(): int {
@@ -380,14 +379,28 @@ finish(): int {
 }
 ```
 
-A function's defers form one list in source order. At every exit — each
-`return` and falling off the end of the body — they run in reverse order:
+Each block's defers form one list in source order. Whenever control leaves the
+block — its end, a `return`, or a `break`, `continue`, labeled restart, or
+`fallthrough` past it — they run in reverse order:
 
 ```ace
 finish(): int {
     defer fmt.println("first")
     defer fmt.println("second")
     return 0 // prints "second", then "first"
+}
+```
+
+An exit that leaves several blocks runs the innermost block's defers first. A
+`defer` in a loop body runs once per iteration, so scratch storage can live in
+the branch or iteration that needs it:
+
+```ace
+for line: string in lines {
+    words: array.Array[string] = split(line)
+    defer mut words.wipe() // released at the end of every iteration
+    if words.len == 0 { continue } // also released here
+    count(words.view())
 }
 ```
 
@@ -456,14 +469,14 @@ work(): int {
   and through a function value there is no receiver, so `defer mut f()` marks
   nothing.
 
-Defers run only at function exits, and nothing else runs them:
+Only leaving the block runs its defers:
 
 - `panic` and `sys.exit` terminate the process and run no defers. If either is
   itself deferred, reaching it terminates immediately and earlier pending
   defers do not run.
-- `break` and `continue`, plain or labeled, leave the function running, so the
-  defers wait for the real exit that ends the function.
-- A `defer` written after the final `return` never runs; it is accepted
+- A `break` or `continue` runs the defers of the blocks it leaves and no
+  others; a block it stays inside keeps its defers pending.
+- A `defer` written after an exit in its block never runs; it is accepted
   without an unreachable-code diagnostic.
 - A deferred call's result is discarded — it cannot change the function's own
   return value.
@@ -498,13 +511,16 @@ Why the rules in `spec/control-flow.md` are shaped as they are.
   register allocator and definite-initialization checking do not model and
   which would force `volatile` locals. Errors as values, `break label`, and
   `panic` already cover every use.
-- Deferred calls #7: cleanup ordering is what C reaches for `goto` to obtain.
-  Anchoring the list at the function keeps the exit set total — every `return`
-  plus fall-off — with no block-scoped bookkeeping, which is what makes inline
-  expansion possible at zero runtime cost in an in-order compiler. The two-tier
+- Deferred calls #2, #7: cleanup ordering is what C reaches for `goto` to
+  obtain. Anchoring each list at its block keeps every exit statically known —
+  the block's end and each jump past it — so inline expansion stays free of
+  runtime machinery, and a `mut` capture of a block-local never outlives its
+  storage. A function-level list fed from nested blocks (Go's model) needs a
+  runtime record of which defers ran; Zig, Swift, Odin, and C's `cleanup`
+  attribute scope defers to blocks as Ace does. The two-tier
   capture keeps the ordinary `mut` call contract truthful at a distance:
   read-only arguments behave like call-by-value snapshots, while `mut`-marked
-  arguments keep their by-reference meaning up to the function's final moment.
+  arguments keep their by-reference meaning up to the block's final moment.
 - Sequences #9: every view operation is explicit and allocation-free; permission
   is established where `mut` is written, carried in types thereafter, and never
   escalated — writable bytes exist only from proven-writable provenance, so the

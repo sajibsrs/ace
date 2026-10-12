@@ -1,6 +1,5 @@
-/* `defer` is only valid as a direct statement of the function's top-level
- * body block. Every defer below sits in a nested block — if, for, a switch
- * case, and a labeled block — so each must be rejected. */
+/* `defer` is valid in any block: each defer below sits in a nested block —
+ * if, for, a switch case, and a labeled block — and runs when it exits. */
 
 touch(): int {
     return 1

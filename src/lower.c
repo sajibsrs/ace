@@ -43,6 +43,7 @@ typedef struct { // a break/continue target
     uint32_t    llen;
     int         brk, cont; // blocks; cont < 0 for a labeled block
     int         restart;   // a labeled block: its first block, where `continue label` returns; else -1
+    int         ndefers;   // defers pending outside it: leaving it runs those above
 } Target;
 
 typedef struct { // an inline call being expanded
@@ -3262,8 +3263,14 @@ static void cond(Lw* l, Node* x, int t, int f) {
 
 static void stmt(Lw* l, Node* s);
 
+static void run_defers(Lw* l, int floor);
+
+// Leaving the block by its end runs the defers it captured (Deferred calls #2).
 static void block(Lw* l, Node* b) {
+    int floor = l->ndefers;
     for (int i = 0; i < b->nkids && l->cur >= 0; i++) stmt(l, b->kids[i]);
+    if (l->cur >= 0) run_defers(l, floor);
+    l->ndefers = floor;
 }
 
 static void leaks_check(Lw* l) { // main's allocator leak report (Safety & Debug Builds #9)
@@ -3272,10 +3279,8 @@ static void leaks_check(Lw* l) { // main's allocator leak report (Safety & Debug
     l->fn->ins[id].name = "__ace$registry_leaks";
 }
 
-static void run_defers(Lw* l);
-
 static void ret(Lw* l, const Agg* a) {
-    run_defers(l);
+    run_defers(l, 0);
     leaks_check(l);
     int id = emit(l, IR_RET, IT_VOID);
     for (int k = 0; a && k < a->n; k++) ir_arg_add(l->fn, id, a->v[k]);
@@ -3440,7 +3445,7 @@ static Target* target(Lw* l, Node* s, int is_continue) {
 
 static void push_target(Lw* l, Node* s, int brk, int cont, int restart) {
     l->tgt = (Target*)grow(l->tgt, &l->ctgt, l->ntgt + 1, sizeof(Target));
-    l->tgt[l->ntgt++] = (Target){ s->str, s->len, brk, cont, restart };
+    l->tgt[l->ntgt++] = (Target){ s->str, s->len, brk, cont, restart, l->ndefers };
 }
 
 // e evaluated for its effects, its value dropped.
@@ -3968,11 +3973,11 @@ static void switch_stmt(Lw* l, Node* s) {
 }
 
 // --- defer ------------------------------------------------------------------------------
-// A `defer` at the top of the body captures its call: each read-only argument
-// is evaluated there into a fresh variable, and a `mut` argument or receiver
-// keeps its storage's address, so the call re-lowered before every return and
-// at the fall-off end, last defer first, reads the snapshots and the final
-// storage. The result being returned is already SSA values (or memory the
+// A `defer` captures its call: each read-only argument is evaluated there into
+// a fresh variable, and a `mut` argument or receiver keeps its storage's
+// address, so the call re-lowered at every exit from its block (the block's
+// end, a return, or a break/continue past it), last defer first, reads the
+// snapshots and the final storage. The result being returned is already SSA values (or memory the
 // caller owns), so it survives the calls.
 
 // a fresh variable's name, standing for the argument captured into it
@@ -4029,9 +4034,7 @@ static Node* defer_arg(Lw* l, Node* a, int byaddr, int in_slot) {
 }
 
 static void defer_capture(Lw* l, Node* s) {
-    int top = 0;
-    for (int i = 0; !l->ninl && i < l->f->b->nkids; i++) top |= l->f->b->kids[i] == s;
-    if (!top) unsupported(l, "defer placement");
+    if (l->ninl) unsupported(l, "defer placement"); // inline bodies hold no defer (Functions)
     Node* call = s->a;
     if (call->kind != N_CALL) unsupported(l, "defer operand");
     Node* callee = call->a;
@@ -4059,9 +4062,10 @@ static void defer_capture(Lw* l, Node* s) {
     l->defers[l->ndefers++] = (Deferred){ sc, s };
 }
 
-static void run_defers(Lw* l) {
+// The pending defers above floor, last first; they stay pending for the code after.
+static void run_defers(Lw* l, int floor) {
     Node* at = l->at;
-    for (int i = l->ndefers - 1; i >= 0; i--) {
+    for (int i = l->ndefers - 1; i >= floor; i--) {
         l->at = l->defers[i].at; // exit-time code cites the defer's line
         expr(l, l->defers[i].call, -1);
     }
@@ -4207,11 +4211,15 @@ static void stmt(Lw* l, Node* s) {
         enter(l, exit);
         return;
     }
-    case N_BREAK:
-        jump(l, target(l, s, 0)->brk);
+    case N_BREAK: {
+        Target* t = target(l, s, 0);
+        run_defers(l, t->ndefers);
+        jump(l, t->brk);
         return;
+    }
     case N_CONTINUE: {
         Target* t = target(l, s, 1);
+        run_defers(l, t->ndefers);
         jump(l, t->cont >= 0 ? t->cont : t->restart);
         return;
     }

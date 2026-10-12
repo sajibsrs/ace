@@ -64,7 +64,7 @@
 //   N_ASM       str = instruction text; kids = N_ASMBIND (str = in/out/clobbers;
 //               kids = [reg, val, reg, val, ...] for in/out, [reg, ...] for clobbers)
 //   N_LABEL     str = label; a = block
-//   N_DEFER     a = call expression deferred to function exit (top-level only)
+//   N_DEFER     a = call expression deferred to the exit of its block
 //   N_NAMED     str = name; a = qualifier (N_NAMED/N_IDENT chain); kids = generic args (types)
 //   N_PTR       a = pointee; F_MUT
 //   N_SLICE_T   a = element

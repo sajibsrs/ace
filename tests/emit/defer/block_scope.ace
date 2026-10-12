@@ -1,0 +1,106 @@
+/* A defer in a nested block runs when control leaves that block: at its end,
+ * and on every return, break, continue, restart, or fallthrough past it. */
+
+// expect-exit: 0
+// expect-output: if body
+// expect-output: if end
+// expect-output: after if
+// expect-output: iter 0
+// expect-output: iter 1
+// expect-output: iter 2
+// expect-output: restart
+// expect-output: restart
+// expect-output: case 1
+// expect-output: case 1 end
+// expect-output: case 2
+// expect-output: case 2 end
+// expect-output: inner
+// expect-output: outer
+// expect-output: function
+// expect-output: total 3
+
+import fmt
+
+note(text: string) {
+    fmt.println(text)
+}
+
+add(mut total: int, n: int) {
+    total += n
+}
+
+show(total: int) {
+    fmt.printf("total %d\n", total)
+}
+
+loops() {
+    for i: int in 0 .. 5 {
+        switch i {
+            0 { defer note("iter 0") }
+            1 { defer note("iter 1") }
+            default { defer note("iter 2") }
+        }
+        if i == 2 { break }
+    }
+    tries: int = 0
+    again: {
+        defer note("restart")
+        tries += 1
+        if tries < 2 { continue again }
+    }
+}
+
+cases(v: int) {
+    switch v {
+        1 {
+            defer note("case 1 end")
+            note("case 1")
+            fallthrough
+        }
+        2 {
+            defer note("case 2 end")
+            note("case 2")
+        }
+        default {
+        }
+    }
+}
+
+nested(): int {
+    defer note("function")
+    for 0 .. 3 {
+        defer note("outer")
+        if true {
+            defer note("inner")
+            return 0
+        }
+    }
+    return 1
+}
+
+captures(): int {
+    total: int = 0
+    for i: int in 0 .. 3 {
+        local: int = i
+        defer add(mut total, local)
+        local += 1
+    }
+    if true {
+        defer show(total) // snapshots 3
+        total += 4
+    }
+    return total
+}
+
+main(): int {
+    if true {
+        defer note("if end")
+        note("if body")
+    }
+    note("after if")
+    loops()
+    cases(1)
+    if nested() != 0 { return 1 }
+    if captures() != 7 { return 2 }
+    return 0
+}

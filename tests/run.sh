@@ -332,7 +332,6 @@ tests/sema/functions/body_statements_err.ace|36:6: error: assignment binds 3 nam
 tests/sema/functions/body_statements_err.ace|40:12: error: bit fields are non-addressable
 tests/sema/functions/body_statements_err.ace|45:11: error: can only slice arrays, slices, and strings, not i64
 tests/sema/functions/body_statements_err.ace|50:11: error: cannot index i64
-tests/sema/functions/body_statements_err.ace|55:9: error: defer statement must appear at the top level of the function body
 tests/sema/functions/body_statements_err.ace|60:5: error: error-domain names are identities, not value types; use Error
 tests/sema/functions/body_statements_err.ace|60:23: error: error-domain names have no value layout; use Error
 tests/sema/functions/body_statements_err.ace|64:19: error: for-in iterates slices, arrays, strings, or ranges — not integer literal
@@ -564,14 +563,6 @@ if ! printf '%s\n' "$switch_else_error" | grep -qF "'else' is not a switch case;
     fail=1
 fi
 
-defer_placement_errors=$("$ACE" tests/sema/defer/placement_err.ace 2>&1)
-defer_placement_count=$(printf '%s\n' "$defer_placement_errors" | grep -cF \
-    "defer statement must appear at the top level of the function body")
-if [ "$defer_placement_count" -ne 4 ]; then
-    echo "FAIL: expected 4 defer placement diagnostics, got $defer_placement_count"
-    printf '%s\n' "$defer_placement_errors"
-    fail=1
-fi
 defer_noncall_errors=$("$ACE" tests/sema/defer/noncall_err.ace 2>&1)
 defer_noncall_count=$(printf '%s\n' "$defer_noncall_errors" | grep -cF \
     "defer operand must be a call")
