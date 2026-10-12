@@ -305,10 +305,6 @@ Sema.sym(mut self, id: u32): mut *Sym {
     return mut &mut self.syms.view()[usize(id)]
 }
 
-Sema.update(mut self, id: u32, s: Sym) {
-    mut self.syms.set(usize(id), s)
-}
-
 Sema.new_sym(mut self, kind: SymKind, name: string): u32 {
     fail(mut self.syms.push(Sym { name = name, kind = kind }))
     return u32(self.syms.len - 1)
@@ -763,12 +759,10 @@ Sema.enter_specialization(mut self, f: u32) {
     s: u32 = mut self.new_sym(SymKind.func, n.text)
     mut self.sym(s).decl = f
     mut self.sym(s).is_pub = (n.flags & parser.F_PUB) != 0
-    h: Sym = self.sym(head)
-    if h.entered_specs == 0 {
-        h.entered_specs = s
-        mut self.update(head, h)
+    if self.sym(head).entered_specs == 0 {
+        mut self.sym(head).entered_specs = s
     } else {
-        tail: u32 = h.entered_specs
+        tail: u32 = self.sym(head).entered_specs
         for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
         mut self.sym(tail).overload = s
     }
@@ -1180,8 +1174,7 @@ Sema.resolve_top(mut self, s: u32) {
         mut self.err(self.resolve_site(s), ["declarations nest too deeply to resolve '", x.name, "'"])
         return
     }
-    x.resolving = true
-    mut self.update(s, x)
+    mut self.sym(s).resolving = true
     fail(mut self.resolving.push(s))
     saved: bool = self.in_module
     self.in_module = self.in_imported(x.top)
@@ -1193,9 +1186,7 @@ Sema.resolve_top(mut self, s: u32) {
             if self.ty(t).kind != TypeKind.err && !mut self.is_c_abi_type(t, CABI_FIELD, 0) {
                 mut self.err(n.a, ["C global '", n.text, "' has type ", mut self.type_name(t), ", which is not C-ABI compatible"])
             }
-            x = self.sym(s)
-            x.ty = t
-            mut self.update(s, x)
+            mut self.sym(s).ty = t
         }
         Kind.struct { if !x.is_generic { mut self.fill_struct(x.top, x.ty) } }
         Kind.bits { mut self.fill_bits(x.top, x.ty) }
@@ -1203,12 +1194,9 @@ Sema.resolve_top(mut self, s: u32) {
         Kind.enum { mut self.check_enum(x.top, x.ty) }
         Kind.contract { mut self.check_contract(x.top) }
         Kind.alias {
-            x.ty = self.t_err // the alias is not visible in its own expansion
-            mut self.update(s, x)
+            mut self.sym(s).ty = self.t_err // the alias is not visible in its own expansion
             actual: u32 = mut self.build_type(n.a)
-            x = self.sym(s)
-            if !x.in_cycle { x.ty = actual }
-            mut self.update(s, x)
+            if !self.sym(s).in_cycle { mut self.sym(s).ty = actual }
             // Modules #2: a facade's pub alias re-exports the struct, so its
             // pub fields reach every importer (Modules #3)
             if actual != 0 && (n.flags & parser.F_PUB) != 0 && self.ty(actual).kind == TypeKind.struct {
@@ -1235,8 +1223,7 @@ Sema.resolve_top(mut self, s: u32) {
 Sema.resolve_global(mut self, s: u32) {
     x: Sym = self.sym(s)
     n: Node = self.node(x.top)
-    x.ty = self.t_err // a reference while its type is built is a cycle
-    mut self.update(s, x)
+    mut self.sym(s).ty = self.t_err // a reference while its type is built is a cycle
     binder: u32 = self.kid(x.top, 0)
     t: u32 = mut self.build_type(self.node(binder).a)
     if self.ty(t).kind == TypeKind.error_domain {
@@ -1247,10 +1234,8 @@ Sema.resolve_global(mut self, s: u32) {
         mut self.err(b.a, ["C global '", b.text, "' has type ", mut self.type_name(t), ", which is not C-ABI compatible"])
     }
     k: TypeKind = self.ty(t).kind
-    x = self.sym(s)
-    x.ty = t
-    x.is_const = (n.flags & parser.F_CONST) != 0 || k == TypeKind.staticmap
-    mut self.update(s, x)
+    mut self.sym(s).ty = t
+    mut self.sym(s).is_const = (n.flags & parser.F_CONST) != 0 || k == TypeKind.staticmap
     if n.b != 0 {
         v: Node = self.node(n.b)
         if k == TypeKind.staticmap {
@@ -1264,9 +1249,7 @@ Sema.resolve_global(mut self, s: u32) {
             _ = mut self.coerce(n.b, t)
         }
         if k == TypeKind.contract && self.node_const(n.b) {
-            x = self.sym(s)
-            x.is_const_backed = true
-            mut self.update(s, x)
+            mut self.sym(s).is_const_backed = true
         }
     } else if k == TypeKind.staticmap {
         if (n.flags & parser.F_CONST) != 0 { mut self.err(x.top, ["const is not permitted on a StaticMap declaration"]) }
@@ -7707,8 +7690,6 @@ Sema.init_v(self, v: u32): InitVar { return self.ik.vars.get(usize(v)) }
 
 Sema.init_v(mut self, v: u32): mut *InitVar { return mut &mut self.ik.vars.view()[usize(v)] }
 
-Sema.init_vset(mut self, v: u32, x: InitVar) { mut self.ik.vars.set(usize(v), x) }
-
 /* Local `sym`'s tracked variable, made when `create`; 0 for none. */
 Sema.init_var(mut self, sym: u32, create: bool): u32 {
     if sym == 0 || self.sym(sym).kind != SymKind.var || self.sym(sym).is_global { return 0 }
@@ -7725,8 +7706,7 @@ Sema.init_touch(mut self, v: u32) {
     x: InitVar = self.init_v(v)
     if self.ik.depth == 0 || x.saved >= i64(self.ik.mark) { return }
     fail(mut self.ik.trail.push(InitUndo { var = v, old = mut self.init_clone(x.state, 0), prev = x.saved }))
-    x.saved = i64(self.ik.trail.len - 1)
-    mut self.init_vset(v, x)
+    mut self.init_v(v).saved = i64(self.ik.trail.len - 1)
 }
 
 Sema.init_undo(mut self, to: u32) {
@@ -7762,8 +7742,7 @@ Sema.init_delta(mut self, from: u32, clone: bool): InitDelta {
         v: u32 = self.ik.trail.get(i).var
         x: InitVar = self.init_v(v)
         if x.seen { continue } // saved again by a branch still open
-        x.seen = true
-        mut self.init_vset(v, x)
+        mut self.init_v(v).seen = true
         st: u32 = x.state
         if clone { st = mut self.init_clone(x.state, 0) }
         fail(mut self.ik.changes.push(InitChange { var = v, state = st }))
@@ -7790,22 +7769,20 @@ Sema.init_join(mut self, first: usize, np: u32, npaths: u32) {
             c: InitChange = self.ik.changes.get(usize(d.start + i))
             x: InitVar = self.init_v(c.var)
             if !x.seen {
-                x.seen = true
-                x.acc = c.state
-                x.count = 1
+                mut self.init_v(c.var).seen = true
+                mut self.init_v(c.var).acc = c.state
+                mut self.init_v(c.var).count = 1
                 fail(mut changed.push(c.var))
             } else {
-                x.acc = mut self.init_intersect(x.acc, c.state, self.sym(x.sym).ty)
-                x.count += 1
+                mut self.init_v(c.var).acc = mut self.init_intersect(x.acc, c.state, self.sym(x.sym).ty)
+                mut self.init_v(c.var).count += 1
             }
-            mut self.init_vset(c.var, x)
         }
     }
     for v: u32 in changed.view() {
         x: InitVar = self.init_v(v)
         if x.count < npaths {
-            x.acc = mut self.init_intersect(x.acc, x.state, self.sym(x.sym).ty)
-            mut self.init_vset(v, x)
+            mut self.init_v(v).acc = mut self.init_intersect(x.acc, x.state, self.sym(x.sym).ty)
         }
         mut self.init_touch(v)
         mut self.init_v(v).state = self.init_v(v).acc
@@ -8890,10 +8867,8 @@ nominal_kind(k: Kind): TypeKind {
  */
 pub Sema.enter(mut self) {
     error: u32 = mut self.new_sym(SymKind.type, "Error")
-    x: Sym = self.sym(error)
-    x.ty = mut self.new_type(SType { kind = TypeKind.error, name = "Error", size = 8, align = 8 })
-    self.t_error = x.ty
-    mut self.update(error, x)
+    mut self.sym(error).ty = mut self.new_type(SType { kind = TypeKind.error, name = "Error", size = 8, align = 8 })
+    self.t_error = self.sym(error).ty
     mut self.files.insert(true, "Error", error)
 
     fn_names: map.Map[string, bool] = map.Map[string, bool] {}
@@ -8953,15 +8928,14 @@ pub Sema.enter(mut self) {
             Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.union, Kind.distinct, Kind.error, Kind.alias {
                 s: u32 = mut self.declare_type(id, n.text)
                 if s == 0 { continue }
-                t: Sym = self.sym(s)
-                t.decl = id
-                t.top = id
-                t.is_generic = n.c != 0
-                t.entered = true
+                mut self.sym(s).decl = id
+                mut self.sym(s).top = id
+                mut self.sym(s).is_generic = n.c != 0
+                mut self.sym(s).entered = true
                 if n.kind == Kind.alias {
-                    if t.is_generic { // stamped at each use; nothing to resolve
-                        t.ty = mut self.new_type(SType { kind = TypeKind.template, name = n.text, decl = id })
-                        t.entered = false
+                    if n.c != 0 { // generic: stamped at each use; nothing to resolve
+                        mut self.sym(s).ty = mut self.new_type(SType { kind = TypeKind.template, name = n.text, decl = id })
+                        mut self.sym(s).entered = false
                     }
                 } else {
                     shell: SType = SType { kind = nominal_kind(n.kind), name = n.text, decl = id }
@@ -8969,9 +8943,8 @@ pub Sema.enter(mut self) {
                         shell.size = 8
                         shell.align = 8
                     }
-                    t.ty = mut self.new_type(shell)
+                    mut self.sym(s).ty = mut self.new_type(shell)
                 }
-                mut self.update(s, t)
             }
             default {}
         }
