@@ -132,7 +132,7 @@ pub split(text: string, separator: string, parts: mut []string): (usize, bool) {
     start: usize = 0
     cursor: usize = 0
 
-    for guard: usize in 0 .. text.len + 1 {
+    for 0 .. text.len + 1 {
         at: usize, found: bool = index_from(text, separator, cursor)
         if !found { break }
 
@@ -239,7 +239,7 @@ pub format(destination: mut []char, value: int): (usize, bool) {
     remaining: int = value
     negative: bool = value < 0
 
-    for d: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         remainder: int = remaining % 10
 
@@ -266,7 +266,7 @@ pub format(destination: mut []char, value: uint): (usize, bool) {
     at: int = 20
     remaining: uint = value
 
-    for d: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
@@ -282,7 +282,7 @@ pub format(destination: mut []char, value: usize): (usize, bool) {
     at: int = 20
     remaining: usize = value
 
-    for d: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
@@ -392,7 +392,7 @@ pub format(destination: mut []char, value: int, radix: u8): (usize, bool) {
         remaining = u64(value)
     }
 
-    for d: int in 0 .. 65 {
+    for 0 .. 65 {
         at -= 1
         r: u64 = remaining % u64(radix)
 
@@ -420,7 +420,7 @@ pub format(destination: mut []char, value: uint, radix: u8): (usize, bool) {
     at: int = 64
     remaining: uint = value
 
-    for d: int in 0 .. 64 {
+    for 0 .. 64 {
         at -= 1
         r: uint = remaining % uint(radix)
 
@@ -443,7 +443,7 @@ pub format(destination: mut []char, value: usize, radix: u8): (usize, bool) {
     at: int = 64
     remaining: usize = value
 
-    for d: int in 0 .. 64 {
+    for 0 .. 64 {
         at -= 1
         r: usize = remaining % usize(radix)
 
@@ -697,7 +697,7 @@ render_float(negative: bool, digits: []u8, count: int, decpt: i32, out: mut []u8
             at += 2
             zeros: int = 0 - dp
 
-            for z: int in 0 .. zeros {
+            for 0 .. zeros {
                 out[at] = u8(48)
                 at += 1
             }
@@ -713,7 +713,7 @@ render_float(negative: bool, digits: []u8, count: int, decpt: i32, out: mut []u8
             }
             pad: int = dp - count
 
-            for z: int in 0 .. pad {
+            for 0 .. pad {
                 out[at] = u8(48)
                 at += 1
             }

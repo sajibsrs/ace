@@ -120,6 +120,19 @@ Equal endpoints produce an empty range. The first endpoint is evaluated once,
 then the second endpoint once, before the loop. Assigning to the loop variable
 does not alter the internal cursor.
 
+A loop that only repeats its body omits the binder. The counter then has the
+range's bound type (`i64` when both bounds are untyped literals), and the
+bounds and step are evaluated exactly as with a binder:
+
+```ace
+for 0 .. n {
+    // runs n times
+}
+```
+
+Only ranges may omit the binder: `for values { }` would be a condition head,
+so a sequence loop that ignores its elements iterates `0 .. values.len`.
+
 An optional positive step follows the second endpoint. `step` is contextual,
 not reserved, so it remains available as an ordinary identifier:
 
@@ -472,6 +485,12 @@ Why the rules in `spec/control-flow.md` are shaped as they are.
   irrelevant, which lets a range lower to a single unsigned compare. Floats and
   strings are left out: a float range needs NaN and signed-zero rules, and a
   string range needs an ordering the language does not define.
+- Iterations #7, binder-less ranges: a count loop omits the binder as a
+  sequence loop omits its index, so the language keeps one rule (omit what is
+  unwanted) and `_` stays a value-drop that never appears in declaration
+  position. Go 1.22's `for range n` does the same; Rust, Odin, and Zig spell a
+  discard binder instead. The generated code is identical to a loop with an
+  unread binder.
 - Conditions #4: `defer` is expanded inline at each exit (Deferred calls #6),
   so a jump that leaves a frame without passing through one of those exits
   would skip cleanup and leave the leak reporter's accounting wrong. A

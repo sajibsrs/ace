@@ -158,3 +158,7 @@
   `mut a.view()[i].x = v` assigns in one statement (Mutability #6); later
   selectors address a place in the result. The parser walks index and field
   nodes to mark it; selfhost write-backs now use `mut *T` accessor overloads.
+- A range head may omit its binder (Iterations #7): `for 0 .. n { }` runs the
+  body once per selected value, counting at the range's unified bound type.
+  The parser turns a leading expression followed by `..` into the range head;
+  lowering keeps its hidden cursor and skips the binder copy.

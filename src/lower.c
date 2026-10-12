@@ -3677,11 +3677,12 @@ static void loop_body(Lw* l, Node* s, int exit, Node* stmts) {
 // from the last value the lower endpoint's stepping selects.
 static void range_loop(Lw* l, Node* s) {
     Node* r = s->b;
-    Sym* bs = node_sym(s->kids[s->nkids - 1]);
-    if (s->nkids != 1 || !bs) unsupported(l, "range binders");
-    int var = var_of(l, bs);
-    IrType bt = need_type(l, bs->type);
-    IrType rt = is_untyped(node_ty(r)) ? bt : need_type(l, node_ty(r)); // endpoints at the binder's type
+    Sym* bs = s->nkids ? node_sym(s->kids[0]) : NULL; // `for 0 .. n` has no binder
+    if (s->nkids > 1 || (s->nkids && !bs)) unsupported(l, "range binders");
+    int var = bs ? var_of(l, bs) : -1;
+    IrType rt = bs && is_untyped(node_ty(r)) ? need_type(l, bs->type) // endpoints at the binder's type
+                                             : need_type(l, node_ty(r));
+    IrType bt = bs ? need_type(l, bs->type) : rt;
     int sig = ir_type_signed(rt);
     int lo = expr(l, r->a, rt), hi = expr(l, r->b, rt);
     IrIns* lk = &l->fn->ins[lo];
@@ -3750,7 +3751,7 @@ static void range_loop(Lw* l, Node* s) {
     terminate(l, IR_BR, more, body, exit);
     seal(l, body);
     enter(l, body);
-    set_var(l, var, widen(l, read_var(l, cur, body), rt, bt));
+    if (bs) set_var(l, var, widen(l, read_var(l, cur, body), rt, bt));
     loop_body(l, s, exit, s->c);
     if (l->cur >= 0) { // the cursor wraps past the last value, which no iteration reads
         int v = read_var(l, cur, l->cur);

@@ -1368,6 +1368,19 @@ Parser.for_tail(mut self, n: u32, hline: u32) {
  * three-clause with no init, `ident ':'` typed binders or a declaration init,
  * otherwise a condition or an assignment/expression-statement init.
  */
+// The range tail `.. b [step c]` of a for-head whose first endpoint is `a`.
+Parser.for_range(mut self, a: u32): u32 {
+    r: u32 = mut self.nd(Kind.range) // at '..', like a binary node
+    self.i += 1
+    self.nodes[r].a = a
+    self.nodes[r].b = mut self.expr(NOSLIT)
+    if self.ident_at(0, "step") {
+        self.i += 1
+        self.nodes[r].c = mut self.expr(NOSLIT)
+    }
+    return r
+}
+
 Parser.for_head(mut self, n: u32): u32 {
     hline: u32 = self.line()
     if self.at(Token.lbrace) { // infinite: exits only via break/return
@@ -1404,17 +1417,7 @@ Parser.for_head(mut self, n: u32): u32 {
         if (self.nodes[n].flags & F_MUT) != 0 && it != 0 && self.nodes[it].kind == Kind.slice {
             self.nodes[it].flags |= F_MUT // `in mut xs[lo..hi]`: establish, then alias
         }
-        if self.at(Token.dot_dot) {
-            r: u32 = mut self.nd(Kind.range) // at '..', like a binary node
-            self.i += 1
-            self.nodes[r].a = it
-            self.nodes[r].b = mut self.expr(NOSLIT)
-            if self.ident_at(0, "step") {
-                self.i += 1
-                self.nodes[r].c = mut self.expr(NOSLIT)
-            }
-            it = r
-        }
+        if self.at(Token.dot_dot) { it = mut self.for_range(it) }
         self.nodes[n].b = it
         self.nodes[n].c = mut self.block()
         return n
@@ -1425,7 +1428,15 @@ Parser.for_head(mut self, n: u32): u32 {
         self.i += 1 // ident; decl_stmt consumes ':'
         self.nodes[n].a = mut self.decl_stmt(name)
     } else {
-        a: u32 = mut self.expr_stmt(NOSLIT)
+        start: usize = self.i
+        e: u32 = mut self.expr(NOSLIT)
+        if self.at(Token.dot_dot) { // binder-less range: `for 0 .. n`
+            self.nodes[n].flags &= ~F_FORGEN
+            self.nodes[n].b = mut self.for_range(e)
+            self.nodes[n].c = mut self.block()
+            return n
+        }
+        a: u32 = mut self.expr_stmt_from(NOSLIT, start, e)
         self.nodes[n].a = a
         if self.at(Token.lbrace) { // condition only: the expression is the condition
             self.nodes[n].b = self.nodes[a].a
@@ -2847,7 +2858,7 @@ pub Parser.dump_resolved(self, mut out: Out, n: u32) {
 }
 
 Parser.dump_tree(self, mut out: Out, n: u32, ind: usize, cnames: bool) {
-    for j: usize in 0..ind { mut out.printf(" ") }
+    for 0..ind { mut out.printf(" ") }
     if n == 0 {
         mut out.printf("nil\n")
         return
@@ -2885,6 +2896,6 @@ Parser.dump_tree(self, mut out: Out, n: u32, ind: usize, cnames: bool) {
     if x.c != 0 { self.dump_tree(mut out, x.c, ind + 1, cnames) }
     if x.d != 0 { self.dump_tree(mut out, x.d, ind + 1, cnames) }
     for k: u32 in 0..x.nkids { self.dump_tree(mut out, self.kids[x.kids + k], ind + 1, cnames) }
-    for j: usize in 0..ind { mut out.printf(" ") }
+    for 0..ind { mut out.printf(" ") }
     mut out.printf(")\n")
 }

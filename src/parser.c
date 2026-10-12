@@ -49,7 +49,8 @@
 //               N_EXPRSTMT or NULL), b = cond expr or NULL, c = post stmt
 //               (N_ASSIGN/N_EXPRSTMT or NULL), d = body; kids empty.
 //               str/len = label. Typed range/sequence head (unchanged):
-//               kids = one value binder, or index + value binders (N_PARAM);
+//               kids = none (range only), one value binder, or index + value
+//               binders (N_PARAM);
 //               b = iterable (expr) or N_RANGE; c = body; str/len = label.
 //               F_MUT = `in mut iterable`: the value binder aliases the
 //               element (sema requires writable array/slice storage)
@@ -1178,6 +1179,19 @@ static void for_tail(P* p, Node* n, int hline) {
 // scan finds a depth-0 `in`, otherwise a declaration init; anything else is
 // an expression that becomes the condition or an assignment/expression
 // statement init.
+// The range tail `.. b [step c]` of a for-head whose first endpoint is `a`.
+static Node* for_range(P* p, Node* a) {
+    Node* r = nd(p, N_RANGE); // positioned at '..', like N_BINARY
+    p->i++;
+    r->a = a;
+    r->b = expr(p, CTX_NOSLIT);
+    if (ident_at(p, "step")) {
+        p->i++;
+        r->c = expr(p, CTX_NOSLIT);
+    }
+    return r;
+}
+
 static Node* parse_for_head(P* p, Node* n) {
     int hline = tk(p)->line;
     if (at(p, T_LBRACE)) { // infinite: exits only via break/return
@@ -1215,18 +1229,7 @@ static Node* parse_for_head(P* p, Node* n) {
         if ((n->flags & F_MUT) && it->kind == N_SLICE_E &&
             !(it->flags & F_MUT))
             it->flags |= F_MUT; // `in mut xs[lo..hi]` — establish, then alias
-        if (at(p, T_DOTDOT)) {
-            Node* r = nd(p, N_RANGE); // positioned at '..', like N_BINARY
-            p->i++;
-            r->a = it;
-            r->b = expr(p, CTX_NOSLIT);
-            if (ident_at(p, "step")) {
-                p->i++;
-                r->c = expr(p, CTX_NOSLIT);
-            }
-            it = r;
-        }
-        n->b = it;
+        n->b = at(p, T_DOTDOT) ? for_range(p, it) : it;
         n->c = parse_block(p);
         return n;
     }
@@ -1236,7 +1239,15 @@ static Node* parse_for_head(P* p, Node* n) {
         p->i++; // ident; ':' consumed inside
         n->a = parse_decl_stmt(p, name);
     } else {
-        n->a = parse_expr_stmt(p, CTX_NOSLIT);
+        Token* start = tk(p);
+        Node* e = expr(p, CTX_NOSLIT);
+        if (at(p, T_DOTDOT)) { // binder-less range: `for 0 .. n`
+            n->flags &= ~F_FORGEN;
+            n->b = for_range(p, e);
+            n->c = parse_block(p);
+            return n;
+        }
+        n->a = parse_expr_stmt_from(p, CTX_NOSLIT, start, e);
         if (at(p, T_LBRACE)) { // condition-only: the expression is the cond
             n->b = n->a->a;
             n->a = NULL;

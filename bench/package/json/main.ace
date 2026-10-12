@@ -65,7 +65,7 @@ main(): int {
     checksum = 0
     started = now()
 
-    for i: usize in 0 .. iterations {
+    for 0 .. iterations {
         perr: Error = mut reader.parse(document)
         if perr != null { return 3 }
     }

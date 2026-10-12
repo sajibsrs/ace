@@ -1,0 +1,7 @@
+/* A binder-less range rejects a zero step. */
+
+main(): int {
+    for 0 .. 10 step 0 {
+    }
+    return 0
+}

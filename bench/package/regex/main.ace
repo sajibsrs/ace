@@ -99,7 +99,7 @@ pathological() {
     checksum: usize = 0
     started: u64 = now()
 
-    for i: usize in 0 .. CALLS {
+    for 0 .. CALLS {
         if mut re.find(text, 0) {
             span: regex.Span = re.span(0)
             checksum += 1 + span.start + span.end

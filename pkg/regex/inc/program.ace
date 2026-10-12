@@ -307,7 +307,7 @@ Compiler.repeat(mut self, r: Repeat) {
  * than spinning through nested counts like `(?:(?:){1000}){1000}`.
  */
 Compiler.copies(mut self, child: u32, count: u32) {
-    for i: u32 in 0 .. count {
+    for 0 .. count {
         before: u32 = self.pc()
         mut self.node(child)
 
@@ -323,7 +323,7 @@ Compiler.copies(mut self, child: u32, count: u32) {
 Compiler.optional(mut self, child: u32, count: u32, greedy: bool) {
     pending: u32 = NIL
 
-    for i: u32 in 0 .. count {
+    for 0 .. count {
         at: u32 = self.pc()
         mut self.emit(Inst.split(Fork {
             x = at + 1,

@@ -138,7 +138,7 @@ failures(): int {
     if err != json.FormatErr.structure { return 59 }
 
     mut f.reset()
-    for i: int in 0 .. 513 { mut f.array() }
+    for 0 .. 513 { mut f.array() }
     text, err = f.finish()
     if err != json.FormatErr.depth { return 60 }
 

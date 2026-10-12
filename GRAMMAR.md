@@ -166,6 +166,7 @@ expr_stmt     := expr
 if_stmt       := "if" expr block ["else" (if_stmt | block)]
 for_stmt      := "for" for_head block
 for_head      := loop_binders "in" ["mut"] iterable    // sequence/range head
+               | range_expr                           // binder-less range head
                | [for_init] ";" [expr] ";" [for_post]  // three-clause head
                | expr                                 // condition-only head
                |                                      // infinite head
@@ -291,6 +292,8 @@ choices that are not evident from the productions.
 2. Statement starts use bounded lookahead: `ident :` begins a label or typed
    declaration, and `ident =`/`ident ,` begins assignment. Function declarations
    are distinguished from calls by their trailing return clause or body.
+   In a `for` head, `..` after a leading expression selects the binder-less
+   range head; a range is not an expression, so no condition head conflicts.
 3. Bare comma lists are single-line. Delimited lists may span lines and accept a
    trailing comma; canonical formatting keeps a list on one line while it fits
    the configured 120-column limit, then uses one item per line with a trailing

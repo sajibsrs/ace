@@ -1,0 +1,7 @@
+/* A binder-less range takes integer bounds. */
+
+main(): int {
+    for 0.5 .. 2.0 {
+    }
+    return 0
+}

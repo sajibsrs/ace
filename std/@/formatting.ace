@@ -19,7 +19,7 @@ pub radix(value: u64, radix: u8, uppercase: bool, out: mut []u8): (usize, bool) 
     at: int = 64
     remaining: u64 = value
 
-    for digit: int in 0 .. 64 {
+    for 0 .. 64 {
         at -= 1
         d: u64 = remaining % u64(radix)
 
@@ -50,7 +50,7 @@ decimal_digits(value: u64, out: mut []u8): (usize, bool) {
     at: usize = 20
     remaining: u64 = value
 
-    for digit: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         digits[at] = u8(48 + remaining % 10)
         remaining = remaining / 10
@@ -364,7 +364,7 @@ Sink.overflow(mut self, bytes: []u8) {
 pub Sink.fill(mut self, byte: u8, count: usize) {
     left: usize = count
 
-    for round: usize in 0 .. count {
+    for 0 .. count {
         if self.failed || left == 0 { return }
 
         if self.used == self.storage.len {

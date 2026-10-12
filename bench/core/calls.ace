@@ -149,12 +149,12 @@ main(): int {
 
     state = 1
     started = time.awake()
-    for i: usize in 0 .. TAIL_ROUNDS { state = sum_tail(TAIL_DEPTH, state) }
+    for 0 .. TAIL_ROUNDS { state = sum_tail(TAIL_DEPTH, state) }
     report("tail-recursive", time.awake() - started, TAIL_ROUNDS * TAIL_DEPTH, state)
 
     small: Small = Small { v = 1 }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS { small = small_step(small) }
+    for 0 .. ITERATIONS { small = small_step(small) }
     report("struct-8", time.awake() - started, ITERATIONS, small.v)
 
     pair: Pair = Pair {
@@ -162,7 +162,7 @@ main(): int {
         b = 1,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS { pair = pair_step(pair) }
+    for 0 .. ITERATIONS { pair = pair_step(pair) }
     report("struct-16", time.awake() - started, ITERATIONS, (pair.a + pair.b) & MASK)
 
     triple: Triple = Triple {
@@ -171,7 +171,7 @@ main(): int {
         c = 1,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS { triple = triple_step(triple) }
+    for 0 .. ITERATIONS { triple = triple_step(triple) }
     report("struct-24", time.awake() - started, ITERATIONS, (triple.a + triple.b + triple.c) & MASK)
 
     octet: Octet = Octet {
@@ -185,7 +185,7 @@ main(): int {
         h = 1,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS { octet = octet_step(octet) }
+    for 0 .. ITERATIONS { octet = octet_step(octet) }
     report(
         "struct-64",
         time.awake() - started,
@@ -204,7 +204,7 @@ main(): int {
         z = 3.0,
     }
     started = time.awake()
-    for i: usize in 0 .. ITERATIONS { acc = vec_add(acc, step) }
+    for 0 .. ITERATIONS { acc = vec_add(acc, step) }
     report("struct-hfa", time.awake() - started, ITERATIONS, usize(acc.x + acc.y + acc.z))
 
     total: f64 = 0.0

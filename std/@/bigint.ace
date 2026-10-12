@@ -73,7 +73,7 @@ pub add_small(mut value: Big, addend: u32) {
 }
 
 pub multiply_power5(mut value: Big, power: int) {
-    for i: int in 0 .. power { multiply_small(mut value, 5) }
+    for 0 .. power { multiply_small(mut value, 5) }
 }
 
 pub shift_left(mut value: Big, count: int) {

@@ -186,26 +186,26 @@ main(): int {
     }
 
     started: u64 = now()
-    for r: usize in 0 .. REPEATS {
+    for 0 .. REPEATS {
         for i: usize in 0 .. COUNT { ys64[i] = 0.5 * xs64[i] + ys64[i] }
     }
     report("saxpy-f64", now() - started, saxpy_ops, sum64(ys64[..]))
 
     started = now()
-    for r: usize in 0 .. REPEATS {
+    for 0 .. REPEATS {
         for i: usize in 0 .. COUNT { ys32[i] = 0.5 * xs32[i] + ys32[i] }
     }
     report("saxpy-f32", now() - started, saxpy_ops, sum32(ys32[..]))
 
     acc: f64 = 0.0
     started = now()
-    for r: usize in 0 .. REPEATS {
+    for 0 .. REPEATS {
         for i: usize in 0 .. COUNT { acc += xs64[i] * ys64[i] }
     }
     report("dot-f64", now() - started, saxpy_ops, usize(bitcast(u64, acc)))
 
     started = now()
-    for r: usize in 0 .. PARTICLE_REPEATS {
+    for 0 .. PARTICLE_REPEATS {
         for i: usize in 0 .. COUNT {
             positions[i].x += velocities[i].x * 0.5
             positions[i].y += velocities[i].y * 0.5
@@ -216,7 +216,7 @@ main(): int {
 
     length: f64 = 0.0
     started = now()
-    for r: usize in 0 .. PARTICLE_REPEATS {
+    for 0 .. PARTICLE_REPEATS {
         for i: usize in 0 .. COUNT {
             length += f64(math.sqrt(velocities[i].x * velocities[i].x +
                                     velocities[i].y * velocities[i].y +

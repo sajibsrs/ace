@@ -221,7 +221,7 @@ reuse(): int {
     p: json.Parser = json.Parser.new()
     defer mut p.wipe()
 
-    for i: int in 0 .. 3 {
+    for 0 .. 3 {
         v: json.Value, err: Error = mut p.parse("[1, {\"k\": \"v\"}, [true, null]]")
         if err != null { return 70 }
 

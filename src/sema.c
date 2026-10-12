@@ -6159,7 +6159,7 @@ static void check_stmt(Ck* k, Node* s) {
         }
         if (it->kind != SK_ERR) {
             if (s->b->kind == N_RANGE) {
-                if (s->nkids != 1) ck_err(k, s, "range iteration accepts one value binder, not %d", s->nkids);
+                if (s->nkids > 1) ck_err(k, s, "range iteration accepts at most one value binder, not %d", s->nkids);
                 if (s->nkids > 0 && !is_int(binds[0]))
                     ck_err(k, s, "range loop variable must be an integer type, not %s",
                            type_name(binds[0]));

@@ -1,0 +1,27 @@
+/* Binder-less range heads: `for lo .. hi` runs once per selected value. */
+
+// expect-exit: 42
+
+count(n: u32, lo: int, hi: int): int {
+    c: int = 0
+
+    for 0 .. n { c += 1 }
+    for lo .. hi step 2 { c += 10 }
+    for 3 .. 0 { c += 100 }
+    for 5 .. 5 { c += 1000 }
+
+    outer: for 0 .. 4 {
+        for 0 .. 4 {
+            c += 10000
+            continue outer
+        }
+    }
+
+    return c
+}
+
+main(): int {
+    if count(3, 7, 0) != 40343 { return 1 }
+    if count(0, 0, 0) != 40300 { return 2 }
+    return 42
+}

@@ -18,7 +18,7 @@ pub print(text: string): int {
     if text.len == 0 { return 0 }
     total: int = 0
 
-    for attempt: int in 0 .. int(text.len) {
+    for 0 .. int(text.len) {
         n: int = os.write(STDOUT, &text[total], text.len - usize(total))
         if n <= 0 { return n }
 
@@ -36,7 +36,7 @@ pub print(value: int): int {
     remaining: int = value
     negative: bool = value < 0
 
-    for digit: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         remainder: int = remaining % 10
 
@@ -57,7 +57,7 @@ pub print(value: int): int {
     size: usize = usize(20 - at)
     total: int = 0
 
-    for attempt: int in 0 .. int(size) {
+    for 0 .. int(size) {
         n: int = os.write(STDOUT, &digits[at + total], size - usize(total))
         if n <= 0 { return n }
 
@@ -74,7 +74,7 @@ pub print(value: uint): int {
     at: int = 20
     remaining: uint = value
 
-    for digit: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         remainder: uint = remaining % 10
         digits[at] = u8(48 + remainder)
@@ -85,7 +85,7 @@ pub print(value: uint): int {
     size: usize = usize(20 - at)
     total: int = 0
 
-    for attempt: int in 0 .. int(size) {
+    for 0 .. int(size) {
         n: int = os.write(STDOUT, &digits[at + total], size - usize(total))
         if n <= 0 { return n }
 
@@ -102,7 +102,7 @@ pub print(value: usize): int {
     at: int = 20
     remaining: usize = value
 
-    for digit: int in 0 .. 20 {
+    for 0 .. 20 {
         at -= 1
         remainder: usize = remaining % 10
         digits[at] = u8(48 + remainder)
@@ -113,7 +113,7 @@ pub print(value: usize): int {
     size: usize = usize(20 - at)
     total: int = 0
 
-    for attempt: int in 0 .. int(size) {
+    for 0 .. int(size) {
         n: int = os.write(STDOUT, &digits[at + total], size - usize(total))
         if n <= 0 { return n }
 
@@ -129,7 +129,7 @@ pub print(value: usize): int {
 write_bytes(fd: i32, data: []u8): int {
     total: int = 0
 
-    for attempt: int in 0 .. int(data.len) {
+    for 0 .. int(data.len) {
         n: int = os.write(fd, &data[total], data.len - usize(total))
         if n <= 0 { return n }
 
@@ -164,7 +164,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
             at += 2
             zeros: int = 0 - dp
 
-            for z: int in 0 .. zeros {
+            for 0 .. zeros {
                 out[at] = u8(48)
                 at += 1
             }
@@ -180,7 +180,7 @@ format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
             }
             pad: int = dp - count
 
-            for z: int in 0 .. pad {
+            for 0 .. pad {
                 out[at] = u8(48)
                 at += 1
             }
