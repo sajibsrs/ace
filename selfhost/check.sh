@@ -211,4 +211,4 @@ for _ in range(int(sys.argv[1])): subprocess.run(sys.argv[2:],stdout=subprocess.
 print("%.2f"%((time.perf_counter()-t)*1000/int(sys.argv[1])))' "$runs" "$tmp/ace-self" "$f")
     echo "$f $(wc -c <"$f" | tr -d ' ')B  $a  $b"
 done
-[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ] && [ "$sbad" -eq 0 ] && [ "$cbad" -eq 0 ] && [ "$gbad" -eq 0 ] && [ "$pbad" -eq 0 ]
+[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ] && [ "$sbad" -eq 0 ] && [ "$cbad" -eq 0 ] && [ "$ebad" -eq 0 ] && [ "$gbad" -eq 0 ] && [ "$pbad" -eq 0 ]

@@ -133,3 +133,7 @@
   specialized templates without a specialization, each signing's method set
   (direct and promoted methods, generic methods stamped per concrete owner),
   and inline call cycles; `selfhost/check.sh` diffs it in a `sema` stage.
+- selfhost `--sema` checks definite initialization as C does: direct storage
+  paths per local, an undo trail joining `if`, `switch`, and labeled-block
+  paths, and scalar `asm` bindings recording their local; `selfhost/check.sh`
+  now fails on any `sema`-stage difference.

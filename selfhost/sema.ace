@@ -220,13 +220,14 @@ pub Sema: struct {
     t_byte_slice: u32 = 0,              // []u8 and mut []u8, the memory builtins' views
     t_mut_byte_slice: u32 = 0,
     prims: u32 = 0,                     // the first of the 14 primitives, in P_ order
+    ik: InitCk,                         // the definite-initialization walk of one function
     pub unsupported: string = "",       // a construct not yet ported, when nonempty
 }
 
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {} }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -267,6 +268,7 @@ pub Sema.wipe(mut self) {
     mut self.nival.wipe()
     mut self.nrep.wipe()
     mut self.ncon.wipe()
+    mut self.ik.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
@@ -7012,7 +7014,9 @@ Sema.check_asm(mut self, s: u32) {
             if k == TypeKind.struct || k == TypeKind.tuple || k == TypeKind.array || k == TypeKind.slice ||
                 k == TypeKind.union || k == TypeKind.contract || (k == TypeKind.prim && self.ty(bt).prim == P_STRING) {
                 mut self.err(val, ["asm binding '", v.text, "' must be a scalar, not ", mut self.type_name(self.sym(vs).ty)])
+                continue
             }
+            mut self.set_node_sym(val, vs) // definite initialization reads and marks it
         }
     }
 }
@@ -7529,12 +7533,844 @@ pub Sema.check_bodies(mut self) {
     mut self.finish_deferred_layouts() // types first built while checking bodies
 }
 
+// --- definite initialization ----------------------------------------------------
+
+/* A storage state and, as a part, its key and next sibling: the initialized
+ * struct fields or constant array elements under `parts`, or all of it
+ * `full`. States are indexes in InitCk.states; 0 is none.
+ */
+InitState: struct {
+    key: u64 = 0,
+    full: bool = false,
+    parts: u32 = 0,
+    next: u32 = 0,
+}
+
+/* A tracked local: `saved` is the trail slot of its latest save, or -1;
+ * `acc`, `count`, and `seen` are init_join and init_delta scratch.
+ */
+InitVar: struct {
+    sym: u32 = 0,
+    state: u32 = 0,
+    saved: i64 = -1,
+    acc: u32 = 0,
+    count: u32 = 0,
+    seen: bool = false,
+}
+
+/* A branch saves a variable's state before its first change, so undoing the
+ * branch touches only what it changed; see init_touch and init_undo.
+ */
+InitUndo: struct {
+    var: u32 = 0,
+    old: u32 = 0,
+    prev: i64 = -1,
+}
+
+/* A variable one path changed since a branch point, with its state. */
+InitChange: struct {
+    var: u32 = 0,
+    state: u32 = 0,
+}
+
+/* The run of InitCk.changes one path made. */
+InitDelta: struct {
+    start: u32 = 0,
+    n: u32 = 0,
+}
+
+/* An open labeled block: `from` is the trail length at the label. */
+InitExit: struct {
+    name: string = "",
+    from: u32 = 0,
+}
+
+/* One path leaving open labeled block `exit` (an index in InitCk.exits). */
+InitExitPath: struct {
+    exit: u32 = 0,
+    d: InitDelta,
+}
+
+/* A direct storage path: local `root`, then field or element `keys`, each
+ * prefix's type in `types`.
+ */
+InitPath: struct {
+    root: u32 = 0,
+    n: u32 = 0,
+    dynamic_index: bool = false,
+    overlay: bool = false,              // reached an overlapping struct: tracked whole from there
+    keys: [64]u64,
+    types: [65]u32,
+}
+
+/* One function's definite-initialization walk (C's InitCk). */
+InitCk: struct {
+    states: array.Array[InitState],
+    vars: array.Array[InitVar],         // indexed from 1
+    var_ix: map.Map[u32, u32],          // symbol -> its InitVar
+    trail: array.Array[InitUndo],
+    changes: array.Array[InitChange],
+    paths: array.Array[InitDelta],      // the join points' paths, innermost last
+    exits: array.Array[InitExit],
+    exit_paths: array.Array[InitExitPath],
+    mark: u32 = 0,                      // trail length at the innermost open branch point
+    depth: u32 = 0,                     // open branch points; none means no change is ever undone
+}
+
+InitCk.wipe(mut self) {
+    mut self.states.wipe()
+    mut self.vars.wipe()
+    mut self.var_ix.wipe()
+    mut self.trail.wipe()
+    mut self.changes.wipe()
+    mut self.paths.wipe()
+    mut self.exits.wipe()
+    mut self.exit_paths.wipe()
+}
+
+Sema.init_shape(self, t: u32): u32 {
+    s: u32 = t
+    for s != 0 && self.ty(s).kind == TypeKind.distinct { s = self.ty(s).base }
+    return s
+}
+
+Sema.init_aggregate(self, t: u32): bool {
+    s: u32 = self.init_shape(t)
+    if s == 0 { return false }
+    k: TypeKind = self.ty(s).kind
+    return k == TypeKind.struct || k == TypeKind.array || k == TypeKind.tuple
+}
+
+Sema.init_st(self, s: u32): InitState { return self.ik.states.get(usize(s)) }
+
+Sema.init_set(mut self, s: u32, st: InitState) { mut self.ik.states.set(usize(s), st) }
+
+Sema.init_new(mut self, st: InitState): u32 {
+    fail(mut self.ik.states.push(st))
+    return u32(self.ik.states.len - 1)
+}
+
+/* State `s`'s part `key`, made when `create`; 0 when absent. */
+Sema.init_part(mut self, s: u32, key: u64, create: bool): u32 {
+    for p: u32 = self.init_st(s).parts; p != 0; p = self.init_st(p).next {
+        if self.init_st(p).key == key { return p }
+    }
+    if !create { return 0 }
+    p: u32 = mut self.init_new(InitState { key = key, next = self.init_st(s).parts })
+    st: InitState = self.init_st(s)
+    st.parts = p
+    mut self.init_set(s, st)
+    return p
+}
+
+Sema.init_part_count(self, t: u32): u64 {
+    s: u32 = self.init_shape(t)
+    if s == 0 { return 0 }
+    x: SType = self.ty(s)
+    if x.kind == TypeKind.struct || x.kind == TypeKind.tuple { return u64(x.nfields) }
+    if x.kind == TypeKind.array { return x.count }
+    return 0
+}
+
+Sema.init_part_type(self, t: u32, key: u64): u32 {
+    s: u32 = self.init_shape(t)
+    if s == 0 { return 0 }
+    x: SType = self.ty(s)
+    if (x.kind == TypeKind.struct || x.kind == TypeKind.tuple) && key < u64(x.nfields) { return self.field(x, u32(key)).ty }
+    if x.kind == TypeKind.array && key < x.count { return x.base }
+    return 0
+}
+
+/* Whether state `s` of type `t` is full, folding complete parts into it. */
+Sema.init_state_full(mut self, s: u32, t: u32): bool {
+    if self.init_st(s).full { return true }
+    if !self.init_aggregate(t) { return false }
+    count: u64 = self.init_part_count(t)
+    have: u64 = 0
+    for p: u32 = self.init_st(s).parts; p != 0; p = self.init_st(p).next {
+        pt: u32 = self.init_part_type(t, self.init_st(p).key)
+        if pt != 0 && mut self.init_state_full(p, pt) { have += 1 }
+    }
+    if have == count {
+        st: InitState = self.init_st(s)
+        st.full = true
+        st.parts = 0
+        mut self.init_set(s, st)
+        return true
+    }
+    return false
+}
+
+/* A deep copy of state `s`, keyed `key`. */
+Sema.init_clone(mut self, s: u32, key: u64): u32 {
+    out: u32 = mut self.init_new(InitState { key = key, full = self.init_st(s).full })
+    tail: u32 = 0
+    for p: u32 = self.init_st(s).parts; p != 0; p = self.init_st(p).next {
+        q: u32 = mut self.init_clone(p, self.init_st(p).key)
+        if tail == 0 {
+            st: InitState = self.init_st(out)
+            st.parts = q
+            mut self.init_set(out, st)
+        } else {
+            st: InitState = self.init_st(tail)
+            st.next = q
+            mut self.init_set(tail, st)
+        }
+        tail = q
+    }
+    return out
+}
+
+/* What both states `a` and `b` of type `t` initialize, as a new state. */
+Sema.init_intersect(mut self, a: u32, b: u32, t: u32): u32 {
+    if self.init_st(a).full { return mut self.init_clone(b, 0) }
+    if self.init_st(b).full { return mut self.init_clone(a, 0) }
+    out: u32 = mut self.init_new(InitState {})
+    for p: u32 = self.init_st(a).parts; p != 0; p = self.init_st(p).next {
+        key: u64 = self.init_st(p).key
+        q: u32 = mut self.init_part(b, key, false)
+        if q == 0 { continue }
+        r: u32 = mut self.init_part(out, key, true)
+        x: u32 = mut self.init_intersect(p, q, self.init_part_type(t, key))
+        st: InitState = self.init_st(x)
+        st.key = key
+        st.next = self.init_st(r).next
+        mut self.init_set(r, st)
+    }
+    _ = mut self.init_state_full(out, t)
+    return out
+}
+
+Sema.init_v(self, v: u32): InitVar { return self.ik.vars.get(usize(v)) }
+
+Sema.init_vset(mut self, v: u32, x: InitVar) { mut self.ik.vars.set(usize(v), x) }
+
+/* Local `sym`'s tracked variable, made when `create`; 0 for none. */
+Sema.init_var(mut self, sym: u32, create: bool): u32 {
+    if sym == 0 || self.sym(sym).kind != SymKind.var || self.sym(sym).is_global { return 0 }
+    found: u32, ok: bool = self.ik.var_ix.get(sym)
+    if ok || !create { return found }
+    fail(mut self.ik.vars.push(InitVar { sym = sym, state = mut self.init_new(InitState {}) }))
+    v: u32 = u32(self.ik.vars.len - 1)
+    fail(mut self.ik.var_ix.set(sym, v))
+    return v
+}
+
+/* Saves `v`'s state before its first change since the innermost branch point. */
+Sema.init_touch(mut self, v: u32) {
+    x: InitVar = self.init_v(v)
+    if self.ik.depth == 0 || x.saved >= i64(self.ik.mark) { return }
+    fail(mut self.ik.trail.push(InitUndo { var = v, old = mut self.init_clone(x.state, 0), prev = x.saved }))
+    x.saved = i64(self.ik.trail.len - 1)
+    mut self.init_vset(v, x)
+}
+
+Sema.init_undo(mut self, to: u32) {
+    for self.ik.trail.len > usize(to) {
+        u: InitUndo = self.ik.trail.get(self.ik.trail.len - 1)
+        mut self.ik.trail.truncate(self.ik.trail.len - 1)
+        x: InitVar = self.init_v(u.var)
+        x.state = u.old
+        x.saved = u.prev
+        mut self.init_vset(u.var, x)
+    }
+}
+
+/* Opens a branch point; the result restores the enclosing one in init_end. */
+Sema.init_begin(mut self): u32 {
+    outer: u32 = self.ik.mark
+    self.ik.mark = u32(self.ik.trail.len)
+    self.ik.depth += 1
+    return outer
+}
+
+/* Closes a branch point, undoing every change made since it opened. */
+Sema.init_end(mut self, outer: u32) {
+    mut self.init_undo(self.ik.mark)
+    self.ik.mark = outer
+    self.ik.depth -= 1
+}
+
+/* The variables changed since trail slot `from`, with their current states.
+ * A path that goes on changing them (a `break` inside the branch) clones.
+ */
+Sema.init_delta(mut self, from: u32, clone: bool): InitDelta {
+    out: InitDelta = InitDelta { start = u32(self.ik.changes.len) }
+    for i: usize = usize(from); i < self.ik.trail.len; i += 1 {
+        v: u32 = self.ik.trail.get(i).var
+        x: InitVar = self.init_v(v)
+        if x.seen { continue } // saved again by a branch still open
+        x.seen = true
+        mut self.init_vset(v, x)
+        st: u32 = x.state
+        if clone { st = mut self.init_clone(x.state, 0) }
+        fail(mut self.ik.changes.push(InitChange { var = v, state = st }))
+        out.n += 1
+    }
+    for i: u32 in 0..out.n {
+        v: u32 = self.ik.changes.get(usize(out.start + i)).var
+        x: InitVar = self.init_v(v)
+        x.seen = false
+        mut self.init_vset(v, x)
+    }
+    return out
+}
+
+/* Joins the `np` paths from InitCk.paths[`first`] of the `npaths` reaching
+ * one point, after init_end has restored the base state: each changed
+ * variable takes the intersection of its states, the base standing in for a
+ * path that left it alone.
+ */
+Sema.init_join(mut self, first: usize, np: u32, npaths: u32) {
+    changed: array.Array[u32] = array.Array[u32] {}
+    defer mut changed.wipe()
+    for p: u32 in 0..np {
+        d: InitDelta = self.ik.paths.get(first + usize(p))
+        for i: u32 in 0..d.n {
+            c: InitChange = self.ik.changes.get(usize(d.start + i))
+            x: InitVar = self.init_v(c.var)
+            if !x.seen {
+                x.seen = true
+                x.acc = c.state
+                x.count = 1
+                fail(mut changed.push(c.var))
+            } else {
+                x.acc = mut self.init_intersect(x.acc, c.state, self.sym(x.sym).ty)
+                x.count += 1
+            }
+            mut self.init_vset(c.var, x)
+        }
+    }
+    for v: u32 in changed.view() {
+        x: InitVar = self.init_v(v)
+        if x.count < npaths {
+            x.acc = mut self.init_intersect(x.acc, x.state, self.sym(x.sym).ty)
+            mut self.init_vset(v, x)
+        }
+        mut self.init_touch(v)
+        y: InitVar = self.init_v(v)
+        y.state = y.acc
+        y.seen = false
+        mut self.init_vset(v, y)
+    }
+}
+
+Sema.init_field_index(self, t: u32, e: u32): i64 {
+    s: u32 = self.init_shape(t)
+    if s == 0 || self.ty(s).kind != TypeKind.struct { return -1 }
+    x: SType = self.ty(s)
+    for i: u32 in 0..x.nfields {
+        if mem.equal(self.field(x, i).name, self.node(e).text) { return i64(i) }
+    }
+    return -1
+}
+
+Sema.init_const_index(self, e: u32): (u64, bool) {
+    if self.node(e).kind == Kind.selector { return self.static_key_int(e) } // [E]T: a member
+    v: i64, ok: bool = self.ut_const(e)
+    if !ok || v < 0 { return 0, false }
+    return u64(v), true
+}
+
+/* Fills `p` with expression `e`'s direct storage path; false for none. */
+Sema.init_path(self, e: u32, mut p: InitPath): bool {
+    if e == 0 || p.n >= 64 { return false }
+    n: Node = self.node(e)
+    if n.kind == Kind.ident {
+        s: u32 = self.node_sym(e)
+        if s == 0 || self.sym(s).kind != SymKind.var || self.sym(s).is_global { return false }
+        p.root = s
+        p.types[0] = self.sym(s).ty
+        return true
+    }
+    if n.kind == Kind.selector {
+        if !self.init_path(n.a, mut p) { return false }
+        if p.overlay { return true }
+        bt: u32 = self.init_shape(p.types[p.n])
+        if bt != 0 && self.ty(bt).kind == TypeKind.struct && self.ty(bt).is_overlap { // tracked whole: any member write initializes it
+            p.overlay = true
+            return true
+        }
+        fi: i64 = self.init_field_index(bt, e)
+        if fi < 0 { return false } // pointer auto-deref, Error, or method
+        p.keys[p.n] = u64(fi)
+        p.types[p.n + 1] = self.field(self.ty(bt), u32(fi)).ty
+        p.n += 1
+        return true
+    }
+    if n.kind == Kind.index {
+        if !self.init_path(n.a, mut p) { return false }
+        if p.overlay { return true }
+        bt: u32 = self.init_shape(p.types[p.n])
+        if bt == 0 || self.ty(bt).kind != TypeKind.array { return false }
+        ix: u64, ok: bool = self.init_const_index(n.b)
+        if !ok || ix >= self.ty(bt).count {
+            p.dynamic_index = true
+            return true
+        }
+        p.keys[p.n] = ix
+        p.types[p.n + 1] = self.ty(bt).base
+        p.n += 1
+        return true
+    }
+    return false
+}
+
+/* The state of `v` along the first `n` keys of `p`; 0 when absent. */
+Sema.init_path_state(mut self, v: u32, p: InitPath, n: u32, create: bool): u32 {
+    s: u32 = self.init_v(v).state
+    if self.init_st(s).full { return s }
+    for i: u32 in 0..n {
+        s = mut self.init_part(s, p.keys[i], create)
+        if s == 0 { return 0 }
+        if self.init_st(s).full { return s }
+    }
+    return s
+}
+
+Sema.init_diag(mut self, at: u32, p: InitPath, want: u32) {
+    n: Node = self.node(at)
+    fully: string = ""
+    if self.init_aggregate(want) || (p.n == 0 && self.init_aggregate(self.sym(p.root).ty)) { fully = "fully " }
+    fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
+    mut self.print_shown(mut self.pool.join(["'", self.sym(p.root).name, "' was not ", fully, "initialized before use"]))
+    fmt.printf(sys.stderr, "\n")
+    self.errors += 1
+}
+
+Sema.init_require_path(mut self, e: u32): bool {
+    p: InitPath = blank(InitPath)
+    if !self.init_path(e, mut p) { return false }
+    v: u32 = mut self.init_var(p.root, false)
+    if v == 0 { return true }
+    if p.dynamic_index {
+        if !mut self.init_state_full(self.init_v(v).state, self.sym(p.root).ty) { mut self.init_diag(e, p, self.sym(p.root).ty) }
+        return true
+    }
+    s: u32 = mut self.init_path_state(v, p, p.n, false)
+    want: u32 = p.types[p.n]
+    if s == 0 || !mut self.init_state_full(s, want) { mut self.init_diag(e, p, want) }
+    return true
+}
+
+Sema.init_mark_path(mut self, e: u32) {
+    p: InitPath = blank(InitPath)
+    if !self.init_path(e, mut p) || p.dynamic_index { return }
+    v: u32 = mut self.init_var(p.root, true)
+    if v == 0 { return }
+    mut self.init_touch(v)
+    s: u32 = mut self.init_path_state(v, p, p.n, true)
+    st: InitState = self.init_st(s)
+    st.full = true
+    st.parts = 0
+    mut self.init_set(s, st)
+    for i: u32 = p.n; i > 0; i -= 1 {
+        parent: u32 = mut self.init_path_state(v, p, i - 1, false)
+        _ = mut self.init_state_full(parent, p.types[i - 1])
+    }
+}
+
+/* A view of a local array is tracked whole: a read-only view reads the whole
+ * array; a mut view initializes it only when it covers every element.
+ */
+Sema.init_array_view(mut self, e: u32) {
+    n: Node = self.node(e)
+    if (n.flags & parser.F_MUT) == 0 {
+        _ = mut self.init_require_path(n.a)
+        return
+    }
+    bt: u32 = self.init_shape(self.node_ty(n.a))
+    lo: u64 = 0
+    hi: u64 = self.ty(bt).count
+    if n.b != 0 {
+        v: u64, ok: bool = self.init_const_index(n.b)
+        if !ok { return }
+        lo = v
+    }
+    if n.c != 0 {
+        v: u64, ok: bool = self.init_const_index(n.c)
+        if !ok { return }
+        hi = v
+    }
+    if lo == 0 && hi == self.ty(bt).count { mut self.init_mark_path(n.a) }
+}
+
+/* What computing place `e`'s address reads. */
+Sema.init_addr_parts(mut self, e: u32) {
+    if e == 0 { return }
+    n: Node = self.node(e)
+    if n.kind == Kind.index {
+        mut self.init_expr(n.b) // computing the address reads the index
+        bt: u32 = self.init_shape(self.node_ty(n.a))
+        if bt != 0 && self.ty(bt).kind != TypeKind.array { mut self.init_expr(n.a) } // slice descriptor/pointer
+        return
+    }
+    if n.kind == Kind.selector {
+        bt: u32 = self.init_shape(self.node_ty(n.a))
+        if bt != 0 && self.ty(bt).kind == TypeKind.ptr {
+            mut self.init_expr(n.a) // auto-deref reads pointer
+        } else {
+            mut self.init_addr_parts(n.a)
+        }
+        return
+    }
+    if n.kind == Kind.unary && n.op == lexer.Token.star { mut self.init_expr(n.a) }
+}
+
+Sema.init_expr(mut self, e: u32) {
+    if e == 0 { return }
+    n: Node = self.node(e)
+    switch n.kind {
+        Kind.ident {
+            s: u32 = self.node_sym(e)
+            if s != 0 && self.sym(s).kind == SymKind.var && !self.sym(s).is_global { _ = mut self.init_require_path(e) }
+        }
+        Kind.selector {
+            if mem.equal(n.text, "len") {
+                t: u32 = self.init_shape(self.node_ty(n.a))
+                if t != 0 && self.ty(t).kind == TypeKind.array { return } // compile-time metadata
+            }
+            p: InitPath = blank(InitPath)
+            if self.init_path(e, mut p) {
+                _ = mut self.init_require_path(e)
+                mut self.init_addr_parts(e)
+            } else {
+                mut self.init_expr(n.a)
+            }
+        }
+        Kind.index {
+            p: InitPath = blank(InitPath)
+            if self.init_path(e, mut p) {
+                _ = mut self.init_require_path(e)
+                mut self.init_expr(n.b)
+            } else {
+                mut self.init_expr(n.a)
+                mut self.init_expr(n.b)
+            }
+        }
+        Kind.slice {
+            bt: u32 = self.init_shape(self.node_ty(n.a))
+            mut self.init_expr(n.b) // bounds are evaluated before the view is used
+            mut self.init_expr(n.c)
+            if bt == 0 || self.ty(bt).kind != TypeKind.array {
+                mut self.init_expr(n.a)
+            } else {
+                mut self.init_addr_parts(n.a)
+                mut self.init_array_view(e)
+            }
+        }
+        Kind.unary {
+            if n.op == lexer.Token.amp {
+                mut self.init_addr_parts(n.a)
+                if (n.flags & parser.F_MUT) != 0 {
+                    mut self.init_mark_path(n.a)
+                } else {
+                    _ = mut self.init_require_path(n.a)
+                }
+            } else {
+                mut self.init_expr(n.a)
+            }
+        }
+        Kind.binary {
+            mut self.init_expr(n.a)
+            mut self.init_expr(n.b)
+        }
+        Kind.range {
+            mut self.init_expr(n.a)
+            mut self.init_expr(n.b)
+            mut self.init_expr(n.c)
+        }
+        Kind.cmpchain, Kind.tuple {
+            for i: u32 in 0..n.nkids { mut self.init_expr(self.kid(e, i)) }
+        }
+        Kind.arraylit {
+            if n.a != 0 {
+                mut self.init_expr(n.a)
+            } else {
+                for i: u32 in 0..n.nkids {
+                    k: u32 = self.kid(e, i)
+                    if self.node(k).kind == Kind.mapentry { k = self.node(k).b }
+                    mut self.init_expr(k)
+                }
+            }
+        }
+        Kind.structlit {
+            for i: u32 in 0..n.nkids { mut self.init_expr(self.node(self.kid(e, i)).a) }
+        }
+        Kind.mutarg { mut self.init_expr(n.a) }
+        Kind.call {
+            if n.a != 0 && self.node(n.a).kind == Kind.ident {
+                s: u32 = self.node_sym(n.a)
+                if s != 0 && self.sym(s).kind == SymKind.var { mut self.init_expr(n.a) } // function variable
+            } else if n.a != 0 && self.node(n.a).kind == Kind.selector {
+                recv: u32 = self.node(n.a).a
+                rt: u32 = self.init_shape(self.node_ty(recv))
+                if (n.flags & parser.F_MUT) != 0 && !(rt != 0 && self.ty(rt).kind == TypeKind.ptr) {
+                    // a mut receiver is passed by address, as `mut &recv` is
+                    mut self.init_addr_parts(recv)
+                    mut self.init_mark_path(recv)
+                } else {
+                    mut self.init_expr(recv) // receiver
+                }
+            } else if n.a != 0 {
+                mut self.init_expr(n.a)
+            }
+            for i: u32 in 0..n.nkids { mut self.init_expr(self.kid(e, i)) }
+        }
+        default {}
+    }
+}
+
+/* Records one path leaving open labeled block `x`. */
+Sema.init_exit_path(mut self, x: u32, clone: bool) {
+    d: InitDelta = mut self.init_delta(self.ik.exits.get(usize(x)).from, clone)
+    fail(mut self.ik.exit_paths.push(InitExitPath { exit = x, d = d }))
+}
+
+Sema.init_block(mut self, b: u32): bool {
+    falls: bool = true
+    if b == 0 { return true }
+    for i: u32 in 0..self.node(b).nkids {
+        if falls { falls = mut self.init_stmt(self.kid(b, i)) }
+    }
+    return falls
+}
+
+/* Marks local `sym` wholly initialized, or wholly not. */
+Sema.init_whole(mut self, sym: u32, full: bool) {
+    v: u32 = mut self.init_var(sym, true)
+    if v == 0 { return }
+    mut self.init_touch(v)
+    s: u32 = self.init_v(v).state
+    st: InitState = self.init_st(s)
+    st.full = full
+    st.parts = 0
+    mut self.init_set(s, st)
+}
+
+/* Walks statement `s`; whether control falls through it. */
+Sema.init_stmt(mut self, s: u32): bool {
+    if s == 0 { return true }
+    n: Node = self.node(s)
+    switch n.kind {
+        Kind.var {
+            mixed: bool = (n.flags & parser.F_MIXED) != 0
+            for i: u32 in 0..n.nkids {
+                k: u32 = self.kid(s, i)
+                if mixed && self.node(k).kind != Kind.param { continue }
+                mut self.init_whole(self.node_sym(k), false)
+            }
+            if n.b != 0 {
+                mut self.init_expr(n.b)
+                for i: u32 in 0..n.nkids {
+                    k: u32 = self.kid(s, i)
+                    if mixed && self.node(k).kind != Kind.param {
+                        if !self.is_discard(k) { mut self.init_mark_path(k) }
+                    } else {
+                        mut self.init_whole(self.node_sym(k), true)
+                    }
+                }
+            }
+            return true
+        }
+        Kind.assign {
+            mut self.init_expr(n.a)
+            for i: u32 in 0..n.nkids {
+                k: u32 = self.kid(s, i)
+                if self.is_discard(k) { continue }
+                if self.node(k).kind == Kind.selector {
+                    base: u32 = self.init_shape(self.node_ty(self.node(k).a))
+                    if base != 0 && self.ty(base).kind == TypeKind.bits { mut self.init_expr(self.node(k).a) } // preserving RMW reads the whole unit
+                }
+                if n.op != lexer.Token.assign { mut self.init_expr(k) }
+                mut self.init_addr_parts(k)
+                mut self.init_mark_path(k)
+            }
+            return true
+        }
+        Kind.exprstmt {
+            mut self.init_expr(n.a)
+            return true
+        }
+        Kind.if {
+            mut self.init_expr(n.a)
+            outer: u32 = mut self.init_begin()
+            from: u32 = self.ik.mark
+            first: usize = self.ik.paths.len
+            np: u32 = 0
+            tf: bool = mut self.init_block(n.b)
+            if tf {
+                fail(mut self.ik.paths.push(mut self.init_delta(from, false)))
+                np += 1
+            }
+            mut self.init_undo(from)
+            ef: bool = true
+            if n.c != 0 { ef = mut self.init_stmt(n.c) }
+            if ef {
+                fail(mut self.ik.paths.push(mut self.init_delta(from, false)))
+                np += 1
+            }
+            mut self.init_end(outer)
+            mut self.init_join(first, np, np)
+            mut self.ik.paths.truncate(first)
+            return tf || ef
+        }
+        Kind.for {
+            if (n.flags & parser.F_FORGEN) != 0 {
+                if n.a != 0 { _ = mut self.init_stmt(n.a) } // head init runs before the first cond
+                if n.b != 0 { mut self.init_expr(n.b) }
+                outer: u32 = mut self.init_begin()
+                _ = mut self.init_block(n.d)
+                if n.c != 0 { _ = mut self.init_stmt(n.c) } // post-clause reads see the body's state
+                mut self.init_end(outer) // loop may execute zero times
+                return true
+            }
+            mut self.init_expr(n.b)
+            outer: u32 = mut self.init_begin()
+            for i: u32 in 0..n.nkids {
+                v: u32 = mut self.init_var(self.node_sym(self.kid(s, i)), true)
+                if v != 0 {
+                    mut self.init_touch(v)
+                    st: InitState = self.init_st(self.init_v(v).state)
+                    st.full = true
+                    mut self.init_set(self.init_v(v).state, st)
+                }
+            }
+            _ = mut self.init_block(n.c)
+            mut self.init_end(outer) // loop may execute zero times
+            return true
+        }
+        Kind.switch {
+            mut self.init_expr(n.a)
+            outer: u32 = mut self.init_begin()
+            from: u32 = self.ik.mark
+            first: usize = self.ik.paths.len
+            np: u32 = 0
+            has_default: bool = false
+            for i: u32 in 0..n.nkids {
+                c: u32 = self.kid(s, i)
+                if (self.node(c).flags & parser.F_DEFAULT) != 0 { has_default = true }
+                for j: u32 in 0..self.node(c).nkids {
+                    pat: u32 = self.kid(c, j)
+                    if self.node(pat).kind == Kind.varpat && self.node(pat).b != 0 {
+                        mut self.init_whole(self.node_sym(self.node(pat).b), true) // an arm binder is a fresh copy
+                    } else {
+                        mut self.init_expr(pat)
+                    }
+                }
+                if mut self.init_block(self.node(c).b) {
+                    fail(mut self.ik.paths.push(mut self.init_delta(from, false)))
+                    np += 1
+                }
+                mut self.init_undo(from) // each case starts from the scrutinee's state
+            }
+            mut self.init_end(outer)
+            // without a default, the value matching no case is one more path
+            npaths: u32 = np
+            if !has_default { npaths += 1 }
+            mut self.init_join(first, np, npaths)
+            mut self.ik.paths.truncate(first)
+            return !has_default || np > 0
+        }
+        Kind.return {
+            mut self.init_expr(n.a)
+            return false
+        }
+        Kind.fallthrough, Kind.continue { return false }
+        Kind.asm {
+            for i: u32 in 0..n.nkids {
+                b: u32 = self.kid(s, i)
+                is_in: bool = mem.equal(self.node(b).text, "in")
+                is_out: bool = mem.equal(self.node(b).text, "out")
+                if !is_in && !is_out { continue }
+                for j: u32 = 1; j < self.node(b).nkids; j += 2 {
+                    if is_in {
+                        mut self.init_expr(self.kid(b, j))
+                    } else {
+                        mut self.init_mark_path(self.kid(b, j))
+                    }
+                }
+            }
+            return true
+        }
+        Kind.block { return mut self.init_block(s) }
+        Kind.label {
+            outer: u32 = mut self.init_begin()
+            x: u32 = u32(self.ik.exits.len)
+            fail(mut self.ik.exits.push(InitExit { name = n.text, from = self.ik.mark }))
+            xmark: usize = self.ik.exit_paths.len
+            if mut self.init_block(n.a) { mut self.init_exit_path(x, false) }
+            mut self.ik.exits.truncate(usize(x))
+            mut self.init_end(outer)
+            // this label's paths join; a deeper `break` to an outer label
+            // stays recorded for it
+            first: usize = self.ik.paths.len
+            np: u32 = 0
+            keep: usize = xmark
+            for i: usize = xmark; i < self.ik.exit_paths.len; i += 1 {
+                xp: InitExitPath = self.ik.exit_paths.get(i)
+                if xp.exit == x {
+                    fail(mut self.ik.paths.push(xp.d))
+                    np += 1
+                } else {
+                    mut self.ik.exit_paths.set(keep, xp)
+                    keep += 1
+                }
+            }
+            mut self.ik.exit_paths.truncate(keep)
+            mut self.init_join(first, np, np)
+            mut self.ik.paths.truncate(first)
+            return np > 0
+        }
+        Kind.break {
+            if n.text.len > 0 {
+                for i: usize = self.ik.exits.len; i > 0; i -= 1 {
+                    if mem.equal(self.ik.exits.get(i - 1).name, n.text) {
+                        mut self.init_exit_path(u32(i - 1), true) // the label's scope goes on
+                        break
+                    }
+                }
+            }
+            return false
+        }
+        default { return true }
+    }
+    return true
+}
+
+/* Every local is initialized before it is read, along every path of each
+ * function with a body (Memory #15): a separate walk after type checking,
+ * over direct storage paths only.
+ */
+Sema.check_definite_initialization(mut self) {
+    for k: u32 in 0..self.node(self.file).nkids {
+        f: u32 = self.kid(self.file, k)
+        n: Node = self.node(f)
+        if n.kind != Kind.func || n.b == 0 { continue }
+        fs: u32 = self.node_sym(f)
+        is_spec: bool = fs != 0 && self.sym(fs).spec_nargs != 0 // n.c holds its type arguments
+        if n.c != 0 && !is_spec && !self.inst_heads.has(f) { continue }
+        mut self.ik.wipe()
+        self.ik = blank(InitCk)
+        _ = mut self.init_new(InitState {}) // 0 is none
+        fail(mut self.ik.vars.push(InitVar {}))
+        for p: u32 in 0..n.nkids {
+            v: u32 = mut self.init_var(self.node_sym(self.kid(f, p)), true)
+            if v != 0 {
+                st: InitState = self.init_st(self.init_v(v).state)
+                st.full = true
+                mut self.init_set(self.init_v(v).state, st)
+            }
+        }
+        _ = mut self.init_block(n.b)
+    }
+}
+
 // --- end-of-file checks ---------------------------------------------------------
 
 /* The checks C's sema_check runs once every body is checked: specialized
  * templates without a specialization, each signing's method set, and inline
- * call cycles when nothing has failed yet. Definite initialization is not yet
- * ported.
+ * call cycles and then definite initialization when nothing has failed yet.
  */
 pub Sema.check_end(mut self) {
     path: array.Array[u32] = array.Array[u32] {} // the inline walk's state
@@ -7568,6 +8404,7 @@ pub Sema.check_end(mut self) {
             }
         }
     }
+    if self.errors == 0 { mut self.check_definite_initialization() }
 }
 
 /* Whether generic method `fn`, or plain method `fn` when `ft` is its type,

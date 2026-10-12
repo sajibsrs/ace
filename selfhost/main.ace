@@ -4,7 +4,7 @@
  * --resolved prints the merged tree as `ace --resolved` does, or with
  * --symbols enters its top-level names and prints them as `ace --symbols` does, or
  * with --check checks it through its function bodies as `ace --check` does, or
- * with --sema checks it fully as `ace` does, except definite initialization.
+ * with --sema checks it fully as `ace` does.
  * --pkg-graph=DIR prints a package's dependency graph and --pkg-check=DIR resolves its imports
  * through it, as `ace` does, optionally for another --target=T.
  */
