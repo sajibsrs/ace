@@ -22,7 +22,9 @@ literal       := int_lit | float_lit | string_lit | char_lit | "null" | "true" |
 int_lit       := digit+ ("_" digit+)* | "0x" hex+ | "0b" bin+     [P: suffixes]
 float_lit     := digit+ "." digit+ [exponent]             [P]
 string_lit    := '"' (char – '"' | '\' escape)* '"'       [P: raw strings]
-char_lit      := "'" (byte – "'" | '\' escape) "'"       // exactly one byte
+char_lit      := "'" (byte – "'" | '\' byte_escape) "'"  // exactly one byte
+byte_escape   := "n" | "t" | "r" | "0" | "\" | '"' | "'" | "x" hex hex
+escape        := byte_escape | "u{" hex{1,6} "}"         // scalar value, UTF-8 encoded (Source #5)
 ```
 
 ## 2. Files & declarations

@@ -474,7 +474,7 @@ Sema.declare_val(mut self, at: u32, kind: SymKind, name: string): u32 {
         return 0
     }
     if is_reserved(name) {
-        mut self.err(at, ["'", name, "' is a reserved builtin name — no declaration may take it"])
+        mut self.err(at, ["'", name, "' is a reserved builtin name \u{2014} no declaration may take it"])
         return 0
     }
     if self.scope_find(false, name) != 0 {
@@ -493,7 +493,7 @@ Sema.declare_type(mut self, at: u32, name: string): u32 {
         return 0
     }
     if is_reserved(name) {
-        mut self.err(at, ["'", name, "' is a reserved builtin name — no declaration may take it"])
+        mut self.err(at, ["'", name, "' is a reserved builtin name \u{2014} no declaration may take it"])
         return 0
     }
     if mem.equal(name, "_") {
@@ -665,7 +665,7 @@ Sema.enter_func(mut self, f: u32, is_extern: bool): u32 {
     owned: bool = (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0
     if owned && !mut self.check_func_owner(f) { return 0 }
     if !owned && is_reserved(n.text) {
-        mut self.err(f, ["'", n.text, "' is a reserved builtin name — no declaration may take it"])
+        mut self.err(f, ["'", n.text, "' is a reserved builtin name \u{2014} no declaration may take it"])
         return 0
     }
     key: string = mut self.func_key(f)
@@ -677,9 +677,9 @@ Sema.enter_func(mut self, f: u32, is_extern: bool): u32 {
     // a method and an associated function never share owner and name
     if head != 0 && owned && (self.node(self.sym(head).decl).flags & parser.F_ASSOC) != (n.flags & parser.F_ASSOC) {
         if (n.flags & parser.F_ASSOC) != 0 {
-            mut self.err(f, ["'", n.text, "' is already declared as a method on this type — associated functions and methods cannot share a name"])
+            mut self.err(f, ["'", n.text, "' is already declared as a method on this type \u{2014} associated functions and methods cannot share a name"])
         } else {
-            mut self.err(f, ["'", n.text, "' is already declared as an associated function on this type — associated functions and methods cannot share a name"])
+            mut self.err(f, ["'", n.text, "' is already declared as an associated function on this type \u{2014} associated functions and methods cannot share a name"])
         }
         return 0
     }
@@ -731,7 +731,7 @@ Sema.enter_func(mut self, f: u32, is_extern: bool): u32 {
 Sema.enter_specialization(mut self, f: u32) {
     n: Node = self.node(f)
     if is_reserved(n.text) {
-        mut self.err(f, ["'", n.text, "' is a reserved builtin name — no declaration may take it"])
+        mut self.err(f, ["'", n.text, "' is a reserved builtin name \u{2014} no declaration may take it"])
         return
     }
     head: u32 = self.files.find(false, n.text)
@@ -746,14 +746,14 @@ Sema.enter_specialization(mut self, f: u32) {
     if !has_generic {
         id: u32 = self.spec_bracket_ident(f, false)
         if id != 0 && !is_prim_name(self.node(id).text) && !self.is_void(id) {
-            mut self.err(f, ["no generic declaration of '", n.text, "' in this file; '", self.node(id).text, "' names a type here — rename the type parameter to declare a generic"])
+            mut self.err(f, ["no generic declaration of '", n.text, "' in this file; '", self.node(id).text, "' names a type here \u{2014} rename the type parameter to declare a generic"])
         } else {
             mut self.err(f, ["no generic declaration of '", n.text, "' in this file"])
         }
         return
     }
     if (n.flags & parser.F_SPECIALIZED) != 0 {
-        mut self.err(f, ["a specialization provides its own body — 'specialized' marks only a generic template"])
+        mut self.err(f, ["a specialization provides its own body \u{2014} 'specialized' marks only a generic template"])
         return
     }
     s: u32 = mut self.new_sym(SymKind.func, n.text)
@@ -1840,7 +1840,7 @@ Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
         return self.t_err
     }
     if (d.flags & parser.F_SPECIALIZED) != 0 {
-        mut self.err(e, ["'", name, mut self.args_name(targs, nargs), "' matches no specialization — '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
+        mut self.err(e, ["'", name, mut self.args_name(targs, nargs), "' matches no specialization \u{2014} '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
         return self.t_err
     }
     if self.has_mut_param(self.sym(chosen).decl) {
@@ -2058,7 +2058,7 @@ Sema.check_ident(mut self, e: u32): u32 {
             for self.ov_hidden(s, e) { s = self.sym(s).overload }
         }
         if self.sym(s).is_generic {
-            mut self.err(e, ["'", n.text, "' is a type or generic — used bare here"])
+            mut self.err(e, ["'", n.text, "' is a type or generic \u{2014} used bare here"])
             return self.t_err
         }
         if self.visible_count(s, e) > 1 {
@@ -2217,7 +2217,7 @@ Sema.check_binary(mut self, e: u32): u32 {
         mut self.err(e, ["operator ", lexer.disp(op), " does not apply to ", mut self.type_name(a)])
         return self.t_err
     }
-    mut self.err(e, ["type mismatch: ", mut self.type_name(a), " ", lexer.disp(op), " ", mut self.type_name(b), " — operands need one type (casts are explicit)"])
+    mut self.err(e, ["type mismatch: ", mut self.type_name(a), " ", lexer.disp(op), " ", mut self.type_name(b), " \u{2014} operands need one type (casts are explicit)"])
     return self.t_err
 }
 
@@ -2303,7 +2303,7 @@ Sema.check_selector(mut self, e: u32): u32 {
             vi: u32, ok: bool = mut self.union_variant_index(e, tt, n.text)
             if !ok { return self.t_err }
             if self.field(self.ty(tt), vi).ty != 0 {
-                mut self.err(e, ["variant '", n.text, "' carries a payload — construct it: ", base.text, ".", n.text, "(...)"])
+                mut self.err(e, ["variant '", n.text, "' carries a payload \u{2014} construct it: ", base.text, ".", n.text, "(...)"])
                 return self.t_err
             }
             mut self.set_node_sym(n.a, ts) // the union type on the base
@@ -2320,7 +2320,7 @@ Sema.check_selector(mut self, e: u32): u32 {
             vi: u32, ok: bool = mut self.union_variant_index(e, ub, n.text)
             if !ok { return self.t_err }
             if self.field(self.ty(ub), vi).ty != 0 {
-                mut self.err(e, ["variant '", n.text, "' carries a payload — construct it with a payload argument"])
+                mut self.err(e, ["variant '", n.text, "' carries a payload \u{2014} construct it with a payload argument"])
                 return self.t_err
             }
             mut self.set_node_sym(e, self.node_sym(base.a))
@@ -2560,7 +2560,7 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
             return self.t_err
         }
         if last != 0 {
-            if !self.ty(last).is_mut { mut self.err(n.a, ["write through read-only pointer — use 'mut *T' and 'mut &value'"]) }
+            if !self.ty(last).is_mut { mut self.err(n.a, ["write through read-only pointer \u{2014} use 'mut *T' and 'mut &value'"]) }
         } else {
             _ = mut self.check_lvalue(callee.a, true)
         }
@@ -2614,7 +2614,7 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
         // the receiver is written in place: the base itself, or the storage
         // the innermost pointer reaches
         if last != 0 {
-            if !self.ty(last).is_mut { mut self.err(n.a, ["write through read-only pointer — use 'mut *T' and 'mut &value'"]) }
+            if !self.ty(last).is_mut { mut self.err(n.a, ["write through read-only pointer \u{2014} use 'mut *T' and 'mut &value'"]) }
         } else {
             _ = mut self.check_lvalue(recv, true)
         }
@@ -2748,7 +2748,7 @@ Sema.check_variant_call(mut self, call: u32, u: u32): u32 {
         base: Node = self.node(callee.a)
         bname: string = base.text
         if base.kind != Kind.ident { bname = self.node(base.a).text }
-        mut self.err(call, ["variant '", callee.text, "' carries no payload — use the plain value ", bname, ".", callee.text])
+        mut self.err(call, ["variant '", callee.text, "' carries no payload \u{2014} use the plain value ", bname, ".", callee.text])
         return self.t_err
     }
     if n.nkids != 1 {
@@ -2937,7 +2937,7 @@ Sema.check_memory_call(mut self, call: u32, f: u32, bi: u64): u32 {
         declared: u32 = self.declared_type(raw, visible)
         if !self.same_type(declared, self.t_byte_slice) && !self.shrink_ok(declared, self.t_byte_slice) {
             if self.ty(declared).kind == TypeKind.slice {
-                mut self.err(raw, ["mem.release requires a mutable []u8 allocation variable — a typed slice states its element type: mem.release[T](mut data)"])
+                mut self.err(raw, ["mem.release requires a mutable []u8 allocation variable \u{2014} a typed slice states its element type: mem.release[T](mut data)"])
             } else {
                 mut self.err(raw, ["mem.release requires a mutable []u8 allocation variable"])
             }
@@ -2962,7 +2962,7 @@ Sema.check_memory_call(mut self, call: u32, f: u32, bi: u64): u32 {
         // content-write destinations carry type-position `mut` (Memory #15)
         if self.node(arg).kind == Kind.mutarg {
             if is_dst {
-                mut self.err(arg, ["mem.", name, "'s destination is a writable view — pass 'mut []u8'; no call-site 'mut'"])
+                mut self.err(arg, ["mem.", name, "'s destination is a writable view \u{2014} pass 'mut []u8'; no call-site 'mut'"])
             } else {
                 mut self.err(arg, ["'mut' marks mut parameters; mem.", name, " parameter ", mut self.num(i + 1), " is read-only"])
             }
@@ -3011,7 +3011,7 @@ Sema.check_memory_generic_call(mut self, call: u32, f: u32, elem: u32, bi: u64):
             // as for the byte forms (Memory #15): type-position `mut` only
             if self.node(arg).kind == Kind.mutarg {
                 if i == 0 {
-                    mut self.err(arg, [what, "'s destination is a writable view — pass 'mut []", mut self.type_name(elem), "'; no call-site 'mut'"])
+                    mut self.err(arg, [what, "'s destination is a writable view \u{2014} pass 'mut []", mut self.type_name(elem), "'; no call-site 'mut'"])
                 } else {
                     mut self.err(arg, ["'mut' marks mut parameters; ", what, " parameter 2 is read-only"])
                 }
@@ -3068,7 +3068,7 @@ Sema.check_memory_generic_call(mut self, call: u32, f: u32, elem: u32, bi: u64):
     visible: u32 = mut self.check_lvalue(raw, true)
     declared: u32 = self.declared_type(raw, visible)
     if !self.same_type(declared, slice) && !self.shrink_ok(declared, slice) {
-        mut self.err(raw, [what, " requires a mutable []", mut self.type_name(elem), " allocation variable — the instantiation must match the slice's element type exactly"])
+        mut self.err(raw, [what, " requires a mutable []", mut self.type_name(elem), " allocation variable \u{2014} the instantiation must match the slice's element type exactly"])
         return self.t_err
     }
     return self.t_void
@@ -3949,7 +3949,7 @@ Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
         return mut self.check_contract_construct(call, want)
     }
     if wk == TypeKind.union {
-        mut self.err(call, ["unions have no constructor call — construct a variant: ", mut self.type_name(want), ".<variant>(...)"])
+        mut self.err(call, ["unions have no constructor call \u{2014} construct a variant: ", mut self.type_name(want), ".<variant>(...)"])
         return self.t_err
     }
     arg: u32 = self.kid(call, 0)
@@ -5821,7 +5821,7 @@ Sema.check_generic_call(mut self, call: u32): u32 {
     }
     d: Node = self.node(self.sym(chosen).decl)
     if (d.flags & parser.F_SPECIALIZED) != 0 {
-        mut self.err(call, ["call '", name, mut self.args_name(targs, nargs), "' matches no specialization — '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
+        mut self.err(call, ["call '", name, mut self.args_name(targs, nargs), "' matches no specialization \u{2014} '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
         return self.t_err
     }
     if d.ival == BI_MEM_ALLOC_T || d.ival == BI_MEM_ZALLOC_T || d.ival == BI_MEM_REALLOC_T || d.ival == BI_MEM_RELEASE_T || d.ival == BI_MEM_COPY_T || d.ival == BI_MEM_MOVE_T {
@@ -5920,7 +5920,7 @@ Sema.declare_local(mut self, at: u32, name: string): u32 {
         return 0
     }
     if is_reserved(name) {
-        mut self.err(at, ["'", name, "' is a reserved builtin name — no declaration may take it"])
+        mut self.err(at, ["'", name, "' is a reserved builtin name \u{2014} no declaration may take it"])
         return 0
     }
     if self.find_local(name, self.frame().start) != 0 {
@@ -6309,7 +6309,7 @@ Sema.check_stmt(mut self, s: u32) {
 Sema.check_expr_stmt(mut self, s: u32, e: u32) {
     t: u32 = mut self.expr_type(e)
     if t == self.t_ut_int || t == self.t_ut_float {
-        mut self.err(s, ["untyped literal expression has no effect — bind it to a type"])
+        mut self.err(s, ["untyped literal expression has no effect \u{2014} bind it to a type"])
     }
 }
 
@@ -6740,7 +6740,7 @@ Sema.check_for(mut self, s: u32) {
                 mut self.err(self.kid(s, value), ["loop value binder is ", mut self.type_name(binds[value]), " but elements are ", mut self.type_name(elem)])
             }
         } else {
-            mut self.err(n.b, ["for-in iterates slices, arrays, strings, or ranges — not ", mut self.type_name(it)])
+            mut self.err(n.b, ["for-in iterates slices, arrays, strings, or ranges \u{2014} not ", mut self.type_name(it)])
         }
     }
     if mutable && ik != TypeKind.err {
@@ -7011,7 +7011,7 @@ Sema.check_slice(mut self, e: u32): u32 {
     establish: bool = (n.flags & parser.F_MUT) != 0
     src: Node = self.node(n.a)
     if establish && src.kind == Kind.str_lit {
-        mut self.err(e, ["a string literal cannot establish 'mut string' — slice a writable string binding"])
+        mut self.err(e, ["a string literal cannot establish 'mut string' \u{2014} slice a writable string binding"])
         return self.t_err
     }
     b: u32 = 0
@@ -7027,7 +7027,7 @@ Sema.check_slice(mut self, e: u32): u32 {
         // the marker may prove writable array elements, never regrow a plain view
         content: bool = (is_string || bk == TypeKind.slice) && self.ty(b).is_mut
         if (is_string || bk == TypeKind.slice) && !content {
-            mut self.err(e, ["cannot establish writable content from plain ", mut self.type_name(b), " — permission that has shrunk cannot grow again"])
+            mut self.err(e, ["cannot establish writable content from plain ", mut self.type_name(b), " \u{2014} permission that has shrunk cannot grow again"])
             return self.t_err
         }
         if !content { // array: prove its inline element storage
@@ -7092,9 +7092,9 @@ Sema.check_lvalue_raw(mut self, e: u32, write: bool): u32 {
                 if x.is_const {
                     mut self.err(e, ["cannot assign to const '", n.text, "'"])
                 } else if (x.is_extern || (x.decl != 0 && (self.node(x.decl).flags & parser.F_EXPO) != 0)) && !x.is_mut {
-                    mut self.err(e, ["C global '", n.text, "' is read-only — mark its declaration 'mut'"])
+                    mut self.err(e, ["C global '", n.text, "' is read-only \u{2014} mark its declaration 'mut'"])
                 } else if x.is_param && !x.is_mut {
-                    mut self.err(e, ["parameter '", n.text, "' is read-only — mark it 'mut' in the signature"])
+                    mut self.err(e, ["parameter '", n.text, "' is read-only \u{2014} mark it 'mut' in the signature"])
                 }
             }
             if x.ty == 0 { return self.t_err }
@@ -7110,7 +7110,7 @@ Sema.check_lvalue_raw(mut self, e: u32, write: bool): u32 {
                     mut self.err(e, ["'*' dereferences pointers, not ", mut self.type_name(p)])
                     return self.t_err
                 }
-                if write && !self.ty(p).is_mut { mut self.err(e, ["write through read-only pointer — use 'mut *T' and 'mut &value'"]) }
+                if write && !self.ty(p).is_mut { mut self.err(e, ["write through read-only pointer \u{2014} use 'mut *T' and 'mut &value'"]) }
                 return self.ty(p).base
             }
         }
@@ -7135,7 +7135,7 @@ Sema.check_field_lvalue(mut self, e: u32, write: bool): u32 {
     for q: u32 = b; q != 0 && self.ty(q).kind == TypeKind.ptr; q = self.ty(q).base { last = q }
     if write {
         if last != 0 {
-            if !self.ty(last).is_mut { mut self.err(e, ["write through read-only pointer — use 'mut *T' and 'mut &value'"]) }
+            if !self.ty(last).is_mut { mut self.err(e, ["write through read-only pointer \u{2014} use 'mut *T' and 'mut &value'"]) }
         } else {
             _ = mut self.check_lvalue(n.a, true) // a field is part of its base's storage
         }
@@ -7207,11 +7207,11 @@ Sema.check_index_lvalue(mut self, e: u32, write: bool): u32 {
     if a.kind == Kind.ident { name = a.text }
     if write && pk == TypeKind.slice {
         if !self.ty(peek).is_mut {
-            mut self.err(e, ["cannot write through the read-only view ", mut self.type_name(peek), " — establish a writable one: 'mut ", name, "[lo..hi]' or declare the view 'mut []T'"])
+            mut self.err(e, ["cannot write through the read-only view ", mut self.type_name(peek), " \u{2014} establish a writable one: 'mut ", name, "[lo..hi]' or declare the view 'mut []T'"])
         }
     } else if write && self.is_prim(peek, P_STRING) {
         if !self.ty(peek).is_mut {
-            mut self.err(e, ["cannot write through the read-only view string — establish a writable one: 'mut ", name, "[lo..hi]' or declare the view 'mut string'"])
+            mut self.err(e, ["cannot write through the read-only view string \u{2014} establish a writable one: 'mut ", name, "[lo..hi]' or declare the view 'mut string'"])
         }
     } else if write {
         b = mut self.check_lvalue(n.a, true)
@@ -8628,7 +8628,7 @@ Sema.resolve_func(mut self, s: u32, head: u32): bool {
             pk: u32 = self.kid(f, i)
             pn: Node = self.node(pk)
             if (pn.flags & parser.F_MUT) != 0 {
-                mut self.err(pk, ["C-boundary parameter '", pn.text, "' is 'mut' — mut parameters stay internal; pass a mut *T instead"])
+                mut self.err(pk, ["C-boundary parameter '", pn.text, "' is 'mut' \u{2014} mut parameters stay internal; pass a mut *T instead"])
                 continue
             }
             p: u32 = self.params.get(usize(t.params + i))
@@ -8734,7 +8734,7 @@ Sema.bind_specialization(mut self, s: u32, head: u32) {
         bind = old
     }
     if bind == 0 {
-        mut self.err(f, ["specialization '", n.text, mut self.args_name(targs, nargs), "' does not conform to any generic overload of '", n.text, "' — parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied"])
+        mut self.err(f, ["specialization '", n.text, mut self.args_name(targs, nargs), "' does not conform to any generic overload of '", n.text, "' \u{2014} parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied"])
         return
     }
     if nbind > 1 {
@@ -8748,7 +8748,7 @@ Sema.bind_specialization(mut self, s: u32, head: u32) {
             same = self.same_type(self.params.get(usize(p.spec_args + i)), self.params.get(usize(targs + i)))
         }
         if same {
-            mut self.err(f, ["duplicate specialization '", n.text, mut self.args_name(targs, nargs), "' — one exact type-argument tuple per generic overload (first declared at line ", mut self.num(self.node(p.decl).line), ")"])
+            mut self.err(f, ["duplicate specialization '", n.text, mut self.args_name(targs, nargs), "' \u{2014} one exact type-argument tuple per generic overload (first declared at line ", mut self.num(self.node(p.decl).line), ")"])
             return
         }
     }

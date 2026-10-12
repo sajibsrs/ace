@@ -57,7 +57,7 @@ pub LexErr: error {
     7: char_empty = "empty char literal",
     8: char_size = "char literal must hold exactly one character",
     9: exponent = "malformed float exponent",
-    10: exponent_dot = "float exponent requires a '.' — write 1.0e5, not 1e5",
+    10: exponent_dot = "float exponent requires a '.' \u{2014} write 1.0e5, not 1e5",
     11: separator = "malformed '_' separator (must sit between digits)",
     12: digits = "missing digits after base prefix",
     13: binary = "invalid binary digit",
@@ -68,6 +68,9 @@ pub LexErr: error {
     18: comment = "unterminated block comment",
     19: byte = "unexpected byte",
     20: ident = "identifier exceeds 128 characters",
+    21: escape_unicode = "\\u escape needs 1-6 hex digits in braces",
+    22: scalar = "\\u escape is not a Unicode scalar value",
+    23: char_unicode = "\\u escape is not allowed in a char literal",
 }
 
 /* A lexing error at the start of the token it was found in. `byte` is the
@@ -477,6 +480,49 @@ Lexer.escape(mut self): u8 {
     return '?'
 }
 
+/* Called with `\\u` consumed. Pushes the UTF-8 encoding of a Unicode scalar
+ * value written as 1-6 hex digits in braces.
+ */
+Lexer.unicode(mut self) {
+    v: u32 = 0
+    n: int = 0
+    if self.cur() == '{' {
+        mut self.adv()
+        for {
+            d: int = digval(self.cur(), 16)
+            if d < 0 { break }
+            if n < 6 { v = v * 16 + u32(d) }
+            mut self.adv()
+            n += 1
+        }
+    }
+    if n < 1 || n > 6 || self.cur() != '}' {
+        if self.cur() == '}' { mut self.adv() }
+        mut self.fail(LexErr.escape_unicode)
+        return
+    }
+    mut self.adv()
+    if v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF) {
+        mut self.fail(LexErr.scalar)
+        return
+    }
+    if v < 0x80 {
+        mut self.push(u8(v))
+    } else if v < 0x800 {
+        mut self.push(u8(0xC0 | v >> 6))
+        mut self.push(u8(0x80 | (v & 0x3F)))
+    } else if v < 0x10000 {
+        mut self.push(u8(0xE0 | v >> 12))
+        mut self.push(u8(0x80 | (v >> 6 & 0x3F)))
+        mut self.push(u8(0x80 | (v & 0x3F)))
+    } else {
+        mut self.push(u8(0xF0 | v >> 18))
+        mut self.push(u8(0x80 | (v >> 12 & 0x3F)))
+        mut self.push(u8(0x80 | (v >> 6 & 0x3F)))
+        mut self.push(u8(0x80 | (v & 0x3F)))
+    }
+}
+
 Lexer.scan_string(mut self): Token {
     mut self.adv() // opening quote
     self.used = 0
@@ -492,8 +538,13 @@ Lexer.scan_string(mut self): Token {
         }
         if c == '\\' {
             mut self.adv()
-            e: u8 = mut self.escape()
-            mut self.push(e)
+            if self.cur() == 'u' {
+                mut self.adv()
+                mut self.unicode()
+            } else {
+                e: u8 = mut self.escape()
+                mut self.push(e)
+            }
         } else {
             mut self.push(mut self.adv()) // UTF-8 bytes pass through
         }
@@ -515,7 +566,13 @@ Lexer.scan_char(mut self): Token {
         ok = false
     } else if self.cur() == '\\' {
         mut self.adv()
-        val = mut self.escape()
+        if self.cur() == 'u' {
+            mut self.adv()
+            mut self.fail(LexErr.char_unicode)
+            for self.cur() != 0 && self.cur() != '\'' && self.cur() != '\n' { mut self.adv() }
+        } else {
+            val = mut self.escape()
+        }
     } else {
         val = mut self.adv()
     }

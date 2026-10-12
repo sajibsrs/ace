@@ -106,6 +106,24 @@ if ! "$ACE" tests/lexer/ident_long_err.ace 2>&1 | grep -qF \
     echo "FAIL: identifier length diagnostic"
     fail=1
 fi
+unicode_errors=$("$ACE" tests/lexer/unicode_err.ace 2>&1)
+for want in "3:13: error: \\u escape needs 1-6 hex digits in braces" \
+    "4:13: error: \\u escape needs 1-6 hex digits in braces" \
+    "5:13: error: \\u escape needs 1-6 hex digits in braces" \
+    "6:13: error: \\u escape needs 1-6 hex digits in braces" \
+    "7:13: error: \\u escape is not a Unicode scalar value" \
+    "8:13: error: \\u escape is not a Unicode scalar value" \
+    "9:9: error: \\u escape is not allowed in a char literal" \
+    "unicode_err.ace: 7 errors"; do
+    if ! printf '%s\n' "$unicode_errors" | grep -qF "$want"; then
+        echo "FAIL: \\u escape diagnostic: $want"
+        fail=1
+    fi
+done
+if ! "$ACE" --tokens tests/lexer/unicode_ok.ace | grep -qF "${tab}string${tab}\"Aé—𝄞\""; then
+    echo "FAIL: \\u{...} should lex as its UTF-8 bytes"
+    fail=1
+fi
 
 for f in $(find tests/sema -name '*_ok.ace' | sort); do
     if ! "$ACE" $(target_of "$f") "$f" >/dev/null 2>/tmp/ace_test_errs; then

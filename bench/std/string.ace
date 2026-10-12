@@ -202,8 +202,8 @@ main(): int {
     }
     report("ascii-fold-64", now() - started, iterations, checksum)
     texts: [2]string = [
-        "Gr\xC3\xBC\xC3\x9Fe, \xE4\xB8\x96\xE7\x95\x8C! \xCE\xA9mega \xE2\x86\x92 \xF0\x9D\x84\x9E na\xC3\xAFve caf\xC3\xA9 plain ascii tail text 0123456789",
-        "Gr\xC3\xBC\xC3\x9Fe, \xE4\xB8\x96\xE7\x95\x8C! \xCE\xA9mega \xE2\x86\x92 \xF0\x9D\x84\x9E na\xC3\xAFve caf\xC3\xA9 plain ascii tail text 012345678\xC0",
+        "Gr\u{FC}\u{DF}e, \u{4E16}\u{754C}! \u{3A9}mega \u{2192} \u{1D11E} na\u{EF}ve caf\u{E9} plain ascii tail text 0123456789",
+        "Gr\u{FC}\u{DF}e, \u{4E16}\u{754C}! \u{3A9}mega \u{2192} \u{1D11E} na\u{EF}ve caf\u{E9} plain ascii tail text 012345678\xC0",
     ]
     checksum = 0
     started = now()

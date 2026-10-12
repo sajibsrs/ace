@@ -82,7 +82,7 @@
       "patterns": [
         {
           "name": "constant.character.escape.ace",
-          "match": "\\\\(?:[\\\\\"'nrt0]|x[0-9A-Fa-f]{2})"
+          "match": "\\\\(?:[\\\\\"'nrt0]|x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]{1,6}\\})"
         },
         {
           "name": "invalid.illegal.escape.ace",

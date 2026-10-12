@@ -101,8 +101,8 @@ bytes. These intent spellings cannot distinguish overloads.
 
 A character literal is an untyped constant holding exactly one byte and can
 materialize into a fitting integer type. The escapes are `\n`, `\t`, `\r`, `\0`,
-`\\`, `\"`, `\'`, and `\xNN`; a direct multibyte source character in a character
-literal is invalid.
+`\\`, `\"`, `\'`, and `\xNN`; a direct multibyte source character or a `\u{...}`
+escape in a character literal is invalid.
 
 ```ace
 letter: char = 'A'
@@ -112,7 +112,15 @@ bytes: [2]char = [letter, newline]
 ```
 
 UTF-8 source bytes pass through string literals, but character literals remain
-single-byte values.
+single-byte values. A string literal may also name a code point with
+`\u{H...}`, 1-6 hex digits, which writes its UTF-8 encoding; surrogates
+(U+D800-U+DFFF) and values above U+10FFFF are rejected. `\xNN` still writes one
+raw byte, so a string can hold bytes that are not UTF-8.
+
+```ace
+dash: string = "a\u{2014}b"     // the same bytes as "a\xE2\x80\x94b"
+clef: string = "\u{1D11E}"      // four bytes
+```
 
 ## Strings
 
@@ -206,6 +214,12 @@ The examples are covered by `tests/sema/docs/primitive_ok.ace`.
 
 ## Design rationale
 
+- `\u{H...}` follows Rust, Swift, and Zig: one braced form covers the whole
+  range, where C, Go, and Python need both `\uXXXX` and `\UXXXXXXXX`, and the
+  brace ends the escape so a following hex digit cannot be misread. It writes
+  bytes at compile time, so it costs nothing at run time. A character literal
+  is one byte, so `\u` is rejected there in every case rather than accepted
+  only below U+80.
 - Bitwise operators and comparisons do not mix unparenthesized because C's
   ranking (`&` looser than `==`) makes `b & mask != value` mean
   `b & (mask != value)`, and reranking would silently change what such code

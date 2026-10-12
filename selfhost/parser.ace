@@ -1200,7 +1200,7 @@ Parser.primary(mut self, ctx: int): u32 {
             return al
         }
         Token.lbrace { // bare struct literal
-            if (ctx & NOSLIT) != 0 { mut self.fail("unexpected '{' — struct literals need a type or parentheses here") }
+            if (ctx & NOSLIT) != 0 { mut self.fail("unexpected '{' \u{2014} struct literals need a type or parentheses here") }
             return mut self.structlit(0)
         }
         default {

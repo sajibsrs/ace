@@ -1,0 +1,4 @@
+/* A \u{...} escape writes its code point's UTF-8 bytes into a string. */
+
+a: string = "\u{41}\u{E9}\u{2014}\u{1D11E}"
+b: string = "\u{0}\u{7F}\u{80}\u{7FF}\u{800}\u{FFFF}\u{10000}\u{10FFFF}"

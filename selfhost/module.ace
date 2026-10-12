@@ -340,7 +340,7 @@ Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
 Loader.reserved(mut self, m: Module, n: Node, name: string) {
     if self.mods.len == 0 { return }
     if mem.equal(name, "panic") || mem.equal(name, "assert") {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: '%s' is a reserved builtin name — no declaration may take it\n", m.path, int(n.line), int(n.col), name)
+        fmt.printf(sys.stderr, "%s:%d:%d: error: '%s' is a reserved builtin name \u{2014} no declaration may take it\n", m.path, int(n.line), int(n.col), name)
         self.errors += 1
     }
 }
@@ -654,7 +654,7 @@ Loader.resolve_module_path(mut self, mi: usize, imp: Node, root: string, kind: s
             probe: string = mut self.pool.join([cur, "/", seg, "/mod.ace"])
             c: string, exists: bool = path.canonical(mut self.pool, probe)
             if !exists {
-                mut self.err(mi, imp, ["'", seg, "' has no mod.ace — '", mut self.joined(segs), "' is not a nested module"])
+                mut self.err(mi, imp, ["'", seg, "' has no mod.ace \u{2014} '", mut self.joined(segs), "' is not a nested module"])
                 return "", false
             }
         }

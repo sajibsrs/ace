@@ -1,5 +1,9 @@
 # Language
 
+- A string literal may name a code point with `\u{H…}` (1–6 hex digits),
+  written as its UTF-8 bytes (#127); surrogates and values above U+10FFFF are
+  lex errors, and `\u` is rejected in a char literal. Both lexers encode it
+  while scanning the string; selfhost diagnostics spell their em dash so.
 - An element of a view-typed call result is a place (#120): `f()[i] = v`,
   `f()[i].f = v`, and `mut &f()[i]` follow the view's own permission. Sema
   types a non-place index base with `expr_type` and keeps "not an assignable

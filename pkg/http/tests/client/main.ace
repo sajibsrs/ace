@@ -84,7 +84,7 @@ main(): int {
     if err != null || url.port != 65535 { return 36 }
 
     header_storage: [2]http.Header = [
-        http.Header { name = "Host", value = "example.com" }, http.Header { name = "X-Test", value = "caf\xC3\xA9" },
+        http.Header { name = "Host", value = "example.com" }, http.Header { name = "X-Test", value = "caf\u{E9}" },
     ]
     request: http.Request = http.Request {
         method = "POST",
@@ -95,7 +95,7 @@ main(): int {
     output_storage: [128]u8 = [0 : 128]
     written: usize
     written, err = request.format(mut output_storage[..])
-    expected: string = "POST /submit HTTP/1.1\r\nHost: example.com\r\nX-Test: caf\xC3\xA9\r\n\r\nok"
+    expected: string = "POST /submit HTTP/1.1\r\nHost: example.com\r\nX-Test: caf\u{E9}\r\n\r\nok"
     if err != null || !mem.equal(output_storage[..written], expected) { return 4 }
     small: [4]u8 = [7 : 4]
     written, err = request.format(mut small[..])
@@ -150,7 +150,7 @@ main(): int {
         framing = http.ResponseFraming.undecided,
     }
     result: http.ResponseResult = mut state.parse(
-        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Text: caf\xC3\xA9\r\n\r\nh\xC3\xA9!",
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Text: caf\u{E9}\r\n\r\nh\u{E9}!",
         mut response_headers[..],
         mut response_body[..],
         false,
@@ -159,7 +159,7 @@ main(): int {
     switch result {
         http.ResponseResult.complete(response: http.Response) {
             if response.status != 200 { return 51 }
-            if !mem.equal(response.body, "h\xC3\xA9!") { return 52 }
+            if !mem.equal(response.body, "h\u{E9}!") { return 52 }
             if response.headers.len != 2 { return 53 }
         }
         default { return 6 }

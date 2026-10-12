@@ -55,7 +55,7 @@ string_case(): int {
 
     switch v {
         json.Value.string(s: string) {
-            if !mem.equal(s, "a\xC3\xA9\n\"") { return 12 }
+            if !mem.equal(s, "a\u{E9}\n\"") { return 12 }
         }
         default { return 13 }
     }

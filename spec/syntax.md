@@ -13,6 +13,12 @@
    name (`as "sym"`, C Interop #2).
 4. An identifier is ASCII and at most 128 characters; a longer one is a lex
    error. Compiler buffers that hold a name are sized to it.
+5. The escapes are `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, `\xHH` (one
+   byte, exactly two hex digits), and `\u{H…}`. `\u{H…}` takes 1–6 hex
+   digits naming a Unicode scalar value (not U+D800–U+DFFF, at most
+   U+10FFFF) and denotes its UTF-8 encoding in a string literal; it is
+   invalid in a char literal, which holds exactly one byte. A string may hold
+   any bytes, so `\xHH` can still write non-UTF-8 data.
 
 ## Syntax & Parsing
 1. Fast, simple parsing is the goal — single-lookahead LL(1) is the guideline, not a requirement; small bounded lookahead is acceptable where it buys readability.

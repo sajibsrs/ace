@@ -41,7 +41,7 @@ fragmented_length(): int {
         default { return 2 }
     }
     result = mut state.parse(
-        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\na\xC3\xA9b",
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\na\u{E9}b",
         mut headers[..],
         mut body[..],
         false,
@@ -49,7 +49,7 @@ fragmented_length(): int {
     )
     switch result {
         http.ResponseResult.complete(response: http.Response) {
-            if response.status != 200 || !mem.equal(response.body, "a\xC3\xA9b") { return 3 }
+            if response.status != 200 || !mem.equal(response.body, "a\u{E9}b") { return 3 }
         }
         default { return 4 }
     }

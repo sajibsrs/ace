@@ -1,0 +1,9 @@
+/* A malformed or out-of-range \u escape is rejected, as is \u in a char literal. */
+
+a: string = "\u{}"
+b: string = "\u{1234567}"
+c: string = "\u41"
+d: string = "\u{41"
+e: string = "\u{D800}"
+f: string = "\u{110000}"
+g: u8 = '\u{41}'

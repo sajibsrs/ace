@@ -419,6 +419,43 @@ static char read_escape(Lex* L) {
     }
 }
 
+// Called with "\u" consumed. Pushes the UTF-8 encoding of a Unicode scalar
+// value written as 1-6 hex digits in braces.
+static void read_unicode(Lex* L) {
+    uint32_t v = 0;
+    int n = 0;
+    if (cur(L) == '{') {
+        adv(L);
+        for (int d; (d = digval(cur(L), 16)) >= 0; adv(L), n++)
+            if (n < 6) v = v * 16 + (uint32_t)d;
+    }
+    if (n < 1 || n > 6 || cur(L) != '}') {
+        if (cur(L) == '}') adv(L);
+        err(L, "\\u escape needs 1-6 hex digits in braces");
+        return;
+    }
+    adv(L);
+    if (v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF)) {
+        err(L, "\\u escape is not a Unicode scalar value");
+        return;
+    }
+    if (v < 0x80) {
+        sb_push(L, (char)v);
+    } else if (v < 0x800) {
+        sb_push(L, (char)(0xC0 | v >> 6));
+        sb_push(L, (char)(0x80 | (v & 0x3F)));
+    } else if (v < 0x10000) {
+        sb_push(L, (char)(0xE0 | v >> 12));
+        sb_push(L, (char)(0x80 | (v >> 6 & 0x3F)));
+        sb_push(L, (char)(0x80 | (v & 0x3F)));
+    } else {
+        sb_push(L, (char)(0xF0 | v >> 18));
+        sb_push(L, (char)(0x80 | (v >> 12 & 0x3F)));
+        sb_push(L, (char)(0x80 | (v >> 6 & 0x3F)));
+        sb_push(L, (char)(0x80 | (v & 0x3F)));
+    }
+}
+
 static void scan_string(Lex* L) {
     adv(L); // opening quote
     L->scratch_len = 0;
@@ -434,7 +471,12 @@ static void scan_string(Lex* L) {
         }
         if (c == '\\') {
             adv(L);
-            sb_push(L, read_escape(L));
+            if (cur(L) == 'u') {
+                adv(L);
+                read_unicode(L);
+            } else {
+                sb_push(L, read_escape(L));
+            }
         } else {
             sb_push(L, adv(L)); // UTF-8 bytes pass through
         }
@@ -458,7 +500,13 @@ static void scan_char(Lex* L) {
         ok = 0;
     } else if (cur(L) == '\\') {
         adv(L);
-        val = (unsigned char)read_escape(L);
+        if (cur(L) == 'u') {
+            adv(L);
+            err(L, "\\u escape is not allowed in a char literal");
+            while (cur(L) && cur(L) != '\'' && cur(L) != '\n') adv(L);
+        } else {
+            val = (unsigned char)read_escape(L);
+        }
     } else {
         val = (unsigned char)adv(L);
     }
