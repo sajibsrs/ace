@@ -129,3 +129,7 @@
 - selfhost checks `asm` statements: the target's mini-assembler
   instructions, its register names in every binding, and scalar local or
   parameter values for `in`/`out`.
+- selfhost `--sema` runs the full check as `ace` does: after the body checks,
+  specialized templates without a specialization, each signing's method set
+  (direct and promoted methods, generic methods stamped per concrete owner),
+  and inline call cycles; `selfhost/check.sh` diffs it in a `sema` stage.

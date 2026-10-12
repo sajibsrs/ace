@@ -4,8 +4,9 @@
 # loader against the C one (every import error line; on success, the count of
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
 # entered scopes and completed types against `ace --symbols`, and its function
-# body checks against `ace --check` over every repository .ace file, then its package graph against `ace --pkg-graph` and its cross-package
-# imports against `ace --pkg-check` over every repository ace.pkg, then times
+# body checks against `ace --check` and its full check against `ace` over
+# every repository .ace file, then its package graph against `ace --pkg-graph`
+# and its cross-package imports against `ace --pkg-check` over every repository ace.pkg, then times
 # the lexers on the largest files. Run from anywhere.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -34,6 +35,8 @@ rbad=0
 sbad=0
 cbad=0
 cport=0
+ebad=0
+eport=0
 for f in $files; do
     total=$((total + 1))
     ./ace --tokens "$f" >"$tmp/want" 2>/dev/null
@@ -129,6 +132,18 @@ for f in $files; do
         echo "CHECK DIFF $f"
         diff "$tmp/werr" "$tmp/gerr" | head -4
     fi
+    # Sema: the full check, end-of-file checks included, counted the same way.
+    ./ace "$f" >"$tmp/want" 2>"$tmp/werr"
+    wrc=$?
+    "$self" --sema "$f" >"$tmp/got" 2>"$tmp/gerr"
+    grc=$?
+    if grep -q 'selfhost does not yet support' "$tmp/gerr"; then
+        eport=$((eport + 1))
+    elif [ "$wrc" -ne "$grc" ] || ! cmp -s "$tmp/werr" "$tmp/gerr"; then
+        ebad=$((ebad + 1))
+        echo "SEMA DIFF $f"
+        diff "$tmp/werr" "$tmp/gerr" | head -4
+    fi
 done
 # Packages: every ace.pkg as a root, for its manifest's target. The graph must
 # match exactly; a check that fails must fail as C's does, and one that passes
@@ -180,6 +195,7 @@ echo "modules: $((total - mbad))/$total files agree ($msema fail only in sema)"
 echo "resolved: $((total - rbad))/$total files agree"
 echo "symbols: $((total - sbad))/$total files agree"
 echo "check: $((total - cbad))/$total files agree ($cport not yet ported)"
+echo "sema: $((total - ebad))/$total files agree ($eport not yet ported)"
 echo "graph: $((ptotal - gbad))/$ptotal packages identical"
 echo "packages: $((ptotal - pbad))/$ptotal packages agree ($psema fail only in sema)"
 

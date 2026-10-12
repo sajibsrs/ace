@@ -7529,6 +7529,199 @@ pub Sema.check_bodies(mut self) {
     mut self.finish_deferred_layouts() // types first built while checking bodies
 }
 
+// --- end-of-file checks ---------------------------------------------------------
+
+/* The checks C's sema_check runs once every body is checked: specialized
+ * templates without a specialization, each signing's method set, and inline
+ * call cycles when nothing has failed yet. Definite initialization is not yet
+ * ported.
+ */
+pub Sema.check_end(mut self) {
+    path: array.Array[u32] = array.Array[u32] {} // the inline walk's state
+    defer mut path.wipe()
+    done: map.Map[u32, bool] = map.Map[u32, bool] {}
+    defer mut done.wipe()
+    // Generics #13: a 'specialized' template with zero specializations in the
+    // compiled program is a declaration error.
+    for k: u32 in 0..self.node(self.file).nkids {
+        id: u32 = self.kid(self.file, k)
+        n: Node = self.node(id)
+        if n.kind != Kind.func || (n.flags & parser.F_SPECIALIZED) == 0 { continue }
+        s: u32 = self.node_sym(id)
+        if s != 0 && self.sym(s).is_generic && self.sym(s).specs == 0 {
+            mut self.err(id, ["generic '", n.text, "' is marked 'specialized' but no specialization is declared in this program"])
+        }
+    }
+    // Every method is declared; validate each signing's method set now.
+    for k: u32 in 0..self.node(self.file).nkids {
+        id: u32 = self.kid(self.file, k)
+        if self.node(id).kind != Kind.signing { continue }
+        self.in_module = self.in_imported(id)
+        mut self.check_signing(id)
+    }
+    self.in_module = false
+    if self.errors == 0 { // every call now names its target
+        for k: u32 in 0..self.node(self.file).nkids {
+            id: u32 = self.kid(self.file, k)
+            if self.node(id).kind == Kind.func && (self.node(id).flags & parser.F_INLINE) != 0 {
+                mut self.inline_visit(mut path, mut done, id)
+            }
+        }
+    }
+}
+
+/* Whether generic method `fn`, or plain method `fn` when `ft` is its type,
+ * matches contract method `m` of signature `mft` exactly on receiver `recv`.
+ */
+Sema.exact_method(self, fn: u32, ft: u32, recv: u32, m: u32, mft: u32): bool {
+    if ft == 0 { return false }
+    f: SType = self.ty(ft)
+    nm: u32 = self.node(m).nkids
+    if f.kind != TypeKind.func || f.nparams != nm + 1 || !self.same_type(self.params.get(usize(f.params)), recv) { return false }
+    d: u32 = self.sym(fn).decl
+    is_mut: bool = d != 0 && (self.node(d).flags & parser.F_MUT) != 0
+    if is_mut != ((self.node(m).flags & parser.F_MUT) != 0) { return false }
+    w: SType = self.ty(mft)
+    for p: u32 in 0..nm {
+        if !self.same_type(self.params.get(usize(f.params + p + 1)), self.params.get(usize(w.params + p))) { return false }
+    }
+    return self.same_type(f.ret, w.ret)
+}
+
+/* Each contract `signing` names is one, named once, and its owner has exactly
+ * one method matching each of the contract's, directly or promoted through
+ * an embedded field whose type signs the contract too.
+ */
+Sema.check_signing(mut self, signing: u32) {
+    n: Node = self.node(signing)
+    run: u32 = u32(self.params.len) // C's canonical_substitution: each parameter stands as `$i`
+    nsub: u32 = 0
+    if n.c != 0 { nsub = self.node(n.c).nkids }
+    for i: u32 in 0..nsub {
+        fail(mut self.params.push(mut self.new_type(SType { kind = TypeKind.typeparam, name = mut self.pool.join(["$", mut self.num(i)]) })))
+    }
+    saved: u32 = mut self.bind_type_args(n.c, run, nsub)
+    conc: u32 = mut self.build_type(n.a)
+    for ci: u32 in 0..n.nkids {
+        conf: u32 = self.kid(signing, ci)
+        want: u32 = mut self.build_type(self.node(conf).a)
+        if self.ty(want).kind != TypeKind.contract {
+            mut self.err(self.node(conf).a, [mut self.type_name(want), " is not a contract"])
+            continue
+        }
+        for j: u32 in 0..ci {
+            if self.same_type(want, mut self.build_type(self.node(self.kid(signing, j)).a)) {
+                mut self.err(self.node(conf).a, ["contract ", mut self.type_name(want), " is repeated in this signing"])
+            }
+        }
+        cd: u32 = self.ty(want).decl
+        for mi: u32 in 0..self.node(cd).nkids {
+            m: u32 = self.kid(cd, mi)
+            name: string = self.node(m).text
+            mft: u32 = mut self.contract_method_type(want, m)
+            found: u32 = 0
+            promoted_ambiguous: bool = false
+            head: u32 = mut self.lookup_val(mut self.pool.join([self.node(n.a).text, "$", name]))
+            for fn: u32 = head; fn != 0; fn = self.sym(fn).overload {
+                ft: u32 = self.sym(fn).ty
+                if self.sym(fn).is_generic { ft = mut self.build_func_type(self.sym(fn).decl, true, run, nsub) }
+                if !self.exact_method(fn, ft, conc, m, mft) { continue }
+                if found != 0 {
+                    mut self.err(signing, ["ambiguous method '", name, "' for contract ", mut self.type_name(want)])
+                    found = 0
+                    break
+                }
+                found = fn
+            }
+            c: SType = self.ty(conc)
+            if found == 0 && c.decl != 0 {
+                for fi: u32 in 0..c.nfields {
+                    fd: u32 = self.kid(c.decl, fi)
+                    eb: u32 = self.field(c, fi).ty
+                    if (self.node(fd).flags & parser.F_EMBED) == 0 || eb == 0 || self.ty(eb).kind != TypeKind.struct || self.ty(eb).decl == 0 { continue }
+                    bs: u32, bsigned: bool = self.signings.get(self.ty(eb).decl)
+                    if !bsigned { continue }
+                    if self.l.module_of(bs) != self.l.module_of(signing) && (self.node(bs).flags & parser.F_PUB) == 0 { continue }
+                    base_signs: bool = false
+                    for bi: u32 in 0..self.node(bs).nkids {
+                        if self.same_type(mut self.build_type(self.node(self.kid(bs, bi)).a), want) { base_signs = true }
+                    }
+                    if !base_signs { continue }
+                    ehead: u32 = mut self.lookup_val(mut self.pool.join([self.node(self.ty(eb).decl).text, "$", name]))
+                    for fn: u32 = ehead; fn != 0; fn = self.sym(fn).overload {
+                        if !self.exact_method(fn, self.sym(fn).ty, eb, m, mft) { continue }
+                        if found != 0 {
+                            mut self.err(signing, ["ambiguous promoted method '", name, "' for contract ", mut self.type_name(want)])
+                            found = 0
+                            promoted_ambiguous = true
+                            break
+                        }
+                        found = fn
+                    }
+                    if promoted_ambiguous { break }
+                }
+            }
+            if found == 0 && !promoted_ambiguous {
+                mut self.err(signing, ["type ", mut self.type_name(conc), " has no exact method '", name, "' required by ", mut self.type_name(want)])
+            } else if found != 0 && self.sym(found).is_generic && c.decl != 0 && self.node(c.decl).c != 0 {
+                // each concrete instantiation of the owner stamps the method
+                head_inst: u32, _ = self.inst_heads.get(c.decl)
+                for it: u32 = head_inst; it != 0; it = self.insts.get(usize(it - 1)).next {
+                    inst: TInst = self.insts.get(usize(it - 1))
+                    concrete: bool = true
+                    for a: u32 in 0..inst.nargs {
+                        if self.ty(self.params.get(usize(inst.args + a))).kind == TypeKind.typeparam { concrete = false }
+                    }
+                    if concrete { _ = mut self.instantiate_func(found, inst.args, inst.nargs, signing) }
+                }
+            }
+        }
+    }
+    mut self.unbind_type_args(saved)
+}
+
+/* The inline function call `call` names directly, or 0. */
+Sema.inline_callee(self, call: u32): u32 {
+    a: u32 = self.node(call).a
+    s: u32 = self.node_sym(call)
+    if a != 0 && self.node(a).kind == Kind.index && self.node_sym(a) != 0 { s = self.node_sym(a) }
+    if s == 0 || self.sym(s).kind != SymKind.func || self.sym(s).decl == 0 { return 0 }
+    d: u32 = self.sym(s).decl
+    if (self.node(d).flags & parser.F_INLINE) == 0 { return 0 }
+    return d
+}
+
+/* Every inline call under node `id`, visited. */
+Sema.inline_calls(mut self, mut path: array.Array[u32], mut done: map.Map[u32, bool], id: u32) {
+    if id == 0 { return }
+    n: Node = self.node(id)
+    if n.kind == Kind.call {
+        g: u32 = self.inline_callee(id)
+        if g != 0 { mut self.inline_visit(mut path, mut done, g) }
+    }
+    d: u32 = 0
+    if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { d = n.d }
+    for part: u32 in [n.a, n.b, n.c, d] { mut self.inline_calls(mut path, mut done, part) }
+    for i: u32 in 0..n.nkids { mut self.inline_calls(mut path, mut done, self.kid(id, i)) }
+}
+
+/* Inline function `f`'s call tree, which must be finite: `path` holds the
+ * inline functions being expanded, `done` those already proven finite.
+ */
+Sema.inline_visit(mut self, mut path: array.Array[u32], mut done: map.Map[u32, bool], f: u32) {
+    for p: u32 in path.view() {
+        if p == f {
+            mut self.err(f, ["inline function '", self.node(f).text, "' reaches itself through inline calls; a recursive call cannot be expanded"])
+            return
+        }
+    }
+    if done.has(f) { return }
+    fail(mut path.push(f))
+    mut self.inline_calls(mut path, mut done, self.node(f).b)
+    mut path.truncate(path.len - 1)
+    fail(mut done.set(f, true))
+}
+
 // --- signatures ---------------------------------------------------------------
 
 /* src/ace.h's compiler-provided intrinsic ids that resolve_func checks. */

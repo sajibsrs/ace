@@ -3,8 +3,9 @@
  * with --modules resolves its imports and prints the loaded modules, or with
  * --resolved prints the merged tree as `ace --resolved` does, or with
  * --symbols enters its top-level names and prints them as `ace --symbols` does, or
- * with --check checks it through its function bodies as `ace --check` does. --pkg-graph=DIR
- * prints a package's dependency graph and --pkg-check=DIR resolves its imports
+ * with --check checks it through its function bodies as `ace --check` does, or
+ * with --sema checks it fully as `ace` does, except definite initialization.
+ * --pkg-graph=DIR prints a package's dependency graph and --pkg-check=DIR resolves its imports
  * through it, as `ace` does, optionally for another --target=T.
  */
 
@@ -59,14 +60,15 @@ main(): int {
     resolved: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--resolved")
     symbols: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--symbols")
     check: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--check")
-    if sys.argc() != 2 && !ast && !modules && !resolved && !symbols && !check {
-        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved|--symbols|--check] file.ace\n")
+    full: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--sema")
+    if sys.argc() != 2 && !ast && !modules && !resolved && !symbols && !check && !full {
+        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved|--symbols|--check|--sema] file.ace\n")
         return 2
     }
     path: string = sys.arg(sys.argc() - 1)
     if modules || resolved { return dump_modules(path, resolved) }
     if symbols { return dump_symbols(path) }
-    if check { return check_bodies(path) }
+    if check || full { return check_bodies(path, full) }
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
@@ -187,8 +189,10 @@ dump_symbols(path: string): int {
     return 0
 }
 
-/* Checks `path` through its function bodies; 1 on any error. */
-check_bodies(path: string): int {
+/* Checks `path` through its function bodies, then with `full` runs the
+ * end-of-file checks as `ace` does; 1 on any error.
+ */
+check_bodies(path: string, full: bool): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer mut l.wipe()
     if !found { return 1 }
@@ -200,6 +204,7 @@ check_bodies(path: string): int {
     mut s.promoted_collisions()
     mut s.signatures()
     mut s.check_bodies()
+    if full && s.unsupported.len == 0 { mut s.check_end() }
     if s.unsupported.len > 0 {
         fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
         return 1
