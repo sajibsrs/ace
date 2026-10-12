@@ -539,6 +539,29 @@ main(): int {
 A plain `[]T` result is read-only, as every plain view is; an element of a
 returned `[N]T` array is a temporary and is not assignable.
 
+A leading `mut` marks the last call in its chain, so an element reached through
+a mutating method's view is written in one statement. The right side runs
+first, so growing the array there leaves no stale target:
+
+```ace
+import array
+
+P: struct { x: i32 }
+
+main(): int {
+    a: array.Array[P] = array.Array[P] {}
+    defer mut a.wipe()
+    _ = mut a.push(P { x = 1 })
+    mut a.view()[0].x = 5  // marks view(), writes element 0 in place
+    return 0
+}
+```
+
+A method may pair a read-only accessor with a `mut self` overload returning
+`mut *T`, as `Array.view` pairs `[]T` with `mut []T`; `mut s.at(i).f = v` then
+writes in place. Such a pointer dangles once the storage grows, so use it
+within one statement rather than holding it across calls that may add elements.
+
 ## Current diagnostics
 
 The `mem` declarations are compiler-backed in the current bootstrap. Release
@@ -619,6 +642,12 @@ Why the rules in `spec/memory.md` are shaped as they are.
   view's type, never from where the descriptor is held, so requiring a local
   binding first added nothing but position dependence. Go draws the same line:
   `f()[i] = v` is legal for a slice and illegal for an array.
+- Leading `mut` scope (Mutability #6): the mark belongs on the call that
+  mutates, and selectors after it only address a place in the result, so it
+  reaches the last call of the chain. Without this, writing one field took a
+  copy and write-back, as Go's map elements do (`m[k].x = v` is rejected
+  there); C (`vec_at(&v, i)->x = v`), Zig (`list.items[i].x = v`), and Rust
+  (`v[i].x = v` via `IndexMut`) write in place.
 - Mutability (section decision): local mutability is invisible to optimization
   (SSA); mutation through references is what blocks alias analysis. Syntax is
   spent only where the compiler and reader profit.

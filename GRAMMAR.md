@@ -159,6 +159,7 @@ assignment    := lvalue ("," lvalue)* "=" expr_list       // n, err = read()
                 | "volatile" lvalue "=" expr              // exactly one final scalar store
 compound_op   := "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
 target        := ident postfix_part*                      // lvalue: ident, .f, [i]
+               | "mut" ident postfix_part*                // mut a.view()[i].x: marks the last call
 lvalue        := target | "*" unary                       // semantic analysis requires addressable storage
 expr_stmt     := expr
 
@@ -220,7 +221,8 @@ unary         := ("*" | "!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue |
 //  "*"  pointer dereference                 "!"  logical negation
 //  "~"  integer bitwise complement
 //  "&"  read-only address-of                "mut &" writable address-of
-//  "mut p" receiver-marked method call or writable-view establishment
+//  "mut p" marks p's last call (receiver) or slice (establishment);
+//  later index and field selectors address a place in its result
 //  (slicing operands only for establishment — Note 25)
 //  "volatile place" exactly one final scalar load
 //  both address forms and establishment require writable lvalues   unary "-" negation

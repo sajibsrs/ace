@@ -230,6 +230,13 @@ pub Parser.node(self, n: u32): Node {
     return self.nodes[n]
 }
 
+/* Node `n` in place, so a later pass can rename or retag it; the pointer
+ * dangles once a node is added.
+ */
+pub Parser.node(mut self, n: u32): mut *Node {
+    return mut &self.nodes[n]
+}
+
 pub Parser.kid(self, n: u32, k: u32): u32 {
     return self.kids[self.nodes[n].kids + k]
 }
@@ -839,6 +846,20 @@ Parser.bracket_arg(mut self): u32 {
     return mut self.expr(0)
 }
 
+/* Marks the call or slice that a leading `mut` reaches: the last one in the
+ * postfix `chain`, past the index and field selectors that address a place
+ * in its result (`mut a.view()[i].x`). False when the chain has none.
+ */
+Parser.mark_mut_chain(mut self, chain: u32): bool {
+    e: u32 = chain
+    for e != 0 && (self.nodes[e].kind == Kind.index || self.nodes[e].kind == Kind.selector) {
+        e = self.nodes[e].a
+    }
+    if e == 0 || (self.nodes[e].kind != Kind.call && self.nodes[e].kind != Kind.slice) { return false }
+    self.nodes[e].flags |= F_MUT
+    return true
+}
+
 Parser.unary(mut self, ctx: int): u32 {
     k: Token = self.kth(0)
     if k == Token.bang || k == Token.tilde || k == Token.minus { return mut self.prefix(k, 0, 1, ctx) }
@@ -854,11 +875,9 @@ Parser.unary(mut self, ctx: int): u32 {
         // A mutating method call or writable-view establishment.
         self.i += 1
         base: u32 = mut self.postfix(ctx, mut self.primary(ctx))
-        if base != 0 && (self.nodes[base].kind == Kind.slice || self.nodes[base].kind == Kind.call) {
-            self.nodes[base].flags |= F_MUT
-            return base
+        if !mut self.mark_mut_chain(base) {
+            mut self.fail("'mut' in an expression marks a method receiver or establishes a writable view")
         }
-        mut self.fail("'mut' in an expression marks a method receiver or establishes a writable view")
         return base
     }
     if k == Token.star {
@@ -1752,17 +1771,15 @@ Parser.stmt(mut self): u32 {
             }
             return n
         }
-        Token.mut { // `mut c.scale(2.0)`: receiver-marked call statement
+        Token.mut { // `mut c.scale(2.0)`, `mut a.view()[i].x = v`
             mt: usize = self.i
-            n: u32 = mut self.leaf(Kind.exprstmt)
-            e: u32 = mut self.expr(NOSLIT)
-            if e == 0 || self.nodes[e].kind != Kind.call {
+            self.i += 1
+            e: u32 = mut self.postfix(0, mut self.primary(0))
+            if !mut self.mark_mut_chain(e) || self.nodes[e].kind == Kind.slice {
                 mut self.fail_at(mt, ["'mut' at statement level marks a call receiver"])
-                return n
+                return mut self.make(Kind.exprstmt, mt)
             }
-            self.nodes[e].flags |= F_MUT
-            self.nodes[n].a = e
-            return n
+            return mut self.expr_stmt_from(0, mt, e)
         }
         Token.ident {
             if self.kth(1) != Token.colon { return mut self.expr_stmt(0) }
@@ -1801,8 +1818,13 @@ is_assign_op(k: Token): bool {
  */
 Parser.expr_stmt(mut self, ctx: int): u32 {
     start: usize = self.i
-    line: u32 = self.line()
-    e: u32 = mut self.expr(ctx)
+    return mut self.expr_stmt_from(ctx, start, mut self.expr(ctx))
+}
+
+/* expr_stmt after its leading expression `head`, which began at token `start`. */
+Parser.expr_stmt_from(mut self, ctx: int, start: usize, head: u32): u32 {
+    line: u32 = self.toks[start].line
+    e: u32 = head
     if self.at(Token.comma) { // destructuring assignment, possibly mixed under `=`
         a: u32 = mut self.nd(Kind.assign)
         mark: usize = self.nstack

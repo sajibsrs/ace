@@ -300,6 +300,11 @@ Sema.sym(self, id: u32): Sym {
     return self.syms.get(usize(id))
 }
 
+/* Symbol `id` in place; the pointer dangles once a symbol is added. */
+Sema.sym(mut self, id: u32): mut *Sym {
+    return mut &mut self.syms.view()[usize(id)]
+}
+
 Sema.update(mut self, id: u32, s: Sym) {
     mut self.syms.set(usize(id), s)
 }
@@ -705,23 +710,19 @@ Sema.enter_func(mut self, f: u32, is_extern: bool): u32 {
     }
     if head == 0 && !owned && mut self.value_names_type(f, key) { return 0 }
     s: u32 = mut self.new_sym(SymKind.func, key)
-    x: Sym = self.sym(s)
-    x.decl = f
-    x.top = f
-    x.is_generic = n.c != 0
-    x.is_extern = is_extern
-    x.is_pub = (n.flags & parser.F_PUB) != 0
-    x.entered = true
-    mut self.update(s, x)
+    mut self.sym(s).decl = f
+    mut self.sym(s).top = f
+    mut self.sym(s).is_generic = n.c != 0
+    mut self.sym(s).is_extern = is_extern
+    mut self.sym(s).is_pub = (n.flags & parser.F_PUB) != 0
+    mut self.sym(s).entered = true
     mut self.set_node_sym(f, s)
     if head == 0 {
         mut self.files.insert(false, key, s)
     } else {
         tail: u32 = head
         for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
-        t: Sym = self.sym(tail)
-        t.overload = s
-        mut self.update(tail, t)
+        mut self.sym(tail).overload = s
     }
     mut self.check_inline_decl(f)
     mut self.check_cold_decl(f)
@@ -760,10 +761,8 @@ Sema.enter_specialization(mut self, f: u32) {
         return
     }
     s: u32 = mut self.new_sym(SymKind.func, n.text)
-    x: Sym = self.sym(s)
-    x.decl = f
-    x.is_pub = (n.flags & parser.F_PUB) != 0
-    mut self.update(s, x)
+    mut self.sym(s).decl = f
+    mut self.sym(s).is_pub = (n.flags & parser.F_PUB) != 0
     h: Sym = self.sym(head)
     if h.entered_specs == 0 {
         h.entered_specs = s
@@ -771,9 +770,7 @@ Sema.enter_specialization(mut self, f: u32) {
     } else {
         tail: u32 = h.entered_specs
         for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
-        t: Sym = self.sym(tail)
-        t.overload = s
-        mut self.update(tail, t)
+        mut self.sym(tail).overload = s
     }
     mut self.check_inline_decl(f)
     mut self.check_cold_decl(f)
@@ -1155,16 +1152,12 @@ Sema.report_cycle(mut self, s: u32) {
     fail(mut parts.push("' depends on itself: "))
     for i: usize in from..self.resolving.len {
         r: u32 = self.resolving.get(i)
-        x: Sym = self.sym(r)
-        x.in_cycle = true // reported once
-        mut self.update(r, x)
+        mut self.sym(r).in_cycle = true // reported once
         fail(mut parts.push("'"))
         fail(mut parts.push(mut self.decl_name(r)))
         fail(mut parts.push("' -> "))
     }
-    x: Sym = self.sym(s)
-    x.in_cycle = true
-    mut self.update(s, x)
+    mut self.sym(s).in_cycle = true
     fail(mut parts.push("'"))
     fail(mut parts.push(name))
     fail(mut parts.push("'"))
@@ -1195,9 +1188,7 @@ Sema.resolve_top(mut self, s: u32) {
     switch n.kind {
         Kind.var { mut self.resolve_global(s) }
         Kind.externvar {
-            x = self.sym(s)
-            x.ty = self.t_err
-            mut self.update(s, x)
+            mut self.sym(s).ty = self.t_err
             t: u32 = mut self.build_type(n.a)
             if self.ty(t).kind != TypeKind.err && !mut self.is_c_abi_type(t, CABI_FIELD, 0) {
                 mut self.err(n.a, ["C global '", n.text, "' has type ", mut self.type_name(t), ", which is not C-ABI compatible"])
@@ -1234,10 +1225,8 @@ Sema.resolve_top(mut self, s: u32) {
     }
     self.in_module = saved
     mut self.resolving.truncate(self.resolving.len - 1)
-    x = self.sym(s)
-    x.resolving = false
-    x.entered = false
-    mut self.update(s, x)
+    mut self.sym(s).resolving = false
+    mut self.sym(s).entered = false
 }
 
 /* A global's type, and whether it is const. Its initializer is not yet
@@ -4681,9 +4670,7 @@ Sema.instantiate(mut self, decl: u32, args: []u32, at: u32): u32 {
     switch d.kind {
         Kind.alias {
             r: u32 = mut self.build_type(d.a)
-            inst: TInst = self.insts.get(usize(slot - 1))
-            inst.result = r
-            mut self.insts.set(usize(slot - 1), inst)
+            mut self.insts.view()[usize(slot - 1)].result = r
             t = r
         }
         Kind.struct { mut self.fill_struct(decl, t) }
@@ -5923,13 +5910,14 @@ Sema.scope_pop(mut self) {
     mut self.frames.truncate(self.frames.len - 1)
 }
 
-/* The innermost frame, changed through `set_frame`. */
+/* The innermost frame. */
 Sema.frame(self): Frame {
     return self.frames.get(self.frames.len - 1)
 }
 
-Sema.set_frame(mut self, f: Frame) {
-    mut self.frames.set(self.frames.len - 1, f)
+/* The innermost frame in place; the pointer dangles once a frame is pushed. */
+Sema.frame(mut self): mut *Frame {
+    return mut &mut self.frames.view()[self.frames.len - 1]
 }
 
 /* The local named `name` in the frames from `from` on, newest first; 0 for none. */
@@ -5979,11 +5967,9 @@ Sema.declare_binder(mut self, list: u32, binder: u32): u32 {
 /* Gives local `s` its type and declaration. */
 Sema.bind_local(mut self, s: u32, t: u32, decl: u32, is_const: bool) {
     if s == 0 { return }
-    x: Sym = self.sym(s)
-    x.ty = t
-    x.is_const = is_const
-    x.decl = decl
-    mut self.update(s, x)
+    mut self.sym(s).ty = t
+    mut self.sym(s).is_const = is_const
+    mut self.sym(s).decl = decl
     mut self.set_node_sym(decl, s)
 }
 
@@ -5995,22 +5981,18 @@ Sema.check_func_body(mut self, f: u32) {
     saved_module: bool = self.in_module
     self.in_module = self.in_imported(f)
     mut self.scope_push()
-    fr: Frame = self.frame()
-    fr.is_fnbody = true // `defer` is legal only as a direct statement here
-    mut self.set_frame(fr)
+    mut self.frame().is_fnbody = true // `defer` is legal only as a direct statement here
     n: Node = self.node(f)
     for i: u32 in 0..n.nkids {
         pa: u32 = self.kid(f, i)
         s: u32 = mut self.declare_local(pa, self.node(pa).text)
         if s != 0 {
             t: u32 = mut self.build_type(self.node(pa).a)
-            x: Sym = self.sym(s)
-            x.ty = t
-            x.is_mut = (self.node(pa).flags & parser.F_MUT) != 0
-            x.is_param = true
-            x.is_const_backed = self.ty(t).kind == TypeKind.contract && !x.is_mut // a read-only contract param may wrap const
-            x.decl = pa
-            mut self.update(s, x)
+            mut self.sym(s).ty = t
+            mut self.sym(s).is_mut = (self.node(pa).flags & parser.F_MUT) != 0
+            mut self.sym(s).is_param = true
+            mut self.sym(s).is_const_backed = self.ty(t).kind == TypeKind.contract && !self.sym(s).is_mut // a read-only contract param may wrap const
+            mut self.sym(s).decl = pa
             mut self.set_node_sym(pa, s)
         }
     }
@@ -6336,10 +6318,8 @@ Sema.check_stmt(mut self, s: u32) {
         }
         Kind.label {
             mut self.scope_push()
-            fr: Frame = self.frame()
-            fr.label = n.text
-            fr.has_label = true
-            mut self.set_frame(fr)
+            mut self.frame().label = n.text
+            mut self.frame().has_label = true
             mut self.check_block(n.a)
             mut self.scope_pop()
         }
@@ -6435,14 +6415,10 @@ Sema.check_var_stmt(mut self, s: u32) {
         // literal provenance for string bindings (Mutability #11)
         v: u32 = mut self.lookup_val(self.node(self.kid(s, 0)).text)
         if v != 0 && wk == TypeKind.contract && self.node_const(init) {
-            x: Sym = self.sym(v)
-            x.is_const_backed = true
-            mut self.update(v, x)
+            mut self.sym(v).is_const_backed = true
         }
         if v != 0 && self.is_prim(w0, P_STRING) && !self.ty(w0).is_mut && mut self.literal_backed(init) {
-            x: Sym = self.sym(v)
-            x.is_literal_backed = true
-            mut self.update(v, x)
+            mut self.sym(v).is_literal_backed = true
         }
         return
     }
@@ -6619,9 +6595,7 @@ Sema.check_assign(mut self, s: u32) {
     if tk == TypeKind.contract && self.node(target).kind == Kind.ident {
         v: u32 = mut self.lookup_val(self.node(target).text)
         if v != 0 {
-            x: Sym = self.sym(v)
-            x.is_const_backed = self.node_const(rhs)
-            mut self.update(v, x)
+            mut self.sym(v).is_const_backed = self.node_const(rhs)
         }
     }
 }
@@ -6736,11 +6710,9 @@ Sema.check_for(mut self, s: u32) {
     if (n.flags & parser.F_FORGEN) != 0 {
         // one loop scope covers init, cond, post, and body
         mut self.scope_push()
-        fr: Frame = self.frame()
-        fr.is_loop = true
-        fr.has_label = labeled
-        fr.label = n.text
-        mut self.set_frame(fr)
+        mut self.frame().is_loop = true
+        mut self.frame().has_label = labeled
+        mut self.frame().label = n.text
         if n.a != 0 { mut self.check_stmt(n.a) }
         if n.b != 0 {
             c: u32 = mut self.expr_type(n.b)
@@ -6809,11 +6781,9 @@ Sema.check_for(mut self, s: u32) {
         }
     }
     mut self.scope_push()
-    fr: Frame = self.frame()
-    fr.is_loop = true
-    fr.has_label = labeled
-    fr.label = n.text
-    mut self.set_frame(fr)
+    mut self.frame().is_loop = true
+    mut self.frame().has_label = labeled
+    mut self.frame().label = n.text
     for i: u32 in 0..n.nkids {
         binder: u32 = self.kid(s, i)
         t: u32 = 0
@@ -7643,7 +7613,7 @@ Sema.init_aggregate(self, t: u32): bool {
 
 Sema.init_st(self, s: u32): InitState { return self.ik.states.get(usize(s)) }
 
-Sema.init_set(mut self, s: u32, st: InitState) { mut self.ik.states.set(usize(s), st) }
+Sema.init_st(mut self, s: u32): mut *InitState { return mut &mut self.ik.states.view()[usize(s)] }
 
 Sema.init_new(mut self, st: InitState): u32 {
     fail(mut self.ik.states.push(st))
@@ -7657,9 +7627,7 @@ Sema.init_part(mut self, s: u32, key: u64, create: bool): u32 {
     }
     if !create { return 0 }
     p: u32 = mut self.init_new(InitState { key = key, next = self.init_st(s).parts })
-    st: InitState = self.init_st(s)
-    st.parts = p
-    mut self.init_set(s, st)
+    mut self.init_st(s).parts = p
     return p
 }
 
@@ -7692,10 +7660,8 @@ Sema.init_state_full(mut self, s: u32, t: u32): bool {
         if pt != 0 && mut self.init_state_full(p, pt) { have += 1 }
     }
     if have == count {
-        st: InitState = self.init_st(s)
-        st.full = true
-        st.parts = 0
-        mut self.init_set(s, st)
+        mut self.init_st(s).full = true
+        mut self.init_st(s).parts = 0
         return true
     }
     return false
@@ -7708,13 +7674,9 @@ Sema.init_clone(mut self, s: u32, key: u64): u32 {
     for p: u32 = self.init_st(s).parts; p != 0; p = self.init_st(p).next {
         q: u32 = mut self.init_clone(p, self.init_st(p).key)
         if tail == 0 {
-            st: InitState = self.init_st(out)
-            st.parts = q
-            mut self.init_set(out, st)
+            mut self.init_st(out).parts = q
         } else {
-            st: InitState = self.init_st(tail)
-            st.next = q
-            mut self.init_set(tail, st)
+            mut self.init_st(tail).next = q
         }
         tail = q
     }
@@ -7735,13 +7697,15 @@ Sema.init_intersect(mut self, a: u32, b: u32, t: u32): u32 {
         st: InitState = self.init_st(x)
         st.key = key
         st.next = self.init_st(r).next
-        mut self.init_set(r, st)
+        mut self.ik.states.set(usize(r), st)
     }
     _ = mut self.init_state_full(out, t)
     return out
 }
 
 Sema.init_v(self, v: u32): InitVar { return self.ik.vars.get(usize(v)) }
+
+Sema.init_v(mut self, v: u32): mut *InitVar { return mut &mut self.ik.vars.view()[usize(v)] }
 
 Sema.init_vset(mut self, v: u32, x: InitVar) { mut self.ik.vars.set(usize(v), x) }
 
@@ -7769,10 +7733,8 @@ Sema.init_undo(mut self, to: u32) {
     for self.ik.trail.len > usize(to) {
         u: InitUndo = self.ik.trail.get(self.ik.trail.len - 1)
         mut self.ik.trail.truncate(self.ik.trail.len - 1)
-        x: InitVar = self.init_v(u.var)
-        x.state = u.old
-        x.saved = u.prev
-        mut self.init_vset(u.var, x)
+        mut self.init_v(u.var).state = u.old
+        mut self.init_v(u.var).saved = u.prev
     }
 }
 
@@ -7809,9 +7771,7 @@ Sema.init_delta(mut self, from: u32, clone: bool): InitDelta {
     }
     for i: u32 in 0..out.n {
         v: u32 = self.ik.changes.get(usize(out.start + i)).var
-        x: InitVar = self.init_v(v)
-        x.seen = false
-        mut self.init_vset(v, x)
+        mut self.init_v(v).seen = false
     }
     return out
 }
@@ -7848,10 +7808,8 @@ Sema.init_join(mut self, first: usize, np: u32, npaths: u32) {
             mut self.init_vset(v, x)
         }
         mut self.init_touch(v)
-        y: InitVar = self.init_v(v)
-        y.state = y.acc
-        y.seen = false
-        mut self.init_vset(v, y)
+        mut self.init_v(v).state = self.init_v(v).acc
+        mut self.init_v(v).seen = false
     }
 }
 
@@ -7960,10 +7918,8 @@ Sema.init_mark_path(mut self, e: u32) {
     if v == 0 { return }
     mut self.init_touch(v)
     s: u32 = mut self.init_path_state(v, p, p.n, true)
-    st: InitState = self.init_st(s)
-    st.full = true
-    st.parts = 0
-    mut self.init_set(s, st)
+    mut self.init_st(s).full = true
+    mut self.init_st(s).parts = 0
     for i: u32 = p.n; i > 0; i -= 1 {
         parent: u32 = mut self.init_path_state(v, p, i - 1, false)
         _ = mut self.init_state_full(parent, p.types[i - 1])
@@ -8142,10 +8098,8 @@ Sema.init_whole(mut self, sym: u32, full: bool) {
     if v == 0 { return }
     mut self.init_touch(v)
     s: u32 = self.init_v(v).state
-    st: InitState = self.init_st(s)
-    st.full = full
-    st.parts = 0
-    mut self.init_set(s, st)
+    mut self.init_st(s).full = full
+    mut self.init_st(s).parts = 0
 }
 
 /* Walks statement `s`; whether control falls through it. */
@@ -8231,9 +8185,7 @@ Sema.init_stmt(mut self, s: u32): bool {
                 v: u32 = mut self.init_var(self.node_sym(self.kid(s, i)), true)
                 if v != 0 {
                     mut self.init_touch(v)
-                    st: InitState = self.init_st(self.init_v(v).state)
-                    st.full = true
-                    mut self.init_set(self.init_v(v).state, st)
+                    mut self.init_st(self.init_v(v).state).full = true
                 }
             }
             _ = mut self.init_block(n.c)
@@ -8357,9 +8309,7 @@ Sema.check_definite_initialization(mut self) {
         for p: u32 in 0..n.nkids {
             v: u32 = mut self.init_var(self.node_sym(self.kid(f, p)), true)
             if v != 0 {
-                st: InitState = self.init_st(self.init_v(v).state)
-                st.full = true
-                mut self.init_set(self.init_v(v).state, st)
+                mut self.init_st(self.init_v(v).state).full = true
             }
         }
         _ = mut self.init_block(n.b)
@@ -8718,9 +8668,7 @@ Sema.resolve_func(mut self, s: u32, head: u32): bool {
             }
         }
     }
-    x = self.sym(s)
-    x.ty = ft
-    mut self.update(s, x)
+    mut self.sym(s).ty = ft
     nt: u32 = 0
     if n.c != 0 { nt = self.node(n.c).nkids }
     for old: u32 = head; old != s; old = self.sym(old).overload {
@@ -8742,9 +8690,7 @@ Sema.resolve_func(mut self, s: u32, head: u32): bool {
  */
 Sema.resolve_func_set(mut self, head: u32) {
     for s: u32 = head; s != 0; s = self.sym(s).overload { // a use while building is a cycle
-        x: Sym = self.sym(s)
-        x.ty = self.t_err
-        mut self.update(s, x)
+        mut self.sym(s).ty = self.t_err
     }
     prev: u32 = 0
     for s: u32 = head; s != 0; s = self.sym(s).overload {
@@ -8752,13 +8698,9 @@ Sema.resolve_func_set(mut self, head: u32) {
             prev = s
             continue
         }
-        p: Sym = self.sym(prev)
-        p.overload = self.sym(s).overload
-        mut self.update(prev, p)
+        mut self.sym(prev).overload = self.sym(s).overload
         mut self.set_node_sym(self.sym(s).decl, 0)
-        x: Sym = self.sym(s)
-        x.entered = false
-        mut self.update(s, x)
+        mut self.sym(s).entered = false
     }
     count: u32 = self.overload_count(head)
     for s: u32 = head; s != 0; s = self.sym(s).overload {
@@ -8776,13 +8718,9 @@ Sema.resolve_func_set(mut self, head: u32) {
         mut self.bind_specialization(sp, head)
         sp = next
     }
-    h: Sym = self.sym(head)
-    h.entered_specs = 0
-    mut self.update(head, h)
+    mut self.sym(head).entered_specs = 0
     for s: u32 = head; s != 0; s = self.sym(s).overload {
-        x: Sym = self.sym(s)
-        x.entered = false
-        mut self.update(s, x)
+        mut self.sym(s).entered = false
     }
 }
 
@@ -8843,22 +8781,16 @@ Sema.bind_specialization(mut self, s: u32, head: u32) {
             return
         }
     }
-    x: Sym = self.sym(s)
-    x.ty = ft
-    x.spec_args = targs
-    x.spec_nargs = nargs
-    x.spec_next = self.sym(bind).specs
-    x.overload = 0
-    mut self.update(s, x)
-    b: Sym = self.sym(bind)
-    b.specs = s
-    mut self.update(bind, b)
+    mut self.sym(s).ty = ft
+    mut self.sym(s).spec_args = targs
+    mut self.sym(s).spec_nargs = nargs
+    mut self.sym(s).spec_next = self.sym(bind).specs
+    mut self.sym(s).overload = 0
+    mut self.sym(bind).specs = s
     mut self.set_node_sym(f, s)
     tail: u32 = head
     for self.sym(tail).overload != 0 { tail = self.sym(tail).overload }
-    t: Sym = self.sym(tail)
-    t.overload = s
-    mut self.update(tail, t)
+    mut self.sym(tail).overload = s
 }
 
 /* Every function signature of the merged tree resolved, in declaration
@@ -8993,14 +8925,12 @@ pub Sema.enter(mut self) {
                     }
                     s: u32 = mut self.declare_val(fid, SymKind.var, f.text)
                     if s == 0 { continue }
-                    v: Sym = self.sym(s)
-                    v.is_mut = (f.flags & parser.F_MUT) != 0
-                    v.is_global = true
-                    v.is_extern = true
-                    v.decl = fid
-                    v.top = fid
-                    v.entered = true
-                    mut self.update(s, v)
+                    mut self.sym(s).is_mut = (f.flags & parser.F_MUT) != 0
+                    mut self.sym(s).is_global = true
+                    mut self.sym(s).is_extern = true
+                    mut self.sym(s).decl = fid
+                    mut self.sym(s).top = fid
+                    mut self.sym(s).entered = true
                 }
             }
             Kind.var {
@@ -9012,15 +8942,13 @@ pub Sema.enter(mut self) {
                 }
                 s: u32 = mut self.declare_val(id, SymKind.var, name)
                 if s == 0 { continue }
-                v: Sym = self.sym(s)
-                v.is_const = (n.flags & parser.F_CONST) != 0
-                v.is_pub = (n.flags & parser.F_PUB) != 0
-                v.is_mut = (n.flags & parser.F_MUT) != 0
-                v.is_global = true
-                v.decl = binder
-                v.top = id
-                v.entered = true
-                mut self.update(s, v)
+                mut self.sym(s).is_const = (n.flags & parser.F_CONST) != 0
+                mut self.sym(s).is_pub = (n.flags & parser.F_PUB) != 0
+                mut self.sym(s).is_mut = (n.flags & parser.F_MUT) != 0
+                mut self.sym(s).is_global = true
+                mut self.sym(s).decl = binder
+                mut self.sym(s).top = id
+                mut self.sym(s).entered = true
             }
             Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.union, Kind.distinct, Kind.error, Kind.alias {
                 s: u32 = mut self.declare_type(id, n.text)
@@ -9069,9 +8997,7 @@ pub Sema.enter(mut self) {
 }
 
 Sema.mark_root(mut self, s: u32) {
-    x: Sym = self.sym(s)
-    x.is_root = x.top != 0 && !self.in_imported(x.top)
-    mut self.update(s, x)
+    mut self.sym(s).is_root = self.sym(s).top != 0 && !self.in_imported(self.sym(s).top)
 }
 
 // --- dump ---------------------------------------------------------------------

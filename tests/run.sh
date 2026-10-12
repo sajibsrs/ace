@@ -512,6 +512,7 @@ while IFS='|' read -r f want; do
 done <<'RECEIVER_MUT'
 tests/parser/mut_statement_err.ace|6:5: error: 'mut' at statement level marks a call receiver
 tests/parser/defer_mut_err.ace|6:11: error: 'mut' after 'defer' marks a call receiver
+tests/parser/mut_target_err.ace|6:5: error: 'mut' at statement level marks a call receiver
 RECEIVER_MUT
 
 compound_operand=$("$ACE" tests/sema/operators/compound_operand_err.ace 2>&1)

@@ -154,3 +154,7 @@
   overload is `pub`, and sema drops overloads `decl_visible` hides from the use
   site before resolving a call, function value, or generic instantiation. A
   call fitting only a hidden overload by arity reports it as private.
+- A leading `mut` marks the last call or slice of its postfix chain, so
+  `mut a.view()[i].x = v` assigns in one statement (Mutability #6); later
+  selectors address a place in the result. The parser walks index and field
+  nodes to mark it; selfhost write-backs now use `mut *T` accessor overloads.

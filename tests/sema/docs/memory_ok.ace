@@ -1,5 +1,6 @@
 /* Compiler-checked examples from docs/memory.md. */
 
+import array
 import mem
 
 @packed
@@ -15,6 +16,15 @@ static_assert(offsetof(Packet, length) == 4)
 static_assert(offsetof(Packet, tail) == 8)
 static_assert(sizeof(Packet) == 12)
 static_assert(alignof(Packet) == 4)
+
+ViewP: struct { x: i32 }
+
+write_through_view() {
+    a: array.Array[ViewP] = array.Array[ViewP] {}
+    defer mut a.wipe()
+    _ = mut a.push(ViewP { x = 1 })
+    mut a.view()[0].x = 5 // marks view(), writes element 0 in place
+}
 
 main(): int {
     packet: Packet = Packet {

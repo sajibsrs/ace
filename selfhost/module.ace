@@ -312,9 +312,8 @@ Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
                 f: Node = m.parser.node(fid)
                 to: string = mut self.pool.join([m.prefix, f.text])
                 fail(mut rs.set(f.text, to))
-                if f.cname.len == 0 { f.cname = f.text } // an explicit link name wins
-                f.text = to
-                mut m.parser.update(fid, f)
+                if f.cname.len == 0 { mut m.parser.node(fid).cname = f.text } // an explicit link name wins
+                mut m.parser.node(fid).text = to
             }
             continue
         }
@@ -323,15 +322,12 @@ Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
         nid: u32 = id
         if n.kind == Kind.var { nid = m.parser.kid(id, 0) }
         original: string = m.parser.node(nid).text
-        if n.kind == Kind.error && n.cname.len == 0 { n.cname = original }
-        if (n.flags & parser.F_EXPO) != 0 && n.cname.len == 0 { n.cname = original } // `extern "c"` keeps its C name
-        mut m.parser.update(id, n)
-        named: Node = m.parser.node(nid)
-        if nid != id { named.cname = n.cname } // an exported global's binder carries it too
+        if n.kind == Kind.error && n.cname.len == 0 { mut m.parser.node(id).cname = original }
+        if (n.flags & parser.F_EXPO) != 0 && n.cname.len == 0 { mut m.parser.node(id).cname = original } // `extern "c"` keeps its C name
+        if nid != id { mut m.parser.node(nid).cname = m.parser.node(id).cname } // an exported global's binder carries it too
         to: string = mut self.pool.join([m.prefix, original])
         fail(mut rs.set(original, to))
-        named.text = to
-        mut m.parser.update(nid, named)
+        mut m.parser.node(nid).text = to
     }
 }
 
@@ -605,8 +601,7 @@ Loader.mark_intrinsics(mut self, mi: usize) {
         if n.kind != Kind.func { continue }
         v: u64 = builtin(m, mod.parser, id)
         if v == 0 { continue }
-        n.ival = v
-        mut mod.parser.update(id, n)
+        mut mod.parser.node(id).ival = v
     }
 }
 
@@ -1060,9 +1055,7 @@ RefLower.lowered_name(self, name: string, is_type: bool): (string, bool) {
 
 /* Renames node `n` to `name`. */
 RefLower.rename(mut self, n: u32, name: string) {
-    x: Node = self.p.node(n)
-    x.text = name
-    mut self.p.update(n, x)
+    mut self.p.node(n).text = name
 }
 
 /* A local or type parameter may shadow a selected name of its own namespace,
@@ -1112,11 +1105,10 @@ Loader.lower_named(mut self, mi: usize, mut c: RefLower, t: u32) {
         } else if !m.exported {
             mut self.err(mi, x, ["type '", x.text, "' of module '", b.name, "' is not public"])
         } else {
-            x.text = mut self.pool.join([self.mods.get(b.module).prefix, x.text])
-            x.a = 0
-            x.line = base.line
-            x.col = base.col
-            mut c.p.update(t, x)
+            mut c.p.node(t).text = mut self.pool.join([self.mods.get(b.module).prefix, x.text])
+            mut c.p.node(t).a = 0
+            mut c.p.node(t).line = base.line
+            mut c.p.node(t).col = base.col
         }
         return
     }
@@ -1140,8 +1132,7 @@ Loader.lower_field(mut self, mi: usize, mut c: RefLower, e: u32) {
             } else if !m.exported {
                 mut self.err(mi, a, ["type '", a.text, "' of module '", b.name, "' is not public"])
             } else {
-                x.a = ident_at(mut c.p, a, mut self.pool.join([self.mods.get(b.module).prefix, a.text]))
-                mut c.p.update(e, x)
+                mut c.p.node(e).a = ident_at(mut c.p, a, mut self.pool.join([self.mods.get(b.module).prefix, a.text]))
             }
             return
         }
@@ -1202,8 +1193,7 @@ Loader.lower_qualified(mut self, mi: usize, mut c: RefLower, n: u32, type_positi
             _, value: bool = self.member(b.module, x.text, false)
             _, is_type: bool = self.member(b.module, x.text, true)
             if value || is_type {
-                x.flags |= parser.F_SHADOWED
-                mut c.p.update(n, x)
+                mut c.p.node(n).flags |= parser.F_SHADOWED
             }
         }
     }

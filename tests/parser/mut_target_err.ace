@@ -1,0 +1,9 @@
+/* A leading mut must reach a call: a chain of only fields and indexes has
+ * no receiver to mark. */
+
+main(): int {
+    x: int = 1
+    mut x.y = 1
+
+    return 0
+}

@@ -507,6 +507,17 @@ static Node* mkbin(P* p, Token* op, Node* l, Node* r) {
 static Node* expr_binary(P* p, int min, int ctx);
 static Node* expr_unary(P* p, int ctx);
 static Node* expr_postfix(P* p, int ctx);
+static Node* parse_expr_stmt_from(P* p, int ctx, Token* start, Node* e);
+
+/* Marks the call or slice that a leading `mut` reaches: the last one in the
+ * postfix chain `e`, past the index and field selectors that address a place
+ * in its result (`mut a.view()[i].x`). Returns 0 when the chain has none. */
+static int mark_mut_chain(Node* e) {
+    while (e->kind == N_INDEX || e->kind == N_FIELD_E) e = e->a;
+    if (e->kind != N_CALL && e->kind != N_SLICE_E) return 0;
+    e->flags |= F_MUT;
+    return 1;
+}
 static Node* expr_postfix_base(P* p, int ctx, Node* base);
 static Node* expr_primary(P* p, int ctx);
 
@@ -713,15 +724,8 @@ static Node* expr_unary(P* p, int ctx) {
         // or writable-view establishment through a slice.
         p->i++;
         Node* base = expr_postfix(p, ctx);
-        if (base->kind == N_SLICE_E) {
-            base->flags |= F_MUT;
-            return base;
-        }
-        if (base->kind == N_CALL) {
-            base->flags |= F_MUT;
-            return base;
-        }
-        perr(p, "'mut' in an expression marks a method receiver or establishes a writable view");
+        if (!mark_mut_chain(base))
+            perr(p, "'mut' in an expression marks a method receiver or establishes a writable view");
         return base;
     }
     if (at(p, T_STAR)) {
@@ -1585,15 +1589,13 @@ static Node* parse_stmt(P* p) {
         }
         return n;
     }
-    case T_MUT: { // `mut c.scale(2.0)` — receiver-marked call statement
+    case T_MUT: { // `mut c.scale(2.0)`, `mut a.view()[i].x = v`
         Token* mut = tk(p);
-        Node* n = nd_tok(p, N_EXPRSTMT, mut);
         p->i++;
-        Node* e = expr(p, CTX_NOSLIT);
-        if (e->kind != N_CALL) perr_at(p, mut, "'mut' at statement level marks a call receiver");
-        e->flags |= F_MUT;
-        n->a = e;
-        return n;
+        Node* e = expr_postfix(p, 0);
+        if (!mark_mut_chain(e) || e->kind == N_SLICE_E)
+            perr_at(p, mut, "'mut' at statement level marks a call receiver");
+        return parse_expr_stmt_from(p, 0, mut, e);
     }
     case T_IDENT:
         if (kth(p, 1) == T_COLON) {
@@ -1629,8 +1631,12 @@ static Node* parse_stmt(P* p) {
 // body's '{', so head clauses parse with CTX_NOSLIT (grammar Note #9).
 static Node* parse_expr_stmt(P* p, int ctx) {
     Token* start = tk(p);
+    return parse_expr_stmt_from(p, ctx, start, expr(p, ctx));
+}
+
+// parse_expr_stmt after its leading expression `e`, which began at `start`.
+static Node* parse_expr_stmt_from(P* p, int ctx, Token* start, Node* e) {
     int line = start->line;
-    Node* e = expr(p, ctx);
     if (at(p, T_COMMA)) { // destructuring assignment, possibly mixed under `=`
         Node* a = nd(p, N_ASSIGN);
         NV targets = {0};
