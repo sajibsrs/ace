@@ -156,3 +156,8 @@
   tables, and locals per expansion and re-stamps a generic body, as C's
   inline_copy does).
   `selfhost/check.sh` adds an `ir` stage, compared per function.
+- selfhost `--ir` lowers as a release build, as `ace --ir` does (`--debug
+  --ir` as a debug one): small-leaf auto-inlining, self tail calls as loops,
+  then `selfhost/optimizer.ace`, a port of `src/optimizer.c` (SCCP, GVN, loop
+  strength reduction, cleanup, vectorization); `selfhost/check.sh` compares IR
+  in both modes.

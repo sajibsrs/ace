@@ -22,6 +22,7 @@ import sys
 
 import lexer: "./lexer.ace"
 import ir: "./ir.ace"
+import optimizer: "./optimizer.ace"
 import parser: "./parser.ace"
 import sema: "./sema.ace"
 
@@ -162,6 +163,8 @@ Lw: struct {
     want: u32 = 0,                      // the scan's parameter, or 0 for every local
     hit: bool = false,                  // whether the scan found `want` needing storage
     in_defer: bool = false,             // scanning under a defer, whose call is never expanded
+    scan_auto: bool = false,            // the scan: release auto-inline calls expand (no self tail loop can stop them)
+    self_head: int = -1,                // release self tail recursion: the loop head block, or -1
 }
 
 fail(err: Error) {
@@ -650,7 +653,7 @@ Lw.need_storage(mut self, x: u32) {
 Lw.scan_target(mut self, x: u32): (u32, u32, u32) {
     if self.in_defer { return 0, 0, 0 }
     f: u32, args: u32, nargs: u32 = self.inline_target(x)
-    if f == 0 || self.node(f).b == 0 { return 0, 0, 0 }
+    if f == 0 || self.node(f).b == 0 || ((self.node(f).flags & parser.F_INLINE) == 0 && !self.scan_auto) { return 0, 0, 0 }
     return f, args, nargs
 }
 
@@ -802,6 +805,16 @@ Lw.access_check(self, addr: int): u8 {
 Lw.global_addr(mut self, s: u32): int {
     id: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
     mut self.fn.at(id).sym = s
+    return id
+}
+
+/* The address of generic function `s` as value `x` names it: its instance. */
+Lw.fn_value_addr(mut self, s: u32, x: u32): int {
+    id: int = mut self.global_addr(s)
+    if self.s.sym(s).spec_args == 0 {
+        args: u32, _ = self.s.inst_args(self.s.sym(s).decl, self.nty(x))
+        mut self.fn.at(id).inst = args
+    }
     return id
 }
 
@@ -3560,7 +3573,7 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         mut self.unsupported("compiler-backed call")
         return mut self.dummy()
     }
-    if (dn.flags & parser.F_INLINE) != 0 { return mut self.inline_call(x, mut res, want_res, dst) }
+    if (dn.flags & parser.F_INLINE) != 0 || self.auto_inline(s) { return mut self.inline_call(x, mut res, want_res, dst) }
     g: Args = Args.init()
     defer mut g.wipe()
     first_var: int = mut self.call_args(x, s, mut g)
@@ -3598,7 +3611,8 @@ Lw.inline_target(self, x: u32): (u32, u32, u32) {
     s: u32 = self.nsym(x)
     if s == 0 { return 0, 0, 0 }
     sy: sema.Sym = self.s.sym(s)
-    if sy.kind != sema.SymKind.func || sy.is_extern || sy.decl == 0 || (self.node(sy.decl).flags & parser.F_INLINE) == 0 { return 0, 0, 0 }
+    if sy.kind != sema.SymKind.func || sy.is_extern || sy.decl == 0 { return 0, 0, 0 }
+    if (self.node(sy.decl).flags & parser.F_INLINE) == 0 && !self.auto_inline(s) { return 0, 0, 0 }
     if sy.is_generic { // a method of a generic type: its owner's arguments
         cft: u32 = self.nty(callee)
         if cft == 0 || self.ty(cft).kind != TypeKind.func { cft = sy.ty }
@@ -3612,6 +3626,113 @@ Lw.inline_target(self, x: u32): (u32, u32, u32) {
         return sy.decl, self.ty(owner).args, self.ty(owner).nargs
     }
     return sy.decl, 0, 0
+}
+
+/* Release builds also expand a small leaf function no source marks inline:
+ * its body at most AUTO_INLINE_NODES nodes, with no call other than a
+ * conversion or compiler-backed operation, and inline's other limits
+ * (Functions & ABI #8).
+ */
+AUTO_INLINE_NODES: const int = 24
+
+/* The node count of `at` added to `size`, or AUTO_INLINE_NODES + 1 once over
+ * it or on any node that rules expansion out.
+ */
+Lw.auto_inline_size(self, at: u32, size: int): int {
+    if at == 0 || size > AUTO_INLINE_NODES { return size }
+    n: Node = self.node(at)
+    if n.kind == Kind.defer || n.kind == Kind.asm { return AUTO_INLINE_NODES + 1 }
+    if n.kind == Kind.call {
+        s: u32 = self.nsym(at)
+        if n.a != 0 && self.node(n.a).kind == Kind.index && self.nsym(n.a) != 0 { s = self.nsym(n.a) }
+        backed: bool = false
+        if s != 0 && self.s.sym(s).kind == sema.SymKind.func && self.s.sym(s).decl != 0 {
+            d: Node = self.node(self.s.sym(s).decl)
+            backed = d.kind == Kind.func && (d.ival != 0 || (d.flags & parser.F_INTRINSIC) != 0)
+        }
+        conversion: bool = s == 0 && n.a != 0 && self.node(n.a).kind == Kind.ident
+        if !backed && !conversion { return AUTO_INLINE_NODES + 1 }
+    }
+    r: int = size + 1
+    r = self.auto_inline_size(n.a, r)
+    r = self.auto_inline_size(n.b, r)
+    r = self.auto_inline_size(n.c, r)
+    if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { r = self.auto_inline_size(n.d, r) }
+    for i: u32 in 0..n.nkids { r = self.auto_inline_size(self.kid(at, i), r) }
+    return r
+}
+
+/* Whether a call to function `s` expands though not marked inline. */
+Lw.auto_inline(self, s: u32): bool {
+    if self.debug || self.self_head >= 0 { return false }
+    sy: sema.Sym = self.s.sym(s)
+    f: u32 = sy.decl
+    if f == self.f { return false }
+    for e: Expansion in self.inl.view() {
+        if e.f == f { return false }
+    }
+    n: Node = self.node(f)
+    if n.kind != Kind.func || n.b == 0 || n.c != 0 || sy.is_extern || sy.is_generic || sy.spec_args != 0 { return false }
+    if (n.flags & (parser.F_INTRINSIC | parser.F_SPECIALIZED | parser.F_COLD)) != 0 || n.nkids > 64 { return false }
+    if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main") { return false }
+    for i: u32 in 0..n.nkids {
+        if (self.node(self.kid(f, i)).flags & parser.F_NOALIAS) != 0 { return false }
+    }
+    return self.auto_inline_size(n.b, 0) <= AUTO_INLINE_NODES
+}
+
+/* Whether `x` is a direct call of the function being lowered. */
+Lw.is_self_call(self, x: u32): bool {
+    if x == 0 || self.node(x).kind != Kind.call { return false }
+    a: u32 = self.node(x).a
+    if a == 0 || (self.node(a).kind != Kind.ident && self.node(a).kind != Kind.selector) { return false }
+    s: u32 = self.nsym(x)
+    return s != 0 && self.s.sym(s).kind == sema.SymKind.func && self.s.sym(s).decl == self.f
+}
+
+/* Whether `at` holds a return of a self call. */
+Lw.has_self_tail(self, at: u32): bool {
+    if at == 0 { return false }
+    n: Node = self.node(at)
+    if n.kind == Kind.return { return self.is_self_call(n.a) }
+    if n.kind == Kind.func { return false }
+    if self.has_self_tail(n.a) || self.has_self_tail(n.b) || self.has_self_tail(n.c) { return true }
+    if n.kind == Kind.for && self.has_self_tail(n.d) { return true }
+    for i: u32 in 0..n.nkids {
+        if self.has_self_tail(self.kid(at, i)) { return true }
+    }
+    return false
+}
+
+/* Whether `at` holds a direct call to an inline function, as C's sema marks
+ * a body F_INLCALLS.
+ */
+Lw.has_inline_call(self, at: u32): bool {
+    if at == 0 { return false }
+    n: Node = self.node(at)
+    if n.kind == Kind.call {
+        s: u32 = self.nsym(at)
+        if n.a != 0 && self.node(n.a).kind == Kind.index && self.nsym(n.a) != 0 { s = self.nsym(n.a) }
+        if s != 0 && self.s.sym(s).kind == sema.SymKind.func && self.s.sym(s).decl != 0 &&
+            (self.node(self.s.sym(s).decl).flags & parser.F_INLINE) != 0 { return true }
+    }
+    if self.has_inline_call(n.a) || self.has_inline_call(n.b) || self.has_inline_call(n.c) || self.has_inline_call(n.d) { return true }
+    for i: u32 in 0..n.nkids {
+        if self.has_inline_call(self.kid(at, i)) { return true }
+    }
+    return false
+}
+
+/* Whether a local or parameter lives in this frame (a slot): the levels of a
+ * self tail recursion could then observe each other's.
+ */
+Lw.frame_storage(self): bool {
+    params: usize = 0 // the stored by-address parameters
+    for i: u32 in 0..self.node(self.f).nkids {
+        ps: u32 = self.nsym(self.kid(self.f, i))
+        if self.by_address(self.f, i) && ps != 0 && self.stored.has(ps) { params += 1 }
+    }
+    return self.stored.len > params
 }
 
 /* A return inside an expansion: the result to the expansion's variable, then
@@ -3839,6 +3960,7 @@ Lw.expr(mut self, x: u32, want: int): int {
                             mut self.unsupported("generic function value")
                             return mut self.dummy()
                         }
+                        return mut self.fn_value_addr(s, x)
                     }
                     return mut self.global_addr(s)
                 }
@@ -3994,7 +4116,7 @@ Lw.expr(mut self, x: u32, want: int): int {
                     mut self.unsupported("generic function value")
                     return mut self.dummy()
                 }
-                return mut self.global_addr(self.nsym(x))
+                return mut self.fn_value_addr(self.nsym(x), x)
             }
             return mut self.place_read(mut self.place(x), 0)
         }
@@ -5131,6 +5253,32 @@ Lw.stmt(mut self, at: u32) {
                 mut self.inline_return(at)
                 return
             }
+            if self.self_head >= 0 && self.defers.len == 0 && self.is_self_call(s.a) { // release: a branch back to the head
+                g: Args = Args.init()
+                defer mut g.wipe()
+                if mut self.call_args(s.a, self.nsym(s.a), mut g) >= 0 || g.v.len != self.fn.params.len { mut self.unsupported("self call") }
+                fnode: Node = self.node(self.f)
+                k: usize = 0
+                for i: u32 in 0..fnode.nkids { // each parameter's leaves, in order
+                    if self.failed() { break }
+                    ps: u32 = self.nsym(self.kid(self.f, i))
+                    var: int = mut self.var_of(ps)
+                    if self.home.get(usize(var)) <= ADDR_VAR {
+                        mut self.write_var(ADDR_VAR - self.home.get(usize(var)), self.cur, g.v.get(k))
+                        k += 1
+                        continue
+                    }
+                    pt: u32 = self.s.sym(ps).ty
+                    n: int = 1
+                    if self.is_agg(pt) { n = mut self.leaf_count(pt) }
+                    for j: int in 0..n {
+                        mut self.write_var(var + j, self.cur, g.v.get(k))
+                        k += 1
+                    }
+                }
+                mut self.jump(self.self_head)
+                return
+            }
             none: Agg = blank(Agg)
             if s.a == 0 {
                 mut self.ret(none)
@@ -5257,6 +5405,9 @@ pub lower(mut s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
         ps: u32 = s.node_sym(s.kid(f, i))
         if ps != 0 && !l.by_address(f, i) && l.in_memory(s.sym(ps).ty) { fail(mut l.stored.set(ps, true)) }
     }
+    // an auto-inline call expands unless a self tail loop turns auto-inlining off
+    inl_calls: bool = (fnode.flags & parser.F_EXPO) != 0 || l.has_inline_call(fnode.b)
+    l.scan_auto = !debug && (l.is_main || inl_calls || !l.has_self_tail(fnode.b))
     mut l.scan_walk(fnode.b)
     for i: u32 in 0..fnode.nkids {
         p: u32 = s.kid(f, i)
@@ -5301,6 +5452,11 @@ pub lower(mut s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
         if l.is_agg(rt) && l.fn.ret_mem == 0 { ret.agg = rt }
         l.fn.sig = mut l.fn.new_sig(g.parts.view(), ret)
     }
+    if !debug && !l.is_main && !inl_calls && !l.frame_storage() && l.has_self_tail(fnode.b) {
+        l.self_head = mut l.new_block()
+        mut l.jump(l.self_head)
+        l.cur = l.self_head
+    }
     mut l.block(fnode.b)
     if l.cur >= 0 && !l.failed() { // falling off the end: zero
         z: Agg = blank(Agg)
@@ -5308,8 +5464,10 @@ pub lower(mut s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
         for k: int in 0..z.n { z.v[k] = mut l.konst(l.fn.rets.get(usize(k)), 0) }
         mut l.ret(z)
     }
+    if l.self_head >= 0 { mut l.seal(l.self_head) }
     if l.failed() { return l.fn, l.why, l.gap }
     mut l.finish()
+    if !debug { optimizer.optimize(mut l.fn) }
     return l.fn, "", false
 }
 

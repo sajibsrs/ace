@@ -18,6 +18,8 @@ documentation once selfhost is complete.
 | Sema: top-level entry | `sema.ace` | `--symbols` | `src/sema.c` (`enter_top_level`) |
 | Sema: type completion | `sema.ace` | `--symbols` | `src/sema.c` (`complete_types`) |
 | Sema: body checks | `sema.ace` | `--check` | `src/sema.c` (`check_func_body`) |
+| Lower | `lowering.ace`, `ir.ace` | `--debug --ir` | `src/lower.c` |
+| Optimize | `optimizer.ace` | `--ir`, `--release --ir` | `src/optimizer.c` |
 
 `--symbols` prints the scopes once every top-level name is entered
 (Compiler #5), every type is complete, every function signature is

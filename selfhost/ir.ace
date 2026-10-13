@@ -185,6 +185,7 @@ pub IrIns: struct {
     pub imm: u64 = 0,
     pub aux: i32 = 0,
     pub sym: u32 = 0,            // GLOBAL symbol; CALL target function
+    pub inst: u32 = 0,           // GLOBAL of a generic function: its instance's type arguments (sema's run), as C's mangled name
     pub routine: bool = false,   // CALL: a C routine with no symbol of its own (sym 0)
     pub name: string = "",       // CALL target's link symbol; STR bytes; CHECK diagnostic
     pub has_name: bool = false,

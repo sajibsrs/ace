@@ -1,0 +1,2045 @@
+/* The release-only optimizer over one function's IR, as src/optimizer.c.
+ *
+ * Each pass runs once, in C's order: constant propagation, value numbering,
+ * loop strength reduction, dead-code and control-flow cleanup, then
+ * auto-vectorization over the cleaned loops (and cleanup again after it).
+ */
+
+import array
+import bits
+import mem
+import fmt
+import sys
+
+import ir: "./ir.ace"
+
+Func: type = ir.Func
+IrIns: type = ir.IrIns
+IrBlock: type = ir.IrBlock
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+is_int(t: u8): bool {
+    return t >= ir.IT_BOOL && t <= ir.IT_PTR
+}
+
+/* Removes instruction `v` from the function. */
+kill_ins(fn: mut *Func, v: int) {
+    x: mut *IrIns = mut fn.at(v)
+    x.nargs = 0
+    x.block = -1
+}
+
+/* The operation over constants, or false when it is not defined (release
+ * makes those cases undefined; they stay for run time).
+ */
+fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
+    n: u64 = u64(ir.type_bits(t))
+    sg: bool = ir.type_signed(t)
+    switch op {
+        ir.IR_ADD { return ir.wrap(t, bits.wradd(a, b)), true }
+        ir.IR_SUB { return ir.wrap(t, bits.wrsub(a, b)), true }
+        ir.IR_MUL { return ir.wrap(t, bits.wrmul(a, b)), true }
+        ir.IR_AND { return ir.wrap(t, a & b), true }
+        ir.IR_OR { return ir.wrap(t, a | b), true }
+        ir.IR_XOR { return ir.wrap(t, a ^ b), true }
+        ir.IR_SHL {
+            if b >= n { return 0, false }
+            return ir.wrap(t, a << b), true
+        }
+        ir.IR_SHR {
+            if b >= n { return 0, false }
+            if sg { return ir.wrap(t, u64(i64(a) >> i64(b))), true }
+            return ir.wrap(t, a >> b), true
+        }
+        ir.IR_DIV, ir.IR_REM {
+            if b == 0 || (sg && i64(b) == -1) { return 0, false }
+            if sg {
+                if op == ir.IR_DIV { return ir.wrap(t, u64(i64(a) / i64(b))), true }
+                return ir.wrap(t, u64(i64(a) % i64(b))), true
+            }
+            if op == ir.IR_DIV { return ir.wrap(t, a / b), true }
+            return ir.wrap(t, a % b), true
+        }
+        ir.IR_NEG { return ir.wrap(t, bits.wrsub(u64(0), a)), true }
+        ir.IR_NOT {
+            if t == ir.IT_BOOL { return a ^ 1, true }
+            return ir.wrap(t, ~a), true
+        }
+        ir.IR_CAST {
+            if t == ir.IT_BOOL { return 0, false }
+            return ir.wrap(t, a), true
+        }
+        ir.IR_EQ { return flag(a == b), true }
+        ir.IR_NE { return flag(a != b), true }
+        ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE {
+            eq: bool = a == b
+            lt: bool = a < b
+            if ir.type_signed(ot) { lt = i64(a) < i64(b) }
+            if op == ir.IR_LT { return flag(lt), true }
+            if op == ir.IR_LE { return flag(lt || eq), true }
+            if op == ir.IR_GT { return flag(!lt && !eq), true }
+            return flag(!lt), true
+        }
+        default { return 0, false }
+    }
+}
+
+flag(b: bool): u64 {
+    if b { return 1 }
+    return 0
+}
+
+// --- sparse conditional constant propagation --------------------------------------
+//
+// Wegman and Zadeck, "Constant Propagation with Conditional Branches" (1991):
+// each integer value is unknown (top), one constant, or varying (bottom), and
+// only blocks reached through an edge a branch can take are evaluated, so a
+// constant condition prunes its other arm before that arm's values are seen.
+
+L_TOP: const u8 = 0
+L_CONST: const u8 = 1
+L_BOT: const u8 = 2
+
+Sccp: struct {
+    fn: mut *Func,
+    lat: array.Array[u8],
+    val: array.Array[u64],
+    exec: array.Array[bool],   // per block
+    edge: array.Array[bool],   // per block and successor slot: 2 * block + slot
+    inq: array.Array[bool],    // per value: on the worklist
+    ustart: array.Array[int],  // per value, the instructions using it
+    users: array.Array[int],
+    work: array.Array[int],    // value worklist
+}
+
+Sccp.wipe(mut self) {
+    mut self.lat.wipe()
+    mut self.val.wipe()
+    mut self.exec.wipe()
+    mut self.edge.wipe()
+    mut self.inq.wipe()
+    mut self.ustart.wipe()
+    mut self.users.wipe()
+    mut self.work.wipe()
+}
+
+Sccp.push(mut self, v: int) {
+    if self.inq.get(usize(v)) { return }
+    mut self.inq.set(usize(v), true)
+    fail(mut self.work.push(v))
+}
+
+Sccp.lower_to(mut self, v: int, st: u8, c: u64) {
+    to: u8 = st
+    if to == L_TOP || self.lat.get(usize(v)) == L_BOT { return }
+    if self.lat.get(usize(v)) == L_CONST {
+        if to == L_CONST && self.val.get(usize(v)) == c { return }
+        to = L_BOT
+    }
+    mut self.lat.set(usize(v), to)
+    mut self.val.set(usize(v), c)
+    for k: int in self.ustart.get(usize(v))..self.ustart.get(usize(v + 1)) { mut self.push(self.users.get(usize(k))) }
+}
+
+Sccp.reach(mut self, b: int) {
+    if self.exec.get(usize(b)) { return }
+    mut self.exec.set(usize(b), true)
+    for id: int in self.fn.block(b).ins.view() { mut self.push(id) }
+}
+
+Sccp.take(mut self, b: int, slot: int) {
+    if self.edge.get(usize(2 * b + slot)) { return }
+    mut self.edge.set(usize(2 * b + slot), true)
+    t: int = succ(self.fn.block(b), slot)
+    if !self.exec.get(usize(t)) {
+        mut self.reach(t)
+        return
+    }
+    for id: int in self.fn.block(t).ins.view() { // a new incoming edge: re-meet the phis
+        if self.fn.at(id).op != ir.IR_PHI { break }
+        mut self.push(id)
+    }
+}
+
+foldable(fn: Func, v: int): bool {
+    x: IrIns = fn.at(v)
+    if (x.flags & ir.IRF_CHECKED) != 0 { return false }
+    switch x.op {
+        ir.IR_ADD, ir.IR_SUB, ir.IR_MUL, ir.IR_DIV, ir.IR_REM, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_SHL, ir.IR_SHR, ir.IR_NEG, ir.IR_NOT {
+            return is_int(x.ty) && x.ty != ir.IT_PTR
+        }
+        ir.IR_EQ, ir.IR_NE, ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE { return is_int(fn.at(fn.arg(v, 0)).ty) }
+        ir.IR_CAST { return is_int(x.ty) && is_int(fn.at(fn.arg(v, 0)).ty) }
+        default { return false }
+    }
+}
+
+Sccp.meet_phi(mut self, v: int) {
+    x: IrIns = self.fn.at(v)
+    preds: []int = self.fn.block(x.block).preds.view()
+    have: bool = false
+    c: u64 = 0
+    for i: u32 in 0..x.nargs {
+        p: int = preds[i]
+        live: bool = false
+        for k: int in 0..2 { live = live || (succ(self.fn.block(p), k) == x.block && self.edge.get(usize(2 * p + k))) }
+        a: int = self.fn.arg(v, i)
+        if !live || self.lat.get(usize(a)) == L_TOP { continue }
+        if self.lat.get(usize(a)) == L_BOT || (have && c != self.val.get(usize(a))) {
+            mut self.lower_to(v, L_BOT, 0)
+            return
+        }
+        have = true
+        c = self.val.get(usize(a))
+    }
+    if have { mut self.lower_to(v, L_CONST, c) }
+}
+
+Sccp.visit(mut self, v: int) {
+    x: IrIns = self.fn.at(v)
+    if x.block < 0 || !self.exec.get(usize(x.block)) { return }
+    b: int = x.block
+    switch x.op {
+        ir.IR_JMP {
+            mut self.take(b, 0)
+            return
+        }
+        ir.IR_BR {
+            c: int = self.fn.arg(v, 0)
+            if self.lat.get(usize(c)) == L_CONST {
+                slot: int = 1
+                if self.val.get(usize(c)) != 0 { slot = 0 }
+                mut self.take(b, slot)
+            } else if self.lat.get(usize(c)) == L_BOT {
+                mut self.take(b, 0)
+                mut self.take(b, 1)
+            }
+            return
+        }
+        ir.IR_RET { return }
+        ir.IR_CONST {
+            if is_int(x.ty) { mut self.lower_to(v, L_CONST, x.imm) } else { mut self.lower_to(v, L_BOT, 0) }
+            return
+        }
+        ir.IR_PHI {
+            if is_int(x.ty) { mut self.meet_phi(v) } else { mut self.lower_to(v, L_BOT, 0) }
+            return
+        }
+        default {}
+    }
+    if !foldable(*self.fn, v) {
+        mut self.lower_to(v, L_BOT, 0)
+        return
+    }
+    top: bool = false
+    bot: bool = false
+    c: [2]u64 = [0, 0]
+    for i: u32 in 0..x.nargs {
+        a: int = self.fn.arg(v, i)
+        if self.lat.get(usize(a)) == L_TOP {
+            top = true
+        } else if self.lat.get(usize(a)) == L_BOT {
+            bot = true
+        } else {
+            c[i] = self.val.get(usize(a))
+        }
+    }
+    if (x.op == ir.IR_AND || x.op == ir.IR_MUL) && x.nargs == 2 { // a zero operand decides the result
+        for i: u32 in 0..2 {
+            a: int = self.fn.arg(v, i)
+            if self.lat.get(usize(a)) == L_CONST && self.val.get(usize(a)) == 0 {
+                mut self.lower_to(v, L_CONST, 0)
+                return
+            }
+        }
+    }
+    if bot {
+        mut self.lower_to(v, L_BOT, 0)
+        return
+    }
+    if top { return }
+    out: u64, ok: bool = fold(x.op, x.ty, self.fn.at(self.fn.arg(v, 0)).ty, c[0], c[1])
+    if ok { mut self.lower_to(v, L_CONST, out) } else { mut self.lower_to(v, L_BOT, 0) }
+}
+
+/* Rewrites every value found constant into a CONST; a phi that becomes one
+ * moves after its block's remaining phis.
+ */
+sccp(mut fn: Func) {
+    s: Sccp = Sccp { fn = mut &fn, lat = array.Array[u8] {}, val = array.Array[u64] {}, exec = array.Array[bool] {}, edge = array.Array[bool] {}, inq = array.Array[bool] {}, ustart = array.Array[int] {}, users = array.Array[int] {}, work = array.Array[int] {} }
+    defer mut s.wipe()
+    n: usize = fn.ins.len
+    for 0..n {
+        fail(mut s.lat.push(L_TOP))
+        fail(mut s.val.push(0))
+        fail(mut s.inq.push(false))
+        fail(mut s.ustart.push(0))
+    }
+    fail(mut s.ustart.push(0))
+    for 0..fn.blocks.len {
+        fail(mut s.exec.push(false))
+        fail(mut s.edge.push(false))
+        fail(mut s.edge.push(false))
+    }
+    us: mut []int = mut s.ustart.view()
+    for b: usize in 0..fn.blocks.len {
+        for id: int in fn.blocks.get(b).ins.view() {
+            for a: u32 in 0..fn.at(id).nargs { us[usize(fn.arg(id, a)) + 1] += 1 }
+        }
+    }
+    for v: usize in 0..n { us[v + 1] += us[v] }
+    for 0..us[n] { fail(mut s.users.push(0)) }
+    fill: array.Array[int] = array.Array[int] {}
+    defer mut fill.wipe()
+    for 0..n { fail(mut fill.push(0)) }
+    for b: usize in 0..fn.blocks.len {
+        for u: int in fn.blocks.get(b).ins.view() {
+            for a: u32 in 0..fn.at(u).nargs {
+                d: usize = usize(fn.arg(u, a))
+                mut s.users.set(usize(s.ustart.get(d) + fill.get(d)), u)
+                mut fill.set(d, fill.get(d) + 1)
+            }
+        }
+    }
+    mut s.reach(0)
+    for s.work.len > 0 {
+        v: int, _ = mut s.work.pop()
+        mut s.inq.set(usize(v), false)
+        mut s.visit(v)
+    }
+    for b: int in 0..int(fn.blocks.len) { // a reachable branch on a value never given one: leave the function alone
+        if !s.exec.get(usize(b)) { continue }
+        t: int = last(fn, b)
+        if fn.at(t).op == ir.IR_BR && s.lat.get(usize(fn.arg(t, 0))) == L_TOP { return }
+    }
+    for b: int in 0..int(fn.blocks.len) {
+        if !s.exec.get(usize(b)) { continue }
+        bp: mut *IrBlock = mut fn.block(b)
+        list: mut []int = mut bp.ins.view()
+        phis: usize = 0
+        for phis < list.len && fn.at(list[phis]).op == ir.IR_PHI { phis += 1 }
+        nconst: int = 0
+        for i: usize in 0..list.len {
+            v: int = list[i]
+            if s.lat.get(usize(v)) != L_CONST || fn.at(v).op == ir.IR_CONST { continue }
+            x: mut *IrIns = mut fn.at(v)
+            x.nargs = 0
+            x.imm = s.val.get(usize(v))
+            x.flags = 0
+            x.op = ir.IR_CONST
+            if i < phis { nconst += 1 }
+        }
+        if nconst == 0 { continue }
+        fresh: array.Array[int] = array.Array[int] {} // remaining phis, the phis now constants, the rest
+        defer mut fresh.wipe()
+        for i: usize in 0..phis { if fn.at(list[i]).op == ir.IR_PHI { fail(mut fresh.push(list[i])) } }
+        for i: usize in 0..phis { if fn.at(list[i]).op == ir.IR_CONST { fail(mut fresh.push(list[i])) } }
+        for i: usize in phis..list.len { fail(mut fresh.push(list[i])) }
+        for i: usize in 0..list.len { list[i] = fresh.get(i) }
+    }
+}
+
+// --- global value numbering -------------------------------------------------------------
+//
+// A walk of the dominator tree with a scoped table of the pure operations seen:
+// an operation equal to one in a dominating block is replaced by it, and an
+// identity (`x + 0`, `x * 1`, `x | x`, a cast to the same type) by its operand.
+// A constant operand counts by its value, not its id, because lowering makes a
+// fresh `const` per use. Loads are never numbered (no memory model).
+
+is_pure(x: IrIns): bool {
+    if x.flags != 0 { return false }
+    switch x.op {
+        ir.IR_ADD, ir.IR_SUB, ir.IR_MUL, ir.IR_DIV, ir.IR_REM, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_SHL, ir.IR_SHR, ir.IR_NEG, ir.IR_NOT { return true }
+        ir.IR_EQ, ir.IR_NE, ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE, ir.IR_CAST, ir.IR_BITCAST { return true }
+        ir.IR_POPCNT, ir.IR_CLZ, ir.IR_CTZ, ir.IR_BSWAP, ir.IR_ROTL, ir.IR_ROTR, ir.IR_SQRT, ir.IR_FLOOR, ir.IR_CEIL, ir.IR_FMA { return true }
+        ir.IR_PADD, ir.IR_PSUB, ir.IR_GLOBAL { return true }
+        default { return false }
+    }
+}
+
+VnEnt: struct {
+    v: int,
+    next: int,
+}
+
+Vn: struct {
+    fn: mut *Func,
+    repl: array.Array[int],
+    head: array.Array[int],   // hash bucket -> newest entry, or -1
+    ent: array.Array[VnEnt],
+    log: array.Array[int],    // bucket of each live entry, newest last
+    mask: u64 = 0,
+}
+
+Vn.wipe(mut self) {
+    mut self.repl.wipe()
+    mut self.head.wipe()
+    mut self.ent.wipe()
+    mut self.log.wipe()
+}
+
+Vn.chase(self, v: int): int {
+    x: int = v
+    for self.repl.get(usize(x)) >= 0 { x = self.repl.get(usize(x)) }
+    return x
+}
+
+commutes(fn: Func, v: int): bool {
+    switch fn.at(v).op {
+        ir.IR_ADD, ir.IR_MUL, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_EQ, ir.IR_NE { return !ir.type_float(fn.at(fn.arg(v, 0)).ty) }
+        default { return false }
+    }
+}
+
+same_arg(fn: Func, a: int, b: int): bool {
+    if a == b { return true }
+    x: IrIns = fn.at(a)
+    y: IrIns = fn.at(b)
+    return x.op == ir.IR_CONST && y.op == ir.IR_CONST && x.ty == y.ty && x.imm == y.imm
+}
+
+mix(h: u64, v: u64): u64 {
+    return h ^ bits.wradd(bits.wradd(bits.wradd(v, u64(0x9E3779B97F4A7C15)), h << 6), h >> 2)
+}
+
+arg_hash(fn: Func, a: int): u64 {
+    x: IrIns = fn.at(a)
+    if x.op == ir.IR_CONST { return mix(mix(1, u64(x.ty)), x.imm) }
+    return mix(2, u64(a))
+}
+
+vn_hash(fn: Func, v: int): u64 {
+    x: IrIns = fn.at(v)
+    h: u64 = mix(mix(mix(u64(x.op), u64(x.ty)), x.imm), u64(u32(x.aux)))
+    if x.op == ir.IR_GLOBAL { return mix(h, u64(x.sym)) }
+    if commutes(fn, v) { return mix(h, bits.wradd(arg_hash(fn, fn.arg(v, 0)), arg_hash(fn, fn.arg(v, 1)))) }
+    for i: u32 in 0..x.nargs { h = mix(h, arg_hash(fn, fn.arg(v, i))) }
+    return h
+}
+
+/* Whether globals x and y address the same object: one symbol can own
+ * several named objects (a static map's tables, a generic's instantiations).
+ */
+same_global(x: IrIns, y: IrIns): bool {
+    return x.sym == y.sym && x.inst == y.inst && mem.equal(x.name, y.name) // an empty name is none
+}
+
+/* A global counts as equal only by a shared, nonzero symbol and name: the
+ * name-only (vtable) form has no symbol to key on and is never merged.
+ */
+vn_equal(fn: Func, xv: int, yv: int): bool {
+    x: IrIns = fn.at(xv)
+    y: IrIns = fn.at(yv)
+    if x.op != y.op || x.ty != y.ty || x.imm != y.imm || x.aux != y.aux || x.nargs != y.nargs { return false }
+    if x.op == ir.IR_GLOBAL { return x.sym != 0 && same_global(x, y) }
+    direct: bool = true
+    swapped: bool = x.nargs == 2 && commutes(fn, xv)
+    for i: u32 in 0..x.nargs {
+        direct = direct && same_arg(fn, fn.arg(xv, i), fn.arg(yv, i))
+        if swapped { swapped = same_arg(fn, fn.arg(xv, i), fn.arg(yv, 1 - i)) }
+    }
+    return direct || swapped
+}
+
+is_konst(fn: Func, a: int, k: u64): bool {
+    x: IrIns = fn.at(a)
+    return x.op == ir.IR_CONST && !ir.type_float(x.ty) && x.imm == k
+}
+
+/* The operand v equals, or -1. */
+simplify(fn: Func, v: int): int {
+    x: IrIns = fn.at(v)
+    if x.nargs == 0 { return -1 }
+    a: int = fn.arg(v, 0)
+    b: int = -1
+    if x.nargs > 1 { b = fn.arg(v, 1) }
+    if ir.type_float(x.ty) { return -1 }
+    switch x.op {
+        ir.IR_ADD, ir.IR_OR, ir.IR_XOR {
+            if b >= 0 && is_konst(fn, b, 0) { return a }
+            if is_konst(fn, a, 0) { return b }
+            if x.op == ir.IR_OR && a == b { return a }
+            return -1
+        }
+        ir.IR_AND {
+            if a == b { return a }
+            return -1
+        }
+        ir.IR_SUB, ir.IR_SHL, ir.IR_SHR, ir.IR_ROTL, ir.IR_ROTR, ir.IR_PADD, ir.IR_PSUB {
+            if b >= 0 && is_konst(fn, b, 0) { return a }
+            return -1
+        }
+        ir.IR_MUL {
+            if b >= 0 && is_konst(fn, b, 1) { return a }
+            if is_konst(fn, a, 1) { return b }
+            return -1
+        }
+        ir.IR_DIV {
+            if b >= 0 && is_konst(fn, b, 1) { return a }
+            return -1
+        }
+        ir.IR_CAST {
+            if fn.at(a).ty == x.ty { return a }
+            return -1
+        }
+        default { return -1 }
+    }
+}
+
+Vn.block(mut self, b: int) {
+    bp: mut *IrBlock = mut self.fn.block(b)
+    list: mut []int = mut bp.ins.view()
+    k: usize = 0
+    for i: usize in 0..list.len {
+        v: int = list[i]
+        for a: u32 in 0..self.fn.at(v).nargs { mut self.fn.set_arg(v, a, self.chase(self.fn.arg(v, a))) }
+        if !is_pure(self.fn.at(v)) {
+            list[k] = v
+            k += 1
+            continue
+        }
+        w: int = simplify(*self.fn, v)
+        if w < 0 {
+            h: int = int(vn_hash(*self.fn, v) & self.mask)
+            for e: int = self.head.get(usize(h)); e >= 0 && w < 0; e = self.ent.get(usize(e)).next {
+                if vn_equal(*self.fn, self.ent.get(usize(e)).v, v) { w = self.ent.get(usize(e)).v }
+            }
+            if w < 0 {
+                fail(mut self.ent.push(VnEnt { v = v, next = self.head.get(usize(h)) }))
+                mut self.head.set(usize(h), int(self.ent.len) - 1)
+                fail(mut self.log.push(h))
+                list[k] = v
+                k += 1
+                continue
+            }
+        }
+        mut self.repl.set(usize(v), w)
+        kill_ins(self.fn, v)
+    }
+    mut bp.ins.truncate(k)
+}
+
+gvn(mut fn: Func) {
+    g: Vn = Vn { fn = mut &fn, repl = array.Array[int] {}, head = array.Array[int] {}, ent = array.Array[VnEnt] {}, log = array.Array[int] {} }
+    defer mut g.wipe()
+    n: int = int(fn.blocks.len)
+    size: usize = 16
+    for size < 2 * fn.ins.len { size *= 2 }
+    g.mask = u64(size - 1)
+    for 0..size { fail(mut g.head.push(-1)) }
+    for 0..fn.ins.len { fail(mut g.repl.push(-1)) }
+    idom: array.Array[int], rpo: array.Array[int] = ir.dominators(fn)
+    defer mut idom.wipe()
+    defer mut rpo.wipe()
+    cstart: array.Array[int] = array.Array[int] {}
+    defer mut cstart.wipe()
+    for 0..n + 1 { fail(mut cstart.push(0)) }
+    cs: mut []int = mut cstart.view()
+    for b: int in 1..n { if idom.get(usize(b)) >= 0 { cs[idom.get(usize(b)) + 1] += 1 } }
+    for b: int in 0..n { cs[b + 1] += cs[b] }
+    kids: array.Array[int] = array.Array[int] {}
+    defer mut kids.wipe()
+    fill: array.Array[int] = array.Array[int] {}
+    defer mut fill.wipe()
+    for 0..n {
+        fail(mut kids.push(0))
+        fail(mut fill.push(0))
+    }
+    for b: int in 1..n {
+        d: int = idom.get(usize(b))
+        if d < 0 { continue }
+        mut kids.set(usize(cs[d] + fill.get(usize(d))), b)
+        mut fill.set(usize(d), fill.get(usize(d)) + 1)
+    }
+    sb: array.Array[int] = array.Array[int] {} // the walk's frames: block, next child, entries at entry
+    defer mut sb.wipe()
+    si: array.Array[int] = array.Array[int] {}
+    defer mut si.wipe()
+    sm: array.Array[int] = array.Array[int] {}
+    defer mut sm.wipe()
+    fail(mut sb.push(0))
+    fail(mut si.push(0))
+    fail(mut sm.push(0))
+    mut g.block(0)
+    for sb.len > 0 {
+        top: usize = sb.len - 1
+        b: int = sb.get(top)
+        if si.get(top) < cs[b + 1] - cs[b] {
+            c: int = kids.get(usize(cs[b] + si.get(top)))
+            mut si.set(top, si.get(top) + 1)
+            fail(mut sb.push(c))
+            fail(mut si.push(0))
+            fail(mut sm.push(int(g.ent.len)))
+            mut g.block(c)
+            continue
+        }
+        for int(g.ent.len) > sm.get(top) { // leave the block: drop its entries
+            h: usize = usize(g.log.get(g.ent.len - 1))
+            mut g.head.set(h, g.ent.get(usize(g.head.get(h))).next)
+            mut g.ent.truncate(g.ent.len - 1)
+            mut g.log.truncate(g.log.len - 1)
+        }
+        mut sb.truncate(top)
+        mut si.truncate(top)
+        mut sm.truncate(top)
+    }
+    for b: usize in 0..fn.blocks.len {
+        for id: int in fn.blocks.get(b).ins.view() {
+            for a: u32 in 0..fn.at(id).nargs { mut fn.set_arg(id, a, g.chase(fn.arg(id, a))) }
+        }
+    }
+}
+
+// --- loop strength reduction ------------------------------------------------------------
+//
+// A pointer offset `base +/- i * S` of a basic induction variable i (a header
+// 64-bit phi whose back-edge operand is i +/- a constant c, indexing directly
+// or through a cast to u64, the same bits) and an invariant base becomes a
+// pointer phi of its own, started at `base +/- init * S` before the loop and
+// stepped by `c * S` at the latch. Only a scale that is not a power of two
+// gains. Offsets with one base, scale, direction, and i share one pointer.
+
+LsrPtr: struct {
+    base: int,
+    op: u8,
+    phi: int,   // -1: a hoisted global, never an induction pointer
+    q: int,
+    scale: u64,
+}
+
+/* repl covers the values from before the pass; a pointer phi is never replaced. */
+lsr_chase(repl: array.Array[int], nins: int, v: int): int {
+    x: int = v
+    for x < nins && repl.get(usize(x)) >= 0 { x = repl.get(usize(x)) }
+    return x
+}
+
+/* A new instruction in b, before its terminator. */
+ins_before_term(mut fn: Func, b: int, op: u8, ty: u8): int {
+    v: int = mut fn.new_ins(b, op, ty)
+    bp: mut *IrBlock = mut fn.block(b)
+    l: mut []int = mut bp.ins.view()
+    l[l.len - 1] = l[l.len - 2]
+    l[l.len - 2] = v
+    return v
+}
+
+/* The induction variable index v stands for: itself, or the 64-bit value a
+ * cast to u64 reinterprets.
+ */
+lsr_index(fn: Func, v: int): int {
+    x: IrIns = fn.at(v)
+    if x.op == ir.IR_CAST && x.ty == ir.IT_U64 && fn.at(fn.arg(v, 0)).ty == ir.IT_I64 { return fn.arg(v, 0) }
+    return v
+}
+
+/* v as the u64 index of a pointer offset in b. */
+lsr_u64(mut fn: Func, b: int, v: int): int {
+    if fn.at(v).ty == ir.IT_U64 { return v }
+    op: u8 = ir.IR_CAST
+    if fn.at(v).op == ir.IR_CONST { op = ir.IR_CONST }
+    c: int = ins_before_term(mut fn, b, op, ir.IT_U64)
+    if op == ir.IR_CONST { mut fn.at(c).imm = fn.at(v).imm } else { mut fn.arg_add(c, v) }
+    return c
+}
+
+same_base(fn: Func, a: int, b: int): bool {
+    if a == b { return true }
+    x: IrIns = fn.at(a)
+    y: IrIns = fn.at(b)
+    return x.op == ir.IR_GLOBAL && y.op == ir.IR_GLOBAL && same_global(x, y)
+}
+
+/* A copy of global `from` in b, before its terminator. */
+global_in(mut fn: Func, b: int, from: int): int {
+    g: int = ins_before_term(mut fn, b, ir.IR_GLOBAL, ir.IT_PTR)
+    f: IrIns = fn.at(from)
+    x: mut *IrIns = mut fn.at(g)
+    x.sym = f.sym
+    x.name = f.name
+    x.inst = f.inst
+    return g
+}
+
+/* The pointer standing for offset u of phi in the loop headed by h, entered
+ * from pre and closed by latch, or -1 when its base does not reach pre.
+ */
+lsr_pointer(mut fn: Func, idom: array.Array[int], repl: array.Array[int], nins: int, mut ptrs: array.Array[LsrPtr], h: int, pre: int, latch: int, pi: int, li: int, phi: int, u: int): int {
+    base: int = lsr_chase(repl, nins, fn.arg(u, 0))
+    op: u8 = fn.at(u).op
+    scale: u64 = fn.at(u).imm
+    for p: LsrPtr in ptrs.view() {
+        if p.phi == phi && p.op == op && p.scale == scale && same_base(fn, p.base, base) { return p.q }
+    }
+    if !ir.dominates(idom, fn.at(base).block, pre) {
+        if fn.at(base).op != ir.IR_GLOBAL { return -1 }
+        base = global_in(mut fn, pre, base)
+    }
+    init: int = fn.arg(phi, u32(pi))
+    next: int = fn.arg(phi, u32(li))
+    start: int = base
+    if fn.at(init).op != ir.IR_CONST || fn.at(init).imm != 0 {
+        k: int = lsr_u64(mut fn, pre, init)
+        start = ins_before_term(mut fn, pre, op, ir.IT_PTR)
+        mut fn.at(start).imm = scale
+        mut fn.arg_add(start, base)
+        mut fn.arg_add(start, k)
+    }
+    q: int = mut fn.new_phi(h, ir.IT_PTR)
+    up: bool = (op == ir.IR_PADD) == (fn.at(next).op == ir.IR_ADD)
+    c: int = lsr_u64(mut fn, latch, fn.arg(next, 1))
+    sop: u8 = ir.IR_PSUB
+    if up { sop = ir.IR_PADD }
+    step: int = ins_before_term(mut fn, latch, sop, ir.IT_PTR)
+    mut fn.at(step).imm = scale
+    mut fn.arg_add(step, q)
+    mut fn.arg_add(step, c)
+    for i: int in 0..2 {
+        if i == pi { mut fn.arg_add(q, start) } else { mut fn.arg_add(q, step) }
+    }
+    fail(mut ptrs.push(LsrPtr { base = base, op = op, phi = phi, q = q, scale = scale }))
+    return q
+}
+
+/* The preheader-resident global that base already is or chases to, reusing
+ * one already hoisted in this loop for the same symbol; base unchanged when
+ * it already dominates pre, or -1 when it is some other loop-varying value.
+ */
+lsr_hoist(mut fn: Func, idom: array.Array[int], mut ptrs: array.Array[LsrPtr], pre: int, base: int): int {
+    if ir.dominates(idom, fn.at(base).block, pre) { return base }
+    if fn.at(base).op != ir.IR_GLOBAL { return -1 }
+    for p: LsrPtr in ptrs.view() {
+        if p.phi < 0 && same_base(fn, p.base, base) { return p.q }
+    }
+    g: int = global_in(mut fn, pre, base)
+    fail(mut ptrs.push(LsrPtr { base = base, op = 0, phi = -1, q = g, scale = 0 }))
+    return g
+}
+
+lsr(mut fn: Func) {
+    n: int = int(fn.blocks.len)
+    nins: int = int(fn.ins.len)
+    any: bool = false
+    for v: int in 0..nins {
+        x: IrIns = fn.at(v)
+        if (x.op == ir.IR_PADD || x.op == ir.IR_PSUB) && x.block >= 0 && x.flags == 0 {
+            any = true
+            break
+        }
+    }
+    if !any { return }
+    idom: array.Array[int], rpo: array.Array[int] = ir.dominators(fn)
+    defer mut idom.wipe()
+    defer mut rpo.wipe()
+    repl: array.Array[int] = array.Array[int] {}
+    defer mut repl.wipe()
+    for 0..nins { fail(mut repl.push(-1)) }
+    body: array.Array[bool] = array.Array[bool] {}
+    defer mut body.wipe()
+    for 0..n { fail(mut body.push(false)) }
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    phis: array.Array[int] = array.Array[int] {}
+    defer mut phis.wipe()
+    ptrs: array.Array[LsrPtr] = array.Array[LsrPtr] {}
+    defer mut ptrs.wipe()
+    changed: bool = false
+    for h: int in rpo.view() {
+        hb: IrBlock = fn.block(h)
+        if hb.preds.len != 2 { continue }
+        li: int = -1
+        for i: int in 0..2 {
+            p: int = hb.preds.get(usize(i))
+            if idom.get(usize(p)) >= 0 && ir.dominates(idom, h, p) {
+                if li < 0 { li = i } else { li = -2 }
+            }
+        }
+        if li < 0 { continue }
+        pi: int = 1 - li
+        latch: int = hb.preds.get(usize(li))
+        pre: int = hb.preds.get(usize(pi))
+        if idom.get(usize(pre)) < 0 || ir.dominates(idom, h, pre) { continue }
+        for b: usize in 0..usize(n) { mut body.set(b, false) } // the natural loop: every block reaching the latch without passing h
+        mut body.set(usize(h), true)
+        if !body.get(usize(latch)) {
+            mut body.set(usize(latch), true)
+            fail(mut stack.push(latch))
+        }
+        for stack.len > 0 {
+            s: int, _ = mut stack.pop()
+            for p: int in fn.block(s).preds.view() {
+                if !body.get(usize(p)) {
+                    mut body.set(usize(p), true)
+                    fail(mut stack.push(p))
+                }
+            }
+        }
+        mut phis.clear() // the header's basic induction variables, before any pointer phi joins them
+        for phi: int in hb.ins.view() {
+            px: IrIns = fn.at(phi)
+            if px.op != ir.IR_PHI { break }
+            nv: int = fn.arg(phi, u32(li))
+            nx: IrIns = fn.at(nv)
+            if (px.ty != ir.IT_U64 && px.ty != ir.IT_I64) || (nx.op != ir.IR_ADD && nx.op != ir.IR_SUB) || nx.flags != 0 ||
+                fn.arg(nv, 0) != phi || fn.at(fn.arg(nv, 1)).op != ir.IR_CONST { continue }
+            fail(mut phis.push(phi))
+        }
+        mut ptrs.clear()
+        for phi: int in phis.view() {
+            for b: int in 0..n {
+                if !body.get(usize(b)) { continue }
+                i: usize = 0
+                for i < fn.block(b).ins.len {
+                    u: int = fn.block(b).ins.get(i)
+                    i += 1
+                    x: IrIns = fn.at(u)
+                    if (x.op != ir.IR_PADD && x.op != ir.IR_PSUB) || x.flags != 0 || lsr_index(fn, fn.arg(u, 1)) != phi || u >= nins { continue }
+                    if (x.imm & (x.imm - 1)) != 0 {
+                        q: int = lsr_pointer(mut fn, idom, repl, nins, mut ptrs, h, pre, latch, pi, li, phi, u)
+                        if q < 0 { continue }
+                        mut repl.set(usize(u), q)
+                    } else {
+                        base: int = lsr_chase(repl, nins, fn.arg(u, 0))
+                        g: int = lsr_hoist(mut fn, idom, mut ptrs, pre, base)
+                        if g < 0 || g == base { continue }
+                        mut fn.set_arg(u, 0, g)
+                    }
+                    changed = true
+                }
+            }
+        }
+    }
+    if !changed { return }
+    for b: int in 0..int(fn.blocks.len) {
+        bp: mut *IrBlock = mut fn.block(b)
+        list: mut []int = mut bp.ins.view()
+        k: usize = 0
+        for i: usize in 0..list.len {
+            v: int = list[i]
+            if v < nins && repl.get(usize(v)) >= 0 {
+                kill_ins(mut &fn, v)
+                continue
+            }
+            for a: u32 in 0..fn.at(v).nargs { mut fn.set_arg(v, a, lsr_chase(repl, nins, fn.arg(v, a))) }
+            list[k] = v
+            k += 1
+        }
+        mut bp.ins.truncate(k)
+    }
+}
+
+// --- auto-vectorization -----------------------------------------------------------------
+//
+// spec/compiler.md Compiler #6: an innermost counted loop whose body is
+// lane-wise f32/i32 (or f64) arithmetic over elements base[i] gains a vector
+// loop ahead of it, four elements per iteration (two for f64); the original
+// loop then runs the remainder. A struct array whose F same-typed fields each
+// get the same computation is the flat array of its fields.
+
+VEC_BLOCKS: const int = 32
+VEC_PTRS: const int = 8
+
+/* b is the latch; blk the body in order, each arm after the block branching
+ * to it; ptr the header's pointer phis, stepping by stride, which pstep holds.
+ */
+VecLoop: struct {
+    h: int,
+    b: int,
+    pre: int,
+    pi: int,
+    i: int,
+    step: int,
+    n: int,
+    lane: int,
+    nb: int,
+    width: int,             // lanes: 4, or 2 for f64
+    blk: [32]int,
+    arm: [32]bool,
+    np: int,
+    stride: int,
+    fields: int,            // F, 1 for contiguous elements
+    ptr: [8]int,
+    pstep: [8]int,
+}
+
+vec_ptr(L: VecLoop, v: int): int {
+    for j: int in 0..L.np { if L.ptr[j] == v { return j } }
+    return -1
+}
+
+/* The object address p offsets: a padd's base, or a pointer's entry value. */
+vec_base(fn: Func, L: VecLoop, p: int): int {
+    if vec_ptr(L, p) >= 0 { return fn.arg(p, u32(L.pi)) }
+    return fn.arg(p, 0)
+}
+
+vec_pstep(L: VecLoop, v: int): bool {
+    for j: int in 0..L.np { if L.pstep[j] == v { return true } }
+    return false
+}
+
+vec_at(L: VecLoop, b: int): int {
+    for j: int in 0..L.nb { if L.blk[j] == b { return j } }
+    return -1
+}
+
+vec_of(t: u8): u8 {
+    if t == ir.IT_F32 { return ir.IT_V4F32 }
+    if t == ir.IT_I32 { return ir.IT_V4I32 }
+    if t == ir.IT_F64 { return ir.IT_V2F64 }
+    return ir.IT_VOID
+}
+
+/* Whether lane type t fits L: every lane type of a loop has one width, set by the first. */
+vec_width(mut L: VecLoop, t: u8): bool {
+    w: int = 4
+    if t == ir.IT_F64 { w = 2 }
+    if L.width == 0 { L.width = w }
+    return L.width == w
+}
+
+/* Whether bases a and b are distinct objects. */
+distinct_objects(fn: Func, a: int, b: int): bool {
+    ga: bool = fn.at(a).op == ir.IR_GLOBAL
+    gb: bool = fn.at(b).op == ir.IR_GLOBAL
+    sa: bool = fn.at(a).op == ir.IR_SLOT
+    sb: bool = fn.at(b).op == ir.IR_SLOT
+    if ga && gb { return !same_base(fn, a, b) }
+    if sa && sb { return a != b }
+    return (ga && sb) || (sa && gb)
+}
+
+/* Whether v, used in loop L, is the same in every iteration. */
+vec_invariant(fn: Func, L: VecLoop, v: int): bool {
+    x: IrIns = fn.at(v)
+    if x.block != L.h && vec_at(L, x.block) < 0 { return true }
+    return x.block != L.h && (x.op == ir.IR_CONST || x.op == ir.IR_GLOBAL)
+}
+
+/* A lane value of L's body: a load or lane-wise arithmetic. */
+vec_lane(fn: Func, L: VecLoop, v: int): bool {
+    x: IrIns = fn.at(v)
+    return vec_at(L, x.block) >= 0 && vec_of(x.ty) != ir.IT_VOID && x.op != ir.IR_CONST
+}
+
+/* Whether v is a padd index of L: i, or its cast to u64 or t's. */
+vec_index(fn: Func, L: VecLoop, v: int): bool {
+    x: IrIns = fn.at(v)
+    return lsr_index(fn, v) == L.i || (L.lane >= 0 && x.op == ir.IR_CAST && x.ty == ir.IT_U64 && fn.arg(v, 0) == L.lane)
+}
+
+/* The block an arm of b's branch leads to, or b itself when it is no arm. */
+vec_arm(fn: Func, h: int, b: int): int {
+    x: IrBlock = fn.block(b)
+    if x.preds.len == 1 && x.succ1 < 0 && x.succ0 != h && b != h { return x.succ0 }
+    return b
+}
+
+vec_operand(fn: Func, L: VecLoop, v: int, t: u8): bool {
+    return fn.at(v).ty == t && (vec_lane(fn, L, v) || vec_invariant(fn, L, v))
+}
+
+/* Whether the loop headed by h has the accepted shape; fills L. */
+vec_shape(fn: Func, h: int, mut L: VecLoop): bool {
+    hb: IrBlock = fn.block(h)
+    hn: int = int(hb.ins.len)
+    if hb.preds.len != 2 || hn < 3 || hn > 3 + VEC_PTRS || hb.succ1 < 0 { return false }
+    first: int = hb.succ0
+    b: int = first
+    nb: int = 0
+    if first == h || fn.block(first).preds.len != 1 { return false }
+    for { // the body's blocks in sequence, each fork's arms after it
+        if nb >= VEC_BLOCKS - 2 { return false }
+        L.arm[nb] = false
+        L.blk[nb] = b
+        nb += 1
+        L.nb = nb
+        xb: IrBlock = fn.block(b)
+        if xb.succ0 == h && xb.succ1 < 0 { break }
+        j: int = xb.succ0
+        if j < 0 { return false } // leaves through a return, so h heads no loop
+        if xb.succ1 >= 0 { // a fork: arms t and f meet at j
+            t: int = xb.succ0
+            f: int = xb.succ1
+            j = vec_arm(fn, h, t)
+            if j < 0 || j == b || j != vec_arm(fn, h, f) || (t == j && f == j) || fn.block(j).preds.len != 2 { return false }
+            if t != j {
+                L.arm[nb] = true
+                L.blk[nb] = t
+                nb += 1
+            }
+            if f != j {
+                L.arm[nb] = true
+                L.blk[nb] = f
+                nb += 1
+            }
+            L.nb = nb
+        } else if fn.block(j).preds.len != 1 {
+            return false
+        }
+        if j == h || j == first || vec_at(L, j) >= 0 { return false }
+        b = j
+    }
+    L.nb = nb
+    L.lane = -1
+    li: int = -1
+    if hb.preds.get(0) == b { li = 0 } else if hb.preds.get(1) == b { li = 1 }
+    if li < 0 { return false }
+    pre: int = hb.preds.get(usize(1 - li))
+    if pre == h || vec_at(L, pre) >= 0 { return false }
+    cv: int = hb.ins.get(usize(hn - 2))
+    cmp: IrIns = fn.at(cv)
+    br: IrIns = fn.at(hb.ins.get(usize(hn - 1)))
+    if cmp.op != ir.IR_LT || br.op != ir.IR_BR || fn.arg(hb.ins.get(usize(hn - 1)), 0) != cv { return false }
+    iv: int = fn.arg(cv, 0)
+    phi: IrIns = fn.at(iv)
+    if phi.op != ir.IR_PHI || phi.block != h || (phi.ty != ir.IT_U64 && phi.ty != ir.IT_I64) { return false }
+    L.np = 0
+    L.stride = 0
+    for j: int in 0..hn - 2 { // i, and pointers stepping by one stride
+        p: int = hb.ins.get(usize(j))
+        if p == iv { continue }
+        px: IrIns = fn.at(p)
+        if px.op != ir.IR_PHI || px.ty != ir.IT_PTR { return false }
+        sv: int = fn.arg(p, u32(li))
+        sx: IrIns = fn.at(sv)
+        ox: IrIns = fn.at(fn.arg(p, u32(1 - li)))
+        if sx.op != ir.IR_PADD || sx.flags != 0 || sx.block != b || fn.arg(sv, 0) != p || fn.at(fn.arg(sv, 1)).op != ir.IR_CONST ||
+            fn.at(fn.arg(sv, 1)).imm != 1 || sx.imm == 0 || (L.stride != 0 && sx.imm != u64(L.stride)) ||
+            ox.block == h || vec_at(L, ox.block) >= 0 { return false }
+        L.stride = int(sx.imm)
+        L.ptr[L.np] = p
+        L.pstep[L.np] = sv
+        L.np += 1
+    }
+    init: IrIns = fn.at(fn.arg(iv, u32(1 - li)))
+    stv: int = fn.arg(iv, u32(li))
+    step: IrIns = fn.at(stv)
+    if init.op != ir.IR_CONST || init.imm != 0 || step.op != ir.IR_ADD || step.flags != 0 || step.block != b ||
+        fn.arg(stv, 0) != hb.ins.get(0) || fn.at(fn.arg(stv, 1)).op != ir.IR_CONST || fn.at(fn.arg(stv, 1)).imm != 1 { return false }
+    L.h = h
+    L.b = b
+    L.pre = pre
+    L.pi = 1 - li
+    L.i = iv
+    L.step = stv
+    L.n = fn.arg(cv, 1)
+    if !vec_invariant(fn, L, L.n) { return false }
+    n: IrIns = fn.at(L.n)
+    return n.op != ir.IR_CONST || i64(n.imm) >= 4
+}
+
+/* Whether lane value w computes for field f what v does for field 0. */
+vec_iso(fn: Func, L: VecLoop, v: int, w: int, f: int, es: int): bool {
+    x: IrIns = fn.at(v)
+    y: IrIns = fn.at(w)
+    lv: bool = vec_lane(fn, L, v)
+    lw: bool = vec_lane(fn, L, w)
+    if !lv || !lw {
+        if lv || lw { return false }
+        return v == w || (x.op == ir.IR_CONST && y.op == ir.IR_CONST && x.ty == y.ty && x.imm == y.imm)
+    }
+    if x.op != y.op || x.ty != y.ty || x.nargs != y.nargs { return false }
+    if x.op == ir.IR_LOAD { return x.aux == 0 && int(y.aux) == f * es && fn.arg(v, 0) == fn.arg(w, 0) }
+    for a: u32 in 0..x.nargs {
+        if !vec_iso(fn, L, fn.arg(v, a), fn.arg(w, a), f, es) { return false }
+    }
+    return true
+}
+
+/* Whether L's F fields each get field 0's computation. */
+vec_fields(fn: Func, L: VecLoop, acc: []int, es: int): bool {
+    if L.nb != 1 || L.lane >= 0 { return false }
+    for s: int in acc {
+        sx: IrIns = fn.at(s)
+        sa: int = int(sx.aux)
+        if sa % es != 0 || sa < 0 || sa >= L.stride { return false }
+        if sx.op != ir.IR_STORE { continue }
+        f: int = sa / es
+        for g: int in 0..L.fields { // f's field-0 store, or field 0's in every field g
+            if f != 0 && g != 0 { break }
+            want: int = g * es
+            if f != 0 { want = 0 }
+            found: bool = false
+            for t: int in acc {
+                if found { break }
+                tx: IrIns = fn.at(t)
+                z: int = s // the field-0 store
+                o: int = t
+                if f != 0 {
+                    z = t
+                    o = s
+                }
+                fg: int = g
+                if f != 0 { fg = f }
+                found = tx.op == ir.IR_STORE && int(tx.aux) == want && fn.arg(t, 0) == fn.arg(s, 0) &&
+                    vec_iso(fn, L, fn.arg(z, 1), fn.arg(o, 1), fg, es)
+            }
+            if !found { return false }
+        }
+    }
+    return true
+}
+
+/* Whether L's body is lane-wise over independent elements, used only inside it. */
+vec_body(fn: Func, mut L: VecLoop): bool {
+    acc: array.Array[int] = array.Array[int] {} // the loads and stores
+    defer mut acc.wipe()
+    ok: bool = true
+    stores: int = 0
+    n: IrIns = fn.at(L.n)
+    L.width = 0
+    for k: int in 0..L.nb {
+        if !ok { break }
+        for u: int in fn.block(L.blk[k]).ins.view() {
+            if !ok { break }
+            x: IrIns = fn.at(u)
+            t: u8 = x.ty
+            if u == L.step || vec_pstep(L, u) || x.op == ir.IR_JMP || x.op == ir.IR_CONST || x.op == ir.IR_GLOBAL { continue }
+            if x.flags != 0 {
+                ok = false
+                break
+            }
+            switch x.op {
+                ir.IR_BR { // a fork on a compare of its own block
+                    c: IrIns = fn.at(fn.arg(u, 0))
+                    ok = c.block == L.blk[k] && c.ty == ir.IT_BOOL && c.op != ir.IR_PHI
+                }
+                ir.IR_EQ, ir.IR_NE, ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE {
+                    ot: u8 = fn.at(fn.arg(u, 0)).ty
+                    ok = vec_of(ot) != ir.IT_VOID && ot != ir.IT_F64 && vec_width(mut L, ot) && vec_operand(fn, L, fn.arg(u, 0), ot) && vec_operand(fn, L, fn.arg(u, 1), ot)
+                }
+                ir.IR_PHI { // a join's: lane values or invariants
+                    ok = vec_of(t) != ir.IT_VOID && t != ir.IT_F64 && vec_width(mut L, t) && x.nargs == 2 && vec_operand(fn, L, fn.arg(u, 0), t) && vec_operand(fn, L, fn.arg(u, 1), t)
+                }
+                ir.IR_CAST {
+                    if fn.arg(u, 0) == L.i && t == ir.IT_I32 && L.lane < 0 { // t, which a constant n keeps exact
+                        ok = n.op == ir.IR_CONST && n.imm <= 2147483647 && vec_width(mut L, ir.IT_I32)
+                        L.lane = u
+                    } else {
+                        ok = t == ir.IT_U64 && ((fn.arg(u, 0) == L.i && fn.at(L.i).ty == ir.IT_I64) || fn.arg(u, 0) == L.lane)
+                    }
+                }
+                ir.IR_PADD { // every element one stride apart
+                    ok = x.imm != 0 && (L.stride == 0 || x.imm == u64(L.stride)) && vec_index(fn, L, fn.arg(u, 1)) && vec_invariant(fn, L, fn.arg(u, 0))
+                    L.stride = int(x.imm)
+                }
+                ir.IR_LOAD, ir.IR_STORE {
+                    pv: int = fn.arg(u, 0)
+                    px: IrIns = fn.at(pv)
+                    et: u8 = t
+                    if x.op == ir.IR_STORE { et = fn.at(fn.arg(u, 1)).ty }
+                    ok = !L.arm[k] && ((px.op == ir.IR_PADD && vec_at(L, px.block) >= 0) || vec_ptr(L, pv) >= 0) &&
+                        vec_of(et) != ir.IT_VOID && vec_width(mut L, et) && (x.op == ir.IR_LOAD || vec_operand(fn, L, fn.arg(u, 1), et))
+                    fail(mut acc.push(u))
+                    if x.op == ir.IR_STORE { stores += 1 }
+                }
+                ir.IR_ADD, ir.IR_SUB, ir.IR_MUL, ir.IR_DIV {
+                    ok = vec_of(t) != ir.IT_VOID && vec_width(mut L, t) && (x.op != ir.IR_DIV || t != ir.IT_I32) && vec_operand(fn, L, fn.arg(u, 0), t) && vec_operand(fn, L, fn.arg(u, 1), t)
+                }
+                ir.IR_AND, ir.IR_OR, ir.IR_XOR {
+                    ok = t == ir.IT_I32 && vec_width(mut L, t) && vec_operand(fn, L, fn.arg(u, 0), t) && vec_operand(fn, L, fn.arg(u, 1), t)
+                }
+                ir.IR_SHL, ir.IR_SHR {
+                    c: IrIns = fn.at(fn.arg(u, 1))
+                    ok = t == ir.IT_I32 && vec_width(mut L, t) && vec_operand(fn, L, fn.arg(u, 0), t) && c.op == ir.IR_CONST && c.imm >= 1 && c.imm <= 31
+                }
+                ir.IR_NEG {
+                    ok = vec_of(t) != ir.IT_VOID && vec_width(mut L, t) && vec_operand(fn, L, fn.arg(u, 0), t)
+                }
+                default { ok = false }
+            }
+        }
+    }
+    es: int = 4 // the element, or field, size
+    if L.width == 2 { es = 8 }
+    inner: bool = L.stride > es // aux offsets within one struct: its other fields, never another iteration's
+    for s: int in acc.view() { // each store against every other access
+        if !ok { break }
+        sx: IrIns = fn.at(s)
+        if sx.op != ir.IR_STORE { continue }
+        sbase: int = vec_base(fn, L, fn.arg(s, 0))
+        st: u8 = fn.at(fn.arg(s, 1)).ty
+        for a: int in acc.view() {
+            if !ok { break }
+            if a == s { continue }
+            ax: IrIns = fn.at(a)
+            abase: int = vec_base(fn, L, fn.arg(a, 0))
+            at: u8 = ax.ty
+            if ax.op != ir.IR_LOAD { at = fn.at(fn.arg(a, 1)).ty }
+            sa: int = int(sx.aux)
+            aa: int = int(ax.aux)
+            ok = distinct_objects(fn, sbase, abase) ||
+                (same_base(fn, sbase, abase) && ((sa == aa && st == at) ||
+                    (inner && sa != aa && sa >= 0 && aa >= 0 && sa < L.stride && aa < L.stride && sa % es == 0 && aa % es == 0)))
+        }
+    }
+    ok = ok && stores != 0 && L.stride % es == 0
+    L.fields = 0
+    if ok { L.fields = L.stride / es }
+    if ok && L.fields > 1 { ok = vec_fields(fn, L, acc.view(), es) }
+    if !ok { return false }
+    // No body value leaves the loop; i only indexes, steps, and becomes t; a
+    // u64 cast only indexes; a compare only forks.
+    for b: int in 0..int(fn.blocks.len) {
+        if !ok { break }
+        inside: bool = vec_at(L, b) >= 0
+        for id: int in fn.block(b).ins.view() {
+            if !ok { break }
+            x: IrIns = fn.at(id)
+            for a: u32 in 0..x.nargs {
+                if !ok { break }
+                v: int = fn.arg(id, a)
+                vx: IrIns = fn.at(v)
+                if v == L.i && inside && !(x.op == ir.IR_PADD && a == 1) && x.op != ir.IR_CAST && id != L.step { ok = false }
+                if vec_ptr(L, v) >= 0 && b != L.h && !(inside && a == 0 && (x.op == ir.IR_LOAD || x.op == ir.IR_STORE || vec_pstep(L, id))) {
+                    ok = false // a pointer only addresses and steps
+                }
+                if vec_at(L, vx.block) < 0 { continue }
+                if !inside && b != L.h { ok = false }
+                if vx.op == ir.IR_CAST && v != L.lane && !(x.op == ir.IR_PADD && a == 1) { ok = false }
+                if vx.ty == ir.IT_BOOL && x.op != ir.IR_BR { ok = false }
+            }
+        }
+    }
+    return ok
+}
+
+konst_in(mut fn: Func, b: int, t: u8, imm: u64): int {
+    v: int = ins_before_term(mut fn, b, ir.IR_CONST, t)
+    mut fn.at(v).imm = imm
+    return v
+}
+
+ins2(mut fn: Func, b: int, op: u8, t: u8, x: int, y: int): int {
+    v: int = mut fn.new_ins(b, op, t)
+    mut fn.arg_add(v, x)
+    if y >= 0 { mut fn.arg_add(v, y) }
+    return v
+}
+
+/* The rewrite's per-value tables, over the values from before it. */
+VecMaps: struct {
+    map: array.Array[int],
+    pre_of: array.Array[int],
+    splat: array.Array[int],
+}
+
+VecMaps.wipe(mut self) {
+    mut self.map.wipe()
+    mut self.pre_of.wipe()
+    mut self.splat.wipe()
+}
+
+/* v as used from the preheader: itself, or a copy of the body's constant or global. */
+vec_scalar(mut fn: Func, L: VecLoop, mut m: VecMaps, v: int): int {
+    if vec_at(L, fn.at(v).block) < 0 { return v }
+    if m.pre_of.get(usize(v)) < 0 {
+        f: IrIns = fn.at(v)
+        c: int = ins_before_term(mut fn, L.pre, f.op, f.ty)
+        x: mut *IrIns = mut fn.at(c)
+        x.imm = f.imm
+        x.sym = f.sym
+        x.name = f.name
+        x.inst = f.inst
+        mut m.pre_of.set(usize(v), c)
+    }
+    return m.pre_of.get(usize(v))
+}
+
+/* Lane value v in the vector loop: its clone, or an invariant splat in the preheader. */
+vec_value(mut fn: Func, L: VecLoop, mut m: VecMaps, v: int): int {
+    if m.map.get(usize(v)) >= 0 { return m.map.get(usize(v)) }
+    if m.splat.get(usize(v)) < 0 && fn.at(v).op == ir.IR_CONST { // one splat per constant, however many copies inlining made
+        for c: int in 0..v {
+            if m.splat.get(usize(v)) >= 0 { break }
+            if m.splat.get(usize(c)) >= 0 && fn.at(c).op == ir.IR_CONST && fn.at(c).ty == fn.at(v).ty && fn.at(c).imm == fn.at(v).imm {
+                mut m.splat.set(usize(v), m.splat.get(usize(c)))
+            }
+        }
+    }
+    if m.splat.get(usize(v)) < 0 {
+        s: int = vec_scalar(mut fn, L, mut m, v)
+        sp: int = ins_before_term(mut fn, L.pre, ir.IR_SPLAT, vec_of(fn.at(v).ty))
+        mut fn.arg_add(sp, s)
+        mut m.splat.set(usize(v), sp)
+    }
+    return m.splat.get(usize(v))
+}
+
+/* Whether L runs whole vectors only (a constant n, a multiple of the width)
+ * and nothing past it needs its header but the exit's phis, for i.
+ */
+vec_whole(fn: Func, L: VecLoop, ex: int): bool {
+    n: IrIns = fn.at(L.n)
+    if n.op != ir.IR_CONST || n.imm % u64(L.width) != 0 { return false }
+    for b: int in 0..int(fn.blocks.len) {
+        if b == L.h || vec_at(L, b) >= 0 { continue }
+        ob: IrBlock = fn.block(b)
+        for id: int in ob.ins.view() {
+            x: IrIns = fn.at(id)
+            for a: u32 in 0..x.nargs {
+                v: int = fn.arg(id, a)
+                if fn.at(v).block != L.h { continue }
+                if !(b == ex && x.op == ir.IR_PHI && ob.preds.get(usize(a)) == L.h && v == L.i) { return false }
+            }
+        }
+    }
+    return true
+}
+
+vec_rewrite(mut fn: Func, L: VecLoop) {
+    nold: usize = fn.ins.len
+    m: VecMaps = VecMaps { map = array.Array[int] {}, pre_of = array.Array[int] {}, splat = array.Array[int] {} }
+    defer mut m.wipe()
+    for 0..nold {
+        fail(mut m.map.push(-1))
+        fail(mut m.pre_of.push(-1))
+        fail(mut m.splat.push(-1))
+    }
+    pre: int = L.pre
+    h: int = L.h
+    it: u8 = fn.at(L.i).ty // k's type, so lt k, m compares as lt i, n does
+    lg: u64 = 1 // log2 of the lanes a vector holds
+    if L.width == 4 { lg = 2 }
+    zero: int = konst_in(mut fn, pre, it, 0)
+    one: int = konst_in(mut fn, pre, it, 1)
+    shift: int = konst_in(mut fn, pre, it, lg)
+    mv: int = -1
+    if fn.at(L.n).op == ir.IR_CONST {
+        mv = konst_in(mut fn, pre, it, fn.at(L.n).imm >> lg)
+    } else { // an i64 n shifts arithmetically: a negative one skips the vector loop
+        mv = ins_before_term(mut fn, pre, ir.IR_SHR, it)
+        mut fn.arg_add(mv, vec_scalar(mut fn, L, mut m, L.n))
+        mut fn.arg_add(mv, shift)
+    }
+    vh: int = mut fn.new_block()
+    vb: int = mut fn.new_block()
+    x: int = mut fn.new_block()
+    pb: mut *IrBlock = mut fn.block(pre)
+    if pb.succ0 == h { pb.succ0 = vh } else { pb.succ1 = vh }
+    hp: mut *IrBlock = mut fn.block(vh)
+    fail(mut hp.preds.push(pre))
+    k: int = mut fn.new_phi(vh, it)
+    mut fn.arg_add(k, zero)
+    _ = ins2(mut fn, vh, ir.IR_BR, ir.IT_VOID, ins2(mut fn, vh, ir.IR_LT, ir.IT_BOOL, k, mv), -1)
+    mut fn.edge_add(vh, vb)
+    mut fn.edge_add(vh, x)
+    kx: int = k // the u64 vector index
+    if it != ir.IT_U64 { kx = ins2(mut fn, vb, ir.IR_CAST, ir.IT_U64, k, -1) }
+    vi: int = -1
+    if L.lane >= 0 { // t's lanes: <0, 1, 2, 3>, then 4 more each vector
+        vi = mut fn.new_phi(vh, ir.IT_V4I32)
+        mut fn.arg_add(vi, ins_before_term(mut fn, pre, ir.IR_LANES, ir.IT_V4I32))
+        mut m.map.set(usize(L.lane), vi)
+    }
+    F: int = L.fields
+    keep: array.Array[bool] = array.Array[bool] {} // for F > 1, field 0's computation
+    defer mut keep.wipe()
+    if F > 1 {
+        for 0..nold { fail(mut keep.push(false)) }
+        stack: array.Array[int] = array.Array[int] {}
+        defer mut stack.wipe()
+        for u: int in fn.block(L.blk[0]).ins.view() {
+            if fn.at(u).op == ir.IR_STORE && fn.at(u).aux == 0 {
+                mut keep.set(usize(u), true)
+                fail(mut stack.push(u))
+            }
+        }
+        for stack.len > 0 {
+            y: int, _ = mut stack.pop()
+            for a: u32 in 0..fn.at(y).nargs {
+                w: int = fn.arg(y, a)
+                if !keep.get(usize(w)) && vec_lane(fn, L, w) {
+                    mut keep.set(usize(w), true)
+                    fail(mut stack.push(w))
+                }
+            }
+        }
+    }
+    for j: int in 0..L.np { // a pointer's struct group: its entry value plus k * 16F
+        p: int = L.ptr[j]
+        q: int = ins2(mut fn, vb, ir.IR_PADD, ir.IT_PTR, vec_scalar(mut fn, L, mut m, fn.arg(p, u32(L.pi))), kx)
+        mut fn.at(q).imm = 16 * u64(F)
+        mut m.map.set(usize(p), q)
+    }
+    for fc: int in 0..F { // F > 1: field 0's computation for each 16 bytes of the group
+        for bk: int in 0..L.nb {
+            j: usize = 0
+            for j < fn.block(L.blk[bk]).ins.len {
+                u: int = fn.block(L.blk[bk]).ins.get(j)
+                j += 1
+                x0: IrIns = fn.at(u)
+                if u == L.step || vec_pstep(L, u) || x0.op == ir.IR_JMP || x0.op == ir.IR_BR || x0.op == ir.IR_CONST ||
+                    x0.op == ir.IR_GLOBAL || x0.op == ir.IR_CAST || (F > 1 && x0.op != ir.IR_PADD && !keep.get(usize(u))) || (fc != 0 && x0.op == ir.IR_PADD) { continue }
+                a0: int = -1
+                a1: int = -1
+                if x0.nargs > 0 { a0 = fn.arg(u, 0) }
+                if x0.nargs > 1 { a1 = fn.arg(u, 1) }
+                if x0.op == ir.IR_PHI { // a join's: a select on the fork's mask
+                    jb: IrBlock = fn.block(x0.block)
+                    p: int = jb.preds.get(0)
+                    c: int = p
+                    if vec_at(L, p) >= 0 && L.arm[vec_at(L, p)] { c = fn.block(p).preds.get(0) }
+                    first: bool = fn.block(c).succ0 == p
+                    if p == c { first = fn.block(c).succ0 == x0.block }
+                    mask: int = m.map.get(usize(fn.arg(last(fn, c), 0)))
+                    ta: int = a1
+                    fa: int = a0
+                    if first {
+                        ta = a0
+                        fa = a1
+                    }
+                    av: int = vec_value(mut fn, L, mut m, ta)
+                    bv: int = vec_value(mut fn, L, mut m, fa)
+                    s: int = ins2(mut fn, vb, ir.IR_SELECT, vec_of(x0.ty), mask, av)
+                    mut fn.arg_add(s, bv)
+                    mut m.map.set(usize(u), s)
+                } else if x0.ty == ir.IT_BOOL { // a compare, to a mask
+                    av: int = vec_value(mut fn, L, mut m, a0)
+                    bv: int = vec_value(mut fn, L, mut m, a1)
+                    mut m.map.set(usize(u), ins2(mut fn, vb, x0.op, ir.IT_V4I32, av, bv))
+                } else if x0.op == ir.IR_SHL || x0.op == ir.IR_SHR { // by the constant itself
+                    av: int = vec_value(mut fn, L, mut m, a0)
+                    bv: int = vec_scalar(mut fn, L, mut m, a1)
+                    mut m.map.set(usize(u), ins2(mut fn, vb, x0.op, ir.IT_V4I32, av, bv))
+                } else if x0.op == ir.IR_PADD {
+                    q: int = ins2(mut fn, vb, ir.IR_PADD, ir.IT_PTR, vec_scalar(mut fn, L, mut m, a0), kx)
+                    mut fn.at(q).imm = 16 * u64(F)
+                    mut m.map.set(usize(u), q)
+                } else if x0.op == ir.IR_LOAD {
+                    q: int = ins2(mut fn, vb, ir.IR_LOAD, vec_of(x0.ty), m.map.get(usize(a0)), -1)
+                    mut fn.at(q).aux = x0.aux + i32(16 * fc)
+                    mut m.map.set(usize(u), q)
+                } else if x0.op == ir.IR_STORE {
+                    bv: int = vec_value(mut fn, L, mut m, a1)
+                    s: int = ins2(mut fn, vb, ir.IR_STORE, ir.IT_VOID, m.map.get(usize(a0)), bv)
+                    mut fn.at(s).aux = x0.aux + i32(16 * fc)
+                } else {
+                    av: int = vec_value(mut fn, L, mut m, a0)
+                    bv: int = -1
+                    if x0.nargs > 1 { bv = vec_value(mut fn, L, mut m, a1) }
+                    mut m.map.set(usize(u), ins2(mut fn, vb, x0.op, vec_of(x0.ty), av, bv))
+                }
+            }
+        }
+    }
+    if vi >= 0 {
+        c4: int = konst_in(mut fn, pre, ir.IT_I32, 4)
+        four: int = ins_before_term(mut fn, pre, ir.IR_SPLAT, ir.IT_V4I32)
+        mut fn.arg_add(four, c4)
+        mut fn.arg_add(vi, ins2(mut fn, vb, ir.IR_ADD, ir.IT_V4I32, vi, four))
+    }
+    mut fn.arg_add(k, ins2(mut fn, vb, ir.IR_ADD, it, k, one))
+    _ = mut fn.new_ins(vb, ir.IR_JMP, ir.IT_VOID)
+    mut fn.edge_add(vb, vh)
+    i0: int = ins2(mut fn, x, ir.IR_SHL, it, k, shift)
+    ex: int = fn.block(h).succ1
+    if L.np > 0 { // the scalar loop's pointers resume at struct i0
+        i64v: int = i0
+        if it != ir.IT_U64 { i64v = ins2(mut fn, x, ir.IR_CAST, ir.IT_U64, i0, -1) }
+        for j: int in 0..L.np {
+            p: int = L.ptr[j]
+            r: int = ins2(mut fn, x, ir.IR_PADD, ir.IT_PTR, vec_scalar(mut fn, L, mut m, fn.arg(p, u32(L.pi))), i64v)
+            mut fn.at(r).imm = u64(L.stride)
+            mut fn.set_arg(p, u32(L.pi), r)
+        }
+    }
+    mut fn.block(x).succ0 = h
+    if vec_whole(fn, L, ex) { // no remainder: x leaves on a false branch, which cleanup folds with the scalar loop
+        no: int = mut fn.new_ins(x, ir.IR_CONST, ir.IT_BOOL)
+        _ = ins2(mut fn, x, ir.IR_BR, ir.IT_VOID, no, -1)
+        hpi: usize = 0
+        for fn.block(ex).preds.get(hpi) != h { hpi += 1 }
+        mut fn.edge_add(x, ex)
+        for ph: int in fn.block(ex).ins.view() {
+            if fn.at(ph).op != ir.IR_PHI { break }
+            a: int = fn.arg(ph, u32(hpi))
+            if a == L.i { mut fn.arg_add(ph, i0) } else { mut fn.arg_add(ph, a) }
+        }
+    } else {
+        _ = mut fn.new_ins(x, ir.IR_JMP, ir.IT_VOID)
+    }
+    hb: mut *IrBlock = mut fn.block(h)
+    mut hb.preds.set(usize(L.pi), x)
+    mut fn.set_arg(L.i, u32(L.pi), i0)
+}
+
+/* Whether any loop gained a vector loop. */
+vectorize(mut fn: Func): bool {
+    loops: array.Array[VecLoop] = array.Array[VecLoop] {}
+    defer mut loops.wipe()
+    for h: int in 0..int(fn.blocks.len) {
+        L: VecLoop = blank(VecLoop)
+        if vec_shape(fn, h, mut L) && vec_body(fn, mut L) { fail(mut loops.push(L)) }
+    }
+    for L: VecLoop in loops.view() { vec_rewrite(mut fn, L) }
+    return loops.len > 0
+}
+
+// --- dead-code and control-flow cleanup -----------------------------------------------
+
+Clean: struct {
+    fn: mut *Func,
+    dead: array.Array[bool],  // per block: removed, awaiting compaction
+    repl: array.Array[int],   // per value: the value replacing it, or -1
+}
+
+Clean.wipe(mut self) {
+    mut self.dead.wipe()
+    mut self.repl.wipe()
+}
+
+Clean.chase(self, v: int): int {
+    x: int = v
+    for self.repl.get(usize(x)) >= 0 { x = self.repl.get(usize(x)) }
+    return x
+}
+
+Clean.apply_repl(mut self) {
+    for b: usize in 0..self.fn.blocks.len {
+        for id: int in self.fn.blocks.get(b).ins.view() {
+            for a: u32 in 0..self.fn.at(id).nargs { mut self.fn.set_arg(id, a, self.chase(self.fn.arg(id, a))) }
+        }
+    }
+}
+
+/* Removes one predecessor entry of `t` from `from`, with its operand in each phi. */
+drop_pred(fn: mut *Func, t: int, from: int) {
+    preds: []int = fn.block(t).preds.view()
+    i: usize = 0
+    for i < preds.len && preds[i] != from { i += 1 }
+    if i == preds.len { return }
+    for id: int in fn.block(t).ins.view() {
+        if fn.at(id).op != ir.IR_PHI { break }
+        n: u32 = fn.at(id).nargs
+        for a: u32 in u32(i)..n - 1 { mut fn.set_arg(id, a, fn.arg(id, a + 1)) }
+        mut fn.at(id).nargs = n - 1
+    }
+    tb: mut *IrBlock = mut fn.block(t)
+    p: mut []int = mut tb.preds.view()
+    for k: usize in i..p.len - 1 { p[k] = p[k + 1] }
+    mut tb.preds.truncate(p.len - 1)
+}
+
+Clean.kill_block(mut self, b: int) {
+    for id: int in self.fn.block(b).ins.view() { kill_ins(self.fn, id) }
+    bb: mut *IrBlock = mut self.fn.block(b)
+    mut bb.ins.clear()
+    mut bb.preds.clear()
+    bb.succ0 = -1
+    bb.succ1 = -1
+    mut self.dead.set(usize(b), true)
+}
+
+Clean.drop_unreachable(mut self): bool {
+    n: usize = self.fn.blocks.len
+    seen: array.Array[bool] = array.Array[bool] {}
+    defer mut seen.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    for 0..n { fail(mut seen.push(false)) }
+    fail(mut stack.push(0))
+    mut seen.set(0, true)
+    for stack.len > 0 {
+        b: int, _ = mut stack.pop()
+        bb: IrBlock = self.fn.block(b)
+        for k: int in 0..2 {
+            s: int = succ(bb, k)
+            if s >= 0 && !seen.get(usize(s)) {
+                mut seen.set(usize(s), true)
+                fail(mut stack.push(s))
+            }
+        }
+    }
+    changed: bool = false
+    for b: int in 0..int(n) {
+        if seen.get(usize(b)) || self.dead.get(usize(b)) { continue }
+        bb: IrBlock = self.fn.block(b)
+        for k: int in 0..2 {
+            t: int = succ(bb, k)
+            if t >= 0 && !self.dead.get(usize(t)) { drop_pred(self.fn, t, b) }
+        }
+        mut self.kill_block(b)
+        changed = true
+    }
+    return changed
+}
+
+/* Successor slot `k` of `bb`. */
+succ(bb: IrBlock, k: int): int {
+    if k == 0 { return bb.succ0 }
+    return bb.succ1
+}
+
+/* The last instruction of block `b`. */
+last(fn: Func, b: int): int {
+    ins: []int = fn.block(b).ins.view()
+    return ins[ins.len - 1]
+}
+
+/* A branch on a constant, or to one block on both arms with equal phi
+ * operands, becomes a jump.
+ */
+Clean.fold_branches(mut self): bool {
+    changed: bool = false
+    for b: int in 0..int(self.fn.blocks.len) {
+        if self.dead.get(usize(b)) { continue }
+        bb: IrBlock = self.fn.block(b)
+        t: int = last(*self.fn, b)
+        if self.fn.at(t).op != ir.IR_BR { continue }
+        c: int = self.fn.arg(t, 0)
+        cond: IrIns = self.fn.at(c)
+        keep: int = -1
+        r: u64 = 0
+        folded: bool = false
+        if cond.op != ir.IR_CONST && cond.nargs == 2 && self.fn.at(self.fn.arg(c, 0)).op == ir.IR_CONST &&
+            self.fn.at(self.fn.arg(c, 1)).op == ir.IR_CONST && is_int(self.fn.at(self.fn.arg(c, 0)).ty) {
+            r, folded = fold(cond.op, cond.ty, self.fn.at(self.fn.arg(c, 0)).ty,
+                self.fn.at(self.fn.arg(c, 0)).imm, self.fn.at(self.fn.arg(c, 1)).imm)
+        }
+        if cond.op == ir.IR_CONST {
+            keep = 1
+            if cond.imm != 0 { keep = 0 }
+        } else if folded { // a comparison a threaded jump left constant
+            keep = 1
+            if r != 0 { keep = 0 }
+        } else if bb.succ0 == bb.succ1 {
+            sb: IrBlock = self.fn.block(bb.succ0)
+            same: bool = true
+            i0: int = -1
+            i1: int = -1
+            for i: usize in 0..sb.preds.len {
+                if sb.preds.get(i) == b {
+                    if i0 < 0 { i0 = int(i) } else { i1 = int(i) }
+                }
+            }
+            for id: int in sb.ins.view() {
+                if self.fn.at(id).op != ir.IR_PHI { break }
+                same = same && self.fn.arg(id, u32(i0)) == self.fn.arg(id, u32(i1))
+            }
+            if same { keep = 0 }
+        }
+        if keep < 0 { continue }
+        other: int = bb.succ0
+        to: int = bb.succ1
+        if keep == 0 {
+            other = bb.succ1
+            to = bb.succ0
+        }
+        drop_pred(self.fn, other, b)
+        m: mut *IrBlock = mut self.fn.block(b)
+        m.succ0 = to
+        m.succ1 = -1
+        x: mut *IrIns = mut self.fn.at(t)
+        x.nargs = 0
+        x.op = ir.IR_JMP
+        changed = true
+    }
+    return changed
+}
+
+Clean.trivial_phis(mut self): bool {
+    changed: bool = false
+    for b: int in 0..int(self.fn.blocks.len) {
+        bb: mut *IrBlock = mut self.fn.block(b)
+        list: mut []int = mut bb.ins.view()
+        k: usize = 0
+        for i: usize in 0..list.len {
+            v: int = list[i]
+            x: IrIns = self.fn.at(v)
+            if x.op == ir.IR_PHI {
+                w: int = -1
+                trivial: bool = true
+                for a: u32 in 0..x.nargs {
+                    if !trivial { break }
+                    u: int = self.chase(self.fn.arg(v, a))
+                    if u == v || u == w { continue }
+                    if w >= 0 { trivial = false } else { w = u }
+                }
+                if trivial && w >= 0 {
+                    mut self.repl.set(usize(v), w)
+                    kill_ins(self.fn, v)
+                    changed = true
+                    continue
+                }
+            }
+            list[k] = v
+            k += 1
+        }
+        mut bb.ins.truncate(k)
+    }
+    if changed { mut self.apply_repl() }
+    return changed
+}
+
+/* A block that ends in a jump to a block with no other predecessor absorbs it. */
+Clean.merge_blocks(mut self): bool {
+    changed: bool = false
+    for b: int in 0..int(self.fn.blocks.len) {
+        if self.dead.get(usize(b)) { continue }
+        for {
+            tid: int = last(*self.fn, b)
+            if self.fn.at(tid).op != ir.IR_JMP { break }
+            s: int = self.fn.block(b).succ0
+            sb: IrBlock = self.fn.block(s)
+            if s == b || sb.preds.len != 1 { break }
+            k: usize = 0
+            for k < sb.ins.len && self.fn.at(sb.ins.get(k)).op == ir.IR_PHI { // one operand: the value itself
+                p: int = sb.ins.get(k)
+                mut self.repl.set(usize(p), self.fn.arg(p, 0))
+                kill_ins(self.fn, p)
+                k += 1
+            }
+            kill_ins(self.fn, tid)
+            bb: mut *IrBlock = mut self.fn.block(b)
+            mut bb.ins.truncate(bb.ins.len - 1)
+            for i: usize in k..sb.ins.len {
+                id: int = sb.ins.get(i)
+                mut self.fn.at(id).block = b
+                into: mut *IrBlock = mut self.fn.block(b)
+                fail(mut into.ins.push(id))
+            }
+            bb = mut self.fn.block(b)
+            bb.succ0 = sb.succ0
+            bb.succ1 = sb.succ1
+            for z: int in 0..2 {
+                q: int = succ(sb, z)
+                if q < 0 { continue }
+                qb: mut *IrBlock = mut self.fn.block(q)
+                p: mut []int = mut qb.preds.view()
+                for i: usize in 0..p.len { if p[i] == s { p[i] = b } }
+            }
+            m: mut *IrBlock = mut self.fn.block(s)
+            mut m.ins.clear()
+            mut m.preds.clear()
+            m.succ0 = -1
+            m.succ1 = -1
+            mut self.dead.set(usize(s), true)
+            changed = true
+        }
+    }
+    if changed { mut self.apply_repl() }
+    return changed
+}
+
+/* A block holding only a jump is skipped: each predecessor goes straight to
+ * its target, when none already does (two edges from one block to another
+ * would need distinct phi operands the IR does not carry).
+ */
+Clean.thread_jumps(mut self): bool {
+    changed: bool = false
+    for e: int in 1..int(self.fn.blocks.len) {
+        eb: IrBlock = self.fn.block(e)
+        if self.dead.get(usize(e)) || eb.ins.len != 1 || self.fn.at(eb.ins.get(0)).op != ir.IR_JMP || eb.preds.len == 0 { continue }
+        t: int = eb.succ0
+        if t == e { continue }
+        tb: IrBlock = self.fn.block(t)
+        ok: bool = true
+        for i: usize in 0..eb.preds.len {
+            if !ok { break }
+            p: int = eb.preds.get(i)
+            ok = p != e
+            for j: usize in 0..i { ok = ok && eb.preds.get(j) != p }
+            for q: int in tb.preds.view() { ok = ok && q != p }
+        }
+        if !ok { continue }
+        idx: usize = 0
+        for tb.preds.get(idx) != e { idx += 1 }
+        ps: array.Array[int] = array.Array[int] {}
+        defer mut ps.wipe()
+        for p: int in eb.preds.view() { fail(mut ps.push(p)) }
+        tp: mut *IrBlock = mut self.fn.block(t)
+        mut tp.preds.set(idx, ps.get(0))
+        for i: usize in 1..ps.len {
+            fail(mut tp.preds.push(ps.get(i)))
+            for id: int in self.fn.block(t).ins.view() {
+                if self.fn.at(id).op != ir.IR_PHI { break }
+                mut self.fn.arg_add(id, self.fn.arg(id, u32(idx)))
+            }
+        }
+        for p: int in ps.view() {
+            pb: mut *IrBlock = mut self.fn.block(p)
+            if pb.succ0 == e { pb.succ0 = t }
+            if pb.succ1 == e { pb.succ1 = t }
+        }
+        mut self.kill_block(e)
+        changed = true
+    }
+    return changed
+}
+
+/* The block owning a use: an instruction's own, or for a phi operand the
+ * predecessor it arrives from.
+ */
+use_owner(fn: Func, id: int, a: u32): int {
+    x: IrIns = fn.at(id)
+    if x.op == ir.IR_PHI { return fn.block(x.block).preds.get(usize(a)) }
+    return x.block
+}
+
+/* Whether every use of j's phi v outside j is owned by s. */
+phi_uses_in(fn: Func, v: int, j: int, s: int): bool {
+    for b: usize in 0..fn.blocks.len {
+        for id: int in fn.blocks.get(b).ins.view() {
+            for a: u32 in 0..fn.at(id).nargs {
+                if fn.arg(id, a) != v { continue }
+                o: int = use_owner(fn, id, a)
+                if o != j && o != s { return false }
+            }
+        }
+    }
+    return true
+}
+
+/* Operand `a` of j's branch condition as it arrives from predecessor i: a
+ * constant's value, or false when it is not constant there.
+ */
+branch_operand(fn: Func, j: int, i: usize, a: int): (u64, bool) {
+    x: int = a
+    if fn.at(x).op == ir.IR_PHI && fn.at(x).block == j { x = fn.arg(x, u32(i)) }
+    if fn.at(x).op != ir.IR_CONST || !is_int(fn.at(x).ty) { return 0, false }
+    return fn.at(x).imm, true
+}
+
+/* A jump from p into block j whose branch condition is constant along that
+ * edge goes straight to the successor it selects, s. j holds only phis,
+ * constants, and the condition, a phi or an integer operation over its phis
+ * and constants, nothing of which but the phis is used outside j, and j heads
+ * no loop, so the edge enters no loop sideways. s has j as its only
+ * predecessor and no phis; a phi of j used in s gets a phi in s joining it
+ * with its operand from p.
+ */
+Clean.thread_branches(mut self): bool {
+    changed: bool = false
+    for j: int in 1..int(self.fn.blocks.len) {
+        if self.dead.get(usize(j)) { continue }
+        t: int = last(*self.fn, j)
+        if self.fn.at(t).op != ir.IR_BR { continue }
+        cond: int = self.fn.arg(t, 0)
+        ok: bool = true
+        jins: []int = self.fn.block(j).ins.view()
+        k: usize = 0
+        for k < jins.len && self.fn.at(jins[k]).op == ir.IR_PHI { k += 1 }
+        for i: usize in k..jins.len - 1 {
+            if !ok { break }
+            ok = self.fn.at(jins[i]).op == ir.IR_CONST || jins[i] == cond
+        }
+        cx: IrIns = self.fn.at(cond)
+        if !ok || (cx.block == j && cx.op != ir.IR_PHI && cx.op != ir.IR_CONST &&
+            (cx.nargs != 2 || !is_int(self.fn.at(self.fn.arg(cond, 0)).ty))) { continue }
+        if cx.block != j { continue }
+        for b: int in 0..int(self.fn.blocks.len) { // j's non-phi values stay in j
+            if !ok { break }
+            if b == j { continue }
+            for id: int in self.fn.block(b).ins.view() {
+                if !ok { break }
+                for a: u32 in 0..self.fn.at(id).nargs {
+                    u: IrIns = self.fn.at(self.fn.arg(id, a))
+                    ok = ok && (u.block != j || u.op == ir.IR_PHI)
+                }
+            }
+        }
+        if !ok { continue }
+        plain: bool = cx.op == ir.IR_PHI || cx.op == ir.IR_CONST
+        i: usize = 0
+        for i < self.fn.block(j).preds.len {
+            p: int = self.fn.block(j).preds.get(i)
+            if self.fn.block(p).succ1 >= 0 || self.fn.at(last(*self.fn, p)).op != ir.IR_JMP {
+                i += 1
+                continue
+            }
+            op0: int = cond
+            if !plain { op0 = self.fn.arg(cond, 0) }
+            x: u64, okx: bool = branch_operand(*self.fn, j, i, op0)
+            if !okx {
+                i += 1
+                continue
+            }
+            r: u64 = 0
+            if plain {
+                r = flag(x != 0)
+            } else {
+                y: u64, oky: bool = branch_operand(*self.fn, j, i, self.fn.arg(cond, 1))
+                okr: bool = false
+                if oky { r, okr = fold(cx.op, cx.ty, self.fn.at(self.fn.arg(cond, 0)).ty, x, y) }
+                if !okr {
+                    i += 1
+                    continue
+                }
+            }
+            s: int = self.fn.block(j).succ1
+            if r != 0 { s = self.fn.block(j).succ0 }
+            sb: IrBlock = self.fn.block(s)
+            if s == j || sb.preds.len != 1 || (sb.ins.len > 0 && self.fn.at(sb.ins.get(0)).op == ir.IR_PHI) {
+                i += 1
+                continue
+            }
+            fine: bool = true
+            for q: usize in 0..k {
+                if !fine { break }
+                fine = phi_uses_in(*self.fn, self.fn.block(j).ins.get(q), j, s)
+            }
+            if !fine {
+                i += 1
+                continue
+            }
+            idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*self.fn)
+            header: bool = false
+            for q: int in self.fn.block(j).preds.view() {
+                header = header || (idom.get(usize(q)) >= 0 && ir.dominates(idom, j, q))
+            }
+            mut idom.wipe()
+            mut rpo.wipe()
+            if header { break }
+            for q: usize in 0..k { // s's phi for each of j's it uses
+                v: int = self.fn.block(j).ins.get(q)
+                w: int = -1
+                for b: int in 0..int(self.fn.blocks.len) {
+                    for u: usize in 0..self.fn.block(b).ins.len {
+                        id: int = self.fn.block(b).ins.get(u)
+                        for a: u32 in 0..self.fn.at(id).nargs {
+                            if self.fn.arg(id, a) != v || id == w || use_owner(*self.fn, id, a) != s { continue }
+                            if w < 0 {
+                                w = mut self.fn.new_phi(s, self.fn.at(v).ty)
+                                mut self.fn.arg_add(w, v)
+                                mut self.fn.arg_add(w, self.fn.arg(v, u32(i)))
+                                for self.repl.len < self.fn.ins.len { fail(mut self.repl.push(-1)) }
+                            }
+                            mut self.fn.set_arg(id, a, w)
+                        }
+                    }
+                }
+            }
+            sp: mut *IrBlock = mut self.fn.block(s)
+            fail(mut sp.preds.push(p))
+            mut self.fn.block(p).succ0 = s
+            drop_pred(self.fn, j, p)
+            changed = true
+            // preds shifted down: i stays
+        }
+    }
+    return changed
+}
+
+has_effect(x: IrIns): bool {
+    switch x.op {
+        ir.IR_STORE, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_CHECK, ir.IR_PROJ, ir.IR_ASM, ir.IR_PARAM, ir.IR_RESULT, ir.IR_JMP, ir.IR_BR, ir.IR_RET { return true }
+        ir.IR_LOAD { return (x.flags & ir.IRF_VOLATILE) != 0 }
+        default { return false }
+    }
+}
+
+Clean.dce(mut self): bool {
+    live: array.Array[bool] = array.Array[bool] {}
+    defer mut live.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    for 0..self.fn.ins.len { fail(mut live.push(false)) }
+    for b: usize in 0..self.fn.blocks.len {
+        for v: int in self.fn.blocks.get(b).ins.view() {
+            if has_effect(self.fn.at(v)) {
+                mut live.set(usize(v), true)
+                fail(mut stack.push(v))
+            }
+        }
+    }
+    for stack.len > 0 {
+        v: int, _ = mut stack.pop()
+        for a: u32 in 0..self.fn.at(v).nargs {
+            u: int = self.fn.arg(v, a)
+            if !live.get(usize(u)) {
+                mut live.set(usize(u), true)
+                fail(mut stack.push(u))
+            }
+        }
+    }
+    changed: bool = false
+    for b: int in 0..int(self.fn.blocks.len) {
+        bb: mut *IrBlock = mut self.fn.block(b)
+        list: mut []int = mut bb.ins.view()
+        k: usize = 0
+        for i: usize in 0..list.len {
+            v: int = list[i]
+            if live.get(usize(v)) {
+                list[k] = v
+                k += 1
+                continue
+            }
+            kill_ins(self.fn, v)
+            changed = true
+        }
+        mut bb.ins.truncate(k)
+    }
+    return changed
+}
+
+/* Renumbers the blocks without the dead ones. */
+Clean.compact(mut self) {
+    nb: usize = self.fn.blocks.len
+    bmap: array.Array[int] = array.Array[int] {}
+    defer mut bmap.wipe()
+    n: int = 0
+    for b: usize in 0..nb {
+        if self.dead.get(b) {
+            fail(mut bmap.push(-1))
+        } else {
+            fail(mut bmap.push(n))
+            n += 1
+        }
+    }
+    if usize(n) == nb { return }
+    for b: usize in 0..nb {
+        if bmap.get(b) < 0 {
+            bb: mut *IrBlock = mut self.fn.block(int(b))
+            mut bb.ins.wipe()
+            mut bb.preds.wipe()
+            continue
+        }
+        bb: mut *IrBlock = mut self.fn.block(int(b))
+        p: mut []int = mut bb.preds.view()
+        for i: usize in 0..p.len { p[i] = bmap.get(usize(p[i])) }
+        if bb.succ0 >= 0 { bb.succ0 = bmap.get(usize(bb.succ0)) }
+        if bb.succ1 >= 0 { bb.succ1 = bmap.get(usize(bb.succ1)) }
+        for id: int in bb.ins.view() { mut self.fn.at(id).block = bmap.get(b) }
+        moved: IrBlock = self.fn.block(int(b))
+        mut self.fn.blocks.set(usize(bmap.get(b)), moved)
+    }
+    mut self.fn.blocks.truncate(usize(n))
+    mut self.dead.truncate(usize(n))
+    for b: usize in 0..usize(n) { mut self.dead.set(b, false) }
+}
+
+cleanup(mut fn: Func) {
+    c: Clean = Clean { fn = mut &fn, dead = array.Array[bool] {}, repl = array.Array[int] {} }
+    defer mut c.wipe()
+    for 0..fn.blocks.len { fail(mut c.dead.push(false)) }
+    for 0..fn.ins.len { fail(mut c.repl.push(-1)) }
+    changed: bool = true
+    for changed {
+        changed = mut c.fold_branches()
+        changed = mut c.drop_unreachable() || changed
+        changed = mut c.trivial_phis() || changed
+        changed = mut c.merge_blocks() || changed
+        changed = mut c.thread_jumps() || changed
+        changed = mut c.thread_branches() || changed
+        changed = mut c.dce() || changed
+        mut c.compact()
+    }
+}
+
+/* Optimizes `fn` in place, as C's ir_optimize. */
+pub optimize(mut fn: Func) {
+    sccp(mut fn)
+    gvn(mut fn)
+    lsr(mut fn)
+    cleanup(mut fn)
+    if vectorize(mut fn) { cleanup(mut fn) } // over the merged blocks, which it then tidies
+}

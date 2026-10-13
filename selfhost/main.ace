@@ -4,8 +4,8 @@
  * --resolved prints the merged tree as `ace --resolved` does, or with
  * --symbols enters its top-level names and prints them as `ace --symbols` does, or
  * with --check checks it through its function bodies as `ace --check` does, or
- * with --sema checks it fully as `ace` does, or with --ir lowers its functions
- * and prints them as `ace --debug --ir` does.
+ * with --sema checks it fully as `ace` does, or with [--debug|--release] --ir
+ * lowers its functions and prints them as `ace [--debug|--release] --ir` does.
  * --pkg-graph=DIR prints a package's dependency graph and --pkg-check=DIR resolves its imports
  * through it, as `ace` does, optionally for another --target=T.
  */
@@ -63,15 +63,17 @@ main(): int {
     symbols: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--symbols")
     check: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--check")
     full: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--sema")
-    lower: bool = sys.argc() == 3 && mem.equal(sys.arg(1), "--ir")
+    debug: bool = sys.argc() == 4 && mem.equal(sys.arg(1), "--debug") && mem.equal(sys.arg(2), "--ir")
+    release: bool = sys.argc() == 4 && mem.equal(sys.arg(1), "--release") && mem.equal(sys.arg(2), "--ir")
+    lower: bool = debug || release || (sys.argc() == 3 && mem.equal(sys.arg(1), "--ir"))
     if sys.argc() != 2 && !ast && !modules && !resolved && !symbols && !check && !full && !lower {
-        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved|--symbols|--check|--sema|--ir] file.ace\n")
+        fmt.printf(sys.stderr, "usage: ace-self [--ast|--modules|--resolved|--symbols|--check|--sema|[--debug|--release] --ir] file.ace\n")
         return 2
     }
     path: string = sys.arg(sys.argc() - 1)
     if modules || resolved { return dump_modules(path, resolved) }
     if symbols { return dump_symbols(path) }
-    if check || full || lower { return check_bodies(path, full || lower, lower) }
+    if check || full || lower { return check_bodies(path, full || lower, lower, debug) }
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
@@ -194,9 +196,9 @@ dump_symbols(path: string): int {
 
 /* Checks `path` through its function bodies, then with `full` runs the
  * end-of-file checks as `ace` does, and with `lower` prints its functions'
- * IR as `ace --debug --ir` does; 1 on any error.
+ * IR as `ace --ir` does, or `ace --debug --ir` with `debug`; 1 on any error.
  */
-check_bodies(path: string, full: bool, lower: bool): int {
+check_bodies(path: string, full: bool, lower: bool, debug: bool): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer mut l.wipe()
     if !found { return 1 }
@@ -219,7 +221,7 @@ check_bodies(path: string, full: bool, lower: bool): int {
     storage: mut []u8 = mem.alloc[u8](65536)
     defer mem.release[u8](mut storage)
     out: Out = Out.init(sys.stdout, storage)
-    ok: bool = lowering.dump_file(mut out, mut s, true)
+    ok: bool = lowering.dump_file(mut out, mut s, debug)
     mut out.flush()
     if !ok { return 1 }
     return 0

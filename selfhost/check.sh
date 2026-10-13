@@ -5,7 +5,7 @@
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
 # entered scopes and completed types against `ace --symbols`, and its function
 # body checks against `ace --check` and its full check against `ace` over
-# every repository .ace file, and its functions' IR against `ace --debug --ir`,
+# every repository .ace file, and its functions' IR against `ace --debug --ir` and `ace --release --ir`,
 # then its package graph against `ace --pkg-graph`
 # and its cross-package imports against `ace --pkg-check` over every repository ace.pkg, then times
 # the lexers on the largest files. Run from anywhere.
@@ -151,8 +151,9 @@ for f in $files; do
     fi
     # IR: each function C lowers in a checked file must print identically,
     # unless selfhost stops on a construct it does not port yet (counted apart).
-    if ./ace --debug --ir "$f" >"$tmp/want" 2>/dev/null; then
-        "$self" --ir "$f" >"$tmp/got" 2>"$tmp/gerr"
+    for mode in --debug --release; do
+    if ./ace $mode --ir "$f" >"$tmp/want" 2>/dev/null; then
+        "$self" $mode --ir "$f" >"$tmp/got" 2>"$tmp/gerr"
         grc=$?
         if ! grep -q 'selfhost does not yet support' "$tmp/gerr"; then
             # one function per line, then the pairs side by side (IR has no tabs)
@@ -162,7 +163,7 @@ for f in $files; do
                 n=$(wc -l <"$tmp/wf")
                 itotal=$((itotal + n))
                 ibad=$((ibad + n))
-                echo "IR FAIL $f"
+                echo "IR FAIL $mode $f"
                 head -2 "$tmp/gerr"
             else
                 counts=$(paste "$tmp/wf" "$tmp/gf" | awk -F '\t' '
@@ -176,12 +177,13 @@ for f in $files; do
                 iport=$((iport + $2))
                 ibad=$((ibad + $3))
                 if [ "$3" -ne 0 ]; then
-                    echo "IR DIFF $f"
+                    echo "IR DIFF $mode $f"
                     head -20 "$tmp/idiff"
                 fi
             fi
         fi
     fi
+    done
 done
 # Packages: every ace.pkg as a root, for its manifest's target. The graph must
 # match exactly; a check that fails must fail as C's does, and one that passes
@@ -234,7 +236,7 @@ echo "resolved: $((total - rbad))/$total files agree"
 echo "symbols: $((total - sbad))/$total files agree"
 echo "check: $((total - cbad))/$total files agree ($cport not yet ported)"
 echo "sema: $((total - ebad))/$total files agree ($eport not yet ported)"
-echo "ir: $isame/$itotal functions identical ($iport not yet ported)"
+echo "ir (debug and release): $isame/$itotal functions identical ($iport not yet ported)"
 echo "graph: $((ptotal - gbad))/$ptotal packages identical"
 echo "packages: $((ptotal - pbad))/$ptotal packages agree ($psema fail only in sema)"
 
