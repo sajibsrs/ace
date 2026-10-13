@@ -211,6 +211,8 @@ pub Sema: struct {
     ncon: array.Array[bool],            // a contract value over const storage; a function returning one (F_CONST)
     nproof: array.Array[u8],            // bounds facts: PROOF_* bits (C's F_BOUNDS_PROVEN, F_STATICLIT, and a slice's aux)
     nview: map.Map[u32, u32],           // an array literal viewed as []T: its [N]T (C's aux)
+    fplans: map.Map[u32, FormatPlan],   // a checked format call's plan (C's call->aux)
+    fparts: array.Array[FormatPart],    // the plans' parts
     identities: map.Map[u32, u32],      // a type's runtime identity, numbered from 1 in order of first use (C's type_id)
     next_identity: u32 = 1,
     cur_fn: u32 = 0,                    // the checked function's declaration
@@ -231,7 +233,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -274,6 +276,8 @@ pub Sema.wipe(mut self) {
     mut self.ncon.wipe()
     mut self.nproof.wipe()
     mut self.nview.wipe()
+    mut self.fplans.wipe()
+    mut self.fparts.wipe()
     mut self.identities.wipe()
     mut self.ik.wipe()
     mut self.files.wipe()
@@ -1362,6 +1366,25 @@ pub Sema.node_proof(self, e: u32): u8 {
 Sema.set_node_proof(mut self, e: u32, p: u8) {
     mut self.grow(e)
     mut self.nproof.set(usize(e), p)
+}
+
+/* The target being compiled for. */
+pub Sema.target(self): string {
+    return self.l.target
+}
+
+/* The build-relative name of the file node `at` is in, as @file writes it. */
+pub Sema.file_name(self, at: u32): string {
+    return self.l.mods.view()[self.l.module_of(at)].parser.file // view: get would copy the whole Module
+}
+
+/* Format call `e`'s plan, and whether sema recorded one (C's call->aux). */
+pub Sema.format_plan(self, e: u32): (FormatPlan, bool) {
+    return self.fplans.get(e)
+}
+
+pub Sema.format_part(self, i: u32): FormatPart {
+    return self.fparts.get(usize(i))
 }
 
 /* The [N]T of array literal `e` viewed as []T, or 0. */
@@ -2918,6 +2941,7 @@ Sema.check_memory_call(mut self, call: u32, f: u32, bi: u64): u32 {
     mut self.set_node_sym(n.a, f)
     mut self.set_node_ty(n.a, self.sym(f).ty)
     mut self.set_node_sym(call, f)
+    mut self.set_node_ival(call, bi) // lowered as the builtin
     if bi == BI_MEM_EQUAL {
         if n.nkids != 2 {
             mut self.err(call, ["mem.equal takes exactly 2 arguments"])
@@ -3043,6 +3067,10 @@ Sema.check_memory_call(mut self, call: u32, f: u32, bi: u64): u32 {
  */
 Sema.check_memory_generic_call(mut self, call: u32, f: u32, elem: u32, bi: u64): u32 {
     n: Node = self.node(call)
+    mut self.set_node_sym(n.a, f)
+    mut self.set_node_sym(self.node(n.a).a, f)
+    mut self.set_node_sym(call, f)
+    mut self.set_node_ival(call, bi) // lowered as the builtin
     if elem != 0 && self.ty(elem).kind == TypeKind.void {
         mut self.err(call, ["'void' names no value and cannot be a memory element type"])
         return self.t_err
@@ -3152,27 +3180,43 @@ Sema.static_string_expr(mut self, e: u32): u32 {
 }
 
 /* A format conversion's value kind, as C's PF_* enumerators. */
-PF_TEXT: const u8 = 0
-PF_SIGNED: const u8 = 1
-PF_UNSIGNED: const u8 = 2
-PF_BINARY: const u8 = 3
-PF_OCTAL: const u8 = 4
-PF_HEX_LOWER: const u8 = 5
-PF_HEX_UPPER: const u8 = 6
-PF_FIXED: const u8 = 7
-PF_SCIENTIFIC: const u8 = 8
-PF_GENERAL: const u8 = 9
-PF_STRING: const u8 = 10
-PF_BYTE: const u8 = 11
-PF_LITERAL_BYTE: const u8 = 12
+pub PF_TEXT: const u8 = 0
+pub PF_SIGNED: const u8 = 1
+pub PF_UNSIGNED: const u8 = 2
+pub PF_BINARY: const u8 = 3
+pub PF_OCTAL: const u8 = 4
+pub PF_HEX_LOWER: const u8 = 5
+pub PF_HEX_UPPER: const u8 = 6
+pub PF_FIXED: const u8 = 7
+pub PF_SCIENTIFIC: const u8 = 8
+pub PF_GENERAL: const u8 = 9
+pub PF_STRING: const u8 = 10
+pub PF_BYTE: const u8 = 11
+pub PF_LITERAL_BYTE: const u8 = 12
 
 /* One conversion of a format plan: its kind, its decoded byte offset, and
  * the call argument it consumes.
  */
-FormatPart: struct {
-    kind: u8,
-    off: u32,
-    arg: u32 = 0,
+pub FormatPart: struct {
+    pub kind: u8,
+    pub off: u32,
+    pub arg: u32 = 0,                   // the call argument it consumes; 0 for text and %%
+    pub len: u32 = 0,                   // a text part's decoded byte count
+    pub precision: u32 = 6,
+    pub width: u32 = 0,                 // minimum byte width, 0 for none
+    pub zero: bool = false,             // '0' flag: zero padding after any sign
+    pub helper: u32 = 0,                // the piece writer sema selected
+}
+
+/* A checked format call's plan (C's PrintfPlan): the static format string,
+ * its parts in Sema.fparts, and the sink's opener and closer.
+ */
+pub FormatPlan: struct {
+    pub format: u32,
+    pub parts: u32,
+    pub nparts: u32,
+    pub open: u32 = 0,
+    pub close: u32 = 0,
 }
 
 /* A format helper beside the public function or in std's formatting module:
@@ -3272,6 +3316,7 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
     mut self.set_node_sym(n.a, f)
     mut self.set_node_ty(n.a, self.sym(f).ty)
     mut self.set_node_sym(call, f)
+    mut self.set_node_ival(call, bi) // lowered as the builtin
     if fi == 1 { // the writable destination comes first
         if n.nkids < 1 {
             mut self.err(call, [who, " requires a destination and a compile-time-static format string"])
@@ -3319,7 +3364,7 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
             i += 1
             continue
         }
-        if i > literal { fail(mut parts.push(FormatPart { kind = PF_TEXT, off = u32(literal), arg = u32(i - literal) })) }
+        if i > literal { fail(mut parts.push(FormatPart { kind = PF_TEXT, off = u32(literal), len = u32(i - literal) })) }
         conv_off: u32 = u32(i)
         i += 1
         if i >= text.len {
@@ -3327,7 +3372,7 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
             return self.t_err
         }
         if text[i] == '%' {
-            fail(mut parts.push(FormatPart { kind = PF_LITERAL_BYTE, off = conv_off }))
+            fail(mut parts.push(FormatPart { kind = PF_LITERAL_BYTE, off = conv_off, len = 1 }))
             i += 1
             literal = i
             continue
@@ -3355,6 +3400,7 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
             return self.t_err
         }
         has_precision: bool = false
+        precision: u32 = 6
         if text[i] == '.' {
             has_precision = true
             i += 1
@@ -3375,6 +3421,7 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
                 mut self.err(format_arg, [who, " precision ", mut self.num64(i64(p)), " exceeds the fixed-buffer limit 324"])
                 return self.t_err
             }
+            precision = u32(p)
             if i >= text.len {
                 mut self.err(format_arg, ["incomplete ", who, " conversion at decoded byte ", mut self.num(conv_off)])
                 return self.t_err
@@ -3409,11 +3456,12 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
             mut self.err(format_arg, [who, " zero padding is supported only for numeric conversions (decoded byte ", mut self.num(conv_off), ")"])
             return self.t_err
         }
-        fail(mut parts.push(FormatPart { kind = kind, off = conv_off, arg = next_arg }))
+        fail(mut parts.push(FormatPart { kind = kind, off = conv_off, arg = next_arg, precision = precision, width = u32(width), zero = zero }))
         next_arg += 1
         i += 1
         literal = i
     }
+    if literal < text.len { fail(mut parts.push(FormatPart { kind = PF_TEXT, off = u32(literal), len = u32(text.len - literal) })) }
     expected_count: u32 = next_arg - (fi + 1)
     provided_count: u32 = 0
     if n.nkids > fi + 1 { provided_count = n.nkids - (fi + 1) }
@@ -3434,11 +3482,20 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
     name: string = self.sym(f).name
     own: string = name[..name.len - 6] // the module prefix before "printf" or "format"
     rendering: string = self.l.formatting
-    _ = mut self.format_helper(own, who, open, 0, call)
-    _ = mut self.format_helper(own, who, close, 0, call)
-    _ = mut self.format_helper(rendering, who, "piece", self.prim(P_STRING), call)
-    _ = mut self.format_helper(rendering, who, "piece", self.prim(P_U8), call)
-    for p: FormatPart in parts.view() {
+    plan: FormatPlan = FormatPlan { format = fnode, parts = u32(self.fparts.len), nparts = u32(parts.len) }
+    plan.open = mut self.format_helper(own, who, open, 0, call)
+    plan.close = mut self.format_helper(own, who, close, 0, call)
+    text_helper: u32 = mut self.format_helper(rendering, who, "piece", self.prim(P_STRING), call)
+    byte_helper: u32 = mut self.format_helper(rendering, who, "piece", self.prim(P_U8), call)
+    for k: usize in 0..parts.len {
+        pp: FormatPart = parts.get(k)
+        if pp.kind == PF_TEXT && pp.len == 1 { pp.kind = PF_LITERAL_BYTE } // stored, not copied
+        if pp.kind == PF_TEXT { pp.helper = text_helper }
+        if pp.kind == PF_LITERAL_BYTE { pp.helper = byte_helper }
+        mut parts.set(k, pp)
+    }
+    for k: usize in 0..parts.len {
+        p: FormatPart = parts.get(k)
         if p.kind == PF_TEXT || p.kind == PF_LITERAL_BYTE || p.arg >= n.nkids { continue }
         arg: u32 = self.kid(call, p.arg)
         if self.node(arg).kind == Kind.mutarg {
@@ -3467,8 +3524,11 @@ Sema.check_format_call(mut self, call: u32, f: u32, bi: u64): u32 {
         } else if p.kind == PF_GENERAL {
             generic = "piece_general"
         }
-        _ = mut self.format_helper(rendering, who, generic, actual, call)
+        p.helper = mut self.format_helper(rendering, who, generic, actual, call)
+        mut parts.set(k, p)
     }
+    for p: FormatPart in parts.view() { fail(mut self.fparts.push(p)) }
+    fail(mut self.fplans.set(call, plan))
     for k: u32 = fi + expected_count + 1; k < n.nkids; k += 1 {
         a: u32 = self.kid(call, k)
         if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
@@ -3508,6 +3568,7 @@ Sema.check_pointer_cast(mut self, call: u32): u32 {
             mut self.err(call, ["pointer reinterpretation cannot widen ", mut self.type_name(from), " to ", mut self.type_name(want)])
             return self.t_err
         }
+        if self.ty(base).align <= self.ty(f.base).align { mut self.set_node_proof(call, self.node_proof(call) | PROOF_BOUNDS) } // aligned already
         mut self.set_node_ty(n.a, want)
         return want
     }
@@ -3523,6 +3584,7 @@ Sema.check_pointer_cast(mut self, call: u32): u32 {
         mut self.err(arg, ["address ", buf.text(), " is not aligned for ", mut self.type_name(base)])
         return self.t_err
     }
+    if known { mut self.set_node_proof(call, self.node_proof(call) | PROOF_BOUNDS) }
     mut self.set_node_ty(n.a, want)
     return want
 }
@@ -3604,6 +3666,7 @@ Sema.check_slice_cast(mut self, call: u32): u32 {
             mut self.err(call, ["slice end address overflows usize"])
             return self.t_err
         }
+        if (kn && c == 0) || (ka && kn) { mut self.set_node_proof(call, self.node_proof(call) | PROOF_BOUNDS) }
         mut self.set_node_ty(n.a, want)
         return want
     }
@@ -3744,7 +3807,7 @@ Sema.check_call(mut self, call: u32): u32 {
             return self.t_err
         }
         if mem.equal(name, "panic") {
-            _ = mut self.coerce(c, self.prim(P_STRING))
+            if mut self.coerce(c, self.prim(P_STRING)) { mut self.set_node_ival(call, 1) } // lowered as panic
             return self.t_err // never returns; poison keeps enclosing uses quiet
         }
         if !mut self.coerce(c, self.prim(P_BOOL)) { return self.t_err }
@@ -3753,6 +3816,7 @@ Sema.check_call(mut self, call: u32): u32 {
             mut self.err(c, ["assert condition is always false"])
             return self.t_err
         }
+        if known { mut self.set_node_ival(call, 3) } else { mut self.set_node_ival(call, 2) } // 3: proven true and fully erased
         return self.t_void
     }
     if mem.equal(name, "static_assert") {
@@ -5327,26 +5391,26 @@ pub Sema.complete(mut self) {
 // --- calls --------------------------------------------------------------------
 
 /* src/ace.h's builtin ids whose calls take their own checks, not yet ported. */
-BI_MEM_ALLOC: const u64 = 2
-BI_MEM_COMPARE: const u64 = 9
-BI_FMT_PRINTF: const u64 = 10
-BI_MEM_EQUAL: const u64 = 18
-BI_MEM_ALLOC_SIZE: const u64 = 28
-BI_STR_FORMAT: const u64 = 37
-BI_FMT_PRINTF_FD: const u64 = 38
-BI_FMT_PRINTF_BUF: const u64 = 41
-BI_MEM_REALLOC: const u64 = 3
-BI_MEM_RELEASE: const u64 = 4
-BI_MEM_COPY: const u64 = 5
-BI_MEM_MOVE: const u64 = 6
-BI_MEM_FILL: const u64 = 7
-BI_MEM_ZERO: const u64 = 8
-BI_MEM_ALLOC_T: const u64 = 11
-BI_MEM_REALLOC_T: const u64 = 12
-BI_MEM_RELEASE_T: const u64 = 13
-BI_MEM_ZALLOC_T: const u64 = 36
-BI_MEM_COPY_T: const u64 = 39
-BI_MEM_MOVE_T: const u64 = 40
+pub BI_MEM_ALLOC: const u64 = 2
+pub BI_MEM_COMPARE: const u64 = 9
+pub BI_FMT_PRINTF: const u64 = 10
+pub BI_MEM_EQUAL: const u64 = 18
+pub BI_MEM_ALLOC_SIZE: const u64 = 28
+pub BI_STR_FORMAT: const u64 = 37
+pub BI_FMT_PRINTF_FD: const u64 = 38
+pub BI_FMT_PRINTF_BUF: const u64 = 41
+pub BI_MEM_REALLOC: const u64 = 3
+pub BI_MEM_RELEASE: const u64 = 4
+pub BI_MEM_COPY: const u64 = 5
+pub BI_MEM_MOVE: const u64 = 6
+pub BI_MEM_FILL: const u64 = 7
+pub BI_MEM_ZERO: const u64 = 8
+pub BI_MEM_ALLOC_T: const u64 = 11
+pub BI_MEM_REALLOC_T: const u64 = 12
+pub BI_MEM_RELEASE_T: const u64 = 13
+pub BI_MEM_ZALLOC_T: const u64 = 36
+pub BI_MEM_COPY_T: const u64 = 39
+pub BI_MEM_MOVE_T: const u64 = 40
 
 /* Modules #2/#7: visibility is per overload. An overload the use site `at`
  * cannot see is skipped as if undeclared; `at` 0 sees every one.
@@ -8587,17 +8651,24 @@ Sema.inline_visit(mut self, mut path: array.Array[u32], mut done: map.Map[u32, b
 // --- signatures ---------------------------------------------------------------
 
 /* src/ace.h's compiler-provided intrinsic ids that resolve_func checks. */
-BI_INTERNAL_LOAD_U64: const u64 = 21
-BI_BITS_POP_COUNT: const u64 = 22
-BI_BITS_TRAIL_ZEROS: const u64 = 24
-BI_BITS_BYTE_SWAP: const u64 = 25
-BI_BITS_ROTATE_LEFT: const u64 = 26
-BI_BITS_ROTATE_RIGHT: const u64 = 27
-BI_MATH_SQRT: const u64 = 29
-BI_MATH_CEIL: const u64 = 31
-BI_MATH_FMA: const u64 = 32
-BI_BITS_WRAP_ADD: const u64 = 33
-BI_BITS_WRAP_MUL: const u64 = 35
+pub BI_INTERNAL_LOAD_U64: const u64 = 21
+pub BI_BITS_POP_COUNT: const u64 = 22
+pub BI_BITS_TRAIL_ZEROS: const u64 = 24
+pub BI_BITS_BYTE_SWAP: const u64 = 25
+pub BI_BITS_ROTATE_LEFT: const u64 = 26
+pub BI_BITS_ROTATE_RIGHT: const u64 = 27
+pub BI_MATH_SQRT: const u64 = 29
+pub BI_MATH_CEIL: const u64 = 31
+pub BI_MATH_FMA: const u64 = 32
+pub BI_BITS_WRAP_ADD: const u64 = 33
+pub BI_BITS_WRAP_MUL: const u64 = 35
+pub BI_BITS_LEAD_ZEROS: const u64 = 23
+pub BI_MATH_FLOOR: const u64 = 30
+pub BI_BITS_WRAP_SUB: const u64 = 34
+pub BI_SYS_ARGC: const u64 = 14
+pub BI_SYS_ARG: const u64 = 15
+pub BI_SYS_ENVC: const u64 = 16
+pub BI_SYS_ENV: const u64 = 17
 
 /* Function declaration `f`'s signature. With `bound`, the run `args` of
  * `nargs` types is substituted for its type parameters; otherwise each

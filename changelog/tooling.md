@@ -145,6 +145,9 @@
   destructuring, and bits fields; strings, slices, and their lengths,
   indexing, and slicing (bounds proofs recorded by selfhost sema), contract
   values and dispatch, tagged unions (construction, equality, union
-  switches), range and sequence loops, `switch`, static maps, and Error and
-  enum descriptions; other constructs are reported as not yet ported.
+  switches), range and sequence loops, `switch`, static maps, Error and
+  enum descriptions, compiler-backed calls (memory, bits, and math builtins,
+  `panic`, `assert`, `bitcast`, `*T(address)`, `[]T(pointer, count)`, and
+  formatted output from the plan selfhost sema records), and enum conversion
+  and noalias checks; other constructs are reported as not yet ported.
   `selfhost/check.sh` adds an `ir` stage, compared per function.

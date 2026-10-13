@@ -80,6 +80,12 @@ Args.wipe(mut self) {
     mut self.parts.wipe()
 }
 
+Args.clear(mut self) {
+    mut self.v.clear()
+    mut self.parts.clear()
+    self.agg = false
+}
+
 Args.scalar(mut self, v: int) {
     fail(mut self.parts.push(ir.IrPart { first = int(self.v.len), n = 1 }))
     fail(mut self.v.push(v))
@@ -2438,9 +2444,11 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
             if (self.node(self.kid(d, i)).flags & parser.F_NOALIAS) != 0 { aliasing = true }
         }
     }
-    if aliasing { mut self.unported("noalias checks") }
+    rng: array.Array[Range] = array.Array[Range] {}
+    defer mut rng.wipe()
     first_var: int = -1
     for i: u32 in 0..n {
+        fail(mut rng.push(Range {}))
         a: u32 = 0
         if recv == 1 && i == 0 { a = self.node(callee).a } else { a = self.kid(call, i - recv) }
         if i >= named { // variadic: promoted to 64 bits (an f32 to f64)
@@ -2498,7 +2506,20 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
             continue
         }
         mut self.call_arg(mut g, a, pt, by_address)
+        pu: u32 = self.unwrap(pt)
+        if !aliasing || pu == 0 || self.ty(pu).kind != TypeKind.slice { continue }
+        pp: ir.IrPart = g.parts.get(g.parts.len - 1)
+        esz: u64 = u64(self.size(self.ty(pu).base))
+        if by_address { // a descriptor in memory: read it at the address just passed
+            addr: int = g.v.get(usize(pp.first))
+            ptr: int = mut self.load(ir.IT_PTR, addr, 0, 0)
+            len: int = mut self.load(ir.IT_U64, addr, 8, 0)
+            mut rng.set(usize(i), Range { ptr = ptr, len = len, esz = esz })
+            continue
+        }
+        mut rng.set(usize(i), Range { ptr = g.v.get(usize(pp.first)), len = g.v.get(usize(pp.first + 1)), esz = esz })
     }
+    if aliasing { mut self.noalias_check(d, rng.view()) }
     return first_var
 }
 
@@ -2562,6 +2583,758 @@ Lw.call_finish(mut self, id: int, g: Args, rt: u32, mut res: Agg, want_res: bool
     return id
 }
 
+// --- compiler-backed calls ------------------------------------------------------
+
+/* Debug: traps through the call contract failure unless `c` holds. */
+Lw.contract_check(mut self, c: int) {
+    id: int = mut self.emit2(ir.IR_CHECK, ir.IT_VOID, c, -1)
+    mut self.fn.at(id).at = self.at
+}
+
+/* A slice argument's descriptor and element size; ptr < 0 for another. */
+Range: struct {
+    ptr: int = -1,
+    len: int = -1,
+    esz: u64 = 0,
+}
+
+/* Debug, at a call boundary (Safety #7) to declaration `d`: the byte range
+ * of each slice argument must be representable, and two whose parameters
+ * include a noalias one must be disjoint unless one is empty.
+ */
+Lw.noalias_check(mut self, d: u32, r: []Range) {
+    nk: usize = usize(self.node(d).nkids)
+    end: array.Array[int] = array.Array[int] {}
+    defer mut end.wipe()
+    for i: usize in 0..r.len {
+        fail(mut end.push(-1))
+        if i >= nk || r[i].ptr < 0 { continue }
+        bytes: int = r[i].len
+        if r[i].esz != 1 {
+            mut self.contract_check(mut self.cmp(ir.IR_LE, bytes, mut self.konst(ir.IT_U64, ~u64(0) / r[i].esz)))
+            bytes = mut self.emit2(ir.IR_MUL, ir.IT_U64, bytes, mut self.konst(ir.IT_U64, r[i].esz))
+        }
+        e: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, r[i].ptr, bytes)
+        mut self.fn.at(e).imm = 1
+        mut end.set(i, e)
+        mut self.contract_check(mut self.cmp(ir.IR_GE, e, r[i].ptr))
+    }
+    for i: usize in 0..r.len {
+        if i >= nk || r[i].ptr < 0 { continue }
+        for j: usize = i + 1; j < r.len && j < nk; j += 1 {
+            if r[j].ptr < 0 || ((self.node(self.kid(d, u32(i))).flags | self.node(self.kid(d, u32(j))).flags) & parser.F_NOALIAS) == 0 { continue }
+            ki: int = mut self.konst(ir.IT_U64, 0)
+            ni: int = mut self.cmp(ir.IR_NE, r[i].len, ki)
+            kj: int = mut self.konst(ir.IT_U64, 0)
+            nj: int = mut self.cmp(ir.IR_NE, r[j].len, kj)
+            some: int = mut self.guard(mut self.emit2(ir.IR_AND, ir.IT_BOOL, ni, nj))
+            after: int = mut self.cmp(ir.IR_GE, r[j].ptr, end.get(i))
+            before: int = mut self.cmp(ir.IR_GE, r[i].ptr, end.get(j))
+            mut self.contract_check(mut self.emit2(ir.IR_OR, ir.IT_BOOL, after, before))
+            mut self.guard_end(some)
+        }
+    }
+}
+
+/* Debug allocator tracking (Safety & Debug Builds #9): the registry routines. */
+Lw.registry_add(mut self, ptr: int, size: int, align: int) {
+    if !self.debug { return }
+    a: [3]int = [ptr, size, align]
+    _ = mut self.call_routine("__ace$registry_add", false, ir.IT_VOID, a[..])
+}
+
+/* The record of a live allocation. */
+Lw.registry_find(mut self, ptr: int, size: int): int {
+    a: [2]int = [ptr, size]
+    return mut self.call_routine("__ace$registry_find", false, ir.IT_PTR, a[..])
+}
+
+/* A slice result's leaves from variables `pv` and `nv`, into res when wanted. */
+Lw.slice_out(mut self, mut res: Agg, want_res: bool, pv: int, nv: int): int {
+    if want_res {
+        res.n = 2
+        res.v[0] = mut self.read_var(pv, self.cur)
+        res.v[1] = mut self.read_var(nv, self.cur)
+    }
+    return -1
+}
+
+/* mem.alloc(size, align): the null slice unless size > 0 and align is a
+ * power of two up to 16 and the allocator succeeds.
+ */
+Lw.mem_alloc(mut self, x: u32, mut res: Agg, want_res: bool): int {
+    size: int = mut self.expr(self.kid(x, 0), int(ir.IT_I64))
+    align: int = mut self.expr(self.kid(x, 1), int(ir.IT_I64))
+    pv: int = mut self.temp_var(ir.IT_PTR, mut self.konst(ir.IT_PTR, 0))
+    nv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+    low: int = mut self.emit2(ir.IR_AND, ir.IT_I64, align, mut self.emit2(ir.IR_SUB, ir.IT_I64, align, mut self.konst(ir.IT_I64, 1)))
+    pow2: int = mut self.cmp(ir.IR_EQ, low, mut self.konst(ir.IT_I64, 0))
+    sized: int = mut self.cmp(ir.IR_GT, size, mut self.konst(ir.IT_I64, 0))
+    aligned: int = mut self.cmp(ir.IR_GT, align, mut self.konst(ir.IT_I64, 0))
+    small: int = mut self.cmp(ir.IR_LE, align, mut self.konst(ir.IT_I64, 16))
+    ok: int = mut self.emit2(ir.IR_AND, ir.IT_BOOL, sized, mut self.emit2(ir.IR_AND, ir.IT_BOOL, aligned, mut self.emit2(ir.IR_AND, ir.IT_BOOL, small, pow2)))
+    valid: int = mut self.guard(ok)
+    a: [1]int = [size]
+    p: int = mut self.call_routine("_malloc", true, ir.IT_PTR, a[..])
+    got: int = mut self.guard(mut self.cmp(ir.IR_NE, p, mut self.konst(ir.IT_PTR, 0)))
+    mut self.registry_add(p, size, align)
+    mut self.write_var(pv, self.cur, p)
+    mut self.write_var(nv, self.cur, mut self.emit2(ir.IR_CAST, ir.IT_U64, size, -1))
+    mut self.guard_end(got)
+    mut self.guard_end(valid)
+    return mut self.slice_out(mut res, want_res, pv, nv)
+}
+
+/* mem.realloc(data, size): data unchanged and the null slice unless size > 0
+ * and the allocator succeeds; debug moves data's registry record.
+ */
+Lw.mem_realloc(mut self, x: u32, mut res: Agg, want_res: bool): int {
+    old: int, oldn: int = mut self.view_parts(self.kid(x, 0), true)
+    size: int = mut self.expr(self.kid(x, 1), int(ir.IT_I64))
+    pv: int = mut self.temp_var(ir.IT_PTR, mut self.konst(ir.IT_PTR, 0))
+    nv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+    valid: int = mut self.guard(mut self.cmp(ir.IR_GT, size, mut self.konst(ir.IT_I64, 0)))
+    rec: int = -1
+    if self.debug { rec = mut self.registry_find(old, oldn) }
+    a: [2]int = [old, size]
+    p: int = mut self.call_routine("_realloc", true, ir.IT_PTR, a[..])
+    got: int = mut self.guard(mut self.cmp(ir.IR_NE, p, mut self.konst(ir.IT_PTR, 0)))
+    n: int = mut self.emit2(ir.IR_CAST, ir.IT_U64, size, -1)
+    if rec >= 0 {
+        mut self.store(rec, 0, p, 0)
+        mut self.store(rec, 8, n, 0)
+    }
+    mut self.write_var(pv, self.cur, p)
+    mut self.write_var(nv, self.cur, n)
+    mut self.guard_end(got)
+    mut self.guard_end(valid)
+    return mut self.slice_out(mut res, want_res, pv, nv)
+}
+
+/* mem.alloc[T](count), mem.zalloc[T](count), mem.realloc[T](data, count):
+ * count elements of T; a zero byte size, an alignment over 16, an
+ * overflowing byte count, or an allocator failure is the null slice (data
+ * unchanged).
+ */
+Lw.mem_alloc_typed(mut self, x: u32, bi: u64, mut res: Agg, want_res: bool): int {
+    elem: u32 = self.ty(self.unwrap(self.nty(x))).base
+    esz: u64 = u64(self.size(elem))
+    eal: u64 = u64(self.ty(elem).align)
+    old: int = -1
+    oldn: int = -1
+    if bi == sema.BI_MEM_REALLOC_T { old, oldn = mut self.view_parts(self.kid(x, 0), true) }
+    ci: u32 = 0
+    if bi == sema.BI_MEM_REALLOC_T { ci = 1 }
+    cn: u32 = self.kid(x, ci)
+    ct: u8 = mut self.type_in(cn, int(ir.IT_U64))
+    count: int = mut self.widen(mut self.expr(cn, int(ct)), ct, ir.IT_U64)
+    pv: int = mut self.temp_var(ir.IT_PTR, mut self.konst(ir.IT_PTR, 0))
+    nv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+    if esz == 0 || eal > 16 { return mut self.slice_out(mut res, want_res, pv, nv) }
+    some: int = mut self.cmp(ir.IR_NE, count, mut self.konst(ir.IT_U64, 0))
+    ok: int = mut self.emit2(ir.IR_AND, ir.IT_BOOL, some, mut self.cmp(ir.IR_LE, count, mut self.konst(ir.IT_U64, ~u64(0) / esz)))
+    valid: int = mut self.guard(ok)
+    bytes: int = mut self.emit2(ir.IR_MUL, ir.IT_U64, count, mut self.konst(ir.IT_U64, esz))
+    p: int = -1
+    rec: int = -1
+    if bi == sema.BI_MEM_REALLOC_T {
+        old_bytes: int = mut self.emit2(ir.IR_MUL, ir.IT_U64, oldn, mut self.konst(ir.IT_U64, esz))
+        if self.debug { rec = mut self.registry_find(old, old_bytes) }
+        a: [2]int = [old, bytes]
+        p = mut self.call_routine("_realloc", true, ir.IT_PTR, a[..])
+    } else if bi == sema.BI_MEM_ZALLOC_T { // the platform zero-fills
+        a: [2]int = [bytes, mut self.konst(ir.IT_U64, 1)]
+        p = mut self.call_routine("_calloc", true, ir.IT_PTR, a[..])
+    } else {
+        a: [1]int = [bytes]
+        p = mut self.call_routine("_malloc", true, ir.IT_PTR, a[..])
+    }
+    got: int = mut self.guard(mut self.cmp(ir.IR_NE, p, mut self.konst(ir.IT_PTR, 0)))
+    if rec >= 0 {
+        mut self.store(rec, 0, p, 0)
+        mut self.store(rec, 8, bytes, 0)
+    } else if bi != sema.BI_MEM_REALLOC_T {
+        mut self.registry_add(p, bytes, mut self.konst(ir.IT_U64, eal))
+    }
+    mut self.write_var(pv, self.cur, p)
+    mut self.write_var(nv, self.cur, count)
+    mut self.guard_end(got)
+    mut self.guard_end(valid)
+    return mut self.slice_out(mut res, want_res, pv, nv)
+}
+
+/* mem.release(mut data), mem.release[T](mut data): free a non-null data
+ * (debug first drops its registry record), then data becomes null.
+ */
+Lw.mem_release(mut self, x: u32): int {
+    raw: u32 = self.kid(x, 0)
+    if self.node(raw).kind == Kind.mutarg { raw = self.node(raw).a }
+    p: Place = mut self.place(raw)
+    st: u32 = self.unwrap(p.t)
+    esz: u64 = 1
+    if st != 0 && self.ty(st).kind == TypeKind.slice { esz = u64(self.size(self.ty(st).base)) }
+    ptr: int = -1
+    if p.var >= 0 { ptr = mut self.read_var(p.var, self.cur) } else { ptr = mut self.load(ir.IT_PTR, p.addr, p.off, p.flags) }
+    live: int = mut self.guard(mut self.cmp(ir.IR_NE, ptr, mut self.konst(ir.IT_PTR, 0)))
+    n: int = -1
+    if p.var >= 0 { n = mut self.read_var(p.var + 1, self.cur) } else { n = mut self.load(ir.IT_U64, p.addr, p.off + 8, p.flags) }
+    if self.debug {
+        bytes: int = n
+        if esz != 1 { bytes = mut self.emit2(ir.IR_MUL, ir.IT_U64, n, mut self.konst(ir.IT_U64, esz)) }
+        a: [2]int = [ptr, bytes]
+        _ = mut self.call_routine("__ace$registry_remove", false, ir.IT_VOID, a[..])
+    }
+    f: [1]int = [ptr]
+    _ = mut self.call_routine("_free", true, ir.IT_VOID, f[..])
+    mut self.guard_end(live)
+    z: Agg = blank(Agg)
+    z.n = 2
+    z.v[0] = mut self.konst(ir.IT_PTR, 0)
+    z.v[1] = mut self.konst(ir.IT_U64, 0)
+    mut self.place_put(p, z, 0)
+    return -1
+}
+
+/* mem.copy, mem.move, mem.fill, mem.zero (Values & Passing: byte
+ * operations): debug checks equal lengths, and for copy that nonempty ranges
+ * neither wrap nor overlap (noalias), before the routine. The typed copy and
+ * move compare element counts, then work on count * sizeof(T) bytes.
+ */
+Lw.mem_write(mut self, x: u32, bi: u64): int {
+    esz: u64 = 1
+    b: u64 = bi
+    if bi == sema.BI_MEM_COPY_T || bi == sema.BI_MEM_MOVE_T {
+        esz = u64(self.size(self.ty(self.unwrap(self.nty(self.node(x).a))).base))
+        if bi == sema.BI_MEM_COPY_T { b = sema.BI_MEM_COPY } else { b = sema.BI_MEM_MOVE }
+    }
+    d: u32 = self.kid(x, 0)
+    if self.node(d).kind == Kind.mutarg { d = self.node(d).a }
+    dst: int, dlen: int = mut self.view_parts(d, true)
+    if b == sema.BI_MEM_FILL || b == sema.BI_MEM_ZERO {
+        v: int = -1
+        if b == sema.BI_MEM_FILL { v = mut self.expr(self.kid(x, 1), int(ir.IT_U8)) } else { v = mut self.konst(ir.IT_U8, 0) }
+        _ = mut self.rtcall("__ace$mem_fill", dst, v, dlen)
+        return -1
+    }
+    src: int, slen: int = mut self.view_parts(self.kid(x, 1), true)
+    count: int = slen
+    if esz != 1 { slen = mut self.emit2(ir.IR_MUL, ir.IT_U64, slen, mut self.konst(ir.IT_U64, esz)) }
+    if self.debug {
+        mut self.contract_check(mut self.cmp(ir.IR_EQ, count, dlen))
+        if b == sema.BI_MEM_COPY {
+            some: int = mut self.guard(mut self.cmp(ir.IR_NE, slen, mut self.konst(ir.IT_U64, 0)))
+            dend: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, dst, slen)
+            send: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, src, slen)
+            mut self.fn.at(dend).imm = 1
+            mut self.fn.at(send).imm = 1
+            mut self.contract_check(mut self.cmp(ir.IR_GE, dend, dst))
+            mut self.contract_check(mut self.cmp(ir.IR_GE, send, src))
+            after: int = mut self.cmp(ir.IR_GE, dst, send)
+            before: int = mut self.cmp(ir.IR_GE, src, dend)
+            mut self.contract_check(mut self.emit2(ir.IR_OR, ir.IT_BOOL, after, before))
+            mut self.guard_end(some)
+        }
+    }
+    name: string = "__ace$mem_copy"
+    if b == sema.BI_MEM_MOVE { name = "__ace$mem_move" }
+    _ = mut self.rtcall(name, dst, src, slen)
+    return -1
+}
+
+/* The bytes of [N]u8, []u8, or string `at`: its address and length. */
+Lw.bytes_parts(mut self, at: u32): (int, int) {
+    x: u32 = at
+    if self.node(x).kind == Kind.mutarg { x = self.node(x).a }
+    t: u32 = self.unwrap(self.nty(x))
+    if t != 0 && self.ty(t).kind == TypeKind.array {
+        p: int = mut self.place_address(mut self.array_place(x))
+        return p, mut self.konst(ir.IT_U64, self.ty(t).count)
+    }
+    return mut self.view_parts(x, true)
+}
+
+/* mem.compare(a, b): the common prefix's order, then the shorter first. */
+Lw.mem_compare(mut self, x: u32): int {
+    ap: int, an: int = mut self.bytes_parts(self.kid(x, 0))
+    bp: int, bn: int = mut self.bytes_parts(self.kid(x, 1))
+    count: int = mut self.temp_var(ir.IT_U64, an)
+    shorter: int = mut self.guard(mut self.cmp(ir.IR_LT, bn, an))
+    mut self.write_var(count, self.cur, bn)
+    mut self.guard_end(shorter)
+    r: int = mut self.rtcall("__ace$mem_compare", ap, bp, mut self.read_var(count, self.cur))
+    out: int = mut self.temp_var(ir.IT_I64, r)
+    same: int = mut self.guard(mut self.cmp(ir.IR_EQ, r, mut self.konst(ir.IT_I64, 0)))
+    gt: int = mut self.emit2(ir.IR_CAST, ir.IT_I64, mut self.cmp(ir.IR_GT, an, bn), -1)
+    lt: int = mut self.emit2(ir.IR_CAST, ir.IT_I64, mut self.cmp(ir.IR_LT, an, bn), -1)
+    mut self.write_var(out, self.cur, mut self.emit2(ir.IR_SUB, ir.IT_I64, gt, lt))
+    mut self.guard_end(same)
+    return mut self.read_var(out, self.cur)
+}
+
+/* mem.equal(a, b): equal lengths, then equal bytes. */
+Lw.mem_equal(mut self, x: u32): int {
+    ap: int, an: int = mut self.bytes_parts(self.kid(x, 0))
+    bp: int, bn: int = mut self.bytes_parts(self.kid(x, 1))
+    out: int = mut self.temp_var(ir.IT_BOOL, mut self.konst(ir.IT_BOOL, 0))
+    same: int = mut self.guard(mut self.cmp(ir.IR_EQ, an, bn))
+    r: int = mut self.rtcall("__ace$mem_compare", ap, bp, an)
+    mut self.write_var(out, self.cur, mut self.cmp(ir.IR_EQ, r, mut self.konst(ir.IT_I64, 0)))
+    mut self.guard_end(same)
+    return mut self.read_var(out, self.cur)
+}
+
+/* A direct call to format helper `h` with the arguments in `g`, `ret` its result. */
+Lw.format_helper_call(mut self, h: u32, g: Args, ret: u8): int {
+    id: int = mut self.emit(ir.IR_CALL, ret)
+    mut self.fn.at(id).sym = h
+    none: Agg = blank(Agg)
+    return mut self.call_finish(id, g, self.ty(self.s.sym(h).ty).ret, mut none, false, -1)
+}
+
+/* Storage in the caller's frame for fmt.printf's sink: a call's output
+ * normally drains in one write.
+ */
+PRINTF_STORAGE: const u64 = 1024
+
+/* fmt.printf and str.format (Standard Library: fmt, str): the destination
+ * (str.format) and every argument once, in order; then a sink opened over
+ * the storage, sema's plan written through it one piece writer per part, and
+ * the sink closed. `fi` is the format's argument index: 1 when a destination
+ * comes first. A printf descriptor (`to_fd` 1) is passed to the opener;
+ * Buffer.printf's receiver (`to_fd` 2) keeps its sink across calls.
+ */
+Lw.format_call(mut self, x: u32, fi: u32, to_fd: int, mut res: Agg, want_res: bool): int {
+    plan: sema.FormatPlan, _ = self.s.format_plan(x)
+    open_t: SType = self.ty(self.s.sym(plan.open).ty)
+    text: string = self.node(plan.format).text
+    dp: int = -1
+    dn: int = -1
+    fd: int = -1
+    sink: int = -1
+    dest: u32 = 0
+    if to_fd == 2 {
+        dest = self.node(self.node(x).a).a // the Buffer.printf receiver
+    } else if fi != 0 {
+        dest = self.kid(x, 0)
+        if self.node(dest).kind == Kind.mutarg { dest = self.node(dest).a }
+    }
+    if to_fd == 2 {
+        p: Place = mut self.place(dest)
+        bt: u32 = self.unwrap(p.t)
+        f: sema.SField = self.s.field(self.ty(bt), u32(self.find_field(bt, "sink")))
+        fd = mut self.place_address(p)
+        p.off += i32(f.offset)
+        p.t = f.ty
+        sink = mut self.place_address(p)
+    } else if to_fd != 0 {
+        v: Agg = blank(Agg)
+        mut self.value(dest, self.nty(dest), mut v)
+        fd = mut self.widen(v.v[0], mut self.need_type(self.nty(dest)), mut self.need_type(self.s.param(open_t, 2)))
+    } else if fi != 0 {
+        dp, dn = mut self.view_parts(dest, true)
+    }
+    nargs: u32 = self.node(x).nkids - fi - 1
+    cap: array.Array[Agg] = array.Array[Agg] {}
+    defer mut cap.wipe()
+    capt: array.Array[u32] = array.Array[u32] {}
+    defer mut capt.wipe()
+    for i: u32 in 0..nargs {
+        a: u32 = self.kid(x, i + fi + 1)
+        if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
+        t: u32 = self.nty(a)
+        for k: u32 in 0..plan.nparts { // an untyped constant takes its writer's type
+            if !self.is_untyped(t) { break }
+            part: sema.FormatPart = self.s.format_part(plan.parts + k)
+            if part.arg == i + fi + 1 && part.helper != 0 { t = self.s.param(self.ty(self.s.sym(part.helper).ty), 1) }
+        }
+        v: Agg = blank(Agg)
+        mut self.value(a, t, mut v)
+        fail(mut cap.push(v))
+        fail(mut capt.push(t))
+    }
+    if (fi == 0 && to_fd != 2) || to_fd == 1 {
+        dp = mut self.at_entry(ir.IR_SLOT, ir.IT_PTR)
+        s: mut *ir.IrIns = mut self.fn.at(dp)
+        s.imm = PRINTF_STORAGE
+        s.aux = 8
+        dn = mut self.konst(ir.IT_U64, PRINTF_STORAGE)
+    }
+    g: Args = Args.init()
+    defer mut g.wipe()
+    if to_fd == 2 {
+        mut g.scalar(fd)
+    } else {
+        sink = mut self.new_slot(self.s.param(open_t, 0))
+        mut g.scalar(sink)
+        fail(mut g.parts.push(ir.IrPart { agg = self.s.param(open_t, 1), first = int(g.v.len), n = 2 }))
+        fail(mut g.v.push(dp))
+        fail(mut g.v.push(dn))
+        g.agg = true
+    }
+    if to_fd == 1 { mut g.scalar(fd) }
+    _ = mut self.format_helper_call(plan.open, g, ir.IT_VOID)
+    for i: u32 in 0..plan.nparts {
+        part: sema.FormatPart = self.s.format_part(plan.parts + i)
+        ft: SType = self.ty(self.s.sym(part.helper).ty)
+        mut g.clear()
+        mut g.scalar(sink)
+        v: Agg = blank(Agg)
+        vt: u32 = self.s.param(ft, 1)
+        if part.kind == sema.PF_TEXT {
+            v.n = 2
+            v.v[0] = mut self.emit(ir.IR_STR, ir.IT_PTR)
+            si: mut *ir.IrIns = mut self.fn.at(v.v[0])
+            si.name = text[part.off..part.off + part.len]
+            si.imm = u64(part.len)
+            v.v[1] = mut self.konst(ir.IT_U64, u64(part.len))
+        } else if part.kind == sema.PF_LITERAL_BYTE {
+            v.n = 1
+            v.v[0] = mut self.konst(mut self.need_type(vt), u64(text[part.off])) // '%' for %%
+        } else {
+            v = cap.get(usize(part.arg - fi - 1))
+            if !self.is_agg(vt) { v.v[0] = mut self.widen(v.v[0], mut self.need_type(capt.get(usize(part.arg - fi - 1))), mut self.need_type(vt)) }
+        }
+        if self.is_agg(vt) {
+            fail(mut g.parts.push(ir.IrPart { agg = vt, first = int(g.v.len), n = v.n }))
+            for k: int in 0..v.n { fail(mut g.v.push(v.v[k])) }
+            g.agg = true
+        } else {
+            mut g.scalar(v.v[0])
+        }
+        p: u32 = 2
+        if part.kind == sema.PF_BINARY || part.kind == sema.PF_OCTAL || part.kind == sema.PF_HEX_LOWER || part.kind == sema.PF_HEX_UPPER {
+            base: u64 = 16
+            if part.kind == sema.PF_BINARY { base = 2 } else if part.kind == sema.PF_OCTAL { base = 8 }
+            mut g.scalar(mut self.konst(mut self.need_type(self.s.param(ft, p)), base))
+            upper: u64 = 0
+            if part.kind == sema.PF_HEX_UPPER { upper = 1 }
+            mut g.scalar(mut self.konst(mut self.need_type(self.s.param(ft, p + 1)), upper))
+            p += 2
+        } else if part.kind == sema.PF_FIXED || part.kind == sema.PF_SCIENTIFIC || part.kind == sema.PF_GENERAL {
+            mut g.scalar(mut self.konst(mut self.need_type(self.s.param(ft, p)), u64(part.precision)))
+            p += 1
+        }
+        mut g.scalar(mut self.konst(mut self.need_type(self.s.param(ft, p)), u64(part.width)))
+        zero: u64 = 0
+        if part.zero { zero = 1 }
+        mut g.scalar(mut self.konst(mut self.need_type(self.s.param(ft, p + 1)), zero))
+        _ = mut self.format_helper_call(part.helper, g, ir.IT_VOID)
+    }
+    mut g.clear()
+    if to_fd == 2 { mut g.scalar(fd) } else { mut g.scalar(sink) }
+    n: int = mut self.format_helper_call(plan.close, g, ir.IT_I64)
+    if fi == 0 || to_fd != 0 { return n } // printf's int; str.format's (count, ok) follows
+    count: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+    fit: int = mut self.temp_var(ir.IT_BOOL, mut self.konst(ir.IT_BOOL, 0))
+    wrote: int = mut self.guard(mut self.cmp(ir.IR_GE, n, mut self.konst(ir.IT_I64, 0)))
+    mut self.write_var(count, self.cur, mut self.emit2(ir.IR_CAST, ir.IT_U64, n, -1))
+    mut self.write_var(fit, self.cur, mut self.konst(ir.IT_BOOL, 1))
+    mut self.guard_end(wrote)
+    if want_res {
+        res.n = 2
+        res.v[0] = mut self.read_var(count, self.cur)
+        res.v[1] = mut self.read_var(fit, self.cur)
+    }
+    return n
+}
+
+/* The address of an external symbol with no Ace symbol of its own. */
+Lw.global_named(mut self, name: string): int {
+    id: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
+    mut self.fn.at(id).name = name
+    return id
+}
+
+/* The address of builtin `bi`'s process-start word: Darwin's accessor
+ * results; on linux-x64, the argc and argv words main stored at entry and
+ * glibc's environ, read at each use so it follows setenv.
+ */
+Lw.process_word(mut self, bi: u64): int {
+    if !mem.equal(self.s.target(), "linux-x64") {
+        name: string = "__NSGetEnviron"
+        if bi == sema.BI_SYS_ARGC { name = "__NSGetArgc" } else if bi == sema.BI_SYS_ARG { name = "__NSGetArgv" }
+        return mut self.call_routine(name, true, ir.IT_PTR, null)
+    }
+    if bi == sema.BI_SYS_ARGC { return mut self.global_named("__ace$argc") }
+    if bi == sema.BI_SYS_ARG { return mut self.global_named("__ace$argv") }
+    return mut self.global_named("_environ")
+}
+
+/* A u64 counted up from 0 while `step` (given the count) is nonzero: the
+ * shared loop of sys.envc and a C string's length. `stride` scales the
+ * count into a byte offset from `p`, and `t` is the word read there.
+ */
+Lw.count_until_zero(mut self, p: int, stride: u64, t: u8): int {
+    n: int = mut self.var_new(0, ir.IT_U64, -1)
+    mut self.write_var(n, self.cur, mut self.konst(ir.IT_U64, 0))
+    head: int = mut self.new_block()
+    body: int = mut self.new_block()
+    exit: int = mut self.new_block()
+    mut self.jump(head)
+    mut self.enter(head)
+    i: int = mut self.read_var(n, head)
+    at: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, p, i)
+    mut self.fn.at(at).imm = stride
+    e: int = mut self.load(t, at, 0, 0)
+    mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_NE, ir.IT_BOOL, e, mut self.konst(t, 0)), body, exit)
+    mut self.seal(body)
+    mut self.enter(body)
+    mut self.write_var(n, self.cur, mut self.emit2(ir.IR_ADD, ir.IT_U64, i, mut self.konst(ir.IT_U64, 1)))
+    mut self.jump(head)
+    mut self.seal(head)
+    mut self.seal(exit)
+    mut self.enter(exit)
+    return i
+}
+
+/* A compiler-backed call the IR covers: its value (a slice's or string's
+ * leaves into res), or -2 for one it does not.
+ */
+Lw.builtin(mut self, x: u32, bi: u64, mut res: Agg, want_res: bool): int {
+    if bi == sema.BI_BITS_POP_COUNT || bi == sema.BI_BITS_LEAD_ZEROS || bi == sema.BI_BITS_TRAIL_ZEROS || bi == sema.BI_BITS_BYTE_SWAP {
+        t: u8 = mut self.need_type(self.nty(self.kid(x, 0)))
+        op: u8 = ir.IR_BSWAP
+        if bi == sema.BI_BITS_POP_COUNT { op = ir.IR_POPCNT } else if bi == sema.BI_BITS_LEAD_ZEROS { op = ir.IR_CLZ } else if bi == sema.BI_BITS_TRAIL_ZEROS { op = ir.IR_CTZ }
+        v: int = mut self.emit2(op, t, mut self.expr(self.kid(x, 0), int(t)), -1)
+        return mut self.widen(v, t, mut self.need_type(self.nty(x)))
+    }
+    if bi == sema.BI_BITS_ROTATE_LEFT || bi == sema.BI_BITS_ROTATE_RIGHT {
+        t: u8 = mut self.need_type(self.nty(self.kid(x, 0)))
+        v: int = mut self.expr(self.kid(x, 0), int(t))
+        ct: u8 = mut self.type_in(self.kid(x, 1), int(ir.IT_U64))
+        c: int = mut self.widen(mut self.expr(self.kid(x, 1), int(ct)), ct, ir.IT_U64)
+        op: u8 = ir.IR_ROTR
+        if bi == sema.BI_BITS_ROTATE_LEFT { op = ir.IR_ROTL }
+        return mut self.emit2(op, t, v, c)
+    }
+    if bi == sema.BI_BITS_WRAP_ADD || bi == sema.BI_BITS_WRAP_SUB || bi == sema.BI_BITS_WRAP_MUL { // never checked
+        t: u8 = mut self.need_type(self.nty(x))
+        a: int = mut self.expr(self.kid(x, 0), int(t))
+        op: u8 = ir.IR_MUL
+        if bi == sema.BI_BITS_WRAP_ADD { op = ir.IR_ADD } else if bi == sema.BI_BITS_WRAP_SUB { op = ir.IR_SUB }
+        return mut self.emit2(op, t, a, mut self.expr(self.kid(x, 1), int(t)))
+    }
+    if bi == sema.BI_MATH_SQRT || bi == sema.BI_MATH_FLOOR || bi == sema.BI_MATH_CEIL {
+        t: u8 = mut self.need_type(self.nty(x))
+        op: u8 = ir.IR_CEIL
+        if bi == sema.BI_MATH_SQRT { op = ir.IR_SQRT } else if bi == sema.BI_MATH_FLOOR { op = ir.IR_FLOOR }
+        return mut self.emit2(op, t, mut self.expr(self.kid(x, 0), int(t)), -1)
+    }
+    if bi == sema.BI_MATH_FMA {
+        t: u8 = mut self.need_type(self.nty(x))
+        a: int = mut self.expr(self.kid(x, 0), int(t))
+        b: int = mut self.expr(self.kid(x, 1), int(t))
+        c: int = mut self.expr(self.kid(x, 2), int(t))
+        id: int = mut self.emit2(ir.IR_FMA, t, a, b)
+        mut self.fn.arg_add(id, c)
+        return id
+    }
+    if bi == sema.BI_INTERNAL_LOAD_U64 { // the native-endian word at text[index], unchecked
+        p: int, _ = mut self.view_parts(self.kid(x, 0), false)
+        it: u8 = mut self.type_in(self.kid(x, 1), int(ir.IT_U64))
+        at: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, p, mut self.widen(mut self.expr(self.kid(x, 1), int(it)), it, ir.IT_U64))
+        mut self.fn.at(at).imm = 1
+        return mut self.load(ir.IT_U64, at, 0, 0)
+    }
+    if bi == sema.BI_SYS_ARGC { // an int, then char** arrays: see process_word
+        return mut self.widen(mut self.load(ir.IT_I32, mut self.process_word(bi), 0, 0), ir.IT_I32, mut self.need_type(self.nty(x)))
+    }
+    if bi == sema.BI_SYS_ENVC {
+        env: int = mut self.load(ir.IT_PTR, mut self.process_word(bi), 0, 0)
+        return mut self.widen(mut self.count_until_zero(env, 8, ir.IT_PTR), ir.IT_U64, mut self.need_type(self.nty(x)))
+    }
+    if bi == sema.BI_SYS_ARG || bi == sema.BI_SYS_ENV { // entry i's bytes up to its NUL
+        it: u8 = mut self.type_in(self.kid(x, 0), int(ir.IT_U64))
+        i: int = mut self.widen(mut self.expr(self.kid(x, 0), int(it)), it, ir.IT_U64)
+        base: int = mut self.load(ir.IT_PTR, mut self.process_word(bi), 0, 0)
+        at: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, base, i)
+        mut self.fn.at(at).imm = 8
+        p: int = mut self.load(ir.IT_PTR, at, 0, 0)
+        n: int = mut self.count_until_zero(p, 1, ir.IT_U8)
+        if !want_res { return -1 }
+        res.n = 2
+        res.v[0] = p
+        res.v[1] = n
+        return -1
+    }
+    if bi != sema.BI_MEM_ALLOC && bi != sema.BI_MEM_REALLOC && bi != sema.BI_MEM_RELEASE && bi != sema.BI_MEM_ALLOC_T && bi != sema.BI_MEM_ZALLOC_T && bi != sema.BI_MEM_REALLOC_T && bi != sema.BI_MEM_RELEASE_T && bi != sema.BI_MEM_ALLOC_SIZE && bi != sema.BI_MEM_COPY && bi != sema.BI_MEM_MOVE && bi != sema.BI_MEM_COPY_T && bi != sema.BI_MEM_MOVE_T && bi != sema.BI_MEM_FILL && bi != sema.BI_MEM_ZERO && bi != sema.BI_MEM_COMPARE && bi != sema.BI_MEM_EQUAL && bi != sema.BI_FMT_PRINTF && bi != sema.BI_FMT_PRINTF_FD && bi != sema.BI_FMT_PRINTF_BUF && bi != sema.BI_STR_FORMAT {
+        return -2
+    }
+    if self.s.node_ival(x) != bi { return -2 } // sema checked it as the builtin
+    if bi == sema.BI_MEM_ALLOC { return mut self.mem_alloc(x, mut res, want_res) }
+    if bi == sema.BI_MEM_REALLOC { return mut self.mem_realloc(x, mut res, want_res) }
+    if bi == sema.BI_MEM_RELEASE || bi == sema.BI_MEM_RELEASE_T { return mut self.mem_release(x) }
+    if bi == sema.BI_MEM_ALLOC_SIZE { // the allocator's usable size of data's allocation
+        p: int, _ = mut self.view_parts(self.kid(x, 0), false)
+        name: string = "_malloc_size"
+        if mem.equal(self.s.target(), "linux-x64") { name = "_malloc_usable_size" }
+        a: [1]int = [p]
+        return mut self.widen(mut self.call_routine(name, true, ir.IT_U64, a[..]), ir.IT_U64, mut self.need_type(self.nty(x)))
+    }
+    if bi == sema.BI_MEM_COMPARE { return mut self.mem_compare(x) }
+    if bi == sema.BI_MEM_EQUAL { return mut self.mem_equal(x) }
+    if bi == sema.BI_FMT_PRINTF || bi == sema.BI_FMT_PRINTF_FD || bi == sema.BI_FMT_PRINTF_BUF || bi == sema.BI_STR_FORMAT {
+        _, planned: bool = self.s.format_plan(x)
+        if !planned { return -2 }
+        if bi == sema.BI_FMT_PRINTF { return mut self.format_call(x, 0, 0, mut res, want_res) }
+        if bi == sema.BI_FMT_PRINTF_FD { return mut self.format_call(x, 1, 1, mut res, want_res) }
+        if bi == sema.BI_FMT_PRINTF_BUF { return mut self.format_call(x, 0, 2, mut res, want_res) }
+        return mut self.format_call(x, 1, 0, mut res, want_res)
+    }
+    if bi == sema.BI_MEM_COPY || bi == sema.BI_MEM_MOVE || bi == sema.BI_MEM_COPY_T || bi == sema.BI_MEM_MOVE_T || bi == sema.BI_MEM_FILL || bi == sema.BI_MEM_ZERO {
+        return mut self.mem_write(x, bi)
+    }
+    return mut self.mem_alloc_typed(x, bi, mut res, want_res)
+}
+
+/* Debug (Safety #2): E(v) traps unless v is a member's discriminant, checked
+ * before narrowing to E's backing type. A dense enum (0..n-1) needs one
+ * unsigned compare; a sparse one compares each member.
+ */
+Lw.enum_check(mut self, v: int, from: u8, e: u32, site: u32) {
+    w: int = v
+    if from != ir.IT_U64 { w = mut self.emit2(ir.IR_CAST, ir.IT_U64, v, -1) } // sign- or zero-extended
+    et: SType = self.ty(e)
+    n: u32 = et.nfields
+    dense: bool = true
+    for i: u32 in 0..n {
+        if u64(self.s.field(et, i).value) >= u64(n) { dense = false }
+    }
+    c: int = -1
+    if dense {
+        c = mut self.emit2(ir.IR_LT, ir.IT_BOOL, w, mut self.konst(ir.IT_U64, u64(n)))
+    } else {
+        c = mut self.konst(ir.IT_BOOL, 0)
+        for i: u32 in 0..n {
+            c = mut self.emit2(ir.IR_OR, ir.IT_BOOL, c, mut self.emit2(ir.IR_EQ, ir.IT_BOOL, w, mut self.konst(ir.IT_U64, u64(self.s.field(et, i).value))))
+        }
+    }
+    id: int = mut self.emit2(ir.IR_CHECK, ir.IT_VOID, c, -1)
+    x: mut *ir.IrIns = mut self.fn.at(id)
+    x.name = "enum value is not a member"
+    x.has_name = true
+    x.at = site
+}
+
+/* The call forms sema leaves without a symbol: bitcast(T, v), panic(m),
+ * assert(c), *T(address), and []T(pointer, count). Returns -2 for another.
+ */
+Lw.special_call(mut self, x: u32, mut res: Agg, want_res: bool, dst: int): int {
+    cn: Node = self.node(x)
+    callee: u32 = cn.a
+    if self.is_layout_builtin(x, "bitcast") { // the same bits as another plain-bits type
+        to: u32 = self.nty(x)
+        from: u32 = self.nty(self.kid(x, 1))
+        if dst >= 0 { // equal sizes: the source's bits stored are the result's
+            mut self.store_value(self.kid(x, 1), from, dst, 0)
+            return -1
+        }
+        if !self.is_agg(to) && !self.is_agg(from) {
+            tt: u8 = mut self.need_type(to)
+            ft: u8 = mut self.need_type(from)
+            v: int = mut self.expr(self.kid(x, 1), int(ft))
+            if tt == ft { return v }
+            if ir.type_float(tt) != ir.type_float(ft) { return mut self.emit2(ir.IR_BITCAST, tt, v, -1) }
+        }
+        // otherwise through a stack object aligned for both
+        st: u32 = from
+        if self.ty(to).align > self.ty(from).align { st = to }
+        slot: int = mut self.new_slot(st)
+        mut self.store_value(self.kid(x, 1), from, slot, 0)
+        out: Agg = blank(Agg)
+        mut self.place_get(Place { addr = slot, t = to }, 0, mut out)
+        if want_res { res = out }
+        if self.is_agg(to) { return -1 }
+        return out.v[0]
+    }
+    if self.nsym(x) != 0 || callee == 0 { return -2 }
+    ck: Kind = self.node(callee).kind
+    if self.s.node_ival(x) != 0 && ck == Kind.ident && mem.equal(self.node(callee).text, "panic") && cn.nkids == 1 {
+        // panic(message): the bytes to stderr, best effort, then abort (Errors #15)
+        ptr: int, len: int = mut self.view_parts(self.kid(x, 0), true)
+        w: [3]int = [mut self.konst(ir.IT_I32, 2), ptr, len]
+        _ = mut self.call_routine("_write", true, ir.IT_I64, w[..])
+        _ = mut self.call_routine("_abort", true, ir.IT_VOID, null)
+        return -1
+    }
+    iv: u64 = self.s.node_ival(x)
+    if (iv == 2 || iv == 3) && ck == Kind.ident && mem.equal(self.node(callee).text, "assert") && cn.nkids == 1 {
+        // assert(condition): debug evaluates it once, and a false one writes
+        // "path:line:col: assertion failed" to stderr and aborts; release
+        // removes the whole condition, side effects included
+        if !self.debug || iv == 3 { return -1 }
+        ok: int = mut self.new_block()
+        bad: int = mut self.new_block()
+        mut self.cond(self.kid(x, 0), ok, bad)
+        mut self.seal(ok)
+        mut self.seal(bad)
+        mut self.enter(bad)
+        if self.cur >= 0 {
+            buf: [48]u8
+            b: Out = Out.init(mut buf[..])
+            _ = mut b.printf(":%u:%u: assertion failed\n", uint(cn.line), uint(cn.col))
+            text: string = mut self.fn.names.join([self.s.file_name(x), b.text()])
+            p: int = mut self.emit(ir.IR_STR, ir.IT_PTR)
+            si: mut *ir.IrIns = mut self.fn.at(p)
+            si.name = text
+            si.imm = u64(text.len)
+            w: [3]int = [mut self.konst(ir.IT_I32, 2), p, mut self.konst(ir.IT_U64, u64(text.len))]
+            _ = mut self.call_routine("_write", true, ir.IT_I64, w[..])
+            _ = mut self.call_routine("_abort", true, ir.IT_VOID, null)
+            mut self.jump(ok) // never taken: abort does not return
+        }
+        mut self.enter(ok)
+        return -1
+    }
+    proven: bool = (self.s.node_proof(x) & sema.PROOF_BOUNDS) != 0
+    if ck == Kind.ptr && cn.nkids == 1 {
+        // *T(address) or *T(pointer): the same bits; debug checks the address
+        // is aligned for T unless sema proved it
+        ft: u32 = self.unwrap(self.nty(self.kid(x, 0)))
+        from_ptr: bool = ft != 0 && self.ty(ft).kind == TypeKind.ptr
+        at: u8 = ir.IT_PTR
+        if !from_ptr { at = mut self.type_in(self.kid(x, 0), int(ir.IT_U64)) }
+        v: int = mut self.expr(self.kid(x, 0), int(at))
+        if from_ptr && proven { return v }
+        if from_ptr { v = mut self.emit2(ir.IR_CAST, ir.IT_U64, v, -1) } else { v = mut self.widen(v, at, ir.IT_U64) }
+        pt: u32 = self.unwrap(self.nty(x))
+        align: u64 = 1
+        if pt != 0 && self.ty(pt).base != 0 { align = u64(self.ty(self.ty(pt).base).align) }
+        if self.debug && align > 1 && !proven {
+            low: int = mut self.emit2(ir.IR_AND, ir.IT_U64, v, mut self.konst(ir.IT_U64, align - 1))
+            bad: int = mut self.guard(mut self.cmp(ir.IR_NE, low, mut self.konst(ir.IT_U64, 0)))
+            _ = mut self.call_routine("__ace$arithmetic_fail", false, ir.IT_VOID, null)
+            mut self.guard_end(bad)
+        }
+        return mut self.emit2(ir.IR_CAST, ir.IT_PTR, v, -1)
+    }
+    if ck == Kind.slice_t && cn.nkids == 2 {
+        // []T(pointer, count): debug checks a nonempty one has a nonnull start
+        // and an end, count elements on, that the address space holds
+        p: int = mut self.expr(self.kid(x, 0), int(ir.IT_PTR))
+        ct: u8 = mut self.type_in(self.kid(x, 1), int(ir.IT_U64))
+        n: int = mut self.widen(mut self.expr(self.kid(x, 1), int(ct)), ct, ir.IT_U64)
+        if self.debug && !proven {
+            some: int = mut self.guard(mut self.cmp(ir.IR_NE, n, mut self.konst(ir.IT_U64, 0)))
+            null_p: int = mut self.guard(mut self.cmp(ir.IR_EQ, p, mut self.konst(ir.IT_PTR, 0)))
+            _ = mut self.call_routine("__ace$null_fail", false, ir.IT_VOID, null)
+            mut self.guard_end(null_p)
+            end: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, p, n) // the rest: its own checks
+            e: mut *ir.IrIns = mut self.fn.at(end)
+            e.imm = u64(self.size(self.ty(self.unwrap(self.nty(x))).base))
+            e.flags = ir.IRF_CHECKED
+            mut self.guard_end(some)
+        }
+        if want_res {
+            res.n = 2
+            res.v[0] = p
+            res.v[1] = n
+        }
+        return p
+    }
+    return -2
+}
+
 /* A call `x`; an aggregate result's leaves go to `res` when `want_res`, one
  * of over 16 leaves to memory at `dst`, or a new stack object when dst < 0.
  */
@@ -2574,6 +3347,7 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
             return mut self.konst(mut self.type_in(x, want), self.s.node_ival(x)) // folded by sema
         }
     }
+    if self.is_layout_builtin(x, "static_assert") { return -1 }
     if self.contract_ctor(x) {
         mut self.contract_value(x, mut res)
         return -1
@@ -2589,6 +3363,8 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         }
         return -1
     }
+    sc: int = mut self.special_call(x, mut res, want_res, dst)
+    if sc != -2 { return sc }
     s: u32 = self.nsym(x)
     if s == 0 && callee != 0 && self.node(callee).kind == Kind.ident && mem.equal(self.node(callee).text, "typeid") {
         return mut self.konst(ir.IT_U64, self.s.node_ival(x)) // typeid(T): the type's identity word
@@ -2612,7 +3388,7 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         v: int = mut self.expr(a, int(from))
         et: u32 = self.unwrap(self.nty(x))
         if self.debug && et != 0 && self.ty(et).kind == TypeKind.enum && (self.node(self.ty(et).decl).flags & parser.F_OPEN) == 0 {
-            mut self.unported("enum conversion checks")
+            mut self.enum_check(v, from, et, x)
         }
         if from == to { return v }
         return mut self.emit2(ir.IR_CAST, to, v, -1)
@@ -2624,6 +3400,10 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
             return mut self.indirect_call(x, s, mut res, want_res, dst)
         }
         if self.field_call(x) { return mut self.indirect_call(x, 0, mut res, want_res, dst) }
+        if callee != 0 && self.node(callee).kind == Kind.index { // f[T](...): sema's symbol is on the callee
+            mut self.unported("generic calls")
+            return mut self.dummy()
+        }
         mut self.unported("this call form")
         return mut self.dummy()
     }
@@ -2634,12 +3414,16 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         return mut self.dummy()
     }
     dn: Node = self.node(d)
-    if self.node(callee).kind == Kind.index || sy.is_generic || sy.spec_args != 0 || (dn.kind == Kind.func && dn.c != 0) {
-        mut self.unported("generic calls")
-        return mut self.dummy()
+    if dn.kind == Kind.func && dn.ival != 0 {
+        v: int = mut self.builtin(x, dn.ival, mut res, want_res)
+        if v != -2 { return v }
     }
     if (dn.kind == Kind.func && dn.ival != 0) || (dn.flags & parser.F_INTRINSIC) != 0 {
-        mut self.unported("compiler-backed calls")
+        mut self.unsupported("compiler-backed call")
+        return mut self.dummy()
+    }
+    if self.node(callee).kind == Kind.index || sy.is_generic || sy.spec_args != 0 || (dn.kind == Kind.func && dn.c != 0) {
+        mut self.unported("generic calls")
         return mut self.dummy()
     }
     if (dn.flags & parser.F_INLINE) != 0 {
