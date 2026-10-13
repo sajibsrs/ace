@@ -1,0 +1,12 @@
+/* A method's mut parameter needs 'mut' at the call site, as a function's does. */
+
+E: struct { n: int }
+
+E.dec(self, mut v: u32) { v -= 1 }
+
+main(): int {
+    x: u32 = 5
+    e: E = E { n = 0 }
+    e.dec(x)
+    return int(x)
+}

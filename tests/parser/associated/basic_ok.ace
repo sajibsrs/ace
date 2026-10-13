@@ -13,5 +13,5 @@ pub Router.reset(mut r: Router): Router {
 
 foo() {
     r: Router = Router.new()
-    r = Router.reset(r)
+    r = Router.reset(mut r)
 }

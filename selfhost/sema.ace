@@ -2857,6 +2857,7 @@ Sema.check_method_call(mut self, call: u32, b: u32, last: u32): u32 {
     } else if last == 0 && promoted == 0 {
         _ = mut self.coerce(recv, b)
     }
+    mut self.check_mut_args(call, x.decl, 1)
     for i: u32 in 0..n.nkids {
         arg: u32 = self.kid(call, i)
         raw: u32 = arg
@@ -5836,7 +5837,7 @@ Sema.finish_direct_call(mut self, call: u32, s: u32) {
     x: Sym = self.sym(s)
     variadic: bool = x.is_extern && x.decl != 0 && (self.node(x.decl).flags & parser.F_VARARGS) != 0
     mut self.check_args(call, x.ty, variadic)
-    mut self.check_mut_args(call, x.decl)
+    mut self.check_mut_args(call, x.decl, 0)
     mut self.set_node_sym(call, s)
     mut self.set_node_ty(call, self.call_ret(s))
     if x.decl != 0 && self.node_const(x.decl) { mut self.set_node_const(call) }
@@ -5891,12 +5892,13 @@ Sema.is_c_variadic_scalar(self, t: u32): bool {
     }
 }
 
-Sema.check_mut_args(mut self, call: u32, decl: u32) {
+// `recv` is 1 for a method call, whose declaration lists self first.
+Sema.check_mut_args(mut self, call: u32, decl: u32, recv: u32) {
     if decl == 0 { return }
-    for i: u32 = 0; i < self.node(call).nkids && i < self.node(decl).nkids; i += 1 {
+    for i: u32 = 0; i < self.node(call).nkids && i + recv < self.node(decl).nkids; i += 1 {
         arg: u32 = self.kid(call, i)
         am: bool = self.node(arg).kind == Kind.mutarg
-        pm: bool = self.param_mut(decl, i)
+        pm: bool = self.param_mut(decl, i + recv)
         if am && !pm {
             mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"])
         } else if pm && !am {
@@ -6138,7 +6140,7 @@ Sema.check_generic_call(mut self, call: u32): u32 {
     ft: u32 = mut self.instantiate_func(chosen, targs, nargs, callee)
     if self.ty(ft).kind == TypeKind.err { return self.t_err }
     mut self.check_args(call, ft, false)
-    mut self.check_mut_args(call, self.sym(chosen).decl)
+    mut self.check_mut_args(call, self.sym(chosen).decl, 0)
     mut self.set_node_sym(callee, chosen)
     mut self.set_node_ty(callee, ft)
     if self.ty(ft).ret == 0 { return self.t_void }

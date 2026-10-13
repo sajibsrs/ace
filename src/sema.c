@@ -865,7 +865,7 @@ static void check_arraylit(Ck* k, Node* lit, SType* want);
 static int enum_member_value(SType* e, int64_t v);
 static SType* check_lvalue(Ck* k, Node* e, int write);
 static void check_func_body(Ck* k, Node* f);
-static void check_mut_args(Ck* k, Node* call, Node* fndecl);
+static void check_mut_args(Ck* k, Node* call, Node* fndecl, int self);
 static void check_no_mut_args(Ck* k, Node* call);
 static Node* static_string_expr(Ck* k, Node* e);
 
@@ -2667,11 +2667,12 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
     }
 }
 
-static void check_mut_args(Ck* k, Node* call, Node* fndecl) {
+// `self` is 1 for a method call, whose declaration lists self first.
+static void check_mut_args(Ck* k, Node* call, Node* fndecl, int self) {
     if (!fndecl) return;
-    for (int i = 0; i < call->nkids && i < fndecl->nkids; i++) {
+    for (int i = 0; i < call->nkids && i + self < fndecl->nkids; i++) {
         int am = call->kids[i]->kind == N_MUTARG;
-        int pm = (fndecl->kids[i]->flags & F_MUT) != 0;
+        int pm = (fndecl->kids[i + self]->flags & F_MUT) != 0;
         if (am && !pm) ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
         else if (pm && !am) ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
         else if (am) { // mut passes the caller's address — the arg must have one
@@ -3686,7 +3687,7 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* am
 static void finish_direct_call(Ck* k, Node* call, Sym* s) {
     int variadic = s->is_extern && s->decl && (s->decl->flags & F_VARARGS) != 0;
     check_args(k, call, s->type, variadic);
-    check_mut_args(k, call, s->decl);
+    check_mut_args(k, call, s->decl, 0);
     call->sym = s;
     call->ty = s->type->ret;
     if (s->decl && (s->decl->flags & F_CONST)) call->flags |= F_CONST;
@@ -4532,6 +4533,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
         Node* recv = callee->a;
         if (rmut) check_lvalue(k, recv, 1);
         else coerce(k, recv, b);
+        check_mut_args(k, call, found->decl, 1);
         for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
             coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[i + 1]);
@@ -5307,7 +5309,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             SType* ft = instantiate_generic_func(k, chosen, callee);
             if (ft->kind == SK_ERR) return T_ERR;
             check_args(k, call, ft, 0);
-            check_mut_args(k, call, chosen->decl);
+            check_mut_args(k, call, chosen->decl, 0);
             callee->sym = chosen; // the selected generic declaration
             callee->ty = ft;  // the stamped signature — args recovered via the
             return ft->ret;   // instantiation memo on s->decl's tparams node

@@ -169,3 +169,7 @@
   `ir_hfa`/`ir_word_class`/`ir_misaligned` classify by every member's leaves;
   arm64 fills float registers from an overlay's memory, spans packed words, and
   8-aligns non-HFA stack aggregates; x64 sends packed ones to memory.
+- Method calls check argument `mut` marks as function calls do: the resolved
+  method runs `check_mut_args` offset past `self` (C and selfhost), so a
+  missing or stray mark is a sema error rather than a lowering failure, and
+  `mut` arguments get the lvalue, bit-field, and const-backed checks.
