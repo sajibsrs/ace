@@ -1,0 +1,781 @@
+/* regalloc — the target-neutral half of register allocation, as
+ * src/regalloc.c: block order, use counts, liveness intervals, and phi and
+ * cast location sharing over the classes a target describes (RaTarget).
+ *
+ * Positions: instruction i of the reverse postorder is at 2i (its uses) and
+ * 2i + 1 (its definition); a phi is defined at its block's first position,
+ * and its operands are used at each predecessor's terminator.
+ */
+
+import array
+import fmt
+import sys
+
+import ir: "./ir.ace"
+
+Func: type = ir.Func
+IrIns: type = ir.IrIns
+IrBlock: type = ir.IrBlock
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+/* `n` copies of `v`. */
+pub filled[T](n: int, v: T): array.Array[T] {
+    a: array.Array[T] = array.Array[T] {}
+    for 0..n { fail(mut a.push(v)) }
+    return a
+}
+
+pub RaUse: struct {
+    pub v: int,
+    pub block: int,
+    pub pos: int,
+}
+
+/* A target's registers. Numbers below fp_base are the integer class, from
+ * fp_base up the float and vector class, all below 64; asm masks name
+ * integer registers below 32.
+ */
+pub RaTarget: struct {
+    pub fp_base: int,
+    pub caller_int: []int,         // caller-saved registers in preference order, by class
+    pub caller_fp: []int,
+    pub callee_int: []int,         // callee-saved, by class
+    pub callee_fp: []int,
+    pub callee_saved: u64,         // mask
+    pub rtcall_clobbers: u64,      // what a byte routine disturbs that allocation hands out
+    pub vec_cross_spills: bool,    // a vector live across a call spills (its callee-saved half is short)
+    pub cast_in_place: (u8, u8): bool, // the cast's register form is its operand's
+}
+
+pub Ra: struct {
+    // layout
+    pub order: array.Array[int],   // blocks in reverse postorder (analysis: liveness, allocation)
+    pub lix: array.Array[int],     // block -> reverse-postorder index
+    pub layout: array.Array[int],  // blocks in emission order (a loop rotated after its body)
+    pub eix: array.Array[int],     // block -> emission-order index
+    pub cold: array.Array[bool],   // block -> laid out last, as a @cold call's arm
+    pub bfirst: array.Array[int],  // block -> index of its first instruction
+    pub blast: array.Array[int],   // block -> index of its terminator
+    pub idx: array.Array[int],     // value -> instruction index
+    // analysis
+    pub nuse: array.Array[int],
+    pub fused: array.Array[bool],  // emitted by its only user (the target marks these after count_uses)
+    pub start: array.Array[int],
+    pub end: array.Array[int],
+    pub ufirst: array.Array[int],  // value -> its first use in uses; a remat value has none
+    pub uses: array.Array[RaUse],  // by value
+    pub hint: array.Array[int],
+    pub phi_of: array.Array[int],
+    pub with: array.Array[int],    // value -> the value it shares a location with, or -1
+    pub calls: array.Array[int],   // call use positions, ascending
+    pub rtcalls: array.Array[int], // byte routine call positions, ascending
+    pub asm_pos: array.Array[int], // asm instruction positions, ascending
+    pub asm_mask: array.Array[u32], // that instruction's reserved registers, parallel to asm_pos
+    pub asm_all: u32 = 0,          // every asm statement's reserved registers
+    // allocation
+    pub reg: array.Array[int],     // value -> register, or -1
+    pub slot: array.Array[int],    // value -> spill slot (8 bytes; a vector takes two), or -1
+    pub nslots: int = 0,
+}
+
+pub Ra.wipe(mut self) {
+    mut self.order.wipe()
+    mut self.lix.wipe()
+    mut self.layout.wipe()
+    mut self.eix.wipe()
+    mut self.cold.wipe()
+    mut self.bfirst.wipe()
+    mut self.blast.wipe()
+    mut self.idx.wipe()
+    mut self.nuse.wipe()
+    mut self.fused.wipe()
+    mut self.start.wipe()
+    mut self.end.wipe()
+    mut self.ufirst.wipe()
+    mut self.uses.wipe()
+    mut self.hint.wipe()
+    mut self.phi_of.wipe()
+    mut self.with.wipe()
+    mut self.calls.wipe()
+    mut self.rtcalls.wipe()
+    mut self.asm_pos.wipe()
+    mut self.asm_mask.wipe()
+    mut self.reg.wipe()
+    mut self.slot.wipe()
+}
+
+pub remat(op: u8): bool {
+    return op == ir.IR_CONST || op == ir.IR_SLOT
+}
+
+succ(b: IrBlock, k: int): int {
+    if k == 0 { return b.succ0 }
+    return b.succ1
+}
+
+/* Splits each edge from a two-way branch into a block with phis. */
+pub split_critical_edges(mut fn: Func) {
+    n: int = int(fn.blocks.len)
+    for b: int in 0..n {
+        for k: int in 0..2 {
+            bb: IrBlock = fn.block(b)
+            s: int = succ(bb, k)
+            if s < 0 || succ(bb, 1 - k) < 0 { continue }
+            sb: IrBlock = fn.block(s)
+            if sb.preds.len < 2 || fn.at(sb.ins.get(0)).op != ir.IR_PHI { continue }
+            at: u32 = fn.at(bb.ins.get(bb.ins.len - 1)).at
+            mid: int = mut fn.new_block()
+            j: int = mut fn.new_ins(mid, ir.IR_JMP, ir.IT_VOID)
+            jx: mut *IrIns = mut fn.at(j)
+            jx.at = at
+            mb: mut *IrBlock = mut fn.block(mid)
+            mb.succ0 = s
+            fail(mut mb.preds.push(b))
+            from: mut *IrBlock = mut fn.block(b)
+            if k == 0 { from.succ0 = mid } else { from.succ1 = mid }
+            to: mut *IrBlock = mut fn.block(s)
+            for p: usize in 0..to.preds.len { // one edge: the first entry still from b
+                if to.preds.get(p) == b {
+                    mut to.preds.set(p, mid)
+                    break
+                }
+            }
+        }
+    }
+}
+
+/* A loop whose header only tests (a two-way branch with one successor in the
+ * loop, one outside) and whose one back edge is a plain jump: its header moves
+ * after its latch in emission order, so an iteration ends in the test's own
+ * conditional branch. Then a @cold call's arm moves last. Only layout and eix
+ * change; analysis keeps every position.
+ */
+emission_order(mut a: Ra, fn: Func) {
+    n: int = int(fn.blocks.len)
+    a.layout = filled[int](n, 0)
+    a.eix = filled[int](n, 0)
+    for i: int in 0..n { mut a.layout.set(usize(i), a.order.get(usize(i))) }
+    pos: array.Array[int] = filled[int](n, 0)
+    defer mut pos.wipe()
+    after: array.Array[int] = filled[int](n, -1) // latch -> its deferred header, or -1
+    defer mut after.wipe()
+    deferred: array.Array[bool] = filled[bool](n, false)
+    defer mut deferred.wipe()
+    inl: array.Array[bool] = filled[bool](n, false)
+    defer mut inl.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    moved: int = 0
+    for i: int in 0..n { mut pos.set(usize(a.layout.get(usize(i))), i) }
+    for i: int in 1..n { // the entry stays first
+        h: int = a.layout.get(usize(i))
+        hb: IrBlock = fn.block(h)
+        if hb.succ1 < 0 { continue }
+        latch: int = -1
+        back: int = 0
+        for q: int in hb.preds.view() {
+            if pos.get(usize(q)) >= i {
+                latch = q
+                back += 1
+            }
+        }
+        if back != 1 { continue }
+        lb: IrBlock = fn.block(latch)
+        if lb.succ1 >= 0 || lb.succ0 != h || after.get(usize(latch)) >= 0 { continue }
+        for b: usize in 0..usize(n) { mut inl.set(b, false) } // the natural loop: what reaches the latch without passing h
+        mut inl.set(usize(h), true)
+        mut inl.set(usize(latch), true)
+        fail(mut stack.push(latch))
+        for stack.len > 0 {
+            t: int, _ = mut stack.pop()
+            for q: int in fn.block(t).preds.view() {
+                if !inl.get(usize(q)) {
+                    mut inl.set(usize(q), true)
+                    fail(mut stack.push(q))
+                }
+            }
+        }
+        s0: int = hb.succ0
+        s1: int = hb.succ1
+        if (inl.get(usize(s0)) && s0 != h) == (inl.get(usize(s1)) && s1 != h) { continue }
+        mut after.set(usize(latch), h)
+        mut deferred.set(usize(h), true)
+        moved += 1
+    }
+    if moved > 0 {
+        old: array.Array[int] = filled[int](n, 0)
+        defer mut old.wipe()
+        for i: int in 0..n { mut old.set(usize(i), a.layout.get(usize(i))) }
+        k: usize = 0
+        for b: int in old.view() {
+            if deferred.get(usize(b)) { continue }
+            mut a.layout.set(k, b)
+            k += 1
+            if after.get(usize(b)) >= 0 {
+                mut a.layout.set(k, after.get(usize(b)))
+                k += 1
+            }
+        }
+    }
+    // A cold arm: a block making a call to a @cold function whose one
+    // predecessor is a two-way branch, with each block reached only from cold
+    // blocks, follows every other block in its emission order, so the common
+    // path falls through its branch.
+    a.cold = filled[bool](n, false)
+    ncold: int = 0
+    for i: int in 1..n { // the entry stays first
+        b: int = a.layout.get(usize(i))
+        bb: IrBlock = fn.block(b)
+        c: bool = bb.preds.len > 0
+        for q: int in bb.preds.view() {
+            if !c { break }
+            c = a.cold.get(usize(q))
+        }
+        if !c && bb.preds.len == 1 && fn.block(bb.preds.get(0)).succ1 >= 0 {
+            for v: int in bb.ins.view() {
+                x: IrIns = fn.at(v)
+                if x.op == ir.IR_CALL && (x.flags & ir.IRF_COLD) != 0 {
+                    c = true
+                    break
+                }
+            }
+        }
+        mut a.cold.set(usize(b), c)
+        if c { ncold += 1 }
+    }
+    if ncold > 0 {
+        old: array.Array[int] = filled[int](n, 0)
+        defer mut old.wipe()
+        for i: int in 0..n { mut old.set(usize(i), a.layout.get(usize(i))) }
+        k: usize = 0
+        for b: int in old.view() {
+            if !a.cold.get(usize(b)) {
+                mut a.layout.set(k, b)
+                k += 1
+            }
+        }
+        for b: int in old.view() {
+            if a.cold.get(usize(b)) {
+                mut a.layout.set(k, b)
+                k += 1
+            }
+        }
+    }
+    for i: int in 0..n { mut a.eix.set(usize(a.layout.get(usize(i))), i) }
+}
+
+/* Reverse postorder, visiting the second successor first so that the first
+ * (a branch's true side, a loop's body) follows its block; then the emission
+ * order. Sets order, lix, bfirst, blast, idx, layout, eix, and cold.
+ */
+pub layout(mut a: Ra, fn: Func) {
+    n: int = int(fn.blocks.len)
+    npost: int = 0
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    seen: array.Array[bool] = filled[bool](n, false)
+    defer mut seen.wipe()
+    a.order = filled[int](n, 0)
+    a.lix = filled[int](n, 0)
+    fail(mut stack.push(0))
+    fail(mut stack.push(0))
+    mut seen.set(0, true)
+    for stack.len > 0 {
+        sp: usize = stack.len
+        b: int = stack.get(sp - 2)
+        k: int = stack.get(sp - 1)
+        if k < 2 {
+            mut stack.set(sp - 1, k + 1)
+            s: int = succ(fn.block(b), 1 - k)
+            if s >= 0 && !seen.get(usize(s)) {
+                mut seen.set(usize(s), true)
+                fail(mut stack.push(s))
+                fail(mut stack.push(0))
+            }
+            continue
+        }
+        mut a.order.set(usize(n - 1 - npost), b)
+        npost += 1
+        _, _ = mut stack.pop()
+        _, _ = mut stack.pop()
+    }
+    a.bfirst = filled[int](n, 0)
+    a.blast = filled[int](n, 0)
+    a.idx = filled[int](int(fn.ins.len), 0)
+    k: int = 0
+    for i: int in 0..n {
+        b: int = a.order.get(usize(i))
+        mut a.lix.set(usize(b), i)
+        mut a.bfirst.set(usize(b), k)
+        for v: int in fn.block(b).ins.view() {
+            mut a.idx.set(usize(v), k)
+            k += 1
+        }
+        mut a.blast.set(usize(b), k - 1)
+    }
+    emission_order(mut a, fn)
+}
+
+/* Sets nuse; fused all clear. */
+pub count_uses(mut a: Ra, fn: Func) {
+    a.nuse = filled[int](int(fn.ins.len), 0)
+    a.fused = filled[bool](int(fn.ins.len), false)
+    for bb: IrBlock in fn.blocks.view() {
+        for u: int in bb.ins.view() {
+            for k: u32 in 0..fn.at(u).nargs {
+                v: usize = usize(fn.arg(u, k))
+                mut a.nuse.set(v, a.nuse.get(v) + 1)
+            }
+        }
+    }
+}
+
+/* Stamps `tag` on each block where v is live in (never its own block),
+ * walking up from each use to the definition; returns the furthest position,
+ * in layout order, where v is used or live out of a block.
+ */
+live_in(a: Ra, fn: Func, v: int, mut stamp: array.Array[int], mut stack: array.Array[int], tag: int): int {
+    d: int = fn.at(v).block
+    e: int = a.start.get(usize(v))
+    for i: int in a.ufirst.get(usize(v))..a.ufirst.get(usize(v + 1)) {
+        u: RaUse = a.uses.get(usize(i))
+        if u.pos > e { e = u.pos }
+        b: int = u.block
+        if b == d || stamp.get(usize(b)) == tag { continue }
+        mut stamp.set(usize(b), tag)
+        fail(mut stack.push(b))
+        for stack.len > 0 { // live in at b: live out of each predecessor
+            t: int, _ = mut stack.pop()
+            for q: int in fn.block(t).preds.view() {
+                last: int = 2 * a.blast.get(usize(q)) + 1
+                if last > e { e = last }
+                if q != d && stamp.get(usize(q)) != tag {
+                    mut stamp.set(usize(q), tag)
+                    fail(mut stack.push(q))
+                }
+            }
+        }
+    }
+    return e
+}
+
+/* A parameter or a result address arrives at entry, wherever lowering placed it. */
+entry_value(op: u8): bool {
+    return op == ir.IR_PARAM || op == ir.IR_RESULT
+}
+
+/* Sets start, end, ufirst, and uses, honoring fused: a fused value's operands
+ * are used at its user. The end of each value's interval is the furthest
+ * position, in layout order, where it is used or live out of a block.
+ */
+pub liveness(mut a: Ra, fn: Func) {
+    nv: int = int(fn.ins.len)
+    a.start = filled[int](nv, 0)
+    a.end = filled[int](nv, 0)
+    for b: int in 0..int(fn.blocks.len) {
+        for v: int in fn.block(b).ins.view() {
+            x: IrIns = fn.at(v)
+            // a proj's value arrives at its call; a parameter or result address, at entry
+            st: int = 2 * a.idx.get(usize(v)) + 1
+            if x.op == ir.IR_PHI {
+                st = 2 * a.bfirst.get(usize(b))
+            } else if x.op == ir.IR_PROJ {
+                st = 2 * a.idx.get(usize(fn.arg(v, 0))) + 1
+            } else if entry_value(x.op) {
+                st = 1
+            }
+            mut a.start.set(usize(v), st)
+            mut a.end.set(usize(v), st)
+        }
+    }
+    uses: array.Array[RaUse] = array.Array[RaUse] {}
+    defer mut uses.wipe()
+    for b: int in 0..int(fn.blocks.len) {
+        bb: IrBlock = fn.block(b)
+        for u: int in bb.ins.view() {
+            x: IrIns = fn.at(u)
+            if a.fused.get(usize(u)) { continue }
+            for k: u32 in 0..x.nargs {
+                v: int = fn.arg(u, k)
+                ub: int = b
+                pos: int = 2 * a.idx.get(usize(u))
+                if x.op == ir.IR_PHI {
+                    ub = bb.preds.get(usize(k))
+                    pos = 2 * a.blast.get(usize(ub))
+                }
+                vf: bool = a.fused.get(usize(v))
+                nsub: u32 = 1
+                if vf { nsub = fn.at(v).nargs }
+                for s: u32 in 0..nsub {
+                    w: int = v
+                    if vf { w = fn.arg(v, s) }
+                    if remat(fn.at(w).op) { continue }
+                    fail(mut uses.push(RaUse { v = w, block = ub, pos = pos }))
+                }
+            }
+        }
+    }
+    first: array.Array[int] = filled[int](nv + 1, 0) // uses by value (counting sort)
+    for u: RaUse in uses.view() { mut first.set(usize(u.v + 1), first.get(usize(u.v + 1)) + 1) }
+    for v: usize in 0..usize(nv) { mut first.set(v + 1, first.get(v + 1) + first.get(v)) }
+    by: array.Array[RaUse] = filled[RaUse](int(uses.len), RaUse { v = 0, block = 0, pos = 0 })
+    fill: array.Array[int] = filled[int](nv, 0)
+    defer mut fill.wipe()
+    for u: RaUse in uses.view() {
+        at: usize = usize(first.get(usize(u.v)) + fill.get(usize(u.v)))
+        mut by.set(at, u)
+        mut fill.set(usize(u.v), fill.get(usize(u.v)) + 1)
+    }
+    a.ufirst = first
+    a.uses = by
+    stamp: array.Array[int] = filled[int](int(fn.blocks.len), 0)
+    defer mut stamp.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    for v: int in 0..nv { mut a.end.set(usize(v), live_in(a, fn, v, mut stamp, mut stack, v + 1)) }
+}
+
+/* Whether v's interval contains one of the call positions `at` it must survive. */
+pub crosses(a: Ra, v: int, at: array.Array[int]): bool {
+    lo: usize = 0 // first call after v's start
+    hi: usize = at.len
+    st: int = a.start.get(usize(v))
+    for lo < hi {
+        mid: usize = (lo + hi) / 2
+        if at.get(mid) > st { hi = mid } else { lo = mid + 1 }
+    }
+    return lo < at.len && a.end.get(usize(v)) > at.get(lo) + 1
+}
+
+pub allocatable(a: Ra, fn: Func, v: int): bool {
+    x: IrIns = fn.at(v)
+    return x.ty != ir.IT_VOID && !remat(x.op) && !a.fused.get(usize(v)) && a.nuse.get(usize(v)) > 0
+}
+
+/* Sets phi_of, calls, rtcalls, and the asm positions; hint all -1. */
+pub positions(mut a: Ra, fn: Func) {
+    nv: int = int(fn.ins.len)
+    a.hint = filled[int](nv, -1)
+    a.phi_of = filled[int](nv, -1)
+    for b: int in a.order.view() {
+        for u: int in fn.block(b).ins.view() {
+            x: IrIns = fn.at(u)
+            if x.op == ir.IR_PHI {
+                for k: u32 in 0..x.nargs {
+                    v: usize = usize(fn.arg(u, k))
+                    if a.phi_of.get(v) < 0 { mut a.phi_of.set(v, u) }
+                }
+            } else if x.op == ir.IR_RTCALL {
+                fail(mut a.rtcalls.push(2 * a.idx.get(usize(u))))
+            } else if x.op == ir.IR_ASM {
+                reserved: u32 = fn.asms.get(usize(x.asm)).reserved
+                fail(mut a.asm_pos.push(2 * a.idx.get(usize(u))))
+                fail(mut a.asm_mask.push(reserved))
+                a.asm_all |= reserved
+            } else if x.op == ir.IR_CALL || x.op == ir.IR_CALLI {
+                fail(mut a.calls.push(2 * a.idx.get(usize(u))))
+            }
+        }
+    }
+}
+
+/* Shares a phi's location with an operand defined after it, typically the
+ * value a loop carries around its back edge, when their intervals overlap only
+ * as hulls: the phi is dead from the operand's definition on (neither used
+ * after it in its block nor live out of it) and the operand is not live into
+ * the phi's block. The pair is allocated as the phi, over both intervals, so
+ * the operand is computed where the phi lives and its phi move vanishes.
+ * The operand may itself be a phi, as where an `if` inside a loop joins: it is
+ * written by its moves at its predecessors' ends, so the phi must also be
+ * unread there except as that operand's own argument, whose move then vanishes
+ * too. A value shares with one phi and leads no pair of its own, so no chain
+ * forms. Then a cast its operand's register form already holds shares the
+ * operand's location when its interval lies within the operand's, which only
+ * the operand's definition writes then. Sets with.
+ */
+pub coalesce(mut a: Ra, fn: Func, t: RaTarget) {
+    nv: int = int(fn.ins.len)
+    a.with = filled[int](nv, -1)
+    leads: array.Array[bool] = filled[bool](nv, false)
+    defer mut leads.wipe()
+    stamp: array.Array[int] = filled[int](int(fn.blocks.len), 0)
+    defer mut stamp.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    tag: int = 0
+    for b: int in 0..int(fn.blocks.len) {
+        bb: IrBlock = fn.block(b)
+        for p: int in bb.ins.view() {
+            if fn.at(p).op != ir.IR_PHI { break }
+            if !allocatable(a, fn, p) || a.with.get(usize(p)) >= 0 { continue }
+            for k: u32 in 0..fn.at(p).nargs {
+                v: int = fn.arg(p, k)
+                if !allocatable(a, fn, v) || a.with.get(usize(v)) >= 0 || leads.get(usize(v)) ||
+                    a.start.get(usize(v)) <= a.start.get(usize(p)) || a.start.get(usize(v)) > a.end.get(usize(p)) { continue } // disjoint: a hint suffices
+                bv: int = fn.at(v).block
+                live: bool = false
+                tag += 1
+                _ = live_in(a, fn, v, mut stamp, mut stack, tag)
+                if stamp.get(usize(b)) == tag { continue }
+                if fn.at(v).op == ir.IR_PHI { // read by a sibling phi's move into bv
+                    for w: int in fn.block(bv).ins.view() {
+                        if fn.at(w).op != ir.IR_PHI || live { break }
+                        if w == v { continue }
+                        for q: u32 in 0..fn.at(w).nargs {
+                            if fn.arg(w, q) == p {
+                                live = true
+                                break
+                            }
+                        }
+                    }
+                }
+                tag += 1
+                _ = live_in(a, fn, p, mut stamp, mut stack, tag)
+                for j: int in a.ufirst.get(usize(p))..a.ufirst.get(usize(p + 1)) {
+                    if live { break }
+                    u: RaUse = a.uses.get(usize(j))
+                    live = u.block == bv && u.pos > a.start.get(usize(v))
+                }
+                vb: IrBlock = fn.block(bv)
+                for s: int in 0..2 {
+                    if live { break }
+                    sc: int = succ(vb, s)
+                    live = sc >= 0 && stamp.get(usize(sc)) == tag
+                }
+                if live { continue }
+                mut a.with.set(usize(v), p)
+                mut leads.set(usize(p), true)
+                if a.end.get(usize(v)) > a.end.get(usize(p)) { mut a.end.set(usize(p), a.end.get(usize(v))) }
+                break
+            }
+        }
+    }
+    partner: array.Array[int] = filled[int](nv, 0) // a phi -> the one value computed into it + 1
+    defer mut partner.wipe()
+    for v: int in 0..nv {
+        if a.with.get(usize(v)) >= 0 { mut partner.set(usize(a.with.get(usize(v))), v + 1) }
+    }
+    for v: int in 0..nv {
+        x: IrIns = fn.at(v)
+        if x.op != ir.IR_CAST || x.block < 0 || !allocatable(a, fn, v) || a.with.get(usize(v)) >= 0 { continue }
+        s: int = fn.arg(v, 0)
+        if !allocatable(a, fn, s) || a.with.get(usize(s)) >= 0 || a.end.get(usize(v)) > a.end.get(usize(s)) ||
+            !t.cast_in_place(x.ty, fn.at(s).ty) { continue }
+        w: int = partner.get(usize(s)) - 1
+        if w < 0 || a.start.get(usize(w)) <= a.start.get(usize(v)) || a.start.get(usize(w)) > a.end.get(usize(v)) {
+            mut a.with.set(usize(v), s)
+        }
+    }
+}
+
+SlotUse: struct {
+    end: int,
+    slot: int,
+}
+
+heap_push(mut h: array.Array[SlotUse], x: SlotUse) {
+    fail(mut h.push(x))
+    v: mut []SlotUse = mut h.view()
+    i: usize = v.len - 1
+    for i > 0 && v[(i - 1) / 2].end > x.end {
+        v[i] = v[(i - 1) / 2]
+        i = (i - 1) / 2
+    }
+    v[i] = x
+}
+
+heap_pop(mut h: array.Array[SlotUse]): SlotUse {
+    top: SlotUse = h.get(0)
+    x: SlotUse, _ = mut h.pop()
+    v: mut []SlotUse = mut h.view()
+    n: usize = v.len
+    i: usize = 0
+    for {
+        c: usize = 2 * i + 1
+        if c >= n { break }
+        if c + 1 < n && v[c + 1].end < v[c].end { c += 1 }
+        if v[c].end >= x.end { break }
+        v[i] = v[c]
+        i = c
+    }
+    if n > 0 { v[i] = x }
+    return top
+}
+
+/* Whether register r is in mask m (callee-saved, disturbed by a byte routine). */
+bit(m: u64, r: int): bool {
+    return ((m >> u64(r)) & 1) != 0
+}
+
+/* Whether an asm statement reserving az (integer registers) claims r. */
+asm_clobbers(az: u32, r: int): bool {
+    return r < 32 && (az & (u32(1) << u32(r))) != 0
+}
+
+/* The union of every asm statement's reserved registers (Inline Assembly
+ * #2-3) whose position falls inside v's interval: none of them may hold v.
+ */
+asm_reserved(a: Ra, v: int): u32 {
+    m: u32 = 0
+    st: int = a.start.get(usize(v))
+    en: int = a.end.get(usize(v))
+    for i: usize in 0..a.asm_pos.len {
+        at: int = a.asm_pos.get(i)
+        if at > st && en > at + 1 { m |= a.asm_mask.get(i) }
+    }
+    return m
+}
+
+/* A free register for v from `list`, or -1. */
+free_in(list: []int, owner: [64]int, rt: bool, t: RaTarget, az: u32, check_rt: bool): int {
+    for r: int in list {
+        if owner[r] < 0 && !(check_rt && rt && bit(t.rtcall_clobbers, r)) && !asm_clobbers(az, r) { return r }
+    }
+    return -1
+}
+
+/* The linear scan: each allocatable value, the values arriving at entry
+ * first, then in start order, takes a hinted register, a caller-saved one
+ * unless it crosses a call, or a callee-saved one; else the interval of its
+ * class ending last spills. Spilled values take 8-byte stack slots, reused
+ * once their interval ends (a vector a pair of its own). Sets reg, slot, and
+ * nslots.
+ */
+pub allocate(mut a: Ra, fn: Func, t: RaTarget) {
+    nv: int = int(fn.ins.len)
+    a.reg = filled[int](nv, -1)
+    a.slot = filled[int](nv, -1)
+    seq: array.Array[int] = array.Array[int] {} // allocated values in start order
+    defer mut seq.wipe()
+    for pass: int in 0..2 { // the values arriving at entry first
+        for b: int in a.order.view() {
+            for v: int in fn.block(b).ins.view() {
+                if allocatable(a, fn, v) && a.with.get(usize(v)) < 0 && entry_value(fn.at(v).op) == (pass == 0) { fail(mut seq.push(v)) }
+            }
+        }
+    }
+    owner: [64]int = blank([64]int)
+    for r: usize in 0..64 { owner[r] = -1 }
+    active: array.Array[int] = array.Array[int] {}
+    defer mut active.wipe()
+    spilled: array.Array[bool] = filled[bool](nv, false)
+    defer mut spilled.wipe()
+    for v: int in seq.view() {
+        k: usize = 0
+        for k < active.len { // expire
+            w: int = active.get(k)
+            if a.end.get(usize(w)) < a.start.get(usize(v)) {
+                owner[a.reg.get(usize(w))] = -1
+                last: int, _ = mut active.pop()
+                if k < active.len { mut active.set(k, last) }
+            } else {
+                k += 1
+            }
+        }
+        x: IrIns = fn.at(v)
+        cross: bool = crosses(a, v, a.calls)
+        fp: bool = ir.type_float(x.ty) || ir.type_vector(x.ty)
+        if cross && ir.type_vector(x.ty) && t.vec_cross_spills {
+            mut spilled.set(usize(v), true)
+            continue
+        }
+        rt: bool = crosses(a, v, a.rtcalls) // not in a register a byte routine disturbs
+        az: u32 = asm_reserved(a, v) // not in a register an asm statement reserves
+        caller: []int = t.caller_int
+        callee: []int = t.callee_int
+        if fp {
+            caller = t.caller_fp
+            callee = t.callee_fp
+        }
+        want: [8]int = blank([8]int) // preferred registers, best first
+        nwant: usize = 0
+        if x.op == ir.IR_PHI {
+            for q: u32 in 0..x.nargs {
+                if nwant >= 6 { break }
+                ar: int = a.reg.get(usize(fn.arg(v, q)))
+                if ar >= 0 {
+                    want[nwant] = ar
+                    nwant += 1
+                }
+            }
+        }
+        po: int = a.phi_of.get(usize(v))
+        if po >= 0 && a.reg.get(usize(po)) >= 0 {
+            want[nwant] = a.reg.get(usize(po))
+            nwant += 1
+        }
+        if a.hint.get(usize(v)) >= 0 {
+            want[nwant] = a.hint.get(usize(v))
+            nwant += 1
+        }
+        r: int = -1
+        for q: usize in 0..nwant {
+            c: int = want[q]
+            if owner[c] < 0 && (c >= t.fp_base) == fp && (!cross || bit(t.callee_saved, c)) &&
+                !(rt && bit(t.rtcall_clobbers, c)) && !asm_clobbers(az, c) {
+                r = c
+                break
+            }
+        }
+        if r < 0 && !cross { r = free_in(caller, owner, rt, t, az, true) }
+        if r < 0 { r = free_in(callee, owner, rt, t, az, false) }
+        if r < 0 { // spill whichever interval of the class ends last
+            far: int = -1
+            for q: usize in 0..active.len {
+                w: int = active.get(q)
+                wr: int = a.reg.get(usize(w))
+                if (wr >= t.fp_base) != fp || (cross && !bit(t.callee_saved, wr)) ||
+                    (rt && bit(t.rtcall_clobbers, wr)) || asm_clobbers(az, wr) { continue }
+                if far < 0 || a.end.get(usize(w)) > a.end.get(usize(active.get(usize(far)))) { far = int(q) }
+            }
+            if far >= 0 && a.end.get(usize(active.get(usize(far)))) > a.end.get(usize(v)) {
+                w: int = active.get(usize(far))
+                r = a.reg.get(usize(w))
+                mut a.reg.set(usize(w), -1)
+                mut spilled.set(usize(w), true)
+                last: int, _ = mut active.pop()
+                if usize(far) < active.len { mut active.set(usize(far), last) }
+            } else {
+                mut spilled.set(usize(v), true)
+                continue
+            }
+        }
+        mut a.reg.set(usize(v), r)
+        owner[r] = v
+        fail(mut active.push(v))
+    }
+    heap: array.Array[SlotUse] = array.Array[SlotUse] {} // stack slots, reused once their interval ends
+    defer mut heap.wipe()
+    free_slots: array.Array[int] = array.Array[int] {}
+    defer mut free_slots.wipe()
+    for v: int in seq.view() {
+        if !spilled.get(usize(v)) { continue }
+        if ir.type_vector(fn.at(v).ty) { // a pair of its own
+            mut a.slot.set(usize(v), a.nslots)
+            a.nslots += 2
+            continue
+        }
+        for heap.len > 0 && heap.get(0).end < a.start.get(usize(v)) { fail(mut free_slots.push(heap_pop(mut heap).slot)) }
+        s: int = a.nslots
+        if free_slots.len > 0 {
+            s, _ = mut free_slots.pop()
+        } else {
+            a.nslots += 1
+        }
+        mut a.slot.set(usize(v), s)
+        heap_push(mut heap, SlotUse { end = a.end.get(usize(v)), slot = s })
+    }
+    for v: int in 0..nv {
+        w: int = a.with.get(usize(v))
+        if w >= 0 {
+            mut a.reg.set(usize(v), a.reg.get(usize(w)))
+            mut a.slot.set(usize(v), a.slot.get(usize(w)))
+        }
+    }
+}

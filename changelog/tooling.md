@@ -165,3 +165,7 @@
   successor (the new phi it inserts no longer hides the block's last
   instruction); `selfhost/check.sh` checks `selfhost/` files too, counting a
   function as unported only by its own skip line.
+- `selfhost/regalloc.ace` ports `src/regalloc.c` (layout, liveness,
+  coalescing, linear scan) and `selfhost/arm64.ace` the arm64 inputs it needs
+  (AAPCS64 locations, fusion, hints, register classes); checked against the
+  C allocator per value on every repository file, not yet by `check.sh`.
