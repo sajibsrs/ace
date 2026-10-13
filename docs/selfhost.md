@@ -22,6 +22,7 @@ documentation once selfhost is complete.
 | Optimize | `optimizer.ace` | `--ir`, `--release --ir` | `src/optimizer.c` |
 | Allocate registers | `regalloc.ace` | (none; checked through `-c`) | `src/regalloc.c` |
 | Code and object | `arm64.ace`, `emission.ace`, `macho.ace` | `-c`, `--debug -c` | `src/arm64.c`, `src/emit.c`, `src/macho.c` |
+| Link | `main.ace` | `-o NAME`, with `.o`/`.a`, `-L`, `-l`, `-framework` | `src/main.c` |
 
 `--symbols` prints the scopes once every top-level name is entered
 (Compiler #5), every type is complete, every function signature is
@@ -82,8 +83,10 @@ contract value passed as a `mut` argument (whether it is const-backed).
 
 ## Checking
 
-`selfhost/check.sh` builds selfhost with `./ace` and diffs every stage
-against the C compiler over every repository `.ace` file and `ace.pkg`,
+`selfhost/check.sh` builds selfhost with `./ace` (stage 1), has stage 1
+build selfhost again (stage 2), and requires the two objects to match byte
+for byte; the linked binaries differ only because `ld` records each object's
+directory. It then runs stage 2 and diffs every stage against the C compiler over every repository `.ace` file and `ace.pkg`,
 printing one agreement count per stage; `-c` objects must match byte for
 byte in debug and release. A `--check` file on which selfhost
 stops with `does not yet support` is counted apart, as not yet ported. It is

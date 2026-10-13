@@ -173,3 +173,7 @@
   `macho.ace`: function bodies, runtime routines, DWARF, constant data,
   globals, static maps, vtables), byte-identical to `./ace -c` in debug and
   release on every repository file; `selfhost/check.sh` diffs them.
+- selfhost links with `-o NAME` (#134): it writes `NAME.o`, refuses outputs
+  that would overwrite an input, passes `.o`/`.a`/`-L`/`-l`/`-framework` to
+  `cc` through `exec.spawn`, and reports as C's driver does. `check.sh` builds
+  selfhost with itself and runs every check with that stage-2 binary.

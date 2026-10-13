@@ -1,5 +1,5 @@
 #!/bin/sh
-# Diffs the self-hosted compiler's tokens against `ace --tokens`, its tree
+# Builds the self-hosted compiler with itself, then diffs its tokens against `ace --tokens`, its tree
 # against `ace --ast` (stdout, exit status, and every error line), its module
 # loader against the C one (every import error line; on success, the count of
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
@@ -17,9 +17,19 @@ tmp=$(mktemp -d)
 # std/ is found beside the running executable, so the module checks run a copy
 # of the self-hosted binary in the repository root, as `ace` itself is.
 self="$root/ace-self.$$"
-trap 'rm -rf "$tmp" "$self"' EXIT
+stage1="$root/ace-stage1.$$"
+trap 'rm -rf "$tmp" "$self" "$stage1" "$stage1.o"' EXIT
 
-"$root/ace" -o "$tmp/ace-self" "$here/main.ace" || exit 1
+# Stage 1 is built by `ace`; stage 2, which every check below runs, is built
+# by stage 1. Their objects must match byte for byte (ld records each object's
+# directory, so the linked binaries themselves differ).
+"$root/ace" -o "$stage1" "$here/main.ace" || exit 1
+"$stage1" -o "$tmp/ace-self" "$here/main.ace" || exit 1
+if ! cmp -s "$stage1.o" "$tmp/ace-self.o"; then
+    echo "self-build: stage 2 object differs from stage 1"
+    exit 1
+fi
+echo "self-build: stage 2 object matches stage 1"
 cp "$tmp/ace-self" "$self"
 
 cd "$root"

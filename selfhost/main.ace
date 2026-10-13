@@ -6,11 +6,14 @@
  * with --check checks it through its function bodies as `ace --check` does, or
  * with --sema checks it fully as `ace` does, or with [--debug|--release] --ir
  * lowers its functions and prints them as `ace [--debug|--release] --ir` does,
- * or with [--debug|--release] -c writes its object file as `ace -c` does.
+ * or with [--debug|--release] -c writes its object file as `ace -c` does, or
+ * with [--debug|--release] -o NAME links it through cc as `ace -o` does.
  * --pkg-graph=DIR prints a package's dependency graph and --pkg-check=DIR resolves its imports
  * through it, as `ace` does, optionally for another --target=T.
  */
 
+import array
+import exec
 import file
 import fmt
 import mem
@@ -36,6 +39,9 @@ TARGET: const string = "darwin-arm64"
 TARGET: const string = "linux-x64"
 
 main(): int {
+    for i: usize in 1 .. sys.argc() {
+        if mem.equal(sys.arg(i), "-o") { return build() }
+    }
     graph_dir: string = ""
     check_dir: string = ""
     target: string = TARGET
@@ -77,7 +83,13 @@ main(): int {
     path: string = sys.arg(sys.argc() - 1)
     if modules || resolved { return dump_modules(path, resolved) }
     if symbols { return dump_symbols(path) }
-    if check || full || lower || object { return check_bodies(path, full || lower || object, lower, object, debug) }
+    if check || full || lower || object {
+        pool: path.Pool = blank(path.Pool)
+        defer mut pool.wipe()
+        obj: string = ""
+        if object { obj = mut pool.join([stem(path), ".o"]) }
+        return check_bodies(path, full || lower || object, lower, obj, debug)
+    }
     src: mut []u8, rerr: Error = file.read(path)
     defer mem.release[u8](mut src)
     if rerr != null {
@@ -198,12 +210,25 @@ dump_symbols(path: string): int {
     return 0
 }
 
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+/* `name` without a trailing `.ace`. */
+stem(name: string): string {
+    if name.len >= 4 && mem.equal(name[name.len - 4..], ".ace") { return name[..name.len - 4] }
+    return name
+}
+
 /* Checks `path` through its function bodies, then with `full` runs the
  * end-of-file checks as `ace` does, and with `lower` prints its functions'
- * IR as `ace --ir` does, or `ace --debug --ir` with `debug`, or with `object`
- * writes its object file beside it as `ace -c` does; 1 on any error.
+ * IR as `ace --ir` does, or `ace --debug --ir` with `debug`, or with a
+ * nonempty `obj` writes its object file there as `ace -c` does; 1 on any error.
  */
-check_bodies(path: string, full: bool, lower: bool, object: bool, debug: bool): int {
+check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer mut l.wipe()
     if !found { return 1 }
@@ -221,14 +246,10 @@ check_bodies(path: string, full: bool, lower: bool, object: bool, debug: bool): 
         return 1
     }
     if s.errors > 0 { return summary(path, s.errors) }
-    if !lower && !object { return 0 }
+    if !lower && obj.len == 0 { return 0 }
     mut s.layout_all()
-    if object {
-        pool: path.Pool = blank(path.Pool)
-        defer mut pool.wipe()
-        stem: string = path
-        if stem.len >= 4 && mem.equal(stem[stem.len - 4..], ".ace") { stem = stem[..stem.len - 4] }
-        ok: bool, why: string = emission.object(mut s, debug, path, mut pool.join([stem, ".o"]))
+    if obj.len > 0 {
+        ok: bool, why: string = emission.object(mut s, debug, path, obj)
         if why.len > 0 { fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", why) }
         if !ok { return 1 }
         return 0
@@ -270,5 +291,164 @@ packages(graph_dir: string, check_dir: string, target: string): int {
         return 0
     }
     if !mut l.resolve_package(g, root) { return summary(g.pkgs.get(root).root_file, l.errors) }
+    return 0
+}
+
+/* The value after option `i`, advancing `i`; a missing value, or one that
+ * looks like an option, is C's usage error.
+ */
+option_value(mut i: usize, option: string, what: string): (string, bool) {
+    if i + 1 >= sys.argc() || (sys.arg(i + 1).len > 1 && sys.arg(i + 1)[0] == '-') {
+        fmt.printf(sys.stderr, "ace: %s requires %s\n", option, what)
+        return "", false
+    }
+    i += 1
+    return sys.arg(i), true
+}
+
+/* Whether `a` and `b` name one file: the same text, or the same canonical
+ * path when both exist. Unlike C's inode comparison, two hard links differ.
+ */
+same_path(a: string, b: string): bool {
+    if mem.equal(a, b) { return true }
+    pool: path.Pool = blank(path.Pool)
+    defer mut pool.wipe()
+    ca: string, found_a: bool = path.canonical(mut pool, a)
+    cb: string, found_b: bool = path.canonical(mut pool, b)
+    return found_a && found_b && mem.equal(ca, cb)
+}
+
+/* C's refusal to let an output overwrite an input; false after reporting. */
+distinct_output(output: string, input: string, kind: string): bool {
+    if !same_path(output, input) { return true }
+    fmt.printf(sys.stderr, "ace: %s '%s' would overwrite input '%s'\n", kind, output, input)
+    return false
+}
+
+/* Runs `cc` over `argv` and waits for it, reporting a failure as C does. */
+run_linker(argv: []string): bool {
+    child: sys.Process, err: Error = exec.spawn(argv)
+    if err != null {
+        fmt.printf(sys.stderr, "ace: cannot launch cc: %s\n", err.message)
+        return false
+    }
+    status: sys.ProcessStatus, werr: Error = sys.wait(child)
+    for werr != null && werr.code == sys.EINTR { status, werr = sys.wait(child) }
+    if werr != null {
+        fmt.printf(sys.stderr, "ace: cannot wait for cc: %s\n", werr.message)
+        return false
+    }
+    if !status.exited {
+        fmt.printf(sys.stderr, "ace: linker terminated by signal %d\n", status.signal)
+        return false
+    }
+    if status.code != 0 {
+        fmt.printf(sys.stderr, "ace: linker exited with status %d\n", status.code)
+        return false
+    }
+    return true
+}
+
+/* Whether `a` is one of C's driver options other than those `build` takes. */
+driver_option(a: string): bool {
+    for known: string in ["--tokens", "--ast", "--resolved", "--symbols", "--check", "--ir", "--report", "--target", "--pkg-graph", "--pkg-check", "-c"] {
+        if mem.equal(a, known) { return true }
+    }
+    for prefix: string in ["--target=", "--pkg-graph=", "--pkg-check="] {
+        if a.len >= prefix.len && mem.equal(a[..prefix.len], prefix) { return true }
+    }
+    return false
+}
+
+/* `ace [--debug|--release] -o NAME root.ace [inputs.o/.a] [-L DIR] [-l NAME]
+ * [-framework NAME]`: writes NAME.o and links it through cc as C's driver
+ * does; `-o root.ace` names the executable for the root's stem.
+ */
+build(): int {
+    debug: bool = false
+    mode_seen: bool = false
+    root: string = ""
+    out: string = ""
+    links: array.Array[string] = array.Array[string] {}
+    defer mut links.wipe()
+    inputs: array.Array[string] = array.Array[string] {}
+    defer mut inputs.wipe()
+    i: usize = 1
+    for i < sys.argc() {
+        a: string = sys.arg(i)
+        if mem.equal(a, "--debug") || mem.equal(a, "--release") {
+            if mode_seen && debug != mem.equal(a, "--debug") {
+                fmt.printf(sys.stderr, "ace: --debug and --release are mutually exclusive\n")
+                return 2
+            }
+            mode_seen = true
+            debug = mem.equal(a, "--debug")
+        } else if mem.equal(a, "-o") {
+            value: string, ok: bool = option_value(mut i, "-o", "an output name")
+            if !ok { return 2 }
+            out = value
+        } else if mem.equal(a, "-L") || mem.equal(a, "-l") || mem.equal(a, "-framework") {
+            what: string = "a directory"
+            if mem.equal(a, "-l") { what = "a library name" }
+            if mem.equal(a, "-framework") { what = "a framework name" }
+            value: string, ok: bool = option_value(mut i, a, what)
+            if !ok { return 2 }
+            fail(mut links.push(a))
+            fail(mut links.push(value))
+        } else if a.len > 1 && a[0] == '-' {
+            if !driver_option(a) {
+                fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
+                return 2
+            }
+            fmt.printf(sys.stderr, "ace: selfhost does not yet support %s with -o\n", a)
+            return 1
+        } else if a.len >= 4 && mem.equal(a[a.len - 4..], ".ace") {
+            if root.len > 0 {
+                fmt.printf(sys.stderr, "ace: only one root .ace source may be compiled\n")
+                return 2
+            }
+            root = a
+        } else if a.len >= 2 && (mem.equal(a[a.len - 2..], ".o") || mem.equal(a[a.len - 2..], ".a")) {
+            fail(mut links.push(a))
+            fail(mut inputs.push(a))
+        } else {
+            fmt.printf(sys.stderr, "ace: unrecognized input '%s' (expected .ace, .o, or .a)\n", a)
+            return 2
+        }
+        i += 1
+    }
+    if out.len >= 4 && mem.equal(out[out.len - 4..], ".ace") {
+        if out.len == 4 {
+            fmt.printf(sys.stderr, "ace: -o <file.ace> requires a name before '.ace'\n")
+            return 2
+        }
+        if root.len > 0 && !mem.equal(root, out) {
+            fmt.printf(sys.stderr, "ace: only one root .ace source may be compiled\n")
+            return 2
+        }
+        root = out
+        out = stem(out)
+    }
+    if root.len == 0 {
+        fmt.printf(sys.stderr, "usage: ace-self [--debug|--release] -o NAME file.ace [inputs]\n")
+        return 2
+    }
+    pool: path.Pool = blank(path.Pool)
+    defer mut pool.wipe()
+    obj: string = mut pool.join([out, ".o"])
+    if !distinct_output(obj, root, "generated object") || !distinct_output(out, root, "linked output") { return 2 }
+    for input: string in inputs.view() {
+        if !distinct_output(obj, input, "generated object") || !distinct_output(out, input, "linked output") { return 2 }
+    }
+    if check_bodies(root, true, false, obj, debug) != 0 { return 1 }
+
+    argv: array.Array[string] = array.Array[string] {}
+    defer mut argv.wipe()
+    fail(mut argv.push("cc"))
+    fail(mut argv.push(obj))
+    for link: string in links.view() { fail(mut argv.push(link)) }
+    fail(mut argv.push("-o"))
+    fail(mut argv.push(out))
+    if !run_linker(argv.view()) { return 1 }
     return 0
 }
