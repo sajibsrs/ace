@@ -1,0 +1,4 @@
+/* An open enum cannot index an array. */
+
+Kind: enum u8 { a, b, _ }
+counts: [Kind]int

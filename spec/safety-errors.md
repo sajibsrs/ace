@@ -7,7 +7,7 @@ Decision: checks are a development tool; release trusts the developer.
 2. Debug builds diagnose dynamic contract violations and then abort; bounds
    diagnostics include the source file, line, and column of the failing access.
    The diagnostic is best-effort on standard error and is not a recoverable error
-   channel. Array, slice, and string bounds and integer overflow are on. A conversion to an enum, `E(n)`, checks that `n` is a member's discriminant (one range compare for a dense enum), so an enum value is always a member and indexing `[E]T` needs no check. A constant taking an enum type, explicitly (`E(7)`) or implicitly (`e: E = 7`, an `E` argument), must name a member at compile time.
+   channel. Array, slice, and string bounds and integer overflow are on. A conversion to a closed enum, `E(n)`, checks that `n` is a member's discriminant (one range compare for a dense enum), so an enum value is always a member and indexing `[E]T` needs no check. A constant taking an enum type, explicitly (`E(7)`) or implicitly (`e: E = 7`, an `E` argument), must name a member at compile time.
    Allocator tracking diagnoses invalid/double release and leaks; arbitrary
    use-after-free access requires separate memory-access instrumentation and is
    not implied by allocation tracking.

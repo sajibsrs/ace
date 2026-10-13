@@ -1678,7 +1678,7 @@ Sema.coerce(mut self, e: u32, want: u32): bool {
             part = w.base
             if part == 0 { part = self.prim(P_I32) }
             cv: i64, known: bool = self.ut_const(e)
-            if known && !self.enum_member_value(want, cv) { // Safety #2, #4: an enum value is always a member
+            if known && !self.enum_open(want) && !self.enum_member_value(want, cv) { // Safety #2, #4: an enum value is always a member
                 mut self.err(e, [mut self.num64(cv), " is not a member of ", mut self.type_name(want)])
                 return false
             }
@@ -3982,7 +3982,7 @@ Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
     }
     if w.kind == TypeKind.enum {
         cv: i64, known: bool = self.ut_const(arg)
-        if known && !self.enum_member_value(want, cv) { // Safety #2, #4: an enum value is always a member
+        if known && !self.enum_open(want) && !self.enum_member_value(want, cv) { // Safety #2, #4: an enum value is always a member
             mut self.err(call, [mut self.num64(cv), " is not a member of ", mut self.type_name(want)])
             return self.t_err
         }
@@ -4772,6 +4772,10 @@ Sema.enum_array(mut self, id: u32): u32 {
         mut self.err(t.b, ["an array's bracket holds a length or an enum, not ", mut self.type_name(e)])
         return self.t_err
     }
+    if self.enum_open(e) {
+        mut self.err(t.b, ["enum ", mut self.type_name(e), " is open; an array's bracket needs a closed dense enum"])
+        return self.t_err
+    }
     n: u32 = et.nfields
     for i: u32 in 0..n {
         m: SField = self.field(et, i)
@@ -5104,8 +5108,15 @@ Sema.check_contract(mut self, decl: u32) {
     }
 }
 
+/* Type System #15: an open enum's values are every value of its backing type. */
+Sema.enum_open(self, t: u32): bool {
+    d: u32 = self.ty(t).decl
+    return d != 0 && (self.node(d).flags & parser.F_OPEN) != 0
+}
+
 Sema.check_enum(mut self, decl: u32, id: u32) {
     d: Node = self.node(decl)
+    if (d.flags & parser.F_OPEN) != 0 && d.a == 0 { mut self.err(decl, ["an open enum must state its backing type"]) }
     base: u32 = self.prim(P_I32)
     if d.a != 0 { base = mut self.build_type(d.a) }
     b: SType = self.ty(base)

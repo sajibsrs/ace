@@ -1,0 +1,5 @@
+/* An open enum ends its member list with `_`. */
+
+Key: enum u32 { unknown, a = 'a', _ }
+Trailing: enum u8 { none, _, }
+Bare: enum u16 { _ }

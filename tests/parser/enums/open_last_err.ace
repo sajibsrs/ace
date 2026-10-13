@@ -1,0 +1,3 @@
+/* `_` must be the last enum member. */
+
+Key: enum u32 { unknown, _, a }

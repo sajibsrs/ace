@@ -182,8 +182,9 @@ if is_key && key.key == sdl.Keycode.space { ... }
 ```
 
 Field names follow SDL's. `type` is an `EventType` and `key` a
-`Keycode`, `u32`-backed enums naming the values this binding handles; SDL may
-deliver other values, which simply match no named member. `Keycode` names
+`Keycode`, open `u32`-backed enums naming the values this binding handles; SDL
+may deliver other values, which simply match no named member (their `.name` is
+`""`). `Keycode` names
 `backspace`, `tab`, `enter`, `escape`, `space`, `digit_0`…`digit_9`, `a`…`z`,
 and the arrows `left`, `right`, `up`, `down`. A key is its unshifted
 character, so any other one is `sdl.Keycode('/')`, and `u32(key)` gives the

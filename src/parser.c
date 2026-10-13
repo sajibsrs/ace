@@ -2097,6 +2097,13 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         NV members = {0};
         if (!at(p, T_RBRACE)) {
             for (;;) {
+                if (at(p, T_IDENT) && tk(p)->len == 1 && tk(p)->str[0] == '_') {
+                    p->i++;
+                    n->flags |= F_OPEN;
+                    eat(p, T_COMMA);
+                    if (!at(p, T_RBRACE)) perr(p, "'_' must be the last enum member");
+                    break;
+                }
                 Node* m = ident_node(p, expect_member(p, "enum member"));
                 if (eat(p, T_ASSIGN)) m->a = expr(p, 0);
                 nv_push(p, &members, m);
@@ -2709,6 +2716,7 @@ static void pflags(Node* x) {
     if (x->flags & F_VOLATILE) printf(" volatile");
     if (x->flags & F_CABI) printf(" c_abi");
     if (x->flags & F_SHADOWED) printf(" shadowed");
+    if (x->flags & F_OPEN) printf(" open");
 }
 
 static int dump_cnames; // --resolved also shows each link name and builtin mark

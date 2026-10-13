@@ -14,6 +14,7 @@ KMOD_LCTRL: const u16 = 0x0040
 main(): int {
     if u32(sdl.Keycode.digit_0) != 0x30 || u32(sdl.Keycode.z) != 0x7a { return 7 }
     if sdl.Keycode('a') != sdl.Keycode.a || u32(sdl.Keycode.up) != 0x4000_0052 { return 7 }
+    if u32(sdl.Keycode('/')) != '/' || sdl.Keycode('/').name.len != 0 { return 7 }
     if !sdl.init(sdl.InitFlags { events = 1 }) { return 1 }
     defer sdl.quit()
 

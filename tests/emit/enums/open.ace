@@ -1,0 +1,34 @@
+/* An open enum holds every value of its backing type: conversion and
+ * constants skip the membership check in both modes, a switch reaches
+ * `default`, and `.name` of a non-member is "". */
+
+// expect-exit: 0
+
+import mem
+
+Key: enum u32 { unknown, a = 'a', b = 'b', _ }
+Empty: enum u8 { _ }
+
+convert(n: u32): Key {
+    return Key(n)
+}
+
+main(): int {
+    slash: Key = convert(u32('/'))
+    if u32(slash) != '/' { return 1 }
+    constant: Key = Key(7)
+    implicit: Key = 9
+    if u32(constant) != 7 || u32(implicit) != 9 { return 2 }
+    seen: int = 0
+    switch slash {
+        Key.a, Key.b { seen = 1 }
+        default { seen = 2 }
+    }
+    if seen != 2 { return 3 }
+    if !mem.equal(slash.name, "") || !mem.equal(constant.name, "") { return 4 }
+    if !mem.equal(Key.b.name, "b") || !mem.equal(Key.unknown.name, "unknown") { return 5 }
+    if convert('a') != Key.a || !mem.equal(convert('a').name, "a") { return 6 }
+    e: Empty = Empty(3)
+    if u8(e) != 3 || !mem.equal(e.name, "") { return 7 }
+    return 0
+}

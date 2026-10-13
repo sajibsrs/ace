@@ -20,19 +20,20 @@ pub WindowFlags: bits u64 { _: 5, resizable: 1, _: 58 }
 // one format a Shader's code is in.
 pub ShaderFormats: bits u32 { _: 1, spirv: 1, dxbc: 1, dxil: 1, msl: 1, metallib: 1, _: 26 }
 
-// SDL_EventType values this binding names; SDL may deliver others, which
-// compare unequal to every member.
+// SDL_EventType values this binding names. The enum is open: SDL may deliver
+// others, which compare unequal to every member.
 pub EventType: enum u32 {
     none,
     quit = 0x100,
     window_close_requested = 0x210,
     key_down = 0x300,
     key_up = 0x301,
+    _,
 }
 
 // SDL_Keycode values this binding names. Keys produce their unshifted
-// character, so any other key is still reachable: `Keycode('/')` builds
-// one, and `u32(key)` gives the integer for range checks.
+// character, and the enum is open, so any other key is still reachable:
+// `Keycode('/')` builds one, and `u32(key)` gives the integer for range checks.
 pub Keycode: enum u32 {
     unknown,
     backspace = 0x08,
@@ -80,6 +81,7 @@ pub Keycode: enum u32 {
     left = 0x4000_0050,
     down = 0x4000_0051,
     up = 0x4000_0052,
+    _,
 }
 
 // Renderer.vsync intervals: 1 presents on every refresh, 0 never waits.

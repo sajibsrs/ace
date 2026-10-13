@@ -1,5 +1,9 @@
 # Language
 
+- An enum whose member list ends with `_` is open (#8): it states its backing
+  type and holds every backing value, so `E(n)` and constants skip the member
+  check, `.name` of a non-member is `""`, and `[E]T` rejects it. The parser
+  sets `F_OPEN`; `pkg/sdl`'s `EventType` and `Keycode` are open.
 - A string literal may name a code point with `\u{H…}` (1–6 hex digits),
   written as its UTF-8 bytes (#127); surrogates and values above U+10FFFF are
   lex errors, and `\u` is rejected in a char literal. Both lexers encode it

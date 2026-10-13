@@ -57,18 +57,19 @@ pub F_INLINE: const u32 = 1048576
 pub F_COLD: const u32 = 4194304
 pub F_GROUPED: const u32 = 33554432
 pub F_SHADOWED: const u32 = 268435456
+pub F_OPEN: const u32 = 536870912 // an enum whose member list ends with `_`
 pub F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
 
 /* Flag dump names, in `ace --ast` order. */
-FLAG_BITS: [19]u32 = [
+FLAG_BITS: [20]u32 = [
     F_PUB, F_EXPO, F_MUT, F_NOALIAS, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
     F_ASSOC, F_SELECT, F_EMBED, F_SPECIALIZED, F_INTRINSIC, F_INLINE, F_COLD,
-    F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED,
+    F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED, F_OPEN,
 ]
-FLAG_NAMES: [19]string = [
+FLAG_NAMES: [20]string = [
     " pub", " extern-c", " mut", " noalias", " const", " default", " varargs",
     " method", " assoc", " select", " embed", " specialized", " intrinsic",
-    " inline", " cold", " packed", " volatile", " c_abi", " shadowed",
+    " inline", " cold", " packed", " volatile", " c_abi", " shadowed", " open",
 ]
 
 NOSLIT: const int = 1 // no struct literal at this expression level
@@ -2261,6 +2262,13 @@ Parser.enum_decl(mut self, name: usize, pub_: bool): u32 {
     mark: usize = self.nstack
     if !self.at(Token.rbrace) {
         for {
+            if self.at(Token.ident) && mem.equal(self.text(self.i), "_") {
+                self.i += 1
+                self.nodes[n].flags |= F_OPEN
+                mut self.eat(Token.comma)
+                if !self.at(Token.rbrace) { mut self.fail("'_' must be the last enum member") }
+                break
+            }
             m: u32 = mut self.ident_node(Kind.ident, mut self.expect_member("enum member"))
             if mut self.eat(Token.assign) { self.nodes[m].a = mut self.expr(0) }
             mut self.push(m)

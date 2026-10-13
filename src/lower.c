@@ -2085,7 +2085,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         if (to == IT_BOOL && from != IT_BOOL) unsupported(l, "conversion to bool");
         int v = expr(l, a, from);
         SType* et = unwrap(node_ty(x));
-        if (l->mode == EMIT_DEBUG && et && et->kind == SK_ENUM) enum_check(l, v, from, et, x);
+        if (l->mode == EMIT_DEBUG && et && et->kind == SK_ENUM && !enum_open(et)) enum_check(l, v, from, et, x);
         if (from == to) return v;
         return emit2(l, IR_CAST, to, v, -1);
     }
@@ -3075,27 +3075,31 @@ static int error_description(Lw* l, Node* x, Agg* out) {
 }
 
 // The name of an enum value (Type System #14), when x reads one: the source
-// spelling of the member whose discriminant it equals. A value is always a
-// member (Safety #2), so the last member needs no comparison.
+// spelling of the member whose discriminant it equals. A closed enum's value
+// is always a member (Safety #2), so its last member needs no comparison; an
+// open enum's non-member is "".
 static int enum_name(Lw* l, Node* x, Agg* out) {
     SType* bt = unwrap(node_ty(x->a));
     while (bt && bt->kind == SK_PTR) bt = unwrap(bt->base);
-    if (!bt || bt->kind != SK_ENUM || !bt->decl || !bt->decl->nkids || x->len != 4 || memcmp(x->str, "name", 4) != 0)
-        return 0;
+    if (!bt || bt->kind != SK_ENUM || !bt->decl || x->len != 4 || memcmp(x->str, "name", 4) != 0) return 0;
     Node* d = bt->decl;
+    int open = enum_open(bt);
+    if (!d->nkids && !open) return 0;
     IrType it = need_type(l, bt);
     int v = deref_value(l, x->a, it);
     int pv = temp_var(l, IT_PTR, konst(l, IT_PTR, 0)), nv = temp_var(l, IT_U64, konst(l, IT_U64, 0));
     int done = new_block(l);
-    for (int j = 0; j < d->nkids; j++) {
-        Node* m = d->kids[j];
+    for (int j = 0; j < d->nkids + open; j++) {
         Node* name = (Node*)arena_alloc(sizeof(Node));
         memset(name, 0, sizeof *name);
         name->kind = N_STR;
-        name->str = m->str;
-        name->len = m->len;
+        if (j < d->nkids) {
+            name->str = d->kids[j]->str;
+            name->len = d->kids[j]->len;
+        }
         int next = -1;
-        if (j + 1 < d->nkids) {
+        if (j + 1 < d->nkids + open) {
+            Node* m = d->kids[j];
             int yes = new_block(l);
             next = new_block(l);
             terminate(l, IR_BR, cmp(l, IR_EQ, v, konst(l, it, m->ival)), yes, next);

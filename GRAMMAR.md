@@ -117,7 +117,8 @@ method_decl   := member "(" receiver ["," params] ")" [ret_clause]
 
 enum_decl     := ident ":" "enum" [enum_backing] "{" enum_members "}"
 enum_backing  := type                                  // sema: fixed-width integer or alias
-enum_members  := enum_member ("," enum_member)* [","]
+enum_members  := enum_member ("," enum_member)* ["," "_"] [","]
+               | "_" [","]                              // "_" last: open enum (Type System #15)
 enum_member   := member ["=" expr]
 union_decl    := ident [type_params] ":" "union" "{" union_variants "}"
 union_variants := union_variant ("," union_variant)* [","]

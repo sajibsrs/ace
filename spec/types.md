@@ -94,9 +94,16 @@ Carved (explicit struct layout):
     name table and lookup are emitted only for an enum whose `.name` is used,
     the lookup is allocation-free and maps each discriminant (dense or sparse)
     to its name, and there is no runtime registry, initialization, or general
-    reflection. Because an enum value is always a member (Safety #2), there is
-    no unknown-value case. `.name` is value lookup; `E.name` remains type
-    lookup and names a member called `name` (Syntax #2).
+    reflection. Because a closed enum's value is always a member (Safety #2),
+    there is no unknown-value case; an open enum's non-member is `""` (#15).
+    `.name` is value lookup; `E.name` remains type lookup and names a member
+    called `name` (Syntax #2).
+15. Open enums. An enum whose member list ends with `_` is open: it must
+    state its backing type, and every value of that type is a value of the
+    enum. `E(n)` converts without a membership check and a constant need not
+    name a member (Safety #2 covers closed enums only); `.name` of a
+    non-member is `""`; an open enum cannot index `[E]T` (#13). Every other
+    rule of #10 and #11 applies. [`_` spelling provisional]
 
 Carved (compile-time static lookup maps):
 

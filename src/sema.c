@@ -1403,6 +1403,10 @@ static SType* enum_array_type(Ck* k, Node* t) {
         ck_err(k, t->b, "an array's bracket holds a length or an enum, not %s", type_name(e));
         return T_ERR;
     }
+    if (enum_open(e)) {
+        ck_err(k, t->b, "enum %s is open; an array's bracket needs a closed dense enum", type_name(e));
+        return T_ERR;
+    }
     int n = e->decl ? e->decl->nkids : 0;
     for (int i = 0; i < n; i++) {
         int64_t v = e->decl->kids[i]->ival;
@@ -2184,6 +2188,7 @@ static uint64_t enum_max(SType* t) {
 }
 
 static void check_enum_decl(Ck* k, Node* n, SType* t) {
+    if ((n->flags & F_OPEN) && !n->a) ck_err(k, n, "an open enum must state its backing type");
     t->base = n->a ? build_type(k, n->a) : st_prim(P_I32);
     if (!enum_backing_type(t->base)) {
         ck_err(k, n->a ? n->a : n, "enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64");
@@ -2357,7 +2362,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
             SType* part = want; // an enum constant is checked whole; its operands are integers
             if (want->kind == SK_ENUM) {
                 part = want->base ? want->base : st_prim(P_I32);
-                if (ut_const(e, &cv) && !enum_member_value(want, cv)) {
+                if (!enum_open(want) && ut_const(e, &cv) && !enum_member_value(want, cv)) {
                     // Safety #2, #4: an enum value is always a member
                     ck_err(k, e, "%lld is not a member of %s", (long long)cv, type_name(want));
                     return 0;
@@ -4823,7 +4828,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                     !ut_fits(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_I64)) : want))
                     return T_ERR;
                 int64_t cv;
-                if (want->kind == SK_ENUM && ut_const(call->kids[0], &cv) && !enum_member_value(want, cv)) {
+                if (want->kind == SK_ENUM && !enum_open(want) && ut_const(call->kids[0], &cv) && !enum_member_value(want, cv)) {
                     // Safety #2, #4: an enum value is always a member
                     ck_err(k, call, "%lld is not a member of %s", (long long)cv, type_name(want));
                     return T_ERR;

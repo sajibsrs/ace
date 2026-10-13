@@ -806,6 +806,20 @@ The names are static data, and their lookup is emitted only for an enum whose
 and reads through pointers as other fields do. There is no general reflection:
 `.name` is the only such question, and only an enum value answers it.
 
+An enum whose member list ends with `_` is open: every value of its backing
+type is a value of the enum, as for a C enumeration a library may extend. It
+must state its backing type. Conversions and constants take any value without
+a membership check, `.name` of a non-member is `""`, and it cannot index an
+array. A switch reaches `default` for a value no case names.
+
+```ace
+Key: enum u32 { unknown, a = 'a', b = 'b', _ }
+slash: Key = Key('/')   // a value, though no member names it; slash.name is ""
+```
+
+A closed enum read from C, as a return, a field C wrote, or a callback
+argument, must hold a member; declare a C enumeration that can grow open.
+
 A tagged union is a closed set of named alternatives stored inline. Variants
 may carry no data or one explicitly typed payload:
 
@@ -1051,6 +1065,15 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   made rather than where it is used, covers `switch` and every table as well,
   and runs less often than indexing (Zig checks `@enumFromInt` likewise). A
   dense enum costs one unsigned compare.
+- Type System #15 (open enums): a C enumeration is open, and a library may add
+  values a binding never named, while a closed enum's "always a member"
+  guarantee is what lets `[E]T` skip bounds checks. Marking openness on the
+  type keeps that guarantee for closed enums and costs an open one nothing.
+  Zig's non-exhaustive `enum(u32) { ..., _ }` is the same design; Swift imports
+  non-frozen C enums as open, and Rust's bindgen emits constants instead
+  because an unknown discriminant is undefined behavior. `_` already means the
+  unnamed part of a `bits` type. `.name` gives `""` for a non-member rather
+  than rejecting `.name`, so code can print what it knows.
 - Type System #14 (enum `.name`): a hand-written name table repeats every
   member and drifts when one is added; the compiler already holds the
   spelling. Zig `@tagName`, Rust `#[derive(Debug)]`, Go `stringer`, and Nim `$`

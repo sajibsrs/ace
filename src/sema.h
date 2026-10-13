@@ -123,5 +123,7 @@ STypeInst* sema_insts(Node* generic_decl);
 
 static inline SType* node_ty(Node* n) { return (SType*)n->ty; }
 static inline Sym*   node_sym(Node* n) { return (Sym*)n->sym; }
+// Type System #15: an open enum's values are every value of its backing type.
+static inline int    enum_open(SType* e) { return e->decl && (e->decl->flags & F_OPEN); }
 
 #endif

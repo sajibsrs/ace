@@ -185,6 +185,7 @@ enum {
     F_STATICLIT = 67108864, // a []T array literal of constant elements: static data
     F_REEXPORTED = 134217728, // a struct a facade's pub alias makes visible to importers
     F_SHADOWED = 268435456, // `x.m` whose local x hides an import binding x with a member m
+    F_OPEN = 536870912, // an enum whose member list ends with `_` (Type System #15)
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

@@ -1,0 +1,3 @@
+/* An open enum states its backing type. */
+
+Key: enum { unknown, _ }
