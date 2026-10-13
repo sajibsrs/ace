@@ -22,7 +22,7 @@ trap 'rm -rf "$tmp" "$self"' EXIT
 cp "$tmp/ace-self" "$self"
 
 cd "$root"
-files=$(find std pkg demo tests bench -name '*.ace' | sort)
+files=$(find std pkg demo tests bench selfhost -name '*.ace' | sort)
 # The loader's own diagnostics: C reports these before sema, so a C failure
 # that shows one is one the self-hosted loader must have reported too.
 import_errors='import cycle|not found \(tried|is ambiguous|cannot load module|member .[^ ]*. is not public|no public member|duplicate import binding|collides with (another import|a declaration)|must be relative|private to directory module|has no mod.ace|too long|too many segments|empty segment|escapes its package directory|reserved pkg/ directory'
@@ -167,7 +167,7 @@ for f in $files; do
                 head -2 "$tmp/gerr"
             else
                 counts=$(paste "$tmp/wf" "$tmp/gf" | awk -F '\t' '
-                    $2 ~ /selfhost does not yet support/ { p++; next }
+                    $2 ~ /^; [^\001]*: not lowered \(selfhost does not yet support [^\001]*\)\001*$/ { p++; next }
                     $1 == $2 { s++; next }
                     { b++; if (!shown++) { gsub(/\001/, "\n", $1); gsub(/\001/, "\n", $2); print $1 > "/dev/stderr"; print "---" > "/dev/stderr"; print $2 > "/dev/stderr" } }
                     END { printf "%d %d %d\n", s, p, b }' 2>"$tmp/idiff")

@@ -161,3 +161,7 @@
   then `selfhost/optimizer.ace`, a port of `src/optimizer.c` (SCCP, GVN, loop
   strength reduction, cleanup, vectorization); `selfhost/check.sh` compares IR
   in both modes.
+- selfhost cleanup's branch threading rewrites every use in the threaded
+  successor (the new phi it inserts no longer hides the block's last
+  instruction); `selfhost/check.sh` checks `selfhost/` files too, counting a
+  function as unported only by its own skip line.

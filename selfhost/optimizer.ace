@@ -1903,7 +1903,8 @@ Clean.thread_branches(mut self): bool {
                 v: int = self.fn.block(j).ins.get(q)
                 w: int = -1
                 for b: int in 0..int(self.fn.blocks.len) {
-                    for u: usize in 0..self.fn.block(b).ins.len {
+                    u: usize = 0
+                    for u < self.fn.block(b).ins.len { // the new phi lengthens s
                         id: int = self.fn.block(b).ins.get(u)
                         for a: u32 in 0..self.fn.at(id).nargs {
                             if self.fn.arg(id, a) != v || id == w || use_owner(*self.fn, id, a) != s { continue }
@@ -1915,6 +1916,7 @@ Clean.thread_branches(mut self): bool {
                             }
                             mut self.fn.set_arg(id, a, w)
                         }
+                        u += 1
                     }
                 }
             }
