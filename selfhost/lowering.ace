@@ -8,10 +8,10 @@
  * slot, read and written by load and store. A struct, tuple, or array is its
  * scalar leaves (ir.leaves).
  *
- * Ported so far: scalar and simple aggregate locals, arithmetic and
- * comparisons, if, general for loops, labels, break and continue, direct and
- * indirect calls, and returns, as a debug build lowers them. Anything else
- * stops the function with a "selfhost does not yet support" reason.
+ * Ported so far, as a debug build lowers them: scalars and aggregates,
+ * strings and slices, contracts, tagged unions, every loop form, switch,
+ * static maps, and direct, indirect, and contract calls. Anything else stops
+ * the function with a "selfhost does not yet support" reason.
  */
 
 import array
@@ -1073,8 +1073,11 @@ Lw.store_value(mut self, at: u32, t: u32, dst: int, off: i32) {
         return
     }
     if u != 0 && self.ty(u).kind == TypeKind.union {
-        mut self.unported("views, contracts, and unions")
-        return
+        ctor: bool, _, _ = self.union_ctor(x)
+        if ctor {
+            mut self.union_store(x, t, dst, off)
+            return
+        }
     }
     if ((n.kind == Kind.structlit && u != 0 && self.ty(u).kind == TypeKind.struct) || (n.kind == Kind.tuple && u != 0 && self.ty(u).kind == TypeKind.tuple)) && self.by_parts(t) {
         ut: SType = self.ty(u)
@@ -1203,7 +1206,7 @@ Lw.element(mut self, x: u32): Place {
     st: u32 = self.unwrap(self.nty(n.a))
     if st != 0 && self.ty(st).kind == TypeKind.array {
         ut: SType = self.ty(st)
-        chk: bool = self.debug && ut.key == 0
+        chk: bool = self.debug && (self.s.node_proof(x) & sema.PROOF_BOUNDS) == 0
         p: Place = mut self.array_place(n.a)
         es: u32 = self.size(ut.base)
         p.t = ut.base
@@ -1220,14 +1223,19 @@ Lw.element(mut self, x: u32): Place {
         e.flags = p.flags // a null base traps here
         return Place { addr = id, off = p.off, t = ut.base }
     }
-    if st != 0 && self.ty(st).kind == TypeKind.staticmap {
-        mut self.unported("static maps")
-    } else if self.is_view(st) {
-        mut self.unported("views, contracts, and unions")
-    } else {
+    if st != 0 && self.ty(st).kind == TypeKind.staticmap { return mut self.staticmap_place(x, st) }
+    if !self.is_view(st) {
         mut self.unsupported(self.type_why(st))
+        return Place { addr = mut self.dummy(), t = self.nty(x) }
     }
-    return Place { addr = mut self.dummy(), t = self.nty(x) }
+    chk: bool = self.debug && (self.s.node_proof(x) & sema.PROOF_BOUNDS) == 0
+    ptr: int, len: int = mut self.view_parts(n.a, chk)
+    i: int = mut self.bound(n.b, x, chk)
+    if chk { mut self.bounds_check(mut self.emit2(ir.IR_LT, ir.IT_BOOL, i, len), x) }
+    et: u32 = self.view_elem(st)
+    id: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, ptr, i)
+    mut self.fn.at(id).imm = u64(self.size(et))
+    return Place { addr = id, t = et }
 }
 
 /* Copies memory place `src` to place `dst` of its type: bytes between
@@ -1470,6 +1478,761 @@ Lw.literal_array(mut self, x: u32, t: u32, mut out: Agg) {
     }
 }
 
+// --- sequences --------------------------------------------------------------
+
+/* A static array literal's link symbol is numbered program-wide, as C's
+ * literal_name numbers it.
+ */
+lit_next: u32 = 0
+
+/* A variable of lowering's own, first holding `v`. */
+Lw.temp_var(mut self, t: u8, v: int): int {
+    var: int = mut self.var_new(0, t, -1)
+    mut self.write_var(var, self.cur, v)
+    return var
+}
+
+Lw.cmp(mut self, op: u8, a: int, b: int): int {
+    return mut self.emit2(op, ir.IT_BOOL, a, b)
+}
+
+/* The literal a module-level string constant names, or 0. */
+Lw.const_string(self, x: u32): u32 {
+    if self.node(x).kind != Kind.ident { return 0 }
+    s: u32 = self.nsym(x)
+    if s == 0 { return 0 }
+    sy: sema.Sym = self.s.sym(s)
+    if sy.kind != sema.SymKind.var || !sy.is_global || !sy.is_const { return 0 }
+    init: u32 = self.s.sym_init(s)
+    if init == 0 || self.node(init).kind != Kind.str_lit { return 0 }
+    return init
+}
+
+/* The string literal `x`, or a constant naming one, or 0. */
+Lw.string_of(self, x: u32): u32 {
+    if self.node(x).kind == Kind.str_lit { return x }
+    return self.const_string(x)
+}
+
+/* The leaves of a string of bytes `text`: their address and length. */
+Lw.string_bytes(mut self, text: string, mut out: Agg) {
+    p: int = mut self.emit(ir.IR_STR, ir.IT_PTR)
+    x: mut *ir.IrIns = mut self.fn.at(p)
+    x.name = text
+    x.imm = u64(text.len)
+    out.n = 2
+    out.v[0] = p
+    out.v[1] = mut self.konst(ir.IT_U64, u64(text.len))
+}
+
+/* Leaf `k` of string or slice `x`, a place's read alone: 0 its ptr, 1 its length. */
+Lw.view_leaf(mut self, x: u32, k: int): int {
+    lit: u32 = self.string_of(x)
+    if lit != 0 && k != 0 { return mut self.konst(ir.IT_U64, u64(self.node(lit).text.len)) }
+    if lit != 0 {
+        v: Agg = blank(Agg)
+        mut self.string_bytes(self.node(lit).text, mut v)
+        return v.v[0]
+    }
+    if self.is_place(x) {
+        p: Place = mut self.place(x)
+        if p.var >= 0 { return mut self.read_var(p.var + k, self.cur) }
+        t: u8 = ir.IT_PTR
+        if k != 0 { t = ir.IT_U64 }
+        return mut self.load(t, p.addr, p.off + i32(8 * k), p.flags)
+    }
+    v: Agg = blank(Agg)
+    mut self.value(x, self.nty(x), mut v)
+    if self.failed() { return mut self.dummy() }
+    return v.v[k]
+}
+
+/* The ptr of string or slice `x`, and its length when `want_len` (else -1):
+ * the descriptor read once, a place's through one address.
+ */
+Lw.view_parts(mut self, x: u32, want_len: bool): (int, int) {
+    lit: u32 = self.string_of(x)
+    if lit == 0 && self.is_place(x) {
+        p: Place = mut self.place(x)
+        if p.var >= 0 {
+            ptr: int = mut self.read_var(p.var, self.cur)
+            if !want_len { return ptr, -1 }
+            return ptr, mut self.read_var(p.var + 1, self.cur)
+        }
+        ptr: int = mut self.load(ir.IT_PTR, p.addr, p.off, p.flags)
+        if !want_len { return ptr, -1 }
+        return ptr, mut self.load(ir.IT_U64, p.addr, p.off + 8, p.flags)
+    }
+    v: Agg = blank(Agg)
+    if lit != 0 { mut self.string_bytes(self.node(lit).text, mut v) } else { mut self.value(x, self.nty(x), mut v) }
+    if self.failed() { return mut self.dummy(), mut self.dummy() }
+    if !want_len { return v.v[0], -1 }
+    return v.v[0], v.v[1]
+}
+
+/* The value an Error or enum field reads, as type `it`: x itself, or what its
+ * pointers lead to, each dereference null-checked.
+ */
+Lw.deref_value(mut self, x: u32, it: u8): int {
+    t: u32 = self.unwrap(self.nty(x))
+    if t == 0 || self.ty(t).kind != TypeKind.ptr { return mut self.expr(x, int(it)) }
+    v: int = mut self.expr(x, int(ir.IT_PTR))
+    t = self.unwrap(self.ty(t).base)
+    for t != 0 && self.ty(t).kind == TypeKind.ptr {
+        v = mut self.load(ir.IT_PTR, v, 0, self.access_check(v))
+        t = self.unwrap(self.ty(t).base)
+    }
+    return mut self.load(it, v, 0, self.access_check(v))
+}
+
+/* The element type of string or slice type `st` (unwrapped). */
+Lw.view_elem(self, st: u32): u32 {
+    if self.ty(st).kind == TypeKind.slice { return self.ty(st).base }
+    return self.s.prim(sema.P_U8)
+}
+
+/* The leaves of x = s[lo..hi] (Sequences #1-2): s's descriptor, then lo,
+ * then hi; debug checks each signed bound nonnegative as it is evaluated,
+ * then lo <= hi, then hi <= s.len, skipping what sema proved.
+ */
+Lw.slice_leaves(mut self, x: u32, mut out: Agg) {
+    n: Node = self.node(x)
+    st: u32 = self.unwrap(self.nty(n.a))
+    pr: u8 = self.s.node_proof(x)
+    chk: bool = self.debug && (pr & sema.PROOF_BOUNDS) == 0
+    ptr: int = -1
+    len: int = -1
+    es: u64 = 1
+    if st != 0 && self.ty(st).kind == TypeKind.array { // its place's address and its fixed length
+        ptr = mut self.place_address(mut self.array_place(n.a))
+        len = mut self.konst(ir.IT_U64, self.ty(st).count)
+        es = u64(self.size(self.ty(st).base))
+    } else {
+        if !self.is_view(st) {
+            mut self.unsupported(self.type_why(st))
+            out.n = 0
+            return
+        }
+        if self.ty(st).kind == TypeKind.slice { es = u64(self.size(self.ty(st).base)) }
+        ptr, len = mut self.view_parts(n.a, n.c == 0 || (chk && (pr & sema.PROOF_SOURCE) == 0))
+    }
+    lo: int = -1
+    if n.b != 0 { lo = mut self.bound(n.b, x, chk && (pr & sema.PROOF_LO_NONNEG) == 0) }
+    hi: int = len
+    if n.c != 0 { hi = mut self.bound(n.c, x, chk && (pr & sema.PROOF_HI_NONNEG) == 0) }
+    if chk && (pr & sema.PROOF_ORDER) == 0 && lo >= 0 { mut self.bounds_check(mut self.cmp(ir.IR_LE, lo, hi), x) }
+    if chk && (pr & sema.PROOF_SOURCE) == 0 && n.c != 0 { mut self.bounds_check(mut self.cmp(ir.IR_LE, hi, len), x) }
+    out.n = 2
+    out.v[0] = ptr
+    out.v[1] = hi
+    if lo < 0 { return }
+    out.v[0] = mut self.emit2(ir.IR_PADD, ir.IT_PTR, ptr, lo)
+    mut self.fn.at(out.v[0]).imm = es
+    out.v[1] = mut self.emit2(ir.IR_SUB, ir.IT_U64, hi, lo)
+}
+
+/* Array literal `x` viewed as []T: its [N]T as static data when its elements
+ * are constant, else built in a stack object; empty, the null view.
+ */
+Lw.literal_view(mut self, x: u32, mut out: Agg) {
+    at: u32 = self.s.node_view(x)
+    out.n = 2
+    out.v[1] = mut self.konst(ir.IT_U64, self.ty(at).count)
+    if self.ty(at).count == 0 {
+        out.v[0] = mut self.konst(ir.IT_PTR, 0)
+        return
+    }
+    if (self.s.node_proof(x) & sema.PROOF_STATIC) != 0 {
+        id: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
+        buf: [32]u8
+        b: Out = Out.init(mut buf[0..32])
+        _ = mut b.printf("__ace$lit$%u", uint(lit_next))
+        mut self.fn.at(id).name = mut self.fn.names.copy(b.text())
+        lit_next += 1
+        out.v[0] = id
+        return
+    }
+    slot: int = mut self.new_slot(at)
+    mut self.store_value(x, at, slot, 0)
+    out.v[0] = slot
+}
+
+/* The name or message of an Error (Errors #9), when `x` reads one: the
+ * string of the first domain (name) or entry (message) the Error's packed
+ * value matches, else the empty string; the program's domains, searched in
+ * declaration order.
+ */
+Lw.error_description(mut self, x: u32, mut out: Agg): bool {
+    n: Node = self.node(x)
+    bt: u32 = self.unwrap(self.nty(n.a))
+    for bt != 0 && self.ty(bt).kind == TypeKind.ptr { bt = self.unwrap(self.ty(bt).base) }
+    message: bool = mem.equal(n.text, "message")
+    if bt == 0 || self.ty(bt).kind != TypeKind.error || (!message && !mem.equal(n.text, "name")) { return false }
+    v: int = mut self.deref_value(n.a, ir.IT_U64)
+    pv: int = mut self.temp_var(ir.IT_PTR, mut self.konst(ir.IT_PTR, 0))
+    nv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+    done: int = mut self.new_block()
+    domain: int = -1
+    if !message { domain = mut self.emit2(ir.IR_SHR, ir.IT_U64, v, mut self.konst(ir.IT_U64, 32)) }
+    file: u32 = self.s.file
+    for i: u32 in 0..self.node(file).nkids {
+        d: u32 = self.kid(file, i)
+        dn: Node = self.node(d)
+        if dn.kind != Kind.error { continue }
+        dt: u32 = self.s.domain_type(d)
+        id: u32 = 0
+        if dt != 0 { id = self.s.identity(dt) }
+        if id == 0 { continue }
+        nk: u32 = 1
+        if message { nk = dn.nkids }
+        for j: u32 in 0..nk {
+            text: string = ""
+            match: int = 0
+            if message {
+                packed: u64 = (u64(id) << 32) | u64(u32(self.s.field(self.ty(dt), j).value))
+                match = mut self.cmp(ir.IR_EQ, v, mut self.konst(ir.IT_U64, packed))
+                text = self.node(self.node(self.kid(d, j)).b).text
+            } else {
+                text = dn.text
+                if dn.cname.len > 0 { text = dn.cname }
+                match = mut self.cmp(ir.IR_EQ, domain, mut self.konst(ir.IT_U64, u64(id)))
+            }
+            yes: int = mut self.new_block()
+            next: int = mut self.new_block()
+            mut self.terminate(ir.IR_BR, match, yes, next)
+            mut self.seal(yes)
+            mut self.enter(yes)
+            sv: Agg = blank(Agg)
+            mut self.string_bytes(text, mut sv)
+            mut self.write_var(pv, self.cur, sv.v[0])
+            mut self.write_var(nv, self.cur, sv.v[1])
+            mut self.jump(done)
+            mut self.seal(next)
+            mut self.enter(next)
+        }
+    }
+    mut self.jump(done)
+    mut self.seal(done)
+    mut self.enter(done)
+    out.n = 2
+    out.v[0] = mut self.read_var(pv, self.cur)
+    out.v[1] = mut self.read_var(nv, self.cur)
+    return true
+}
+
+/* The name of an enum value (Type System #14), when `x` reads one: the source
+ * spelling of the member whose discriminant it equals; an open enum's
+ * non-member is "".
+ */
+Lw.enum_name(mut self, x: u32, mut out: Agg): bool {
+    n: Node = self.node(x)
+    bt: u32 = self.unwrap(self.nty(n.a))
+    for bt != 0 && self.ty(bt).kind == TypeKind.ptr { bt = self.unwrap(self.ty(bt).base) }
+    if bt == 0 || self.ty(bt).kind != TypeKind.enum || self.ty(bt).decl == 0 || !mem.equal(n.text, "name") { return false }
+    et: SType = self.ty(bt)
+    nm: u32 = et.nfields
+    open: u32 = 0
+    if (self.node(et.decl).flags & parser.F_OPEN) != 0 { open = 1 }
+    if nm == 0 && open == 0 { return false }
+    it: u8 = mut self.need_type(bt)
+    v: int = mut self.deref_value(n.a, it)
+    pv: int = mut self.temp_var(ir.IT_PTR, mut self.konst(ir.IT_PTR, 0))
+    nv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+    done: int = mut self.new_block()
+    for j: u32 in 0..nm + open {
+        text: string = ""
+        if j < nm { text = self.s.field(et, j).name }
+        next: int = -1
+        if j + 1 < nm + open {
+            yes: int = mut self.new_block()
+            next = mut self.new_block()
+            mut self.terminate(ir.IR_BR, mut self.cmp(ir.IR_EQ, v, mut self.konst(it, u64(self.s.field(et, j).value))), yes, next)
+            mut self.seal(yes)
+            mut self.enter(yes)
+        }
+        s: Agg = blank(Agg)
+        mut self.string_bytes(text, mut s)
+        mut self.write_var(pv, self.cur, s.v[0])
+        mut self.write_var(nv, self.cur, s.v[1])
+        mut self.jump(done)
+        if next >= 0 {
+            mut self.seal(next)
+            mut self.enter(next)
+        }
+    }
+    mut self.seal(done)
+    mut self.enter(done)
+    out.n = 2
+    out.v[0] = mut self.read_var(pv, self.cur)
+    out.v[1] = mut self.read_var(nv, self.cur)
+    return true
+}
+
+/* Type `t`'s link-symbol spelling, as emit.c's mangle_type writes it. */
+Lw.mangle_type(self, mut b: Out, t: u32) {
+    if t == 0 {
+        _ = mut b.printf("?")
+        return
+    }
+    x: SType = self.ty(t)
+    switch x.kind {
+        TypeKind.prim {
+            _ = mut b.printf("%s", PRIM_NAMES[x.prim])
+        }
+        TypeKind.ptr {
+            _ = mut b.printf("p")
+            self.mangle_type(mut b, x.base)
+        }
+        TypeKind.slice {
+            _ = mut b.printf("s")
+            self.mangle_type(mut b, x.base)
+        }
+        TypeKind.array {
+            _ = mut b.printf("a%u_", x.count)
+            if x.key != 0 { // [E]T
+                _ = mut b.printf("k")
+                self.mangle_type(mut b, x.key)
+            }
+            self.mangle_type(mut b, x.base)
+        }
+        TypeKind.error { _ = mut b.printf("Error") }
+        TypeKind.struct, TypeKind.enum, TypeKind.bits, TypeKind.contract, TypeKind.union {
+            tag: string = "I"
+            if x.kind == TypeKind.struct { tag = "S" } else if x.kind == TypeKind.enum { tag = "E" } else if x.kind == TypeKind.bits { tag = "B" } else if x.kind == TypeKind.union { tag = "U" }
+            _ = mut b.printf("%s%u_%s", tag, uint(x.name.len), x.name)
+            if x.nargs > 0 {
+                _ = mut b.printf("g")
+                for i: u32 in 0..x.nargs {
+                    _ = mut b.printf("$")
+                    self.mangle_type(mut b, self.s.type_arg(x, i))
+                }
+            }
+        }
+        TypeKind.distinct { _ = mut b.printf("D%u_%s", uint(x.name.len), x.name) }
+        TypeKind.tuple {
+            _ = mut b.printf("t")
+            for i: u32 in 0..x.nfields { self.mangle_type(mut b, self.s.field(x, i).ty) }
+            _ = mut b.printf("_")
+        }
+        TypeKind.func {
+            _ = mut b.printf("f")
+            for i: u32 in 0..x.nparams { self.mangle_type(mut b, self.s.param(x, i)) }
+            _ = mut b.printf("r")
+            self.mangle_type(mut b, x.ret)
+            _ = mut b.printf("_")
+        }
+        default { _ = mut b.printf("?") }
+    }
+}
+
+PRIM_NAMES: [14]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid"]
+
+/* Whether call `x` builds a contract value: `Shape(&value)` (Carved #5). */
+Lw.contract_ctor(self, x: u32): bool {
+    n: Node = self.node(x)
+    return n.kind == Kind.call && self.nsym(x) == 0 && n.nkids == 1 && n.a != 0 && self.node(n.a).kind == Kind.ident && self.is_contract(self.nty(x)) && self.is_pointer(self.kid(x, 0))
+}
+
+/* Contract construction `x`: the vtable of the pointee's signing, then the pointer. */
+Lw.contract_value(mut self, x: u32, mut out: Agg) {
+    conc: u32 = self.ty(self.unwrap(self.nty(self.kid(x, 0)))).base
+    buf: [512]u8
+    b: Out = Out.init(mut buf[0..512])
+    _ = mut b.printf("__ace$vt$")
+    self.mangle_type(mut b, conc)
+    _ = mut b.printf("$")
+    self.mangle_type(mut b, self.nty(x))
+    if b.dropped() != 0 {
+        mut self.unsupported("contract construction")
+        out.n = 0
+        return
+    }
+    vt: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
+    mut self.fn.at(vt).name = mut self.fn.names.copy(b.text())
+    data: int = mut self.expr(self.kid(x, 0), int(ir.IT_PTR))
+    out.n = 2
+    out.v[0] = vt
+    out.v[1] = data
+}
+
+/* Contract dispatch `x`: s.area() through the method's vtable slot, the data
+ * pointer as its receiver; -2 when `x` is no such call.
+ */
+Lw.contract_call(mut self, x: u32, mut res: Agg, want_res: bool, dst: int): int {
+    cn: Node = self.node(x)
+    callee: u32 = cn.a
+    if self.nsym(x) != 0 || callee == 0 || self.node(callee).kind != Kind.selector { return -2 }
+    ct: u32 = self.nty(self.node(callee).a)
+    if ct == 0 || self.ty(ct).kind != TypeKind.contract { return -2 }
+    d: u32 = self.ty(ct).decl
+    midx: int = -1
+    for i: u32 in 0..self.node(d).nkids {
+        if mem.equal(self.node(self.kid(d, i)).text, self.node(callee).text) {
+            midx = int(i)
+            break
+        }
+    }
+    if midx < 0 {
+        mut self.unsupported("contract method")
+        return mut self.dummy()
+    }
+    c: Agg = blank(Agg)
+    mut self.value(self.node(callee).a, ct, mut c)
+    if self.failed() { return mut self.dummy() }
+    f: int = mut self.load(ir.IT_PTR, c.v[0], i32(midx * 8), self.access_check(c.v[0])) // fn slot: vtable checked here
+    g: Args = Args.init()
+    defer mut g.wipe()
+    mut g.scalar(c.v[1]) // the receiver: always by address
+    for i: u32 in 0..cn.nkids { mut self.call_arg(mut g, self.kid(x, i), self.nty(self.kid(x, i)), false) }
+    rt: u32 = self.nty(x)
+    id: int = mut self.emit(ir.IR_CALLI, mut self.result_type(rt))
+    mut self.fn.at(id).flags = self.null_checked() // fn itself, at the call
+    mut self.fn.arg_add(id, f)
+    return mut self.call_finish(id, g, rt, mut res, want_res, dst)
+}
+
+// --- static maps ------------------------------------------------------------
+
+map_hash_int(x: u64, seed: u64): u64 {
+    z: u64 = x + seed + 0x9e3779b97f4a7c15
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+    z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+    return z ^ (z >> 31)
+}
+
+map_hash_string(p: string, seed: u64): u64 {
+    h: u64 = 1469598103934665603 ^ seed
+    for c: u8 in p {
+        h ^= u64(c)
+        h *= 1099511628211
+    }
+    return h
+}
+
+/* Static map `ms`'s perfect hash, as emit.c's map_plan finds it: the seed and
+ * the slot mask, or false when there is none.
+ */
+Lw.map_plan(self, ms: u32, strings: bool): (u64, u32, bool) {
+    lit: u32 = self.s.sym_init(ms)
+    count: u32 = 0
+    if lit != 0 { count = self.node(lit).nkids }
+    keys: array.Array[u64] = array.Array[u64] {}
+    defer mut keys.wipe()
+    texts: array.Array[string] = array.Array[string] {}
+    defer mut texts.wipe()
+    for i: u32 in 0..count {
+        a: u32 = self.node(self.kid(lit, i)).a
+        if strings {
+            t: u32 = self.s.static_key_string(a)
+            if t == 0 { return 0, 0, false }
+            fail(mut texts.push(self.node(t).text))
+        } else {
+            k: u64, ok: bool = self.s.static_key_int(a)
+            if !ok { return 0, 0, false }
+            fail(mut keys.push(k))
+        }
+    }
+    size: u32 = 1
+    want: u32 = 1
+    if count != 0 { want = count * 2 }
+    for size < want { size <<= 1 }
+    slots: array.Array[bool] = array.Array[bool] {}
+    defer mut slots.wipe()
+    for {
+        mut slots.truncate(0)
+        for 0..size { fail(mut slots.push(false)) }
+        for seed: u64 in 0..1000000 {
+            for j: u32 in 0..size { mut slots.set(usize(j), false) }
+            collision: bool = false
+            for i: u32 in 0..count {
+                h: u64 = 0
+                if strings { h = map_hash_string(texts.get(usize(i)), seed) } else { h = map_hash_int(keys.get(usize(i)), seed) }
+                at: u32 = u32(h) & (size - 1)
+                if slots.get(usize(at)) {
+                    collision = true
+                    break
+                }
+                mut slots.set(usize(at), true)
+            }
+            if !collision { return seed, size - 1, true }
+        }
+        if size >= u32(1) << 30 { return 0, 0, false }
+        size <<= 1
+    }
+    return 0, 0, false
+}
+
+/* The link symbol of one table (keys, values, or slots) of static map `ms`. */
+Lw.map_table(mut self, ms: u32, table: string): int {
+    id: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
+    mut self.fn.at(id).sym = ms
+    mut self.fn.at(id).name = mut self.fn.names.join(["__ace$map$", self.s.sym(ms).name, "$", table])
+    return id
+}
+
+/* A call to runtime routine `name` (a, b, n): mem_compare's i64, else none. */
+Lw.rtcall(mut self, name: string, a: int, b: int, n: int): int {
+    t: u8 = ir.IT_VOID
+    if mem.equal(name, "__ace$mem_compare") { t = ir.IT_I64 }
+    id: int = mut self.emit(ir.IR_RTCALL, t)
+    mut self.fn.at(id).name = name
+    mut self.fn.arg_add(id, a)
+    mut self.fn.arg_add(id, b)
+    mut self.fn.arg_add(id, n)
+    return id
+}
+
+/* Static map lookup x = table[key] (Carved: compile-time static lookup
+ * maps): hash the key as emit.c laid the table out (integers by splitmix64,
+ * strings by FNV-1a, both seeded), load the slot, and confirm the key
+ * exactly. The entry index is count, the table's zero entry, unless the key
+ * is found; the place is that entry's value.
+ */
+Lw.staticmap_place(mut self, x: u32, mp: u32): Place {
+    n: Node = self.node(x)
+    m: SType = self.ty(mp)
+    ms: u32 = self.nsym(n.a)
+    rawkey: u32 = self.unwrap(m.base)
+    strings: bool = rawkey != 0 && self.ty(rawkey).kind == TypeKind.prim && self.ty(rawkey).prim == sema.P_STRING
+    seed: u64 = 0
+    mask: u32 = 0
+    ok: bool = false
+    if ms != 0 && self.s.sym(ms).kind == sema.SymKind.var && self.s.sym(ms).is_global && self.s.sym_init(ms) != 0 { seed, mask, ok = self.map_plan(ms, strings) }
+    if !ok {
+        mut self.unsupported("static map")
+        return Place { addr = mut self.dummy(), t = m.ret }
+    }
+    count: u64 = u64(self.node(self.s.sym_init(ms)).nkids)
+    kv: Agg = blank(Agg)
+    kt: u8 = ir.IT_U64
+    k: int = -1
+    h: int = 0
+    if strings {
+        mut self.value(n.b, m.base, mut kv)
+    } else {
+        kt = mut self.need_type(m.base)
+        if kt == ir.IT_PTR || ir.type_float(kt) {
+            mut self.unsupported("static map")
+            return Place { addr = mut self.dummy(), t = m.ret }
+        }
+        k = mut self.expr(n.b, int(kt))
+    }
+    if self.failed() { return Place { addr = mut self.dummy(), t = m.ret } }
+    idx: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, count))
+    if !strings {
+        h = k
+        if kt != ir.IT_U64 && kt != ir.IT_I64 { h = mut self.emit2(ir.IR_CAST, ir.IT_U64, k, -1) }
+        h = mut self.emit2(ir.IR_ADD, ir.IT_U64, h, mut self.konst(ir.IT_U64, seed + 0x9e3779b97f4a7c15))
+        h = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, mut self.emit2(ir.IR_SHR, ir.IT_U64, h, mut self.konst(ir.IT_U64, 30)))
+        h = mut self.emit2(ir.IR_MUL, ir.IT_U64, h, mut self.konst(ir.IT_U64, 0xbf58476d1ce4e5b9))
+        h = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, mut self.emit2(ir.IR_SHR, ir.IT_U64, h, mut self.konst(ir.IT_U64, 27)))
+        h = mut self.emit2(ir.IR_MUL, ir.IT_U64, h, mut self.konst(ir.IT_U64, 0x94d049bb133111eb))
+        h = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, mut self.emit2(ir.IR_SHR, ir.IT_U64, h, mut self.konst(ir.IT_U64, 31)))
+    } else {
+        hv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 1469598103934665603 ^ seed))
+        iv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 0))
+        head: int = mut self.new_block()
+        body: int = mut self.new_block()
+        exit: int = mut self.new_block()
+        mut self.jump(head)
+        mut self.enter(head)
+        i: int = mut self.read_var(iv, head)
+        h = mut self.read_var(hv, head)
+        mut self.terminate(ir.IR_BR, mut self.cmp(ir.IR_LT, i, kv.v[1]), body, exit)
+        mut self.seal(body)
+        mut self.enter(body)
+        at: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, kv.v[0], i)
+        mut self.fn.at(at).imm = 1
+        b: int = mut self.emit2(ir.IR_CAST, ir.IT_U64, mut self.load(ir.IT_U8, at, 0, 0), -1)
+        mix: int = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, b)
+        mut self.write_var(hv, self.cur, mut self.emit2(ir.IR_MUL, ir.IT_U64, mix, mut self.konst(ir.IT_U64, 1099511628211)))
+        mut self.write_var(iv, self.cur, mut self.emit2(ir.IR_ADD, ir.IT_U64, i, mut self.konst(ir.IT_U64, 1)))
+        mut self.jump(head)
+        mut self.seal(head)
+        mut self.seal(exit)
+        mut self.enter(exit)
+    }
+    h = mut self.emit2(ir.IR_AND, ir.IT_U64, h, mut self.konst(ir.IT_U64, u64(mask)))
+    sp: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, mut self.map_table(ms, "slots"), h)
+    mut self.fn.at(sp).imm = 4
+    slot: int = mut self.load(ir.IT_U32, sp, 0, 0)
+    found: int = mut self.guard(mut self.cmp(ir.IR_NE, slot, mut self.konst(ir.IT_U32, 0)))
+    wide: int = mut self.emit2(ir.IR_CAST, ir.IT_U64, slot, -1)
+    ei: int = mut self.emit2(ir.IR_SUB, ir.IT_U64, wide, mut self.konst(ir.IT_U64, 1))
+    ksz: u32 = 16
+    if !strings { ksz = self.size(m.base) }
+    keys: int = mut self.map_table(ms, "keys")
+    ep: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, keys, ei)
+    mut self.fn.at(ep).imm = u64(ksz)
+    if strings {
+        lenok: int = mut self.guard(mut self.cmp(ir.IR_EQ, mut self.load(ir.IT_U64, ep, 8, 0), kv.v[1]))
+        r: int = mut self.rtcall("__ace$mem_compare", mut self.load(ir.IT_PTR, ep, 0, 0), kv.v[0], kv.v[1])
+        same: int = mut self.guard(mut self.cmp(ir.IR_EQ, r, mut self.konst(ir.IT_I64, 0)))
+        mut self.write_var(idx, self.cur, ei)
+        mut self.guard_end(same)
+        mut self.guard_end(lenok)
+    } else {
+        same: int = mut self.guard(mut self.cmp(ir.IR_EQ, mut self.load(kt, ep, 0, 0), k))
+        mut self.write_var(idx, self.cur, ei)
+        mut self.guard_end(same)
+    }
+    mut self.guard_end(found)
+    values: int = mut self.map_table(ms, "values")
+    vp: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, values, mut self.read_var(idx, self.cur))
+    mut self.fn.at(vp).imm = u64(self.size(m.ret))
+    return Place { addr = vp, t = m.ret }
+}
+
+// --- tagged unions ----------------------------------------------------------
+
+/* The union a construction's or pattern's base names: a type, or a generic
+ * union's stamp; else 0.
+ */
+Lw.union_of_base(self, base: u32): u32 {
+    if base == 0 { return 0 }
+    b: Node = self.node(base)
+    if b.kind == Kind.ident {
+        ts: u32 = self.nsym(base)
+        if ts != 0 && self.s.sym(ts).kind == sema.SymKind.type && self.is_union(self.s.sym(ts).ty) { return self.unwrap(self.s.sym(ts).ty) }
+        return 0
+    }
+    if b.kind == Kind.index && self.is_union(self.nty(base)) { return self.unwrap(self.nty(base)) }
+    return 0
+}
+
+/* Whether `x` builds a variant: `Event.quit`, or `Event.key(42)`; the
+ * variant and its payload expression (0 for none).
+ */
+Lw.union_ctor(self, x: u32): (bool, int, u32) {
+    n: Node = self.node(x)
+    if n.kind == Kind.selector && self.union_of_base(n.a) != 0 { return true, int(self.s.node_ival(x)), 0 }
+    if n.kind != Kind.call || self.nsym(x) != 0 || n.a == 0 || self.node(n.a).kind != Kind.selector || self.union_of_base(self.node(n.a).a) == 0 { return false, 0, 0 }
+    pay: u32 = 0
+    if n.nkids == 1 {
+        pay = self.kid(x, 0)
+        if self.node(pay).kind == Kind.mutarg { pay = self.node(pay).a }
+    }
+    return true, int(self.s.node_ival(n.a)), pay
+}
+
+/* The byte offset of union `u`'s payload: past the i32 tag, at the largest
+ * payload alignment.
+ */
+Lw.payload_off(self, u: u32): u32 {
+    x: SType = self.ty(self.unwrap(u))
+    maxa: u32 = 1
+    for i: u32 in 0..x.nfields {
+        ft: u32 = self.s.field(x, i).ty
+        if ft != 0 && maxa < self.ty(self.unwrap(ft)).align { maxa = self.ty(self.unwrap(ft)).align }
+    }
+    return (4 + maxa - 1) / maxa * maxa
+}
+
+/* Variant construction into memory at dst + off: the payload where it lives,
+ * then the tag. The inactive bytes are left as they are.
+ */
+Lw.union_store(mut self, x: u32, t: u32, dst: int, off: i32) {
+    ut: SType = self.ty(self.unwrap(t))
+    _, vi: int, pay: u32 = self.union_ctor(x)
+    if vi < 0 || vi >= int(ut.nfields) || (pay != 0) != (self.s.field(ut, u32(vi)).ty != 0) {
+        mut self.unsupported("union variant")
+        return
+    }
+    if pay != 0 { mut self.store_value(pay, self.s.field(ut, u32(vi)).ty, dst, off + i32(self.payload_off(t))) }
+    mut self.store(dst, off, mut self.konst(ir.IT_I32, u64(vi)), 0)
+}
+
+/* The address of the union `x` names or builds. */
+Lw.union_addr(mut self, x: u32, t: u32): int {
+    ctor: bool, _, _ = self.union_ctor(x)
+    if !ctor && self.is_place(x) {
+        p: Place = mut self.place(x)
+        if p.var < 0 { return mut self.place_address(p) }
+    }
+    mut self.covered(t)
+    slot: int = mut self.new_slot(t)
+    mut self.store_value(x, t, slot, 0)
+    return slot
+}
+
+/* Whether the bytes of payload type `pt` at a + off and b + off are equal: a
+ * nested union by its own rule, a float by value, the rest word by word.
+ */
+Lw.payload_equal(mut self, pt: u32, a: int, b: int, off: i32): int {
+    u: u32 = self.unwrap(pt)
+    x: SType = self.ty(u)
+    if x.kind == TypeKind.union {
+        ua: int = mut self.offset_addr(a, off)
+        return mut self.union_equal_at(u, ua, mut self.offset_addr(b, off))
+    }
+    if x.kind == TypeKind.prim && (x.prim == sema.P_F32 || x.prim == sema.P_F64) {
+        ft: u8 = ir.IT_F64
+        if x.prim == sema.P_F32 { ft = ir.IT_F32 }
+        fa: int = mut self.load(ft, a, off, 0)
+        return mut self.cmp(ir.IR_EQ, fa, mut self.load(ft, b, off, 0))
+    }
+    size: u32 = self.size(pt)
+    acc: int = mut self.konst(ir.IT_BOOL, 1)
+    at: u32 = 0
+    for at < size {
+        rem: u32 = size - at
+        w: u32 = 1
+        if rem >= 8 { w = 8 } else if rem >= 4 { w = 4 } else if rem >= 2 { w = 2 }
+        wt: u8 = word_type(w)
+        wa: int = mut self.load(wt, a, off + i32(at), 0)
+        c: int = mut self.cmp(ir.IR_EQ, wa, mut self.load(wt, b, off + i32(at), 0))
+        acc = mut self.emit2(ir.IR_AND, ir.IT_BOOL, acc, c)
+        at += w
+    }
+    return acc
+}
+
+/* Whether the unions at a and b are equal: the tags, and when they match the
+ * active payload (inactive bytes and padding are never compared).
+ */
+Lw.union_equal_at(mut self, ut: u32, a: int, b: int): int {
+    res: int = mut self.temp_var(ir.IT_BOOL, mut self.konst(ir.IT_BOOL, 0))
+    join: int = mut self.new_block()
+    same: int = mut self.new_block()
+    ta: int = mut self.load(ir.IT_I32, a, 0, 0)
+    tb: int = mut self.load(ir.IT_I32, b, 0, 0)
+    mut self.terminate(ir.IR_BR, mut self.cmp(ir.IR_EQ, ta, tb), same, join)
+    mut self.seal(same)
+    mut self.enter(same)
+    poff: i32 = i32(self.payload_off(ut))
+    x: SType = self.ty(ut)
+    for k: u32 in 0..x.nfields {
+        ft: u32 = self.s.field(x, k).ty
+        if ft == 0 { continue }
+        yes: int = mut self.new_block()
+        next: int = mut self.new_block()
+        mut self.terminate(ir.IR_BR, mut self.cmp(ir.IR_EQ, ta, mut self.konst(ir.IT_I32, u64(k))), yes, next)
+        mut self.seal(yes)
+        mut self.enter(yes)
+        mut self.write_var(res, self.cur, mut self.payload_equal(ft, a, b, poff))
+        mut self.jump(join)
+        mut self.seal(next)
+        mut self.enter(next)
+    }
+    mut self.write_var(res, self.cur, mut self.konst(ir.IT_BOOL, 1)) // a payloadless variant
+    mut self.jump(join)
+    mut self.seal(join)
+    mut self.enter(join)
+    return mut self.read_var(res, join)
+}
+
+/* x.a == x.b or x.a != x.b on unions. */
+Lw.union_equal(mut self, x: u32, negate: bool): int {
+    n: Node = self.node(x)
+    t: u32 = self.nty(n.a)
+    if !self.is_union(t) { t = self.nty(n.b) }
+    a: int = mut self.union_addr(n.a, t)
+    b: int = mut self.union_addr(n.b, t)
+    r: int = mut self.union_equal_at(self.unwrap(t), a, b)
+    if negate { return mut self.emit2(ir.IR_NOT, ir.IT_BOOL, r, -1) }
+    return r
+}
+
 // --- expressions ------------------------------------------------------------
 
 /* The IR type of `x`, taking an untyped constant's type from its context. */
@@ -1710,6 +2473,25 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
             by_address = (i < dn.nkids && (self.node(self.kid(d, i)).flags & parser.F_MUT) != 0) || ((dn.flags & parser.F_METHOD) != 0 && i == 0)
         }
         pt: u32 = self.s.param(self.ty(ft), i)
+        ef: int = -1
+        if recv == 1 && i == 0 { ef = self.promoting_field(a, pt) }
+        if ef >= 0 { // a method promoted from embedded field ef: its receiver is that field (C's sema rewrites it so)
+            rp: Place = blank(Place)
+            if self.is_pointer(a) {
+                rp, _ = mut self.field_base(callee)
+            } else if self.is_place(a) {
+                rp = mut self.place(a)
+            } else {
+                rp = mut self.temp_place(a)
+            }
+            bt: u32 = self.unwrap(rp.t)
+            if self.is_pointer(a) { bt = self.recv_struct(a) }
+            f: sema.SField = self.s.field(self.ty(bt), u32(ef))
+            rp.off += i32(f.offset)
+            rp.t = f.ty
+            mut g.scalar(mut self.place_address(rp))
+            continue
+        }
         if recv == 1 && i == 0 && by_address && self.is_pointer(a) { // p.m() is (*p).m(), once per pointer level
             rp: Place, _ = mut self.field_base(callee)
             mut g.scalar(mut self.place_address(rp))
@@ -1718,6 +2500,27 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
         mut self.call_arg(mut g, a, pt, by_address)
     }
     return first_var
+}
+
+/* The struct receiver `a` names, through every pointer level. */
+Lw.recv_struct(self, a: u32): u32 {
+    t: u32 = self.unwrap(self.nty(a))
+    for t != 0 && self.ty(t).kind == TypeKind.ptr { t = self.unwrap(self.ty(t).base) }
+    return t
+}
+
+/* The embedded field of receiver `a`'s struct that a method on `pt` is
+ * promoted from, or -1 when the method is the struct's own.
+ */
+Lw.promoting_field(self, a: u32, pt: u32): int {
+    bt: u32 = self.recv_struct(a)
+    if bt == 0 || self.ty(bt).kind != TypeKind.struct || self.s.same_type(bt, self.unwrap(pt)) || self.ty(bt).decl == 0 { return -1 }
+    x: SType = self.ty(bt)
+    for i: u32 in 0..x.nfields {
+        if (self.node(self.kid(x.decl, i)).flags & parser.F_EMBED) == 0 { continue }
+        if self.s.same_type(self.unwrap(self.s.field(x, i).ty), self.unwrap(pt)) { return int(i) }
+    }
+    return -1
 }
 
 /* Emits call `id`'s arguments, and its signature when a part or the result
@@ -1771,6 +2574,10 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
             return mut self.konst(mut self.type_in(x, want), self.s.node_ival(x)) // folded by sema
         }
     }
+    if self.contract_ctor(x) {
+        mut self.contract_value(x, mut res)
+        return -1
+    }
     if self.is_layout_builtin(x, "blank") { // the zero of its type
         t: u32 = self.nty(x)
         if !self.is_agg(t) { return mut self.konst(mut self.type_in(x, want), 0) }
@@ -1810,6 +2617,8 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         if from == to { return v }
         return mut self.emit2(ir.IR_CAST, to, v, -1)
     }
+    cc: int = mut self.contract_call(x, mut res, want_res, dst)
+    if cc != -2 { return cc }
     if s == 0 || self.s.sym(s).kind != sema.SymKind.func || callee == 0 {
         if s != 0 && self.s.sym(s).kind == sema.SymKind.var {
             return mut self.indirect_call(x, s, mut res, want_res, dst)
@@ -1941,14 +2750,14 @@ Lw.expr(mut self, x: u32, want: int): int {
             bt: u32 = self.unwrap(self.nty(n.a))
             et: u32 = bt
             for et != 0 && self.ty(et).kind == TypeKind.ptr { et = self.unwrap(self.ty(et).base) }
-            if et != 0 && self.ty(et).kind == TypeKind.error {
-                mut self.unported("Error fields")
+            if et != 0 && self.ty(et).kind == TypeKind.error { // Errors #9: the domain above the raw i32 code
+                v: int = mut self.deref_value(n.a, ir.IT_U64)
+                if mem.equal(n.text, "domain") { return mut self.emit2(ir.IR_SHR, ir.IT_U64, v, mut self.konst(ir.IT_U64, 32)) }
+                if mem.equal(n.text, "code") { return mut self.emit2(ir.IR_CAST, ir.IT_I32, v, -1) }
+                mut self.unsupported("Error description")
                 return mut self.dummy()
             }
-            if self.is_view(bt) && mem.equal(n.text, "len") {
-                mut self.unported("sequence lengths")
-                return mut self.dummy()
-            }
+            if self.is_view(bt) && mem.equal(n.text, "len") { return mut self.view_leaf(n.a, 1) }
             if bt != 0 && self.ty(bt).kind == TypeKind.array && mem.equal(n.text, "len") {
                 if !self.is_place(n.a) { // side effects only: the length is static
                     discard: Agg = blank(Agg)
@@ -2017,15 +2826,18 @@ Lw.expr(mut self, x: u32, want: int): int {
                 if an != bn {
                     o: u32 = n.a
                     if an { o = n.b }
-                    if self.is_view(self.nty(o)) || self.is_contract(self.nty(o)) {
-                        mut self.unported("null views and contracts")
-                        return mut self.dummy()
+                    if self.is_view(self.nty(o)) { // Sequences #8: a null view has a null ptr
+                        ptr: int = mut self.view_leaf(o, 0)
+                        return mut self.emit2(u8(op), ir.IT_BOOL, ptr, mut self.konst(ir.IT_PTR, 0))
+                    }
+                    if self.is_contract(self.nty(o)) { // Carved #5: a null contract has a null vtable
+                        a: Agg = blank(Agg)
+                        mut self.value(o, self.nty(o), mut a)
+                        if self.failed() { return mut self.dummy() }
+                        return mut self.emit2(u8(op), ir.IT_BOOL, a.v[0], mut self.konst(ir.IT_PTR, 0))
                     }
                 }
-                if self.is_union(self.nty(n.a)) || self.is_union(self.nty(n.b)) {
-                    mut self.unported("union equality")
-                    return mut self.dummy()
-                }
+                if self.is_union(self.nty(n.a)) || self.is_union(self.nty(n.b)) { return mut self.union_equal(x, op == int(ir.IR_NE)) }
             }
             if is_compare(op) {
                 ot: u8 = mut self.operand_type(x, -1)
@@ -2107,12 +2919,62 @@ Lw.value(mut self, at: u32, t: u32, mut out: Agg) {
         out.v[0] = mut self.expr(x, int(mut self.need_type(t)))
         return
     }
-    if self.is_view(t) || self.is_contract(t) || self.is_union(t) || self.has_union(t) {
-        mut self.unported("views, contracts, and unions")
-        out.n = 0
+    n: Node = self.node(x)
+    if self.is_view(t) {
+        lit: u32 = self.string_of(x)
+        if lit != 0 {
+            mut self.string_bytes(self.node(lit).text, mut out)
+            return
+        }
+        if n.kind == Kind.arraylit && self.s.node_view(x) != 0 { // an array literal viewed as []T
+            mut self.literal_view(x, mut out)
+            return
+        }
+        if n.kind == Kind.null { // Sequences #8: the null view
+            out.n = 2
+            out.v[0] = mut self.konst(ir.IT_PTR, 0)
+            out.v[1] = mut self.konst(ir.IT_U64, 0)
+            return
+        }
+        if n.kind == Kind.call && self.nsym(x) == 0 && n.a != 0 && (self.node(n.a).kind == Kind.ident || self.node(n.a).kind == Kind.slice_t) && n.nkids == 1 && self.is_view(self.nty(self.kid(x, 0))) {
+            mut self.value(self.kid(x, 0), t, mut out) // string(b), []u8(s): one type (Types #19)
+            return
+        }
+        at: u32 = self.unwrap(self.nty(x))
+        if at != 0 && self.ty(at).kind == TypeKind.array { // an array viewed whole
+            out.n = 2
+            out.v[0] = mut self.place_address(mut self.array_place(x))
+            out.v[1] = mut self.konst(ir.IT_U64, self.ty(at).count)
+            return
+        }
+    }
+    if self.is_contract(t) && n.kind == Kind.null { // Carved #5: the null contract, all bits zero
+        out.n = 2
+        out.v[0] = mut self.konst(ir.IT_PTR, 0)
+        out.v[1] = out.v[0]
         return
     }
-    n: Node = self.node(x)
+    if n.kind == Kind.selector && self.is_view(t) {
+        if mut self.error_description(x, mut out) { return }
+        if mut self.enum_name(x, mut out) { return }
+    }
+    if self.is_union(t) {
+        ctor: bool, _, _ = self.union_ctor(x)
+        if ctor { // built in a stack object, then read as leaves
+            mut self.covered(t)
+            slot: int = mut self.new_slot(t)
+            mut self.union_store(x, t, slot, 0)
+            mut self.place_get(Place { addr = slot, t = t }, 0, mut out)
+            return
+        }
+    }
+    if self.has_union(t) && (n.kind == Kind.structlit || n.kind == Kind.tuple || n.kind == Kind.arraylit) {
+        mut self.covered(t) // built in a stack object, then read as leaves
+        slot: int = mut self.new_slot(t)
+        mut self.store_value(x, t, slot, 0)
+        mut self.place_get(Place { addr = slot, t = t }, 0, mut out)
+        return
+    }
     switch n.kind {
         Kind.structlit, Kind.tuple {
             mut self.literal_agg(x, t, mut out)
@@ -2123,8 +2985,7 @@ Lw.value(mut self, at: u32, t: u32, mut out: Agg) {
             return
         }
         Kind.slice {
-            mut self.unsupported(self.type_why(t))
-            out.n = 0
+            mut self.slice_leaves(x, mut out)
             return
         }
         Kind.call {
@@ -2514,6 +3375,358 @@ Lw.var_decl(mut self, at: u32) {
     mut self.init_var(var, sym, s.b)
 }
 
+/* The body of a loop; continue reaches the block current on return, which
+ * the caller finishes with the step back to the head.
+ */
+Lw.loop_body(mut self, at: u32, exit: int, stmts: u32) {
+    post: int = mut self.new_block()
+    mut self.push_target(at, exit, post, -1)
+    if self.cur >= 0 { mut self.block(stmts) }
+    mut self.tgt.truncate(self.tgt.len - 1)
+    mut self.jump(post)
+    mut self.seal(post)
+    mut self.enter(post)
+}
+
+/* for i: T in a .. b [step c] (Iterations #4-5): the endpoints once, in
+ * order, then the step; every selected value in order from a toward b.
+ * Ascending by one from a constant start to a constant not below it, or from
+ * zero to an unsigned end, runs the cursor up to the end; any other range
+ * counts (|b - a| - 1) / step + 1 values from its first, stepping down when
+ * a > b from the last value the lower endpoint's stepping selects.
+ */
+Lw.range_loop(mut self, at: u32) {
+    s: Node = self.node(at)
+    r: u32 = s.b
+    rn: Node = self.node(r)
+    bs: u32 = 0 // `for 0 .. n` has no binder
+    if s.nkids > 0 { bs = self.nsym(self.kid(at, 0)) }
+    if s.nkids > 1 || (s.nkids > 0 && bs == 0) {
+        mut self.unsupported("range binders")
+        return
+    }
+    var: int = -1
+    if bs != 0 { var = mut self.var_of(bs) }
+    rt: u8 = 0
+    if bs != 0 && self.is_untyped(self.nty(r)) { rt = mut self.need_type(self.s.sym(bs).ty) } else { rt = mut self.need_type(self.nty(r)) } // endpoints at the binder's type
+    bt: u8 = rt
+    if bs != 0 { bt = mut self.need_type(self.s.sym(bs).ty) }
+    sig: bool = ir.type_signed(rt)
+    lo: int = mut self.expr(rn.a, int(rt))
+    hi: int = mut self.expr(rn.b, int(rt))
+    if self.failed() { return }
+    lk: ir.IrIns = self.fn.at(lo)
+    hk: ir.IrIns = self.fn.at(hi)
+    step_one: bool = rn.c == 0 || (self.node(rn.c).kind == Kind.int_lit && self.node(rn.c).ival == 1)
+    up: bool = false
+    if step_one && lk.op == ir.IR_CONST {
+        if hk.op == ir.IR_CONST {
+            if sig { up = i64(lk.imm) <= i64(hk.imm) } else { up = lk.imm <= hk.imm }
+        } else {
+            up = !sig && lk.imm == 0
+        }
+    }
+    cur: int = mut self.var_new(0, rt, -1)
+    cnt: int = -1
+    stp: int = -1
+    if !up {
+        cnt = mut self.var_new(0, ir.IT_U64, -1)
+        stp = mut self.var_new(0, ir.IT_U64, -1)
+    }
+    head: int = mut self.new_block()
+    body: int = mut self.new_block()
+    exit: int = mut self.new_block()
+    if up {
+        mut self.write_var(cur, self.cur, lo)
+    } else {
+        wt: u8 = ir.IT_U64 // 64-bit endpoints, then u64 arithmetic
+        if sig { wt = ir.IT_I64 }
+        step: int = 0
+        if rn.c != 0 { step = mut self.expr(rn.c, int(rt)) } else { step = mut self.konst(rt, 1) }
+        if rn.c != 0 && self.node(rn.c).kind != Kind.int_lit && self.debug {
+            // sema rejects a non-positive constant step; only a runtime-computed
+            // step needs checking here
+            ok: int = 0
+            if sig { ok = mut self.emit2(ir.IR_GT, ir.IT_BOOL, step, mut self.konst(rt, 0)) } else { ok = mut self.emit2(ir.IR_NE, ir.IT_BOOL, step, mut self.konst(rt, 0)) }
+            id: int = mut self.emit2(ir.IR_CHECK, ir.IT_VOID, ok, -1)
+            c: mut *ir.IrIns = mut self.fn.at(id)
+            c.name = "range step violation"
+            c.has_name = true
+            c.at = rn.c
+        }
+        a: int = mut self.widen(lo, rt, wt)
+        b: int = mut self.widen(hi, rt, wt)
+        ua: int = mut self.widen(a, wt, ir.IT_U64)
+        ub: int = mut self.widen(b, wt, ir.IT_U64)
+        st: int = mut self.widen(mut self.widen(step, rt, wt), wt, ir.IT_U64)
+        nonempty: int = mut self.new_block()
+        empty: int = mut self.new_block()
+        asc: int = mut self.new_block()
+        desc: int = mut self.new_block()
+        setup: int = mut self.new_block()
+        mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_EQ, ir.IT_BOOL, a, b), empty, nonempty)
+        mut self.seal(empty)
+        mut self.seal(nonempty)
+        mut self.enter(empty)
+        mut self.write_var(cnt, self.cur, mut self.konst(ir.IT_U64, 0))
+        mut self.write_var(cur, self.cur, mut self.konst(rt, 0))
+        mut self.write_var(stp, self.cur, mut self.konst(ir.IT_U64, 0))
+        mut self.jump(setup)
+        mut self.enter(nonempty)
+        mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_GT, ir.IT_BOOL, a, b), desc, asc)
+        mut self.seal(asc)
+        mut self.seal(desc)
+        mut self.enter(asc)
+        one: int = mut self.konst(ir.IT_U64, 1)
+        q: int = mut self.emit2(ir.IR_DIV, ir.IT_U64, mut self.emit2(ir.IR_SUB, ir.IT_U64, mut self.emit2(ir.IR_SUB, ir.IT_U64, ub, ua), one), st)
+        mut self.write_var(cnt, self.cur, mut self.emit2(ir.IR_ADD, ir.IT_U64, q, one))
+        mut self.write_var(cur, self.cur, lo)
+        mut self.write_var(stp, self.cur, st)
+        mut self.jump(setup)
+        mut self.enter(desc)
+        one = mut self.konst(ir.IT_U64, 1)
+        q = mut self.emit2(ir.IR_DIV, ir.IT_U64, mut self.emit2(ir.IR_SUB, ir.IT_U64, mut self.emit2(ir.IR_SUB, ir.IT_U64, ua, ub), one), st)
+        first: int = mut self.emit2(ir.IR_ADD, ir.IT_U64, ub, mut self.emit2(ir.IR_MUL, ir.IT_U64, q, st))
+        mut self.write_var(cnt, self.cur, mut self.emit2(ir.IR_ADD, ir.IT_U64, q, one))
+        mut self.write_var(cur, self.cur, mut self.widen(first, ir.IT_U64, rt))
+        mut self.write_var(stp, self.cur, mut self.emit2(ir.IR_NEG, ir.IT_U64, st, -1))
+        mut self.jump(setup)
+        mut self.seal(setup)
+        mut self.enter(setup)
+    }
+    mut self.jump(head)
+    mut self.enter(head)
+    more: int = 0
+    if up {
+        more = mut self.emit2(ir.IR_LT, ir.IT_BOOL, mut self.read_var(cur, head), hi)
+    } else {
+        c: int = mut self.read_var(cnt, head)
+        more = mut self.emit2(ir.IR_NE, ir.IT_BOOL, c, mut self.konst(ir.IT_U64, 0))
+    }
+    mut self.terminate(ir.IR_BR, more, body, exit)
+    mut self.seal(body)
+    mut self.enter(body)
+    if bs != 0 { mut self.set_var(var, mut self.widen(mut self.read_var(cur, body), rt, bt)) }
+    mut self.loop_body(at, exit, s.c)
+    if self.cur >= 0 { // the cursor wraps past the last value, which no iteration reads
+        v: int = mut self.read_var(cur, self.cur)
+        if up {
+            v = mut self.emit2(ir.IR_ADD, rt, v, mut self.konst(rt, 1))
+        } else {
+            v = mut self.widen(v, rt, ir.IT_U64)
+            v = mut self.emit2(ir.IR_ADD, ir.IT_U64, v, mut self.read_var(stp, self.cur))
+            v = mut self.widen(v, ir.IT_U64, rt)
+            left: int = mut self.read_var(cnt, self.cur)
+            mut self.write_var(cnt, self.cur, mut self.emit2(ir.IR_SUB, ir.IT_U64, left, mut self.konst(ir.IT_U64, 1)))
+        }
+        mut self.write_var(cur, self.cur, v)
+        mut self.jump(head)
+    }
+    mut self.seal(head)
+    mut self.seal(exit)
+    mut self.enter(exit)
+}
+
+/* for v: T in seq, for i: usize, v: T in seq, and either under `in mut`
+ * (Iterations #7-10): the sequence's pointer and length fixed at entry, a
+ * pointer running from the start to the end, bumped by the element size. The
+ * value binder is a copy of the element at the pointer, or under `in mut` an
+ * alias of it; the index binder counts from zero. No bounds checks.
+ */
+Lw.seq_loop(mut self, at: u32) {
+    s: Node = self.node(at)
+    if s.nkids < 1 || s.nkids > 2 {
+        mut self.unsupported("sequence binders")
+        return
+    }
+    vb: u32 = self.kid(at, s.nkids - 1)
+    ib: u32 = 0
+    if s.nkids == 2 { ib = self.kid(at, 0) }
+    vs: u32 = self.nsym(vb)
+    is: u32 = 0
+    if ib != 0 { is = self.nsym(ib) }
+    if vs == 0 || (ib != 0 && is == 0) {
+        mut self.unsupported("unresolved binder")
+        return
+    }
+    is_mut: bool = (s.flags & parser.F_MUT) != 0
+    st: u32 = self.unwrap(self.nty(s.b))
+    et: u32 = 0
+    ptr: int = -1
+    len: int = -1
+    if st != 0 && self.ty(st).kind == TypeKind.array { // its place's address and its fixed length
+        et = self.ty(st).base
+        ptr = mut self.place_address(mut self.array_place(s.b))
+        len = mut self.konst(ir.IT_U64, self.ty(st).count)
+    } else {
+        if !self.is_view(st) {
+            mut self.unsupported(self.type_why(st))
+            return
+        }
+        et = self.view_elem(st)
+        ptr, len = mut self.view_parts(s.b, true)
+    }
+    if self.failed() { return }
+    esz: u32 = self.size(et)
+    end: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, ptr, len)
+    mut self.fn.at(end).imm = u64(esz)
+    cur: int = mut self.var_new(0, ir.IT_PTR, -1)
+    ix: int = -1
+    if is != 0 { ix = mut self.var_new(0, ir.IT_U64, -1) }
+    alias: int = -1
+    if is_mut { // the binder lives at the element's address, which changes each iteration
+        alias = mut self.var_new(0, ir.IT_PTR, -1)
+        _ = mut self.var_new(vs, ir.IT_VOID, ADDR_VAR - alias)
+    }
+    mut self.write_var(cur, self.cur, ptr)
+    if is != 0 { mut self.write_var(ix, self.cur, mut self.konst(ir.IT_U64, 0)) }
+    head: int = mut self.new_block()
+    body: int = mut self.new_block()
+    exit: int = mut self.new_block()
+    mut self.jump(head)
+    mut self.enter(head)
+    mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_LT, ir.IT_BOOL, mut self.read_var(cur, head), end), body, exit)
+    mut self.seal(body)
+    mut self.enter(body)
+    p: int = mut self.read_var(cur, body)
+    if is_mut {
+        mut self.write_var(alias, self.cur, p)
+    } else {
+        mut self.move_place(mut self.binder_place(vb), Place { addr = p, t = et })
+    }
+    if is != 0 {
+        g: Agg = blank(Agg)
+        g.n = 1
+        g.v[0] = mut self.read_var(ix, self.cur)
+        bt: u8 = mut self.need_type(self.s.sym(is).ty) // an [E]T index binds as E
+        if bt != ir.IT_U64 { g.v[0] = mut self.emit2(ir.IR_CAST, bt, g.v[0], -1) }
+        mut self.set_leaves(mut self.var_of(is), self.s.sym(is).ty, g)
+    }
+    mut self.loop_body(at, exit, s.c)
+    if self.cur >= 0 {
+        a: int = mut self.read_var(cur, self.cur)
+        next: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, a, mut self.konst(ir.IT_U64, 1))
+        mut self.fn.at(next).imm = u64(esz)
+        mut self.write_var(cur, self.cur, next)
+        if is != 0 {
+            i: int = mut self.read_var(ix, self.cur)
+            mut self.write_var(ix, self.cur, mut self.emit2(ir.IR_ADD, ir.IT_U64, i, mut self.konst(ir.IT_U64, 1)))
+        }
+        mut self.jump(head)
+    }
+    mut self.seal(head)
+    mut self.seal(exit)
+    mut self.enter(exit)
+}
+
+/* The payload binders of a union switch's case `c`, each a copy of its
+ * variant's payload at `addr`.
+ */
+Lw.union_binders(mut self, c: u32, ut: u32, addr: int) {
+    x: SType = self.ty(ut)
+    for j: u32 in 0..self.node(c).nkids {
+        pat: u32 = self.kid(c, j)
+        if self.node(pat).kind != Kind.varpat || self.node(pat).b == 0 { continue }
+        vi: u64 = self.s.node_ival(pat)
+        if vi >= u64(x.nfields) { continue }
+        pt: u32 = self.s.field(x, u32(vi)).ty
+        if pt == 0 { continue }
+        mut self.move_place(mut self.binder_place(self.node(pat).b), Place { addr = addr, off = i32(self.payload_off(ut)), t = pt })
+    }
+}
+
+/* switch on a scalar (Conditions #2): the scrutinee once, then each pattern
+ * in source order against it, a chain of branches to the first matching
+ * case, else to the default or past the switch. A case ends past the switch,
+ * or, when its last statement is `fallthrough`, in the next case. On a union
+ * the scrutinee is its tag, loaded once from the union's address, and an
+ * arm's binder is a copy of the payload made where the arm is entered.
+ */
+Lw.switch_stmt(mut self, at: u32) {
+    s: Node = self.node(at)
+    st: u32 = self.nty(s.a)
+    un: bool = self.is_union(st)
+    addr: int = -1
+    t: u8 = ir.IT_I32
+    v: int = 0
+    if un {
+        addr = mut self.union_addr(s.a, st)
+        v = mut self.load(ir.IT_I32, addr, 0, 0)
+    } else {
+        t = mut self.need_type(st)
+        v = mut self.expr(s.a, int(t))
+    }
+    if self.failed() { return }
+    n: u32 = s.nkids
+    ntests: u32 = 0
+    dflt: int = -1
+    for i: u32 in 0..n {
+        c: Node = self.node(self.kid(at, i))
+        if (c.flags & parser.F_DEFAULT) != 0 { dflt = int(i) } else { ntests += c.nkids }
+    }
+    end: int = mut self.new_block()
+    body: array.Array[int] = array.Array[int] {}
+    defer mut body.wipe()
+    for 0..n { fail(mut body.push(mut self.new_block())) }
+    miss: int = end
+    if dflt >= 0 { miss = body.get(usize(dflt)) }
+    if ntests == 0 { mut self.jump(miss) }
+    k: u32 = 0
+    for i: u32 in 0..n {
+        c: u32 = self.kid(at, i)
+        if (self.node(c).flags & parser.F_DEFAULT) != 0 { continue }
+        for j: u32 in 0..self.node(c).nkids {
+            k += 1
+            last: bool = k == ntests
+            next: int = miss
+            if !last { next = mut self.new_block() }
+            pat: u32 = self.kid(c, j)
+            if self.node(pat).kind == Kind.range { // lo <= v < hi as one unsigned compare: v - lo < hi - lo
+                r: Node = self.node(pat)
+                ra: u32 = r.a
+                rb: u32 = r.b
+                if self.s.node_ival(pat) != 0 { // a descending range, its bounds swapped by sema
+                    ra = r.b
+                    rb = r.a
+                }
+                lo: int = mut self.expr(ra, int(t))
+                hi: int = mut self.expr(rb, int(t))
+                ut: u8 = t
+                if ir.type_signed(t) { ut = t + 4 } // the same width, unsigned
+                d: int = mut self.emit2(ir.IR_SUB, t, v, lo)
+                w: int = mut self.emit2(ir.IR_SUB, t, hi, lo)
+                if ut != t {
+                    d = mut self.emit2(ir.IR_CAST, ut, d, -1)
+                    w = mut self.emit2(ir.IR_CAST, ut, w, -1)
+                }
+                mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_LT, ir.IT_BOOL, d, w), body.get(usize(i)), next)
+            } else {
+                p: int = 0
+                if un { p = mut self.konst(ir.IT_I32, self.s.node_ival(pat)) } else { p = mut self.expr(pat, int(t)) }
+                mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_NE, ir.IT_BOOL, v, p), next, body.get(usize(i)))
+            }
+            if !last {
+                mut self.seal(next)
+                mut self.enter(next)
+            }
+        }
+    }
+    for i: u32 in 0..n {
+        c: u32 = self.kid(at, i)
+        b: u32 = self.node(c).b
+        bi: int = body.get(usize(i))
+        mut self.seal(bi) // its tests, and the case before it if that falls through, have branched here
+        mut self.enter(bi)
+        if un && self.cur >= 0 && (self.node(c).flags & parser.F_DEFAULT) == 0 { mut self.union_binders(c, self.unwrap(st), addr) }
+        if self.cur >= 0 { mut self.block(b) }
+        bn: Node = self.node(b)
+        falls: bool = i + 1 < n && bn.nkids > 0 && self.node(self.kid(b, bn.nkids - 1)).kind == Kind.fallthrough
+        if falls { mut self.jump(body.get(usize(i + 1))) } else { mut self.jump(end) }
+    }
+    mut self.seal(end)
+    mut self.enter(end)
+}
+
 Lw.for_loop(mut self, at: u32) {
     s: Node = self.node(at)
     if (s.flags & parser.F_FORGEN) == 0 {
@@ -2521,7 +3734,7 @@ Lw.for_loop(mut self, at: u32) {
             mut self.unsupported("for head")
             return
         }
-        mut self.unported("range and sequence loops")
+        if self.node(s.b).kind == Kind.range { mut self.range_loop(at) } else { mut self.seq_loop(at) }
         return
     }
     if s.a != 0 { mut self.stmt(s.a) }
@@ -2624,7 +3837,7 @@ Lw.stmt(mut self, at: u32) {
             mut self.value(s.a, self.rtype, mut a)
             mut self.ret(a)
         }
-        Kind.switch { mut self.unported("switch") }
+        Kind.switch { mut self.switch_stmt(at) }
         Kind.fallthrough {}
         Kind.defer { mut self.unported("defer") }
         Kind.asm { mut self.unported("inline assembly") }

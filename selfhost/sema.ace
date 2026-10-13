@@ -209,6 +209,8 @@ pub Sema: struct {
     nival: array.Array[u64],            // and its constant, as C keeps them on the node,
     nrep: array.Array[bool],            // and whether its error is already reported (F_REPORTED)
     ncon: array.Array[bool],            // a contract value over const storage; a function returning one (F_CONST)
+    nproof: array.Array[u8],            // bounds facts: PROOF_* bits (C's F_BOUNDS_PROVEN, F_STATICLIT, and a slice's aux)
+    nview: map.Map[u32, u32],           // an array literal viewed as []T: its [N]T (C's aux)
     identities: map.Map[u32, u32],      // a type's runtime identity, numbered from 1 in order of first use (C's type_id)
     next_identity: u32 = 1,
     cur_fn: u32 = 0,                    // the checked function's declaration
@@ -229,7 +231,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -270,6 +272,8 @@ pub Sema.wipe(mut self) {
     mut self.nival.wipe()
     mut self.nrep.wipe()
     mut self.ncon.wipe()
+    mut self.nproof.wipe()
+    mut self.nview.wipe()
     mut self.identities.wipe()
     mut self.ik.wipe()
     mut self.files.wipe()
@@ -818,6 +822,11 @@ pub Sema.param(self, t: SType, i: u32): u32 {
     return self.params.get(usize(t.params + i))
 }
 
+/* Type argument `i` of generic instance `t`. */
+pub Sema.type_arg(self, t: SType, i: u32): u32 {
+    return self.params.get(usize(t.args + i))
+}
+
 Sema.set_field(mut self, t: SType, i: u32, f: SField) {
     mut self.fields.set(usize(t.fields + i), f)
 }
@@ -829,7 +838,7 @@ Sema.new_fields(mut self, n: u32): u32 {
     return first
 }
 
-Sema.prim(self, p: u8): u32 {
+pub Sema.prim(self, p: u8): u32 {
     return self.prims + u32(p)
 }
 
@@ -1291,6 +1300,7 @@ Sema.grow(mut self, e: u32) {
         fail(mut self.nival.push(0))
         fail(mut self.nrep.push(false))
         fail(mut self.ncon.push(false))
+        fail(mut self.nproof.push(0))
     }
 }
 
@@ -1331,6 +1341,34 @@ Sema.set_node_const(mut self, e: u32) {
 Sema.set_node_reported(mut self, e: u32) {
     mut self.grow(e)
     mut self.nrep.set(usize(e), true)
+}
+
+/* Bounds facts lowering reads: a slice's proven bounds (the low four bits),
+ * whether sema recorded them, an access needing no check, a constant literal.
+ */
+pub PROOF_LO_NONNEG: const u8 = 1
+pub PROOF_HI_NONNEG: const u8 = 2
+pub PROOF_ORDER: const u8 = 4
+pub PROOF_SOURCE: const u8 = 8
+pub PROOF_SLICE: const u8 = 16
+pub PROOF_BOUNDS: const u8 = 32
+pub PROOF_STATIC: const u8 = 64
+
+pub Sema.node_proof(self, e: u32): u8 {
+    if usize(e) >= self.nproof.len { return 0 }
+    return self.nproof.get(usize(e))
+}
+
+Sema.set_node_proof(mut self, e: u32, p: u8) {
+    mut self.grow(e)
+    mut self.nproof.set(usize(e), p)
+}
+
+/* The [N]T of array literal `e` viewed as []T, or 0. */
+pub Sema.node_view(self, e: u32): u32 {
+    t: u32, found: bool = self.nview.get(e)
+    if found { return t }
+    return 0
 }
 
 Sema.set_node_ival(mut self, e: u32, v: u64) {
@@ -1972,7 +2010,11 @@ Sema.coerce_slicelit(mut self, e: u32, want: u32): bool {
     at: u32 = mut self.new_type(SType { kind = TypeKind.array, count = u64(count), base = w.base })
     mut self.check_arraylit(e, at)
     if self.node_ty(e) == self.t_err { return false }
+    fail(mut self.nview.set(e, at))
     mut self.set_node_ty(e, want)
+    p: u8 = self.node_proof(e) & ~PROOF_STATIC
+    if self.compile_time_expr(e) { p |= PROOF_STATIC }
+    mut self.set_node_proof(e, p)
     return true
 }
 
@@ -3947,6 +3989,18 @@ Sema.contract_method_type(mut self, want: u32, m: u32): u32 {
 /* `t`'s runtime identity, numbered on first use; a string shares its byte
  * slice's (C's type_identity).
  */
+/* Type `t`'s runtime identity when one is numbered already, else 0. */
+pub Sema.identity(self, t: u32): u32 {
+    v: u32, found: bool = self.identities.get(t)
+    if found { return v }
+    return 0
+}
+
+/* The type error domain declaration `decl` declares. */
+pub Sema.domain_type(self, decl: u32): u32 {
+    return self.sym(self.files.find(true, self.node(decl).text)).ty
+}
+
 Sema.type_identity(mut self, t: u32): u32 {
     id: u32 = t
     if self.ty(t).kind == TypeKind.prim && self.ty(t).prim == P_STRING {
@@ -4290,7 +4344,7 @@ Sema.check_keyed_arraylit(mut self, lit: u32, want: u32) {
 }
 
 /* A key known exactly at compile time: a bool or an enum member. */
-Sema.static_key_int(self, e: u32): (u64, bool) {
+pub Sema.static_key_int(self, e: u32): (u64, bool) {
     n: Node = self.node(e)
     if n.kind == Kind.bool {
         if n.ival != 0 { return 1, true }
@@ -4315,7 +4369,7 @@ Sema.static_key_int(self, e: u32): (u64, bool) {
 }
 
 /* A string key known exactly at compile time, as its literal node, or 0. */
-Sema.static_key_string(self, e: u32): u32 {
+pub Sema.static_key_string(self, e: u32): u32 {
     if e == 0 { return 0 }
     n: Node = self.node(e)
     if n.kind == Kind.str_lit { return e }
@@ -4593,7 +4647,7 @@ Sema.indexed_named_type(mut self, ix: u32): u32 {
 }
 
 /* Whether `a` and `b` are one type, as C's same_type decides. */
-Sema.same_type(self, a: u32, b: u32): bool {
+pub Sema.same_type(self, a: u32, b: u32): bool {
     if a == b { return true }
     if a == 0 || b == 0 { return false }
     x: SType = self.ty(a)
@@ -6147,6 +6201,7 @@ Sema.check_case_value(mut self, v: u32, t: u32, mut los: array.Array[u64], mut h
             k: u64 = lo
             lo = hi
             hi = k
+            mut self.set_node_ival(v, 1) // its bounds swapped: C exchanges the kids
         }
         hi -= 1 // half-open [lo, hi) as a closed span
         mut self.set_node_ty(v, t)
@@ -7277,6 +7332,8 @@ Sema.check_index_type(mut self, e: u32, b: u32, ix: u32) {
         key: u32 = self.ty(b).key
         if !self.same_type(ix, key) {
             mut self.err(self.node(e).b, ["index of ", mut self.type_name(b), " must be ", mut self.type_name(key), ", not ", mut self.type_name(ix)])
+        } else {
+            mut self.set_node_proof(e, self.node_proof(e) | PROOF_BOUNDS)
         }
         return
     }
@@ -7330,6 +7387,8 @@ Sema.check_index_bounds(mut self, e: u32, base: u32, bt: u32, write: bool) {
     slen: i64 = mut self.seq_const_len(base, bt)
     if slen >= 0 && ix >= slen {
         mut self.err(b, [w, "index ", mut self.num64(ix), " exceeds source length ", mut self.num64(slen)])
+    } else if slen >= 0 {
+        mut self.set_node_proof(e, self.node_proof(e) | PROOF_BOUNDS)
     }
 }
 
@@ -7366,6 +7425,13 @@ Sema.check_slice_bounds(mut self, e: u32, base: u32, bt: u32) {
             mut self.err(n.b, ["slice lower bound ", mut self.num64(lo), " exceeds source length ", mut self.num64(slen)])
         }
     }
+    proof: u8 = PROOF_SLICE
+    if klo && lo >= 0 { proof |= PROOF_LO_NONNEG }
+    if khi && hi >= 0 { proof |= PROOF_HI_NONNEG }
+    if klo && khi && lo <= hi { proof |= PROOF_ORDER }
+    if khi && slen >= 0 && hi <= slen { proof |= PROOF_SOURCE }
+    if proof == (PROOF_SLICE | PROOF_LO_NONNEG | PROOF_HI_NONNEG | PROOF_ORDER | PROOF_SOURCE) { proof |= PROOF_BOUNDS }
+    mut self.set_node_proof(e, proof)
 }
 
 // --- escapes ------------------------------------------------------------------

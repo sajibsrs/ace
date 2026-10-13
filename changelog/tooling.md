@@ -142,6 +142,9 @@
   aggregate locals, arithmetic, `if`, general `for`, labels, and calls;
   aggregate literals, aggregates in memory (results through RESULT/sret,
   by-copy and temporary arguments), array indexing, fields of values,
-  destructuring, and bits fields; other
-  constructs are reported as not yet ported. `selfhost/check.sh` adds an
-  `ir` stage, compared per function.
+  destructuring, and bits fields; strings, slices, and their lengths,
+  indexing, and slicing (bounds proofs recorded by selfhost sema), contract
+  values and dispatch, tagged unions (construction, equality, union
+  switches), range and sequence loops, `switch`, static maps, and Error and
+  enum descriptions; other constructs are reported as not yet ported.
+  `selfhost/check.sh` adds an `ir` stage, compared per function.

@@ -9,6 +9,7 @@ import fmt
 import str
 import sys
 
+import path: "./path.ace"
 import parser: "./parser.ace"
 import sema: "./sema.ace"
 
@@ -178,6 +179,7 @@ pub Func: struct {
     pub args: array.Array[int],  // every instruction's operands, each a run
     pub sigs: array.Array[IrSig],
     pub parts: array.Array[IrPart],
+    pub names: path.Pool,        // instruction names lowering builds
 }
 
 fail(err: Error) {
@@ -190,7 +192,7 @@ fail(err: Error) {
 // --- construction -----------------------------------------------------------
 
 pub Func.new(decl: u32, sym: u32): Func {
-    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {} }
+    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {}, names = blank(path.Pool) }
 }
 
 pub Func.wipe(mut self) {
@@ -206,6 +208,7 @@ pub Func.wipe(mut self) {
     mut self.args.wipe()
     mut self.sigs.wipe()
     mut self.parts.wipe()
+    mut self.names.wipe()
 }
 
 /* Instruction `id` in place; the pointer dangles once one is added. */
