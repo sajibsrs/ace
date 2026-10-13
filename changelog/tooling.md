@@ -150,6 +150,7 @@
   `panic`, `assert`, `bitcast`, `*T(address)`, `[]T(pointer, count)`, and
   formatted output from the plan selfhost sema records), enum conversion
   and noalias checks, `defer` (a captured argument maps its node to the
-  variable holding it, as selfhost cannot add tree nodes), and inline
-  assembly; other constructs are reported as not yet ported.
+  variable holding it, as selfhost cannot add tree nodes), inline
+  assembly, and generic calls and function values (named by the callee's
+  symbol; one with no matching instance fails as C's does); other constructs are reported as not yet ported.
   `selfhost/check.sh` adds an `ir` stage, compared per function.

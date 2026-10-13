@@ -1870,7 +1870,7 @@ PRIM_NAMES: [14]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32",
 /* Whether call `x` builds a contract value: `Shape(&value)` (Carved #5). */
 Lw.contract_ctor(self, x: u32): bool {
     n: Node = self.node(x)
-    return n.kind == Kind.call && self.nsym(x) == 0 && n.nkids == 1 && n.a != 0 && self.node(n.a).kind == Kind.ident && self.is_contract(self.nty(x)) && self.is_pointer(self.kid(x, 0))
+    return n.kind == Kind.call && self.nsym(x) == 0 && n.nkids == 1 && n.a != 0 && (self.node(n.a).kind == Kind.ident || (self.node(n.a).kind == Kind.index && self.nsym(n.a) == 0)) && self.is_contract(self.nty(x)) && self.is_pointer(self.kid(x, 0))
 }
 
 /* Contract construction `x`: the vtable of the pointee's signing, then the pointer. */
@@ -3400,7 +3400,9 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
     }
     sc: int = mut self.special_call(x, mut res, want_res, dst)
     if sc != -2 { return sc }
+    inst: bool = callee != 0 && self.node(callee).kind == Kind.index && self.nsym(callee) != 0 // larger[int](a, b)
     s: u32 = self.nsym(x)
+    if inst { s = self.nsym(callee) }
     if s == 0 && callee != 0 && self.node(callee).kind == Kind.ident && mem.equal(self.node(callee).text, "typeid") {
         return mut self.konst(ir.IT_U64, self.s.node_ival(x)) // typeid(T): the type's identity word
     }
@@ -3435,10 +3437,6 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
             return mut self.indirect_call(x, s, mut res, want_res, dst)
         }
         if self.field_call(x) { return mut self.indirect_call(x, 0, mut res, want_res, dst) }
-        if callee != 0 && self.node(callee).kind == Kind.index { // f[T](...): sema's symbol is on the callee
-            mut self.unported("generic calls")
-            return mut self.dummy()
-        }
         mut self.unported("this call form")
         return mut self.dummy()
     }
@@ -3457,10 +3455,6 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         mut self.unsupported("compiler-backed call")
         return mut self.dummy()
     }
-    if self.node(callee).kind == Kind.index || sy.is_generic || sy.spec_args != 0 || (dn.kind == Kind.func && dn.c != 0) {
-        mut self.unported("generic calls")
-        return mut self.dummy()
-    }
     if (dn.flags & parser.F_INLINE) != 0 {
         mut self.unported("inline calls")
         return mut self.dummy()
@@ -3473,6 +3467,7 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
     rt: u32 = 0
     if ft != 0 { rt = self.ty(ft).ret }
     id: int = mut self.emit(ir.IR_CALL, mut self.result_type(rt))
+    if inst && !self.fn_value_named(s, callee) { mut self.unsupported("generic call") }
     c: mut *ir.IrIns = mut self.fn.at(id)
     c.sym = s
     if (dn.flags & parser.F_COLD) != 0 { c.flags |= ir.IRF_COLD }
@@ -3481,6 +3476,15 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         if first_var >= 0 { c.aux = i32(first_var) } else { c.aux = i32(g.v.len) }
     }
     return mut self.call_finish(id, g, rt, mut res, want_res, dst)
+}
+
+/* Whether generic function `s`, named by `x`, has a stamp to link: a written
+ * specialization, or the instance whose signature sema recorded on `x` (C's
+ * fn_value_mangle succeeding). --ir prints the symbol, not the stamp's name.
+ */
+Lw.fn_value_named(self, s: u32, x: u32): bool {
+    if self.s.sym(s).spec_args != 0 { return true }
+    return self.s.has_inst(self.s.sym(s).decl, self.nty(x))
 }
 
 /* A call through a function value: variable `s`, or a struct field when 0. */
@@ -3543,8 +3547,10 @@ Lw.expr(mut self, x: u32, want: int): int {
                 }
                 if sy.kind == sema.SymKind.func { // a function value
                     if sy.is_generic || sy.spec_args != 0 || (sy.decl != 0 && self.node(sy.decl).kind == Kind.func && self.node(sy.decl).c != 0) {
-                        mut self.unported("generic function values")
-                        return mut self.dummy()
+                        if !self.fn_value_named(s, x) { // larger[int]
+                            mut self.unsupported("generic function value")
+                            return mut self.dummy()
+                        }
                     }
                     return mut self.global_addr(s)
                 }
@@ -3695,9 +3701,12 @@ Lw.expr(mut self, x: u32, want: int): int {
             return mut self.call(x, want, mut res, false, -1)
         }
         Kind.index {
-            if self.nsym(x) != 0 {
-                mut self.unported("generic function values")
-                return mut self.dummy()
+            if self.nsym(x) != 0 { // larger[int] as a value
+                if !self.fn_value_named(self.nsym(x), x) {
+                    mut self.unsupported("generic function value")
+                    return mut self.dummy()
+                }
+                return mut self.global_addr(self.nsym(x))
             }
             return mut self.place_read(mut self.place(x), 0)
         }

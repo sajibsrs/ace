@@ -1313,6 +1313,18 @@ pub Sema.node_ty(self, e: u32): u32 {
     return self.nty.get(usize(e))
 }
 
+/* Whether generic declaration `d` has an instance whose signature is `ft`
+ * (C's sema_insts walk in fn_value_mangle).
+ */
+pub Sema.has_inst(self, d: u32, ft: u32): bool {
+    if d == 0 || self.node(d).c == 0 { return false }
+    head: u32, _ = self.inst_heads.get(d)
+    for it: u32 = head; it != 0; it = self.insts.get(usize(it - 1)).next {
+        if self.insts.get(usize(it - 1)).result == ft { return true }
+    }
+    return false
+}
+
 pub Sema.node_sym(self, e: u32): u32 {
     if usize(e) >= self.nsym.len { return 0 }
     return self.nsym.get(usize(e))
