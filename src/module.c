@@ -648,7 +648,8 @@ int decl_visible(const char* decl_path, int pub, const char* use_path) {
     file_root(decl_path, &root);
     const char* use_root;
     file_root(use_path, &use_root);
-    return use_root && strcmp(use_root, root) == 0;
+    // Visible throughout the directory module, nested modules included.
+    return use_root && (strcmp(use_root, root) == 0 || path_beneath(use_root, root));
 }
 
 static Module* module_new(Loader* L, const char* canon, Node* file) {

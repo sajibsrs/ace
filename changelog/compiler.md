@@ -1,5 +1,9 @@
 # Compiler
 
+- A `pub` declaration in a directory module's implementation file is visible
+  to its nested modules' files too, as the loader already let them import it;
+  sema compared module roots for equality and reported the call as a generic
+  function needing type arguments.
 - Both loaders enforce directory-module privacy (Modules #1–2) for every
   directory module, not only std ones: the walk up from an imported file stops
   at its deepest ancestor with a `mod.ace`, and a deep import from outside

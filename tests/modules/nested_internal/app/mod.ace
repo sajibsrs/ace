@@ -1,0 +1,6 @@
+import util: "./inc/util.ace"
+import inner: "./inner"
+
+pub run(): int {
+    return util.one() + inner.four()
+}

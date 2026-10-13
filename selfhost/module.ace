@@ -1499,14 +1499,18 @@ pub Loader.decl_external(self, mi: usize): bool {
 }
 
 /* Whether a declaration in module `decl`, `pub` or not, is visible from
- * module `use` (Modules #2): its own file always, and a `pub` one from
- * outside its directory module only on the external surface.
+ * module `use` (Modules #2): its own file always, a `pub` one throughout its
+ * directory module, nested modules included, and from outside it only on the
+ * external surface.
  */
 pub Loader.decl_visible(self, decl: usize, is_pub: bool, use: usize): bool {
     if decl == use { return true }
     if !is_pub { return false }
     if self.decl_external(decl) { return true }
-    return use != 0 && mem.equal(self.mods.get(use).root, self.mods.get(decl).root)
+    if use == 0 { return false }
+    root: string = self.mods.get(decl).root
+    use_root: string = self.mods.get(use).root
+    return mem.equal(use_root, root) || path.beneath(use_root, root)
 }
 
 /* `name` as written: a module-private identity `m$f` or `m$Owner$f` reads

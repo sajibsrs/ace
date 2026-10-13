@@ -171,7 +171,8 @@ Whoever needs `ping` imports `./inner.ace` through their own explicit line.
 
 Within a directory module, implementation files import one another through
 relative `.ace` paths. A `pub` declaration in such a file is visible only to
-other files in that directory module. The `mod.ace` facade exposes its chosen
+other files beneath that directory module, including the files of nested
+modules inside it. The `mod.ace` facade exposes its chosen
 surface with declarations of its own; transparent type re-exports are explicit:
 
 ```ace

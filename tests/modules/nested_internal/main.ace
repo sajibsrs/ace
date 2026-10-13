@@ -1,0 +1,9 @@
+/* A nested module sees its enclosing directory module's internal pub
+ * declarations (Modules #2). expect-exit: 5
+ */
+
+import app: "./app"
+
+main(): int {
+    return app.run()
+}
