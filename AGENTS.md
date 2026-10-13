@@ -86,9 +86,9 @@ history.
   permitted the commit, as one commit per topic. Keep a patch of each measured
   stage outside the repository; park an unfinished topic with `git stash`.
   Every commit message is exactly one
-  imperative subject line, full stop — no body paragraph, no rationale, no
-  bullet list, no `Co-Authored-By` trailer, even when the change feels like it
-  needs explaining. That explanation belongs in `changelog/`, not the commit.
+  imperative subject line — no body paragraph, no rationale, no bullet list,
+  even when the change feels like it needs explaining; a `Co-Authored-By`
+  trailer is allowed. That explanation belongs in `changelog/`, not the commit.
 
 ## Conventions
 
