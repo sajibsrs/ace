@@ -3,7 +3,7 @@
 // Newline handling (spec/syntax.md "newline terminates statements", GRAMMAR.md §6.1):
 // a newline token is emitted only when the previous token can end an
 // expression — ident/literal/null/true/false, a keyword after '.', ')', ']',
-// '}', '?', or the keywords return/break/continue — and the next token is not ';'. Consequence:
+// '}', or the keywords return/break/continue — and the next token is not ';'. Consequence:
 // parenthesized/bracketed groups and trailing-comma lists continue across
 // lines for free; 'else' stays on the '}' line. ';' tokenizes only for the
 // for-head clause separators; the parser rejects it everywhere else.
@@ -590,6 +590,7 @@ static void scan_punct(Lex* L, char c) {
         k = T_SEMI; // valid only between for-head clauses (parser enforces)
         break;
     case '@': adv(L); k = T_AT; break;
+    case '?': adv(L); k = T_QUESTION; break;
     default:
         adv(L);
         if ((unsigned char)c >= 0x80) err(L, "non-ASCII byte 0x%02X (identifiers are ASCII in v1)", (unsigned char)c);

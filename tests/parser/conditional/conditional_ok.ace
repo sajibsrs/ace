@@ -1,0 +1,15 @@
+/* `:` binds the nearest `?`, so a conditional is a repeat literal's value
+   only when parenthesized; a nested conditional is parenthesized. */
+
+main(): int {
+    c: bool = true
+    x: int = 1
+    a: [1]int = [c ? x : 3]
+    b: [3]int = [(c ? x : 2) : 3]
+    d: int = c ? x : (c ? 2 : 3)
+    e: int = (c ? x : 2) + 1
+    f: int = c ?
+        x :
+        2
+    return a[0] + b[0] + d + e + f
+}

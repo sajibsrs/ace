@@ -30,7 +30,7 @@ pub Kind: enum u8 {
     block, exprstmt, assign, if, for, range, switch, case, varpat, return,
     break, continue, fallthrough, asm, asmbind, label, defer,
     int_lit, float_lit, str_lit, char_lit, bool, null, ident, tuple,
-    binary, cmpchain, ops, op, unary, call, mutarg, index, slice, selector,
+    binary, cmpchain, ops, cond, op, unary, call, mutarg, index, slice, selector,
     arraylit, structlit, fieldinit, staticmaplit, mapentry,
 }
 
@@ -432,8 +432,7 @@ Parser.expect(mut self, k: Token, what: string): usize {
 /* A new node of `kind` at token `ti`'s position. */
 Parser.make(mut self, kind: Kind, ti: usize): u32 {
     if self.nnode == self.nodes.len { self.nodes = grow[Node](self.nodes) }
-    t: usize = ti
-    if t >= self.ntok { t = self.ntok - 1 }
+    t: usize = ti >= self.ntok ? self.ntok - 1 : ti
     n: u32 = u32(self.nnode)
     self.nodes[n] = Node {
         kind = kind, op = Token.eof, flags = 0, line = self.toks[t].line, col = self.toks[t].col,
@@ -667,8 +666,25 @@ level(k: Token): int {
 
 CMP_LEVEL: const int = 7
 
+/* A conditional `c ? a : b`, loosest of all; `:` binds the nearest `?`.
+ * At `?`. A conditional nested in another needs parentheses.
+ */
 pub Parser.expr(mut self, ctx: int): u32 {
+    c: u32, top: int = mut self.binary(1, ctx)
+    if self.kth(0) != Token.question { return c }
+    n: u32 = mut self.nd(Kind.cond)
+    self.i += 1
+    self.nodes[n].a = c
+    self.nodes[n].b = mut self.branch(ctx)
+    mut self.expect(Token.colon, "':' after the conditional's first branch")
+    self.nodes[n].c = mut self.branch(ctx)
+    return n
+}
+
+/* A conditional's branch, which is no unparenthesized conditional. */
+Parser.branch(mut self, ctx: int): u32 {
     r: u32, top: int = mut self.binary(1, ctx)
+    if self.kth(0) == Token.question { mut self.fail("a nested conditional needs parentheses") }
     return r
 }
 
@@ -883,8 +899,7 @@ Parser.unary(mut self, ctx: int): u32 {
     }
     if k == Token.star {
         // `*T(address)` is a pointer conversion; any other '*' dereferences.
-        after: usize = 0
-        if !self.failed { after = self.scan_type(self.i) }
+        after: usize = self.failed ? 0 : self.scan_type(self.i)
         if after != 0 && self.kind_at(after) == Token.lparen { return mut self.postfix(ctx, mut self.parse_type()) }
         self.i += 1
         u: u32 = mut self.nd(Kind.unary)
@@ -1088,8 +1103,7 @@ Parser.primary(mut self, ctx: int): u32 {
     t: usize = self.i
     switch self.kth(0) {
         Token.int, Token.char {
-            kind: Kind = Kind.int_lit
-            if self.kinds[t] == Token.char { kind = Kind.char_lit }
+            kind: Kind = self.kinds[t] == Token.char ? Kind.char_lit : Kind.int_lit
             x: u32 = mut self.leaf(kind)
             self.nodes[x].ival = self.toks[t].ival
             return x
@@ -1265,8 +1279,7 @@ slice_type_start(k: Token): bool {
 
 /* The current token's line (the last token's once past the end). */
 Parser.line(self): u32 {
-    t: usize = self.i
-    if t >= self.ntok { t = self.ntok - 1 }
+    t: usize = self.i >= self.ntok ? self.ntok - 1 : self.i
     return self.toks[t].line
 }
 
@@ -1313,13 +1326,7 @@ Parser.parse_if(mut self): u32 {
     self.nodes[n].b = mut self.block()
     if self.at(Token.else) { // must be on the '}' line (the lexer emits a newline otherwise)
         self.i += 1
-        c: u32 = 0
-        if self.at(Token.if) {
-            c = mut self.parse_if()
-        } else {
-            c = mut self.block()
-        }
-        self.nodes[n].c = c
+        self.nodes[n].c = self.at(Token.if) ? mut self.parse_if() : mut self.block()
     }
     return n
 }
@@ -1495,11 +1502,8 @@ Parser.variant_pattern(mut self): u32 {
     for {
         first: bool = base == 0 && !self.at(Token.dot)
         if self.at(Token.dot) { self.i += 1 } // separator before the next segment
-        if first {
-            seg = mut self.expect(Token.ident, "type or variant name")
-        } else {
-            seg = mut self.expect_member("type or variant name")
-        }
+        seg = first ? mut self.expect(Token.ident, "type or variant name") :
+            mut self.expect_member("type or variant name")
         if self.at(Token.lparen) || self.failed { break } // the variant name
         node: u32 = mut self.ident_node(Kind.ident, seg)
         if base != 0 {
@@ -1725,13 +1729,7 @@ Parser.decl_stmt(mut self, first: usize): u32 {
     mut self.close(n, mark)
     if mut self.eat(Token.assign) {
         if count > 1 { self.nodes[n].flags |= F_MIXED }
-        b: u32 = 0
-        if staticmap && self.at(Token.lbrace) {
-            b = mut self.staticmaplit()
-        } else {
-            b = mut self.expr_list(0)
-        }
-        self.nodes[n].b = b
+        self.nodes[n].b = staticmap && self.at(Token.lbrace) ? mut self.staticmaplit() : mut self.expr_list(0)
     } else if count > 1 || (self.nodes[n].flags & F_MIXED) != 0 {
         mut self.fail("destructuring declaration requires an initializer")
     }
@@ -1858,8 +1856,7 @@ Parser.expr_stmt_from(mut self, ctx: int, start: usize, head: u32): u32 {
         }
         if (self.nodes[a].flags & F_MIXED) != 0 {
             for j: usize in mark..self.nstack {
-                k: Kind = Kind.ident
-                if self.stack[j] != 0 { k = self.nodes[self.stack[j]].kind }
+                k: Kind = self.stack[j] != 0 ? self.nodes[self.stack[j]].kind : Kind.ident
                 if k != Kind.ident && k != Kind.param { mut self.fail("mixed '=' left side accepts names only") }
             }
             self.nodes[a].kind = Kind.var
@@ -1925,15 +1922,13 @@ pub Parser.block(mut self): u32 {
 
 /* Token `ti`'s text, clamped to the last token. */
 Parser.text(self, ti: usize): string {
-    t: usize = ti
-    if t >= self.ntok { t = self.ntok - 1 }
+    t: usize = ti >= self.ntok ? self.ntok - 1 : ti
     return self.toks[t].text
 }
 
 /* The line of the token before the current one. */
 Parser.prev_line(self): u32 {
-    t: usize = self.i - 1
-    if t >= self.ntok { t = self.ntok - 1 }
+    t: usize = self.i - 1 >= self.ntok ? self.ntok - 1 : self.i - 1
     return self.toks[t].line
 }
 
@@ -2347,13 +2342,8 @@ Parser.global_decl(mut self, name: usize, pub_: bool): u32 {
     mut self.close(n, mark)
     if mut self.eat(Token.assign) {
         a: u32 = self.nodes[binder].a
-        b: u32 = 0
-        if a != 0 && self.nodes[a].kind == Kind.staticmap_t && self.at(Token.lbrace) {
-            b = mut self.staticmaplit()
-        } else {
-            b = mut self.expr_list(0)
-        }
-        self.nodes[n].b = b
+        staticmap: bool = a != 0 && self.nodes[a].kind == Kind.staticmap_t && self.at(Token.lbrace)
+        self.nodes[n].b = staticmap ? mut self.staticmaplit() : mut self.expr_list(0)
     } else if is_const {
         mut self.fail("const declaration requires an initializer")
     }
@@ -2566,8 +2556,7 @@ Parser.import(mut self): u32 {
     n: u32 = mut self.nd(Kind.import)
     mut self.expect(Token.import, "'import'")
     paren: bool = mut self.eat(Token.lparen)
-    what: string = "module or member name after 'import'"
-    if paren { what = "imported member name" }
+    what: string = paren ? "imported member name" : "module or member name after 'import'"
     first: usize = mut self.expect(Token.ident, what)
     if paren || self.at(Token.comma) || self.ident_at(0, "from") {
         self.nodes[n].flags |= F_SELECT
@@ -2876,8 +2865,7 @@ Parser.dump_tree(self, mut out: Out, n: u32, ind: usize, cnames: bool) {
     if (x.flags & F_TEXT) != 0 {
         // C prints with "%.*s", which stops at an embedded NUL.
         nul: usize, found: bool = str.find(x.text, '\0')
-        text: string = x.text
-        if found { text = x.text[..nul] }
+        text: string = found ? x.text[..nul] : x.text
         mut out.printf(" '%s'", text)
     }
     switch x.kind {

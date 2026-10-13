@@ -60,3 +60,4 @@ slice-range = tight
 paren-bracket-inner = tight
 array-repeat = spaced
 declaration-elision = spaced
+conditional = spaced-wrap-after-operator

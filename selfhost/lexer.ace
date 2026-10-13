@@ -24,7 +24,7 @@ pub Token: enum u8 {
     shl_eq, shr_eq,
     plus, minus, star, slash, percent, eq_eq, bang_eq, lt, le, gt, ge,
     and_and, or_or, amp, pipe, caret, shl, shr, tilde, bang,
-    lparen, rparen, lbrack, rbrack, lbrace, rbrace, comma, colon, semi, at,
+    lparen, rparen, lbrack, rbrack, lbrace, rbrace, comma, colon, semi, at, question,
     dot, dot_dot, dot_dot_dot,
 }
 
@@ -38,7 +38,7 @@ PUNCT: StaticMap[Token]string = {
     Token.pipe: "|", Token.caret: "^", Token.shl: "<<", Token.shr: ">>", Token.tilde: "~",
     Token.bang: "!", Token.lparen: "(", Token.rparen: ")", Token.lbrack: "[", Token.rbrack: "]",
     Token.lbrace: "{", Token.rbrace: "}", Token.comma: ",", Token.colon: ":", Token.semi: ";",
-    Token.at: "@", Token.dot: ".", Token.dot_dot: "..", Token.dot_dot_dot: "...",
+    Token.at: "@", Token.dot: ".", Token.dot_dot: "..", Token.dot_dot_dot: "...", Token.question: "?",
 }
 
 pub disp(kind: Token): string {
@@ -668,6 +668,7 @@ Lexer.scan_punct(mut self, c: u8): (Token, bool) {
         }
         ';' { k = Token.semi }
         '@' { k = Token.at }
+        '?' { k = Token.question }
         default {
             if c >= 0x80 {
                 mut self.fail(LexErr.non_ascii, c)

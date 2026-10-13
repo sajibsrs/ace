@@ -514,6 +514,10 @@
           "match": "\\.\\.\\.?"
         },
         {
+          "name": "keyword.operator.ternary.ace",
+          "match": "\\?"
+        },
+        {
           "name": "keyword.operator.ace",
           "match": "&&|\\|\\||<<|>>|[+\\-*/%&|^!~]"
         },

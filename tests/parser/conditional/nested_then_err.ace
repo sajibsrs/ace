@@ -1,0 +1,6 @@
+/* A conditional in another's then branch needs parentheses. */
+
+main(): int {
+    a: bool = true
+    return a ? a ? 1 : 2 : 3
+}

@@ -1195,6 +1195,18 @@ Lw.store_value(mut self, at: u32, t: u32, dst: int, off: i32) {
     if !self.captured.has(at) { x = self.array_cast_arg(at) }
     n: Node = self.node(x)
     if self.captured.has(x) { n.kind = Kind.ident } // read as the name C gives it
+    if n.kind == Kind.cond && self.is_big(t) { // each branch writes dst + off itself
+        then: int, els: int, join: int = mut self.cond_split(x)
+        mut self.enter(then)
+        if self.cur >= 0 { mut self.store_value(n.b, t, dst, off) }
+        mut self.jump(join)
+        mut self.enter(els)
+        if self.cur >= 0 { mut self.store_value(n.c, t, dst, off) }
+        mut self.jump(join)
+        mut self.seal(join)
+        mut self.enter(join)
+        return
+    }
     u: u32 = self.unwrap(t)
     if n.kind == Kind.arraylit && u != 0 && self.ty(u).kind == TypeKind.array {
         ut: SType = self.ty(u)
@@ -2498,6 +2510,65 @@ Lw.bool_value(mut self, x: u32): int {
         if self.fn.block(join).preds.get(i) == from_b { mut self.fn.arg_add(phi, b) } else { mut self.fn.arg_add(phi, k) }
     }
     return phi
+}
+
+/* Branches on conditional `x`'s condition into `then` and `els`, both
+ * sealed, and returns them with the join block both branches jump to.
+ */
+Lw.cond_split(mut self, x: u32): (int, int, int) {
+    then: int = mut self.new_block()
+    els: int = mut self.new_block()
+    join: int = mut self.new_block()
+    mut self.cond(self.node(x).a, then, els)
+    mut self.seal(then)
+    mut self.seal(els)
+    return then, els, join
+}
+
+/* Joins leaf `a` of the branch from block `fa` with leaf `b` of the other. */
+Lw.cond_join(mut self, join: int, fa: int, a: int, b: int): int {
+    preds: []int = self.fn.block(join).preds.view()
+    if preds.len == 1 {
+        if preds[0] == fa { return a }
+        return b
+    }
+    phi: int = mut self.fn.new_phi(join, self.fn.at(a).ty)
+    for i: usize in 0..self.fn.block(join).preds.len {
+        if self.fn.block(join).preds.get(i) == fa { mut self.fn.arg_add(phi, a) } else { mut self.fn.arg_add(phi, b) }
+    }
+    return phi
+}
+
+/* Conditional `x`'s value: only the selected branch is evaluated. Scalar
+ * when `agg` is false (the result is returned), else its leaves at type `t`.
+ */
+Lw.cond_value(mut self, x: u32, want: int, t: u32, agg: bool, mut out: Agg): int {
+    n: Node = self.node(x)
+    then: int, els: int, join: int = mut self.cond_split(x)
+    a: Agg = blank(Agg)
+    a.n = 1
+    a.v[0] = -1
+    b: Agg = blank(Agg)
+    b.n = 1
+    b.v[0] = -1
+    mut self.enter(then)
+    if self.cur >= 0 {
+        if agg { mut self.value(n.b, t, mut a) } else { a.v[0] = mut self.expr(n.b, want) }
+    }
+    fa: int = self.cur
+    mut self.jump(join)
+    mut self.enter(els)
+    if self.cur >= 0 {
+        if agg { mut self.value(n.c, t, mut b) } else { b.v[0] = mut self.expr(n.c, want) }
+    }
+    mut self.jump(join)
+    mut self.seal(join)
+    mut self.enter(join)
+    if self.cur < 0 { return -1 }
+    if !agg { return mut self.cond_join(join, fa, a.v[0], b.v[0]) }
+    if fa >= 0 { out.n = a.n } else { out.n = b.n } // the reached branch's leaf count
+    for i: int in 0..out.n { out.v[i] = mut self.cond_join(join, fa, a.v[i], b.v[i]) }
+    return 0
 }
 
 /* Whether `x` names storage: a variable, a dereference, or a field of one. */
@@ -4043,6 +4114,10 @@ Lw.expr(mut self, x: u32, want: int): int {
             mut self.unsupported("operator")
             return mut self.dummy()
         }
+        Kind.cond {
+            none: Agg = blank(Agg)
+            return mut self.cond_value(x, want, 0, false, mut none)
+        }
         Kind.binary {
             if n.op == Token.and_and || n.op == Token.or_or { return mut self.bool_value(x) }
             op: int = binop_of(n.op)
@@ -4191,6 +4266,10 @@ Lw.value(mut self, at: u32, t: u32, mut out: Agg) {
             return
         }
     }
+    if n.kind == Kind.cond {
+        _ = mut self.cond_value(x, 0, t, true, mut out)
+        return
+    }
     if self.is_contract(t) && n.kind == Kind.null { // Carved #5: the null contract, all bits zero
         out.n = 2
         out.v[0] = mut self.konst(ir.IT_PTR, 0)
@@ -4271,6 +4350,14 @@ Lw.cond(mut self, x: u32, t: int, f: int) {
         mut self.seal(mid)
         mut self.enter(mid)
         mut self.cond(n.b, t, f)
+        return
+    }
+    if n.kind == Kind.cond { // each branch tests itself: no bool is materialized
+        then: int, els: int, _ = mut self.cond_split(x)
+        mut self.enter(then)
+        mut self.cond(n.b, t, f)
+        mut self.enter(els)
+        mut self.cond(n.c, t, f)
         return
     }
     if n.kind == Kind.bool {

@@ -1,0 +1,9 @@
+/* Typed branches of different types never convert implicitly. */
+
+main(): int {
+    c: bool = true
+    a: i32 = 1
+    b: i64 = 2
+    x: i64 = c ? a : b
+    return int(x)
+}

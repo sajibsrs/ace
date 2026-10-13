@@ -174,3 +174,7 @@
   calls #2): the block's end, `return`, `break`, `continue`, a labeled restart,
   or `fallthrough`. Lowering keeps one defer stack with a floor per block and
   per loop/label target; each exit re-emits the calls above its target's floor.
+- `cond ? a : b`, loosest of all expressions, unparenthesized nesting an error,
+  in both compilers. Sema types the branches alike (an untyped one settles to
+  the other, or both meet `coerce`'s expected type); lowering joins only the
+  selected branch's leaves with phis, branching directly in a test.

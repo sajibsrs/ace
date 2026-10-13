@@ -292,6 +292,7 @@ main(): int {
     shifted >>= 1
     inverted: uint = !shifted
     valid: bool = enabled && in_range || no_shape == null
+    chosen: uint = valid ? shifted : 0
 
     if valid && empty == null && writable != null && shape != null &&
        identity != null && size > 0 && viewed > 0 && inverted != 0 &&

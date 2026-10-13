@@ -27,6 +27,22 @@ A bitwise operator never mixes with an equality or comparison without
 parentheses, in either order: `b & 0xC0 != 0x80` and `b == 1 | x` are parse
 errors, written `(b & 0xC0) != 0x80` and `(b == 1) | x`.
 
+The conditional `cond ? a : b` selects a value by a `bool` and evaluates only
+the selected branch. It binds loosest of all operators, so
+`limit: int = n > max ? max : n` needs no parentheses. Its branches have one
+type; an untyped constant branch takes the other branch's type, and where the
+context expects a type, each branch meets it on its own:
+
+```ace
+view: []u8 = empty ? null : data[..n]
+origin: Point = flipped ? { x = 1, y = 0 } : { x = 0, y = 1 }
+```
+
+Typed branches of different types never convert: `c ? a32 : b64` is an
+error, written with an explicit cast. A conditional inside another needs
+parentheses (`a ? b : (c ? d : e)`), and inside a repeated array literal the
+first `:` belongs to the conditional, so `[(c ? x : y) : 3]` repeats it.
+
 Debug output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
 value of its declared type, and on division/remainder by zero or the signed
 minimum divided by `-1`. Shift counts must be nonnegative and below the left
@@ -226,3 +242,14 @@ The examples are covered by `tests/sema/docs/primitive_ok.ace`.
   means. Rejecting the mix never changes meaning and can later relax to
   Go's ranking (`&` above `==`) without breaking code. GCC and Clang flag the
   same mix with `-Wparentheses`.
+- The conditional is spelled `cond ? a : b`, as in C, rather than an
+  if-expression, because Ace has no block-valued expressions: an `if` whose
+  branches are blocks yielding values would bring in a block-result rule for
+  one construct. `?` was otherwise unused.
+- A conditional nested unparenthesized in another is an error, as in PHP 8,
+  because chained conditionals read ambiguously (C groups `a ? b : c ? d : e`
+  to the right, PHP 7 grouped it to the left), and requiring parentheses
+  matches the bitwise/comparison rule above. It can later relax to C's
+  right grouping without breaking code.
+- A conditional is not yet a compile-time constant; constant folding of it
+  can be added later without changing any accepted program.

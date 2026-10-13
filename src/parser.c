@@ -74,6 +74,7 @@
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
+//   N_COND      a = cond; b = then; c = else
 //   N_UNARY     op (T_STAR = dereference, T_AMP = address-of); a; F_MUT = writable `mut &`
 //   N_CALL      a = callee; kids = args (N_MUTARG wraps mut-marked args); F_MUT = receiver mark
 //   N_INDEX     a = base; b = index
@@ -503,7 +504,7 @@ static Node* mkbin(P* p, Token* op, Node* l, Node* r) {
     return b;
 }
 
-// binary precedence, loosest → tightest (see level):
+// binary precedence, loosest → tightest (see level), all below ?: :
 // || → && → | → ^ → & → ==/!= → </<=/>/>= (chains) → <</>> → +,- → *,/,%
 static Node* expr_binary(P* p, int min, int ctx);
 static Node* expr_unary(P* p, int ctx);
@@ -636,7 +637,21 @@ static int level(TokKind k) {
 
 static Node* expr_chain(P* p, Node* first, int ctx);
 
-static Node* expr(P* p, int ctx) { return expr_binary(p, 1, ctx); }
+/* A conditional `c ? a : b`, loosest of all; ':' binds the nearest '?'.
+ * Positioned at '?'. A conditional nested in another needs parentheses. */
+static Node* expr(P* p, int ctx) {
+    Node* c = expr_binary(p, 1, ctx);
+    if (!at(p, T_QUESTION)) return c;
+    Node* n = nd(p, N_COND);
+    p->i++;
+    n->a = c;
+    n->b = expr_binary(p, 1, ctx);
+    if (at(p, T_QUESTION)) perr(p, "a nested conditional needs parentheses");
+    expect(p, T_COLON, "':' after the conditional's first branch");
+    n->c = expr_binary(p, 1, ctx);
+    if (at(p, T_QUESTION)) perr(p, "a nested conditional needs parentheses");
+    return n;
+}
 
 /* Whether level lv is an equality or comparison's, which a bitwise
  * operator (| ^ &, levels 3-5) never takes as an operand unparenthesized. */

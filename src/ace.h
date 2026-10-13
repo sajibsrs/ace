@@ -39,8 +39,8 @@
     X(TILDE, "~") X(BANG, "!")                                                \
     /* punctuation */                                                          \
     X(LPAREN, "(") X(RPAREN, ")") X(LBRACK, "[") X(RBRACK, "]")                \
-    X(LBRACE, "{") X(RBRACE, "}") X(COMMA, ",") X(COLON, ":")                  \
-    X(SEMI, ";") X(AT, "@")                                                  \
+    X(LBRACE, "{") X(RBRACE, "}") X(COMMA, ",") X(COLON, ":")                 \
+    X(SEMI, ";") X(AT, "@") X(QUESTION, "?")                                 \
     X(DOT, ".") X(DOTDOT, "..") X(DOTDOTDOT, "...")
 
 typedef enum {
@@ -156,6 +156,7 @@ void      ptrmap_free(PtrMap* m);
     X(N_CHAR, "char_lit") X(N_BOOL, "bool") X(N_NULL, "null")                  \
     X(N_IDENT, "ident") X(N_TUPLE_E, "tuple")                                  \
     X(N_BINARY, "binary") X(N_CMPCHAIN, "cmpchain") X(N_OPS, "ops")            \
+    X(N_COND, "cond")                                                          \
     X(N_OP, "op") X(N_UNARY, "unary") X(N_CALL, "call")                        \
     X(N_MUTARG, "mutarg") X(N_INDEX, "index") X(N_SLICE_E, "slice")            \
     X(N_FIELD_E, "selector") X(N_ARRAYLIT, "arraylit")                         \

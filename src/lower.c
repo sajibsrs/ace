@@ -925,6 +925,54 @@ static int bool_value(Lw* l, Node* x) {
     return phi;
 }
 
+/* Branches on conditional x's condition into *then and *els, both sealed,
+ * and returns the join block both branches jump to. */
+static int cond_split(Lw* l, Node* x, int* then, int* els) {
+    *then = new_block(l);
+    *els = new_block(l);
+    int join = new_block(l);
+    cond(l, x->a, *then, *els);
+    seal(l, *then);
+    seal(l, *els);
+    return join;
+}
+
+/* Joins leaf i of the branch values a (from block fa) and b (from fb). */
+static int cond_join(Lw* l, int join, int fa, int a, int b) {
+    IrBlock* jb = &l->fn->blocks[join];
+    if (jb->npreds == 1) return jb->preds[0] == fa ? a : b;
+    int phi = ir_phi_new(l->fn, join, l->fn->ins[a].type);
+    for (int i = 0; i < jb->npreds; i++) ir_arg_add(l->fn, phi, jb->preds[i] == fa ? a : b);
+    return phi;
+}
+
+/* Conditional x's value: only the selected branch is evaluated. Scalar
+ * when out is NULL (the result is returned), else its leaves at type t. */
+static int cond_value(Lw* l, Node* x, int want, SType* t, Agg* out) {
+    int then, els, join = cond_split(l, x, &then, &els);
+    Agg a = { 1, { -1 } }, b = { 1, { -1 } };
+    enter(l, then);
+    if (l->cur >= 0) {
+        if (out) value(l, x->b, t, &a);
+        else a.v[0] = expr(l, x->b, want);
+    }
+    int fa = l->cur;
+    jump(l, join);
+    enter(l, els);
+    if (l->cur >= 0) {
+        if (out) value(l, x->c, t, &b);
+        else b.v[0] = expr(l, x->c, want);
+    }
+    jump(l, join);
+    seal(l, join);
+    enter(l, join);
+    if (l->cur < 0) return -1;
+    if (!out) return cond_join(l, join, fa, a.v[0], b.v[0]);
+    out->n = fa >= 0 ? a.n : b.n; // the reached branch's leaf count
+    for (int i = 0; i < out->n; i++) out->v[i] = cond_join(l, join, fa, a.v[i], b.v[i]);
+    return 0;
+}
+
 static int is_self_call(Lw* l, Node* x) {
     if (!x || x->kind != N_CALL || !x->a || (x->a->kind != N_IDENT && x->a->kind != N_FIELD_E)) return 0;
     Sym* s = node_sym(x);
@@ -2268,6 +2316,8 @@ static int expr(Lw* l, Node* x, int want) {
         }
         unsupported(l, "operator");
     }
+    case N_COND:
+        return cond_value(l, x, want, NULL, NULL);
     case N_BINARY: {
         if (x->op == T_ANDAND || x->op == T_OROR) return bool_value(l, x);
         int op = binop_of((TokKind)x->op);
@@ -2693,6 +2743,18 @@ static Node* array_cast_arg(Node* x) {
 
 static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
     x = array_cast_arg(x);
+    if (x->kind == N_COND && is_big(t)) { // each branch writes dst + off itself
+        int then, els, join = cond_split(l, x, &then, &els);
+        enter(l, then);
+        if (l->cur >= 0) store_value(l, x->b, t, dst, off);
+        jump(l, join);
+        enter(l, els);
+        if (l->cur >= 0) store_value(l, x->c, t, dst, off);
+        jump(l, join);
+        seal(l, join);
+        enter(l, join);
+        return;
+    }
     SType* u = unwrap(t);
     if (x->kind == N_ARRAYLIT && u && u->kind == SK_ARRAY) {
         uint32_t es = sema_size(u->base);
@@ -3180,6 +3242,10 @@ static void value(Lw* l, Node* x, SType* t, Agg* out) {
             return;
         }
     }
+    if (x->kind == N_COND) {
+        cond_value(l, x, 0, t, out);
+        return;
+    }
     if (is_contract(t) && x->kind == N_NULL) { // Carved #5: the null contract, all bits zero
         out->n = 2;
         out->v[0] = out->v[1] = konst(l, IT_PTR, 0);
@@ -3248,6 +3314,15 @@ static void cond(Lw* l, Node* x, int t, int f) {
         seal(l, mid);
         enter(l, mid);
         cond(l, x->b, t, f);
+        return;
+    }
+    if (x->kind == N_COND) { // each branch tests itself: no bool is materialized
+        int then, els;
+        (void)cond_split(l, x, &then, &els);
+        enter(l, then);
+        cond(l, x->b, t, f);
+        enter(l, els);
+        cond(l, x->c, t, f);
         return;
     }
     if (x->kind == N_BOOL) {

@@ -1843,7 +1843,7 @@ Sema.settle_operand(mut self, e: u32, want: u32): bool {
     n: Node = self.node(e)
     if n.kind == Kind.unary && (self.node(n.a).kind == Kind.int_lit || self.node(n.a).kind == Kind.float_lit) {
         mut self.set_node_ty(n.a, want) // a negated literal is still a literal
-    } else if n.kind == Kind.binary || n.kind == Kind.unary {
+    } else if n.kind == Kind.binary || n.kind == Kind.unary || n.kind == Kind.cond {
         return mut self.coerce(e, want)
     }
     mut self.set_node_ty(e, want)
@@ -1855,6 +1855,13 @@ Sema.coerce(mut self, e: u32, want: u32): bool {
     n: Node = self.node(e)
     wk: TypeKind = TypeKind.err
     if want != 0 { wk = self.ty(want).kind }
+    if n.kind == Kind.cond && want != 0 { // each branch meets the expected type
+        ok: bool = mut self.cond_test(e)
+        if !mut self.coerce(n.b, want) { ok = false }
+        if !mut self.coerce(n.c, want) { ok = false }
+        if ok { mut self.set_node_ty(e, want) } else { mut self.set_node_ty(e, self.t_err) }
+        return ok
+    }
     if n.kind == Kind.arraylit && wk == TypeKind.slice { return mut self.coerce_slicelit(e, want) }
     if n.kind == Kind.arraylit && wk == TypeKind.array {
         mut self.check_arraylit(e, want)
@@ -2228,6 +2235,7 @@ Sema.expr_type_raw(mut self, e: u32): u32 {
             return mut self.new_type(tu)
         }
         Kind.unary { return mut self.check_unary(e) }
+        Kind.cond { return mut self.check_cond(e) }
         Kind.binary { return mut self.check_binary(e) }
         Kind.cmpchain { return mut self.check_cmpchain(e) }
         Kind.selector { return mut self.check_selector(e) }
@@ -2357,6 +2365,35 @@ Sema.check_unary(mut self, e: u32): u32 {
         default {}
     }
     mut self.err(e, ["invalid operand for '", lexer.disp(n.op), "': ", mut self.type_name(t)])
+    return self.t_err
+}
+
+/* Whether conditional `e`'s condition is bool, reporting it otherwise. */
+Sema.cond_test(mut self, e: u32): bool {
+    c: u32 = mut self.expr_type(self.node(e).a)
+    if self.ty(c).kind == TypeKind.err { return false }
+    if self.is_bool(c) { return true }
+    mut self.err(self.node(e).a, ["conditional condition must be bool, not ", mut self.type_name(c)])
+    return false
+}
+
+Sema.check_cond(mut self, e: u32): u32 {
+    n: Node = self.node(e)
+    if !mut self.cond_test(e) { return self.t_err }
+    a: u32 = mut self.expr_type(n.b)
+    b: u32 = mut self.expr_type(n.c)
+    if self.ty(a).kind == TypeKind.err || self.ty(b).kind == TypeKind.err { return self.t_err }
+    if self.same_type(a, b) { return a }
+    // an untyped branch takes the other's type; typed branches never convert
+    if self.ty(a).kind == TypeKind.ut && self.ty(b).kind != TypeKind.ut {
+        if mut self.coerce(n.b, b) { return b }
+        return self.t_err
+    }
+    if self.ty(b).kind == TypeKind.ut && self.ty(a).kind != TypeKind.ut {
+        if mut self.coerce(n.c, a) { return a }
+        return self.t_err
+    }
+    mut self.err(e, ["conditional branches differ: ", mut self.type_name(a), " and ", mut self.type_name(b), " (casts are explicit)"])
     return self.t_err
 }
 
@@ -7690,6 +7727,11 @@ Sema.dies_on_return(self, s: u32): bool {
 Sema.local_view(self, e: u32): u32 {
     n: Node = self.node(e)
     switch n.kind {
+        Kind.cond {
+            v: u32 = self.local_view(n.b)
+            if v != 0 { return v }
+            return self.local_view(n.c)
+        }
         Kind.slice {
             bt: u32 = self.node_ty(n.a)
             if bt != 0 && self.ty(bt).kind == TypeKind.array && self.dies_on_return(self.path_root(n.a)) { return e }
@@ -8323,6 +8365,20 @@ Sema.init_expr(mut self, e: u32) {
         Kind.binary {
             mut self.init_expr(n.a)
             mut self.init_expr(n.b)
+        }
+        Kind.cond {
+            mut self.init_expr(n.a)
+            outer: u32 = mut self.init_begin()
+            from: u32 = self.ik.mark
+            first: usize = self.ik.paths.len
+            mut self.init_expr(n.b)
+            fail(mut self.ik.paths.push(mut self.init_delta(from, false)))
+            mut self.init_undo(from)
+            mut self.init_expr(n.c)
+            fail(mut self.ik.paths.push(mut self.init_delta(from, false)))
+            mut self.init_end(outer)
+            mut self.init_join(first, 2, 2)
+            mut self.ik.paths.truncate(first)
         }
         Kind.range {
             mut self.init_expr(n.a)

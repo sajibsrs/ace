@@ -2,6 +2,8 @@
 
 import fmt
 
+Point: struct { x: int, y: int }
+
 dynamic_byte(text: string, index: i32): u8 {
     return text[index]
 }
@@ -34,8 +36,19 @@ main(): int {
     first: u8 = message[0]
     second: u8 = dynamic_byte(message, 1)
     id: typeid = null
+    n: int = 7
+    max: int = 5
+    limit: int = n > max ? max : n
+    empty: bool = false
+    data: string = message
+    view: []u8 = empty ? null : data[..2]
+    flipped: bool = true
+    origin: Point = flipped ? { x = 1, y = 0 } : { x = 0, y = 1 }
+    nested: int = empty ? 1 : (flipped ? 2 : 3)
+    repeated: [3]int = [(flipped ? limit : max) : 3]
 
     if int(as_byte) != 65 || back != direct { return 90 }
+    if view.len != 2 || origin.x != 1 || nested != 2 || repeated[2] != 5 { return 91 }
     return signed_word + int(unsigned_word) + int(byte_value) + wide +
         int(unsigned) + int(double) + int(default_width) - int(same_identity) +
         int(same_identity_back) + int(converted) + int(letter) +

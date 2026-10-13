@@ -1,0 +1,10 @@
+/* A conditional branch that views a local cannot escape by return. */
+
+pick(c: bool, p: *int): *int {
+    local: int = 1
+    return c ? p : &local
+}
+
+main(): int {
+    return 0
+}

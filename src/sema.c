@@ -2275,7 +2275,16 @@ static int coerce_slicelit(Ck* k, Node* e, SType* want) {
     return 1;
 }
 
+static int cond_test(Ck* k, Node* e);
+
 static int coerce(Ck* k, Node* e, SType* want) {
+    if (e->kind == N_COND && want) { // each branch meets the expected type
+        int ok = cond_test(k, e);
+        ok &= coerce(k, e->b, want);
+        ok &= coerce(k, e->c, want);
+        e->ty = ok ? want : T_ERR;
+        return ok;
+    }
     if (e->kind == N_ARRAYLIT && want && want->kind == SK_SLICE) return coerce_slicelit(k, e, want);
     if (e->kind == N_ARRAYLIT && want && want->kind == SK_ARRAY) {
         check_arraylit(k, e, want);
@@ -2401,7 +2410,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
 static int settle_operand(Ck* k, Node* e, SType* want) {
     if (e->kind == N_UNARY && (e->a->kind == N_INT || e->a->kind == N_FLOAT))
         e->a->ty = want; // a negated literal is still a literal
-    else if (e->kind == N_BINARY || e->kind == N_UNARY) return coerce(k, e, want);
+    else if (e->kind == N_BINARY || e->kind == N_UNARY || e->kind == N_COND) return coerce(k, e, want);
     e->ty = want; // literal materializes to the operand type
     return 1;
 }
@@ -2699,6 +2708,15 @@ static void check_no_mut_args(Ck* k, Node* call) {
 
 // --- expressions ----------------------------------------------------------------------
 
+/* Checks a conditional's condition, which must be bool. */
+static int cond_test(Ck* k, Node* e) {
+    SType* c = expr_type(k, e->a);
+    if (c->kind == SK_ERR) return 0;
+    if (is_bool(c)) return 1;
+    ck_err(k, e->a, "conditional condition must be bool, not %s", type_name(c));
+    return 0;
+}
+
 static SType* expr_type_raw(Ck* k, Node* e) {
     switch (e->kind) {
     case N_INT: case N_CHAR: return T_UT_INT;
@@ -2811,6 +2829,18 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             break;
         }
         ck_err(k, e, "invalid operand for '%s': %s", tok_disp((TokKind)e->op), type_name(t));
+        return T_ERR;
+    }
+    case N_COND: {
+        if (!cond_test(k, e)) return T_ERR;
+        SType* a = expr_type(k, e->b);
+        SType* b = expr_type(k, e->c);
+        if (a->kind == SK_ERR || b->kind == SK_ERR) return T_ERR;
+        if (same_type(a, b)) return a;
+        // an untyped branch takes the other's type; typed branches never convert
+        if (a->kind == SK_UT && b->kind != SK_UT) return coerce(k, e->b, b) ? b : T_ERR;
+        if (b->kind == SK_UT && a->kind != SK_UT) return coerce(k, e->c, a) ? a : T_ERR;
+        ck_err(k, e, "conditional branches differ: %s and %s (casts are explicit)", type_name(a), type_name(b));
         return T_ERR;
     }
     case N_BINARY: {
@@ -5755,7 +5785,7 @@ static int dies_on_return(Sym* s) {
 /*
  * The first subexpression of e that directly views storage ending with the
  * function: a slice or address of such a path, or a []T array literal with
- * runtime elements. Looks through aggregate literals, tuples, and view
+ * runtime elements. Looks through aggregate literals, tuples, conditionals, and view
  * conversions; never through variables or calls (no alias analysis).
  */
 static Node* local_view(Node* e) {
@@ -5766,6 +5796,10 @@ static Node* local_view(Node* e) {
     }
     case N_UNARY:
         return e->op == T_AMP && dies_on_return(path_root(e->a)) ? e : NULL;
+    case N_COND: {
+        Node* v = local_view(e->b);
+        return v ? v : local_view(e->c);
+    }
     case N_ARRAYLIT: {
         SType* t = node_ty(e);
         if (t && t->kind == SK_SLICE && !(e->flags & F_STATICLIT)) return e;
@@ -7024,6 +7058,19 @@ static void init_expr(InitCk* k, Node* e) {
         return;
     case N_BINARY:
         init_expr(k, e->a); init_expr(k, e->b); return;
+    case N_COND: {
+        init_expr(k, e->a);
+        int outer = init_begin(k), from = k->mark;
+        InitDelta paths[2];
+        init_expr(k, e->b);
+        paths[0] = init_delta(k, from, 0);
+        init_undo(k, from);
+        init_expr(k, e->c);
+        paths[1] = init_delta(k, from, 0);
+        init_end(k, outer);
+        init_join(k, paths, 2, 2);
+        return;
+    }
     case N_RANGE:
         init_expr(k, e->a); init_expr(k, e->b); init_expr(k, e->c); return;
     case N_CMPCHAIN: case N_TUPLE_E:

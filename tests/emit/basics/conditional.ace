@@ -1,0 +1,65 @@
+/* The conditional `c ? a : b` evaluates only its selected branch, at scalar,
+ * view, struct, and memory-sized aggregate types, and as a branch condition. */
+
+// expect-exit: 0
+
+Point: struct {
+    x: int,
+    y: int,
+}
+
+Big: struct {
+    words: [20]u64,
+}
+
+calls: int = 0
+
+count(v: int): int {
+    calls += 1
+    return v
+}
+
+big(v: u64): Big {
+    return Big { words = [v : 20] }
+}
+
+pick(c: bool, a: string, b: string): string {
+    return c ? a : b
+}
+
+// a constant condition leaves one branch unreachable; every leaf still joins
+constant(t: string): string {
+    return false ? "a" : t
+}
+
+constant_then(t: string): string {
+    return true ? t : "a"
+}
+
+main(): int {
+    yes: bool = true
+    no: bool = false
+    if (yes ? count(1) : count(2)) != 1 { return 1 }
+    if (no ? count(3) : count(4)) != 4 { return 2 }
+    if calls != 2 { return 3 } // the unselected branch never ran
+    narrow: u8 = no ? 1 : 200
+    if narrow != 200 { return 4 }
+    wide: i64 = yes ? -1 : i64(narrow)
+    if wide != -1 { return 5 }
+    if pick(yes, "left", "right").len != 4 || pick(no, "left", "right")[0] != 'r' { return 6 }
+    xs: [3]int = [1, 2, 3]
+    view: []int = no ? null : xs[1..]
+    if view.len != 2 || view[0] != 2 { return 7 }
+    p: Point = no ? Point { x = 1, y = 2 } : Point { x = 3, y = 4 }
+    if p.x != 3 || p.y != 4 { return 8 }
+    b: Big = yes ? big(7) : big(9)
+    if b.words[19] != 7 { return 9 }
+    if (yes ? no : yes) { return 10 }
+    if !(no ? no : yes) { return 11 }
+    filled: [2]int = [(yes ? 5 : 6) : 2]
+    if filled[1] != 5 { return 12 }
+    at: int = xs[no ? 0 : 2]
+    if at != 3 { return 13 }
+    if constant("hello").len != 5 || constant_then("hello").len != 5 { return 14 }
+    return 0
+}

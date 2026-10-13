@@ -94,6 +94,16 @@
     or comparison as an operand: `b & 0xC0 != 0x80` is a parse error, written
     `(b & 0xC0) != 0x80` or `b & (0xC0 != 0x80)`. Precedence is otherwise as
     `GRAMMAR.md` §4 lists it.
+18. The conditional `cond ? a : b` is the loosest expression, below `||`, and
+    evaluates only the selected branch. `cond` is `bool`. `:` binds the
+    nearest `?`, so `[c ? x : 3]` is a one-element literal and a repeated
+    conditional is `[(c ? x : y) : 3]` (#8). A conditional is never an
+    unparenthesized branch of another: `a ? b : c ? d : e` is a parse error,
+    written `a ? b : (c ? d : e)`. The branches have one type, or an untyped
+    constant branch takes the other's; with an expected type, both branches
+    meet it (so `null`, literals, and bare aggregate literals are branches).
+    Typed branches never convert implicitly. A conditional is not a
+    compile-time constant expression.
 
 ## Names & Scoping
 1. Qualification is the primary namespacing mechanism — modules provide what C fakes with prefixes: `parser.init()` instead of `ace_parser_init`; import aliasing resolves module-name collisions. Selective import is the explicit opt-in for bringing particular public spellings into their ordinary namespaces.

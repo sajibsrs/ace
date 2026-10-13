@@ -60,6 +60,19 @@ if ! printf '%s\n' "$bitwise_compare" | grep -qF \
     fail=1
 fi
 
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'CONDITIONAL_RULES'
+tests/parser/conditional/nested_else_err.ace|nested_else_err.ace:5:22: error: a nested conditional needs parentheses
+tests/parser/conditional/nested_then_err.ace|nested_then_err.ace:5:18: error: a nested conditional needs parentheses
+tests/sema/conditional/cond_type_err.ace|conditional condition must be bool, not integer literal
+tests/sema/conditional/branch_differ_err.ace|conditional branches differ: i32 and i64
+tests/sema/conditional/branch_mismatch_err.ace|type mismatch: i32 given where i64 expected
+CONDITIONAL_RULES
+
 unknown_decl=$("$ACE" tests/parser/unknown_decl_type_err.ace 2>&1)
 if ! printf '%s\n' "$unknown_decl" | grep -qF \
     "tests/parser/unknown_decl_type_err.ace:3:8: error: unknown declaration type 'protocol'"; then

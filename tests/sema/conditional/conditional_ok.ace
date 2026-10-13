@@ -1,0 +1,16 @@
+/* Branches of one type, an untyped branch taking the other's type, and an
+   expected type that both branches meet (null, literals, bare literals). */
+
+Point: struct { x: int, y: int }
+
+main(): int {
+    c: bool = true
+    n: i32 = 4
+    m: i32 = c ? n : 5
+    p: *int = c ? null : null
+    q: Point = c ? Point { x = 1, y = 2 } : { x = 3, y = 4 }
+    s: string = c ? "a" : "bc"
+    v: []int = c ? null : []
+    f: f32 = c ? 1.0 : 2.5
+    return int(m) + q.x + int(s.len) + int(v.len) + (p == null ? 0 : 1) + int(f)
+}

@@ -1,0 +1,5 @@
+/* A conditional's condition must be bool. */
+
+main(): int {
+    return 1 ? 2 : 3
+}
