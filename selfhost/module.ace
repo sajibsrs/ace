@@ -416,26 +416,24 @@ Loader.std_display(mut self, canon: string): string {
     return mut self.pool.join(["std", canon[self.std_root.len..]])
 }
 
-/* The directory of the nearest std directory module containing `canon`. A
- * nested module (its own mod.ace) is its own boundary: the deepest ancestor
- * directory with a mod.ace wins.
+/* The directory of the nearest directory module containing `canon`. A
+ * nested module (its own mod.ace) is its own boundary: the walk upward stops
+ * at the deepest ancestor directory with a mod.ace. Inside std it stops below
+ * the std root, which is not itself a module.
  */
-Loader.std_module_root(mut self, canon: string): (string, bool) {
-    if !self.is_std_source(canon) || self.is_std_internal(canon) { return "", false }
-    rel: string = canon[self.std_root.len + 1..]
-    best: string = ""
-    found: bool = false
-    for i: usize in 0..rel.len {
-        if rel[i] != '/' { continue }
-        root: string = mut self.pool.join([self.std_root, "/", rel[..i]])
-        entry: string = mut self.pool.join([root, "/mod.ace"])
-        c: string, exists: bool = path.canonical(mut self.pool, entry)
-        if exists {
-            best = root
-            found = true
-        }
+Loader.module_root(mut self, canon: string): (string, bool) {
+    if self.is_std_internal(canon) { return "", false }
+    floor: usize = 0
+    if self.is_std_source(canon) { floor = self.std_root.len }
+    n: usize = canon.len
+    for {
+        for n > floor && canon[n - 1] != '/' { n -= 1 }
+        if n <= floor + 1 { return "", false }
+        n -= 1
+        root: string = canon[..n]
+        c: string, exists: bool = path.canonical(mut self.pool, mut self.pool.join([root, "/mod.ace"]))
+        if exists { return root, true }
     }
-    return best, found
 }
 
 // --- intrinsics ---------------------------------------------------------------
@@ -793,12 +791,12 @@ Loader.ensure(mut self, mi: usize, imp: Node): (usize, bool) {
         return 0, false
     }
     importer: string = self.mods.get(mi).canon
-    root: string, in_module: bool = mut self.std_module_root(canon)
+    root: string, in_module: bool = mut self.module_root(canon)
     if in_module {
         entry: string = mut self.pool.join([root, "/mod.ace"])
         same: bool = mem.equal(importer, entry) || path.beneath(importer, root)
         if !mem.equal(canon, entry) && !same {
-            mut self.err(mi, imp, ["implementation file '", mut self.std_display(canon), "' is private to directory module '", mut self.std_display(entry), "'"])
+            mut self.err(mi, imp, ["implementation file '", self.roots.show(mut self.pool, canon), "' is private to directory module '", self.roots.show(mut self.pool, entry), "'"])
             return 0, false
         }
     }

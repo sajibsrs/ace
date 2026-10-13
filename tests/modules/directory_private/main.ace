@@ -1,0 +1,8 @@
+/* A directory module's implementation file is private to it outside std too. */
+
+import app: "./app"
+import util: "./app/inc/util.ace"
+
+main(): int {
+    return app.run() + util.one()
+}

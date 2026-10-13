@@ -221,29 +221,27 @@ static int is_std_internal(Loader* L, const char* canon) {
     return strncmp(canon, L->std_root, n) == 0 && strcmp(canon + n, "/@") != 0 && strncmp(canon + n, "/@/", 3) == 0;
 }
 
-// Return the canonical root directory for the nearest enclosing std
-// directory module containing canon, or NULL. A nested module (its own
-// mod.ace) is its own boundary — the walk keeps the deepest ancestor
-// directory with a mod.ace, so a nested module's implementation files are
-// private to it, not to whichever outer directory module contains it.
-static const char* std_directory_module_root(Loader* L, const char* canon) {
-    if (!is_std_source(L, canon) || is_std_internal(L, canon)) return NULL;
-    const char* rel = canon + strlen(L->std_root) + 1;
-    const char* best = NULL;
-    for (const char* p = rel;;) {
-        const char* slash = strchr(p, '/');
-        if (!slash) break; // remaining component is the filename, not a directory
-        size_t prefix_len = (size_t)(slash - rel);
-        size_t need = strlen(L->std_root) + 1 + prefix_len + 1;
-        char* root = arena_alloc(need);
-        snprintf(root, need, "%s/%.*s", L->std_root, (int)prefix_len, rel);
-        size_t entry_need = need + strlen("/mod.ace");
-        char* entry = arena_alloc(entry_need);
-        snprintf(entry, entry_need, "%s/mod.ace", root);
-        if (canonicalize(entry)) best = root;
-        p = slash + 1;
+// Return the canonical root directory of the nearest directory module
+// containing canon, or NULL. A nested module (its own mod.ace) is its own
+// boundary: the walk upward stops at the deepest ancestor directory with a
+// mod.ace, so a nested module's implementation files are private to it, not
+// to whichever outer directory module contains it. Inside std the walk stops
+// below the std root, which is not itself a module.
+static const char* directory_module_root(Loader* L, const char* canon) {
+    if (is_std_internal(L, canon)) return NULL;
+    size_t floor = is_std_source(L, canon) ? strlen(L->std_root) : 0;
+    size_t n = strlen(canon);
+    for (;;) {
+        while (n > floor && canon[n - 1] != '/') n--;
+        if (n <= floor + 1) return NULL;
+        n--; // drop the slash: canon[0..n) is an ancestor directory
+        char* entry = arena_alloc(n + strlen("/mod.ace") + 1);
+        snprintf(entry, n + strlen("/mod.ace") + 1, "%.*s/mod.ace", (int)n, canon);
+        if (canonicalize(entry)) {
+            entry[n] = 0;
+            return entry;
+        }
     }
-    return best;
 }
 
 static const char* std_display_path(Loader* L, const char* canon) {
@@ -976,7 +974,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
         return NULL;
     }
     const char* importer = canonicalize(src_path);
-    const char* target_root = std_directory_module_root(L, canon);
+    const char* target_root = directory_module_root(L, canon);
     if (target_root) {
         size_t entry_len = strlen(target_root) + strlen("/mod.ace") + 1;
         char* entry = arena_alloc(entry_len);
@@ -986,8 +984,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
         if (!is_entry && !same_module) {
             import_err(L->d, imp,
                        "implementation file '%s' is private to directory module '%s'",
-                       std_display_path(L, canon),
-                       std_display_path(L, entry));
+                       build_path(canon), build_path(entry));
             return NULL;
         }
     }

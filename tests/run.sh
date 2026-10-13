@@ -236,6 +236,7 @@ tests/parser/function_type/empty_type_err.ace|'()' is not a type
 tests/parser/function_type/c_return_err.ace|expected ':' and a return type or 'void'
 tests/sema/fields/method_collision_err.ace|5:8: error: method 'on_click' collides with a field of Button
 tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides with a method promoted from embedded 'base'
+tests/modules/directory_private/main.ace|4:1: error: implementation file 'app/inc/util.ace' is private to directory module 'app/mod.ace'
 tests/modules/selective_type_value/main.ace|3:8: error: imported name 'Thing' collides with a declaration
 tests/modules/selective_value_type/main.ace|3:8: error: imported name 'make' collides with a declaration
 tests/modules/selective_local_type/main.ace|6:5: error: 'Thing' names a type; a value may not share its name
@@ -1057,7 +1058,7 @@ fi
 mkdir -p /tmp/ace_std_module/normal/std/outer/inner
 mkdir -p /tmp/ace_std_module/normal/std/outer/amb_leaf
 mkdir -p /tmp/ace_std_module/normal/std/outer_missing
-mkdir -p /tmp/ace_std_module/normal/nested_quoted_dir
+mkdir -p /tmp/ace_std_module/normal/nested_quoted_dir/leaf
 cp tests/stdlib_module/nested_outer_mod.ace \
    /tmp/ace_std_module/normal/std/outer/mod.ace
 cp tests/stdlib_module/nested_outer_inner_mod.ace \
@@ -1071,7 +1072,7 @@ cp tests/stdlib_module/nested_outer_amb_leaf_mod.ace \
 cp tests/stdlib_module/nested_quoted_mod.ace \
    /tmp/ace_std_module/normal/nested_quoted_dir/mod.ace
 cp tests/stdlib_module/nested_quoted_leaf.ace \
-   /tmp/ace_std_module/normal/nested_quoted_dir/leaf.ace
+   /tmp/ace_std_module/normal/nested_quoted_dir/leaf/mod.ace
 cp tests/stdlib_module/nested_quoted.ace \
    /tmp/ace_std_module/normal/app/nested_quoted.ace
 if ! /tmp/ace_std_module/normal/ace -o /tmp/ace_std_module/normal/nested_bare \

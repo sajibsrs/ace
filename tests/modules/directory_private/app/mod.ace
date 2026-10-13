@@ -1,0 +1,5 @@
+import util: "./inc/util.ace"
+
+pub run(): int {
+    return util.one()
+}

@@ -1,5 +1,9 @@
 # Compiler
 
+- Both loaders enforce directory-module privacy (Modules #1–2) for every
+  directory module, not only std ones: the walk up from an imported file stops
+  at its deepest ancestor with a `mod.ace`, and a deep import from outside
+  names both files relative to the build root.
 - The self-hosted loader sets `F_SHADOWED` and records each module's display
   name, directory-module root, and source byte and token totals. `--resolved`
   prints the flag and a `module` line per import in both compilers;

@@ -1,3 +1,3 @@
-/* Leaf reached via a quoted relative path without a .ace suffix. */
+/* Nested leaf module (its own mod.ace) reached via a quoted relative path without a .ace suffix. */
 
 pub value: const int = 7
