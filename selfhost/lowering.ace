@@ -53,6 +53,22 @@ Target: struct {
     brk: int,
     cont: int,       // -1 for a labeled block
     restart: int,    // a labeled block: its first block; else -1
+    ndefers: usize,  // defers pending outside it: leaving it runs those above
+}
+
+/* A captured defer: its call, re-lowered at each exit, and the statement. */
+Deferred: struct {
+    call: u32,
+    at: u32,
+}
+
+/* A deferred call's argument captured at the defer (C gives the call a fresh
+ * name in its place): the variable holding its value or, when it is a place,
+ * its storage's address; t is the type it is read at.
+ */
+Capture: struct {
+    var: int,
+    t: u32,
 }
 
 /* A place: an SSA variable, or memory at addr + off. */
@@ -117,6 +133,8 @@ Lw: struct {
     is_main: bool = false,
     rtype: u32 = 0,                     // the result type, or 0
     result: int = -1,                   // a result in memory: the RESULT address
+    defers: array.Array[Deferred],      // captured defers, source order
+    captured: map.Map[u32, Capture],    // deferred-call argument node -> its capture
 }
 
 fail(err: Error) {
@@ -136,6 +154,8 @@ Lw.wipe(mut self) {
     mut self.inc_head.wipe()
     mut self.repl.wipe()
     mut self.tgt.wipe()
+    mut self.defers.wipe()
+    mut self.captured.wipe()
 }
 
 /* Stops the function: C's unsupported(), for a reason C reports itself. Ace
@@ -470,8 +490,14 @@ Lw.at_entry(mut self, op: u8, ty: u8): int {
 Lw.var_of(mut self, s: u32): int {
     ix: int, found: bool = self.var_ix.get(s)
     if found { return ix - 1 }
-    t: u32 = self.s.sym(s).ty
-    if self.stored.has(s) || self.in_memory(t) {
+    return mut self.var_make(s, self.s.sym(s).ty, self.stored.has(s))
+}
+
+/* A new variable of type t, for local `s` (0 for none): in a slot when
+ * stored or in memory, else SSA values.
+ */
+Lw.var_make(mut self, s: u32, t: u32, stored: bool): int {
+    if stored || self.in_memory(t) {
         if self.is_agg(t) { mut self.covered(t) }
         slot: int = mut self.at_entry(ir.IR_SLOT, ir.IT_PTR)
         x: mut *ir.IrIns = mut self.fn.at(slot)
@@ -485,7 +511,7 @@ Lw.var_of(mut self, s: u32): int {
     first: int = int(self.vtype.len)
     if n == 0 { _ = mut self.var_new(0, ir.IT_VOID, -1) } // an empty aggregate's placeholder, never read
     for k: int in 0..n { _ = mut self.var_new(0, lv.v[k].ty, -1) }
-    fail(mut self.var_ix.set(s, first + 1))
+    if s != 0 { fail(mut self.var_ix.set(s, first + 1)) }
     return first
 }
 
@@ -706,6 +732,12 @@ Lw.field_base(mut self, x: u32): (Place, u32) {
 Lw.place(mut self, x: u32): Place {
     n: Node = self.node(x)
     p: Place = Place { t = self.nty(x) }
+    c: Capture, captured: bool = self.captured.get(x)
+    if captured {
+        p.t = c.t
+        if self.home.get(usize(c.var)) == -1 { p.var = c.var } else { p.addr = mut self.var_addr(c.var) }
+        return p
+    }
     switch n.kind {
         Kind.ident {
             s: u32 = self.nsym(x)
@@ -1041,8 +1073,10 @@ Lw.lit_default(self, x: u32, u: u32, i: u32): u32 {
  */
 Lw.store_value(mut self, at: u32, t: u32, dst: int, off: i32) {
     if self.failed() { return }
-    x: u32 = self.array_cast_arg(at)
+    x: u32 = at
+    if !self.captured.has(at) { x = self.array_cast_arg(at) }
     n: Node = self.node(x)
+    if self.captured.has(x) { n.kind = Kind.ident } // read as the name C gives it
     u: u32 = self.unwrap(t)
     if n.kind == Kind.arraylit && u != 0 && self.ty(u).kind == TypeKind.array {
         ut: SType = self.ty(u)
@@ -2350,6 +2384,7 @@ Lw.bool_value(mut self, x: u32): int {
 
 /* Whether `x` names storage: a variable, a dereference, or a field of one. */
 Lw.is_place(self, x: u32): bool {
+    if self.captured.has(x) { return true }
     n: Node = self.node(x)
     switch n.kind {
         Kind.ident, Kind.index { return true }
@@ -3483,6 +3518,7 @@ Lw.is_pointer(self, x: u32): bool {
 
 Lw.expr(mut self, x: u32, want: int): int {
     if self.failed() { return mut self.dummy() }
+    if self.captured.has(x) { return mut self.place_read(mut self.place(x), 0) }
     n: Node = self.node(x)
     switch n.kind {
         Kind.int_lit, Kind.char_lit, Kind.float_lit { return mut self.literal(mut self.type_in(x, want), x, false) }
@@ -3697,6 +3733,10 @@ Lw.expr(mut self, x: u32, want: int): int {
 
 /* The leaves of `x` at type `t` into `out`. */
 Lw.value(mut self, at: u32, t: u32, mut out: Agg) {
+    if self.captured.has(at) && self.is_agg(t) {
+        mut self.place_get(mut self.place(at), 0, mut out)
+        return
+    }
     x: u32 = self.array_cast_arg(at)
     if !self.is_agg(t) {
         out.n = 1
@@ -3824,12 +3864,16 @@ Lw.cond(mut self, x: u32, t: int, f: int) {
 
 // --- statements -------------------------------------------------------------
 
+/* Leaving the block by its end runs the defers it captured (Deferred calls #2). */
 Lw.block(mut self, b: u32) {
+    floor: usize = self.defers.len
     n: Node = self.node(b)
     for i: u32 in 0..n.nkids {
         if self.cur < 0 { break }
         mut self.stmt(self.kid(b, i))
     }
+    if self.cur >= 0 { mut self.run_defers(floor) }
+    mut self.defers.truncate(floor)
 }
 
 /* main's allocator leak report (Safety & Debug Builds #9). */
@@ -3840,6 +3884,7 @@ Lw.leaks_check(mut self) {
 }
 
 Lw.ret(mut self, a: Agg) {
+    mut self.run_defers(0)
     mut self.leaks_check()
     id: int = mut self.emit(ir.IR_RET, ir.IT_VOID)
     for k: int in 0..a.n { mut self.fn.arg_add(id, a.v[k]) }
@@ -3877,7 +3922,7 @@ Lw.target(mut self, s: u32, is_continue: bool): int {
 
 Lw.push_target(mut self, s: u32, brk: int, cont: int, restart: int) {
     n: Node = self.node(s)
-    fail(mut self.tgt.push(Target { label = n.text, has_label = (n.flags & parser.F_TEXT) != 0, brk = brk, cont = cont, restart = restart }))
+    fail(mut self.tgt.push(Target { label = n.text, has_label = (n.flags & parser.F_TEXT) != 0, brk = brk, cont = cont, restart = restart, ndefers = self.defers.len }))
 }
 
 /* `e` evaluated for its effects, its value dropped. */
@@ -4548,6 +4593,184 @@ Lw.for_loop(mut self, at: u32) {
     mut self.enter(exit)
 }
 
+// --- defer --------------------------------------------------------------------
+
+/* A `defer` captures its call: each read-only argument is evaluated there into
+ * a fresh variable, and a `mut` argument or receiver keeps its storage's
+ * address, so the call re-lowered at every exit from its block (the block's
+ * end, a return, or a break/continue past it), last defer first, reads the
+ * captures and the final storage.
+ */
+Lw.is_literal(self, x: u32): bool {
+    k: Kind = self.node(x).kind
+    if k == Kind.int_lit || k == Kind.float_lit || k == Kind.str_lit || k == Kind.char_lit || k == Kind.bool || k == Kind.null { return true }
+    if k != Kind.ident { return false }
+    s: u32 = self.nsym(x)
+    return s != 0 && self.s.sym(s).kind == sema.SymKind.var && self.s.sym(s).is_global && self.s.sym(s).is_const // never changes
+}
+
+/* Captures argument `a` of a deferred call: its storage's address when
+ * by_address, else its value, in a slot when a receiver reads it by address.
+ */
+Lw.defer_arg(mut self, a: u32, by_address: bool, in_slot: bool) {
+    inner: u32 = a
+    if self.node(a).kind == Kind.mutarg { inner = self.node(a).a }
+    _ = mut self.captured.unset(inner) // a defer lowered again captures afresh
+    t: u32 = self.nty(inner)
+    if by_address {
+        p: Place = mut self.place(inner)
+        addr: int = mut self.place_address(p)
+        fail(mut self.captured.set(inner, Capture { var = mut self.var_new(0, ir.IT_VOID, addr), t = p.t }))
+        return
+    }
+    if self.is_untyped(t) || self.is_literal(inner) { return } // nothing to capture
+    var: int = mut self.var_make(0, t, in_slot)
+    if self.home.get(usize(var)) != -1 && self.in_memory(t) {
+        mut self.store_value(inner, t, mut self.var_addr(var), 0)
+    } else {
+        v: Agg = blank(Agg)
+        mut self.value(inner, t, mut v)
+        mut self.set_leaves(var, t, v)
+    }
+    fail(mut self.captured.set(inner, Capture { var = var, t = t }))
+}
+
+Lw.defer_capture(mut self, at: u32) {
+    call: u32 = self.node(at).a
+    cn: Node = self.node(call)
+    if cn.kind != Kind.call {
+        mut self.unsupported("defer operand")
+        return
+    }
+    callee: u32 = cn.a
+    tgt: u32 = self.nsym(call)
+    sel: bool = self.node(callee).kind == Kind.selector
+    instance: bool = sel && tgt != 0 && self.s.sym(tgt).kind == sema.SymKind.func && !self.s.sym(tgt).is_extern && !self.assoc_call(call)
+    via_contract: bool = sel && tgt == 0 && self.is_contract(self.nty(self.node(callee).a))
+    if instance || via_contract {
+        mut self.defer_arg(self.node(callee).a, (cn.flags & parser.F_MUT) != 0, true)
+    } else if tgt != 0 && self.s.sym(tgt).kind == sema.SymKind.var { // the function value is captured too
+        mut self.defer_arg(callee, false, false)
+    }
+    for i: u32 in 0..cn.nkids {
+        k: u32 = self.kid(call, i)
+        mut self.defer_arg(k, self.node(k).kind == Kind.mutarg, false)
+    }
+    fail(mut self.defers.push(Deferred { call = call, at = at }))
+}
+
+/* The pending defers above floor, last first; they stay pending for the code after. */
+Lw.run_defers(mut self, floor: usize) {
+    at: u32 = self.at
+    i: usize = self.defers.len
+    for i > floor {
+        i -= 1
+        d: Deferred = self.defers.get(i)
+        self.at = d.at // exit-time code cites the defer's line
+        _ = mut self.expr(d.call, -1)
+    }
+    self.at = at
+}
+
+// --- inline assembly ------------------------------------------------------------
+
+/* The variable of the scalar local or parameter an asm binding names (sema
+ * refused any other), and its type.
+ */
+Lw.asm_local(mut self, val: u32): (int, u8) {
+    vs: u32 = 0
+    if self.node(val).kind == Kind.ident { vs = self.nsym(val) }
+    if vs == 0 || self.s.sym(vs).kind != sema.SymKind.var || self.s.sym(vs).is_global || self.is_agg(self.s.sym(vs).ty) {
+        mut self.unsupported("asm binding")
+        return 0, ir.IT_I64
+    }
+    t: u8 = mut self.need_type(self.s.sym(vs).ty)
+    return mut self.var_of(vs), t
+}
+
+/* A binding's register number: sema accepted only the target's names. */
+Lw.asm_reg(mut self, r: u32): int {
+    n: int = -1
+    if self.node(r).kind == Kind.ident { n = ir.asm_register(self.s.target(), self.node(r).text) }
+    if n < 0 { mut self.unsupported("asm register") }
+    return n
+}
+
+/* asm "instruction text" { bindings } (Inline Assembly #1-3), as sema checked
+ * it: a bound local living at a home is loaded before the instruction and
+ * stored after it.
+ */
+Lw.asm_stmt(mut self, at: u32) {
+    s: Node = self.node(at)
+    inreg: array.Array[int] = array.Array[int] {}
+    defer mut inreg.wipe()
+    invals: array.Array[int] = array.Array[int] {}
+    defer mut invals.wipe()
+    outreg: array.Array[int] = array.Array[int] {}
+    defer mut outreg.wipe()
+    outvars: array.Array[int] = array.Array[int] {}
+    defer mut outvars.wipe()
+    outtypes: array.Array[u8] = array.Array[u8] {}
+    defer mut outtypes.wipe()
+    reserved: u32 = 0
+    for i: u32 in 0..s.nkids {
+        b: u32 = self.kid(at, i)
+        bnd: Node = self.node(b)
+        is_in: bool = mem.equal(bnd.text, "in")
+        is_out: bool = mem.equal(bnd.text, "out")
+        if !is_in && !is_out { // clobbers: register names only
+            for j: u32 in 0..bnd.nkids {
+                r: int = mut self.asm_reg(self.kid(b, j))
+                if r >= 0 { reserved |= u32(1) << u32(r) }
+            }
+            continue
+        }
+        j: u32 = 0
+        for j + 1 < bnd.nkids {
+            r: int = mut self.asm_reg(self.kid(b, j))
+            if self.failed() { return }
+            reserved |= u32(1) << u32(r)
+            val: u32 = self.kid(b, j + 1)
+            if is_in {
+                v: int = -1
+                if self.node(val).kind == Kind.int_lit { v = mut self.konst(ir.IT_I64, self.node(val).ival) }
+                if v < 0 {
+                    var: int, vt: u8 = mut self.asm_local(val)
+                    if self.home.get(usize(var)) == -1 { v = mut self.read_var(var, self.cur) } else { v = mut self.load(vt, mut self.var_addr(var), 0, 0) }
+                }
+                fail(mut inreg.push(r))
+                fail(mut invals.push(v))
+            } else {
+                var: int, vt: u8 = mut self.asm_local(val)
+                fail(mut outreg.push(r))
+                fail(mut outvars.push(var))
+                fail(mut outtypes.push(vt))
+            }
+            j += 2
+        }
+    }
+    if self.failed() { return }
+    id: int = mut self.emit(ir.IR_ASM, ir.IT_VOID)
+    for v: int in invals.view() { mut self.fn.arg_add(id, v) }
+    regs: u32 = u32(self.fn.asm_regs.len)
+    for r: int in inreg.view() { fail(mut self.fn.asm_regs.push(r)) }
+    for r: int in outreg.view() { fail(mut self.fn.asm_regs.push(r)) }
+    fail(mut self.fn.asms.push(ir.IrAsm { regs = regs, nout = u32(outreg.len), reserved = reserved }))
+    x: mut *ir.IrIns = mut self.fn.at(id)
+    x.asm = int(self.fn.asms.len) - 1
+    x.name = s.text
+    x.has_name = true
+    projs: array.Array[int] = array.Array[int] {}
+    defer mut projs.wipe()
+    for k: usize in 0..outreg.len { // every projection directly after the asm
+        pj: int = mut self.emit(ir.IR_PROJ, outtypes.get(k))
+        mut self.fn.arg_add(pj, id)
+        mut self.fn.at(pj).imm = u64(k)
+        fail(mut projs.push(pj))
+    }
+    for k: usize in 0..outreg.len { mut self.set_var(outvars.get(k), projs.get(k)) }
+}
+
 Lw.stmt(mut self, at: u32) {
     if self.cur < 0 || self.failed() { return }
     self.at = at
@@ -4592,12 +4815,16 @@ Lw.stmt(mut self, at: u32) {
         }
         Kind.break {
             t: int = mut self.target(at, false)
-            if t >= 0 { mut self.jump(self.tgt.get(usize(t)).brk) }
+            if t >= 0 {
+                mut self.run_defers(self.tgt.get(usize(t)).ndefers)
+                mut self.jump(self.tgt.get(usize(t)).brk)
+            }
         }
         Kind.continue {
             t: int = mut self.target(at, true)
             if t >= 0 {
                 tg: Target = self.tgt.get(usize(t))
+                mut self.run_defers(tg.ndefers)
                 if tg.cont >= 0 { mut self.jump(tg.cont) } else { mut self.jump(tg.restart) }
             }
         }
@@ -4623,8 +4850,8 @@ Lw.stmt(mut self, at: u32) {
         }
         Kind.switch { mut self.switch_stmt(at) }
         Kind.fallthrough {}
-        Kind.defer { mut self.unported("defer") }
-        Kind.asm { mut self.unported("inline assembly") }
+        Kind.defer { mut self.defer_capture(at) }
+        Kind.asm { mut self.asm_stmt(at) }
         default { mut self.unsupported("statement form") }
     }
 }
@@ -4704,7 +4931,7 @@ pub lower(s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
     if fnode.b == 0 && fnode.ival == 0 && (fnode.flags & parser.F_INTRINSIC) == 0 { return Func.new(f, fs), "no body", false }
     if fnode.c != 0 && !(fs != 0 && s.sym(fs).spec_args != 0) { return Func.new(f, fs), "generic", false }
     if fnode.b == 0 { return Func.new(f, fs), "compiler-backed bodies", true }
-    l: Lw = Lw { s = s, fn = Func.new(f, fs), f = f, debug = debug, var_ix = map.Map[u32, int] {}, stored = map.Map[u32, bool] {}, vtype = array.Array[u8] {}, home = array.Array[int] {}, defs = map.Map[u64, int] {}, inc = array.Array[Incomplete] {}, inc_head = array.Array[int] {}, repl = array.Array[int] {}, tgt = array.Array[Target] {} }
+    l: Lw = Lw { s = s, fn = Func.new(f, fs), f = f, debug = debug, var_ix = map.Map[u32, int] {}, stored = map.Map[u32, bool] {}, vtype = array.Array[u8] {}, home = array.Array[int] {}, defs = map.Map[u64, int] {}, inc = array.Array[Incomplete] {}, inc_head = array.Array[int] {}, repl = array.Array[int] {}, tgt = array.Array[Target] {}, defers = array.Array[Deferred] {}, captured = map.Map[u32, Capture] {} }
     defer mut l.wipe()
     l.is_main = (fnode.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(fnode.text, "main")
     if rt != 0 && l.kind(rt) == TypeKind.void { rt = 0 }

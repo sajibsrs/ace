@@ -6,6 +6,7 @@
 
 import array
 import fmt
+import mem
 import str
 import sys
 
@@ -142,6 +143,38 @@ pub IrSig: struct {
     pub ret: IrPart,
 }
 
+/* An ASM instruction's register bindings: an in register per argument, then
+ * nout out registers (a run of Func.asm_regs), and the registers it reserves.
+ */
+pub IrAsm: struct {
+    pub regs: u32 = 0,
+    pub nout: u32 = 0,
+    pub reserved: u32 = 0,
+}
+
+ARM64_ASM_REG: [31]string = [
+    "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
+    "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30",
+]
+X64_ASM_REG: [16]string = [
+    "rax", "rcx", "rdx", "rbx", "", "", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+]
+
+/* An asm binding's register number on `target`, or -1. */
+pub asm_register(target: string, name: string): int {
+    if mem.equal(target, "linux-x64") {
+        for r: int in 0..16 { if X64_ASM_REG[r].len > 0 && mem.equal(X64_ASM_REG[r], name) { return r } }
+        return -1
+    }
+    for r: int in 0..31 { if mem.equal(ARM64_ASM_REG[r], name) { return r } }
+    return -1
+}
+
+asm_register_name(target: string, r: int): string {
+    if mem.equal(target, "linux-x64") { return X64_ASM_REG[r] }
+    return ARM64_ASM_REG[r]
+}
+
 pub IrIns: struct {
     pub op: u8,
     pub ty: u8,
@@ -156,6 +189,7 @@ pub IrIns: struct {
     pub name: string = "",       // CALL target's link symbol; STR bytes; CHECK diagnostic
     pub has_name: bool = false,
     pub sig: int = -1,           // CALL, CALLI: index in Func.sigs, or -1
+    pub asm: int = -1,           // ASM: index in Func.asms
     pub at: u32 = 0,             // source position
 }
 
@@ -180,6 +214,8 @@ pub Func: struct {
     pub sigs: array.Array[IrSig],
     pub parts: array.Array[IrPart],
     pub names: path.Pool,        // instruction names lowering builds
+    pub asms: array.Array[IrAsm],
+    pub asm_regs: array.Array[int],
 }
 
 fail(err: Error) {
@@ -192,7 +228,7 @@ fail(err: Error) {
 // --- construction -----------------------------------------------------------
 
 pub Func.new(decl: u32, sym: u32): Func {
-    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {}, names = blank(path.Pool) }
+    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {}, names = blank(path.Pool), asms = array.Array[IrAsm] {}, asm_regs = array.Array[int] {} }
 }
 
 pub Func.wipe(mut self) {
@@ -209,6 +245,8 @@ pub Func.wipe(mut self) {
     mut self.sigs.wipe()
     mut self.parts.wipe()
     mut self.names.wipe()
+    mut self.asms.wipe()
+    mut self.asm_regs.wipe()
 }
 
 /* Instruction `id` in place; the pointer dangles once one is added. */
@@ -958,7 +996,7 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
         for id: int in bb.ins.view() {
             v: IrIns = fn.at(id)
             mut out.printf("    ")
-            agg: bool = v.sig >= 0 && fn.sigs.get(usize(v.sig)).ret.agg != 0
+            agg: bool = (v.sig >= 0 && fn.sigs.get(usize(v.sig)).ret.agg != 0) || (v.op == IR_ASM && fn.asms.get(usize(v.asm)).nout > 0) // a call or asm whose leaves its projs read
             if v.ty != IT_VOID || agg { mut out.printf("%%%d = ", numb.get(usize(id))) }
             mut out.printf("%s", OP_NAMES[v.op])
             if (v.flags & IRF_CHECKED) != 0 { mut out.printf(".chk") }
@@ -966,7 +1004,11 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
             if (v.flags & IRF_SRET) != 0 { mut out.printf(".mem") }
             if (v.flags & IRF_COLD) != 0 { mut out.printf(".cold") }
             if v.ty != IT_VOID { mut out.printf(" %s", TYPE_NAMES[v.ty]) }
-            if agg { mut out.printf(" {%d}", fn.sigs.get(usize(v.sig)).ret.n) }
+            if agg && v.op == IR_ASM {
+                mut out.printf(" {%d}", int(fn.asms.get(usize(v.asm)).nout))
+            } else if agg {
+                mut out.printf(" {%d}", fn.sigs.get(usize(v.sig)).ret.n)
+            }
             switch v.op {
                 IR_CONST {
                     mut out.printf(" ")
@@ -1024,6 +1066,16 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                         mut out.printf("%%%d", numb.get(usize(fn.arg(id, a))))
                     }
                     mut out.printf(")")
+                }
+                IR_ASM {
+                    ab: IrAsm = fn.asms.get(usize(v.asm))
+                    mut out.printf(" \"%s\"", v.name)
+                    for a: u32 in 0..v.nargs { mut out.printf(" %s=%%%d", asm_register_name(s.target(), fn.asm_regs.get(usize(ab.regs + a))), numb.get(usize(fn.arg(id, a)))) }
+                    if ab.nout > 0 {
+                        mut out.printf(" ->")
+                        for k: u32 in 0..ab.nout { mut out.printf(" %s", asm_register_name(s.target(), fn.asm_regs.get(usize(ab.regs + v.nargs + k)))) }
+                    }
+                    if ab.reserved != 0 { mut out.printf(", clobbers 0x%x", uint(ab.reserved)) }
                 }
                 IR_CHECK {
                     mut out.printf(" %%%d", numb.get(usize(fn.arg(id, 0))))

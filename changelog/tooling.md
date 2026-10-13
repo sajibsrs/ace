@@ -148,6 +148,8 @@
   switches), range and sequence loops, `switch`, static maps, Error and
   enum descriptions, compiler-backed calls (memory, bits, and math builtins,
   `panic`, `assert`, `bitcast`, `*T(address)`, `[]T(pointer, count)`, and
-  formatted output from the plan selfhost sema records), and enum conversion
-  and noalias checks; other constructs are reported as not yet ported.
+  formatted output from the plan selfhost sema records), enum conversion
+  and noalias checks, `defer` (a captured argument maps its node to the
+  variable holding it, as selfhost cannot add tree nodes), and inline
+  assembly; other constructs are reported as not yet ported.
   `selfhost/check.sh` adds an `ir` stage, compared per function.
