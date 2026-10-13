@@ -595,7 +595,7 @@ Lw.scan_walk(mut self, at: u32) {
     }
     if n.kind == Kind.call { // a receiver or mut argument: storage (no expansion binds it in place yet)
         recv: bool = n.a != 0 && self.node(n.a).kind == Kind.selector && !self.assoc_call(at) && !self.field_call(at)
-        if recv { mut self.need_storage(self.node(n.a).a) }
+        if recv && !self.is_pointer(self.node(n.a).a) { mut self.need_storage(self.node(n.a).a) } // p.m() is (*p).m()
         for i: u32 in 0..n.nkids {
             k: u32 = self.kid(at, i)
             if self.node(k).kind == Kind.mutarg { mut self.need_storage(self.node(k).a) }
@@ -746,7 +746,7 @@ Lw.place(mut self, x: u32): Place {
             q.t = f.ty
             return q
         }
-        Kind.index { mut self.unported("indexing") }
+        Kind.index { return mut self.element(x) }
         default {}
     }
     mut self.unsupported("assignment target")
@@ -814,6 +814,660 @@ Lw.place_address(mut self, p: Place): int {
     x.imm = 1
     x.flags = p.flags
     return id
+}
+
+// --- memory -----------------------------------------------------------------
+
+Lw.size(self, t: u32): u32 {
+    return self.ty(self.unwrap(t)).size
+}
+
+/* An aggregate of over MAX_LEAVES leaves, or one holding a union: built and
+ * copied by its parts in memory.
+ */
+Lw.by_parts(self, t: u32): bool {
+    return self.is_big(t) || self.has_union(t)
+}
+
+/* A new stack object of type `t`. */
+Lw.new_slot(mut self, t: u32): int {
+    slot: int = mut self.at_entry(ir.IR_SLOT, ir.IT_PTR)
+    x: mut *ir.IrIns = mut self.fn.at(slot)
+    x.imm = u64(self.size(t))
+    x.aux = i32(self.ty(self.unwrap(t)).align)
+    return slot
+}
+
+/* Continues in a new block when bool `c` holds; guard_end joins the path
+ * where it did not. A variable written between them meets its earlier value
+ * there.
+ */
+Lw.guard(mut self, c: int): int {
+    yes: int = mut self.new_block()
+    join: int = mut self.new_block()
+    mut self.terminate(ir.IR_BR, c, yes, join)
+    mut self.seal(yes)
+    mut self.enter(yes)
+    return join
+}
+
+Lw.guard_end(mut self, join: int) {
+    mut self.jump(join)
+    mut self.seal(join)
+    mut self.enter(join)
+}
+
+Lw.widen(mut self, v: int, from: u8, to: u8): int {
+    if from == to { return v }
+    return mut self.emit2(ir.IR_CAST, to, v, -1)
+}
+
+/* A copy or fill of up to this many words is straight-line. */
+UNROLL: const u32 = 16
+
+/* A counted loop over u64 i in [0, n): loop_begin enters the body and
+ * returns i; loop_end steps i and leaves through the exit.
+ */
+Loop: struct {
+    var: int = 0,
+    head: int = 0,
+    exit: int = 0,
+}
+
+Lw.loop_begin(mut self, mut lp: Loop, n: u64): int {
+    lp.var = mut self.var_new(0, ir.IT_U64, -1)
+    mut self.write_var(lp.var, self.cur, mut self.konst(ir.IT_U64, 0))
+    lp.head = mut self.new_block()
+    lp.exit = mut self.new_block()
+    body: int = mut self.new_block()
+    mut self.jump(lp.head)
+    mut self.enter(lp.head)
+    i: int = mut self.read_var(lp.var, lp.head)
+    mut self.terminate(ir.IR_BR, mut self.emit2(ir.IR_LT, ir.IT_BOOL, i, mut self.konst(ir.IT_U64, n)), body, lp.exit)
+    mut self.seal(body)
+    mut self.enter(body)
+    return i
+}
+
+Lw.loop_end(mut self, lp: Loop, i: int) {
+    mut self.write_var(lp.var, self.cur, mut self.emit2(ir.IR_ADD, ir.IT_U64, i, mut self.konst(ir.IT_U64, 1)))
+    mut self.jump(lp.head)
+    mut self.seal(lp.head)
+    mut self.seal(lp.exit)
+    mut self.enter(lp.exit)
+}
+
+/* The address addr + off. */
+Lw.offset_addr(mut self, addr: int, off: i32): int {
+    if off == 0 { return addr }
+    id: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, addr, mut self.konst(ir.IT_U64, u64(off)))
+    mut self.fn.at(id).imm = 1
+    return id
+}
+
+/* The unsigned IR type of a `w`-byte word. */
+word_type(w: u32): u8 {
+    if w == 8 { return ir.IT_U64 }
+    if w == 4 { return ir.IT_U32 }
+    if w == 2 { return ir.IT_U16 }
+    return ir.IT_U8
+}
+
+/* Copies `size` bytes from src + soff (loads flagged `sflags`) to dst +
+ * doff: words, then a narrower tail; a long run of words loops.
+ */
+Lw.copy_mem(mut self, dst: int, doff: i32, src: int, soff: i32, sflags: u8, size: u32) {
+    words: u32 = size / 8
+    done: u32 = 0
+    if words > UNROLL {
+        d: int = mut self.offset_addr(dst, doff)
+        s: int = mut self.offset_addr(src, soff)
+        lp: Loop = Loop {}
+        i: int = mut self.loop_begin(mut lp, u64(words))
+        sa: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, s, i)
+        da: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, d, i)
+        mut self.fn.at(sa).imm = 8
+        mut self.fn.at(da).imm = 8
+        mut self.store(da, 0, mut self.load(ir.IT_U64, sa, 0, sflags), 0)
+        mut self.loop_end(lp, i)
+        done = words * 8
+    }
+    w: u32 = 8
+    for w > 0 {
+        t: u8 = word_type(w)
+        for size - done >= w {
+            mut self.store(dst, doff + i32(done), mut self.load(t, src, soff + i32(done), sflags), 0)
+            done += w
+        }
+        w /= 2
+    }
+}
+
+/* Fills `size` bytes at dst + off with u64 pattern `pat` (one repeating unit). */
+Lw.fill_mem(mut self, dst: int, off: i32, pat: int, size: u32) {
+    words: u32 = size / 8
+    done: u32 = 0
+    if words > UNROLL {
+        d: int = mut self.offset_addr(dst, off)
+        lp: Loop = Loop {}
+        i: int = mut self.loop_begin(mut lp, u64(words))
+        da: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, d, i)
+        mut self.fn.at(da).imm = 8
+        mut self.store(da, 0, pat, 0)
+        mut self.loop_end(lp, i)
+        done = words * 8
+    }
+    w: u32 = 8
+    for w > 0 {
+        if size - done >= w {
+            v: int = pat
+            if w != 8 { v = mut self.emit2(ir.IR_CAST, word_type(w), pat, -1) }
+            for size - done >= w {
+                mut self.store(dst, off + i32(done), v, 0)
+                done += w
+            }
+        }
+        w /= 2
+    }
+}
+
+/* The u64 repeating element value `v` of type `t`, or -1 when its bytes do
+ * not repeat in a word (a float's, or a width that does not divide 8).
+ */
+Lw.fill_pattern(mut self, v: int, t: u32): int {
+    it: int = ir.type_of(self.s, t)
+    w: u32 = self.size(t)
+    if it < 0 || ir.type_float(u8(it)) || u8(it) == ir.IT_PTR || (w != 1 && w != 2 && w != 4 && w != 8) { return -1 }
+    rep: u64 = 1
+    if w == 1 { rep = 0x0101010101010101 } else if w == 2 { rep = 0x0001000100010001 } else if w == 4 { rep = 0x0000000100000001 }
+    k: ir.IrIns = self.fn.at(v)
+    if k.op == ir.IR_CONST {
+        b: u64 = k.imm
+        if w != 8 { b = k.imm & ((u64(1) << u64(w * 8)) - 1) }
+        return mut self.konst(ir.IT_U64, b * rep)
+    }
+    ut: u8 = word_type(w)
+    if u8(it) == ir.IT_BOOL { ut = ir.IT_BOOL }
+    x: int = v
+    if ut != u8(it) { x = mut self.emit2(ir.IR_CAST, ut, x, -1) } // its bits, zero-extended
+    if ut != ir.IT_U64 { x = mut self.emit2(ir.IR_CAST, ir.IT_U64, x, -1) }
+    if w == 8 { return x }
+    return mut self.emit2(ir.IR_MUL, ir.IT_U64, x, mut self.konst(ir.IT_U64, rep))
+}
+
+/* `x` past any array conversions [N]T(...), which keep its bytes. */
+Lw.array_cast_arg(self, at: u32): u32 {
+    x: u32 = at
+    for self.node(x).kind == Kind.call && self.node(x).a != 0 && self.node(self.node(x).a).kind == Kind.array_t { x = self.kid(x, 0) }
+    return x
+}
+
+/* An array literal entry's value, past a `key: ` (Syntax & Parsing #16). */
+Lw.lit_elem(self, k: u32): u32 {
+    if self.node(k).kind == Kind.mapentry { return self.node(k).b }
+    return k
+}
+
+/* An array literal entry's element index: its key member's, else its position. */
+Lw.lit_slot(self, k: u32, i: u32): u64 {
+    if self.node(k).kind == Kind.mapentry { return self.s.node_ival(self.node(k).a) }
+    return u64(i)
+}
+
+/* Whether call `x` is the layout builtin `name` (no function of that name). */
+Lw.is_layout_builtin(self, x: u32, name: string): bool {
+    n: Node = self.node(x)
+    return n.kind == Kind.call && n.a != 0 && self.node(n.a).kind == Kind.ident && self.nsym(x) == 0 && mem.equal(self.node(n.a).text, name)
+}
+
+/* The default sema leaves to struct literal `x` for field `i` it omits, or 0. */
+Lw.lit_default(self, x: u32, u: u32, i: u32): u32 {
+    f: sema.SField = self.s.field(self.ty(u), i)
+    if f.default_value == 0 { return 0 }
+    for j: u32 in 0..self.node(x).nkids {
+        if mem.equal(self.node(self.kid(x, j)).text, f.name) { return 0 }
+    }
+    return f.default_value
+}
+
+/* Stores `x`, of type `t`, to memory at dst + off: an aggregate literal
+ * member by member, a place's bytes copied, a call's result written there.
+ */
+Lw.store_value(mut self, at: u32, t: u32, dst: int, off: i32) {
+    if self.failed() { return }
+    x: u32 = self.array_cast_arg(at)
+    n: Node = self.node(x)
+    u: u32 = self.unwrap(t)
+    if n.kind == Kind.arraylit && u != 0 && self.ty(u).kind == TypeKind.array {
+        ut: SType = self.ty(u)
+        es: u32 = self.size(ut.base)
+        if n.a == 0 {
+            for i: u32 in 0..n.nkids { // written order; a keyed entry at its member's slot
+                k: u32 = self.kid(x, i)
+                mut self.store_value(self.lit_elem(k), ut.base, dst, off + i32(self.lit_slot(k, i) * u64(es)))
+            }
+            return
+        }
+        if ut.count == 0 { return }
+        if !self.is_agg(ut.base) { // [v : n]: v once, as a repeating word when its bytes allow
+            v: int = mut self.expr(n.a, int(mut self.need_type(ut.base)))
+            pat: int = mut self.fill_pattern(v, ut.base)
+            if pat >= 0 {
+                mut self.fill_mem(dst, off, pat, u32(ut.count) * es)
+                return
+            }
+        }
+        mut self.store_value(n.a, ut.base, dst, off) // the first element, then copies of it
+        if ut.count - 1 <= u64(UNROLL) {
+            for i: u64 in 1..ut.count { mut self.copy_mem(dst, off + i32(i * u64(es)), dst, off, 0, es) }
+            return
+        }
+        d: int = mut self.offset_addr(dst, off)
+        lp: Loop = Loop {}
+        i: int = mut self.loop_begin(mut lp, ut.count - 1)
+        one: int = mut self.konst(ir.IT_U64, 1)
+        ea: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, d, mut self.emit2(ir.IR_ADD, ir.IT_U64, i, one))
+        mut self.fn.at(ea).imm = u64(es)
+        mut self.copy_mem(ea, 0, d, 0, 0, es)
+        mut self.loop_end(lp, i)
+        return
+    }
+    if u != 0 && self.ty(u).kind == TypeKind.union {
+        mut self.unported("views, contracts, and unions")
+        return
+    }
+    if ((n.kind == Kind.structlit && u != 0 && self.ty(u).kind == TypeKind.struct) || (n.kind == Kind.tuple && u != 0 && self.ty(u).kind == TypeKind.tuple)) && self.by_parts(t) {
+        ut: SType = self.ty(u)
+        tuple: bool = n.kind == Kind.tuple
+        positional: bool = tuple || (n.nkids > 0 && self.node(self.kid(x, 0)).text.len == 0)
+        given: u32 = n.nkids
+        if !positional {
+            for i: u32 in 0..ut.nfields {
+                if self.lit_default(x, u, i) != 0 { given += 1 }
+            }
+        }
+        if given != ut.nfields { // sema supplies every field
+            mut self.unsupported("field initializer")
+            return
+        }
+        for i: u32 in 0..n.nkids {
+            fi: u32 = self.kid(x, i)
+            fidx: int = int(i)
+            if !positional { fidx = self.find_field(u, self.node(fi).text) }
+            if fidx < 0 {
+                mut self.unsupported("field initializer")
+                return
+            }
+            f: sema.SField = self.s.field(ut, u32(fidx))
+            e: u32 = fi
+            if !tuple { e = self.node(fi).a }
+            mut self.store_value(e, f.ty, dst, off + i32(f.offset))
+        }
+        if !positional { // the declaration's defaults, in field order
+            for i: u32 in 0..ut.nfields {
+                dv: u32 = self.lit_default(x, u, i)
+                if dv != 0 { mut self.store_value(dv, self.s.field(ut, i).ty, dst, off + i32(self.s.field(ut, i).offset)) }
+            }
+        }
+        return
+    }
+    if self.is_agg(t) && !self.is_view(t) && self.is_place(x) {
+        p: Place = mut self.place(x)
+        if p.var < 0 {
+            mut self.copy_mem(dst, off, p.addr, p.off, p.flags, self.size(t))
+            return
+        }
+    }
+    if self.is_big(t) && self.is_layout_builtin(x, "blank") {
+        mut self.fill_mem(dst, off, mut self.konst(ir.IT_U64, 0), self.size(t))
+        return
+    }
+    if self.is_big(t) && n.kind == Kind.call { // its result goes straight to dst + off
+        none: Agg = blank(Agg)
+        _ = mut self.call(x, -1, mut none, false, mut self.offset_addr(dst, off))
+        return
+    }
+    if self.is_big(t) {
+        mut self.unsupported("aggregate of over 16 leaves")
+        return
+    }
+    a: Agg = blank(Agg)
+    mut self.value(x, t, mut a)
+    lv: ir.Leaves = blank(ir.Leaves)
+    _ = mut self.leaves(t, mut lv)
+    for k: int in 0..a.n { mut self.store(dst, off + i32(lv.v[k].off), a.v[k], 0) }
+}
+
+/* Array `x` as a place in memory: its own, or a new stack object holding it. */
+Lw.array_place(mut self, at: u32): Place {
+    x: u32 = self.array_cast_arg(at)
+    if self.is_place(x) {
+        p: Place = mut self.place(x)
+        if p.var < 0 { return p }
+    }
+    t: u32 = self.nty(x)
+    mut self.covered(t)
+    slot: int = mut self.new_slot(t)
+    mut self.store_value(x, t, slot, 0)
+    return Place { addr = slot, t = t }
+}
+
+/* The storage of `x`, a value that is no place (a call's result, or a field
+ * of one): a new stack object holding it, or the field's offset within that.
+ */
+Lw.temp_place(mut self, x: u32): Place {
+    n: Node = self.node(x)
+    bt: u32 = 0
+    if n.kind == Kind.selector { bt = self.unwrap(self.nty(n.a)) }
+    fi: int = -1
+    if bt != 0 && self.ty(bt).kind == TypeKind.struct { fi = self.find_field(bt, n.text) }
+    if fi >= 0 && !self.is_place(n.a) {
+        p: Place = mut self.temp_place(n.a)
+        f: sema.SField = self.s.field(self.ty(bt), u32(fi))
+        p.off += i32(f.offset)
+        p.t = f.ty
+        return p
+    }
+    t: u32 = self.nty(x)
+    mut self.covered(t)
+    slot: int = mut self.new_slot(t)
+    mut self.store_value(x, t, slot, 0)
+    return Place { addr = slot, t = t }
+}
+
+/* Debug: traps through the bounds failure at `site` unless `c` holds. */
+Lw.bounds_check(mut self, c: int, site: u32) {
+    id: int = mut self.emit2(ir.IR_CHECK, ir.IT_VOID, c, -1)
+    x: mut *ir.IrIns = mut self.fn.at(id)
+    x.name = "bounds violation"
+    x.has_name = true
+    x.at = site
+}
+
+/* Index `x` of `site` as a u64; a signed one is first checked nonnegative
+ * (Sequences #12) when `nonneg`.
+ */
+Lw.bound(mut self, x: u32, site: u32, nonneg: bool): int {
+    t: u8 = mut self.type_in(x, int(ir.IT_U64))
+    v: int = mut self.expr(x, int(t))
+    if nonneg && ir.type_signed(t) { mut self.bounds_check(mut self.emit2(ir.IR_GE, ir.IT_BOOL, v, mut self.konst(t, 0)), site) }
+    if t == ir.IT_U64 { return v }
+    return mut self.emit2(ir.IR_CAST, ir.IT_U64, v, -1)
+}
+
+/* The place of element x = a[i]: at a fixed offset from an array's place,
+ * checked in debug unless its index is an [E]T's enum (Safety #2).
+ */
+Lw.element(mut self, x: u32): Place {
+    n: Node = self.node(x)
+    st: u32 = self.unwrap(self.nty(n.a))
+    if st != 0 && self.ty(st).kind == TypeKind.array {
+        ut: SType = self.ty(st)
+        chk: bool = self.debug && ut.key == 0
+        p: Place = mut self.array_place(n.a)
+        es: u32 = self.size(ut.base)
+        p.t = ut.base
+        b: Node = self.node(n.b)
+        if b.kind == Kind.int_lit && b.ival < ut.count { // a constant index (sema rejects one out of range)
+            p.off += i32(b.ival * u64(es))
+            return p
+        }
+        i: int = mut self.bound(n.b, x, chk)
+        if chk { mut self.bounds_check(mut self.emit2(ir.IR_LT, ir.IT_BOOL, i, mut self.konst(ir.IT_U64, ut.count)), x) }
+        id: int = mut self.emit2(ir.IR_PADD, ir.IT_PTR, p.addr, i) // the place's offset stays on the access
+        e: mut *ir.IrIns = mut self.fn.at(id)
+        e.imm = u64(es)
+        e.flags = p.flags // a null base traps here
+        return Place { addr = id, off = p.off, t = ut.base }
+    }
+    if st != 0 && self.ty(st).kind == TypeKind.staticmap {
+        mut self.unported("static maps")
+    } else if self.is_view(st) {
+        mut self.unported("views, contracts, and unions")
+    } else {
+        mut self.unsupported(self.type_why(st))
+    }
+    return Place { addr = mut self.dummy(), t = self.nty(x) }
+}
+
+/* Copies memory place `src` to place `dst` of its type: bytes between
+ * memory, else leaves.
+ */
+Lw.move_place(mut self, dst: Place, src: Place) {
+    if dst.var < 0 && (self.is_big(src.t) || self.has_array(src.t)) {
+        d: int = dst.addr // a pointer-derived one is checked once
+        doff: i32 = dst.off
+        if dst.flags != 0 {
+            d = mut self.place_address(dst)
+            doff = 0
+        }
+        mut self.copy_mem(d, doff, src.addr, src.off, src.flags, self.size(src.t))
+        return
+    }
+    a: Agg = blank(Agg)
+    mut self.place_get(src, 0, mut a)
+    mut self.place_put(dst, a, 0)
+}
+
+// --- bits -------------------------------------------------------------------
+
+/* The bits type whose named field `x` projects (Scalar-backed Bit Fields #3)
+ * and the field's index, or 0 when `x` is no such field.
+ */
+Lw.bits_field(self, x: u32): (u32, u32) {
+    n: Node = self.node(x)
+    if n.kind != Kind.selector { return 0, 0 }
+    t: u32 = self.unwrap(self.nty(n.a))
+    for t != 0 && self.ty(t).kind == TypeKind.ptr { t = self.unwrap(self.ty(t).base) }
+    if t == 0 || self.ty(t).kind != TypeKind.bits { return 0, 0 }
+    fi: int = self.find_field(t, n.text)
+    if fi < 0 || self.s.field(self.ty(t), u32(fi)).bit_anonymous { return 0, 0 }
+    return t, u32(fi)
+}
+
+/* Field `f` of bits type `b`'s backing value `w`, zero- or sign-extended to
+ * the field's type (#2).
+ */
+Lw.bits_get(mut self, b: u32, f: sema.SField, w: int): int {
+    bt: u8 = mut self.need_type(b)
+    ft: u8 = mut self.need_type(f.ty)
+    n: u32 = u32(ir.type_bits(bt))
+    width: u32 = f.bit_width
+    v: int = w
+    if !f.bit_signed {
+        if f.bit_offset != 0 { v = mut self.emit2(ir.IR_SHR, bt, v, mut self.konst(bt, u64(f.bit_offset))) }
+        if width + f.bit_offset < n { v = mut self.emit2(ir.IR_AND, bt, v, mut self.konst(bt, (u64(1) << u64(width)) - 1)) }
+        return v
+    }
+    up: u32 = n - f.bit_offset - width // its top bit to the sign bit, then back down
+    if up != 0 { v = mut self.emit2(ir.IR_SHL, bt, v, mut self.konst(bt, u64(up))) }
+    v = mut self.emit2(ir.IR_CAST, ft, v, -1)
+    if width < n { v = mut self.emit2(ir.IR_SHR, ft, v, mut self.konst(ft, u64(n - width))) }
+    return v
+}
+
+/* Bits type `b`'s backing value `w` with field `f` replaced by `v`, of the
+ * field's type, where f's bits of w are zero unless `clear`; debug first
+ * checks v fits the field's width (#4).
+ */
+Lw.bits_set(mut self, b: u32, f: sema.SField, w: int, v: int, clear: bool): int {
+    bt: u8 = mut self.need_type(b)
+    ft: u8 = mut self.need_type(f.ty)
+    n: u32 = u32(ir.type_bits(bt))
+    width: u32 = f.bit_width
+    low: u64 = 0xffffffffffffffff
+    if width != 64 { low = (u64(1) << u64(width)) - 1 }
+    if width == n { return mut self.widen(v, ft, bt) }
+    if self.debug {
+        c: int = 0
+        if f.bit_signed { // out of range: sign-extending its low bits changes it
+            k: int = mut self.konst(ft, u64(n - width))
+            c = mut self.emit2(ir.IR_NE, ir.IT_BOOL, mut self.emit2(ir.IR_SHR, ft, mut self.emit2(ir.IR_SHL, ft, v, k), k), v)
+        } else {
+            c = mut self.emit2(ir.IR_GT, ir.IT_BOOL, v, mut self.konst(ft, low))
+        }
+        bad: int = mut self.guard(c)
+        _ = mut self.call_routine("__ace$arithmetic_fail", false, ir.IT_VOID, null)
+        mut self.guard_end(bad)
+    }
+    wv: int = mut self.widen(v, ft, bt)
+    u: int = mut self.emit2(ir.IR_AND, bt, wv, mut self.konst(bt, low))
+    if f.bit_offset != 0 { u = mut self.emit2(ir.IR_SHL, bt, u, mut self.konst(bt, u64(f.bit_offset))) }
+    x: int = w
+    if clear { x = mut self.emit2(ir.IR_AND, bt, x, mut self.konst(bt, ~(low << u64(f.bit_offset)))) }
+    return mut self.emit2(ir.IR_OR, bt, x, u)
+}
+
+/* Bits field `x` assigned, or with a compound op, the value of `rhs`, or `v`
+ * when rhs is 0: one read-modify-write of the whole backing value (#3), read
+ * before rhs is evaluated.
+ */
+Lw.bits_assign(mut self, x: u32, op: Token, rhs: u32, v0: int) {
+    b: u32, fi: u32 = self.bits_field(x)
+    f: sema.SField = self.s.field(self.ty(b), fi)
+    ft: u8 = mut self.need_type(f.ty)
+    v: int = v0
+    if rhs != 0 { v = mut self.expr(rhs, int(ft)) } // the right side before the target (Memory #9)
+    p: Place, _ = mut self.field_base(x)
+    w: int = mut self.place_read(p, 0)
+    if op != Token.assign {
+        bop: int = binop_of(op)
+        if bop < 0 {
+            mut self.unsupported("compound assignment")
+            return
+        }
+        v = mut self.arith(u8(bop), ft, mut self.bits_get(b, f, w), v)
+    }
+    mut self.place_write(p, mut self.bits_set(b, f, w, v, true), 0)
+}
+
+// --- aggregate values -------------------------------------------------------
+
+/* The leaves of field `x` of a value that is no place: a call's result or a
+ * literal. One of over 16 leaves, like one with a union, is stored to a new
+ * stack object and the field read from it.
+ */
+Lw.field_leaves(mut self, x: u32, mut out: Agg) {
+    n: Node = self.node(x)
+    bt: u32 = self.unwrap(self.nty(n.a))
+    out.n = 0
+    if bt == 0 || self.ty(bt).kind != TypeKind.struct {
+        if bt != 0 { mut self.unsupported(self.type_why(bt)) } else { mut self.unsupported("field access") }
+        return
+    }
+    fi: int = self.find_field(bt, n.text)
+    if fi < 0 {
+        mut self.unsupported("field access")
+        return
+    }
+    f: sema.SField = self.s.field(self.ty(bt), u32(fi))
+    if self.has_union(bt) || self.is_big(bt) { // its words, not its members': stored, then the field read
+        mut self.covered(bt)
+        slot: int = mut self.new_slot(bt)
+        mut self.store_value(n.a, bt, slot, 0)
+        mut self.place_get(Place { addr = slot, off = i32(f.offset), t = f.ty }, 0, mut out)
+        return
+    }
+    b: Agg = blank(Agg)
+    mut self.value(n.a, self.nty(n.a), mut b)
+    at: int = mut self.leaf_index(bt, u32(fi))
+    cnt: int = mut self.leaf_count(f.ty)
+    if self.failed() { return }
+    out.n = cnt
+    for k: int in 0..cnt { out.v[k] = b.v[at + k] }
+}
+
+/* The leaves of struct or tuple literal `x` of type `t`, in field order; its
+ * fields are evaluated in source order, then the declaration's defaults.
+ */
+Lw.literal_agg(mut self, x: u32, t: u32, mut out: Agg) {
+    u: u32 = self.unwrap(t)
+    lv: ir.Leaves = blank(ir.Leaves)
+    out.n = mut self.leaves(t, mut lv)
+    for k: int in 0..out.n { out.v[k] = -1 }
+    n: Node = self.node(x)
+    tuple: bool = n.kind == Kind.tuple
+    positional: bool = tuple || (n.nkids > 0 && self.node(self.kid(x, 0)).text.len == 0)
+    if u == 0 || (tuple && (self.ty(u).kind != TypeKind.tuple || n.nkids != self.ty(u).nfields)) || (!tuple && self.ty(u).kind != TypeKind.struct) {
+        mut self.unsupported(self.type_why(t))
+        out.n = 0
+        return
+    }
+    ut: SType = self.ty(u)
+    for i: u32 in 0..n.nkids {
+        fi: u32 = self.kid(x, i)
+        fidx: int = int(i)
+        if !positional { fidx = self.find_field(u, self.node(fi).text) }
+        if fidx < 0 || fidx >= int(ut.nfields) {
+            mut self.unsupported("field initializer")
+            out.n = 0
+            return
+        }
+        e: u32 = fi
+        if !tuple { e = self.node(fi).a }
+        mut self.literal_field(u, u32(fidx), e, mut out)
+    }
+    if !positional {
+        for i: u32 in 0..ut.nfields {
+            dv: u32 = self.lit_default(x, u, i)
+            if dv != 0 { mut self.literal_field(u, i, dv, mut out) }
+        }
+    }
+    if self.failed() {
+        out.n = 0
+        return
+    }
+    for k: int in 0..out.n { // sema supplies every field, defaults included
+        if out.v[k] < 0 { out.v[k] = mut self.konst(lv.v[k].ty, 0) }
+    }
+}
+
+/* Field `fi` of struct or tuple `u` from `e`, into its leaves of `out`. */
+Lw.literal_field(mut self, u: u32, fi: u32, e: u32, mut out: Agg) {
+    f: Agg = blank(Agg)
+    mut self.value(e, self.s.field(self.ty(u), fi).ty, mut f)
+    at: int = mut self.leaf_index(u, fi)
+    if self.failed() { return }
+    for k: int in 0..f.n { out.v[at + k] = f.v[k] }
+}
+
+/* The leaves of array literal `x` of type `t`, element by element; [v : n]
+ * evaluates v once.
+ */
+Lw.literal_array(mut self, x: u32, t: u32, mut out: Agg) {
+    u: u32 = self.unwrap(t)
+    out.n = 0
+    if u == 0 || self.ty(u).kind != TypeKind.array {
+        mut self.unsupported(self.type_why(t))
+        return
+    }
+    ut: SType = self.ty(u)
+    nb: int = mut self.leaf_count(ut.base)
+    cnt: int = mut self.leaf_count(t)
+    if self.failed() { return }
+    out.n = cnt
+    n: Node = self.node(x)
+    if n.a != 0 {
+        e: Agg = blank(Agg)
+        if ut.count != 0 { mut self.value(n.a, ut.base, mut e) }
+        if self.failed() { return }
+        for i: int in 0..int(ut.count) {
+            for k: int in 0..nb { out.v[i * nb + k] = e.v[k] }
+        }
+        return
+    }
+    if u64(n.nkids) != ut.count {
+        mut self.unsupported("array literal")
+        return
+    }
+    for i: u32 in 0..n.nkids { // written order; a keyed entry at its member's slot
+        k: u32 = self.kid(x, i)
+        e: Agg = blank(Agg)
+        mut self.value(self.lit_elem(k), ut.base, mut e)
+        if self.failed() { return }
+        s: int = int(self.lit_slot(k, i))
+        for j: int in 0..nb { out.v[s * nb + j] = e.v[j] }
+    }
 }
 
 // --- expressions ------------------------------------------------------------
@@ -966,8 +1620,7 @@ Lw.call_arg(mut self, mut g: Args, at: u32, pt: u32, by_address: bool) {
     a: u32 = at
     if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
     if by_address && !self.is_place(a) {
-        mut self.unported("a temporary passed by address")
-        mut g.scalar(mut self.dummy())
+        mut g.scalar(mut self.place_address(mut self.temp_place(a)))
         return
     }
     if by_address {
@@ -978,9 +1631,13 @@ Lw.call_arg(mut self, mut g: Args, at: u32, pt: u32, by_address: bool) {
         mut g.scalar(mut self.expr(a, int(mut self.need_type(pt))))
         return
     }
-    if self.is_big(pt) {
-        mut self.unported("an aggregate passed by copy")
-        mut g.scalar(mut self.dummy())
+    if self.is_big(pt) { // the address of a copy
+        mut self.covered(pt)
+        slot: int = mut self.new_slot(pt)
+        mut self.store_value(a, pt, slot, 0)
+        fail(mut g.parts.push(ir.IrPart { agg = pt, first = int(g.v.len), n = 1, addr = true }))
+        fail(mut g.v.push(slot))
+        g.agg = true
         return
     }
     v: Agg = blank(Agg)
@@ -1053,6 +1710,11 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
             by_address = (i < dn.nkids && (self.node(self.kid(d, i)).flags & parser.F_MUT) != 0) || ((dn.flags & parser.F_METHOD) != 0 && i == 0)
         }
         pt: u32 = self.s.param(self.ty(ft), i)
+        if recv == 1 && i == 0 && by_address && self.is_pointer(a) { // p.m() is (*p).m(), once per pointer level
+            rp: Place, _ = mut self.field_base(callee)
+            mut g.scalar(mut self.place_address(rp))
+            continue
+        }
         mut self.call_arg(mut g, a, pt, by_address)
     }
     return first_var
@@ -1060,15 +1722,24 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
 
 /* Emits call `id`'s arguments, and its signature when a part or the result
  * `rt` is an aggregate; an aggregate result's leaves follow as projections.
+ * One of over 16 leaves goes to memory at `dst` (a new stack object when
+ * dst < 0), passed last.
  */
-Lw.call_finish(mut self, id: int, g: Args, rt: u32, mut res: Agg, want_res: bool): int {
+Lw.call_finish(mut self, id: int, g: Args, rt: u32, mut res: Agg, want_res: bool, dst: int): int {
     for v: int in g.v.view() { mut self.fn.arg_add(id, v) }
     if self.is_big(rt) {
-        mut self.unported("a result in memory")
-        return id
+        mut self.covered(rt)
+        d: int = dst
+        if d < 0 { d = mut self.new_slot(rt) }
+        mut self.fn.arg_add(id, d)
+        mut self.fn.at(id).flags |= ir.IRF_SRET
     }
     if !g.agg && !self.is_agg(rt) { return id }
     ret: ir.IrPart = blank(ir.IrPart)
+    if self.is_big(rt) {
+        mut self.fn.at(id).sig = mut self.fn.new_sig(g.parts.view(), ret)
+        return id
+    }
     if !self.is_agg(rt) {
         if rt != 0 && self.kind(rt) != TypeKind.void { ret.n = 1 }
         mut self.fn.at(id).sig = mut self.fn.new_sig(g.parts.view(), ret)
@@ -1088,8 +1759,10 @@ Lw.call_finish(mut self, id: int, g: Args, rt: u32, mut res: Agg, want_res: bool
     return id
 }
 
-/* A call `x`; an aggregate result's leaves go to `res` when `want_res`. */
-Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool): int {
+/* A call `x`; an aggregate result's leaves go to `res` when `want_res`, one
+ * of over 16 leaves to memory at `dst`, or a new stack object when dst < 0.
+ */
+Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): int {
     cn: Node = self.node(x)
     callee: u32 = cn.a
     if callee != 0 && self.node(callee).kind == Kind.ident {
@@ -1097,6 +1770,17 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool): int {
         if self.nsym(x) == 0 && (mem.equal(nm, "sizeof") || mem.equal(nm, "alignof") || mem.equal(nm, "offsetof")) {
             return mut self.konst(mut self.type_in(x, want), self.s.node_ival(x)) // folded by sema
         }
+    }
+    if self.is_layout_builtin(x, "blank") { // the zero of its type
+        t: u32 = self.nty(x)
+        if !self.is_agg(t) { return mut self.konst(mut self.type_in(x, want), 0) }
+        lv: ir.Leaves = blank(ir.Leaves)
+        n: int = mut self.leaves(t, mut lv)
+        if want_res {
+            res.n = n
+            for k: int in 0..n { res.v[k] = mut self.konst(lv.v[k].ty, 0) }
+        }
+        return -1
     }
     s: u32 = self.nsym(x)
     if s == 0 && callee != 0 && self.node(callee).kind == Kind.ident && mem.equal(self.node(callee).text, "typeid") {
@@ -1128,9 +1812,9 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool): int {
     }
     if s == 0 || self.s.sym(s).kind != sema.SymKind.func || callee == 0 {
         if s != 0 && self.s.sym(s).kind == sema.SymKind.var {
-            return mut self.indirect_call(x, s, mut res, want_res)
+            return mut self.indirect_call(x, s, mut res, want_res, dst)
         }
-        if self.field_call(x) { return mut self.indirect_call(x, 0, mut res, want_res) }
+        if self.field_call(x) { return mut self.indirect_call(x, 0, mut res, want_res, dst) }
         mut self.unported("this call form")
         return mut self.dummy()
     }
@@ -1168,11 +1852,11 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool): int {
         c.flags |= ir.IRF_VARARGS
         if first_var >= 0 { c.aux = i32(first_var) } else { c.aux = i32(g.v.len) }
     }
-    return mut self.call_finish(id, g, rt, mut res, want_res)
+    return mut self.call_finish(id, g, rt, mut res, want_res, dst)
 }
 
 /* A call through a function value: variable `s`, or a struct field when 0. */
-Lw.indirect_call(mut self, x: u32, s: u32, mut res: Agg, want_res: bool): int {
+Lw.indirect_call(mut self, x: u32, s: u32, mut res: Agg, want_res: bool, dst: int): int {
     cn: Node = self.node(x)
     ft: u32 = 0
     if s != 0 { ft = self.unwrap(self.s.sym(s).ty) } else { ft = self.unwrap(self.nty(cn.a)) }
@@ -1187,7 +1871,7 @@ Lw.indirect_call(mut self, x: u32, s: u32, mut res: Agg, want_res: bool): int {
     id: int = mut self.emit(ir.IR_CALLI, mut self.result_type(self.ty(ft).ret))
     mut self.fn.at(id).flags = self.null_checked()
     mut self.fn.arg_add(id, f) // the target, then the arguments
-    return mut self.call_finish(id, g, self.ty(ft).ret, mut res, want_res)
+    return mut self.call_finish(id, g, self.ty(ft).ret, mut res, want_res, dst)
 }
 
 /* ptr `pv` (of pointer type `pt`) +/- u64 `n` elements of its pointee. */
@@ -1261,21 +1945,35 @@ Lw.expr(mut self, x: u32, want: int): int {
                 mut self.unported("Error fields")
                 return mut self.dummy()
             }
-            if bt != 0 && (self.is_view(bt) || self.ty(bt).kind == TypeKind.array) && mem.equal(n.text, "len") {
+            if self.is_view(bt) && mem.equal(n.text, "len") {
                 mut self.unported("sequence lengths")
                 return mut self.dummy()
             }
-            if et != 0 && self.ty(et).kind == TypeKind.bits {
-                mut self.unported("bits fields")
-                return mut self.dummy()
+            if bt != 0 && self.ty(bt).kind == TypeKind.array && mem.equal(n.text, "len") {
+                if !self.is_place(n.a) { // side effects only: the length is static
+                    discard: Agg = blank(Agg)
+                    mut self.value(n.a, self.nty(n.a), mut discard)
+                }
+                return mut self.konst(mut self.type_in(x, want), self.ty(bt).count)
+            }
+            bits: u32, bfi: u32 = self.bits_field(x)
+            if bits != 0 { // a projection of the whole backing value
+                bf: sema.SField = self.s.field(self.ty(bits), bfi)
+                if (bt != 0 && self.ty(bt).kind == TypeKind.ptr) || self.is_place(n.a) {
+                    bp: Place, _ = mut self.field_base(x)
+                    return mut self.bits_get(bits, bf, mut self.place_read(bp, 0))
+                }
+                return mut self.bits_get(bits, bf, mut self.expr(n.a, int(mut self.need_type(bits))))
             }
             if bt == 0 || (self.ty(bt).kind != TypeKind.ptr && self.ty(bt).kind != TypeKind.struct) {
                 if bt != 0 { mut self.unsupported(self.type_why(bt)) } else { mut self.unsupported("field access") }
                 return mut self.dummy()
             }
             if !self.is_place(x) {
-                mut self.unported("fields of values")
-                return mut self.dummy()
+                a: Agg = blank(Agg)
+                mut self.field_leaves(x, mut a)
+                if a.n == 0 { return mut self.dummy() }
+                return a.v[0]
             }
             return mut self.place_read(mut self.place(x), 0)
         }
@@ -1362,7 +2060,7 @@ Lw.expr(mut self, x: u32, want: int): int {
         }
         Kind.call {
             res: Agg = blank(Agg)
-            return mut self.call(x, want, mut res, false)
+            return mut self.call(x, want, mut res, false, -1)
         }
         Kind.index {
             if self.nsym(x) != 0 {
@@ -1375,9 +2073,24 @@ Lw.expr(mut self, x: u32, want: int): int {
             mut self.unsupported(self.type_why(self.nty(x)))
             return mut self.dummy()
         }
-        Kind.structlit {
-            mut self.unported("bits literals")
-            return mut self.dummy()
+        Kind.structlit { // a bits value (#5): all bits zero, then each field in source order
+            b: u32 = self.unwrap(self.nty(x))
+            if b == 0 || self.ty(b).kind != TypeKind.bits {
+                mut self.unsupported(self.type_why(b))
+                return mut self.dummy()
+            }
+            w: int = mut self.konst(mut self.need_type(b), 0)
+            for i: u32 in 0..n.nkids {
+                k: Node = self.node(self.kid(x, i))
+                fi: int = self.find_field(b, k.text)
+                if fi < 0 {
+                    mut self.unsupported("field initializer")
+                    return mut self.dummy()
+                }
+                f: sema.SField = self.s.field(self.ty(b), u32(fi))
+                w = mut self.bits_set(b, f, w, mut self.expr(k.a, int(mut self.need_type(f.ty))), false) // each field once (#5)
+            }
+            return w
         }
         default {
             if self.is_untyped(self.nty(x)) { mut self.unsupported("expression form") } else { mut self.unsupported(self.type_why(self.nty(x))) }
@@ -1387,7 +2100,8 @@ Lw.expr(mut self, x: u32, want: int): int {
 }
 
 /* The leaves of `x` at type `t` into `out`. */
-Lw.value(mut self, x: u32, t: u32, mut out: Agg) {
+Lw.value(mut self, at: u32, t: u32, mut out: Agg) {
+    x: u32 = self.array_cast_arg(at)
     if !self.is_agg(t) {
         out.n = 1
         out.v[0] = mut self.expr(x, int(mut self.need_type(t)))
@@ -1400,9 +2114,12 @@ Lw.value(mut self, x: u32, t: u32, mut out: Agg) {
     }
     n: Node = self.node(x)
     switch n.kind {
-        Kind.structlit, Kind.tuple, Kind.arraylit {
-            mut self.unported("aggregate literals")
-            out.n = 0
+        Kind.structlit, Kind.tuple {
+            mut self.literal_agg(x, t, mut out)
+            return
+        }
+        Kind.arraylit {
+            mut self.literal_array(x, t, mut out)
             return
         }
         Kind.slice {
@@ -1411,14 +2128,13 @@ Lw.value(mut self, x: u32, t: u32, mut out: Agg) {
             return
         }
         Kind.call {
-            _ = mut self.call(x, -1, mut out, true)
+            _ = mut self.call(x, -1, mut out, true, -1)
             if out.n != mut self.leaf_count(t) { mut self.unsupported("conversion") }
             return
         }
         Kind.selector {
             if !self.is_place(x) {
-                mut self.unported("fields of values")
-                out.n = 0
+                mut self.field_leaves(x, mut out)
                 return
             }
         }
@@ -1535,6 +2251,140 @@ Lw.is_discard(self, x: u32): bool {
     return n.kind == Kind.ident && mem.equal(n.text, "_")
 }
 
+/* Whether `x` contains a call, which could change storage the rest reads. */
+Lw.has_call(self, x: u32): bool {
+    if x == 0 { return false }
+    n: Node = self.node(x)
+    if n.kind == Kind.call { return true }
+    if self.has_call(n.a) || self.has_call(n.b) || self.has_call(n.c) { return true }
+    for i: u32 in 0..n.nkids {
+        if self.has_call(self.kid(x, i)) { return true }
+    }
+    return false
+}
+
+/* The place of new binder (a param node) `b`: its SSA variable, or its memory. */
+Lw.binder_place(mut self, b: u32): Place {
+    bs: u32 = self.nsym(b)
+    if bs == 0 {
+        mut self.unsupported("unresolved binder")
+        return Place { addr = mut self.dummy() }
+    }
+    t: u32 = self.s.sym(bs).ty
+    var: int = mut self.var_of(bs)
+    if self.home.get(usize(var)) == -1 { return Place { var = var, t = t } }
+    return Place { addr = mut self.var_addr(var), t = t }
+}
+
+/* Member `m` into `x`, an existing place or a bits field. */
+Lw.member_put(mut self, x: u32, m: Agg) {
+    bits: u32, _ = self.bits_field(x)
+    if bits != 0 {
+        mut self.bits_assign(x, Token.assign, 0, m.v[0])
+        return
+    }
+    p: Place = mut self.place(x)
+    if mut self.leaf_count(p.t) != m.n { mut self.unsupported("destructuring") }
+    mut self.place_put(p, m, 0)
+}
+
+/* Tuple destructuring (Errors #12): the right side once, then each member
+ * into a new binder or an existing place, the first `n` kids of `owner`, in
+ * order; a `_` member is dropped. A tuple of over 16 leaves is stored whole
+ * first, then its members copied out.
+ */
+Lw.destructure(mut self, owner: u32, n: u32, rhs: u32) {
+    tt: u32 = self.nty(rhs)
+    u: u32 = self.unwrap(tt)
+    if u == 0 || self.ty(u).kind != TypeKind.tuple || self.ty(u).nfields != n {
+        mut self.unsupported("destructuring")
+        return
+    }
+    ut: SType = self.ty(u)
+    rn: Node = self.node(rhs)
+    if rn.kind == Kind.tuple && rn.nkids == n && ir.leaf_count(self.s, tt) < 0 {
+        // `a: int, b: string = 1, "x"`: untyped elements take their targets'
+        // types; every element is evaluated before any target is written
+        m: array.Array[Agg] = array.Array[Agg] {}
+        defer mut m.wipe()
+        for i: u32 in 0..n {
+            k: u32 = self.kid(owner, i)
+            kt: u32 = 0
+            if self.node(k).kind == Kind.param {
+                if self.nsym(k) != 0 { kt = self.s.sym(self.nsym(k)).ty }
+            } else if self.is_discard(k) {
+                kt = self.nty(self.kid(rhs, i))
+            } else {
+                kt = self.nty(k)
+            }
+            if kt == 0 || self.by_parts(kt) {
+                mut self.unsupported("destructuring")
+                return
+            }
+            a: Agg = blank(Agg)
+            mut self.value(self.kid(rhs, i), kt, mut a)
+            fail(mut m.push(a))
+        }
+        for i: u32 in 0..n {
+            k: u32 = self.kid(owner, i)
+            if self.is_discard(k) { continue }
+            if self.node(k).kind == Kind.param {
+                bs: u32 = self.nsym(k)
+                mut self.set_leaves(mut self.var_of(bs), self.s.sym(bs).ty, m.get(usize(i)))
+                continue
+            }
+            mut self.member_put(k, m.get(usize(i)))
+        }
+        return
+    }
+    if self.by_parts(tt) {
+        mut self.covered(tt)
+        slot: int = mut self.new_slot(tt)
+        mut self.store_value(rhs, tt, slot, 0)
+        for i: u32 in 0..n {
+            k: u32 = self.kid(owner, i)
+            if self.is_discard(k) { continue }
+            f: sema.SField = self.s.field(ut, i)
+            src: Place = Place { addr = slot, off = i32(f.offset), t = f.ty }
+            bits: u32, _ = self.bits_field(k)
+            if bits != 0 {
+                mut self.bits_assign(k, Token.assign, 0, mut self.place_read(src, 0))
+                continue
+            }
+            dst: Place = blank(Place)
+            if self.node(k).kind == Kind.param { dst = mut self.binder_place(k) } else { dst = mut self.place(k) }
+            mut self.move_place(dst, src)
+        }
+        return
+    }
+    all: Agg = blank(Agg)
+    mut self.value(rhs, tt, mut all)
+    for i: u32 in 0..n {
+        if self.failed() { return }
+        m: Agg = blank(Agg)
+        at: int = mut self.leaf_index(u, i)
+        m.n = mut self.leaf_count(self.s.field(ut, i).ty)
+        if self.failed() { return }
+        for k: int in 0..m.n { m.v[k] = all.v[at + k] }
+        kid: u32 = self.kid(owner, i)
+        if self.is_discard(kid) { continue }
+        if self.node(kid).kind == Kind.param {
+            bs: u32 = self.nsym(kid)
+            if bs == 0 {
+                mut self.unsupported("unresolved binder")
+                return
+            }
+            if mut self.leaf_count(self.s.sym(bs).ty) != m.n {
+                mut self.unsupported("destructuring")
+                return
+            }
+            mut self.set_leaves(mut self.var_of(bs), self.s.sym(bs).ty, m)
+            continue
+        }
+        mut self.member_put(kid, m)
+    }
+}
+
 Lw.assign(mut self, at: u32) {
     s: Node = self.node(at)
     x: u32 = self.kid(at, 0)
@@ -1543,20 +2393,22 @@ Lw.assign(mut self, at: u32) {
         return
     }
     if s.nkids > 1 {
-        mut self.unported("destructuring")
-        return
-    }
-    vol: u8 = 0
-    if (s.flags & parser.F_VOLATILE) != 0 { vol = ir.IRF_VOLATILE }
-    // a bits field target: a read-modify-write of its backing value
-    if self.node(x).kind == Kind.selector {
-        bt: u32 = self.unwrap(self.nty(self.node(x).a))
-        for bt != 0 && self.ty(bt).kind == TypeKind.ptr { bt = self.unwrap(self.ty(bt).base) }
-        if bt != 0 && self.ty(bt).kind == TypeKind.bits {
-            mut self.unported("bits fields")
+        if s.op != Token.assign || (s.flags & parser.F_VOLATILE) != 0 {
+            mut self.unsupported("assignment target")
             return
         }
+        mut self.destructure(at, s.nkids, s.a)
+        return
     }
+    bits: u32, _ = self.bits_field(x)
+    if bits != 0 { // a read-modify-write of its backing value
+        mut self.bits_assign(x, s.op, s.a, -1)
+        return
+    }
+    // the right side whole, then the target (Memory #9): a right side that
+    // moves the target's storage cannot leave its address stale
+    vol: u8 = 0
+    if (s.flags & parser.F_VOLATILE) != 0 { vol = ir.IRF_VOLATILE }
     xt: u32 = self.nty(x)
     if self.node(x).kind == Kind.ident && self.nsym(x) != 0 { xt = self.s.sym(self.nsym(x)).ty }
     if self.is_agg(xt) {
@@ -1564,8 +2416,30 @@ Lw.assign(mut self, at: u32) {
             mut self.unsupported("compound assignment")
             return
         }
-        if self.is_big(xt) || self.has_array(xt) {
-            mut self.unported("aggregates in memory")
+        direct: bool = vol == 0 && (self.is_big(xt) || (self.has_array(xt) && self.is_place(s.a)))
+        if direct && self.is_place(s.a) && (self.node(x).kind == Kind.ident || !self.has_call(x)) {
+            // a place's bytes: equal or disjoint, and finding the target
+            // cannot change them
+            p: Place = mut self.place(x)
+            if p.var < 0 {
+                mut self.store_value(s.a, p.t, p.addr, p.off)
+                return
+            }
+            a: Agg = blank(Agg)
+            mut self.value(s.a, p.t, mut a)
+            mut self.place_put(p, a, vol)
+            return
+        }
+        if direct && self.is_big(xt) { // whole, before any byte is written
+            mut self.covered(xt)
+            src: int = mut self.new_slot(xt)
+            mut self.store_value(s.a, xt, src, 0)
+            p: Place = mut self.place(x)
+            if p.var < 0 {
+                mut self.copy_mem(p.addr, p.off, src, 0, 0, self.size(xt))
+            } else {
+                mut self.move_place(p, Place { addr = src, t = xt })
+            }
             return
         }
         a: Agg = blank(Agg)
@@ -1607,8 +2481,8 @@ Lw.assign(mut self, at: u32) {
 /* Local `sym`'s variable `var`, initialized to `x`. */
 Lw.init_var(mut self, var: int, sym: u32, x: u32) {
     t: u32 = self.s.sym(sym).ty
-    if self.home.get(usize(var)) != -1 && self.in_memory(t) {
-        mut self.unported("aggregates in memory")
+    if self.home.get(usize(var)) != -1 && self.in_memory(t) { // into its memory, which the value cannot name
+        mut self.store_value(x, t, mut self.var_addr(var), 0)
         return
     }
     a: Agg = blank(Agg)
@@ -1623,7 +2497,11 @@ Lw.var_decl(mut self, at: u32) {
             mut self.unsupported("multiple binders")
             return
         }
-        mut self.unported("destructuring")
+        for i: u32 in 0..s.nkids { // make each new binder's variable
+            k: u32 = self.kid(at, i)
+            if self.node(k).kind == Kind.param && self.nsym(k) != 0 { _ = mut self.var_of(self.nsym(k)) }
+        }
+        mut self.destructure(at, s.nkids, s.b)
         return
     }
     sym: u32 = self.nsym(self.kid(at, 0))
@@ -1737,8 +2615,9 @@ Lw.stmt(mut self, at: u32) {
                 mut self.ret(none)
                 return
             }
-            if self.result >= 0 {
-                mut self.unported("a result in memory")
+            if self.result >= 0 { // into the caller's memory
+                mut self.store_value(s.a, self.rtype, self.result, 0)
+                mut self.ret(none)
                 return
             }
             a: Agg = blank(Agg)
@@ -1836,7 +2715,11 @@ pub lower(s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
     l.cur = mut l.new_block()
     mut l.seal(l.cur)
     l.at = f
-    if l.is_big(rt) { mut l.unported("a result in memory") }
+    if l.is_big(rt) { // stored through the address the caller passes
+        mut l.covered(rt)
+        l.fn.ret_mem = rt
+        l.result = mut l.emit(ir.IR_RESULT, ir.IT_PTR)
+    }
     lv: ir.Leaves = blank(ir.Leaves)
     if rt != 0 && l.fn.ret_mem == 0 {
         nr: int = mut l.leaves(rt, mut lv)

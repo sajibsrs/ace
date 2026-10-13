@@ -139,6 +139,9 @@
   now fails on any `sema`-stage difference.
 - selfhost `--ir` lowers root-file functions to SSA IR as `ace --debug --ir`
   prints it (`selfhost/ir.ace`, `selfhost/lowering.ace`): scalar and simple
-  aggregate locals, arithmetic, `if`, general `for`, labels, and calls; other
+  aggregate locals, arithmetic, `if`, general `for`, labels, and calls;
+  aggregate literals, aggregates in memory (results through RESULT/sret,
+  by-copy and temporary arguments), array indexing, fields of values,
+  destructuring, and bits fields; other
   constructs are reported as not yet ported. `selfhost/check.sh` adds an
   `ir` stage, compared per function.
