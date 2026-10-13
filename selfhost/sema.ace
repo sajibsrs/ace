@@ -4896,6 +4896,14 @@ pub Sema.build_type(mut self, id: u32): u32 {
             base: u32 = mut self.build_type(t.a)
             return mut self.new_type(SType { kind = kind, is_mut = (t.flags & parser.F_MUT) != 0, base = base })
         }
+        Kind.unary { // a bracket's *T parses as a dereference: f[*u8](n)
+            if t.op != lexer.Token.star {
+                mut self.err(id, ["expected a type"])
+                return self.t_err
+            }
+            base: u32 = mut self.build_type(t.a)
+            return mut self.new_type(SType { kind = TypeKind.ptr, base = base })
+        }
         Kind.array_t { return mut self.build_array(id) }
         Kind.staticmap_t {
             base: u32 = mut self.build_type(t.a)

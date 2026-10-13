@@ -1,0 +1,18 @@
+/* An expression-position type argument may be a pointer type; its `*T`
+ * parses as a dereference and checks as the pointer type. */
+
+import mem
+
+same[T](value: T): T {
+    return value
+}
+
+main(): int {
+    slots: mut []*u8 = mem.alloc[*u8](2)
+    defer mem.release[*u8](mut slots)
+    deep: mut []**u8 = mem.alloc[**u8](1)
+    defer mem.release[**u8](mut deep)
+    byte: u8 = 7
+    at: *u8 = same[*u8](&byte)
+    return int(*at) - 7
+}

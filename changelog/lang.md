@@ -1,5 +1,8 @@
 # Language
 
+- An expression-position type argument may be a pointer type:
+  `mem.alloc[*u8](n)`. The parser reads the bracket's `*T` as a dereference;
+  `build_type` (C and selfhost) now checks that unary `*` as the pointer type.
 - An enum whose member list ends with `_` is open (#8): it states its backing
   type and holds every backing value, so `E(n)` and constants skip the member
   check, `.name` of a non-member is `""`, and `[E]T` rejects it. The parser

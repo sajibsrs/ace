@@ -1483,6 +1483,15 @@ static SType* build_type(Ck* k, Node* t) {
         p->base = build_type(k, t->a);
         return p;
     }
+    case N_UNARY: { // a bracket's *T parses as a dereference: f[*u8](n)
+        if (t->op != T_STAR) {
+            ck_err(k, t, "expected a type");
+            return T_ERR;
+        }
+        SType* p = st_new(SK_PTR);
+        p->base = build_type(k, t->a);
+        return p;
+    }
     case N_SLICE_T: {
         SType* s = st_new(SK_SLICE);
         s->is_mut = (t->flags & F_MUT) != 0; // mut []T — writable elements
