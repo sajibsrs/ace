@@ -32,7 +32,9 @@
 9. Every storage declaration states its type explicitly. There is no declaration-elision spelling: a local initialized from an expression is `name: Type = expr`, and every name introduced by a multi-declaration states its own type.
 10. Numeric and character literals are untyped constants that take the expected
     type at use and must fit it. Casts are explicit and constructor-shaped
-    (`i32(x)`, `Meters(x)`); there are no implicit numeric conversions. An
+    (`i32(x)`, `Meters(x)`); there are no implicit numeric conversions. `bool`
+    has no cast to or from an integer: write `n != 0` for a truth value and a
+    branch for a count. An
     untyped constant expression (`1 + 2`, `-0.5`, `1 << 3`) takes the expected
     type as a whole, beside a typed operand as in a declaration; an integer
     expression never becomes floating-point arithmetic (`x != 7 / 2` with `x: f64`
