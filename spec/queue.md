@@ -5,6 +5,12 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
+- Self-hosting: the selfhost compiler (`selfhost/`, written in Ace) reaches
+  parity with the C bootstrap compiler (`src/`). Its purpose is to expose Ace
+  language and `std` limitations; each one found becomes a `self-hosting`
+  issue. Done when the selfhost compiler builds itself and `selfhost/check.sh`
+  matches `./ace` on the test suite.
+
 ### Trigger-gated
 
 - The canonical source formatter (`ace fmt`: in-place, check-only, stdout
