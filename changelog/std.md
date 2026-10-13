@@ -1,5 +1,9 @@
 # Standard library
 
+- `sys.FileInfo` carries `device` and `inode` from `stat`/`lstat` on both
+  targets (Darwin's signed `st_dev` widened as raw bits). Selfhost's
+  output-overwrite check compares them, as the C driver compares `st_dev` and
+  `st_ino`, so a hard link to an input is refused too.
 - Added the `exec` module: `exec.spawn(argv)` and `SpawnErr` over
   `posix_spawnp`. The facade copies the arguments and environment into one
   NUL-terminated `mem` block and `os.spawn` only makes the call; it is its own

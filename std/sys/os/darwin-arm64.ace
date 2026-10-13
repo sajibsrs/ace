@@ -190,9 +190,14 @@ pub IoctlErr: error {
 
 pub FileType: enum { unknown, regular, directory, symlink, other }
 
+/* `device` and `inode` together identify the file: two infos describe one
+ * file exactly when both are equal.
+ */
 pub FileInfo: struct {
     pub size: u64,
     pub file_type: FileType,
+    pub device: u64,
+    pub inode: u64,
 }
 
 /* Caller-owned directory iteration state. `active` makes canonical zero an
@@ -556,6 +561,8 @@ stat(path: string, follow: bool): (FileInfo, Error) {
     zero: FileInfo = FileInfo {
         size = 0,
         file_type = FileType.unknown,
+        device = 0,
+        inode = 0,
     }
 
     if !path_copy(path, mut path_buf[0..1024]) { return zero, StatErr(errno()) }
@@ -570,6 +577,8 @@ stat(path: string, follow: bool): (FileInfo, Error) {
     info: FileInfo = FileInfo {
         size = u64(raw.size),
         file_type = file_type_from_mode(raw.mode),
+        device = u64(u32(raw.device)),
+        inode = raw.inode,
     }
     return info, null
 }

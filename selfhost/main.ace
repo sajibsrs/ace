@@ -300,16 +300,15 @@ option_value(mut i: usize, option: string, what: string): (string, bool) {
     return sys.arg(i), true
 }
 
-/* Whether `a` and `b` name one file: the same text, or the same canonical
- * path when both exist. Unlike C's inode comparison, two hard links differ.
+/* Whether `a` and `b` name one file: the same text, which also catches an
+ * output that does not exist yet, or the same device and inode, so relative
+ * paths, symlinks, and hard links to one file all match.
  */
 same_path(a: string, b: string): bool {
     if mem.equal(a, b) { return true }
-    pool: path.Pool = blank(path.Pool)
-    defer mut pool.wipe()
-    ca: string, found_a: bool = path.canonical(mut pool, a)
-    cb: string, found_b: bool = path.canonical(mut pool, b)
-    return found_a && found_b && mem.equal(ca, cb)
+    ia: sys.FileInfo, ea: Error = sys.stat(a)
+    ib: sys.FileInfo, eb: Error = sys.stat(b)
+    return ea == null && eb == null && ia.device == ib.device && ia.inode == ib.inode
 }
 
 /* C's refusal to let an output overwrite an input; false after reporting. */

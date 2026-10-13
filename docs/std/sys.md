@@ -56,8 +56,10 @@ main(): int {
   typed reinterpretation, request-size inference, or retry. These are raw
   target operations rather than an OS-independent device-control abstraction.
 - `stat(path: string): (FileInfo, Error)` follows symbolic links and returns
-  byte size plus a `FileType` of `unknown`, `regular`, `directory`, `symlink`,
-  or `other`. `lstat(path: string): (FileInfo, Error)` is the same query
+  byte size, a `FileType` of `unknown`, `regular`, `directory`, `symlink`,
+  or `other`, and the file's `device` and `inode`. Two results name one file
+  exactly when both `device` and `inode` match, so a hard link compares equal
+  to its original. `lstat(path: string): (FileInfo, Error)` is the same query
   without following a final symlink.
 - `canonical(path: string, buf: mut []u8): (usize, Error)` writes the absolute
   path of an existing file, symlinks and `.`/`..` resolved, into `buf` (no NUL)

@@ -1,0 +1,54 @@
+/* FileInfo's device and inode identify a file: a hard link matches its
+ * original, a separate file does not.
+ */
+
+// expect-exit: 42
+
+import sys
+
+DIR_PATH: string = "/tmp/ace_sys_identity"
+FIRST_PATH: string = "/tmp/ace_sys_identity/first"
+LINK_PATH: string = "/tmp/ace_sys_identity/link"
+OTHER_PATH: string = "/tmp/ace_sys_identity/other"
+
+extern "c" {
+    c_link(existing: *u8, created: *u8): i32 as "link"
+}
+
+same(a: sys.FileInfo, b: sys.FileInfo): bool {
+    return a.device == b.device && a.inode == b.inode
+}
+
+create(path: string): bool {
+    fd: sys.Fd, err: Error = sys.open(path, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, sys.S_IRUSR | sys.S_IWUSR)
+    return err == null && sys.close(fd) == null
+}
+
+main(): int {
+    make_err: Error = sys.mkdir(DIR_PATH)
+    if make_err != null && make_err.code != 17 { return 1 }
+    sys.unlink(FIRST_PATH)
+    sys.unlink(LINK_PATH)
+    sys.unlink(OTHER_PATH)
+
+    if !create(FIRST_PATH) || !create(OTHER_PATH) { return 2 }
+    first_c: string = "/tmp/ace_sys_identity/first\0"
+    link_c: string = "/tmp/ace_sys_identity/link\0"
+    if c_link(&first_c[0], &link_c[0]) != 0 { return 3 }
+
+    first: sys.FileInfo, first_err: Error = sys.stat(FIRST_PATH)
+    link: sys.FileInfo, link_err: Error = sys.stat(LINK_PATH)
+    other: sys.FileInfo, other_err: Error = sys.stat(OTHER_PATH)
+    if first_err != null || link_err != null || other_err != null { return 4 }
+    if first.inode == 0 { return 5 }
+    if !same(first, link) { return 6 }
+    if same(first, other) { return 7 }
+
+    missing: sys.FileInfo, missing_err: Error = sys.stat("/tmp/ace_sys_identity/missing")
+    if missing_err == null || missing.device != 0 || missing.inode != 0 { return 8 }
+
+    sys.unlink(FIRST_PATH)
+    sys.unlink(LINK_PATH)
+    sys.unlink(OTHER_PATH)
+    return 42
+}
