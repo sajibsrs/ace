@@ -67,9 +67,11 @@ total: 21
 
 | Path | Contents |
 | --- | --- |
-| `std/` | Standard library: `fmt`, `mem`, `str`, `utf8`, `map`, `array`, `file`, `math`, `time`, `net`, `poll`, `sys` |
+| `std/` | Standard library: `fmt`, `mem`, `str`, `ascii`, `utf8`, `bits`, `map`, `array`, `file`, `math`, `time`, `net`, `poll`, `sys` |
 | `pkg/` | First-party packages: `json`, `regex`, `http`, `sdl` |
-| `demo/` | Runnable programs: HTTP client and server, JSON and regex tools, a packet sniffer, an SDL3 rotating cube |
+| `demo/` | Runnable programs: HTTP client and server, JSON and regex tools, a packet sniffer, SDL3 window, rotating and raycast cubes |
+| `bench/` | Benchmarks for the compiler, language features, `std`, and packages |
+| `selfhost/` | Self-hosted compiler in Ace (in progress); `selfhost/check.sh` compares its output with `./ace` |
 | `editors/vscode/` | VS Code extension with syntax highlighting |
 
 ## Build
