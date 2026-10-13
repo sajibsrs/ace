@@ -1,0 +1,1054 @@
+/* ir — the per-function SSA IR between the checker and the targets,
+ * mirroring src/ir.h and src/ir.c: construction, the leaf and ABI views of a
+ * type, verification, and printing as `ace --ir` does. Node, symbol, and type
+ * ids index the checked tree and `sema.Sema`.
+ */
+
+import array
+import fmt
+import str
+import sys
+
+import parser: "./parser.ace"
+import sema: "./sema.ace"
+
+Out: type = fmt.Buffer
+SType: type = sema.SType
+TypeKind: type = sema.TypeKind
+
+/* Value types, in src/ir.h's IrType order. */
+pub IT_VOID: const u8 = 0
+pub IT_BOOL: const u8 = 1
+pub IT_I8: const u8 = 2
+pub IT_I16: const u8 = 3
+pub IT_I32: const u8 = 4
+pub IT_I64: const u8 = 5
+pub IT_U8: const u8 = 6
+pub IT_U16: const u8 = 7
+pub IT_U32: const u8 = 8
+pub IT_U64: const u8 = 9
+pub IT_PTR: const u8 = 10
+pub IT_F32: const u8 = 11
+pub IT_F64: const u8 = 12
+pub IT_V4F32: const u8 = 13
+pub IT_V4I32: const u8 = 14
+pub IT_V2F64: const u8 = 15
+
+TYPE_NAMES: [16]string = [
+    "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "f32", "f64", "v4f32", "v4i32", "v2f64",
+]
+
+/* Operations, in src/ir.h's IR_OPS order. */
+pub IR_CONST: const u8 = 0
+pub IR_PARAM: const u8 = 1
+pub IR_PHI: const u8 = 2
+pub IR_ADD: const u8 = 3
+pub IR_SUB: const u8 = 4
+pub IR_MUL: const u8 = 5
+pub IR_DIV: const u8 = 6
+pub IR_REM: const u8 = 7
+pub IR_AND: const u8 = 8
+pub IR_OR: const u8 = 9
+pub IR_XOR: const u8 = 10
+pub IR_SHL: const u8 = 11
+pub IR_SHR: const u8 = 12
+pub IR_NEG: const u8 = 13
+pub IR_NOT: const u8 = 14
+pub IR_EQ: const u8 = 15
+pub IR_NE: const u8 = 16
+pub IR_LT: const u8 = 17
+pub IR_LE: const u8 = 18
+pub IR_GT: const u8 = 19
+pub IR_GE: const u8 = 20
+pub IR_CAST: const u8 = 21
+pub IR_BITCAST: const u8 = 22
+pub IR_POPCNT: const u8 = 23
+pub IR_CLZ: const u8 = 24
+pub IR_CTZ: const u8 = 25
+pub IR_BSWAP: const u8 = 26
+pub IR_ROTL: const u8 = 27
+pub IR_ROTR: const u8 = 28
+pub IR_SQRT: const u8 = 29
+pub IR_FLOOR: const u8 = 30
+pub IR_CEIL: const u8 = 31
+pub IR_FMA: const u8 = 32
+pub IR_SLOT: const u8 = 33
+pub IR_GLOBAL: const u8 = 34
+pub IR_STR: const u8 = 35
+pub IR_LOAD: const u8 = 36
+pub IR_STORE: const u8 = 37
+pub IR_PADD: const u8 = 38
+pub IR_PSUB: const u8 = 39
+pub IR_CALL: const u8 = 40
+pub IR_CALLI: const u8 = 41
+pub IR_RTCALL: const u8 = 42
+pub IR_ASM: const u8 = 43
+pub IR_RESULT: const u8 = 44
+pub IR_PROJ: const u8 = 45
+pub IR_SPLAT: const u8 = 46
+pub IR_SELECT: const u8 = 47
+pub IR_LANES: const u8 = 48
+pub IR_CHECK: const u8 = 49
+pub IR_JMP: const u8 = 50
+pub IR_BR: const u8 = 51
+pub IR_RET: const u8 = 52
+
+OP_NAMES: [53]string = [
+    "const", "param", "phi", "add", "sub", "mul", "div", "rem", "and", "or", "xor", "shl", "shr", "neg", "not",
+    "eq", "ne", "lt", "le", "gt", "ge", "cast", "bitcast", "popcnt", "clz", "ctz", "bswap", "rotl", "rotr",
+    "sqrt", "floor", "ceil", "fma", "slot", "global", "str", "load", "store", "padd", "psub", "call", "calli",
+    "rtcall", "asm", "result", "proj", "splat", "select", "lanes", "check", "jmp", "br", "ret",
+]
+
+/* Instruction flags, src/ir.h's IRF_ values. */
+pub IRF_CHECKED: const u8 = 1
+pub IRF_VOLATILE: const u8 = 2
+pub IRF_VARARGS: const u8 = 4
+pub IRF_SRET: const u8 = 8
+pub IRF_COLD: const u8 = 16
+
+/* An aggregate of over this many leaves stays in memory. */
+pub MAX_LEAVES: const int = 16
+
+pub IrLeaf: struct {
+    pub off: u32,
+    pub ty: u8,
+}
+
+/* The leaves of an aggregate, or a scalar's one. */
+pub Leaves: struct {
+    pub n: int,
+    pub v: [16]IrLeaf,
+}
+
+/* One argument, parameter, or result as the ABI sees it: n leaves from
+ * first, of aggregate type agg, or 0 for a scalar; addr marks an aggregate
+ * passed by value as the address of a copy.
+ */
+pub IrPart: struct {
+    pub agg: u32 = 0,
+    pub first: int = 0,
+    pub n: int = 0,
+    pub addr: bool = false,
+}
+
+/* How a call's arguments or a function's parameters group into parts (a run
+ * of Func.parts), and its result.
+ */
+pub IrSig: struct {
+    pub parts: u32 = 0,
+    pub nparts: u32 = 0,
+    pub ret: IrPart,
+}
+
+pub IrIns: struct {
+    pub op: u8,
+    pub ty: u8,
+    pub flags: u8 = 0,
+    pub block: int,              // owning block, or -1 once removed
+    pub args: u32 = 0,           // a run of Func.args
+    pub nargs: u32 = 0,
+    pub imm: u64 = 0,
+    pub aux: i32 = 0,
+    pub sym: u32 = 0,            // GLOBAL symbol; CALL target function
+    pub routine: bool = false,   // CALL: a C routine with no symbol of its own (sym 0)
+    pub name: string = "",       // CALL target's link symbol; STR bytes; CHECK diagnostic
+    pub has_name: bool = false,
+    pub sig: int = -1,           // CALL, CALLI: index in Func.sigs, or -1
+    pub at: u32 = 0,             // source position
+}
+
+pub IrBlock: struct {
+    pub ins: array.Array[int],   // instruction ids; phis first, terminator last
+    pub preds: array.Array[int],
+    pub succ0: int = -1,
+    pub succ1: int = -1,
+    pub sealed: bool = false,
+}
+
+pub Func: struct {
+    pub decl: u32,
+    pub sym: u32,
+    pub params: array.Array[u8], // leaves, in order
+    pub rets: array.Array[u8],   // result leaves
+    pub ret_mem: u32 = 0,        // a result over MAX_LEAVES leaves, stored through RESULT
+    pub sig: int = -1,           // index in sigs, or -1 when all parts are scalars
+    pub ins: array.Array[IrIns], // indexed by value id
+    pub blocks: array.Array[IrBlock],
+    pub args: array.Array[int],  // every instruction's operands, each a run
+    pub sigs: array.Array[IrSig],
+    pub parts: array.Array[IrPart],
+}
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+// --- construction -----------------------------------------------------------
+
+pub Func.new(decl: u32, sym: u32): Func {
+    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {} }
+}
+
+pub Func.wipe(mut self) {
+    for i: usize in 0..self.blocks.len {
+        b: mut *IrBlock = mut &mut self.blocks.view()[i]
+        mut b.ins.wipe()
+        mut b.preds.wipe()
+    }
+    mut self.params.wipe()
+    mut self.rets.wipe()
+    mut self.ins.wipe()
+    mut self.blocks.wipe()
+    mut self.args.wipe()
+    mut self.sigs.wipe()
+    mut self.parts.wipe()
+}
+
+/* Instruction `id` in place; the pointer dangles once one is added. */
+pub Func.at(mut self, id: int): mut *IrIns {
+    return mut &mut self.ins.view()[usize(id)]
+}
+
+pub Func.at(self, id: int): IrIns {
+    return self.ins.get(usize(id))
+}
+
+pub Func.block(mut self, b: int): mut *IrBlock {
+    return mut &mut self.blocks.view()[usize(b)]
+}
+
+pub Func.block(self, b: int): IrBlock {
+    return self.blocks.get(usize(b))
+}
+
+/* Operand `k` of instruction `id`. */
+pub Func.arg(self, id: int, k: u32): int {
+    return self.args.get(usize(self.ins.get(usize(id)).args + k))
+}
+
+pub Func.set_arg(mut self, id: int, k: u32, v: int) {
+    mut self.args.set(usize(self.ins.get(usize(id)).args + k), v)
+}
+
+pub Func.new_block(mut self): int {
+    fail(mut self.blocks.push(IrBlock { ins = array.Array[int] {}, preds = array.Array[int] {} }))
+    return int(self.blocks.len) - 1
+}
+
+Func.alloc(mut self, block: int, op: u8, ty: u8): int {
+    fail(mut self.ins.push(IrIns { op = op, ty = ty, block = block }))
+    return int(self.ins.len) - 1
+}
+
+/* A new instruction appended to `block`. */
+pub Func.new_ins(mut self, block: int, op: u8, ty: u8): int {
+    id: int = mut self.alloc(block, op, ty)
+    b: mut *IrBlock = mut self.block(block)
+    fail(mut b.ins.push(id))
+    return id
+}
+
+/* A new phi placed after `block`'s existing phis. */
+pub Func.new_phi(mut self, block: int, ty: u8): int {
+    id: int = mut self.alloc(block, IR_PHI, ty)
+    at: usize = 0
+    list: []int = self.block(block).ins.view()
+    for at < list.len && self.ins.get(usize(list[at])).op == IR_PHI { at += 1 }
+    b: mut *IrBlock = mut self.block(block)
+    fail(mut b.ins.push(id))
+    v: mut []int = mut b.ins.view()
+    i: usize = v.len - 1
+    for i > at {
+        v[i] = v[i - 1]
+        i -= 1
+    }
+    v[at] = id
+    return id
+}
+
+/* Appends operand `arg` to `v`, moving v's run to the end of the pool when
+ * another run follows it.
+ */
+pub Func.arg_add(mut self, v: int, arg: int) {
+    x: IrIns = self.ins.get(usize(v))
+    if usize(x.args + x.nargs) != self.args.len || x.nargs == 0 {
+        start: u32 = u32(self.args.len)
+        for k: u32 in 0..x.nargs { fail(mut self.args.push(self.args.get(usize(x.args + k)))) }
+        x.args = start
+    }
+    fail(mut self.args.push(arg))
+    x.nargs += 1
+    mut self.ins.set(usize(v), x)
+}
+
+pub Func.edge_add(mut self, from: int, to: int) {
+    f: mut *IrBlock = mut self.block(from)
+    if f.succ0 < 0 { f.succ0 = to } else { f.succ1 = to }
+    t: mut *IrBlock = mut self.block(to)
+    fail(mut t.preds.push(from))
+}
+
+pub Func.new_sig(mut self, parts: []IrPart, ret: IrPart): int {
+    start: u32 = u32(self.parts.len)
+    for p: IrPart in parts { fail(mut self.parts.push(p)) }
+    fail(mut self.sigs.push(IrSig { parts = start, nparts = u32(parts.len), ret = ret }))
+    return int(self.sigs.len) - 1
+}
+
+pub is_term(op: u8): bool {
+    return op == IR_JMP || op == IR_BR || op == IR_RET
+}
+
+// --- types ------------------------------------------------------------------
+
+pub type_bits(t: u8): int {
+    switch t {
+        IT_BOOL, IT_I8, IT_U8 { return 8 }
+        IT_I16, IT_U16 { return 16 }
+        IT_I32, IT_U32, IT_F32 { return 32 }
+        IT_I64, IT_U64, IT_PTR, IT_F64 { return 64 }
+        IT_V4F32, IT_V4I32, IT_V2F64 { return 128 }
+        default { return 0 }
+    }
+}
+
+pub type_signed(t: u8): bool {
+    return t >= IT_I8 && t <= IT_I64
+}
+
+pub type_float(t: u8): bool {
+    return t == IT_F32 || t == IT_F64
+}
+
+pub type_vector(t: u8): bool {
+    return t == IT_V4F32 || t == IT_V4I32 || t == IT_V2F64
+}
+
+pub lane_type(t: u8): u8 {
+    if t == IT_V4F32 { return IT_F32 }
+    if t == IT_V4I32 { return IT_I32 }
+    if t == IT_V2F64 { return IT_F64 }
+    return t
+}
+
+/* `t` through its distinct wrappers. */
+pub unwrap(s: sema.Sema, t: u32): u32 {
+    id: u32 = t
+    for id != 0 && s.ty(id).kind == TypeKind.distinct { id = s.ty(id).base }
+    return id
+}
+
+/* The IR type of scalar `t`, or -1 when t is not a scalar the IR covers. */
+pub type_of(s: sema.Sema, t: u32): int {
+    id: u32 = unwrap(s, t)
+    if id == 0 { return -1 }
+    x: SType = s.ty(id)
+    switch x.kind {
+        TypeKind.ptr, TypeKind.func { return int(IT_PTR) }
+        TypeKind.enum, TypeKind.bits { return type_of(s, x.base) }
+        TypeKind.error { return int(IT_U64) }
+        TypeKind.prim {}
+        default { return -1 }
+    }
+    switch x.prim {
+        sema.P_BOOL { return int(IT_BOOL) }
+        sema.P_I8 { return int(IT_I8) }
+        sema.P_I16 { return int(IT_I16) }
+        sema.P_I32 { return int(IT_I32) }
+        sema.P_I64 { return int(IT_I64) }
+        sema.P_U8 { return int(IT_U8) }
+        sema.P_U16 { return int(IT_U16) }
+        sema.P_U32 { return int(IT_U32) }
+        sema.P_U64, sema.P_USIZE, sema.P_TYPEID { return int(IT_U64) }
+        sema.P_F32 { return int(IT_F32) }
+        sema.P_F64 { return int(IT_F64) }
+        default { return -1 }
+    }
+}
+
+/* Leaves found, or the type that does not fit. */
+Collect: struct {
+    store: bool,                 // record leaves in `out` (counting only, else)
+    out: Leaves,
+    max: int,
+    bad: u32 = 0,
+}
+
+/* The leaves of `t` at `off` appended after `n`: the new count, or -1 with
+ * c.bad the type that does not fit.
+ */
+leaves_at(s: sema.Sema, t: u32, off: u32, mut c: Collect, n: int): int {
+    it: int = type_of(s, t)
+    if it >= 0 {
+        if n == c.max {
+            c.bad = t
+            return -1
+        }
+        if c.store { c.out.v[n] = IrLeaf { off = off, ty = u8(it) } }
+        return n + 1
+    }
+    u: u32 = unwrap(s, t)
+    if u == 0 {
+        c.bad = t
+        return -1
+    }
+    x: SType = s.ty(u)
+    view: bool = x.kind == TypeKind.slice || (x.kind == TypeKind.prim && x.prim == sema.P_STRING)
+    if view || x.kind == TypeKind.contract { // Types #19; Carved #5
+        if n + 2 > c.max {
+            c.bad = t
+            return -1
+        }
+        if c.store {
+            c.out.v[n] = IrLeaf { off = off, ty = IT_PTR }
+            if view { c.out.v[n + 1] = IrLeaf { off = off + 8, ty = IT_U64 } } else { c.out.v[n + 1] = IrLeaf { off = off + 8, ty = IT_PTR } }
+        }
+        return n + 2
+    }
+    if x.kind == TypeKind.array { // its elements in order, as AAPCS64 flattens it
+        es: u32 = s.ty(x.base).size
+        k: int = n
+        i: u64 = 0
+        for i < x.count && k >= 0 {
+            k = leaves_at(s, x.base, off + u32(i) * es, mut c, k)
+            i += 1
+        }
+        return k
+    }
+    if x.kind != TypeKind.struct && x.kind != TypeKind.tuple {
+        c.bad = t
+        return -1
+    }
+    k: int = n
+    for i: u32 in 0..x.nfields {
+        if k < 0 { break }
+        f: sema.SField = s.field(x, i)
+        k = leaves_at(s, f.ty, off + f.offset, mut c, k)
+    }
+    return k
+}
+
+/* Whether `t` is a union or a struct whose fields share bytes. */
+pub is_overlay(s: sema.Sema, t: u32): bool {
+    u: u32 = unwrap(s, t)
+    if u == 0 { return false }
+    x: SType = s.ty(u)
+    return x.kind == TypeKind.union || (x.kind == TypeKind.struct && x.is_overlap)
+}
+
+/* Whether `t` is, or holds in a member at any depth, an overlay. */
+pub holds_union(s: sema.Sema, t: u32): bool {
+    u: u32 = unwrap(s, t)
+    if u == 0 { return false }
+    x: SType = s.ty(u)
+    if x.kind == TypeKind.struct && x.is_overlap { return true }
+    if x.kind == TypeKind.array { return is_overlay(s, x.base) || holds_union(s, x.base) }
+    if x.kind != TypeKind.struct && x.kind != TypeKind.tuple { return false }
+    for i: u32 in 0..x.nfields {
+        f: sema.SField = s.field(x, i)
+        if is_overlay(s, f.ty) || holds_union(s, f.ty) { return true }
+    }
+    return false
+}
+
+/* An overlay's bytes as the ABI moves them: a u64 per full word, then a
+ * u32, u16, and u8 for a last partial word.
+ */
+word_leaves(s: sema.Sema, t: u32, mut c: Collect): int {
+    size: u32 = s.ty(t).size
+    off: u32 = 0
+    n: int = 0
+    for off < size {
+        rest: u32 = size - off
+        w: u32 = 1
+        ty: u8 = IT_U8
+        if rest >= 8 {
+            w = 8
+            ty = IT_U64
+        } else if rest >= 4 {
+            w = 4
+            ty = IT_U32
+        } else if rest >= 2 {
+            w = 2
+            ty = IT_U16
+        }
+        if n >= c.max {
+            c.bad = t
+            return -1
+        }
+        if c.store { c.out.v[n] = IrLeaf { off = off, ty = ty } }
+        n += 1
+        off += w
+    }
+    return n
+}
+
+is_word_type(s: sema.Sema, t: u32): bool {
+    return is_overlay(s, t) || holds_union(s, t)
+}
+
+/* The leaves of `t` in offset order into `out`, or -1 and the first type
+ * the IR does not cover.
+ */
+pub leaves(s: sema.Sema, t: u32, mut out: Leaves): (int, u32) {
+    c: Collect = Collect { store = true, out = blank(Leaves), max = MAX_LEAVES }
+    n: int = 0
+    if is_word_type(s, t) { n = word_leaves(s, unwrap(s, t), mut c) } else { n = leaves_at(s, t, 0, mut c, 0) }
+    out = c.out
+    if n >= 0 { out.n = n }
+    return n, c.bad
+}
+
+/* The leaf count of `t`, uncapped; -1 when some leaf is not covered. */
+pub leaf_count(s: sema.Sema, t: u32): int {
+    c: Collect = Collect { store = false, out = blank(Leaves), max = 0x7fffffff }
+    if is_word_type(s, t) { return word_leaves(s, unwrap(s, t), mut c) }
+    return leaves_at(s, t, 0, mut c, 0)
+}
+
+/* The element count (1-4) of a homogeneous floating aggregate; else 0. */
+pub hfa(s: sema.Sema, t: u32): (int, u8) {
+    size: u32 = s.ty(t).size
+    if size > 32 { return 0, 0 }
+    c: Collect = Collect { store = true, out = blank(Leaves), max = MAX_LEAVES }
+    n: int = leaves_at(s, t, 0, mut c, 0)
+    if n < 1 || !type_float(c.out.v[0].ty) { return 0, 0 }
+    base: u8 = c.out.v[0].ty
+    bs: u32 = u32(type_bits(base)) / 8
+    if size % bs != 0 || size / bs > 4 { return 0, 0 }
+    cover: u32 = 0
+    for k: int in 0..n {
+        lf: IrLeaf = c.out.v[k]
+        if lf.ty != base || lf.off % bs != 0 { return 0, 0 }
+        cover |= u32(1) << (lf.off / bs)
+    }
+    if cover != (u32(1) << (size / bs)) - 1 { return 0, 0 } // padding: not homogeneous
+    return int(size / bs), base
+}
+
+/* `v` wrapped into `t`: truncated, then extended by t's signedness. */
+pub wrap(t: u8, v: u64): u64 {
+    if t == IT_BOOL {
+        if v != 0 { return 1 }
+        return 0
+    }
+    n: int = type_bits(t)
+    if n == 64 || n == 0 { return v }
+    mask: u64 = (u64(1) << u64(n)) - 1
+    w: u64 = v & mask
+    if type_signed(t) && ((w >> u64(n - 1)) & 1) != 0 { w |= ~mask }
+    return w
+}
+
+// --- verification -----------------------------------------------------------
+
+/* Reports the first violation found, as C's bad() does. */
+bad(s: sema.Sema, fn: Func, parts: []string): bool {
+    fmt.printf(sys.stderr, "ace: internal IR error in '%s': ", s.node(fn.decl).text)
+    for p: string in parts { fmt.printf(sys.stderr, "%s", p) }
+    fmt.printf(sys.stderr, "\n")
+    return false
+}
+
+num(mut buf: [24]u8, v: int): string {
+    n: usize, _ = str.format(mut buf[..], v)
+    return buf[..n]
+}
+
+/* Immediate dominators over a reverse postorder (Cooper-Harvey-Kennedy):
+ * idom[0] = 0 and idom[b] = -1 for a block unreachable from the entry. Both
+ * results are the caller's to wipe.
+ */
+pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
+    n: usize = fn.blocks.len
+    order: array.Array[int] = array.Array[int] {}
+    numb: array.Array[int] = array.Array[int] {}
+    defer mut numb.wipe()
+    seen: array.Array[bool] = array.Array[bool] {}
+    defer mut seen.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    idom: array.Array[int] = array.Array[int] {}
+    for 0 .. n {
+        fail(mut numb.push(-1))
+        fail(mut seen.push(false))
+        fail(mut idom.push(-1))
+    }
+    fail(mut stack.push(0))
+    fail(mut stack.push(0))
+    mut seen.set(0, true)
+    for stack.len > 0 { // iterative DFS: (block, next successor slot)
+        sp: usize = stack.len
+        b: int = stack.get(sp - 2)
+        k: int = stack.get(sp - 1)
+        if k < 2 {
+            mut stack.set(sp - 1, k + 1)
+            bb: IrBlock = fn.blocks.get(usize(b))
+            succ: int = bb.succ0
+            if k == 1 { succ = bb.succ1 }
+            if succ >= 0 && !seen.get(usize(succ)) {
+                mut seen.set(usize(succ), true)
+                fail(mut stack.push(succ))
+                fail(mut stack.push(0))
+            }
+            continue
+        }
+        fail(mut order.push(b))
+        mut stack.truncate(sp - 2)
+    }
+    npost: usize = order.len
+    o: mut []int = mut order.view()
+    for i: usize in 0..npost / 2 {
+        t: int = o[i]
+        o[i] = o[npost - 1 - i]
+        o[npost - 1 - i] = t
+    }
+    for i: usize in 0..npost { mut numb.set(usize(o[i]), int(i)) }
+    mut idom.set(0, 0)
+    changed: bool = true
+    for changed {
+        changed = false
+        for i: usize in 1..npost {
+            b: int = o[i]
+            nd: int = -1
+            for q: int in fn.blocks.get(usize(b)).preds.view() {
+                if idom.get(usize(q)) < 0 { continue }
+                if nd < 0 {
+                    nd = q
+                    continue
+                }
+                x: int = q
+                y: int = nd
+                for x != y {
+                    for numb.get(usize(x)) > numb.get(usize(y)) { x = idom.get(usize(x)) }
+                    for numb.get(usize(y)) > numb.get(usize(x)) { y = idom.get(usize(y)) }
+                }
+                nd = x
+            }
+            if nd >= 0 && idom.get(usize(b)) != nd {
+                mut idom.set(usize(b), nd)
+                changed = true
+            }
+        }
+    }
+    return idom, order
+}
+
+pub dominates(idom: array.Array[int], a: int, b: int): bool {
+    x: int = b
+    for x != a && x != 0 { x = idom.get(usize(x)) }
+    return x == a
+}
+
+/* Whether instruction `id` uses vectors only as the vector operations allow. */
+vector_ok(fn: Func, id: int): bool {
+    v: IrIns = fn.at(id)
+    t: u8 = v.ty
+    any: bool = type_vector(t)
+    for a: u32 in 0..v.nargs { any = any || type_vector(fn.at(fn.arg(id, a)).ty) }
+    if !any { return v.op != IR_SPLAT && v.op != IR_SELECT && v.op != IR_LANES }
+    a0: u8 = IT_VOID
+    a1: u8 = IT_VOID
+    if v.nargs > 0 { a0 = fn.at(fn.arg(id, 0)).ty }
+    if v.nargs > 1 { a1 = fn.at(fn.arg(id, 1)).ty }
+    if (v.flags & IRF_CHECKED) != 0 { return false }
+    switch v.op {
+        IR_PHI {
+            for a: u32 in 0..v.nargs {
+                if fn.at(fn.arg(id, a)).ty != t { return false }
+            }
+            return true
+        }
+        IR_ADD, IR_SUB, IR_MUL { return v.nargs == 2 && type_vector(t) && a0 == t && a1 == t }
+        IR_DIV { return v.nargs == 2 && (t == IT_V4F32 || t == IT_V2F64) && a0 == t && a1 == t }
+        IR_NEG { return v.nargs == 1 && type_vector(t) && a0 == t }
+        IR_AND, IR_OR, IR_XOR { return v.nargs == 2 && t == IT_V4I32 && a0 == t && a1 == t }
+        IR_SHL, IR_SHR {
+            if v.nargs != 2 { return false }
+            c: IrIns = fn.at(fn.arg(id, 1))
+            return t == IT_V4I32 && a0 == t && a1 == IT_I32 && c.op == IR_CONST && c.imm >= 1 && c.imm <= 31
+        }
+        IR_LANES { return v.nargs == 0 && t == IT_V4I32 }
+        IR_EQ, IR_NE, IR_LT, IR_LE, IR_GT, IR_GE { return v.nargs == 2 && t == IT_V4I32 && type_vector(a0) && a0 != IT_V2F64 && a1 == a0 }
+        IR_CAST { return v.nargs == 1 && t == IT_V4F32 && a0 == IT_V4I32 }
+        IR_LOAD { return v.nargs == 1 && a0 == IT_PTR }
+        IR_STORE { return v.nargs == 2 && a0 == IT_PTR && type_vector(a1) }
+        IR_SPLAT { return v.nargs == 1 && type_vector(t) && a0 == lane_type(t) }
+        IR_SELECT { return v.nargs == 3 && a0 == IT_V4I32 && type_vector(t) && t != IT_V2F64 && a1 == t && fn.at(fn.arg(id, 2)).ty == t }
+        default { return false }
+    }
+}
+
+/* Structural invariants; false after reporting the first violation. */
+pub verify(s: sema.Sema, fn: Func): bool {
+    b1: [24]u8 = blank([24]u8)
+    b2: [24]u8 = blank([24]u8)
+    if fn.blocks.len == 0 { return bad(s, fn, ["no blocks"]) }
+    if fn.block(0).preds.len > 0 { return bad(s, fn, ["entry block b0 has ", num(mut b1, int(fn.block(0).preds.len)), " predecessors"]) }
+    pos: array.Array[int] = array.Array[int] {} // index within its block
+    defer mut pos.wipe()
+    for 0 .. fn.ins.len { fail(mut pos.push(0)) }
+    for b: int in 0..int(fn.blocks.len) {
+        bb: IrBlock = fn.block(b)
+        if bb.ins.len == 0 { return bad(s, fn, ["block b", num(mut b1, b), " is empty"]) }
+        phis: bool = true
+        for i: usize in 0..bb.ins.len {
+            id: int = bb.ins.get(i)
+            v: IrIns = fn.at(id)
+            mut pos.set(usize(id), int(i))
+            if v.block != b { return bad(s, fn, ["%", num(mut b1, id), " listed in block b", num(mut b2, b), " it does not belong to"]) }
+            if v.op == IR_PHI && !phis { return bad(s, fn, ["phi %", num(mut b1, id), " after a non-phi in b", num(mut b2, b)]) }
+            if v.op != IR_PHI { phis = false }
+            if is_term(v.op) != (i == bb.ins.len - 1) { return bad(s, fn, ["block b", num(mut b1, b), ": terminator misplaced at %", num(mut b2, id)]) }
+        }
+        t: IrIns = fn.at(bb.ins.get(bb.ins.len - 1))
+        want: int = 0
+        if t.op == IR_JMP { want = 1 } else if t.op == IR_BR { want = 2 }
+        have: int = 0
+        if bb.succ0 >= 0 { have += 1 }
+        if bb.succ1 >= 0 { have += 1 }
+        if want != have { return bad(s, fn, ["block b", num(mut b1, b), " has ", num(mut b2, have), " successors for its terminator"]) }
+        for k: int in 0..have { // each edge appears once in the successor's preds
+            succ: int = bb.succ0
+            if k == 1 { succ = bb.succ1 }
+            count: int = 0
+            for p: int in fn.block(succ).preds.view() {
+                if p == b { count += 1 }
+            }
+            expect: int = 1
+            if have == 2 && bb.succ0 == bb.succ1 { expect = 2 }
+            if count != expect { return bad(s, fn, ["edge b", num(mut b1, b), " -> b", num(mut b2, succ), " missing from predecessors"]) }
+        }
+    }
+    idom: array.Array[int], rpo: array.Array[int] = dominators(fn)
+    defer mut idom.wipe()
+    defer mut rpo.wipe()
+    if rpo.len != fn.blocks.len { return bad(s, fn, [num(mut b1, int(fn.blocks.len - rpo.len)), " blocks unreachable from the entry"]) }
+    for b: int in 0..int(fn.blocks.len) {
+        bb: IrBlock = fn.block(b)
+        for i: usize in 0..bb.ins.len {
+            id: int = bb.ins.get(i)
+            v: IrIns = fn.at(id)
+            if v.op == IR_PHI && usize(v.nargs) != bb.preds.len { return bad(s, fn, ["phi %", num(mut b1, id), " has ", num(mut b2, int(v.nargs)), " operands"]) }
+            for a: u32 in 0..v.nargs {
+                u: int = fn.arg(id, a)
+                if u < 0 || usize(u) >= fn.ins.len || fn.at(u).block < 0 { return bad(s, fn, ["%", num(mut b1, id), " uses removed value %", num(mut b2, u)]) }
+                ux: IrIns = fn.at(u)
+                if v.op == IR_PROJ { // the call or asm, or the proj before it, directly precedes it
+                    prev: int = -1
+                    if i > 0 { prev = bb.ins.get(i - 1) }
+                    if ux.op != IR_CALL && ux.op != IR_CALLI && ux.op != IR_ASM { return bad(s, fn, ["proj %", num(mut b1, id), " of non-call %", num(mut b2, u)]) }
+                    if prev != u && (prev < 0 || fn.at(prev).op != IR_PROJ || fn.arg(prev, 0) != u) { return bad(s, fn, ["proj %", num(mut b1, id), " does not follow call %", num(mut b2, u)]) }
+                } else if ux.ty == IT_VOID {
+                    return bad(s, fn, ["%", num(mut b1, id), " uses void value %", num(mut b2, u)])
+                }
+                want_ptr: bool = (a == 0 && (v.op == IR_LOAD || v.op == IR_STORE || v.op == IR_PADD || v.op == IR_PSUB || v.op == IR_CALLI || v.op == IR_RTCALL)) || (a == v.nargs - 1 && (v.flags & IRF_SRET) != 0)
+                if want_ptr && ux.ty != IT_PTR { return bad(s, fn, ["%", num(mut b1, id), " needs an address, not %", num(mut b2, u)]) }
+                if v.op == IR_CHECK && ux.ty != IT_BOOL { return bad(s, fn, ["check %", num(mut b1, id), " of non-bool %", num(mut b2, u)]) }
+                db: int = ux.block
+                // a phi operand must be available at the end of its predecessor
+                ub: int = b
+                if v.op == IR_PHI { ub = bb.preds.get(usize(a)) }
+                dom: bool = false
+                if db == ub { dom = v.op == IR_PHI || pos.get(usize(u)) < int(i) } else { dom = dominates(idom, db, ub) }
+                if !dom { return bad(s, fn, ["%", num(mut b1, id), " uses %", num(mut b2, u), " where its definition does not dominate"]) }
+            }
+            if !vector_ok(fn, id) { return bad(s, fn, ["%", num(mut b1, id), " misuses a vector type"]) }
+        }
+    }
+    return true
+}
+
+// --- printing ---------------------------------------------------------------
+
+/* owner.name, as the source spells it. */
+print_sym(mut out: Out, s: sema.Sema, sym: u32) {
+    x: sema.Sym = s.sym(sym)
+    if x.decl != 0 {
+        d: parser.Node = s.node(x.decl)
+        if d.d != 0 { mut out.printf("%s.", s.node(d.d).text) }
+    }
+    mut out.printf("%s", x.name)
+}
+
+/* The shortest decimal of `v` that reads back to the same bits, in C's %g
+ * form, as a float stays visibly one.
+ */
+print_float(mut out: Out, t: u8, imm: u64) {
+    buf: [48]u8 = blank([48]u8)
+    n: usize = 0
+    if t == IT_F32 {
+        n, _ = str.format(mut buf[..], bitcast(f32, u32(imm)))
+    } else {
+        n, _ = str.format(mut buf[..], bitcast(f64, imm))
+    }
+    text: string = buf[..n]
+    if mem_has(text, 'n') || mem_has(text, 'i') { // nan, inf
+        mut out.printf("%s", text)
+        return
+    }
+    // the digits and the decimal exponent of the first
+    digits: [24]u8 = blank([24]u8)
+    nd: int = 0
+    point: int = 0
+    seen_point: bool = false
+    exp: int = 0
+    i: usize = 0
+    if text[0] == '-' {
+        mut out.printf("-")
+        i = 1
+    }
+    for i < text.len {
+        c: u8 = text[i]
+        if c == '.' {
+            seen_point = true
+        } else if c == 'e' || c == 'E' {
+            e: int = 0
+            neg: bool = false
+            i += 1
+            if text[i] == '+' || text[i] == '-' {
+                neg = text[i] == '-'
+                i += 1
+            }
+            for i < text.len {
+                e = e * 10 + int(text[i] - '0')
+                i += 1
+            }
+            if neg { exp = -e } else { exp = e }
+            break
+        } else {
+            if nd == 0 && c == '0' {
+                if seen_point { point -= 1 }
+            } else {
+                digits[nd] = c
+                nd += 1
+                if !seen_point { point += 1 }
+            }
+        }
+        i += 1
+    }
+    for nd > 1 && digits[nd - 1] == '0' { nd -= 1 }
+    if nd == 0 { // zero
+        mut out.printf("0.0")
+        return
+    }
+    x: int = point - 1 + exp // the scientific exponent
+    if x < -4 || x >= nd { // %e style: d.ddde+XX
+        mut out.printf("%c", digits[0])
+        if nd > 1 {
+            mut out.printf(".")
+            for k: int in 1..nd { mut out.printf("%c", digits[k]) }
+        }
+        if x < 0 { mut out.printf("e-") } else { mut out.printf("e+") }
+        ax: int = x
+        if ax < 0 { ax = -ax }
+        if ax < 10 { mut out.printf("0") }
+        mut out.printf("%d", ax)
+        return
+    }
+    if x < 0 {
+        mut out.printf("0.")
+        for 0 .. -x - 1 { mut out.printf("0") }
+        for k: int in 0..nd { mut out.printf("%c", digits[k]) }
+        return
+    }
+    for k: int in 0..nd {
+        if k == x + 1 { mut out.printf(".") }
+        mut out.printf("%c", digits[k])
+    }
+    if nd <= x + 1 { mut out.printf(".0") }
+}
+
+mem_has(text: string, c: u8): bool {
+    for b: u8 in text {
+        if b == c { return true }
+    }
+    return false
+}
+
+print_imm(mut out: Out, t: u8, imm: u64) {
+    if type_float(t) {
+        print_float(mut out, t, imm)
+    } else if t == IT_BOOL {
+        if imm != 0 { mut out.printf("true") } else { mut out.printf("false") }
+    } else if type_signed(t) {
+        mut out.printf("%d", int(bitcast(i64, imm)))
+    } else {
+        mut out.printf("%u", uint(imm))
+    }
+}
+
+/* Leaf types, an aggregate part's in braces. */
+print_types(mut out: Out, fn: Func, t: []u8, sig: int, ret: bool) {
+    k: usize = 0
+    p: u32 = 0
+    for k < t.len {
+        agg: bool = false
+        m: usize = 1
+        if sig >= 0 {
+            g: IrSig = fn.sigs.get(usize(sig))
+            pt: IrPart = g.ret
+            have: bool = ret
+            if !ret && p < g.nparts {
+                pt = fn.parts.get(usize(g.parts + p))
+                have = true
+            }
+            if have {
+                agg = pt.agg != 0 && !pt.addr
+                m = usize(pt.n)
+            }
+        }
+        if p > 0 { mut out.printf(", ") }
+        if agg { mut out.printf("{") }
+        for i: usize in 0..m {
+            if i > 0 { mut out.printf(", ") }
+            mut out.printf("%s", TYPE_NAMES[t[k]])
+            k += 1
+        }
+        if agg { mut out.printf("}") }
+        p += 1
+    }
+}
+
+/* Prints `fn` as `ace --ir` does; values are numbered in block order. */
+pub print(mut out: Out, s: sema.Sema, fn: Func) {
+    numb: array.Array[int] = array.Array[int] {}
+    defer mut numb.wipe()
+    for 0 .. fn.ins.len { fail(mut numb.push(0)) }
+    next: int = 0
+    for bb: IrBlock in fn.blocks.view() {
+        for id: int in bb.ins.view() {
+            mut numb.set(usize(id), next)
+            next += 1
+        }
+    }
+    d: parser.Node = s.node(fn.decl)
+    if d.d != 0 { mut out.printf("%s.", s.node(d.d).text) }
+    mut out.printf("%s(", d.text)
+    print_types(mut out, fn, fn.params.view(), fn.sig, false)
+    mut out.printf("): ")
+    if fn.ret_mem != 0 {
+        mut out.printf("mem %u", uint(s.ty(fn.ret_mem).size))
+    } else if fn.rets.len == 0 {
+        mut out.printf("void")
+    } else if fn.sig >= 0 && fn.sigs.get(usize(fn.sig)).ret.agg != 0 {
+        print_types(mut out, fn, fn.rets.view(), fn.sig, true)
+    } else {
+        mut out.printf("%s", TYPE_NAMES[fn.rets.get(0)])
+    }
+    mut out.printf(" {\n")
+    for b: int in 0..int(fn.blocks.len) {
+        bb: IrBlock = fn.block(b)
+        mut out.printf("b%d:", b)
+        if bb.preds.len > 0 {
+            mut out.printf(" ; preds")
+            for p: usize in 0..bb.preds.len {
+                if p > 0 { mut out.printf(",") }
+                mut out.printf(" b%d", bb.preds.get(p))
+            }
+        }
+        mut out.printf("\n")
+        for id: int in bb.ins.view() {
+            v: IrIns = fn.at(id)
+            mut out.printf("    ")
+            agg: bool = v.sig >= 0 && fn.sigs.get(usize(v.sig)).ret.agg != 0
+            if v.ty != IT_VOID || agg { mut out.printf("%%%d = ", numb.get(usize(id))) }
+            mut out.printf("%s", OP_NAMES[v.op])
+            if (v.flags & IRF_CHECKED) != 0 { mut out.printf(".chk") }
+            if (v.flags & IRF_VOLATILE) != 0 { mut out.printf(".vol") }
+            if (v.flags & IRF_SRET) != 0 { mut out.printf(".mem") }
+            if (v.flags & IRF_COLD) != 0 { mut out.printf(".cold") }
+            if v.ty != IT_VOID { mut out.printf(" %s", TYPE_NAMES[v.ty]) }
+            if agg { mut out.printf(" {%d}", fn.sigs.get(usize(v.sig)).ret.n) }
+            switch v.op {
+                IR_CONST {
+                    mut out.printf(" ")
+                    print_imm(mut out, v.ty, v.imm)
+                }
+                IR_PARAM { mut out.printf(" %u", uint(v.imm)) }
+                IR_PROJ { mut out.printf(" %%%d, %u", numb.get(usize(fn.arg(id, 0))), uint(v.imm)) }
+                IR_PHI {
+                    for a: u32 in 0..v.nargs {
+                        if a > 0 { mut out.printf(",") }
+                        mut out.printf(" [%%%d, b%d]", numb.get(usize(fn.arg(id, a))), bb.preds.get(usize(a)))
+                    }
+                }
+                IR_SLOT { mut out.printf(" %u, %d", uint(v.imm), int(v.aux)) }
+                IR_GLOBAL {
+                    mut out.printf(" ")
+                    if v.sym != 0 { print_sym(mut out, s, v.sym) } else { mut out.printf("@%s", v.name) }
+                }
+                IR_STR {
+                    mut out.printf(" \"")
+                    for k: u64 in 0..v.imm {
+                        c: u8 = v.name[k]
+                        if c == '"' || c == '\\' {
+                            mut out.printf("\\%c", c)
+                        } else if c >= 32 && c < 127 {
+                            mut out.printf("%c", c)
+                        } else {
+                            mut out.printf("\\x%c%c", HEX[c >> 4], HEX[c & 15])
+                        }
+                    }
+                    mut out.printf("\"")
+                }
+                IR_LOAD, IR_STORE {
+                    mut out.printf(" [%%%d", numb.get(usize(fn.arg(id, 0))))
+                    if v.aux != 0 { mut out.printf(" + %d", int(v.aux)) }
+                    mut out.printf("]")
+                    if v.op == IR_STORE { mut out.printf(", %%%d", numb.get(usize(fn.arg(id, 1)))) }
+                }
+                IR_PADD, IR_PSUB { mut out.printf(" %%%d, %%%d * %u", numb.get(usize(fn.arg(id, 0))), numb.get(usize(fn.arg(id, 1))), uint(v.imm)) }
+                IR_CALL, IR_CALLI, IR_RTCALL {
+                    first: u32 = 0
+                    mut out.printf(" ")
+                    if v.op == IR_CALLI {
+                        first = 1
+                        mut out.printf("%%%d", numb.get(usize(fn.arg(id, 0))))
+                    } else if v.sym != 0 {
+                        print_sym(mut out, s, v.sym)
+                    } else {
+                        mut out.printf("@%s", v.name)
+                    }
+                    mut out.printf("(")
+                    for a: u32 in first..v.nargs {
+                        if a > first { mut out.printf(", ") }
+                        if (v.flags & IRF_VARARGS) != 0 && i32(a) == v.aux { mut out.printf("... ") }
+                        mut out.printf("%%%d", numb.get(usize(fn.arg(id, a))))
+                    }
+                    mut out.printf(")")
+                }
+                IR_CHECK {
+                    mut out.printf(" %%%d", numb.get(usize(fn.arg(id, 0))))
+                    if v.has_name {
+                        line: u32 = 0
+                        col: u32 = 0
+                        if v.at != 0 {
+                            line = s.node(v.at).line
+                            col = s.node(v.at).col
+                        }
+                        mut out.printf(", %d:%d %s", int(line), int(col), v.name)
+                    } else {
+                        mut out.printf(", contract")
+                    }
+                }
+                IR_JMP { mut out.printf(" b%d", bb.succ0) }
+                IR_BR { mut out.printf(" %%%d, b%d, b%d", numb.get(usize(fn.arg(id, 0))), bb.succ0, bb.succ1) }
+                default {
+                    for a: u32 in 0..v.nargs {
+                        if a > 0 { mut out.printf(", ") } else { mut out.printf(" ") }
+                        mut out.printf("%%%d", numb.get(usize(fn.arg(id, a))))
+                    }
+                }
+            }
+            mut out.printf("\n")
+        }
+    }
+    mut out.printf("}\n")
+}
+
+HEX: string = "0123456789abcdef"

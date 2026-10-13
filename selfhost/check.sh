@@ -5,7 +5,8 @@
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
 # entered scopes and completed types against `ace --symbols`, and its function
 # body checks against `ace --check` and its full check against `ace` over
-# every repository .ace file, then its package graph against `ace --pkg-graph`
+# every repository .ace file, and its functions' IR against `ace --debug --ir`,
+# then its package graph against `ace --pkg-graph`
 # and its cross-package imports against `ace --pkg-check` over every repository ace.pkg, then times
 # the lexers on the largest files. Run from anywhere.
 set -u
@@ -37,6 +38,10 @@ cbad=0
 cport=0
 ebad=0
 eport=0
+itotal=0
+isame=0
+iport=0
+ibad=0
 for f in $files; do
     total=$((total + 1))
     ./ace --tokens "$f" >"$tmp/want" 2>/dev/null
@@ -144,6 +149,39 @@ for f in $files; do
         echo "SEMA DIFF $f"
         diff "$tmp/werr" "$tmp/gerr" | head -4
     fi
+    # IR: each function C lowers in a checked file must print identically,
+    # unless selfhost stops on a construct it does not port yet (counted apart).
+    if ./ace --debug --ir "$f" >"$tmp/want" 2>/dev/null; then
+        "$self" --ir "$f" >"$tmp/got" 2>"$tmp/gerr"
+        grc=$?
+        if ! grep -q 'selfhost does not yet support' "$tmp/gerr"; then
+            # one function per line, then the pairs side by side (IR has no tabs)
+            awk 'BEGIN { RS = "" } { gsub(/\n/, "\001"); print }' "$tmp/want" >"$tmp/wf"
+            awk 'BEGIN { RS = "" } { gsub(/\n/, "\001"); print }' "$tmp/got" >"$tmp/gf"
+            if [ "$grc" -ne 0 ] || [ "$(wc -l <"$tmp/wf")" -ne "$(wc -l <"$tmp/gf")" ]; then
+                n=$(wc -l <"$tmp/wf")
+                itotal=$((itotal + n))
+                ibad=$((ibad + n))
+                echo "IR FAIL $f"
+                head -2 "$tmp/gerr"
+            else
+                counts=$(paste "$tmp/wf" "$tmp/gf" | awk -F '\t' '
+                    $2 ~ /selfhost does not yet support/ { p++; next }
+                    $1 == $2 { s++; next }
+                    { b++; if (!shown++) { gsub(/\001/, "\n", $1); gsub(/\001/, "\n", $2); print $1 > "/dev/stderr"; print "---" > "/dev/stderr"; print $2 > "/dev/stderr" } }
+                    END { printf "%d %d %d\n", s, p, b }' 2>"$tmp/idiff")
+                set -- $counts
+                itotal=$((itotal + $1 + $2 + $3))
+                isame=$((isame + $1))
+                iport=$((iport + $2))
+                ibad=$((ibad + $3))
+                if [ "$3" -ne 0 ]; then
+                    echo "IR DIFF $f"
+                    head -20 "$tmp/idiff"
+                fi
+            fi
+        fi
+    fi
 done
 # Packages: every ace.pkg as a root, for its manifest's target. The graph must
 # match exactly; a check that fails must fail as C's does, and one that passes
@@ -196,6 +234,7 @@ echo "resolved: $((total - rbad))/$total files agree"
 echo "symbols: $((total - sbad))/$total files agree"
 echo "check: $((total - cbad))/$total files agree ($cport not yet ported)"
 echo "sema: $((total - ebad))/$total files agree ($eport not yet ported)"
+echo "ir: $isame/$itotal functions identical ($iport not yet ported)"
 echo "graph: $((ptotal - gbad))/$ptotal packages identical"
 echo "packages: $((ptotal - pbad))/$ptotal packages agree ($psema fail only in sema)"
 

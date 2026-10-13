@@ -177,7 +177,7 @@ pub Sema: struct {
     quiet_errors: int = 0,
     l: module.Loader,                   // the loader of the merged tree; not owned
     p: parser.Parser,                   // the merged tree, the loader's; not owned
-    file: u32,
+    pub file: u32,
     pool: path.Pool,
     syms: array.Array[Sym],
     types: array.Array[SType],
@@ -209,6 +209,8 @@ pub Sema: struct {
     nival: array.Array[u64],            // and its constant, as C keeps them on the node,
     nrep: array.Array[bool],            // and whether its error is already reported (F_REPORTED)
     ncon: array.Array[bool],            // a contract value over const storage; a function returning one (F_CONST)
+    identities: map.Map[u32, u32],      // a type's runtime identity, numbered from 1 in order of first use (C's type_id)
+    next_identity: u32 = 1,
     cur_fn: u32 = 0,                    // the checked function's declaration
     t_err: u32 = 0,
     t_void: u32 = 0,
@@ -227,7 +229,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -268,6 +270,7 @@ pub Sema.wipe(mut self) {
     mut self.nival.wipe()
     mut self.nrep.wipe()
     mut self.ncon.wipe()
+    mut self.identities.wipe()
     mut self.ik.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()
@@ -283,20 +286,20 @@ fail(err: Error) {
 
 // --- accessors ----------------------------------------------------------------
 
-Sema.node(self, id: u32): Node {
+pub Sema.node(self, id: u32): Node {
     return self.p.node(id)
 }
 
-Sema.kid(self, id: u32, k: u32): u32 {
+pub Sema.kid(self, id: u32, k: u32): u32 {
     return self.p.kid(id, k)
 }
 
 /* Whether node `id` is in an imported file rather than the root. */
-Sema.in_imported(self, id: u32): bool {
+pub Sema.in_imported(self, id: u32): bool {
     return id != 0 && self.l.module_of(id) != 0
 }
 
-Sema.sym(self, id: u32): Sym {
+pub Sema.sym(self, id: u32): Sym {
     return self.syms.get(usize(id))
 }
 
@@ -773,20 +776,20 @@ Sema.enter_specialization(mut self, f: u32) {
 // --- types --------------------------------------------------------------------
 
 /* src/sema.h's P_ primitives, in its order. */
-P_BOOL: const u8 = 0
-P_I8: const u8 = 1
-P_I16: const u8 = 2
-P_I32: const u8 = 3
-P_I64: const u8 = 4
-P_U8: const u8 = 5
-P_U16: const u8 = 6
-P_U32: const u8 = 7
-P_U64: const u8 = 8
-P_F32: const u8 = 9
-P_F64: const u8 = 10
-P_STRING: const u8 = 11
-P_USIZE: const u8 = 12
-P_TYPEID: const u8 = 13
+pub P_BOOL: const u8 = 0
+pub P_I8: const u8 = 1
+pub P_I16: const u8 = 2
+pub P_I32: const u8 = 3
+pub P_I64: const u8 = 4
+pub P_U8: const u8 = 5
+pub P_U16: const u8 = 6
+pub P_U32: const u8 = 7
+pub P_U64: const u8 = 8
+pub P_F32: const u8 = 9
+pub P_F64: const u8 = 10
+pub P_STRING: const u8 = 11
+pub P_USIZE: const u8 = 12
+pub P_TYPEID: const u8 = 13
 
 PRIM_SPELLINGS: [14]string = [
     "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid",
@@ -798,7 +801,7 @@ PRIM_OF_NAME: [18]u8 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 4, 8, 
 MAX_RESOLVING: const u32 = 256
 MAX_PARAMS: const u32 = 64
 
-Sema.ty(self, id: u32): SType {
+pub Sema.ty(self, id: u32): SType {
     return self.types.get(usize(id))
 }
 
@@ -806,8 +809,13 @@ Sema.set_ty(mut self, id: u32, t: SType) {
     mut self.types.set(usize(id), t)
 }
 
-Sema.field(self, t: SType, i: u32): SField {
+pub Sema.field(self, t: SType, i: u32): SField {
     return self.fields.get(usize(t.fields + i))
+}
+
+/* Function type `t`'s parameter `i`. */
+pub Sema.param(self, t: SType, i: u32): u32 {
+    return self.params.get(usize(t.params + i))
 }
 
 Sema.set_field(mut self, t: SType, i: u32, f: SField) {
@@ -998,6 +1006,16 @@ Sema.layout(mut self, id: u32): bool {
     }
     mut self.set_ty(id, t)
     return true
+}
+
+/* Lays out every type not yet laid out, as lowering's size reads would on
+ * demand (C's sema_size).
+ */
+pub Sema.layout_all(mut self) {
+    for i: usize in 1..self.types.len {
+        k: TypeKind = self.types.get(i).kind
+        if k != TypeKind.template && k != TypeKind.typeparam && k != TypeKind.err && k != TypeKind.ut && k != TypeKind.void { _ = mut self.layout(u32(i)) }
+    }
 }
 
 Sema.layout_struct(mut self, id: u32): bool {
@@ -1276,17 +1294,17 @@ Sema.grow(mut self, e: u32) {
     }
 }
 
-Sema.node_ty(self, e: u32): u32 {
+pub Sema.node_ty(self, e: u32): u32 {
     if usize(e) >= self.nty.len { return 0 }
     return self.nty.get(usize(e))
 }
 
-Sema.node_sym(self, e: u32): u32 {
+pub Sema.node_sym(self, e: u32): u32 {
     if usize(e) >= self.nsym.len { return 0 }
     return self.nsym.get(usize(e))
 }
 
-Sema.node_ival(self, e: u32): u64 {
+pub Sema.node_ival(self, e: u32): u64 {
     if usize(e) >= self.nival.len { return 0 }
     return self.nival.get(usize(e))
 }
@@ -1435,7 +1453,7 @@ Sema.enum_member_value(self, e: u32, v: i64): bool {
 }
 
 /* The initializer a const global's value is read from, or 0. */
-Sema.sym_init(self, s: u32): u32 {
+pub Sema.sym_init(self, s: u32): u32 {
     x: Sym = self.sym(s)
     if x.kind != SymKind.var || x.top == 0 || self.node(x.top).kind != Kind.var { return 0 }
     return self.node(x.top).b
@@ -2293,6 +2311,7 @@ Sema.check_selector(mut self, e: u32): u32 {
                 if mem.equal(self.field(t, i).name, n.text) {
                     mut self.set_node_sym(n.a, ts)
                     mut self.set_node_ty(n.a, tt)
+                    mut self.set_node_ival(e, (u64(mut self.type_identity(tt)) << 32) | u64(u32(self.field(t, i).value)))
                     return self.t_error
                 }
             }
@@ -3613,7 +3632,7 @@ Sema.check_call(mut self, call: u32): u32 {
             return self.t_err
         }
         if t == 0 || self.ty(t).kind == TypeKind.err { return self.t_err }
-        mut self.set_node_ival(call, u64(t)) // the type's identity, a StaticMap key (C's type_identity)
+        mut self.set_node_ival(call, u64(mut self.type_identity(t))) // a StaticMap key
         return self.prim(P_TYPEID)
     }
     p: u32 = self.prim_by_name(name)
@@ -3925,6 +3944,22 @@ Sema.contract_method_type(mut self, want: u32, m: u32): u32 {
     return ft
 }
 
+/* `t`'s runtime identity, numbered on first use; a string shares its byte
+ * slice's (C's type_identity).
+ */
+Sema.type_identity(mut self, t: u32): u32 {
+    id: u32 = t
+    if self.ty(t).kind == TypeKind.prim && self.ty(t).prim == P_STRING {
+        if self.ty(t).is_mut { id = self.t_mut_byte_slice } else { id = self.t_byte_slice }
+    }
+    v: u32, found: bool = self.identities.get(id)
+    if found { return v }
+    v = self.next_identity
+    self.next_identity += 1
+    fail(mut self.identities.set(id, v))
+    return v
+}
+
 /* `T(x)`: a cast to primitive `p` or declared type `ts`. */
 Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
     n: Node = self.node(call)
@@ -3934,6 +3969,9 @@ Sema.check_cast(mut self, call: u32, p: u32, ts: u32): u32 {
             return self.t_err
         }
         if n.nkids == 1 && !mut self.coerce(self.kid(call, 0), self.prim(P_I32)) { return self.t_err }
+        mut self.set_node_sym(n.a, ts)
+        mut self.set_node_ty(n.a, self.sym(ts).ty)
+        mut self.set_node_ival(call, u64(mut self.type_identity(self.sym(ts).ty)))
         return self.t_error
     }
     if n.nkids != 1 {
