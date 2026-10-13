@@ -169,3 +169,7 @@
   coalescing, linear scan) and `selfhost/arm64.ace` the arm64 inputs it needs
   (AAPCS64 locations, fusion, hints, register classes); checked against the
   C allocator per value on every repository file, not yet by `check.sh`.
+- selfhost emits arm64 Mach-O objects with `-c` (`arm64.ace`, `emission.ace`,
+  `macho.ace`: function bodies, runtime routines, DWARF, constant data,
+  globals, static maps, vtables), byte-identical to `./ace -c` in debug and
+  release on every repository file; `selfhost/check.sh` diffs them.

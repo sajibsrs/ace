@@ -171,6 +171,12 @@ Scope.insert(mut self, types: bool, name: string, id: u32) {
     }
 }
 
+/* One contract method a conformance resolved (C's synthesized ref node). */
+ConfMethod: struct {
+    sym: u32,
+    via: int,                           // the embedded field it is promoted through, or -1
+}
+
 pub Sema: struct {
     pub errors: int = 0,
     quiet: bool = false,                // count errors in quiet_errors instead of reporting them
@@ -201,6 +207,8 @@ pub Sema: struct {
     insts: array.Array[TInst],
     inst_heads: map.Map[u32, u32],      // a generic declaration's newest instance, plus one
     signings: map.Map[u32, u32],        // a struct declaration's registered signing (C's decl->d)
+    conf_at: map.Map[u32, u32],         // a conformance's first resolved method in conf_methods
+    conf_methods: array.Array[ConfMethod],
     reexported: map.Map[u32, bool],     // struct declarations a facade's pub alias re-exports (F_REEXPORTED)
     stamps: array.Array[Stamp],         // the generic stamps in progress, outermost first
     cabi: array.Array[u32],             // the structs is_c_abi_type is inside
@@ -234,7 +242,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, origin = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, origin = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -265,6 +273,8 @@ pub Sema.wipe(mut self) {
     mut self.insts.wipe()
     mut self.inst_heads.wipe()
     mut self.signings.wipe()
+    mut self.conf_at.wipe()
+    mut self.conf_methods.wipe()
     mut self.reexported.wipe()
     mut self.frames.wipe()
     mut self.locals.wipe()
@@ -337,7 +347,7 @@ identity_char(c: u8): bool {
 /* Reports `parts` at node `at`, each module-private identity in it as
  * written (Loader.shown), as C's ck_err does through diag_printf.
  */
-Sema.err(mut self, at: u32, parts: []string) {
+pub Sema.err(mut self, at: u32, parts: []string) {
     if self.quiet {
         self.quiet_errors += 1
         return
@@ -826,6 +836,23 @@ pub Sema.field(self, t: SType, i: u32): SField {
 /* Function type `t`'s parameter `i`. */
 pub Sema.param(self, t: SType, i: u32): u32 {
     return self.params.get(usize(t.params + i))
+}
+
+/* Entry `at` of the type-argument and parameter runs. */
+pub Sema.param_at(self, at: u32): u32 {
+    return self.params.get(usize(at))
+}
+
+/* The path diagnostics print for the file node `at` came from. */
+pub Sema.path_of(self, at: u32): string {
+    o: u32, _ = self.origin.get(at) // a copy (an inline expansion) is its original's
+    if o == 0 { o = at }
+    return self.l.mods.get(self.l.module_of(o)).path
+}
+
+/* Type `i` of run `run` of params (a specialization's or instance's type arguments). */
+pub Sema.run_arg(self, run: u32, i: u32): u32 {
+    return self.params.get(usize(run + i))
 }
 
 /* Type argument `i` of generic instance `t`. */
@@ -1334,6 +1361,22 @@ pub Sema.inst_args(self, d: u32, ft: u32): (u32, bool) {
     return 0, false
 }
 
+/* Generic declaration `d`'s newest instance, plus one, or 0 when it has
+ * none; `inst` reads one (C's sema_insts).
+ */
+pub Sema.inst_head(self, d: u32): u32 {
+    head: u32, _ = self.inst_heads.get(d)
+    return head
+}
+
+/* Instance `it`'s type arguments (a run of `params`), its signature, and the
+ * next older instance, plus one, or 0.
+ */
+pub Sema.inst(self, it: u32): (u32, u32, u32) {
+    x: TInst = self.insts.get(usize(it - 1))
+    return x.args, x.result, x.next
+}
+
 /* Re-annotates generic function `f`'s body under the run `args` of `nargs`
  * type arguments (C's sema_stamp_body). The stamp was checked already, so it
  * reports nothing.
@@ -1461,6 +1504,62 @@ pub Sema.copy_body(mut self, f: u32, mut bind: array.Array[u32]): u32 {
     mods: mut []module.Module = mut self.l.mods.view()
     mods[0].parser = self.p // the loader owns the tree, which adding may have moved
     return body
+}
+
+/* A node like `at`, of kind `k`, naming symbol `sym` of type `ty`. */
+Sema.synth(mut self, at: u32, k: Kind, sym: u32, ty: u32): u32 {
+    x: Node = self.node(at)
+    n: Node = blank(Node)
+    n.kind = k
+    n.flags = x.flags & parser.F_TEXT
+    n.line = x.line
+    n.col = x.col
+    n.text = x.text
+    c: u32 = mut self.p.add(n)
+    o: u32, _ = self.origin.get(at)
+    if o == 0 { o = at }
+    fail(mut self.origin.set(c, o)) // its file, for diagnostics and line tables
+    mut self.grow(c)
+    mut self.nsym.set(usize(c), sym)
+    mut self.nty.set(usize(c), ty)
+    return c
+}
+
+/* Compiler-backed function `f`'s body, `return f(p0, p1, ...)` returning
+ * `rt`, a call the IR covers as the builtin's operation (C's intrinsic_body);
+ * its parameters, which checking binds no symbols for, get them first, as its
+ * signature types them (C's intrinsic_params).
+ */
+pub Sema.intrinsic_body(mut self, f: u32, rt: u32): u32 {
+    fs: u32 = self.node_sym(f)
+    ft: SType = self.ty(self.sym(fs).ty)
+    nk: u32 = self.node(f).nkids
+    for i: u32 in 0..nk {
+        p: u32 = self.kid(f, i)
+        if i >= ft.nparams || self.node_sym(p) != 0 { continue }
+        mut self.set_node_sym(p, u32(self.syms.len))
+        fail(mut self.syms.push(Sym { name = self.node(p).text, kind = SymKind.var, is_param = true, ty = self.param(ft, i), decl = p }))
+    }
+    call: u32 = mut self.synth(f, Kind.call, fs, rt)
+    x: Node = self.node(call)
+    x.a = mut self.synth(f, Kind.ident, fs, self.sym(fs).ty)
+    args: array.Array[u32] = array.Array[u32] {}
+    defer mut args.wipe()
+    for i: u32 in 0..nk {
+        p: u32 = self.kid(f, i)
+        ps: u32 = self.node_sym(p)
+        fail(mut args.push(mut self.synth(p, Kind.ident, ps, self.sym(ps).ty)))
+    }
+    x.nkids = nk
+    mut self.p.update(call, x)
+    mut self.p.relink(call, args.view())
+    ret: u32 = mut self.synth(f, Kind.return, 0, 0)
+    r: Node = self.node(ret)
+    r.a = call
+    mut self.p.update(ret, r)
+    mods: mut []module.Module = mut self.l.mods.view()
+    mods[0].parser = self.p // the loader owns the tree, which adding may have moved
+    return ret
 }
 
 pub Sema.node_sym(self, e: u32): u32 {
@@ -4164,7 +4263,7 @@ Sema.unbind_type_args(mut self, saved: u32) {
 }
 
 /* The item of struct type `conc`'s signing that names contract type `want`, or 0. */
-Sema.find_conformance(mut self, conc: u32, want: u32): u32 {
+pub Sema.find_conformance(mut self, conc: u32, want: u32): u32 {
     c: SType = self.ty(conc)
     if c.kind != TypeKind.struct || c.decl == 0 { return 0 }
     signing: u32, signed: bool = self.signings.get(c.decl)
@@ -4763,7 +4862,7 @@ Sema.build_ident(mut self, id: u32, named: bool): u32 {
     return self.sym(s).ty
 }
 
-Sema.build_type(mut self, id: u32): u32 {
+pub Sema.build_type(mut self, id: u32): u32 {
     t: Node = self.node(id)
     switch t.kind {
         Kind.named { return mut self.build_named(id) }
@@ -7795,6 +7894,11 @@ Sema.check_store_escape(mut self, target: u32, value: u32) {
 }
 
 /* The global `name` entered for top-level declaration `top`, or 0. */
+/* Top-level variable declaration `d`'s symbol, or 0 (C's node_sym of its binder). */
+pub Sema.var_sym(self, d: u32): u32 {
+    return self.global_sym(d, self.node(self.kid(d, 0)).text)
+}
+
 Sema.global_sym(self, top: u32, name: string): u32 {
     g: u32 = self.files.find(false, name)
     if g == 0 || self.sym(g).top != top { g = self.imports.find(false, name) }
@@ -8706,6 +8810,16 @@ pub Sema.check_end(mut self) {
     if self.errors == 0 { mut self.check_definite_initialization() }
 }
 
+/* Conformance `conf`'s method for contract method i: its symbol (0 when
+ * unresolved) and the embedded field it is promoted through, or -1.
+ */
+pub Sema.conf_method(self, conf: u32, i: u32): (u32, int) {
+    at: u32, ok: bool = self.conf_at.get(conf)
+    if !ok || usize(at + i) >= self.conf_methods.len { return 0, -1 }
+    m: ConfMethod = self.conf_methods.get(usize(at + i))
+    return m.sym, m.via
+}
+
 /* Whether generic method `fn`, or plain method `fn` when `ft` is its type,
  * matches contract method `m` of signature `mft` exactly on receiver `recv`.
  */
@@ -8751,11 +8865,13 @@ Sema.check_signing(mut self, signing: u32) {
             }
         }
         cd: u32 = self.ty(want).decl
+        fail(mut self.conf_at.set(conf, u32(self.conf_methods.len)))
         for mi: u32 in 0..self.node(cd).nkids {
             m: u32 = self.kid(cd, mi)
             name: string = self.node(m).text
             mft: u32 = mut self.contract_method_type(want, m)
             found: u32 = 0
+            via: int = -1
             promoted_ambiguous: bool = false
             head: u32 = mut self.lookup_val(mut self.pool.join([self.node(n.a).text, "$", name]))
             for fn: u32 = head; fn != 0; fn = self.sym(fn).overload {
@@ -8793,10 +8909,12 @@ Sema.check_signing(mut self, signing: u32) {
                             break
                         }
                         found = fn
+                        via = int(fi)
                     }
                     if promoted_ambiguous { break }
                 }
             }
+            fail(mut self.conf_methods.push(ConfMethod { sym = found, via = via }))
             if found == 0 && !promoted_ambiguous {
                 mut self.err(signing, ["type ", mut self.type_name(conc), " has no exact method '", name, "' required by ", mut self.type_name(want)])
             } else if found != 0 && self.sym(found).is_generic && c.decl != 0 && self.node(c.decl).c != 0 {

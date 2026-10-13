@@ -24,6 +24,7 @@ import lexer: "./lexer.ace"
 import ir: "./ir.ace"
 import optimizer: "./optimizer.ace"
 import parser: "./parser.ace"
+import path: "./path.ace"
 import sema: "./sema.ace"
 
 Kind: type = parser.Kind
@@ -799,22 +800,29 @@ Lw.access_check(self, addr: int): u8 {
     return self.null_checked()
 }
 
-/* The address of global variable or function `s`. Its link name is not
- * mangled yet: --ir prints the symbol.
+/* The address of global variable or function `s`: a function or C global
+ * binds its link name, an Ace global its __ace$g$ name.
  */
 Lw.global_addr(mut self, s: u32): int {
+    sy: sema.Sym = self.s.sym(s)
+    name: string = ""
+    if sy.kind == sema.SymKind.func || self.c_named(s) {
+        name = mut self.link_name(s, sy.ty)
+    } else {
+        name = mut self.fn.names.join(["__ace$g$", sy.name])
+    }
     id: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
-    mut self.fn.at(id).sym = s
+    x: mut *ir.IrIns = mut self.fn.at(id)
+    x.sym = s
+    x.name = name
     return id
 }
 
 /* The address of generic function `s` as value `x` names it: its instance. */
 Lw.fn_value_addr(mut self, s: u32, x: u32): int {
+    name: string = mut self.fn_value_mangle(s, x)
     id: int = mut self.global_addr(s)
-    if self.s.sym(s).spec_args == 0 {
-        args: u32, _ = self.s.inst_args(self.s.sym(s).decl, self.nty(x))
-        mut self.fn.at(id).inst = args
-    }
+    mut self.fn.at(id).name = name
     return id
 }
 
@@ -1655,6 +1663,17 @@ Lw.literal_array(mut self, x: u32, t: u32, mut out: Agg) {
  */
 lit_next: u32 = 0
 
+/* A fresh name for a constant array literal's data, __ace$lit$N, in `names`
+ * (shared by lowering and the data a global's initializer nests).
+ */
+pub literal_name(mut names: path.Pool): string {
+    buf: [32]u8
+    b: Out = Out.init(mut buf[0..32])
+    _ = mut b.printf("__ace$lit$%u", uint(lit_next))
+    lit_next += 1
+    return mut names.copy(b.text())
+}
+
 /* A variable of lowering's own, first holding `v`. */
 Lw.temp_var(mut self, t: u8, v: int): int {
     var: int = mut self.var_new(0, t, -1)
@@ -1814,11 +1833,9 @@ Lw.literal_view(mut self, x: u32, mut out: Agg) {
     }
     if (self.s.node_proof(x) & sema.PROOF_STATIC) != 0 {
         id: int = mut self.emit(ir.IR_GLOBAL, ir.IT_PTR)
-        buf: [32]u8
-        b: Out = Out.init(mut buf[0..32])
-        _ = mut b.printf("__ace$lit$%u", uint(lit_next))
-        mut self.fn.at(id).name = mut self.fn.names.copy(b.text())
-        lit_next += 1
+        nm: string = literal_name(mut self.fn.names)
+        mut self.fn.at(id).name = nm
+        fail(mut self.fn.lits.push(ir.IrLiteral { name = nm, lit = x }))
         out.v[0] = id
         return
     }
@@ -1939,31 +1956,31 @@ Lw.enum_name(mut self, x: u32, mut out: Agg): bool {
 }
 
 /* Type `t`'s link-symbol spelling, as emit.c's mangle_type writes it. */
-Lw.mangle_type(self, mut b: Out, t: u32) {
+pub mangle_type(s: sema.Sema, mut b: Out, t: u32) {
     if t == 0 {
         _ = mut b.printf("?")
         return
     }
-    x: SType = self.ty(t)
+    x: SType = s.ty(t)
     switch x.kind {
         TypeKind.prim {
             _ = mut b.printf("%s", PRIM_NAMES[x.prim])
         }
         TypeKind.ptr {
             _ = mut b.printf("p")
-            self.mangle_type(mut b, x.base)
+            mangle_type(s, mut b, x.base)
         }
         TypeKind.slice {
             _ = mut b.printf("s")
-            self.mangle_type(mut b, x.base)
+            mangle_type(s, mut b, x.base)
         }
         TypeKind.array {
             _ = mut b.printf("a%u_", x.count)
             if x.key != 0 { // [E]T
                 _ = mut b.printf("k")
-                self.mangle_type(mut b, x.key)
+                mangle_type(s, mut b, x.key)
             }
-            self.mangle_type(mut b, x.base)
+            mangle_type(s, mut b, x.base)
         }
         TypeKind.error { _ = mut b.printf("Error") }
         TypeKind.struct, TypeKind.enum, TypeKind.bits, TypeKind.contract, TypeKind.union {
@@ -1974,25 +1991,111 @@ Lw.mangle_type(self, mut b: Out, t: u32) {
                 _ = mut b.printf("g")
                 for i: u32 in 0..x.nargs {
                     _ = mut b.printf("$")
-                    self.mangle_type(mut b, self.s.type_arg(x, i))
+                    mangle_type(s, mut b, s.type_arg(x, i))
                 }
             }
         }
         TypeKind.distinct { _ = mut b.printf("D%u_%s", uint(x.name.len), x.name) }
         TypeKind.tuple {
             _ = mut b.printf("t")
-            for i: u32 in 0..x.nfields { self.mangle_type(mut b, self.s.field(x, i).ty) }
+            for i: u32 in 0..x.nfields { mangle_type(s, mut b, s.field(x, i).ty) }
             _ = mut b.printf("_")
         }
         TypeKind.func {
             _ = mut b.printf("f")
-            for i: u32 in 0..x.nparams { self.mangle_type(mut b, self.s.param(x, i)) }
+            for i: u32 in 0..x.nparams { mangle_type(s, mut b, s.param(x, i)) }
             _ = mut b.printf("r")
-            self.mangle_type(mut b, x.ret)
+            mangle_type(s, mut b, x.ret)
             _ = mut b.printf("_")
         }
         default { _ = mut b.printf("?") }
     }
+}
+
+/* Whether `s` binds a C name: an extern or an export. */
+Lw.c_named(self, s: u32): bool {
+    sy: sema.Sym = self.s.sym(s)
+    return sy.is_extern || (sy.decl != 0 && (self.node(sy.decl).flags & parser.F_EXPO) != 0)
+}
+
+/* The link symbol of function or C global `s` under type `ft` (emit.c's
+ * link_name): a C name with its leading underscore, else the mangled Ace name.
+ */
+Lw.link_name(mut self, s: u32, ft: u32): string {
+    sy: sema.Sym = self.s.sym(s)
+    if !self.c_named(s) { return mut self.fn_mangle(s, ft, 0, 0, false) }
+    if sy.decl != 0 && self.node(sy.decl).cname.len > 0 { return mut self.fn.names.join(["_", self.node(sy.decl).cname]) }
+    return mut self.fn.names.join(["_", sy.name])
+}
+
+/* The internal symbol of Ace function `sym` under type `ft` with the `nt`
+ * type arguments of run `targs` (emit.c's fn_mangle, its 511-byte limit
+ * kept), in `names`; `spec` tags a specialization's.
+ */
+pub fn_mangle(s: sema.Sema, mut names: path.Pool, sym: u32, ft: u32, targs: u32, nt: u32, spec: bool): string {
+    sy: sema.Sym = s.sym(sym)
+    buf: [511]u8
+    b: Out = Out.init(mut buf[0..511])
+    _ = mut b.printf("__ace$fn$%s$p", sy.name)
+    if ft != 0 && s.ty(ft).kind == TypeKind.func {
+        f: SType = s.ty(ft)
+        for i: u32 in 0..f.nparams {
+            if sy.decl != 0 && i < s.node(sy.decl).nkids && (s.node(s.kid(sy.decl, i)).flags & parser.F_MUT) != 0 { _ = mut b.printf("m") } else { _ = mut b.printf("r") }
+            mangle_type(s, mut b, s.param(f, i))
+            _ = mut b.printf("$")
+        }
+    }
+    if nt > 0 {
+        if spec { _ = mut b.printf("s") } else { _ = mut b.printf("g") }
+    }
+    for i: u32 in 0..nt {
+        _ = mut b.printf("$")
+        mangle_type(s, mut b, s.run_arg(targs, i))
+    }
+    return mut names.copy(b.text())
+}
+
+Lw.fn_mangle(mut self, s: u32, ft: u32, targs: u32, nt: u32, spec: bool): string {
+    return fn_mangle(*self.s, mut self.fn.names, s, ft, targs, nt, spec)
+}
+
+/* Generic function `s` as value `x` names it (larger[int]): the written
+ * specialization's symbol, or the stamp's whose signature is x's type.
+ */
+Lw.fn_value_mangle(mut self, s: u32, x: u32): string {
+    sy: sema.Sym = self.s.sym(s)
+    if sy.spec_args != 0 { return mut self.fn_mangle(s, sy.ty, sy.spec_args, sy.spec_nargs, true) }
+    nt: u32 = 0
+    if self.node(sy.decl).c != 0 { nt = self.node(self.node(sy.decl).c).nkids }
+    args: u32, _ = self.s.inst_args(sy.decl, self.nty(x))
+    return mut self.fn_mangle(s, self.nty(x), args, nt, false)
+}
+
+/* The internal symbol direct call `call` to Ace function `s` targets: a
+ * method of a generic type under its owner's or receiver's type arguments.
+ */
+Lw.fn_call_mangle(mut self, s: u32, call: u32): string {
+    sy: sema.Sym = self.s.sym(s)
+    callee: u32 = self.node(call).a
+    cft: u32 = self.nty(callee)
+    if cft == 0 || self.ty(cft).kind != TypeKind.func { cft = sy.ty }
+    targs: u32 = 0
+    nt: u32 = 0
+    if sy.is_generic && self.assoc_call(call) { // no receiver: the owner expression's type carries them
+        if self.node(callee).kind == Kind.selector {
+            owner: SType = self.ty(self.nty(self.node(callee).a))
+            targs = owner.args
+            nt = owner.nargs
+        }
+    } else if sy.is_generic && cft != 0 && self.ty(cft).nparams > 0 {
+        recv: SType = self.ty(self.s.param(self.ty(cft), 0))
+        targs = recv.args
+        nt = recv.nargs
+    } else if sy.spec_args != 0 {
+        targs = sy.spec_args
+        nt = sy.spec_nargs
+    }
+    return mut self.fn_mangle(s, cft, targs, nt, sy.spec_args != 0)
 }
 
 PRIM_NAMES: [14]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid"]
@@ -2008,10 +2111,11 @@ Lw.contract_value(mut self, x: u32, mut out: Agg) {
     conc: u32 = self.ty(self.unwrap(self.nty(self.kid(x, 0)))).base
     buf: [512]u8
     b: Out = Out.init(mut buf[0..512])
+    if self.ty(conc).nargs > 0 { fail(mut self.fn.vtables.push(ir.IrVtable { conc = conc, contract = self.nty(x) })) } // a generic signing's pair comes with this function
     _ = mut b.printf("__ace$vt$")
-    self.mangle_type(mut b, conc)
+    mangle_type(*self.s, mut b, conc)
     _ = mut b.printf("$")
-    self.mangle_type(mut b, self.nty(x))
+    mangle_type(*self.s, mut b, self.nty(x))
     if b.dropped() != 0 {
         mut self.unsupported("contract construction")
         out.n = 0
@@ -2079,25 +2183,26 @@ map_hash_string(p: string, seed: u64): u64 {
     return h
 }
 
-/* Static map `ms`'s perfect hash, as emit.c's map_plan finds it: the seed and
- * the slot mask, or false when there is none.
+/* Static map `ms`'s perfect hash, as emit.c's map_plan finds it: the seed,
+ * the slot mask, and in `slots` each slot's entry index plus one (0 when
+ * empty), or false when there is none.
  */
-Lw.map_plan(self, ms: u32, strings: bool): (u64, u32, bool) {
-    lit: u32 = self.s.sym_init(ms)
+pub map_plan(s: sema.Sema, ms: u32, strings: bool, mut slots: array.Array[u32]): (u64, u32, bool) {
+    lit: u32 = s.sym_init(ms)
     count: u32 = 0
-    if lit != 0 { count = self.node(lit).nkids }
+    if lit != 0 { count = s.node(lit).nkids }
     keys: array.Array[u64] = array.Array[u64] {}
     defer mut keys.wipe()
     texts: array.Array[string] = array.Array[string] {}
     defer mut texts.wipe()
     for i: u32 in 0..count {
-        a: u32 = self.node(self.kid(lit, i)).a
+        a: u32 = s.node(s.kid(lit, i)).a
         if strings {
-            t: u32 = self.s.static_key_string(a)
+            t: u32 = s.static_key_string(a)
             if t == 0 { return 0, 0, false }
-            fail(mut texts.push(self.node(t).text))
+            fail(mut texts.push(s.node(t).text))
         } else {
-            k: u64, ok: bool = self.s.static_key_int(a)
+            k: u64, ok: bool = s.static_key_int(a)
             if !ok { return 0, 0, false }
             fail(mut keys.push(k))
         }
@@ -2106,27 +2211,28 @@ Lw.map_plan(self, ms: u32, strings: bool): (u64, u32, bool) {
     want: u32 = 1
     if count != 0 { want = count * 2 }
     for size < want { size <<= 1 }
-    slots: array.Array[bool] = array.Array[bool] {}
-    defer mut slots.wipe()
     for {
         mut slots.truncate(0)
-        for 0..size { fail(mut slots.push(false)) }
+        for 0..size { fail(mut slots.push(0)) }
         for seed: u64 in 0..1000000 {
-            for j: u32 in 0..size { mut slots.set(usize(j), false) }
+            for j: u32 in 0..size { mut slots.set(usize(j), 0) }
             collision: bool = false
             for i: u32 in 0..count {
                 h: u64 = 0
                 if strings { h = map_hash_string(texts.get(usize(i)), seed) } else { h = map_hash_int(keys.get(usize(i)), seed) }
                 at: u32 = u32(h) & (size - 1)
-                if slots.get(usize(at)) {
+                if slots.get(usize(at)) != 0 {
                     collision = true
                     break
                 }
-                mut slots.set(usize(at), true)
+                mut slots.set(usize(at), i + 1)
             }
             if !collision { return seed, size - 1, true }
         }
-        if size >= u32(1) << 30 { return 0, 0, false }
+        if size >= u32(1) << 30 {
+            mut slots.truncate(0)
+            return 0, 0, false
+        }
         size <<= 1
     }
     return 0, 0, false
@@ -2167,7 +2273,11 @@ Lw.staticmap_place(mut self, x: u32, mp: u32): Place {
     seed: u64 = 0
     mask: u32 = 0
     ok: bool = false
-    if ms != 0 && self.s.sym(ms).kind == sema.SymKind.var && self.s.sym(ms).is_global && self.s.sym_init(ms) != 0 { seed, mask, ok = self.map_plan(ms, strings) }
+    if ms != 0 && self.s.sym(ms).kind == sema.SymKind.var && self.s.sym(ms).is_global && self.s.sym_init(ms) != 0 {
+        slots: array.Array[u32] = array.Array[u32] {}
+        defer mut slots.wipe()
+        seed, mask, ok = map_plan(*self.s, ms, strings, mut slots)
+    }
     if !ok {
         mut self.unsupported("static map")
         return Place { addr = mut self.dummy(), t = m.ret }
@@ -3109,8 +3219,12 @@ Lw.mem_equal(mut self, x: u32): int {
 
 /* A direct call to format helper `h` with the arguments in `g`, `ret` its result. */
 Lw.format_helper_call(mut self, h: u32, g: Args, ret: u8): int {
+    sy: sema.Sym = self.s.sym(h)
+    name: string = mut self.fn_mangle(h, sy.ty, sy.spec_args, sy.spec_nargs, sy.spec_args != 0)
     id: int = mut self.emit(ir.IR_CALL, ret)
-    mut self.fn.at(id).sym = h
+    x: mut *ir.IrIns = mut self.fn.at(id)
+    x.sym = h
+    x.name = name
     none: Agg = blank(Agg)
     return mut self.call_finish(id, g, self.ty(self.s.sym(h).ty).ret, mut none, false, -1)
 }
@@ -3654,8 +3768,17 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
     if ft != 0 { rt = self.ty(ft).ret }
     id: int = mut self.emit(ir.IR_CALL, mut self.result_type(rt))
     if inst && !self.fn_value_named(s, callee) { mut self.unsupported("generic call") }
+    name: string = ""
+    if inst && self.fn_value_named(s, callee) {
+        name = mut self.fn_value_mangle(s, callee)
+    } else if self.c_named(s) {
+        name = mut self.link_name(s, ft)
+    } else if !inst {
+        name = mut self.fn_call_mangle(s, x)
+    }
     c: mut *ir.IrIns = mut self.fn.at(id)
     c.sym = s
+    c.name = name
     if (dn.flags & parser.F_COLD) != 0 { c.flags |= ir.IRF_COLD }
     if sy.is_extern && (dn.flags & parser.F_VARARGS) != 0 {
         c.flags |= ir.IRF_VARARGS
@@ -3730,6 +3853,15 @@ Lw.auto_inline_size(self, at: u32, size: int): int {
     r = self.auto_inline_size(n.c, r)
     if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { r = self.auto_inline_size(n.d, r) }
     for i: u32 in 0..n.nkids { r = self.auto_inline_size(self.kid(at, i), r) }
+    if n.kind == Kind.structlit && !(n.nkids > 0 && self.node(self.kid(at, 0)).text.len == 0) { // C's sema adds the omitted defaults as fields
+        u: u32 = self.unwrap(self.nty(at))
+        if u != 0 && self.ty(u).kind == TypeKind.struct {
+            for i: u32 in 0..self.ty(u).nfields {
+                dv: u32 = self.lit_default(at, u, i)
+                if dv != 0 { r = self.auto_inline_size(dv, r + 1) }
+            }
+        }
+    }
     return r
 }
 
@@ -5460,14 +5592,19 @@ Lw.finish(mut self) {
 /* Lowers checked function `f`: the IR, or a reason it was not lowered and
  * whether that reason is only selfhost's (a construct not yet ported).
  */
-pub lower(mut s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
+pub lower(mut s: sema.Sema, f: u32, debug: bool, targs: u32, nt: u32, ft: u32): (Func, string, bool) {
     fs: u32 = s.node_sym(f)
     fnode: Node = s.node(f)
     rt: u32 = 0
     if fs != 0 && s.sym(fs).ty != 0 { rt = s.ty(s.sym(fs).ty).ret }
     if fnode.b == 0 && fnode.ival == 0 && (fnode.flags & parser.F_INTRINSIC) == 0 { return Func.new(f, fs), "no body", false }
-    if fnode.c != 0 && !(fs != 0 && s.sym(fs).spec_args != 0) { return Func.new(f, fs), "generic", false }
-    if fnode.b == 0 { return Func.new(f, fs), "compiler-backed bodies", true }
+    if fnode.c != 0 && !(fs != 0 && s.sym(fs).spec_args != 0) {
+        if nt == 0 || s.node(fnode.c).nkids != nt { return Func.new(f, fs), "generic", false }
+        mut s.stamp_body(f, targs, nt) // as an inlined generic call does
+        rt = s.ty(ft).ret
+    }
+    body: u32 = fnode.b
+    if body == 0 { body = mut s.intrinsic_body(f, rt) }
     l: Lw = Lw { s = mut &s, fn = Func.new(f, fs), f = f, debug = debug, var_ix = map.Map[u32, int] {}, stored = map.Map[u32, bool] {}, vtype = array.Array[u8] {}, home = array.Array[int] {}, defs = map.Map[u64, int] {}, inc = array.Array[Incomplete] {}, inc_head = array.Array[int] {}, repl = array.Array[int] {}, tgt = array.Array[Target] {}, defers = array.Array[Deferred] {}, captured = map.Map[u32, Capture] {}, inl = array.Array[Expansion] {}, escapes = map.Map[u32, u64] {}, gesc = array.Array[GenEscape] {} }
     defer mut l.wipe()
     l.is_main = (fnode.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(fnode.text, "main")
@@ -5544,7 +5681,7 @@ pub lower(mut s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
         mut l.jump(l.self_head)
         l.cur = l.self_head
     }
-    mut l.block(fnode.b)
+    if fnode.b == 0 { mut l.stmt(body) } else { mut l.block(body) }
     if l.cur >= 0 && !l.failed() { // falling off the end: zero
         z: Agg = blank(Agg)
         z.n = int(l.fn.rets.len)
@@ -5567,7 +5704,7 @@ pub dump_file(mut out: Out, mut s: sema.Sema, debug: bool): bool {
         f: u32 = s.kid(s.file, i)
         n: Node = s.node(f)
         if n.kind != Kind.func || s.in_imported(f) { continue }
-        fn: Func, why: string, unported: bool = lower(mut s, f, debug)
+        fn: Func, why: string, unported: bool = lower(mut s, f, debug, 0, 0, 0)
         defer mut fn.wipe()
         if why.len > 0 {
             mut out.printf("; ")

@@ -6,6 +6,7 @@
 # entered scopes and completed types against `ace --symbols`, and its function
 # body checks against `ace --check` and its full check against `ace` over
 # every repository .ace file, and its functions' IR against `ace --debug --ir` and `ace --release --ir`,
+# and its object files against `ace --debug -c` and `ace --release -c`,
 # then its package graph against `ace --pkg-graph`
 # and its cross-package imports against `ace --pkg-check` over every repository ace.pkg, then times
 # the lexers on the largest files. Run from anywhere.
@@ -41,6 +42,8 @@ eport=0
 itotal=0
 isame=0
 iport=0
+ototal=0
+obad=0
 ibad=0
 for f in $files; do
     total=$((total + 1))
@@ -184,6 +187,22 @@ for f in $files; do
         fi
     fi
     done
+    # Objects: each one C writes must match byte for byte. -c writes <base>.o
+    # beside the source, so a file that already has one is left alone.
+    o=${f%.ace}.o
+    [ -e "$o" ] || for mode in --debug --release; do
+    if ./ace $mode -c "$f" >/dev/null 2>&1; then
+        mv "$o" "$tmp/want.o"
+        ototal=$((ototal + 1))
+        "$self" $mode -c "$f" >/dev/null 2>"$tmp/gerr"
+        if [ ! -e "$o" ] || ! cmp -s "$tmp/want.o" "$o"; then
+            obad=$((obad + 1))
+            echo "OBJECT DIFF $mode $f"
+            head -2 "$tmp/gerr"
+        fi
+    fi
+    rm -f "$o"
+    done
 done
 # Packages: every ace.pkg as a root, for its manifest's target. The graph must
 # match exactly; a check that fails must fail as C's does, and one that passes
@@ -237,6 +256,7 @@ echo "symbols: $((total - sbad))/$total files agree"
 echo "check: $((total - cbad))/$total files agree ($cport not yet ported)"
 echo "sema: $((total - ebad))/$total files agree ($eport not yet ported)"
 echo "ir (debug and release): $isame/$itotal functions identical ($iport not yet ported)"
+echo "objects (debug and release): $((ototal - obad))/$ototal identical"
 echo "graph: $((ptotal - gbad))/$ptotal packages identical"
 echo "packages: $((ptotal - pbad))/$ptotal packages agree ($psema fail only in sema)"
 

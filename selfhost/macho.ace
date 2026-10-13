@@ -1,0 +1,685 @@
+/* macho — the Mach-O arm64 object every function is emitted into, as
+ * src/macho.c and src/backend.h: its sections, symbols, relocations,
+ * fixups, and line rows.
+ */
+
+import array
+import file
+import fmt
+import map
+import mem
+import sys
+
+import path: "./path.ace"
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+/* Sections, in order; nlist_64 n_sect is 1-based: SEC_TEXT -> 1. */
+pub SEC_TEXT: const int = 0
+pub SEC_CONST: const int = 1
+pub SEC_DATA: const int = 2
+pub SEC_BSS: const int = 3
+pub SEC_DEBUG_ABBREV: const int = 4
+pub SEC_DEBUG_INFO: const int = 5
+pub SEC_DEBUG_LINE: const int = 6
+pub NSECS: const int = 7
+
+/* Section flags (mach-o/loader.h). */
+pub S_ZEROFILL: const u32 = 0x00000001
+pub S_ATTR_SOME_INSTRUCTIONS: const u32 = 0x00000400
+pub S_ATTR_DEBUG: const u32 = 0x02000000
+pub S_ATTR_PURE_INSTRUCTIONS: const u32 = 0x80000000
+
+/* arm64 relocation types. */
+pub RM_UNSIGNED: const u8 = 0
+pub RM_BRANCH26: const u8 = 2
+pub RM_PAGE21: const u8 = 3
+pub RM_PAGEOFF12: const u8 = 4
+pub RM_GOT_LOAD_PAGE21: const u8 = 5
+pub RM_GOT_LOAD_PAGEOFF12: const u8 = 6
+
+/* n_type bits. */
+pub N_EXT: const u8 = 0x01
+pub N_SECT: const u8 = 0x0e
+
+/* A symbol: type 0 until defined, then in section sect (1-based) at value. */
+pub ESym: struct {
+    pub name: string,
+    pub ntype: u8 = 0,
+    pub sect: u8 = 0,
+    pub value: u64 = 0,
+}
+
+/* A relocation against symbol sym (an index in Obj.syms). */
+pub Rel: struct {
+    pub off: u32,
+    pub sym: int,
+    pub pcrel: bool,
+    pub len: u8,
+    pub ext: bool,
+    pub rtype: u8,
+}
+
+pub Sec: struct {
+    pub sect: string,
+    pub seg: string,
+    pub flags: u32 = 0,
+    pub align: u8 = 0,           // exponent: 2^align
+    pub data: array.Array[u8],
+    pub rels: array.Array[Rel],
+    pub size: u64 = 0,           // bss: reserved bytes
+}
+
+pub FK_SUBSP: const u8 = 0
+pub FK_BRANCH: const u8 = 1
+
+pub Fixup: struct {
+    pub kind: u8,
+    pub site: u32,               // offset of the instruction word in __text
+    pub target: int,             // FK_BRANCH: the call target symbol
+    pub frame: u32 = 0,          // FK_SUBSP: final frame size
+}
+
+pub LineRow: struct {
+    pub addr: u32,
+    pub line: u32,
+    pub col: u32,
+    pub path: string,
+}
+
+pub DebugFn: struct {
+    pub addr: u32,
+    pub size: u32,
+    pub name: string,
+}
+
+pub Obj: struct {
+    pub debug: bool,
+    pub secs: array.Array[Sec],
+    pub syms: array.Array[ESym],
+    ids: map.Map[string, int],
+    pub fix: array.Array[Fixup],
+    pub lines: array.Array[LineRow],
+    pub debug_fns: array.Array[DebugFn],
+    pub names: path.Pool,        // symbol names and literal bytes the object owns
+    // shared runtime routines a function referenced, emitted once per object
+    pub bounds_fail_used: bool = false,
+    pub arithmetic_fail_used: bool = false,
+    pub contract_fail_used: bool = false,
+    pub null_fail_used: bool = false,
+    pub allocator_used: bool = false,
+    pub mem_copy_used: bool = false,    // __ace$mem_copy / __ace$mem_move
+    pub mem_fill_used: bool = false,
+    pub mem_compare_used: bool = false,
+    pub str_n: int = 0,                 // string literals interned, for their __ace$str$N names
+    pub errors: int = 0,
+}
+
+sec(name: string, seg: string, flags: u32, align: u8): Sec {
+    return Sec { sect = name, seg = seg, flags = flags, align = align, data = array.Array[u8] {}, rels = array.Array[Rel] {} }
+}
+
+/* An object with its sections and the __ace$text anchor; `debug` for a
+ * debug build. The result owns its memory.
+ */
+pub Obj.new(debug: bool): Obj {
+    o: Obj = Obj { debug = debug, secs = array.Array[Sec] {}, syms = array.Array[ESym] {}, ids = map.Map[string, int] {}, fix = array.Array[Fixup] {}, lines = array.Array[LineRow] {}, debug_fns = array.Array[DebugFn] {}, names = blank(path.Pool) }
+    fail(mut o.secs.push(sec("__text", "__TEXT", S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS, 6)))
+    fail(mut o.secs.push(sec("__const", "__DATA_CONST", 0, 4)))
+    fail(mut o.secs.push(sec("__data", "__DATA", 0, 4)))
+    fail(mut o.secs.push(sec("__bss", "__DATA", S_ZEROFILL, 4)))
+    fail(mut o.secs.push(sec("__debug_abbrev", "__DWARF", S_ATTR_DEBUG, 0)))
+    fail(mut o.secs.push(sec("__debug_info", "__DWARF", S_ATTR_DEBUG, 0)))
+    fail(mut o.secs.push(sec("__debug_line", "__DWARF", S_ATTR_DEBUG, 0)))
+    _ = mut o.define("__ace$text", false, SEC_TEXT)
+    return o
+}
+
+pub Obj.wipe(mut self) {
+    for i: usize in 0..self.secs.len {
+        s: mut *Sec = mut &mut self.secs.view()[i]
+        mut s.data.wipe()
+        mut s.rels.wipe()
+    }
+    mut self.secs.wipe()
+    mut self.syms.wipe()
+    mut self.ids.wipe()
+    mut self.fix.wipe()
+    mut self.lines.wipe()
+    mut self.debug_fns.wipe()
+    mut self.names.wipe()
+}
+
+pub Obj.sec(mut self, k: int): mut *Sec {
+    return mut &mut self.secs.view()[usize(k)]
+}
+
+/* The text section's length, and its words written, patched, and read. */
+pub Obj.here(self): u32 {
+    return u32(self.secs.get(usize(SEC_TEXT)).data.len)
+}
+
+pub Obj.put32(mut self, w: u32) {
+    t: mut *Sec = mut self.sec(SEC_TEXT)
+    put32(mut t.data, w)
+}
+
+pub Obj.patch32(mut self, off: usize, w: u32) {
+    t: mut *Sec = mut self.sec(SEC_TEXT)
+    patch32(mut t.data, off, w)
+}
+
+pub Obj.get32(self, off: usize): u32 {
+    return get32(self.secs.get(usize(SEC_TEXT)).data, off)
+}
+
+pub put32(mut b: array.Array[u8], v: u32) {
+    for i: u32 in 0..4 { fail(mut b.push(u8((v >> (8 * i)) & 0xFF))) }
+}
+
+pub patch32(mut b: array.Array[u8], off: usize, v: u32) {
+    for i: u32 in 0..4 { mut b.set(off + usize(i), u8((v >> (8 * i)) & 0xFF)) }
+}
+
+pub get32(b: array.Array[u8], off: usize): u32 {
+    w: u32 = 0
+    for i: u32 in 0..4 { w |= u32(b.get(off + usize(i))) << (8 * i) }
+    return w
+}
+
+/* Symbol `name`, entered undefined on first sight. */
+pub Obj.intern(mut self, name: string): int {
+    id: int, found: bool = self.ids.get(name)
+    if found { return id }
+    nm: string = mut self.names.copy(name)
+    fail(mut self.syms.push(ESym { name = nm }))
+    id = int(self.syms.len) - 1
+    fail(mut self.ids.set(nm, id))
+    return id
+}
+
+/* Defines `name` at section k's cursor (a bss's size cursor); a
+ * redefinition keeps the first.
+ */
+pub Obj.define(mut self, name: string, ext: bool, k: int): int {
+    id: int = mut self.intern(name)
+    s: mut *ESym = mut &mut self.syms.view()[usize(id)]
+    if s.ntype != 0 { return id }
+    s.ntype = N_SECT
+    if ext { s.ntype |= N_EXT }
+    s.sect = u8(1 + k)
+    sc: Sec = self.secs.get(usize(k))
+    if (sc.flags & S_ZEROFILL) != 0 { s.value = sc.size } else { s.value = u64(sc.data.len) }
+    return id
+}
+
+pub Obj.reloc(mut self, k: int, off: u32, sym: int, pcrel: bool, len: u8, ext: bool, rtype: u8) {
+    s: mut *Sec = mut self.sec(k)
+    fail(mut s.rels.push(Rel { off = off, sym = sym, pcrel = pcrel, len = len, ext = ext, rtype = rtype }))
+}
+
+pub Obj.fixup(mut self, kind: u8, site: u32, target: int) {
+    fail(mut self.fix.push(Fixup { kind = kind, site = site, target = target }))
+}
+
+/* A line row at addr; a later row at the same address replaces it. */
+pub Obj.line(mut self, addr: u32, line: u32, col: u32, path: string) {
+    row: LineRow = LineRow { addr = addr, line = line, col = col, path = path }
+    if self.lines.len > 0 && self.lines.get(self.lines.len - 1).addr == addr {
+        mut self.lines.set(self.lines.len - 1, row)
+        return
+    }
+    fail(mut self.lines.push(row))
+}
+
+pub Obj.debug_fn(mut self, addr: u32, size: u32, name: string) {
+    fail(mut self.debug_fns.push(DebugFn { addr = addr, size = size, name = name }))
+}
+
+/* The bytes of a string literal in the constant section, under a fresh name. */
+pub Obj.string(mut self, bytes: string): int {
+    c: mut *Sec = mut self.sec(SEC_CONST)
+    for c.data.len % 8 != 0 { fail(mut c.data.push(0)) }
+    buf: [32]u8
+    b: fmt.Buffer = fmt.Buffer.init(mut buf[0..32])
+    _ = mut b.printf("__ace$str$%d", self.str_n)
+    self.str_n += 1
+    id: int = mut self.define(b.text(), false, SEC_CONST)
+    c = mut self.sec(SEC_CONST)
+    for k: usize in 0..bytes.len { fail(mut c.data.push(bytes[k])) }
+    return id
+}
+
+// --- byte encodings ---------------------------------------------------------
+
+pub put8(mut b: array.Array[u8], v: u8) { fail(mut b.push(v)) }
+
+put16(mut b: array.Array[u8], v: u32) {
+    put8(mut b, u8(v & 0xFF))
+    put8(mut b, u8((v >> 8) & 0xFF))
+}
+
+put64(mut b: array.Array[u8], v: u64) {
+    for i: u64 in 0..8 { put8(mut b, u8((v >> (8 * i)) & 0xFF)) }
+}
+
+pub put_bytes(mut b: array.Array[u8], p: []u8) {
+    for c: u8 in p { put8(mut b, c) }
+}
+
+/* p and its terminating NUL. */
+put_cstr(mut b: array.Array[u8], p: string) {
+    put_bytes(mut b, p)
+    put8(mut b, 0)
+}
+
+uleb(mut b: array.Array[u8], v0: u64) {
+    v: u64 = v0
+    for {
+        byte: u8 = u8(v & 0x7F)
+        v >>= 7
+        if v != 0 { byte |= 0x80 }
+        put8(mut b, byte)
+        if v == 0 { break }
+    }
+}
+
+sleb(mut b: array.Array[u8], v0: i64) {
+    v: i64 = v0
+    for {
+        byte: u8 = u8(v & 0x7F)
+        sign: bool = (byte & 0x40) != 0
+        v >>= 7
+        more: bool = !((v == 0 && !sign) || (v == -1 && sign))
+        if more { byte |= 0x80 }
+        put8(mut b, byte)
+        if !more { break }
+    }
+}
+
+/* A 16-byte NUL-padded name field. */
+putname(mut b: array.Array[u8], name: string) {
+    n: usize = name.len
+    if n > 16 { n = 16 }
+    put_bytes(mut b, name[..n])
+    for i: usize in n..16 { put8(mut b, 0) }
+}
+
+// --- fixups -----------------------------------------------------------------
+
+/* Patches every recorded call once all text symbols are defined. */
+pub Obj.patch_fixups(mut self) {
+    for f: Fixup in self.fix.view() {
+        t: ESym = self.syms.get(usize(f.target))
+        if t.ntype == 0 || t.sect != u8(1 + SEC_TEXT) {
+            fmt.printf(sys.stderr, "ace: internal call to '%s' is not a text symbol\n", t.name)
+            self.errors += 1
+            continue
+        }
+        delta: i64 = i64(t.value) - i64(f.site)
+        if delta < -(1 << 27) || delta >= (1 << 27) || (delta & 3) != 0 {
+            fmt.printf(sys.stderr, "ace: call to '%s' out of branch range\n", t.name)
+            self.errors += 1
+            continue
+        }
+        mut self.patch32(usize(f.site), 0x94000000 | (u32(delta >> 2) & 0x03FFFFFF))
+    }
+}
+
+// --- DWARF ------------------------------------------------------------------
+
+/* The working directory, as getcwd gives it, or "." when it cannot. */
+pub cwd(mut pool: path.Pool): string {
+    buf: [3072]u8
+    n: usize, err: Error = sys.canonical(".", mut buf[0..3072])
+    if err != null { return "." }
+    return mut pool.copy(buf[0..n])
+}
+
+/* `input` made absolute against the working directory. */
+source_path(mut pool: path.Pool, dir: string, input: string): string {
+    if input.len > 0 && input[0] == '/' { return input }
+    return mut pool.join([dir, "/", input])
+}
+
+/* The compile unit and one subprogram per function, against the text anchor
+ * (symbol 0), when there are line rows; `root` is the compiled file.
+ */
+pub Obj.debug_info(mut self, root: string, dir: string) {
+    if self.lines.len == 0 { return }
+    ab: mut *Sec = mut self.sec(SEC_DEBUG_ABBREV)
+    // Abbrev 1: compile unit. Function children let dsymutil select the text
+    // ranges while deliberately omitting types, variables, and frame data.
+    abbrev: [31]u8 = [
+        1, 0x11, 1,                                  // compile unit, children
+        0x25, 0x08, 0x13, 0x05, 0x03, 0x08, 0x10, 0x17, // producer, language, name, stmt_list
+        0x1b, 0x08, 0x11, 0x01, 0x12, 0x06, 0, 0,    // comp_dir, low_pc, high_pc
+        2, 0x2e, 0,                                  // subprogram, no children
+        0x11, 0x01, 0x12, 0x06, 0x03, 0x08, 0, 0,    // low_pc, high_pc, name
+        0,                                           // table terminator
+    ]
+    put_bytes(mut ab.data, abbrev[0..31])
+
+    full: string = source_path(mut self.names, dir, root)
+    text_len: u32 = self.here()
+    info: mut *Sec = mut self.sec(SEC_DEBUG_INFO)
+    unit: usize = info.data.len
+    put32(mut info.data, 0)     // unit_length
+    put16(mut info.data, 4)     // DWARF v4
+    put32(mut info.data, 0)     // abbrev offset
+    put8(mut info.data, 8)      // address size
+    uleb(mut info.data, 1)
+    put_cstr(mut info.data, "Ace compiler")
+    put16(mut info.data, 0x8000) // DW_LANG_lo_user: Ace has no assigned DWARF code
+    put_cstr(mut info.data, full)
+    put32(mut info.data, 0)     // stmt_list offset
+    put_cstr(mut info.data, dir)
+    low_pc: u32 = u32(info.data.len)
+    put64(mut info.data, 0)
+    fail(mut info.rels.push(Rel { off = low_pc, sym = 0, pcrel = false, len = 3, ext = false, rtype = RM_UNSIGNED }))
+    put32(mut info.data, text_len) // high_pc is a size in DWARF v4
+    for f: DebugFn in self.debug_fns.view() {
+        uleb(mut info.data, 2)
+        fn_pc: u32 = u32(info.data.len)
+        put64(mut info.data, u64(f.addr)) // relocation addend within __text
+        fail(mut info.rels.push(Rel { off = fn_pc, sym = 0, pcrel = false, len = 3, ext = false, rtype = RM_UNSIGNED }))
+        put32(mut info.data, f.size)
+        put_cstr(mut info.data, f.name)
+    }
+    put8(mut info.data, 0)      // end compile-unit children
+    patch32(mut info.data, unit, u32(info.data.len - unit - 4))
+}
+
+/* The line program over the rows, against the text anchor (symbol 0). */
+pub Obj.debug_line(mut self, dir: string) {
+    if self.lines.len == 0 { return }
+    files: array.Array[string] = array.Array[string] {}
+    defer mut files.wipe()
+    for r: LineRow in self.lines.view() {
+        if file_index(files, r.path) == 0 { fail(mut files.push(r.path)) }
+    }
+    text_len: u32 = self.here()
+    full: array.Array[string] = array.Array[string] {}
+    defer mut full.wipe()
+    for f: string in files.view() { fail(mut full.push(source_path(mut self.names, dir, f))) }
+
+    b: mut *Sec = mut self.sec(SEC_DEBUG_LINE)
+    unit: usize = b.data.len
+    put32(mut b.data, 0)          // unit_length, patched below
+    put16(mut b.data, 4)          // DWARF v4
+    header_len: usize = b.data.len
+    put32(mut b.data, 0)          // header_length, patched below
+    header: usize = b.data.len
+    // minimum_instruction_length, maximum_operations_per_instruction,
+    // default_is_stmt, line_base -5, line_range, opcode_base, the standard
+    // opcodes' operand counts, and the empty include_directories
+    hdr: [19]u8 = [1, 1, 1, 0xFB, 14, 13, 0, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0]
+    put_bytes(mut b.data, hdr[0..19])
+    for f: string in full.view() {
+        put_cstr(mut b.data, f)
+        uleb(mut b.data, 0)       // directory index (full filename)
+        uleb(mut b.data, 0)       // modification time
+        uleb(mut b.data, 0)       // file size
+    }
+    put8(mut b.data, 0)           // file_names terminator
+    patch32(mut b.data, header_len, u32(b.data.len - header))
+
+    // DW_LNE_set_address. The object relocation supplies __text's final base.
+    put8(mut b.data, 0)
+    uleb(mut b.data, 9)
+    put8(mut b.data, 2)
+    address_off: u32 = u32(b.data.len)
+    put64(mut b.data, 0)
+    fail(mut b.rels.push(Rel { off = address_off, sym = 0, pcrel = false, len = 3, ext = false, rtype = RM_UNSIGNED }))
+
+    addr: u32 = 0
+    line: i64 = 1
+    col: i64 = 0
+    cur: int = 1
+    for r: LineRow in self.lines.view() {
+        want: int = file_index(files, r.path)
+        if r.addr > addr {
+            put8(mut b.data, 2)   // DW_LNS_advance_pc
+            uleb(mut b.data, u64(r.addr - addr))
+            addr = r.addr
+        }
+        if want != cur {
+            put8(mut b.data, 4)   // DW_LNS_set_file
+            uleb(mut b.data, u64(want))
+            cur = want
+        }
+        if i64(r.line) != line {
+            put8(mut b.data, 3)   // DW_LNS_advance_line
+            sleb(mut b.data, i64(r.line) - line)
+            line = i64(r.line)
+        }
+        if i64(r.col) != col {
+            put8(mut b.data, 5)   // DW_LNS_set_column
+            uleb(mut b.data, u64(r.col))
+            col = i64(r.col)
+        }
+        put8(mut b.data, 1)       // DW_LNS_copy
+    }
+    if text_len > addr {
+        put8(mut b.data, 2)
+        uleb(mut b.data, u64(text_len - addr))
+    }
+    put8(mut b.data, 0)
+    uleb(mut b.data, 1)
+    put8(mut b.data, 1)           // DW_LNE_end_sequence
+    patch32(mut b.data, unit, u32(b.data.len - unit - 4))
+}
+
+/* The 1-based index of `p` in files, or 0. */
+file_index(files: array.Array[string], p: string): int {
+    for j: usize in 0..files.len {
+        if mem.equal(files.get(j), p) { return int(j) + 1 }
+    }
+    return 0
+}
+
+// --- Mach-O object writing --------------------------------------------------
+
+bit(b: bool): u32 {
+    if b { return 1 }
+    return 0
+}
+
+align_up32(v: u32, a: u32): u32 { return (v + a - 1) & ~(a - 1) }
+
+/* The object file's image, as src/macho.c's obj_write lays it out. The
+ * result owns its memory.
+ */
+pub Obj.image(mut self): array.Array[u8] {
+    n: usize = self.secs.len
+    for i: usize in 0..n {
+        s: mut *Sec = mut self.sec(int(i))
+        if (s.flags & S_ZEROFILL) == 0 { s.size = u64(s.data.len) }
+    }
+    segcmd: u32 = 72 + 80 * u32(n)
+    cmdend: u32 = 32 + segcmd + 24 + 24 + 80 // header + 4 load commands
+    max_align: u32 = 1
+    for s: Sec in self.secs.view() {
+        if max_align < (u32(1) << u32(s.align)) { max_align = u32(1) << u32(s.align) }
+    }
+    base: u32 = align_up32(cmdend, max_align)
+
+    // Layout: addrs continuous from 0; file offsets track (bss takes no bytes).
+    addrs: array.Array[u64] = array.Array[u64] {}
+    defer mut addrs.wipe()
+    offs: array.Array[u32] = array.Array[u32] {}
+    defer mut offs.wipe()
+    addr: u64 = 0
+    off: u32 = base
+    for s: Sec in self.secs.view() {
+        a: u32 = u32(1) << u32(s.align)
+        addr = (addr + u64(a) - 1) & ~(u64(a) - 1)
+        off = align_up32(off, a)
+        fail(mut addrs.push(addr))
+        fail(mut offs.push(off))
+        addr += s.size
+        if (s.flags & S_ZEROFILL) == 0 { off += u32(s.size) }
+    }
+    vmsize: u64 = addr
+    filesize: u32 = off - base
+
+    // Symbol order (pinned): locals, extdefs, undefs. Assign strtab indices
+    // and table ordinals; relocation entries serialize against the ordinals.
+    str: array.Array[u8] = array.Array[u8] {}
+    defer mut str.wipe()
+    put8(mut str, 0) // strx 0: the empty string
+    nsyms: usize = self.syms.len
+    order: array.Array[int] = array.Array[int] {}
+    defer mut order.wipe()
+    strx: array.Array[u32] = array.Array[u32] {}
+    defer mut strx.wipe()
+    ord: array.Array[u32] = array.Array[u32] {}
+    defer mut ord.wipe()
+    for i: usize in 0..nsyms {
+        fail(mut strx.push(0))
+        fail(mut ord.push(0))
+    }
+    counts: [3]u32 = [0, 0, 0]
+    for pass: int in 0..3 {
+        for i: usize in 0..nsyms {
+            s: ESym = self.syms.get(i)
+            want: bool = s.ntype == 0
+            if pass == 0 { want = s.ntype != 0 && (s.ntype & N_EXT) == 0 }
+            if pass == 1 { want = s.ntype != 0 && (s.ntype & N_EXT) != 0 }
+            if !want { continue }
+            mut strx.set(i, u32(str.len))
+            mut ord.set(i, u32(order.len))
+            put_cstr(mut str, s.name)
+            fail(mut order.push(int(i)))
+            counts[pass] += 1
+        }
+    }
+
+    // Serialize structured relocations now that symbol ordinals are known.
+    rel: array.Array[u8] = array.Array[u8] {}
+    defer mut rel.wipe()
+    rel_at: array.Array[u32] = array.Array[u32] {}
+    defer mut rel_at.wipe()
+    for s: Sec in self.secs.view() {
+        fail(mut rel_at.push(u32(rel.len)))
+        for r: Rel in s.rels.view() {
+            put32(mut rel, r.off)
+            target: u32 = u32(self.syms.get(usize(r.sym)).sect)
+            if r.ext { target = ord.get(usize(r.sym)) }
+            put32(mut rel, (target & 0xFFFFFF) | (bit(r.pcrel) << 24) | (u32(r.len) << 25) | (bit(r.ext) << 27) | (u32(r.rtype) << 28))
+        }
+    }
+
+    img: array.Array[u8] = array.Array[u8] {}
+    // mach_header_64
+    put32(mut img, 0xFEEDFACF)          // MH_MAGIC_64
+    put32(mut img, 0x0100000C)          // CPU_TYPE_ARM64
+    put32(mut img, 0)                   // CPU_SUBTYPE_ARM64_ALL
+    put32(mut img, 1)                   // MH_OBJECT
+    put32(mut img, 4)                   // ncmds
+    put32(mut img, segcmd + 24 + 24 + 80) // sizeofcmds
+    put32(mut img, 0)                   // flags (pinned: no bit set)
+    put32(mut img, 0)                   // reserved
+
+    // LC_SEGMENT_64: one nameless segment holding all sections
+    put32(mut img, 0x19)
+    put32(mut img, segcmd)
+    putname(mut img, "")
+    put64(mut img, 0)                   // vmaddr
+    put64(mut img, vmsize)
+    put64(mut img, u64(base))           // fileoff
+    put64(mut img, u64(filesize))
+    put32(mut img, 7)                   // maxprot RWX
+    put32(mut img, 7)                   // initprot RWX
+    put32(mut img, u32(n))
+    put32(mut img, 0)                   // flags
+    for i: usize in 0..n {
+        s: Sec = self.secs.get(i)
+        putname(mut img, s.sect)
+        putname(mut img, s.seg)
+        put64(mut img, addrs.get(i))
+        put64(mut img, s.size)
+        put32(mut img, offs.get(i))
+        put32(mut img, u32(s.align))
+        if s.rels.len > 0 { put32(mut img, off + rel_at.get(i)) } else { put32(mut img, 0) }
+        put32(mut img, u32(s.rels.len))
+        put32(mut img, s.flags)
+        put32(mut img, 0)               // reserved1
+        put32(mut img, 0)               // reserved2
+        put32(mut img, 0)               // reserved3
+    }
+
+    // LC_BUILD_VERSION
+    put32(mut img, 0x32)
+    put32(mut img, 24)
+    put32(mut img, 1)                   // PLATFORM_MACOS
+    put32(mut img, 0x000B0000)          // minos 11.0
+    put32(mut img, 0x000B0000)          // sdk 11.0
+    put32(mut img, 0)                   // ntools
+
+    // LC_SYMTAB: symoff/stroff patched once known
+    symcmd: usize = img.len
+    put32(mut img, 0x02)
+    put32(mut img, 24)
+    put32(mut img, 0)                   // symoff (patch)
+    put32(mut img, u32(nsyms))
+    put32(mut img, 0)                   // stroff (patch)
+    put32(mut img, u32(str.len))
+
+    // LC_DYSYMTAB
+    put32(mut img, 0x0B)
+    put32(mut img, 80)
+    put32(mut img, 0)
+    put32(mut img, counts[0])
+    put32(mut img, counts[0])
+    put32(mut img, counts[1])
+    put32(mut img, counts[0] + counts[1])
+    put32(mut img, counts[2])
+    for i: int in 0..12 { put32(mut img, 0) } // remaining dysym fields
+
+    // Section data (offsets pinned above), then relocations.
+    for img.len < usize(base) { put8(mut img, 0) }
+    for i: usize in 0..n {
+        s: Sec = self.secs.get(i)
+        for img.len < usize(offs.get(i)) { put8(mut img, 0) }
+        if (s.flags & S_ZEROFILL) != 0 { continue }
+        put_bytes(mut img, s.data.view())
+    }
+    put_bytes(mut img, rel.view())
+
+    // Symbol table (in `order`), then the string table.
+    for (img.len & 7) != 0 { put8(mut img, 0) }
+    symoff: u32 = u32(img.len)
+    for k: int in order.view() {
+        s: ESym = self.syms.get(usize(k))
+        put32(mut img, strx.get(usize(k)))
+        if s.ntype != 0 { put8(mut img, s.ntype) } else { put8(mut img, N_EXT) } // undefined: N_EXT only
+        put8(mut img, s.sect)
+        put16(mut img, 0)               // n_desc
+        value: u64 = s.value
+        if s.sect > 0 && usize(s.sect) <= n { value += addrs.get(usize(s.sect) - 1) }
+        put64(mut img, value)
+    }
+    stroff: u32 = u32(img.len)
+    put_bytes(mut img, str.view())
+    patch32(mut img, symcmd + 8, symoff)
+    patch32(mut img, symcmd + 16, stroff)
+    return img
+}
+
+/* Writes the object file to `out`; false, after a message, when it cannot. */
+pub Obj.write(mut self, out: string): bool {
+    img: array.Array[u8] = mut self.image()
+    defer mut img.wipe()
+    if file.write(out, img.view()) != null {
+        fmt.printf(sys.stderr, "ace: cannot write '%s'\n", out)
+        self.errors += 1
+        return false
+    }
+    return true
+}

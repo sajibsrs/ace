@@ -185,7 +185,6 @@ pub IrIns: struct {
     pub imm: u64 = 0,
     pub aux: i32 = 0,
     pub sym: u32 = 0,            // GLOBAL symbol; CALL target function
-    pub inst: u32 = 0,           // GLOBAL of a generic function: its instance's type arguments (sema's run), as C's mangled name
     pub routine: bool = false,   // CALL: a C routine with no symbol of its own (sym 0)
     pub name: string = "",       // CALL target's link symbol; STR bytes; CHECK diagnostic
     pub has_name: bool = false,
@@ -217,6 +216,20 @@ pub Func: struct {
     pub names: path.Pool,        // instruction names lowering builds
     pub asms: array.Array[IrAsm],
     pub asm_regs: array.Array[int],
+    pub lits: array.Array[IrLiteral], // constant array literals named, which the object must define
+    pub vtables: array.Array[IrVtable], // generic signings' vtables named, which the object must define
+}
+
+/* The vtable of concrete type `conc` for contract `contract` a construction names. */
+pub IrVtable: struct {
+    pub conc: u32,
+    pub contract: u32,
+}
+
+/* A constant array literal `lit` the function addresses under link symbol `name`. */
+pub IrLiteral: struct {
+    pub name: string,
+    pub lit: u32,
 }
 
 fail(err: Error) {
@@ -229,7 +242,7 @@ fail(err: Error) {
 // --- construction -----------------------------------------------------------
 
 pub Func.new(decl: u32, sym: u32): Func {
-    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {}, names = blank(path.Pool), asms = array.Array[IrAsm] {}, asm_regs = array.Array[int] {} }
+    return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {}, names = blank(path.Pool), asms = array.Array[IrAsm] {}, asm_regs = array.Array[int] {}, lits = array.Array[IrLiteral] {}, vtables = array.Array[IrVtable] {} }
 }
 
 pub Func.wipe(mut self) {
@@ -248,6 +261,8 @@ pub Func.wipe(mut self) {
     mut self.names.wipe()
     mut self.asms.wipe()
     mut self.asm_regs.wipe()
+    mut self.lits.wipe()
+    mut self.vtables.wipe()
 }
 
 /* Instruction `id` in place; the pointer dangles once one is added. */

@@ -428,7 +428,7 @@ vn_hash(fn: Func, v: int): u64 {
  * several named objects (a static map's tables, a generic's instantiations).
  */
 same_global(x: IrIns, y: IrIns): bool {
-    return x.sym == y.sym && x.inst == y.inst && mem.equal(x.name, y.name) // an empty name is none
+    return x.sym == y.sym && mem.equal(x.name, y.name) // an empty name is none
 }
 
 /* A global counts as equal only by a shared, nonzero symbol and name: the
@@ -664,7 +664,6 @@ global_in(mut fn: Func, b: int, from: int): int {
     x: mut *IrIns = mut fn.at(g)
     x.sym = f.sym
     x.name = f.name
-    x.inst = f.inst
     return g
 }
 
@@ -1248,7 +1247,6 @@ vec_scalar(mut fn: Func, L: VecLoop, mut m: VecMaps, v: int): int {
         x.imm = f.imm
         x.sym = f.sym
         x.name = f.name
-        x.inst = f.inst
         mut m.pre_of.set(usize(v), c)
     }
     return m.pre_of.get(usize(v))

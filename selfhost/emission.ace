@@ -1,0 +1,1115 @@
+/* emission — a checked program's object file, as emit.c's emit_object:
+ * which functions compile, in which order, under which link symbols, then
+ * the runtime routines, DWARF, and the Mach-O image.
+ */
+
+import array
+import bits
+import fmt
+import map
+import mem
+import sys
+
+import arm64: "./arm64.ace"
+import ir: "./ir.ace"
+import lexer: "./lexer.ace"
+import lowering: "./lowering.ace"
+import macho: "./macho.ace"
+import parser: "./parser.ace"
+import path: "./path.ace"
+import sema: "./sema.ace"
+
+Node: type = parser.Node
+Kind: type = parser.Kind
+Token: type = lexer.Token
+TypeKind: type = sema.TypeKind
+
+fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}
+
+/* One compilable function: a declaration, or one instantiation of a generic
+ * template (its type arguments and signature), with the link symbol it
+ * defines.
+ */
+EmitFn: struct {
+    n: u32,
+    targs: u32 = 0,
+    nt: u32 = 0,
+    ft: u32 = 0,
+    global: bool = false,
+    done: bool = false,
+    name: string,
+}
+
+/* Declarations backed by the compiler: their calls lower directly, so they
+ * define no symbol.
+ */
+compiler_backed(bi: u64): bool {
+    return bi == sema.BI_MEM_ALLOC || bi == sema.BI_MEM_REALLOC || bi == sema.BI_MEM_RELEASE || bi == sema.BI_MEM_COPY || bi == sema.BI_MEM_MOVE || bi == sema.BI_MEM_FILL || bi == sema.BI_MEM_ZERO || bi == sema.BI_MEM_COMPARE || bi == sema.BI_MEM_EQUAL || bi == sema.BI_MEM_ALLOC_SIZE || bi == sema.BI_MEM_ALLOC_T || bi == sema.BI_MEM_ZALLOC_T || bi == sema.BI_MEM_REALLOC_T || bi == sema.BI_MEM_RELEASE_T || bi == sema.BI_MEM_COPY_T || bi == sema.BI_MEM_MOVE_T || bi == sema.BI_FMT_PRINTF || bi == sema.BI_FMT_PRINTF_FD || bi == sema.BI_FMT_PRINTF_BUF || bi == sema.BI_STR_FORMAT || (bi >= sema.BI_SYS_ARGC && bi <= sema.BI_SYS_ENV)
+}
+
+Em: struct {
+    s: mut *sema.Sema,
+    o: macho.Obj,
+    debug: bool,
+    fns: array.Array[EmitFn],
+    names: path.Pool,
+    unsupported: string = "",
+}
+
+/* Lowers and compiles function f, or reports why it cannot. */
+Em.compile(mut self, k: usize) {
+    f: EmitFn = self.fns.get(k)
+    x: mut *EmitFn = mut &mut self.fns.view()[k]
+    x.done = true
+    fn: ir.Func, why: string, unported: bool = lowering.lower(mut *self.s, f.n, self.debug, f.targs, f.nt, f.ft)
+    defer mut fn.wipe()
+    if unported {
+        if self.unsupported.len == 0 { self.unsupported = why }
+        return
+    }
+    if why.len > 0 {
+        mut self.s.err(f.n, ["cannot compile '", self.s.node(f.n).text, "': ", why])
+        return
+    }
+    for v: ir.IrVtable in fn.vtables.view() { _ = mut self.vtable(v.conc, v.contract, mut self.s.find_conformance(v.conc, v.contract)) }
+    for x: ir.IrLiteral in fn.lits.view() {
+        if mut self.literal_data(x.lit, x.name) < 0 { mut self.s.err(x.lit, ["array literal is not a compile-time constant"]) }
+    }
+    arm64.func(*self.s, mut self.o, mut fn, f.name, f.global)
+}
+
+/* Writes the object file for checked program s to `out`; `root` is its path
+ * as given. Returns whether it was written, or the construct selfhost does
+ * not yet compile.
+ */
+pub object(mut s: sema.Sema, debug: bool, root: string, out: string): (bool, string) {
+    e: Em = Em { s = mut &s, o = macho.Obj.new(debug), debug = debug, fns = array.Array[EmitFn] {}, names = blank(path.Pool) }
+    defer mut e.o.wipe()
+    defer mut e.fns.wipe()
+    defer mut e.names.wipe()
+
+    // Collect every compilable function under its link symbol, then compile
+    // only those reachable from main and the C exports: a referenced symbol
+    // that is still undefined names the next function to compile. An object
+    // without main may be called from anywhere, so it compiles every one.
+    by_name: map.Map[string, usize] = map.Map[string, usize] {}
+    defer mut by_name.wipe()
+    // Globals likewise: only those a compiled function, an emitted global's
+    // initializer, or C export references are emitted.
+    vars: array.Array[u32] = array.Array[u32] {}
+    defer mut vars.wipe()
+    var_by_name: map.Map[string, usize] = map.Map[string, usize] {}
+    defer mut var_by_name.wipe()
+    main_at: int = -1
+    errors: int = s.errors
+    file: Node = s.node(s.file)
+    for i: u32 in 0..file.nkids {
+        d: u32 = s.kid(s.file, i)
+        n: Node = s.node(d)
+        if n.kind == Kind.func {
+            if compiler_backed(n.ival) { continue }
+            ds: u32 = s.node_sym(d)
+            generic: bool = n.c != 0 && !(ds != 0 && s.sym(ds).spec_args != 0)
+            if generic {
+                // one function per instantiation, newest first
+                it: u32 = s.inst_head(d)
+                for it != 0 {
+                    args: u32, ft: u32, next: u32 = s.inst(it)
+                    nt: u32 = s.node(n.c).nkids
+                    nm: string = lowering.fn_mangle(s, mut e.names, ds, ft, args, nt, false)
+                    fail(mut by_name.set(nm, e.fns.len))
+                    fail(mut e.fns.push(EmitFn { n = d, targs = args, nt = nt, ft = ft, name = nm }))
+                    it = next
+                }
+                continue
+            }
+            is_main: bool = (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main")
+            export_c: bool = (n.flags & parser.F_EXPO) != 0
+            nm: string = ""
+            if is_main {
+                nm = "_main"
+                main_at = int(e.fns.len)
+            } else if export_c && n.cname.len > 0 {
+                nm = mut e.names.join(["_", n.cname])
+            } else if export_c {
+                nm = mut e.names.join(["_", n.text])
+            } else {
+                sy: sema.Sym = s.sym(ds)
+                nt: u32 = 0
+                if sy.spec_args != 0 { nt = sy.spec_nargs }
+                nm = lowering.fn_mangle(s, mut e.names, ds, sy.ty, sy.spec_args, nt, sy.spec_args != 0)
+            }
+            global: bool = is_main || export_c
+            if global && by_name.has(nm) { mut s.err(d, ["C symbol '", nm[1..], "' is already defined"]) }
+            fail(mut by_name.set(nm, e.fns.len))
+            fail(mut e.fns.push(EmitFn { n = d, global = global, name = nm }))
+        } else if n.kind == Kind.var {
+            // deferred like functions: emitted once referenced, unless C-exported
+            // or the object has no main
+            binder: u32 = s.kid(d, 0)
+            vs: u32 = s.var_sym(d)
+            if vs == 0 { continue }
+            fail(mut vars.push(d))
+            text: string = s.node(binder).text
+            if s.ty(s.sym(vs).ty).kind == TypeKind.staticmap {
+                for part: string in ["keys", "values", "slots"] { fail(mut var_by_name.set(mut e.names.join(["__ace$map$", text, "$", part]), vars.len)) }
+            } else if (n.flags & parser.F_EXPO) != 0 {
+                mut vars.set(vars.len - 1, 0) // a C global may be read from anywhere
+                mut e.global(d)
+            } else {
+                fail(mut var_by_name.set(mut e.names.join(["__ace$g$", text]), vars.len))
+            }
+        } else if n.kind == Kind.signing && n.c == 0 { // a generic signing's pairs come with their constructions
+            conc: u32 = mut s.build_type(n.a)
+            for j: u32 in 0..n.nkids {
+                conf: u32 = s.kid(d, j)
+                want: u32 = s.node_ty(s.node(conf).a)
+                if want == 0 { want = mut s.build_type(s.node(conf).a) }
+                _ = mut e.vtable(conc, want, conf)
+            }
+        }
+    }
+    for k: usize in 0..e.fns.len {
+        if main_at < 0 || e.fns.get(k).global { mut e.compile(k) }
+        if e.unsupported.len > 0 { return false, e.unsupported }
+    }
+    if main_at < 0 {
+        for k: usize in 0..vars.len {
+            if vars.get(k) != 0 {
+                mut e.global(vars.get(k))
+                mut vars.set(k, 0)
+            }
+        }
+    }
+    if e.unsupported.len > 0 { return false, e.unsupported }
+    for k: usize = 0; k < e.o.syms.len; k += 1 {
+        sy: macho.ESym = e.o.syms.get(k)
+        if sy.ntype != 0 { continue }
+        at: usize, found: bool = by_name.get(sy.name)
+        if found && !e.fns.get(at).done { mut e.compile(at) }
+        if e.unsupported.len > 0 { return false, e.unsupported }
+        vi: usize, is_var: bool = var_by_name.get(sy.name)
+        if is_var && vars.get(vi - 1) != 0 {
+            mut e.global(vars.get(vi - 1))
+            mut vars.set(vi - 1, 0)
+        }
+        if e.unsupported.len > 0 { return false, e.unsupported }
+    }
+    arm64.runtime(mut e.o)
+    if s.errors > errors || e.o.errors > 0 { return false, "" }
+    dir: string = macho.cwd(mut e.names)
+    mut e.o.debug_info(root, dir)
+    mut e.o.debug_line(dir)
+    ok: bool = mut e.o.write(out)
+    return ok, ""
+}
+
+// --- constant data ----------------------------------------------------------
+
+/* A pointer word at `off` in a constant's bytes, which the linker fills with
+ * symbol `sym`'s address.
+ */
+CRel: struct {
+    off: u32,
+    sym: int,
+}
+
+word_size(size: u32): u32 {
+    if size < 8 { return size }
+    return 8
+}
+
+put_u(mut b: array.Array[u8], v: u64, w: u32) {
+    for i: u32 in 0..w { fail(mut b.push(u8((v >> u64(8 * i)) & 0xFF))) }
+}
+
+pad(mut b: array.Array[u8], from: usize, to: usize) {
+    for b.len - from < to { fail(mut b.push(0)) }
+}
+
+Em.ty(self, t: u32): sema.SType {
+    return self.s.ty(t)
+}
+
+Em.unwrap(self, t: u32): u32 {
+    return ir.unwrap(*self.s, t)
+}
+
+Em.size(self, t: u32): u32 {
+    return self.ty(self.unwrap(t)).size
+}
+
+Em.align(self, t: u32): u32 {
+    return self.ty(self.unwrap(t)).align
+}
+
+Em.signed(self, t: u32): bool {
+    u: u32 = self.unwrap(t)
+    if u == 0 { return true }
+    x: sema.SType = self.ty(u)
+    if x.kind == TypeKind.enum || x.kind == TypeKind.bits { return self.signed(x.base) }
+    return x.kind == TypeKind.prim && x.prim >= sema.P_I8 && x.prim <= sema.P_I64
+}
+
+Em.int_prim(self, t: u32): bool {
+    u: u32 = self.unwrap(t)
+    return u != 0 && self.ty(u).kind == TypeKind.prim && ((self.ty(u).prim >= sema.P_I8 && self.ty(u).prim <= sema.P_U64) || self.ty(u).prim == sema.P_USIZE)
+}
+
+Em.float_prim(self, t: u32): bool {
+    u: u32 = self.unwrap(t)
+    return u != 0 && self.ty(u).kind == TypeKind.prim && (self.ty(u).prim == sema.P_F32 || self.ty(u).prim == sema.P_F64)
+}
+
+/* Constructor-constant targets, family-checked: an int argument may fold
+ * into an integer primitive, an enum, a bits type, or a distinct over one; a
+ * float argument only into a float primitive or a distinct over one.
+ */
+Em.int_target(self, t: u32): bool {
+    u: u32 = self.unwrap(t)
+    return u != 0 && (self.ty(u).kind == TypeKind.enum || self.ty(u).kind == TypeKind.bits || self.int_prim(u))
+}
+
+/* Whether `s` is a global constant with an initializer, and that initializer. */
+Em.const_init(self, s: u32): (bool, u32) {
+    if s == 0 { return false, 0 }
+    x: sema.Sym = self.s.sym(s)
+    init: u32 = self.s.sym_init(s)
+    return x.is_global && x.is_const && init != 0, init
+}
+
+/* Constant arithmetic for global initializers, as emit.c's folders: an
+ * integer folds at its destination's width and signedness (0 stands for the
+ * untyped i64 literals carry), a float at its destination's precision,
+ * rounding f32 after every operation. Overflow, division by zero, and an
+ * out-of-range shift count are reported here. Each returns 1 with a value,
+ * 0 when the shape does not fold, or -1 after reporting its own error.
+ *
+ * C folds in 128 bits. Every value folded fits its type, so here one is its
+ * 64-bit two's-complement bits, read signed or not by the type, and each
+ * operation checks its own 64-bit overflow before the width check.
+ */
+Em.bits(self, t: u32): u32 {
+    if t == 0 { return 64 }
+    return self.size(t) * 8
+}
+
+Em.fold_signed(self, t: u32): bool {
+    return t == 0 || self.signed(t)
+}
+
+/* Whether value bits `v`, read by t's signedness, fit t's width. */
+Em.fits(self, t: u32, v: u64): bool {
+    w: u32 = self.bits(t)
+    if w >= 64 { return true }
+    if self.fold_signed(t) {
+        x: i64 = bitcast(i64, v)
+        h: i64 = i64(1) << i64(w - 1)
+        return x >= -h && x < h
+    }
+    return v < u64(1) << u64(w)
+}
+
+/* Whether literal value `v`, never negative, fits t. */
+Em.lit_fits(self, t: u32, v: u64): bool {
+    w: u32 = self.bits(t)
+    if self.fold_signed(t) { return v < u64(1) << u64(w - 1) }
+    return w >= 64 || v < u64(1) << u64(w)
+}
+
+/* Bits `v` cut to t's width, sign-extended when t is signed. */
+Em.trunc(self, t: u32, v: u64): u64 {
+    w: u32 = self.bits(t)
+    if w >= 64 { return v }
+    mask: u64 = (u64(1) << u64(w)) - 1
+    m: u64 = v & mask
+    if self.fold_signed(t) && ((m >> u64(w - 1)) & 1) != 0 { return m | ~mask }
+    return m
+}
+
+I64_MIN: const u64 = 0x8000000000000000
+
+/* a op b for op +, -, *, and whether it overflows 64 bits read by `sg`. */
+wide(op: Token, a: u64, b: u64, sg: bool): (u64, bool) {
+    ia: i64 = bitcast(i64, a)
+    ib: i64 = bitcast(i64, b)
+    if op == Token.plus {
+        r: u64 = bits.wradd(a, b)
+        if !sg { return r, r < a }
+        return r, (ia >= 0) == (ib >= 0) && (bitcast(i64, r) >= 0) != (ia >= 0)
+    }
+    if op == Token.minus {
+        r: u64 = bits.wrsub(a, b)
+        if !sg { return r, a < b }
+        return r, (ia >= 0) != (ib >= 0) && (bitcast(i64, r) >= 0) != (ia >= 0)
+    }
+    r: u64 = bits.wrmul(a, b)
+    if !sg { return r, a != 0 && r / a != b }
+    if ia == 0 { return r, false }
+    if (ia == -1 && b == I64_MIN) || (ib == -1 && a == I64_MIN) { return r, true }
+    return r, bitcast(i64, r) / ia != ib
+}
+
+Em.fold_int(mut self, v: u32, t: u32): (int, u64) {
+    n: Node = self.s.node(v)
+    if n.kind == Kind.int_lit || n.kind == Kind.char_lit {
+        if self.lit_fits(t, n.ival) { return 1, n.ival }
+        return 0, 0
+    }
+    if n.kind == Kind.ident {
+        ok: bool, init: u32 = self.const_init(self.s.node_sym(v))
+        vt: u32 = self.unwrap(self.s.node_ty(v))
+        if !ok || vt == 0 || vt != self.unwrap(t) { return 0, 0 }
+        return mut self.fold_int(init, t)
+    }
+    if n.kind == Kind.unary {
+        if n.op != Token.minus && n.op != Token.tilde { return 0, 0 }
+        r: int, a: u64 = mut self.fold_int(n.a, t)
+        if r != 1 { return r, 0 }
+        if n.op == Token.tilde { return 1, self.trunc(t, ~a) }
+        if self.fold_signed(t) {
+            if a != I64_MIN {
+                x: u64 = bitcast(u64, -bitcast(i64, a))
+                if self.fits(t, x) { return 1, x }
+            }
+        } else if a == 0 {
+            return 1, 0
+        }
+        mut self.s.err(v, ["constant integer overflow"])
+        return -1, 0
+    }
+    if n.kind == Kind.binary {
+        ct: u32 = t
+        if n.op == Token.shl || n.op == Token.shr {
+            bt: u32 = self.unwrap(self.s.node_ty(n.b))
+            if self.int_prim(bt) { ct = bt }
+        }
+        r: int, a: u64 = mut self.fold_int(n.a, t)
+        if r != 1 { return r, 0 }
+        b: u64 = 0
+        r, b = mut self.fold_int(n.b, ct)
+        if r != 1 { return r, 0 }
+        sg: bool = self.fold_signed(t)
+        switch n.op {
+            Token.plus, Token.minus, Token.star {
+                x: u64, over: bool = wide(n.op, a, b, sg)
+                if over || !self.fits(t, x) {
+                    mut self.s.err(v, ["constant integer overflow"])
+                    return -1, 0
+                }
+                return 1, x
+            }
+            Token.slash, Token.percent {
+                if b == 0 {
+                    mut self.s.err(v, ["constant division by zero"])
+                    return -1, 0
+                }
+                if sg && bitcast(i64, b) == -1 && a == ~u64(0) << u64(self.bits(t) - 1) {
+                    mut self.s.err(v, ["constant integer overflow"])
+                    return -1, 0
+                }
+                if sg && n.op == Token.slash { return 1, bitcast(u64, bitcast(i64, a) / bitcast(i64, b)) }
+                if sg { return 1, bitcast(u64, bitcast(i64, a) % bitcast(i64, b)) }
+                if n.op == Token.slash { return 1, a / b }
+                return 1, a % b
+            }
+            Token.amp { return 1, a & b }
+            Token.pipe { return 1, a | b }
+            Token.caret { return 1, a ^ b }
+            Token.shl, Token.shr {
+                if (self.fold_signed(ct) && bitcast(i64, b) < 0) || b >= u64(self.bits(t)) {
+                    mut self.s.err(v, ["constant shift count out of range"])
+                    return -1, 0
+                }
+                if n.op == Token.shl { return 1, self.trunc(t, a << b) }
+                if sg { return 1, bitcast(u64, bitcast(i64, a) >> i64(b)) }
+                return 1, a >> b
+            }
+            default { return 0, 0 }
+        }
+    }
+    if n.kind == Kind.call {
+        if self.s.node_sym(v) != 0 || n.nkids != 1 || n.a == 0 || self.s.node(n.a).kind != Kind.ident { return 0, 0 }
+        want: u32 = self.unwrap(self.s.node_ty(n.a))
+        if !self.int_prim(want) || want != self.unwrap(t) { return 0, 0 }
+        arg: u32 = self.s.kid(v, 0)
+        at: u32 = self.unwrap(self.s.node_ty(arg))
+        if !self.int_prim(at) { at = want }
+        r: int, a: u64 = mut self.fold_int(arg, at)
+        if r != 1 { return r, 0 }
+        return 1, self.trunc(want, a)
+    }
+    return 0, 0
+}
+
+Em.round(self, t: u32, d: f64): f64 {
+    if self.ty(self.unwrap(t)).prim == sema.P_F32 { return f64(f32(d)) }
+    return d
+}
+
+Em.fold_float(mut self, v: u32, t: u32): (int, f64) {
+    n: Node = self.s.node(v)
+    if n.kind == Kind.float_lit { return 1, self.round(t, n.fval) }
+    if n.kind == Kind.ident {
+        ok: bool, init: u32 = self.const_init(self.s.node_sym(v))
+        vt: u32 = self.unwrap(self.s.node_ty(v))
+        if !ok || vt == 0 || vt != self.unwrap(t) { return 0, 0.0 }
+        return mut self.fold_float(init, t)
+    }
+    if n.kind == Kind.unary {
+        if n.op != Token.minus { return 0, 0.0 }
+        r: int, a: f64 = mut self.fold_float(n.a, t)
+        if r != 1 { return r, 0.0 }
+        return 1, -a
+    }
+    if n.kind == Kind.binary {
+        r: int, a: f64 = mut self.fold_float(n.a, t)
+        if r != 1 { return r, 0.0 }
+        b: f64 = 0.0
+        r, b = mut self.fold_float(n.b, t)
+        if r != 1 { return r, 0.0 }
+        x: f64 = 0.0
+        switch n.op {
+            Token.plus { x = self.round(t, a + b) }
+            Token.minus { x = self.round(t, a - b) }
+            Token.star { x = self.round(t, a * b) }
+            Token.slash { x = self.round(t, a / b) }
+            default { return 0, 0.0 }
+        }
+        // a NaN's sign bit is host-dependent, so only finite results fold
+        if x - x != 0.0 { return 0, 0.0 }
+        return 1, x
+    }
+    if n.kind == Kind.call {
+        if self.s.node_sym(v) != 0 || n.nkids != 1 || n.a == 0 || self.s.node(n.a).kind != Kind.ident { return 0, 0.0 }
+        want: u32 = self.unwrap(self.s.node_ty(n.a))
+        if !self.float_prim(want) || want != self.unwrap(t) { return 0, 0.0 }
+        arg: u32 = self.s.kid(v, 0)
+        at: u32 = self.unwrap(self.s.node_ty(arg))
+        if self.float_prim(at) {
+            r: int, a: f64 = mut self.fold_float(arg, at)
+            if r != 1 { return r, 0.0 }
+            return 1, self.round(want, a)
+        }
+        if at != 0 && self.ty(at).kind == TypeKind.ut { at = 0 }
+        if at != 0 && !self.int_prim(at) { return 0, 0.0 }
+        r: int, w: u64 = mut self.fold_int(arg, at)
+        if r != 1 { return r, 0.0 }
+        f32_want: bool = self.ty(want).prim == sema.P_F32
+        if self.fold_signed(at) {
+            if f32_want { return 1, f64(f32(bitcast(i64, w))) }
+            return 1, f64(bitcast(i64, w))
+        }
+        if f32_want { return 1, f64(f32(w)) }
+        return 1, f64(w)
+    }
+    return 0, 0.0
+}
+
+/* Float `d` as primitive t's bytes: f64 when t is, else f32. */
+Em.put_float(self, mut out: array.Array[u8], t: u32, d: f64) {
+    if self.ty(t).kind == TypeKind.prim && self.ty(t).prim == sema.P_F64 {
+        put_u(mut out, bitcast(u64, d), 8)
+        return
+    }
+    put_u(mut out, u64(bitcast(u32, f32(d))), 4)
+}
+
+/* Arithmetic or a cast of one over a primitive destination, as its bytes. */
+Em.eval_fold(mut self, v: u32, t: u32, mut out: array.Array[u8]): bool {
+    if self.int_prim(t) {
+        r: int, x: u64 = mut self.fold_int(v, t)
+        if r != 1 { return false }
+        put_u(mut out, x, self.size(t))
+        return true
+    }
+    if self.float_prim(t) {
+        r: int, d: f64 = mut self.fold_float(v, t)
+        if r != 1 { return false }
+        self.put_float(mut out, self.unwrap(t), d)
+        return true
+    }
+    return false
+}
+
+/* The integer constant `v` spells, as emit.c's const_int: a literal, a
+ * global constant, a cast of one, negated or complemented, as 64 bits.
+ */
+Em.const_int(self, v: u32): (bool, u64) {
+    n: u32 = v
+    neg: bool = false
+    comp: bool = false
+    x: Node = self.s.node(v)
+    if x.kind == Kind.unary && x.op == Token.minus {
+        neg = true
+        n = x.a
+    } else if x.kind == Kind.unary && x.op == Token.tilde {
+        comp = true
+        n = x.a
+    }
+    xn: Node = self.s.node(n)
+    inner: u64 = 0
+    if xn.kind == Kind.call && self.s.node_sym(n) == 0 && xn.nkids == 1 && xn.a != 0 && self.s.node(xn.a).kind == Kind.ident && self.s.node_ty(xn.a) != 0 && self.ty(self.s.node_ty(xn.a)).kind != TypeKind.error_domain { // a domain packs its id above the code
+        ok: bool = false
+        ok, inner = self.const_int(self.s.kid(n, 0))
+        if !ok { return false, 0 }
+    } else if xn.kind == Kind.ident {
+        ok: bool, init: u32 = self.const_init(self.s.node_sym(n))
+        if !ok { return false, 0 }
+        ok, inner = self.const_int(init)
+        if !ok { return false, 0 }
+    } else {
+        if xn.kind != Kind.int_lit && xn.kind != Kind.bool && xn.kind != Kind.char_lit { return false, 0 }
+        t: u32 = self.unwrap(self.s.node_ty(v))
+        if t == 0 { return false, 0 }
+        tk: TypeKind = self.ty(t).kind
+        p: u8 = self.ty(t).prim
+        if tk != TypeKind.ut && (tk != TypeKind.prim || !(p <= sema.P_U64 || p == sema.P_USIZE)) { return false, 0 }
+        inner = xn.ival
+    }
+    if neg { return true, 0 - inner }
+    if comp { return true, ~inner }
+    return true, inner
+}
+
+/* The static data of constant array literal `lit` viewed as []T (sema's
+ * view is its [N]T), read-only under link symbol `name`; -1 when it is not
+ * constant.
+ */
+Em.literal_data(mut self, lit: u32, name: string): int {
+    at: u32 = self.s.node_view(lit)
+    bytes: array.Array[u8] = array.Array[u8] {}
+    defer mut bytes.wipe()
+    rels: array.Array[CRel] = array.Array[CRel] {}
+    defer mut rels.wipe()
+    if !mut self.eval_const(lit, at, mut bytes, mut rels) { return -1 }
+    return mut self.place(macho.SEC_CONST, name, false, self.align(at), bytes, rels)
+}
+
+/* Bytes `bytes` and their relocations `rels` defined as `name` (external
+ * when `ext`) in section k at alignment `align`; the symbol.
+ */
+Em.place(mut self, k: int, name: string, ext: bool, align: u32, bytes: array.Array[u8], rels: array.Array[CRel]): int {
+    d: mut *macho.Sec = mut self.o.sec(k)
+    for align > 1 && d.data.len % usize(align) != 0 { fail(mut d.data.push(0)) }
+    g: int = mut self.o.define(name, ext, k)
+    d = mut self.o.sec(k)
+    start: u32 = u32(d.data.len)
+    macho.put_bytes(mut d.data, bytes.view())
+    for r: CRel in rels.view() { mut self.o.reloc(k, start + r.off, r.sym, false, 3, true, macho.RM_UNSIGNED) }
+    return g
+}
+
+/* A value evaluated alone into fresh bytes, which then land at `at` in `out`. */
+Em.eval_into(mut self, v: u32, t: u32, mut out: array.Array[u8], mut rels: array.Array[CRel], at: u32): bool {
+    b: array.Array[u8] = array.Array[u8] {}
+    defer mut b.wipe()
+    r: array.Array[CRel] = array.Array[CRel] {}
+    defer mut r.wipe()
+    if !mut self.eval_const(v, t, mut b, mut r) || u32(b.len) != self.size(t) { return false }
+    for j: usize in 0..b.len { mut out.set(usize(at) + j, b.get(j)) }
+    for x: CRel in r.view() { fail(mut rels.push(CRel { off = at + x.off, sym = x.sym })) }
+    return true
+}
+
+/* Constant `v` of type t appended to `out` as its bytes (little-endian,
+ * declaration-order layout), each pointer word it holds in `rels`; false
+ * when it is not a compile-time constant (emit.c's eval_const).
+ */
+Em.eval_const(mut self, value: u32, ty: u32, mut out: array.Array[u8], mut rels: array.Array[CRel]): bool {
+    t: u32 = self.unwrap(ty)
+    if t == 0 { return false }
+    // [N]T(value) and []T([...]): the value itself, typed by the cast
+    v: u32 = value
+    for {
+        c: Node = self.s.node(v)
+        if c.kind != Kind.call || c.a == 0 || c.nkids != 1 { break }
+        ck: Kind = self.s.node(c.a).kind
+        if ck != Kind.array_t && !(ck == Kind.slice_t && self.s.node(self.s.kid(v, 0)).kind == Kind.arraylit) { break }
+        v = self.s.kid(v, 0)
+    }
+    n: Node = self.s.node(v)
+    x: sema.SType = self.ty(t)
+    switch n.kind {
+        Kind.call {
+            // union variant construction with a compile-time payload
+            callee: u32 = n.a
+            ut: u32 = 0
+            if callee != 0 && self.s.node(callee).kind == Kind.selector && self.s.node_sym(v) == 0 { ut = self.union_of_base(self.s.node(callee).a) }
+            if ut != 0 {
+                vi: u64 = self.s.node_ival(callee)
+                u: sema.SType = self.ty(ut)
+                if vi >= u64(u.nfields) || self.s.field(u, u32(vi)).ty == 0 { return false }
+                start: usize = out.len
+                put_u(mut out, vi, 4)
+                pad(mut out, start, usize(self.payload_off(ut)))
+                if !mut self.eval_const(self.s.kid(v, 0), self.s.field(u, u32(vi)).ty, mut out, mut rels) { return false }
+                pad(mut out, start, usize(x.size))
+                return true
+            }
+            if callee != 0 && self.s.node(callee).kind == Kind.ident && mem.equal(self.s.node(callee).text, "typeid") && self.s.node_ival(v) != 0 {
+                put_u(mut out, self.s.node_ival(v), 8)
+                return true
+            }
+            // A constructor-shaped cast sema resolved against a type: folding
+            // the argument at the checked target matches the runtime cast,
+            // within one family.
+            if callee != 0 && self.s.node(callee).kind == Kind.ident && n.nkids == 1 && self.s.node_sym(v) == 0 {
+                want: u32 = self.s.node_ty(callee)
+                arg: u32 = self.s.kid(v, 0)
+                an: Node = self.s.node(arg)
+                neg: bool = an.kind == Kind.unary && an.op == Token.minus
+                arg_int: bool = an.kind == Kind.int_lit || an.kind == Kind.char_lit || an.kind == Kind.bool || neg
+                arg_float: bool = an.kind == Kind.float_lit || (neg && self.s.node(an.a).kind == Kind.float_lit)
+                if (arg_int && self.int_target(want)) || (arg_float && self.float_prim(want)) { return mut self.eval_const(arg, want, mut out, mut rels) }
+            }
+            return mut self.eval_fold(v, t, mut out)
+        }
+        Kind.binary { return mut self.eval_fold(v, t, mut out) }
+        Kind.int_lit, Kind.bool, Kind.char_lit {
+            ok: bool, c: u64 = self.const_int(v)
+            if !ok { return false }
+            put_u(mut out, c, word_size(x.size))
+            return true
+        }
+        Kind.float_lit {
+            self.put_float(mut out, t, n.fval)
+            return true
+        }
+        Kind.str_lit {
+            if x.kind != TypeKind.prim || x.prim != sema.P_STRING { return false }
+            off: u32 = u32(out.len)
+            str: int = mut self.o.string(n.text)
+            put_u(mut out, 0, 8)
+            put_u(mut out, u64(n.text.len), 8)
+            fail(mut rels.push(CRel { off = off, sym = str }))
+            return true
+        }
+        Kind.selector { // enum member (base carries the type symbol)
+            ts: u32 = self.s.node_sym(n.a)
+            if ts != 0 && self.s.sym(ts).kind == sema.SymKind.type && self.s.sym(ts).ty != 0 {
+                st: u32 = self.s.sym(ts).ty
+                if self.ty(st).kind == TypeKind.error_domain {
+                    put_u(mut out, self.s.node_ival(v), 8)
+                    return true
+                }
+                if self.ty(st).kind == TypeKind.enum {
+                    put_u(mut out, self.s.node_ival(v), self.ty(st).size)
+                    return true
+                }
+            }
+            if self.union_of_base(n.a) != 0 { // payloadless variant: tag, then a zero payload
+                start: usize = out.len
+                put_u(mut out, self.s.node_ival(v), 4)
+                pad(mut out, start, usize(x.size))
+                return true
+            }
+            return false
+        }
+        Kind.null {
+            pad(mut out, out.len, usize(x.size))
+            return true
+        }
+        Kind.ident {
+            ok: bool, init: u32 = self.const_init(self.s.node_sym(v))
+            if ok { return mut self.eval_const(init, t, mut out, mut rels) }
+            return false
+        }
+        Kind.unary {
+            if n.op == Token.minus || n.op == Token.tilde {
+                ok: bool, c: u64 = self.const_int(v)
+                if ok {
+                    put_u(mut out, c, word_size(x.size))
+                    return true
+                }
+            }
+            if n.op == Token.minus && self.s.node(n.a).kind == Kind.float_lit && self.float_prim(t) {
+                self.put_float(mut out, t, -self.s.node(n.a).fval) // a negated float literal folds as its negated value
+                return true
+            }
+            return mut self.eval_fold(v, t, mut out)
+        }
+        Kind.structlit { return mut self.eval_struct(v, t, mut out, mut rels) }
+        Kind.arraylit { return mut self.eval_array(v, t, mut out, mut rels) }
+        default { return false }
+    }
+}
+
+Em.eval_struct(mut self, v: u32, t: u32, mut out: array.Array[u8], mut rels: array.Array[CRel]): bool {
+    n: Node = self.s.node(v)
+    x: sema.SType = self.ty(t)
+    if x.kind == TypeKind.bits {
+        raw: u64 = 0
+        for i: u32 in 0..n.nkids {
+            k: u32 = self.s.kid(v, i)
+            fi: int = self.find_field(t, self.s.node(k).text)
+            if fi < 0 { return false }
+            ok: bool, value: u64 = self.const_int(self.s.node(k).a)
+            if !ok { return false }
+            f: sema.SField = self.s.field(x, u32(fi))
+            low: u64 = ~u64(0)
+            if f.bit_width != 64 { low = (u64(1) << u64(f.bit_width)) - 1 }
+            raw |= (value & low) << u64(f.bit_offset)
+        }
+        put_u(mut out, raw, x.size)
+        return true
+    }
+    if x.kind != TypeKind.struct { return false }
+    positional: bool = n.nkids > 0 && self.s.node(self.s.kid(v, 0)).text.len == 0
+    start: usize = out.len
+    pad(mut out, start, usize(x.size))
+    for i: u32 in 0..n.nkids {
+        k: u32 = self.s.kid(v, i)
+        fidx: int = int(i)
+        if !positional { fidx = self.find_field(t, self.s.node(k).text) }
+        if fidx < 0 || fidx >= int(x.nfields) || !mut self.eval_into(self.s.node(k).a, self.s.field(x, u32(fidx)).ty, mut out, mut rels, u32(start) + self.s.field(x, u32(fidx)).offset) {
+            mut out.truncate(start)
+            return false
+        }
+    }
+    // the fields left out, at their declared defaults (C's sema appends them)
+    for i: u32 in 0..x.nfields {
+        f: sema.SField = self.s.field(x, i)
+        if f.default_value == 0 || (positional && i < n.nkids) || self.written(v, f.name) { continue }
+        if !mut self.eval_into(f.default_value, f.ty, mut out, mut rels, u32(start) + f.offset) {
+            mut out.truncate(start)
+            return false
+        }
+    }
+    return true
+}
+
+/* Whether struct literal `v` names field `name`. */
+Em.written(self, v: u32, name: string): bool {
+    for j: u32 in 0..self.s.node(v).nkids {
+        if mem.equal(self.s.node(self.s.kid(v, j)).text, name) { return true }
+    }
+    return false
+}
+
+Em.eval_array(mut self, v: u32, t: u32, mut out: array.Array[u8], mut rels: array.Array[CRel]): bool {
+    n: Node = self.s.node(v)
+    x: sema.SType = self.ty(t)
+    if x.kind == TypeKind.slice && self.s.node_view(v) != 0 { // its [N]T, then the view
+        at: u32 = self.s.node_view(v)
+        off: u32 = u32(out.len)
+        g: int = -1
+        if self.ty(at).count != 0 {
+            g = mut self.literal_data(v, lowering.literal_name(mut self.names))
+            if g < 0 { return false }
+        }
+        put_u(mut out, 0, 8)
+        put_u(mut out, self.ty(at).count, 8)
+        if g >= 0 { fail(mut rels.push(CRel { off = off, sym = g })) }
+        return true
+    }
+    if x.kind != TypeKind.array { return false }
+    start: usize = out.len
+    es: u32 = self.size(x.base)
+    if n.nkids > 0 && self.s.node(self.s.kid(v, 0)).kind == Kind.mapentry {
+        // keyed [E]T: each value at its member's slot, in any written order
+        pad(mut out, start, usize(x.size))
+        for i: u32 in 0..n.nkids {
+            k: u32 = self.s.kid(v, i)
+            value: u32 = k
+            slot: u64 = u64(i)
+            if self.s.node(k).kind == Kind.mapentry {
+                value = self.s.node(k).b
+                slot = self.s.node_ival(self.s.node(k).a)
+            }
+            if !mut self.eval_into(value, x.base, mut out, mut rels, u32(start) + u32(slot) * es) {
+                mut out.truncate(start)
+                return false
+            }
+        }
+        return true
+    }
+    if n.a != 0 {
+        for 0..x.count {
+            if !mut self.eval_const(n.a, x.base, mut out, mut rels) { return false }
+        }
+        return true
+    }
+    for i: u32 in 0..n.nkids {
+        pad(mut out, start, usize(i * es))
+        if !mut self.eval_const(self.s.kid(v, i), x.base, mut out, mut rels) { return false }
+    }
+    pad(mut out, start, usize(x.size)) // tail padding
+    return true
+}
+
+Em.find_field(self, t: u32, name: string): int {
+    x: sema.SType = self.ty(t)
+    for i: u32 in 0..x.nfields {
+        if mem.equal(self.s.field(x, i).name, name) { return int(i) }
+    }
+    return -1
+}
+
+/* The union a variant's base names: its type, or an instantiated one. */
+Em.union_of_base(self, base: u32): u32 {
+    if base == 0 { return 0 }
+    b: Node = self.s.node(base)
+    if b.kind == Kind.ident {
+        ts: u32 = self.s.node_sym(base)
+        if ts != 0 && self.s.sym(ts).kind == sema.SymKind.type && self.s.sym(ts).ty != 0 && self.ty(self.s.sym(ts).ty).kind == TypeKind.union { return self.s.sym(ts).ty }
+        return 0
+    }
+    if b.kind == Kind.index && self.s.node_ty(base) != 0 && self.ty(self.s.node_ty(base)).kind == TypeKind.union { return self.s.node_ty(base) }
+    return 0
+}
+
+/* The byte offset of union `u`'s payload: past the i32 tag, at the largest
+ * payload alignment.
+ */
+Em.payload_off(self, u: u32): u32 {
+    x: sema.SType = self.ty(u)
+    maxa: u32 = 1
+    for i: u32 in 0..x.nfields {
+        ft: u32 = self.s.field(x, i).ty
+        if ft != 0 && maxa < self.align(ft) { maxa = self.align(ft) }
+    }
+    return (4 + maxa - 1) / maxa * maxa
+}
+
+// --- globals ----------------------------------------------------------------
+
+/* Global `d`'s storage: zero-fill without an initializer, else its constant
+ * bytes, read-only when const (or a C export that is not mut).
+ */
+Em.global(mut self, d: u32) {
+    n: Node = self.s.node(d)
+    binder: u32 = self.s.kid(d, 0)
+    vs: u32 = self.s.var_sym(d)
+    if vs == 0 { return }
+    t: u32 = self.s.sym(vs).ty
+    if self.ty(t).kind == TypeKind.staticmap {
+        mut self.staticmap(d, vs, t)
+        return
+    }
+    export_c: bool = (n.flags & parser.F_EXPO) != 0 // a C global defined in Ace: its C name, external
+    nm: string = ""
+    if export_c && n.cname.len > 0 {
+        nm = mut self.names.join(["_", n.cname])
+    } else if export_c {
+        nm = mut self.names.join(["_", self.s.node(binder).text])
+    } else {
+        nm = mut self.names.join(["__ace$g$", self.s.node(binder).text])
+    }
+    if n.b == 0 {
+        b: mut *macho.Sec = mut self.o.sec(macho.SEC_BSS)
+        a: u64 = u64(self.align(t))
+        b.size = (b.size + a - 1) / a * a
+        _ = mut self.o.define(nm, false, macho.SEC_BSS)
+        b = mut self.o.sec(macho.SEC_BSS)
+        b.size += u64(self.size(t))
+        return
+    }
+    if self.ty(t).kind == TypeKind.error {
+        mut self.error_global(d, nm)
+        return
+    }
+    bytes: array.Array[u8] = array.Array[u8] {}
+    defer mut bytes.wipe()
+    rels: array.Array[CRel] = array.Array[CRel] {}
+    defer mut rels.wipe()
+    errors: int = self.s.errors
+    if !mut self.eval_const(n.b, t, mut bytes, mut rels) {
+        // a fold error is already reported; otherwise the shape is not constant
+        if self.s.errors != errors { return }
+        if self.ty(t).kind == TypeKind.union {
+            mut self.s.err(d, ["global union initializer must be a compile-time variant value"])
+        } else {
+            mut self.s.err(d, ["global initializer must be a compile-time constant"])
+        }
+        return
+    }
+    k: int = macho.SEC_DATA
+    if (n.flags & parser.F_CONST) != 0 || (export_c && (n.flags & parser.F_MUT) == 0) { k = macho.SEC_CONST }
+    if export_c && self.o.syms.get(usize(mut self.o.intern(nm))).ntype != 0 { mut self.s.err(d, ["C symbol '", nm[1..], "' is already defined"]) }
+    _ = mut self.place(k, nm, export_c, self.align(t), bytes, rels)
+}
+
+/* Static map global `d` (symbol vs, type t) as three read-only tables: its
+ * keys, its values with the miss entry's zero value last, and the perfect
+ * hash's slots, each an entry index plus one.
+ */
+Em.staticmap(mut self, d: u32, vs: u32, t: u32) {
+    lit: u32 = self.s.node(d).b
+    count: u32 = 0
+    if lit != 0 { count = self.s.node(lit).nkids }
+    m: sema.SType = self.ty(t)
+    rawkey: u32 = self.unwrap(m.base)
+    strings: bool = rawkey != 0 && self.ty(rawkey).kind == TypeKind.prim && self.ty(rawkey).prim == sema.P_STRING
+    slots: array.Array[u32] = array.Array[u32] {}
+    defer mut slots.wipe()
+    _, _, ok: bool = lowering.map_plan(*self.s, vs, strings, mut slots)
+    if !ok {
+        mut self.s.err(d, ["could not construct StaticMap perfect hash"])
+        return
+    }
+    keys: array.Array[u8] = array.Array[u8] {}
+    defer mut keys.wipe()
+    key_rels: array.Array[CRel] = array.Array[CRel] {}
+    defer mut key_rels.wipe()
+    for i: u32 in 0..count {
+        a: u32 = self.s.node(self.s.kid(lit, i)).a
+        if strings {
+            text: u32 = self.s.static_key_string(a)
+            if text == 0 || !mut self.eval_const(text, m.base, mut keys, mut key_rels) { mut self.s.err(a, ["StaticMap key did not emit as a constant"]) }
+        } else {
+            k: u64, _ = self.s.static_key_int(a)
+            put_u(mut keys, k, self.size(m.base))
+        }
+    }
+    values: array.Array[u8] = array.Array[u8] {}
+    defer mut values.wipe()
+    value_rels: array.Array[CRel] = array.Array[CRel] {}
+    defer mut value_rels.wipe()
+    for i: u32 in 0..count {
+        b: u32 = self.s.node(self.s.kid(lit, i)).b
+        if !mut self.eval_const(b, m.ret, mut values, mut value_rels) { mut self.s.err(b, ["StaticMap value did not emit as a constant"]) }
+    }
+    pad(mut values, values.len, usize(self.size(m.ret))) // the miss entry, at index count
+    name: string = self.s.sym(vs).name
+    _ = mut self.place(macho.SEC_CONST, mut self.names.join(["__ace$map$", name, "$keys"]), false, self.align(m.base), keys, key_rels)
+    _ = mut self.place(macho.SEC_CONST, mut self.names.join(["__ace$map$", name, "$values"]), false, self.align(m.ret), values, value_rels)
+    table: array.Array[u8] = array.Array[u8] {}
+    defer mut table.wipe()
+    for v: u32 in slots.view() { put_u(mut table, u64(v), 4) }
+    _ = mut self.place(macho.SEC_CONST, mut self.names.join(["__ace$map$", name, "$slots"]), false, 4, table, array.Array[CRel] {})
+}
+
+/* A global Error handle: null, a domain entry, or a domain called with a
+ * constant code, as one word (domain id above the i32 code).
+ */
+Em.error_global(mut self, d: u32, nm: string) {
+    n: Node = self.s.node(d)
+    call: u32 = n.b
+    c: Node = self.s.node(call)
+    word: u64 = 0
+    if c.kind == Kind.null {
+        word = 0
+    } else if c.kind == Kind.selector && self.s.node_ty(call) != 0 && self.ty(self.s.node_ty(call)).kind == TypeKind.error {
+        word = self.s.node_ival(call)
+    } else {
+        code: u64 = 0
+        ok: bool = c.kind == Kind.call && c.nkids <= 1
+        if ok && c.nkids == 1 { ok, code = self.const_int(self.s.kid(call, 0)) }
+        if !ok {
+            mut self.s.err(d, ["global Error initializer must use a domain with a constant i32 code"])
+            return
+        }
+        word = (self.s.node_ival(call) << 32) | u64(u32(code & 0xFFFFFFFF))
+    }
+    k: int = macho.SEC_DATA
+    if (n.flags & parser.F_CONST) != 0 { k = macho.SEC_CONST }
+    bytes: array.Array[u8] = array.Array[u8] {}
+    defer mut bytes.wipe()
+    put_u(mut bytes, word, 8)
+    _ = mut self.place(k, nm, false, 8, bytes, array.Array[CRel] {})
+}
+
+// --- vtables ----------------------------------------------------------------
+
+/* conc's vtable for contract `want` under conformance conf, defined once per pair:
+ * its method addresses in contract order in __const, and any embed thunk it
+ * needs in __text at the cursor, so never inside a function's code.
+ */
+Em.vtable(mut self, conc: u32, want: u32, conf: u32): int {
+    if conc == 0 || want == 0 || conf == 0 {
+        mut self.s.err(conf, ["invalid contract conformance in codegen"])
+        return mut self.o.intern("__ace$vt$invalid")
+    }
+    buf: [512]u8
+    b: fmt.Buffer = fmt.Buffer.init(mut buf[0..512])
+    _ = mut b.printf("__ace$vt$")
+    lowering.mangle_type(*self.s, mut b, conc)
+    _ = mut b.printf("$")
+    lowering.mangle_type(*self.s, mut b, want)
+    nm: string = mut self.names.copy(b.text())
+    prior: int = mut self.o.intern(nm)
+    if self.o.syms.get(usize(prior)).ntype != 0 { return prior }
+    c: mut *macho.Sec = mut self.o.sec(macho.SEC_CONST)
+    for c.data.len % 8 != 0 { fail(mut c.data.push(0)) }
+    out: int = mut self.o.define(nm, false, macho.SEC_CONST)
+    cd: u32 = self.ty(want).decl
+    x: sema.SType = self.ty(conc)
+    for i: u32 in 0..self.s.node(cd).nkids { // contract method order
+        fsym: u32, via: int = self.s.conf_method(conf, i)
+        if fsym == 0 {
+            mut self.s.err(conf, ["signing misses method '", self.s.node(self.s.kid(cd, i)).text, "' (sema gap)"])
+            c = mut self.o.sec(macho.SEC_CONST)
+            macho.put_bytes(mut c.data, [0, 0, 0, 0, 0, 0, 0, 0])
+            continue
+        }
+        sy: sema.Sym = self.s.sym(fsym)
+        ft: u32 = sy.ty
+        args: u32 = 0
+        nargs: u32 = 0
+        owner: u32 = conc
+        if via >= 0 { owner = self.s.field(x, u32(via)).ty }
+        ox: sema.SType = self.ty(owner)
+        if sy.is_generic && ox.nargs > 0 {
+            args = ox.args
+            nargs = ox.nargs
+            for it: u32 = self.s.inst_head(sy.decl); it != 0; {
+                iargs: u32, ift: u32, next: u32 = self.s.inst(it)
+                it = next
+                if ift == 0 || self.ty(ift).nparams == 0 { continue }
+                recv: sema.SType = self.ty(self.s.param(self.ty(ift), 0))
+                same: bool = recv.decl == ox.decl && recv.nargs == ox.nargs
+                for a: u32 in 0..ox.nargs {
+                    if same { same = self.s.param_at(iargs + a) == self.s.param_at(ox.args + a) }
+                }
+                if same {
+                    ft = ift
+                    break
+                }
+            }
+        }
+        fnm: string = lowering.fn_mangle(*self.s, mut self.names, fsym, ft, args, nargs, false)
+        fs: int = 0
+        if via >= 0 {
+            fs = mut self.embed_thunk(nm, i, fnm, self.s.field(x, u32(via)).offset)
+        } else {
+            fs = mut self.o.intern(fnm)
+        }
+        c = mut self.o.sec(macho.SEC_CONST)
+        off: u32 = u32(c.data.len)
+        macho.put_bytes(mut c.data, [0, 0, 0, 0, 0, 0, 0, 0])
+        mut self.o.reloc(macho.SEC_CONST, off, fs, false, 3, true, macho.RM_UNSIGNED)
+    }
+    return out
+}
+
+/* The thunk slot `slot` of vtable `vt` calls through: `target` with the
+ * receiver advanced to the embedded field at `off`.
+ */
+Em.embed_thunk(mut self, vt: string, slot: u32, target: string, off: u32): int {
+    buf: [512]u8
+    b: fmt.Buffer = fmt.Buffer.init(mut buf[0..512])
+    _ = mut b.printf("%s$embed$%d", vt, int(slot))
+    nm: string = mut self.names.copy(b.text())
+    prior: int = mut self.o.intern(nm)
+    if self.o.syms.get(usize(prior)).ntype != 0 { return prior }
+    out: int = mut self.o.define(nm, false, macho.SEC_TEXT)
+    mut self.o.put32(0xA9BF7BFD) // stp x29, x30, [sp, #-16]!
+    if off <= 4095 {
+        mut self.o.put32(0x91000000 | (off << 10)) // add x0, x0, #field-offset
+    } else {
+        mut self.o.put32(0xD2800010 | ((off & 0xFFFF) << 5)) // movz x16, #lo
+        if (off >> 16) != 0 { mut self.o.put32(0xF2A00010 | ((off >> 16) << 5)) } // movk x16, #hi, lsl #16
+        mut self.o.put32(0x8B000000 | (16 << 16)) // add x0, x0, x16
+    }
+    mut self.o.fixup(macho.FK_BRANCH, self.o.here(), mut self.o.intern(target))
+    mut self.o.put32(0x94000000) // bl target
+    mut self.o.put32(0xA8C17BFD) // ldp x29, x30, [sp], #16
+    mut self.o.put32(0xD65F03C0) // ret
+    return out
+}
