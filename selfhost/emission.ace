@@ -8,7 +8,6 @@ import bits
 import fmt
 import map
 import mem
-import sys
 
 import arm64: "./arm64.ace"
 import ir: "./ir.ace"
@@ -18,18 +17,12 @@ import macho: "./macho.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
 import sema: "./sema.ace"
+import fail from "./failure.ace"
 
 Node: type = parser.Node
 Kind: type = parser.Kind
 Token: type = lexer.Token
 TypeKind: type = sema.TypeKind
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
-}
 
 /* One compilable function: a declaration, or one instantiation of a generic
  * template (its type arguments and signature), with the link symbol it

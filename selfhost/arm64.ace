@@ -7,26 +7,19 @@ import array
 import bits
 import fmt
 import mem
-import sys
 
 import ir: "./ir.ace"
 import parser: "./parser.ace"
 import macho: "./macho.ace"
 import regalloc: "./regalloc.ace"
 import sema: "./sema.ace"
+import fail from "./failure.ace"
 
 Func: type = ir.Func
 IrIns: type = ir.IrIns
 IrBlock: type = ir.IrBlock
 IrPart: type = ir.IrPart
 Ra: type = regalloc.Ra
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
-}
 
 pub V: const int = 32 // v registers
 

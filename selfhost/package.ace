@@ -14,6 +14,7 @@ import str
 import sys
 
 import path: "./path.ace"
+import fail from "./failure.ace"
 
 /* A direct dependency: its name, which is also its import alias, and the
  * package's index in the graph.
@@ -120,13 +121,6 @@ pub Graph.wipe(mut self) {
     mut self.loading.wipe()
     mut self.names.wipe()
     mut self.pool.wipe()
-}
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
 }
 
 /* Opens a diagnostic at `manifest`'s `line`; the caller prints the message. */

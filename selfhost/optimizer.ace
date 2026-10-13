@@ -8,21 +8,13 @@
 import array
 import bits
 import mem
-import fmt
-import sys
 
 import ir: "./ir.ace"
+import fail from "./failure.ace"
 
 Func: type = ir.Func
 IrIns: type = ir.IrIns
 IrBlock: type = ir.IrBlock
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
-}
 
 is_int(t: u8): bool {
     return t >= ir.IT_BOOL && t <= ir.IT_PTR

@@ -11,13 +11,7 @@ import mem
 import sys
 
 import path: "./path.ace"
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
-}
+import fail from "./failure.ace"
 
 /* Sections, in order; nlist_64 n_sect is 1-based: SEC_TEXT -> 1. */
 pub SEC_TEXT: const int = 0

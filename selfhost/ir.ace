@@ -13,6 +13,7 @@ import sys
 import path: "./path.ace"
 import parser: "./parser.ace"
 import sema: "./sema.ace"
+import fail from "./failure.ace"
 
 Out: type = fmt.Buffer
 SType: type = sema.SType
@@ -230,13 +231,6 @@ pub IrVtable: struct {
 pub IrLiteral: struct {
     pub name: string,
     pub lit: u32,
-}
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
 }
 
 // --- construction -----------------------------------------------------------

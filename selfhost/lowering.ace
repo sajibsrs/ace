@@ -26,6 +26,7 @@ import optimizer: "./optimizer.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
 import sema: "./sema.ace"
+import fail from "./failure.ace"
 
 Kind: type = parser.Kind
 Node: type = parser.Node
@@ -166,13 +167,6 @@ Lw: struct {
     in_defer: bool = false,             // scanning under a defer, whose call is never expanded
     scan_auto: bool = false,            // the scan: release auto-inline calls expand (no self tail loop can stop them)
     self_head: int = -1,                // release self tail recursion: the loop head block, or -1
-}
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
 }
 
 Lw.wipe(mut self) {

@@ -28,6 +28,7 @@ import package: "./package.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
 import sema: "./sema.ace"
+import fail from "./failure.ace"
 
 Token: type = lexer.Token
 Out: type = fmt.Buffer
@@ -208,13 +209,6 @@ dump_symbols(path: string): int {
     mut s.dump(mut out)
     mut out.flush()
     return 0
-}
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
 }
 
 /* `name` without a trailing `.ace`. */

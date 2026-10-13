@@ -24,6 +24,7 @@ import lexer: "./lexer.ace"
 import package: "./package.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
+import fail from "./failure.ace"
 
 Token: type = lexer.Token
 Kind: type = parser.Kind
@@ -157,13 +158,6 @@ Loader.resolve_root(mut self, root_path: string, in_package: bool, pkg: usize): 
     if self.errors > 0 { return false }
     mut self.merge()
     return true
-}
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
 }
 
 // --- accessors ----------------------------------------------------------------

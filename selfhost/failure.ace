@@ -1,0 +1,12 @@
+/* failure — the out-of-memory exit shared by every selfhost file. */
+
+import fmt
+import sys
+
+/* Exits with status 1 when `err` is set: the selfhost's only error is out of memory. */
+pub fail(err: Error) {
+    if err != null {
+        fmt.printf(sys.stderr, "ace: out of memory\n")
+        sys.exit(1)
+    }
+}

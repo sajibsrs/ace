@@ -23,6 +23,7 @@ import lexer: "./lexer.ace"
 import module: "./module.ace"
 import parser: "./parser.ace"
 import path: "./path.ace"
+import fail from "./failure.ace"
 
 Kind: type = parser.Kind
 Node: type = parser.Node
@@ -295,13 +296,6 @@ pub Sema.wipe(mut self) {
     mut self.files.wipe()
     mut self.imports.wipe()
     mut self.pool.wipe()
-}
-
-fail(err: Error) {
-    if err != null {
-        fmt.printf(sys.stderr, "ace: out of memory\n")
-        sys.exit(1)
-    }
 }
 
 // --- accessors ----------------------------------------------------------------
