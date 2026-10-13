@@ -1379,9 +1379,10 @@ static uint32_t align_up(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1)
 // AMD64): a scalar, or an aggregate of up to 16 bytes, in one register per
 // eightbyte, an SSE one when every leaf in it is a float and an integer one
 // otherwise; the whole part on the stack at soff when its registers run out;
-// an aggregate over 16 bytes (MEMORY) always on the stack, as a copy. reg[w]
-// is the register of eightbyte w, or -1 on the stack; SSE + k is xmm k.
-enum { SSE = 32 };
+// an aggregate over 16 bytes or with a misaligned (packed) leaf (MEMORY)
+// always on the stack, as a copy. reg[w] is the register of eightbyte w, or -1
+// on the stack; SSE + k is xmm k; NOCLASS marks padding, which takes none.
+enum { SSE = 32, NOCLASS = 64 };
 typedef struct { int8_t reg[2]; int8_t words; uint32_t soff, size; } Pass;
 
 typedef struct { int ni, ns; uint32_t soff; } Cc;
@@ -1390,16 +1391,11 @@ static IrPart part_of(const IrSig* sig, int p) { return sig ? sig->parts[p] : (I
 
 // A result System V returns through memory at an address the caller passes
 // in rdi and the callee returns in rax: an aggregate over 16 bytes.
-static int ret_in_memory(const IrSig* sig) { return sig && sig->ret.agg && sema_size(sig->ret.agg) > 16; }
-
-int x64_result_in_memory(SType* t) { return t && ir_type_of(t) < 0 && sema_size(t) > 16; }
-
-// Whether eightbyte w of the leaves lv[0..n) is SSE: every leaf in it a float.
-static int word_sse(const IrLeaf* lv, int n, uint32_t w) {
-    for (int k = 0; k < n; k++)
-        if (lv[k].off / 8 == w && !ir_type_float((IrType)lv[k].type)) return 0;
-    return 1;
+static int ret_in_memory(const IrSig* sig) {
+    return sig && sig->ret.agg && (sema_size(sig->ret.agg) > 16 || ir_misaligned(sig->ret.agg));
 }
+
+int x64_result_in_memory(SType* t) { return t && ir_type_of(t) < 0 && (sema_size(t) > 16 || ir_misaligned(t)); }
 
 // Assign part pt, whose first leaf has type t0, from the next registers or
 // the stack; lv receives an aggregate's leaves.
@@ -1419,15 +1415,19 @@ static void pass_part(Cc* c, IrPart pt, IrType t0, IrLeaf* lv, Pass* o) {
         return;
     }
     SType* bad;
-    int n = pt.addr ? 0 : ir_leaves(pt.agg, lv, &bad);
+    if (!pt.addr) ir_leaves(pt.agg, lv, &bad);
     o->size = sema_size(pt.agg);
     o->words = (int8_t)((o->size + 7) / 8);
-    if (!pt.addr && o->size <= 16) {
-        int ni = 0, ns = 0;
-        for (int w = 0; w < o->words; w++) word_sse(lv, n, (uint32_t)w) ? ns++ : ni++;
+    if (!pt.addr && o->size <= 16 && !ir_misaligned(pt.agg)) {
+        int ni = 0, ns = 0, cls[2];
+        for (int w = 0; w < o->words; w++) {
+            cls[w] = ir_word_class(pt.agg, (uint32_t)w);
+            ns += cls[w] == IR_WORD_SSE;
+            ni += cls[w] == IR_WORD_INT;
+        }
         if (c->ni + ni <= 6 && c->ns + ns <= 8) {
             for (int w = 0; w < o->words; w++)
-                o->reg[w] = (int8_t)(word_sse(lv, n, (uint32_t)w) ? SSE + c->ns++ : ARG_REG[c->ni++]);
+                o->reg[w] = (int8_t)(cls[w] == IR_WORD_NONE ? NOCLASS : cls[w] == IR_WORD_SSE ? SSE + c->ns++ : ARG_REG[c->ni++]);
             return;
         }
     }
@@ -1552,6 +1552,7 @@ static void call(X64* a, IrBlock* bb, int i) {
         if (ps->reg[0] < 0 || !pt.agg) continue;
         for (int w = 0; w < ps->words; w++) {
             int32_t at = (int32_t)(img + 8 * (uint32_t)w);
+            if (ps->reg[w] == NOCLASS) continue;
             if (ps->reg[w] >= SSE) xld(a, ps->reg[w] - SSE, RSP, at);
             else ld64(a, ps->reg[w], RSP, at);
         }
@@ -1580,6 +1581,7 @@ static void call(X64* a, IrBlock* bb, int i) {
             pass_part(&c, sig->ret, (IrType)lv[0].type, lv, &r);
             for (int w = 0; w < r.words; w++) {
                 int32_t to = (int32_t)(p.img + 8 * (uint32_t)w);
+                if (r.reg[w] == NOCLASS) continue;
                 int rg = ret_reg(r.reg[w]);
                 if (rg >= SSE) xst(a, rg - SSE, RSP, to);
                 else st64(a, rg, RSP, to);
@@ -1760,6 +1762,7 @@ static void terminator(X64* a, int b, int v) {
                 pass_part(&c, sig->ret, (IrType)lv[0].type, lv, &r);
                 pack_words(a, lv, x->args, x->nargs, r.words, base, at);
                 for (int w = 0; w < r.words; w++) {
+                    if (r.reg[w] == NOCLASS) continue;
                     int rg = ret_reg(r.reg[w]);
                     if (rg >= SSE) xld(a, rg - SSE, RBP, a->scratch + 8 * w);
                     else ld64(a, rg, RBP, a->scratch + 8 * w);
@@ -2105,6 +2108,7 @@ static void params(X64* a) {
         if (pt.agg && !pt.addr && ps[q].reg[0] >= 0) {
             for (int w = 0; w < ps[q].words; w++) {
                 int32_t at = a->aggs + 16 * q + 8 * w;
+                if (ps[q].reg[w] == NOCLASS) continue;
                 if (ps[q].reg[w] >= SSE) xst(a, ps[q].reg[w] - SSE, RBP, at);
                 else st64(a, ps[q].reg[w], RBP, at);
             }

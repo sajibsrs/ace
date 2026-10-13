@@ -51,10 +51,11 @@ Carved (explicit struct layout):
   bytes and writing one writes only its bytes. It has no literal and no `==`;
   it starts as zero or uninitialized, and initialization checking tracks it
   whole, so any member write initializes it. Its zero is all zero bytes.
-- Packed, explicitly aligned, and explicitly offset structs may be C-compatible behind pointers
-  when all recursive rules hold and the layout matches the external definition.
-  They are rejected as direct `extern "c"` parameters and returns pending
-  by-value ABI verification. Layout attributes do not determine byte order, bit
+- Packed, explicitly aligned, and explicitly offset structs are C-compatible in
+  every position, direct `extern "c"` parameters and returns included, when all
+  recursive rules hold and the layout matches the external definition; one
+  crosses by value as the target's C ABI passes the matching packed struct,
+  aligned struct, or union. Layout attributes do not determine byte order, bit
   fields, observability, or synchronization.
 
 10. Enums default to `i32` storage and declaration-order discriminants beginning

@@ -233,6 +233,16 @@ int      ir_leaves(SType* t, IrLeaf* out, SType** bad);
 int      ir_leaf_count(SType* t); // uncapped; -1 when some leaf is not covered
 int      ir_is_overlay(SType* t);  // a union or a struct whose fields share bytes
 int      ir_holds_union(SType* t); // is or holds an overlay in a struct, tuple, or array member, at any depth
+// C ABI classification by every member's leaves, overlapping ones included.
+// ir_hfa: the element count (1-4) of a homogeneous floating aggregate, whose
+// leaves of one float type *base tile it without padding; else 0.
+// ir_misaligned: some leaf sits off its natural alignment (packed).
+// ir_word_class: System V eightbyte w's class, IR_WORD_NONE when no leaf
+// covers it (padding), IR_WORD_SSE when every leaf starting in it is a float.
+enum { IR_WORD_NONE, IR_WORD_SSE, IR_WORD_INT };
+int      ir_hfa(SType* t, IrType* base);
+int      ir_misaligned(SType* t);
+int      ir_word_class(SType* t, uint32_t w);
 // v wrapped into t: truncated, then extended by t's signedness
 uint64_t ir_wrap(IrType t, uint64_t v);
 

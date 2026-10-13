@@ -465,8 +465,9 @@ static Move move_of(A64* a, int dst_loc, int v) {
 
 // Where a leaf of an argument, parameter, or result travels (emit.c
 // assign_cc): in register reg (L_REG); on the stack at soff in size bytes
-// (L_STACK); in the word of x register reg that it shares with other leaves,
-// at byte off, through 8 bytes of memory at mem (L_WORD); or at off from an
+// (L_STACK); in registers from reg on that it shares with other leaves, at
+// byte off of their memory at mem (L_WORD: nreg registers of rsz bytes each,
+// one 8-byte x register when nreg is 0); or at off from an
 // address that travels in register reg, or on the stack at soff when reg < 0
 // (L_ADDR), whose memory is at mem. head marks the first leaf of a word or of
 // an addressed aggregate. mem is an offset in the caller's outgoing area (a
@@ -474,51 +475,55 @@ static Move move_of(A64* a, int dst_loc, int v) {
 // area (the saved address or word). word marks an L_REG leaf alone in a word
 // of an aggregate, whose other bits AAPCS64 leaves unspecified.
 enum { L_REG, L_STACK, L_WORD, L_ADDR };
-typedef struct Loc { uint8_t kind, size, head; int8_t reg; uint32_t soff, off, mem; uint8_t word; } Loc;
+typedef struct Loc { uint8_t kind, size, head; int8_t reg; uint32_t soff, off, mem; uint8_t word, nreg, rsz; } Loc;
 
 static uint32_t align_to(uint32_t v, uint32_t a) { return (v + a - 1) & ~(a - 1); }
 
-// A homogeneous floating aggregate: one to four leaves of one float type.
-static int is_hfa(const IrType* t, int n) {
-    if (n < 1 || n > 4 || !is_fp(t[0])) return 0;
-    for (int k = 1; k < n; k++) if (t[k] != t[0]) return 0;
-    return 1;
-}
-
 typedef struct { int xn, vn; uint32_t soff, area; int caller; } Cc;
 
-// An aggregate on the stack, its leaves at their natural size.
-static void agg_stack(Cc* c, const IrLeaf* lv, int n, SType* agg, Loc* out) {
+// An aggregate on the stack, its leaves at their natural size: an HFA at its
+// own alignment, any other at least 8-aligned (Apple arm64).
+static void agg_stack(Cc* c, const IrLeaf* lv, int n, SType* agg, int hfa, Loc* out) {
     uint32_t al = sema_align(agg);
-    c->soff = align_to(c->soff, al > 8 ? 8 : al ? al : 1);
+    c->soff = align_to(c->soff, al > 16 ? 16 : al < 8 && !hfa ? 8 : al ? al : 1);
     for (int k = 0; k < n; k++)
-        out[k] = (Loc){ L_STACK, (uint8_t)(ir_type_bits((IrType)lv[k].type) / 8), 0, -1, c->soff + lv[k].off, 0, 0, 0 };
+        out[k] = (Loc){ L_STACK, (uint8_t)(ir_type_bits((IrType)lv[k].type) / 8), 0, -1, c->soff + lv[k].off, 0, 0, 0, 0, 0 };
     c->soff += align_to(sema_size(agg), 8);
 }
 
 // Memory for an aggregate that travels by address: the caller's copy, or the
 // callee's saved address.
 static uint32_t addr_mem(Cc* c, SType* agg) {
-    c->area = align_to(c->area, 8);
+    c->area = align_to(c->area, c->caller && sema_align(agg) > 8 ? 16 : 8);
     uint32_t m = c->area;
     c->area += c->caller ? align_to(sema_size(agg), 8) : 8;
     return m;
 }
 
+// The 8-byte word past a scalar leaf's last byte (a packed leaf may cross into
+// the next word).
+static uint32_t word_end(IrLeaf l) {
+    uint32_t b = (uint32_t)ir_type_bits((IrType)l.type) / 8;
+    return b <= 8 ? (l.off + b + 7) / 8 : l.off / 8 + 1;
+}
+
 // An aggregate in 8-byte words from x register first: a word holding one leaf
-// at its start is that leaf's register, else its leaves share it through memory.
+// at its start is that leaf's register, else the leaves of the words they
+// span share those registers through memory.
 static void agg_words(Cc* c, const IrLeaf* lv, int n, int first, Loc* out) {
     for (int k = 0; k < n;) {
-        uint32_t w = lv[k].off / 8;
-        int e = k;
-        while (e < n && lv[e].off / 8 == w) e++;
+        uint32_t w = lv[k].off / 8, end = word_end(lv[k]);
+        int e = k + 1;
+        for (; e < n && lv[e].off / 8 < end; e++)
+            if (word_end(lv[e]) > end) end = word_end(lv[e]);
         int8_t reg = (int8_t)(first + (int)w);
-        if (e == k + 1 && lv[k].off % 8 == 0) {
-            out[k] = (Loc){ L_REG, 8, 1, reg, 0, 0, 0, 1 };
+        if (e == k + 1 && lv[k].off % 8 == 0 && end == w + 1) {
+            out[k] = (Loc){ L_REG, 8, 1, reg, 0, 0, 0, 1, 0, 0 };
         } else {
             uint32_t m = c->area = align_to(c->area, 8);
-            c->area += 8;
-            for (int j = k; j < e; j++) out[j] = (Loc){ L_WORD, 8, (uint8_t)(j == k), reg, 0, lv[j].off % 8, m, 0 };
+            c->area += 8 * (end - w);
+            for (int j = k; j < e; j++)
+                out[j] = (Loc){ L_WORD, 8, (uint8_t)(j == k), reg, 0, lv[j].off - 8 * w, m, 0, (uint8_t)(end - w), 8 };
         }
         k = e;
     }
@@ -539,12 +544,12 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
             int* rn = is_fp(tt) ? &c->vn : &c->xn;
             if (varargs_from >= 0 && pt.first >= varargs_from) w = 8;
             else if (*rn < 8) {
-                o[0] = (Loc){ L_REG, 8, 1, (int8_t)((rn == &c->vn ? V : 0) + (*rn)++), 0, 0, 0, 0 };
+                o[0] = (Loc){ L_REG, 8, 1, (int8_t)((rn == &c->vn ? V : 0) + (*rn)++), 0, 0, 0, 0, 0, 0 };
                 continue;
             }
             if (w < 4) w = 4;
             c->soff = align_to(c->soff, w);
-            o[0] = (Loc){ L_STACK, (uint8_t)w, 1, -1, c->soff, 0, 0, 0 };
+            o[0] = (Loc){ L_STACK, (uint8_t)w, 1, -1, c->soff, 0, 0, 0, 0, 0 };
             c->soff += w;
             continue;
         }
@@ -552,12 +557,21 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
         SType* bad;
         ir_leaves(pt.agg, lv, &bad);
         uint32_t size = sema_size(pt.agg);
-        if (is_hfa(t + pt.first, pt.n)) {
-            if (c->vn + pt.n <= 8) {
-                for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_REG, 8, 1, (int8_t)(V + c->vn++), 0, 0, 0, 0 };
-            } else {
-                agg_stack(c, lv, pt.n, pt.agg, o);
+        IrType bt;
+        int h = ir_hfa(pt.agg, &bt);
+        if (h) {
+            if (c->vn + h > 8) {
+                agg_stack(c, lv, pt.n, pt.agg, 1, o);
                 c->vn = 8;
+            } else if (pt.n == h && t[pt.first] == bt) { // its leaves are its elements
+                for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_REG, 8, 1, (int8_t)(V + c->vn++), 0, 0, 0, 0, 0, 0 };
+            } else { // an overlay's words, through memory into its elements' registers
+                uint32_t m = c->area = align_to(c->area, 8);
+                c->area += align_to(size, 8);
+                for (int k = 0; k < pt.n; k++)
+                    o[k] = (Loc){ L_WORD, 8, (uint8_t)(k == 0), (int8_t)(V + c->vn), 0, lv[k].off, m, 0, (uint8_t)h,
+                                  (uint8_t)(ir_type_bits(bt) / 8) };
+                c->vn += h;
             }
         } else if (size > 16) {
             uint32_t m = addr_mem(c, pt.agg);
@@ -569,9 +583,9 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
                 so = c->soff = align_to(c->soff, 8);
                 c->soff += 8;
             }
-            for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), reg, so, lv[k].off, m, 0 };
+            for (int k = 0; k < pt.n; k++) o[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), reg, so, lv[k].off, m, 0, 0, 0 };
         } else if (c->xn + (int)((size + 7) / 8) > 8) {
-            agg_stack(c, lv, pt.n, pt.agg, o);
+            agg_stack(c, lv, pt.n, pt.agg, 0, o);
             c->xn = 8;
         } else {
             agg_words(c, lv, pt.n, c->xn, o);
@@ -587,15 +601,15 @@ static uint32_t assign_leaves(Cc* c, const IrType* t, int n, const IrSig* sig, i
 static void assign_result(Cc* c, const IrType* t, int n, SType* agg, Loc* out) {
     if (!n) return;
     if (!agg) {
-        out[0] = (Loc){ L_REG, 8, 1, (int8_t)(is_fp(t[0]) ? V : 0), 0, 0, 0, 0 };
+        out[0] = (Loc){ L_REG, 8, 1, (int8_t)(is_fp(t[0]) ? V : 0), 0, 0, 0, 0, 0, 0 };
         return;
     }
-    if (!is_hfa(t, n) && sema_size(agg) > 16) {
+    if (!ir_hfa(agg, NULL) && sema_size(agg) > 16) {
         IrLeaf lv[IR_MAX_LEAVES];
         SType* bad;
         ir_leaves(agg, lv, &bad);
         uint32_t m = addr_mem(c, agg);
-        for (int k = 0; k < n; k++) out[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), 8, 0, lv[k].off, m, 0 };
+        for (int k = 0; k < n; k++) out[k] = (Loc){ L_ADDR, 8, (uint8_t)(k == 0), 8, 0, lv[k].off, m, 0, 0, 0 };
         return;
     }
     Cc r = { 0, 0, 0, c->area, c->caller };
@@ -621,7 +635,7 @@ static void plan_call(IrFunc* fn, IrIns* x, Plan* p) {
     for (int k = 0; k < p->n; k++) t[k] = (IrType)fn->ins[x->args[p->k0 + k]].type;
     p->arg = xcalloc((size_t)p->n, sizeof(Loc));
     Cc c = { 0, 0, 0, 0, 1 };
-    uint32_t base = align_to(assign_leaves(&c, t, p->n, x->sig, (x->flags & IRF_VARARGS) ? x->aux : -1, p->arg), 8);
+    uint32_t base = align_to(assign_leaves(&c, t, p->n, x->sig, (x->flags & IRF_VARARGS) ? x->aux : -1, p->arg), 16);
     free(t);
     SType* agg = x->sig ? x->sig->ret.agg : NULL;
     IrLeaf lv[IR_MAX_LEAVES];
@@ -1627,6 +1641,13 @@ static void load_leaf(A64* a, int v, int base, int64_t off) {
 static void str_x(A64* a, int r, int base, uint32_t off) { mem(a, 0xF9000000u, 8, r, base, off); }
 static void ldr_x(A64* a, int r, int base, uint32_t off) { mem(a, 0xF9400000u, 8, r, base, off); }
 
+// A head L_WORD's registers loaded from, or stored to, its memory at base + off.
+static void word_regs(A64* a, Loc g, int load, int base, uint32_t off) {
+    int n = g.nreg ? g.nreg : 1, sz = g.rsz ? g.rsz : 8;
+    uint32_t op = mem_op(g.reg >= V ? (sz == 4 ? IT_F32 : IT_F64) : IT_U64, load);
+    for (int i = 0; i < n; i++) mem(a, op, sz, g.reg + i, base, off + (uint32_t)(i * sz));
+}
+
 // A direct, extern, or indirect call: memory first (stack arguments, copies
 // of aggregates passed by address, shared words), then the register arguments
 // moved in parallel and the shared words loaded; a calli's target waits in
@@ -1671,7 +1692,7 @@ static void call(A64* a, int v) {
     if (x->flags & IRF_SRET) m[nm++] = move_of(a, 8, x->args[x->nargs - 1]); // the result's memory
     parallel_move(a, m, nm, 0);
     for (int k = 0; k < p.n; k++)
-        if (p.arg[k].kind == L_WORD && p.arg[k].head) ldr_x(a, p.arg[k].reg, 31, p.arg[k].mem);
+        if (p.arg[k].kind == L_WORD && p.arg[k].head) word_regs(a, p.arg[k], 1, 31, p.arg[k].mem);
     if (x->op == IR_CALLI) put(a, 0xD63F0000u | (S1 << 5)); // blr x17
     else if (x->sym && x->sym->is_extern) bl_extern(a, x->name);
     else bl_to(a, x->name);
@@ -1698,7 +1719,7 @@ static void call(A64* a, int v) {
     int last = first + 1;
     while (last < bb->nins && ins_of(a, bb->ins[last])->op == IR_PROJ) last++;
     for (int k = 0; k < p.nres; k++)
-        if (p.res[k].kind == L_WORD && p.res[k].head) str_x(a, p.res[k].reg, 31, p.res[k].mem);
+        if (p.res[k].kind == L_WORD && p.res[k].head) word_regs(a, p.res[k], 0, 31, p.res[k].mem);
     nm = 0;
     for (int i = first + 1; i < last; i++) {
         int u = bb->ins[i];
@@ -1843,7 +1864,7 @@ static void terminator(A64* a, int b, int v) {
         }
         parallel_move(a, m, nm, 0);
         for (int k = 0; k < x->nargs; k++)
-            if (a->rin[k].kind == L_WORD && a->rin[k].head) ldr_x(a, a->rin[k].reg, 31, a->save_at + a->rin[k].mem);
+            if (a->rin[k].kind == L_WORD && a->rin[k].head) word_regs(a, a->rin[k], 1, 31, a->save_at + a->rin[k].mem);
         free(m);
         epilogue(a);
         return;
@@ -1985,7 +2006,8 @@ static void params(A64* a) {
     if (fn->nrets && a->rin[0].kind == L_ADDR) str_x(a, 8, 31, a->save_at + a->rin[0].mem);
     for (int k = 0; k < fn->nparams; k++) {
         Loc g = a->pin[k];
-        if (g.head && (g.kind == L_WORD || (g.kind == L_ADDR && g.reg >= 0))) str_x(a, g.reg, 31, a->save_at + g.mem);
+        if (g.head && g.kind == L_WORD) word_regs(a, g, 0, 31, a->save_at + g.mem);
+        else if (g.head && g.kind == L_ADDR && g.reg >= 0) str_x(a, g.reg, 31, a->save_at + g.mem);
     }
     Move* m = xcalloc((size_t)fn->nparams + 1, sizeof(Move));
     int n = 0;

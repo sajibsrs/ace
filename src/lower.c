@@ -211,10 +211,11 @@ static int has_array(SType* t) {
 // words (like a union's), and a literal of it is built member by member.
 static int has_union(SType* t) { return ir_holds_union(t); }
 
-// An aggregate of over IR_MAX_LEAVES leaves: never split, it stays in memory
-// and travels by address (AAPCS64 passes it so, as a copy).
+// An aggregate of over IR_MAX_LEAVES leaves, or one holding a union over 16
+// bytes that is no floating aggregate: never split, it stays in memory and
+// travels by address (AAPCS64 passes it so, as a copy).
 static int is_big(SType* t) {
-    if (is_union(t) || has_union(t)) return sema_size(unwrap(t)) > 16;
+    if (is_union(t) || has_union(t)) return sema_size(unwrap(t)) > 16 && !ir_hfa(t, NULL);
     return is_agg(t) && ir_leaf_count(t) > IR_MAX_LEAVES;
 }
 
@@ -232,13 +233,7 @@ static int param_by_address(SType* t) {
     IrLeaf lv[IR_MAX_LEAVES];
     SType* bad;
     int n = ir_leaves(t, lv, &bad);
-    if (n < 0 || sema_size(t) <= 16) return 0;
-    if (n <= 4 && ir_type_float((IrType)lv[0].type)) {
-        int hfa = 1;
-        for (int k = 1; k < n; k++) hfa &= lv[k].type == lv[0].type;
-        if (hfa) return 0;
-    }
-    return 1;
+    return n >= 0 && sema_size(t) > 16 && !ir_hfa(t, NULL);
 }
 
 // The leaves of t, which the IR must cover.

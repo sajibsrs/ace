@@ -1623,13 +1623,6 @@ static const char* method_key(Node* owner, const char* name, uint32_t len, uint3
  * carries the in-progress nominal structs: a repeat hit is a cycle, which can
  * only arise through a pointer, so it is compatible and recursion terminates.
  */
-static int has_special_struct_layout(SType* t) {
-    if (!t || t->kind != SK_STRUCT) return 0;
-    if (t->is_packed || t->requested_align) return 1;
-    for (int i = 0; i < t->nfields; i++) if (t->fields[i].requested_align || t->fields[i].has_offset) return 1;
-    return 0;
-}
-
 static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     if (!t) return 1; // no-value shape: legal only as a return
     switch (t->kind) {
@@ -1657,9 +1650,6 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         for (int i = 0; i < t->nparams; i++) if (!is_c_abi_type(t->params[i], CABI_DIRECT, stack, nstack)) return 0;
         return is_c_abi_type(t->ret, CABI_DIRECT, stack, nstack);
     case SK_STRUCT: {
-        if (has_special_struct_layout(t) &&
-            pos != CABI_POINTEE && pos != CABI_POINTEE_FIELD)
-            return 0; // special-layout aggregates are pointer-only initially
         if (t->nargs || (t->decl && t->decl->c)) return 0; // generic shapes
         for (int i = 0; i < nstack; i++)
             if (stack[i] == t) return 1; // cycle through a pointer

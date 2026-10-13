@@ -617,9 +617,11 @@ Their parameter and return types are restricted to representations the compiler
 has verified: fixed-width integers, `int`, `uint`, `usize`, `f32`, `f64`,
 compatible pointers and distinct types, and structs composed recursively from
 those types. Arrays are allowed as struct fields or behind pointers, but not as
-direct parameters or returns. Packed and explicitly aligned structs are
-initially C-compatible only behind pointers; their direct parameter and return
-classification remains rejected pending target ABI verification.
+direct parameters or returns. Packed, explicitly aligned, and overlapping
+structs pass by value as C passes the matching packed struct, aligned struct,
+or union: an overlapping struct such as Vulkan's `VkClearValue` travels as its
+bytes in integer registers, unless every member is one float type tiling it
+without padding, which makes it a floating aggregate in float registers.
 
 A declaration without a body imports a C symbol. A declaration with a body is
 defined in Ace and visible to C under its own unmangled name. Both may share
@@ -747,6 +749,13 @@ The examples are covered by `tests/sema/docs/function_ok.ace`.
 ## Design rationale
 
 Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and Values & Passing #2 are shaped as they are.
+
+- Explicit layouts by value: the C ABI classifies an aggregate by the types of
+  all its members, overlapping ones included (clang's
+  `isHomogeneousAggregate` and System V's eightbyte merge), not by the bytes
+  Ace moves it as. So the compiler classifies every packed, aligned, or
+  overlapping struct from all its members' leaves, and pins each target's
+  rules against clang in `tests/driver/layout_abi.ace`.
 
 - Plain parameters (Values & Passing #2): leaving copy versus address to the
   compiler lets each argument use the cheapest machine passing (registers for

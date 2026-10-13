@@ -4673,16 +4673,6 @@ CABI_FIELD: const u8 = 1
 CABI_POINTEE: const u8 = 2
 CABI_POINTEE_FIELD: const u8 = 3
 
-Sema.has_special_struct_layout(self, t: SType): bool {
-    if t.kind != TypeKind.struct { return false }
-    if t.is_packed || t.requested_align != 0 { return true }
-    for i: u32 in 0..t.nfields {
-        f: SField = self.field(t, i)
-        if f.requested_align != 0 || f.has_offset { return true }
-    }
-    return false
-}
-
 /* The C-ABI whitelist, positive and position-aware: arrays only nested in
  * aggregates or behind pointers. `cabi` holds the `depth` structs in
  * progress; a repeat is a cycle through a pointer, so compatible.
@@ -4705,7 +4695,6 @@ Sema.is_c_abi_type(mut self, id: u32, pos: u8, depth: u32): bool {
             return mut self.is_c_abi_type(t.ret, CABI_DIRECT, depth)
         }
         TypeKind.struct {
-            if self.has_special_struct_layout(t) && pos != CABI_POINTEE && pos != CABI_POINTEE_FIELD { return false } // pointer-only initially
             if t.nargs != 0 || (t.decl != 0 && self.node(t.decl).c != 0) { return false } // generic shapes
             for i: u32 in 0..depth {
                 if self.cabi.get(usize(i)) == id { return true } // a cycle through a pointer

@@ -239,6 +239,51 @@ int ir_leaves(SType* t, IrLeaf* out, SType** bad) {
     return leaves_at(t, 0, out, 0, IR_MAX_LEAVES, bad);
 }
 
+// The leaves of every member of t, overlapping members included: what a C
+// ABI classifies t by, whichever bytes the IR moves it as. -1 past max.
+static int abi_leaves(SType* t, IrLeaf* out, int max) {
+    SType* bad;
+    return leaves_at(t, 0, out, 0, max, &bad);
+}
+
+int ir_hfa(SType* t, IrType* base) {
+    IrLeaf lv[64];
+    uint32_t size = sema_size(t);
+    int n = size <= 32 ? abi_leaves(t, lv, 64) : -1;
+    if (n < 1 || !ir_type_float((IrType)lv[0].type)) return 0;
+    uint32_t bs = (uint32_t)ir_type_bits((IrType)lv[0].type) / 8, cover = 0;
+    if (size % bs || size / bs > 4) return 0;
+    for (int k = 0; k < n; k++) {
+        if (lv[k].type != lv[0].type || lv[k].off % bs) return 0;
+        cover |= 1u << (lv[k].off / bs);
+    }
+    if (cover != (1u << (size / bs)) - 1) return 0; // padding: not homogeneous
+    if (base) *base = (IrType)lv[0].type;
+    return (int)(size / bs);
+}
+
+int ir_misaligned(SType* t) {
+    IrLeaf lv[64];
+    int n = abi_leaves(t, lv, 64);
+    for (int k = 0; k < n; k++) {
+        uint32_t w = (uint32_t)ir_type_bits((IrType)lv[k].type) / 8;
+        if (w && lv[k].off % w) return 1;
+    }
+    return 0;
+}
+
+int ir_word_class(SType* t, uint32_t w) {
+    IrLeaf lv[64];
+    int n = abi_leaves(t, lv, 64), covered = 0, sse = 1;
+    if (n < 0) return IR_WORD_INT;
+    for (int k = 0; k < n; k++) {
+        uint32_t lo = lv[k].off, hi = lo + (uint32_t)ir_type_bits((IrType)lv[k].type) / 8;
+        if (lo < 8 * w + 8 && hi > 8 * w) covered = 1;
+        if (lo / 8 == w && !ir_type_float((IrType)lv[k].type)) sse = 0;
+    }
+    return !covered ? IR_WORD_NONE : sse ? IR_WORD_SSE : IR_WORD_INT;
+}
+
 int ir_leaf_count(SType* t) {
     SType* bad;
     if (is_word_type(t)) return word_leaves(unwrap(t), NULL, INT_MAX, &bad);

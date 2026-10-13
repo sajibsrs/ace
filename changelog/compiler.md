@@ -165,3 +165,7 @@
 - Diagnostics name a module member as written (`util.pick`), never its
   module-private identity `util$pick`: sema, emitter, and backend errors print
   through `diag_printf`, which passes each `$`-bearing word to `module_display`.
+- Packed, `@align`, and `@offset` structs cross `extern "c"` by value (#7):
+  `ir_hfa`/`ir_word_class`/`ir_misaligned` classify by every member's leaves;
+  arm64 fills float registers from an overlay's memory, spans packed words, and
+  8-aligns non-HFA stack aggregates; x64 sends packed ones to memory.

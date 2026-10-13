@@ -703,7 +703,7 @@ for case in export mut_function; do
 done
 
 overlap_errors=$("$ACE" tests/sema/overlap/main_err.ace 2>&1)
-if [ "$(printf '%s\n' "$overlap_errors" | grep -c 'error:')" -ne 7 ]; then
+if [ "$(printf '%s\n' "$overlap_errors" | grep -c 'error:')" -ne 6 ]; then
     echo "FAIL: overlapping struct diagnostics"
     fail=1
 fi
@@ -2300,6 +2300,7 @@ if [ -d tests/driver ]; then
     mkdir -p "/tmp/ace_driver/lib dir" "/tmp/ace_driver/space dir"
     cc -c tests/driver/helper.c -o /tmp/ace_driver/helper_raw.o
     cc -c tests/driver/abi.c -o /tmp/ace_driver/abi_c.o
+    cc -c tests/driver/layout_abi.c -o /tmp/ace_driver/layout_abi_c.o
     ar rcs "/tmp/ace_driver/lib dir/libhelper.a" /tmp/ace_driver/helper_raw.o
     cp /tmp/ace_driver/helper_raw.o '/tmp/ace_driver/evil;$(echo pwn)`id`.o'
     cp /tmp/ace_driver/helper_raw.o "/tmp/ace_driver/space dir/help lib.o"
@@ -2375,6 +2376,22 @@ if [ -d tests/driver ]; then
             fail=1
         fi
     fi
+    # Packed, @align, and @offset structs by value, debug and release
+    for mode in --debug ""; do
+        if ! "$ACE" $mode -o /tmp/ace_driver/app_layout_abi tests/driver/layout_abi.ace \
+             /tmp/ace_driver/layout_abi_c.o >/dev/null 2>$T/errs; then
+            echo "FAIL: explicit-layout C ABI oracle did not compile/link ($mode)"
+            cat $T/errs
+            fail=1
+        else
+            /tmp/ace_driver/app_layout_abi
+            got=$?
+            if [ "$got" -ne 0 ]; then
+                echo "FAIL: explicit-layout C ABI oracle exited $got, want 0 ($mode)"
+                fail=1
+            fi
+        fi
+    done
 
     # C global variables (C Interop #6): from an object, and from a shared
     # library, which only the GOT reaches; debug and release

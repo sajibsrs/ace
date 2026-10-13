@@ -20,6 +20,8 @@ Header: struct {
 
 extern "c" {
     by_pointer(word: *Word)
+    by_value(word: Word): Word
+    header_value(header: Header): Header
 }
 
 main(): int {

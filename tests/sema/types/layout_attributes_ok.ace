@@ -31,6 +31,10 @@ Outer: struct { lead: u8, inner: Inner, tail: u16 }
 
 extern "c" {
     accept_packed(value: *Packed)
+    packed_value(value: Packed): Packed
+    raised_value(value: Raised): Raised
+    aligned_field_value(value: AlignedField): AlignedField
+    outer_value(value: Outer): Outer
 }
 
 static_assert(sizeof(Packed) == 5)

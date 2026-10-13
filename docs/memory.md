@@ -68,10 +68,10 @@ needed for its alignment and therefore supplies the correct stride in arrays.
 Use explicit byte-array fields for reserved bytes. Layout attributes do not
 specify byte order, bit fields, access observability, or synchronization.
 
-Packed and explicitly aligned structs may cross a C boundary behind a pointer
-when their complete shape is otherwise C-compatible and matches the external
-declaration. Passing or returning such a struct directly is currently rejected
-until its target-specific by-value ABI has been separately verified.
+Packed, explicitly aligned, and overlapping structs may cross a C boundary,
+behind a pointer or by value, when their complete shape is otherwise
+C-compatible and matches the external declaration; by value, each travels as
+the target's C ABI passes the matching C struct or union.
 
 `@offset(N)` places a field at exactly byte `N`, which must be a multiple of the
 field's alignment; the fields after it follow it as usual. Fields placed so

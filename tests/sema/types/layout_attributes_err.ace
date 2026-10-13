@@ -9,20 +9,6 @@ Natural: struct {
     value: u32,
 }
 
-@packed
-ByValue: struct { value: u32 }
-
-FieldAlignedByValue: struct {
-    @align(8)
-    value: u32,
-}
-
-extern "c" {
-    bad_parameter(value: ByValue)
-    bad_return(): ByValue
-    bad_field_aligned(value: FieldAlignedByValue)
-}
-
 main(): int {
     return 0
 }

@@ -42,10 +42,6 @@ NotConst: struct {
     value: u32,
 }
 
-extern "c" {
-    by_value(word: Word)
-}
-
 runtime(): usize {
     return 0
 }
