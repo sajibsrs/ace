@@ -507,7 +507,7 @@ function record_stmt(pad,   p, r, t, i, k, j, n, c, name) {
 # cases always match), a case that is not last may fall through into the next,
 # and a default is optional; a break or continue in a case names an enclosing
 # loop or block
-function switch_stmt(depth, pad, loops,   p, q, t, name, ncases, hasdef, i, j, k, pats, r) {
+function switch_stmt(depth, pad, loops,   p, q, t, name, ncases, hasdef, i, j, k, pats, r, pat, key, seen) {
     p = indent(pad)
     q = indent(pad + 1)
     t = anytype()
@@ -522,7 +522,16 @@ function switch_stmt(depth, pad, loops,   p, q, t, name, ncases, hasdef, i, j, k
         pats = ""
         for (j = 0; j < k; j++) {
             r = rand()
-            pats = pats (j ? ", " : "") (r < 0.4 ? literal(t) : r < 0.6 ? (var_of(t) != "" ? var_of(t) : literal(t)) : r < 0.9 ? expr(t, 1) : name)
+            pat = r < 0.4 ? literal(t) : r < 0.6 ? (var_of(t) != "" ? var_of(t) : literal(t)) : r < 0.9 ? expr(t, 1) : name
+            # sema rejects a repeated constant: a repeat becomes the scrutinee
+            key = pat
+            gsub(/[() ]/, "", key)
+            if (key ~ /^(-?[0-9.]+|true|false)$/) {
+                if (key !~ /[a-z]/) key += 0
+                if (key in seen) pat = name
+                seen[key] = 1
+            }
+            pats = pats (j ? ", " : "") pat
         }
         print q pats " {"
         block(depth - 1, pad + 2, loops)
