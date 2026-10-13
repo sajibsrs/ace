@@ -213,6 +213,7 @@ pub Sema: struct {
     nview: map.Map[u32, u32],           // an array literal viewed as []T: its [N]T (C's aux)
     fplans: map.Map[u32, FormatPlan],   // a checked format call's plan (C's call->aux)
     fparts: array.Array[FormatPart],    // the plans' parts
+    origin: map.Map[u32, u32],          // an inline expansion's copied node -> the original
     identities: map.Map[u32, u32],      // a type's runtime identity, numbered from 1 in order of first use (C's type_id)
     next_identity: u32 = 1,
     cur_fn: u32 = 0,                    // the checked function's declaration
@@ -233,7 +234,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, origin = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -278,6 +279,7 @@ pub Sema.wipe(mut self) {
     mut self.nview.wipe()
     mut self.fplans.wipe()
     mut self.fparts.wipe()
+    mut self.origin.wipe()
     mut self.identities.wipe()
     mut self.ik.wipe()
     mut self.files.wipe()
@@ -1025,7 +1027,12 @@ Sema.layout(mut self, id: u32): bool {
  * demand (C's sema_size).
  */
 pub Sema.layout_all(mut self) {
-    for i: usize in 1..self.types.len {
+    mut self.layout_from(1)
+}
+
+/* Lays out every type from index `first` on. */
+Sema.layout_from(mut self, first: usize) {
+    for i: usize in first..self.types.len {
         k: TypeKind = self.types.get(i).kind
         if k != TypeKind.template && k != TypeKind.typeparam && k != TypeKind.err && k != TypeKind.ut && k != TypeKind.void { _ = mut self.layout(u32(i)) }
     }
@@ -1313,16 +1320,147 @@ pub Sema.node_ty(self, e: u32): u32 {
     return self.nty.get(usize(e))
 }
 
-/* Whether generic declaration `d` has an instance whose signature is `ft`
- * (C's sema_insts walk in fn_value_mangle).
+/* The type arguments, a run of `params`, of generic declaration `d`'s
+ * instance whose signature is `ft`, and whether it has one (C's sema_insts
+ * walk).
  */
-pub Sema.has_inst(self, d: u32, ft: u32): bool {
-    if d == 0 || self.node(d).c == 0 { return false }
+pub Sema.inst_args(self, d: u32, ft: u32): (u32, bool) {
+    if d == 0 || self.node(d).c == 0 { return 0, false }
     head: u32, _ = self.inst_heads.get(d)
     for it: u32 = head; it != 0; it = self.insts.get(usize(it - 1)).next {
-        if self.insts.get(usize(it - 1)).result == ft { return true }
+        inst: TInst = self.insts.get(usize(it - 1))
+        if inst.result == ft { return inst.args, true }
     }
-    return false
+    return 0, false
+}
+
+/* Re-annotates generic function `f`'s body under the run `args` of `nargs`
+ * type arguments (C's sema_stamp_body). The stamp was checked already, so it
+ * reports nothing.
+ */
+pub Sema.stamp_body(mut self, f: u32, args: u32, nargs: u32) {
+    tp: u32 = self.node(f).c
+    if tp == 0 || self.node(tp).nkids != nargs || (self.node(f).flags & parser.F_SPECIALIZED) != 0 { return }
+    quiet: bool = self.quiet
+    errors: int = self.quiet_errors
+    self.quiet = true
+    first: usize = self.types.len
+    saved: u32 = self.sub
+    self.sub = u32(self.tnames.len)
+    for i: u32 in 0..nargs {
+        fail(mut self.tnames.push(self.node(self.kid(tp, i)).text))
+        fail(mut self.ttypes.push(self.params.get(usize(args + i))))
+    }
+    frames: array.Array[Frame] = self.frames
+    locals: array.Array[u32] = self.locals
+    root_body: bool = self.root_body
+    self.frames = array.Array[Frame] {}
+    self.locals = array.Array[u32] {}
+    self.root_body = !self.in_imported(f)
+    mut self.check_func_body(f)
+    mut self.frames.wipe()
+    mut self.locals.wipe()
+    self.frames = frames
+    self.locals = locals
+    self.root_body = root_body
+    mut self.tnames.truncate(usize(self.sub))
+    mut self.ttypes.truncate(usize(self.sub))
+    self.sub = saved
+    mut self.layout_from(first) // the types it made, as layout_all did the rest
+    self.quiet = quiet
+    self.quiet_errors = errors
+}
+
+/* Node `n` and everything under it, each node once, with its side tables;
+ * Node.d only as a general for's body (sema's d links form cycles). `copies`
+ * maps each original to its copy.
+ */
+Sema.copy_tree(mut self, n: u32, mut copies: map.Map[u32, u32]): u32 {
+    if n == 0 { return 0 }
+    have: u32, found: bool = copies.get(n)
+    if found { return have }
+    x: Node = self.node(n)
+    c: u32 = mut self.p.add(x)
+    fail(mut copies.set(n, c))
+    o: u32, _ = self.origin.get(n)
+    if o == 0 { o = n }
+    fail(mut self.origin.set(c, o))
+    mut self.grow(c)
+    if usize(n) < self.nty.len {
+        mut self.nty.set(usize(c), self.nty.get(usize(n)))
+        mut self.nsym.set(usize(c), self.nsym.get(usize(n)))
+        mut self.nival.set(usize(c), self.nival.get(usize(n)))
+        mut self.nrep.set(usize(c), self.nrep.get(usize(n)))
+        mut self.ncon.set(usize(c), self.ncon.get(usize(n)))
+        mut self.nproof.set(usize(c), self.nproof.get(usize(n)))
+    }
+    v: u32, has_view: bool = self.nview.get(n)
+    if has_view { fail(mut self.nview.set(c, v)) }
+    fp: FormatPlan, has_plan: bool = self.fplans.get(n)
+    if has_plan { fail(mut self.fplans.set(c, fp)) }
+    x.a = mut self.copy_tree(x.a, mut copies)
+    x.b = mut self.copy_tree(x.b, mut copies)
+    x.c = mut self.copy_tree(x.c, mut copies)
+    if x.kind == Kind.for && (x.flags & parser.F_FORGEN) != 0 { x.d = mut self.copy_tree(x.d, mut copies) }
+    if x.nkids != 0 {
+        kids: array.Array[u32] = array.Array[u32] {}
+        defer mut kids.wipe()
+        for i: u32 in 0..x.nkids { fail(mut kids.push(mut self.copy_tree(self.kid(n, i), mut copies))) }
+        mut self.p.update(c, x)
+        mut self.p.relink(c, kids.view())
+        return c
+    }
+    mut self.p.update(c, x)
+    return c
+}
+
+/* Points copy `c`'s names at fresh locals whose binders are the copied ones. */
+Sema.copy_syms(mut self, c: u32, copies: map.Map[u32, u32], mut fresh: map.Map[u32, u32], mut seen: map.Map[u32, bool]) {
+    if c == 0 { return }
+    _, was: bool = seen.get(c)
+    if was { return }
+    fail(mut seen.set(c, true))
+    s: u32 = self.node_sym(c)
+    if s != 0 && self.sym(s).kind == SymKind.var && !self.sym(s).is_global && self.sym(s).decl != 0 {
+        d: u32, copied: bool = copies.get(self.sym(s).decl)
+        if copied {
+            ns: u32, made: bool = fresh.get(s)
+            if !made {
+                x: Sym = self.sym(s)
+                x.decl = d
+                ns = u32(self.syms.len)
+                fail(mut self.syms.push(x))
+                fail(mut fresh.set(s, ns))
+            }
+            mut self.nsym.set(usize(c), ns)
+        }
+    }
+    n: Node = self.node(c)
+    mut self.copy_syms(n.a, copies, mut fresh, mut seen)
+    mut self.copy_syms(n.b, copies, mut fresh, mut seen)
+    mut self.copy_syms(n.c, copies, mut fresh, mut seen)
+    if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { mut self.copy_syms(n.d, copies, mut fresh, mut seen) }
+    for i: u32 in 0..n.nkids { mut self.copy_syms(self.kid(c, i), copies, mut fresh, mut seen) }
+}
+
+/* Function `f`'s parameters (into `bind`, one per parameter) and body copied
+ * with fresh local symbols, so each inline expansion has locals of its own
+ * (C's inline_copy after its stamp); the body's copy.
+ */
+pub Sema.copy_body(mut self, f: u32, mut bind: array.Array[u32]): u32 {
+    copies: map.Map[u32, u32] = map.Map[u32, u32] {}
+    defer mut copies.wipe()
+    for i: u32 in 0..self.node(f).nkids { fail(mut bind.push(mut self.copy_tree(self.kid(f, i), mut copies))) }
+    body: u32 = mut self.copy_tree(self.node(f).b, mut copies)
+    fresh: map.Map[u32, u32] = map.Map[u32, u32] {}
+    defer mut fresh.wipe()
+    seen: map.Map[u32, bool] = map.Map[u32, bool] {}
+    defer mut seen.wipe()
+    for i: u32 in 0..u32(bind.len) { mut self.copy_syms(bind.get(usize(i)), copies, mut fresh, mut seen) }
+    mut self.copy_syms(body, copies, mut fresh, mut seen)
+    mods: mut []module.Module = mut self.l.mods.view()
+    mods[0].parser = self.p // the loader owns the tree, which adding may have moved
+    return body
 }
 
 pub Sema.node_sym(self, e: u32): u32 {
@@ -1387,6 +1525,8 @@ pub Sema.target(self): string {
 
 /* The build-relative name of the file node `at` is in, as @file writes it. */
 pub Sema.file_name(self, at: u32): string {
+    o: u32, copied: bool = self.origin.get(at)
+    if copied { return self.file_name(o) }
     return self.l.mods.view()[self.l.module_of(at)].parser.file // view: get would copy the whole Module
 }
 

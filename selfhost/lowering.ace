@@ -39,6 +39,27 @@ Agg: struct {
     v: [16]int,
 }
 
+/* An inline expansion in progress: its declaration, result type, the join
+ * its returns reach, and where the result goes (C's Expansion).
+ */
+Expansion: struct {
+    f: u32,
+    rt: u32,
+    join: int,
+    res: int,              // the result's first variable, or -1
+    dst: int,              // a result in memory: its address, or -1
+}
+
+/* A generic inline declaration's escape mask under one instantiation. */
+GenEscape: struct {
+    f: u32,
+    args: u32,
+    esc: u64,
+}
+
+ESC_ALL: const u64 = 0xffffffffffffffff
+ESC_REST: const u64 = 0x8000000000000000 // parameter 63 onward: always set, so a mask is never 0
+
 /* An unsealed block's pending phi. */
 Incomplete: struct {
     var: int,
@@ -113,7 +134,7 @@ Args.scalar(mut self, v: int) {
 ADDR_VAR: const int = -2
 
 Lw: struct {
-    s: sema.Sema,                       // the checker; not owned
+    s: mut *sema.Sema,                  // the checker; not owned (inline expansion adds nodes and symbols)
     fn: Func,
     f: u32,
     debug: bool,
@@ -135,6 +156,12 @@ Lw: struct {
     result: int = -1,                   // a result in memory: the RESULT address
     defers: array.Array[Deferred],      // captured defers, source order
     captured: map.Map[u32, Capture],    // deferred-call argument node -> its capture
+    inl: array.Array[Expansion],        // the inline expansions in progress, innermost last
+    escapes: map.Map[u32, u64],         // inline declaration -> its escape mask
+    gesc: array.Array[GenEscape],       // the same for a generic one, per instantiation
+    want: u32 = 0,                      // the scan's parameter, or 0 for every local
+    hit: bool = false,                  // whether the scan found `want` needing storage
+    in_defer: bool = false,             // scanning under a defer, whose call is never expanded
 }
 
 fail(err: Error) {
@@ -156,6 +183,9 @@ Lw.wipe(mut self) {
     mut self.tgt.wipe()
     mut self.defers.wipe()
     mut self.captured.wipe()
+    mut self.inl.wipe()
+    mut self.escapes.wipe()
+    mut self.gesc.wipe()
 }
 
 /* Stops the function: C's unsupported(), for a reason C reports itself. Ace
@@ -201,7 +231,7 @@ Lw.nsym(self, n: u32): u32 {
 // --- types ------------------------------------------------------------------
 
 Lw.unwrap(self, t: u32): u32 {
-    return ir.unwrap(self.s, t)
+    return ir.unwrap(*self.s, t)
 }
 
 Lw.kind(self, t: u32): TypeKind {
@@ -234,7 +264,7 @@ Lw.type_why(self, t: u32): string {
 }
 
 Lw.need_type(mut self, t: u32): u8 {
-    it: int = ir.type_of(self.s, t)
+    it: int = ir.type_of(*self.s, t)
     if it < 0 {
         mut self.unsupported(self.type_why(t))
         return ir.IT_I64
@@ -280,13 +310,13 @@ Lw.has_array(self, t: u32): bool {
     if x.kind != TypeKind.struct && x.kind != TypeKind.tuple { return false }
     for i: u32 in 0..x.nfields {
         f: sema.SField = self.s.field(x, i)
-        if self.has_array(f.ty) || ir.is_overlay(self.s, f.ty) { return true }
+        if self.has_array(f.ty) || ir.is_overlay(*self.s, f.ty) { return true }
     }
     return false
 }
 
 Lw.has_union(self, t: u32): bool {
-    return ir.holds_union(self.s, t)
+    return ir.holds_union(*self.s, t)
 }
 
 /* An aggregate of over MAX_LEAVES leaves, or one holding a union over 16
@@ -294,14 +324,14 @@ Lw.has_union(self, t: u32): bool {
  */
 Lw.is_big(self, t: u32): bool {
     if self.is_union(t) || self.has_union(t) {
-        n: int, _ = ir.hfa(self.s, t)
+        n: int, _ = ir.hfa(*self.s, t)
         return self.ty(self.unwrap(t)).size > 16 && n == 0
     }
-    return self.is_agg(t) && ir.leaf_count(self.s, t) > ir.MAX_LEAVES
+    return self.is_agg(t) && ir.leaf_count(*self.s, t) > ir.MAX_LEAVES
 }
 
 Lw.in_memory(self, t: u32): bool {
-    return ir.is_overlay(self.s, t) || (self.is_agg(t) && (self.has_array(t) || self.is_big(t)))
+    return ir.is_overlay(*self.s, t) || (self.is_agg(t) && (self.has_array(t) || self.is_big(t)))
 }
 
 /* A parameter in memory that AAPCS64 passes by address. */
@@ -309,16 +339,16 @@ Lw.param_by_address(self, t: u32): bool {
     if !self.in_memory(t) { return false }
     if self.is_big(t) { return true }
     lv: ir.Leaves = blank(ir.Leaves)
-    n: int, _ = ir.leaves(self.s, t, mut lv)
-    h: int, _ = ir.hfa(self.s, t)
+    n: int, _ = ir.leaves(*self.s, t, mut lv)
+    h: int, _ = ir.hfa(*self.s, t)
     return n >= 0 && self.ty(t).size > 16 && h == 0
 }
 
 /* The leaves of `t`, which the IR must cover. */
 Lw.leaves(mut self, t: u32, mut out: ir.Leaves): int {
-    n: int, bad: u32 = ir.leaves(self.s, t, mut out)
+    n: int, bad: u32 = ir.leaves(*self.s, t, mut out)
     if n < 0 {
-        if bad != 0 && (ir.type_of(self.s, bad) >= 0 || self.is_view(bad)) {
+        if bad != 0 && (ir.type_of(*self.s, bad) >= 0 || self.is_view(bad)) {
             mut self.unsupported("aggregate of over 16 leaves")
         } else {
             mut self.unsupported(self.type_why(bad))
@@ -336,7 +366,7 @@ Lw.leaf_count(mut self, t: u32): int {
 
 /* Refuses `t` unless the IR covers each of its leaves, however many. */
 Lw.covered(mut self, t: u32) {
-    if ir.leaf_count(self.s, t) < 0 { _ = mut self.leaf_count(t) }
+    if ir.leaf_count(*self.s, t) < 0 { _ = mut self.leaf_count(t) }
 }
 
 /* The index of field `fi`'s first leaf among its struct's. */
@@ -605,9 +635,68 @@ Lw.root_local(self, at: u32): u32 {
     return s
 }
 
+/* Records that local `x` names needs storage: for every local, or whether it
+ * is the scanned parameter.
+ */
 Lw.need_storage(mut self, x: u32) {
     s: u32 = self.root_local(x)
-    if s != 0 { fail(mut self.stored.set(s, true)) }
+    if s == 0 { return }
+    if self.want == 0 { fail(mut self.stored.set(s, true)) } else if s == self.want { self.hit = true }
+}
+
+/* The inline declaration call `x` expands, as lowering will decide, with the
+ * type arguments its body is stamped under; 0 when none.
+ */
+Lw.scan_target(mut self, x: u32): (u32, u32, u32) {
+    if self.in_defer { return 0, 0, 0 }
+    f: u32, args: u32, nargs: u32 = self.inline_target(x)
+    if f == 0 || self.node(f).b == 0 { return 0, 0, 0 }
+    return f, args, nargs
+}
+
+/* Which parameters of inline declaration `f` need the storage their argument
+ * names (bit i for parameter i): an expansion binds the others to the
+ * argument's own variables. A generic body, whose calls resolve only once
+ * stamped, is stamped under `args` and scanned per instantiation; a
+ * specialization and a cycle count as needing it.
+ */
+Lw.scan_escapes(mut self, f: u32, args: u32, nargs: u32): u64 {
+    fs: u32 = self.nsym(f)
+    if fs != 0 && self.s.sym(fs).spec_args != 0 { return ESC_ALL }
+    gen: int = -1 // f's entry in gesc, when generic
+    tp: u32 = self.node(f).c
+    if tp != 0 {
+        if nargs == 0 || self.node(tp).nkids != nargs { return ESC_ALL }
+        for i: usize in 0..self.gesc.len {
+            g: GenEscape = self.gesc.get(i)
+            if g.f == f && g.args == args { return g.esc }
+        }
+        fail(mut self.gesc.push(GenEscape { f = f, args = args, esc = ESC_ALL })) // a cycle meets all
+        gen = int(self.gesc.len) - 1
+        mut self.s.stamp_body(f, args, nargs) // inline_call stamps it again before each expansion
+    } else {
+        seen: u64, found: bool = self.escapes.get(f)
+        if found { return seen }
+        fail(mut self.escapes.set(f, ESC_ALL)) // a cycle meets all
+        if fs != 0 && self.s.sym(fs).is_generic { return ESC_ALL }
+    }
+    esc: u64 = ESC_REST
+    want: u32 = self.want
+    hit: bool = self.hit
+    in_defer: bool = self.in_defer
+    self.in_defer = false
+    for i: u32 = 0; i < self.node(f).nkids && i < 63; i += 1 {
+        self.want = self.nsym(self.kid(f, i))
+        if self.want == 0 { continue }
+        self.hit = false
+        mut self.scan_walk(self.node(f).b)
+        if self.hit { esc |= u64(1) << u64(i) }
+    }
+    self.want = want
+    self.hit = hit
+    self.in_defer = in_defer
+    if gen >= 0 { mut self.gesc.view()[gen].esc = esc } else { fail(mut self.escapes.set(f, esc)) }
+    return esc
 }
 
 /* Marks each local whose storage the body needs, before any is read. Follows
@@ -621,16 +710,32 @@ Lw.scan_walk(mut self, at: u32) {
     if n.kind == Kind.assign && (n.flags & parser.F_VOLATILE) != 0 {
         for i: u32 in 0..n.nkids { mut self.need_storage(self.kid(at, i)) }
     }
-    if n.kind == Kind.param {
+    if n.kind == Kind.param && self.want == 0 {
         ps: u32 = self.nsym(at)
         if ps != 0 && self.in_memory(self.s.sym(ps).ty) { fail(mut self.stored.set(ps, true)) } // a binder in memory
     }
-    if n.kind == Kind.call { // a receiver or mut argument: storage (no expansion binds it in place yet)
+    if n.kind == Kind.defer {
+        in_defer: bool = self.in_defer
+        self.in_defer = true
+        mut self.scan_walk(n.a)
+        mut self.scan_walk(n.b)
+        mut self.scan_walk(n.c)
+        for i: u32 in 0..n.nkids { mut self.scan_walk(self.kid(at, i)) }
+        self.in_defer = in_defer
+        return
+    }
+    if n.kind == Kind.call { // a receiver or mut argument: storage unless an expansion binds it in place
+        f: u32, args: u32, nargs: u32 = mut self.scan_target(at)
+        esc: u64 = ESC_ALL
+        if f != 0 { esc = mut self.scan_escapes(f, args, nargs) }
         recv: bool = n.a != 0 && self.node(n.a).kind == Kind.selector && !self.assoc_call(at) && !self.field_call(at)
-        if recv && !self.is_pointer(self.node(n.a).a) { mut self.need_storage(self.node(n.a).a) } // p.m() is (*p).m()
+        if recv && (esc & 1) != 0 && !self.is_pointer(self.node(n.a).a) { mut self.need_storage(self.node(n.a).a) } // p.m() is (*p).m()
         for i: u32 in 0..n.nkids {
             k: u32 = self.kid(at, i)
-            if self.node(k).kind == Kind.mutarg { mut self.need_storage(self.node(k).a) }
+            p: u64 = u64(i)
+            if recv { p += 1 }
+            if p > 63 { p = 63 }
+            if self.node(k).kind == Kind.mutarg && ((esc >> p) & 1) != 0 { mut self.need_storage(self.node(k).a) }
         }
         mut self.scan_walk(n.a)
         mut self.scan_walk(n.b)
@@ -1013,7 +1118,7 @@ Lw.fill_mem(mut self, dst: int, off: i32, pat: int, size: u32) {
  * not repeat in a word (a float's, or a width that does not divide 8).
  */
 Lw.fill_pattern(mut self, v: int, t: u32): int {
-    it: int = ir.type_of(self.s, t)
+    it: int = ir.type_of(*self.s, t)
     w: u32 = self.size(t)
     if it < 0 || ir.type_float(u8(it)) || u8(it) == ir.IT_PTR || (w != 1 && w != 2 && w != 4 && w != 8) { return -1 }
     rep: u64 = 1
@@ -3455,10 +3560,7 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
         mut self.unsupported("compiler-backed call")
         return mut self.dummy()
     }
-    if (dn.flags & parser.F_INLINE) != 0 {
-        mut self.unported("inline calls")
-        return mut self.dummy()
-    }
+    if (dn.flags & parser.F_INLINE) != 0 { return mut self.inline_call(x, mut res, want_res, dst) }
     g: Args = Args.init()
     defer mut g.wipe()
     first_var: int = mut self.call_args(x, s, mut g)
@@ -3478,13 +3580,199 @@ Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): in
     return mut self.call_finish(id, g, rt, mut res, want_res, dst)
 }
 
+// --- inline functions -----------------------------------------------------------
+
+/* The inline function direct call `x` names, with the type arguments its body
+ * is stamped under (a run of sema's params), or 0.
+ */
+Lw.inline_target(self, x: u32): (u32, u32, u32) {
+    callee: u32 = self.node(x).a
+    if callee == 0 { return 0, 0, 0 }
+    if self.node(callee).kind == Kind.index && self.nsym(callee) != 0 {
+        d: u32 = self.s.sym(self.nsym(callee)).decl
+        if d == 0 || (self.node(d).flags & parser.F_INLINE) == 0 { return 0, 0, 0 }
+        args: u32, found: bool = self.s.inst_args(d, self.nty(callee))
+        if !found { return 0, 0, 0 }
+        return d, args, self.node(self.node(d).c).nkids
+    }
+    s: u32 = self.nsym(x)
+    if s == 0 { return 0, 0, 0 }
+    sy: sema.Sym = self.s.sym(s)
+    if sy.kind != sema.SymKind.func || sy.is_extern || sy.decl == 0 || (self.node(sy.decl).flags & parser.F_INLINE) == 0 { return 0, 0, 0 }
+    if sy.is_generic { // a method of a generic type: its owner's arguments
+        cft: u32 = self.nty(callee)
+        if cft == 0 || self.ty(cft).kind != TypeKind.func { cft = sy.ty }
+        owner: u32 = 0
+        if self.assoc_call(x) {
+            if self.node(callee).kind == Kind.selector { owner = self.nty(self.node(callee).a) }
+        } else if cft != 0 && self.ty(cft).nparams > 0 {
+            owner = self.s.param(self.ty(cft), 0)
+        }
+        if owner == 0 { return 0, 0, 0 }
+        return sy.decl, self.ty(owner).args, self.ty(owner).nargs
+    }
+    return sy.decl, 0, 0
+}
+
+/* A return inside an expansion: the result to the expansion's variable, then
+ * the join.
+ */
+Lw.inline_return(mut self, at: u32) {
+    a: u32 = self.node(at).a
+    e: Expansion = self.inl.get(self.inl.len - 1)
+    if a != 0 && e.dst >= 0 {
+        mut self.store_value(a, e.rt, e.dst, 0)
+    } else if a != 0 && e.res >= 0 && self.is_agg(e.rt) {
+        v: Agg = blank(Agg)
+        mut self.value(a, e.rt, mut v)
+        for k: int in 0..v.n { mut self.write_var(e.res + k, self.cur, v.v[k]) }
+    } else if a != 0 && e.res >= 0 {
+        v: int = mut self.expr(a, int(mut self.need_type(e.rt)))
+        mut self.write_var(e.res, self.cur, v)
+    } else if a != 0 { // `return f()` of a call with no value
+        mut self.drop(a)
+    }
+    mut self.jump(e.join)
+}
+
+/* A call to an inline function: its body copied in place. Each argument is
+ * evaluated in order and bound to its parameter, a mut parameter or receiver
+ * to the argument's own storage and any other to a copy. Each return jumps to
+ * a join block, where the result is a variable read: an aggregate's leaves
+ * into res, or one of over 16 leaves stored at dst (a new stack object when
+ * dst < 0), as a call's.
+ */
+Lw.inline_call(mut self, x: u32, mut out: Agg, want_out: bool, dst: int): int {
+    f: u32, targs: u32, ntargs: u32 = self.inline_target(x)
+    if f == 0 || self.node(f).b == 0 {
+        mut self.unsupported("inline call")
+        return mut self.dummy()
+    }
+    recursive: bool = f == self.f
+    for i: usize in 0..self.inl.len {
+        if self.inl.get(i).f == f { recursive = true }
+    }
+    if recursive {
+        mut self.unsupported("recursive inline call")
+        return mut self.dummy()
+    }
+    cn: Node = self.node(x)
+    args: array.Array[u32] = array.Array[u32] {} // the receiver included
+    defer mut args.wipe()
+    recv: bool = self.node(cn.a).kind == Kind.selector && !self.assoc_call(x)
+    if recv { fail(mut args.push(self.node(cn.a).a)) } // receiver
+    if u32(args.len) + cn.nkids != self.node(f).nkids || self.node(f).nkids > 64 {
+        mut self.unsupported("inline call")
+        return mut self.dummy()
+    }
+    for i: u32 in 0..cn.nkids { fail(mut args.push(self.kid(x, i))) }
+    rt: u32 = 0
+    if self.node(f).a != 0 { rt = self.nty(x) } // the call of a generic method with no result is not typed void
+    if rt != 0 && self.kind(rt) == TypeKind.void { rt = 0 }
+
+    fs: u32 = self.nsym(f)
+    if self.node(f).c != 0 && !(fs != 0 && self.s.sym(fs).spec_args != 0) { mut self.s.stamp_body(f, targs, ntargs) }
+    bind: array.Array[u32] = array.Array[u32] {}
+    defer mut bind.wipe()
+    body: u32 = mut self.s.copy_body(f, mut bind)
+    mut self.scan_walk(body)
+    for i: usize in 0..args.len {
+        ps: u32 = self.nsym(bind.get(i))
+        if ps == 0 {
+            mut self.unsupported("unresolved parameter")
+            return mut self.dummy()
+        }
+        a: u32 = args.get(i)
+        if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
+        if i == 0 && recv {
+            // C's sema rewrites a receiver to the place the method takes:
+            // *p for a pointer, its embedded field for a promoted method
+            ef: int = self.promoting_field(a, self.s.sym(ps).ty)
+            if ef >= 0 || self.is_pointer(a) {
+                rp: Place = blank(Place)
+                if self.is_pointer(a) {
+                    rp, _ = mut self.field_base(cn.a)
+                } else if self.is_place(a) {
+                    rp = mut self.place(a)
+                } else {
+                    rp = mut self.temp_place(a)
+                }
+                if ef >= 0 {
+                    fd: sema.SField = self.s.field(self.ty(self.recv_struct(a)), u32(ef))
+                    rp.off += i32(fd.offset)
+                    rp.t = fd.ty
+                }
+                if rp.var >= 0 && self.unwrap(rp.t) == self.unwrap(self.s.sym(ps).ty) {
+                    fail(mut self.var_ix.set(ps, rp.var + 1))
+                    continue
+                }
+                _ = mut self.var_new(ps, ir.IT_VOID, mut self.place_address(rp))
+                continue
+            }
+        }
+        if self.by_address(f, u32(i)) && !self.is_place(a) { // a call's result, or a field of one: a new stack object
+            _ = mut self.var_new(ps, ir.IT_VOID, mut self.place_address(mut self.temp_place(a)))
+            continue
+        }
+        if self.by_address(f, u32(i)) {
+            p: Place = mut self.place(a)
+            if p.var >= 0 && self.unwrap(p.t) == self.unwrap(self.s.sym(ps).ty) { // the argument's own variables
+                fail(mut self.var_ix.set(ps, p.var + 1))
+                continue
+            }
+            _ = mut self.var_new(ps, ir.IT_VOID, mut self.place_address(p))
+            continue
+        }
+        mut self.init_var(mut self.var_of(ps), ps, a)
+    }
+    join: int = mut self.new_block()
+    res: int = -1
+    nres: int = 0
+    d: int = dst
+    if self.is_big(rt) {
+        mut self.covered(rt)
+        if d < 0 { d = mut self.new_slot(rt) }
+    } else if self.is_agg(rt) {
+        d = -1
+        lv: ir.Leaves = blank(ir.Leaves)
+        nres = mut self.leaves(rt, mut lv)
+        for k: int in 0..nres {
+            v: int = mut self.var_new(0, lv.v[k].ty, -1)
+            if k == 0 { res = v }
+        }
+    } else {
+        d = -1
+        if rt != 0 {
+            res = mut self.var_new(0, mut self.need_type(rt), -1)
+            nres = 1
+        }
+    }
+    fail(mut self.inl.push(Expansion { f = f, rt = rt, join = join, res = res, dst = d }))
+    mut self.block(body)
+    if self.cur >= 0 { // falling off the end: zero
+        for k: int in 0..nres { mut self.write_var(res + k, self.cur, mut self.konst(self.vtype.get(usize(res + k)), 0)) }
+        mut self.jump(join)
+    }
+    mut self.inl.truncate(self.inl.len - 1)
+    mut self.seal(join)
+    mut self.enter(join)
+    if self.cur < 0 || res < 0 { return -1 }
+    if !self.is_agg(rt) { return mut self.read_var(res, join) }
+    if want_out {
+        out.n = nres
+        for k: int in 0..nres { out.v[k] = mut self.read_var(res + k, join) }
+    }
+    return -1
+}
+
 /* Whether generic function `s`, named by `x`, has a stamp to link: a written
  * specialization, or the instance whose signature sema recorded on `x` (C's
  * fn_value_mangle succeeding). --ir prints the symbol, not the stamp's name.
  */
 Lw.fn_value_named(self, s: u32, x: u32): bool {
     if self.s.sym(s).spec_args != 0 { return true }
-    return self.s.has_inst(self.s.sym(s).decl, self.nty(x))
+    _, found: bool = self.s.inst_args(self.s.sym(s).decl, self.nty(x))
+    return found
 }
 
 /* A call through a function value: variable `s`, or a struct field when 0. */
@@ -4001,7 +4289,7 @@ Lw.destructure(mut self, owner: u32, n: u32, rhs: u32) {
     }
     ut: SType = self.ty(u)
     rn: Node = self.node(rhs)
-    if rn.kind == Kind.tuple && rn.nkids == n && ir.leaf_count(self.s, tt) < 0 {
+    if rn.kind == Kind.tuple && rn.nkids == n && ir.leaf_count(*self.s, tt) < 0 {
         // `a: int, b: string = 1, "x"`: untyped elements take their targets'
         // types; every element is evaluated before any target is written
         m: array.Array[Agg] = array.Array[Agg] {}
@@ -4645,6 +4933,7 @@ Lw.defer_arg(mut self, a: u32, by_address: bool, in_slot: bool) {
 }
 
 Lw.defer_capture(mut self, at: u32) {
+    if self.inl.len != 0 { mut self.unsupported("defer placement") } // inline bodies hold no defer (Functions)
     call: u32 = self.node(at).a
     cn: Node = self.node(call)
     if cn.kind != Kind.call {
@@ -4782,7 +5071,7 @@ Lw.asm_stmt(mut self, at: u32) {
 
 Lw.stmt(mut self, at: u32) {
     if self.cur < 0 || self.failed() { return }
-    self.at = at
+    if self.inl.len == 0 { self.at = at } // inlined code keeps its call site's line
     s: Node = self.node(at)
     switch s.kind {
         Kind.block { mut self.block(at) }
@@ -4838,6 +5127,10 @@ Lw.stmt(mut self, at: u32) {
             }
         }
         Kind.return {
+            if self.inl.len != 0 {
+                mut self.inline_return(at)
+                return
+            }
             none: Agg = blank(Agg)
             if s.a == 0 {
                 mut self.ret(none)
@@ -4932,7 +5225,7 @@ Lw.finish(mut self) {
 /* Lowers checked function `f`: the IR, or a reason it was not lowered and
  * whether that reason is only selfhost's (a construct not yet ported).
  */
-pub lower(s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
+pub lower(mut s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
     fs: u32 = s.node_sym(f)
     fnode: Node = s.node(f)
     rt: u32 = 0
@@ -4940,7 +5233,7 @@ pub lower(s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
     if fnode.b == 0 && fnode.ival == 0 && (fnode.flags & parser.F_INTRINSIC) == 0 { return Func.new(f, fs), "no body", false }
     if fnode.c != 0 && !(fs != 0 && s.sym(fs).spec_args != 0) { return Func.new(f, fs), "generic", false }
     if fnode.b == 0 { return Func.new(f, fs), "compiler-backed bodies", true }
-    l: Lw = Lw { s = s, fn = Func.new(f, fs), f = f, debug = debug, var_ix = map.Map[u32, int] {}, stored = map.Map[u32, bool] {}, vtype = array.Array[u8] {}, home = array.Array[int] {}, defs = map.Map[u64, int] {}, inc = array.Array[Incomplete] {}, inc_head = array.Array[int] {}, repl = array.Array[int] {}, tgt = array.Array[Target] {}, defers = array.Array[Deferred] {}, captured = map.Map[u32, Capture] {} }
+    l: Lw = Lw { s = mut &s, fn = Func.new(f, fs), f = f, debug = debug, var_ix = map.Map[u32, int] {}, stored = map.Map[u32, bool] {}, vtype = array.Array[u8] {}, home = array.Array[int] {}, defs = map.Map[u64, int] {}, inc = array.Array[Incomplete] {}, inc_head = array.Array[int] {}, repl = array.Array[int] {}, tgt = array.Array[Target] {}, defers = array.Array[Deferred] {}, captured = map.Map[u32, Capture] {}, inl = array.Array[Expansion] {}, escapes = map.Map[u32, u64] {}, gesc = array.Array[GenEscape] {} }
     defer mut l.wipe()
     l.is_main = (fnode.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(fnode.text, "main")
     if rt != 0 && l.kind(rt) == TypeKind.void { rt = 0 }
@@ -5023,13 +5316,13 @@ pub lower(s: sema.Sema, f: u32, debug: bool): (Func, string, bool) {
 /* --ir: prints the IR of every function in the root file, or why it was not
  * lowered; false when one fails verification.
  */
-pub dump_file(mut out: Out, s: sema.Sema, debug: bool): bool {
+pub dump_file(mut out: Out, mut s: sema.Sema, debug: bool): bool {
     file: Node = s.node(s.file)
     for i: u32 in 0..file.nkids {
         f: u32 = s.kid(s.file, i)
         n: Node = s.node(f)
         if n.kind != Kind.func || s.in_imported(f) { continue }
-        fn: Func, why: string, unported: bool = lower(s, f, debug)
+        fn: Func, why: string, unported: bool = lower(mut s, f, debug)
         defer mut fn.wipe()
         if why.len > 0 {
             mut out.printf("; ")

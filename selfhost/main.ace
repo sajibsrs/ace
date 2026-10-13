@@ -219,7 +219,7 @@ check_bodies(path: string, full: bool, lower: bool): int {
     storage: mut []u8 = mem.alloc[u8](65536)
     defer mem.release[u8](mut storage)
     out: Out = Out.init(sys.stdout, storage)
-    ok: bool = lowering.dump_file(mut out, s, true)
+    ok: bool = lowering.dump_file(mut out, mut s, true)
     mut out.flush()
     if !ok { return 1 }
     return 0
