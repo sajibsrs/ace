@@ -1,0 +1,25 @@
+/* Process spawning through PATH, status, and argument errors. */
+
+// expect-exit: 0
+
+import exec
+import sys
+
+main(): int {
+    child: sys.Process, err: Error = exec.spawn(["sh", "-c", "exit $0", "37"])
+    if err != null || child == -1 { return 1 }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(child)
+    if wait_err != null || !status.exited || status.code != 37 { return 2 }
+
+    child, err = exec.spawn(["/nonexistent/program"])
+    if err == null || err.domain != typeid(exec.SpawnErr) || err.code != 2 ||
+       child != -1 {
+        return 3
+    }
+    words: [1]string = ["sh"]
+    child, err = exec.spawn(words[0..0])
+    if err == null || err.code != 22 { return 4 }
+    child, err = exec.spawn(["sh", "a\0b"])
+    if err == null || err.code != 22 { return 5 }
+    return 0
+}

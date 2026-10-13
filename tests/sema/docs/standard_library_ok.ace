@@ -1,8 +1,9 @@
 /*
- * Mirrors docs/std/{bits,fmt,sys,net,tcp,str}.md examples (sema
+ * Mirrors docs/std/{bits,exec,fmt,sys,net,tcp,str}.md examples (sema
  * check only; runtime coverage lives in tests/emit/fmt/*.ace,
  * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
  * tests/emit/sys/time.ace, tests/emit/sys/process_control.ace,
+ * tests/emit/exec/spawn.ace,
  * tests/emit/net/main.ace, tests/emit/tcp/main.ace,
  * tests/emit/net/poll.ace, tests/emit/net/nonblocking_echo.ace,
  * tests/emit/net/nonblocking_chat.ace, tests/emit/allocation/typed.ace,
@@ -10,6 +11,7 @@
  */
 
 import bits
+import exec
 import fmt
 import math
 import mem
@@ -229,6 +231,15 @@ process_example(): int {
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
 
     if wait_err != null || !status.exited { return 2 }
+    return status.code
+}
+
+spawn_example(): int {
+    child: sys.Process, err: Error = exec.spawn(["cc", "main.o", "-o", "main"])
+    if err != null { return 1 }
+    status: sys.ProcessStatus, werr: Error = sys.wait(child)
+
+    if werr != null || !status.exited { return 2 }
     return status.code
 }
 

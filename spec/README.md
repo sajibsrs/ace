@@ -20,7 +20,7 @@ gives each section's file. Stdlib items keep one numbering across their files.
 | `control-flow.md` | Conditions, Iterations, Deferred calls, Sequences |
 | `modules-packages.md` | Modules, Package System, C Interop |
 | `std/README.md` | Stdlib: conventions, #1–9 and #21 |
-| `std/sys.md` | Stdlib #10 `sys`, #11 `time` |
+| `std/sys.md` | Stdlib #10 `sys`, #11 `time`, #24 `exec` |
 | `std/fmt.md` | Stdlib #12 formatted output |
 | `std/net.md` | Stdlib #13 `net`, #14 `poll`, #15 `tcp` |
 | `std/text.md` | Stdlib #16 character and string utilities |

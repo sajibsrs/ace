@@ -1,0 +1,54 @@
+/* exec — starting programs as child processes. It builds on `sys`, which
+ * keeps one call per operation and imports nothing, and allocates through
+ * `mem`; only programs that start processes load it.
+ */
+
+import mem
+import sys
+
+@when(target == "darwin-arm64")
+import os: "./os/darwin-arm64.ace"
+
+@when(target == "linux-x64")
+import os: "./os/linux-x64.ace"
+
+pub SpawnErr: type = os.SpawnErr
+
+/* Start `argv[0]`, searched in PATH, with `argv` as its arguments and this
+ * process's environment; no shell runs between. Wait for it with `sys.wait`.
+ * The strings are copied into NUL-terminated storage released before return.
+ * An empty `argv` or an argument holding a NUL byte fails with
+ * `SpawnErr.invalid`.
+ */
+pub spawn(argv: []string): (sys.Process, Error) {
+    if argv.len == 0 { return sys.Process(-1), SpawnErr.invalid }
+    envc: usize = sys.envc()
+    size: usize = 0
+    for i: usize in 0 .. argv.len {
+        for j: usize in 0 .. argv[i].len {
+            if argv[i][j] == 0 { return sys.Process(-1), SpawnErr.invalid }
+        }
+        size += argv[i].len + 1
+    }
+    for i: usize in 0 .. envc { size += sys.env(i).len + 1 }
+
+    bytes: mut []u8 = mem.alloc[u8](size)
+    defer mem.release[u8](mut bytes)
+    pointers: mut []*u8 = mem.alloc[*u8](argv.len + envc + 2)
+    defer mem.release[*u8](mut pointers)
+    if bytes == null || pointers == null { return sys.Process(-1), SpawnErr.memory }
+
+    at: usize = 0
+    for i: usize in 0 .. argv.len + envc {
+        text: string = i < argv.len ? argv[i] : sys.env(i - argv.len)
+        for j: usize in 0 .. text.len { bytes[at + j] = text[j] }
+        bytes[at + text.len] = 0
+        slot: usize = i < argv.len ? i : i + 1
+        pointers[slot] = &bytes[at]
+        at += text.len + 1
+    }
+    pointers[argv.len] = null
+    pointers[argv.len + envc + 1] = null
+    process: sys.Process, err: Error = os.spawn(pointers[0 .. argv.len + 1], pointers[argv.len + 1 .. argv.len + envc + 2])
+    return process, err
+}

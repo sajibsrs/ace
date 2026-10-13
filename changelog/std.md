@@ -1,5 +1,9 @@
 # Standard library
 
+- Added the `exec` module: `exec.spawn(argv)` and `SpawnErr` over
+  `posix_spawnp`. The facade copies the arguments and environment into one
+  NUL-terminated `mem` block and `os.spawn` only makes the call; it is its own
+  module so `sys` keeps importing nothing. Selfhost will link through it (#134).
 - Added `sys.lstat`, `sys.canonical`, and `sys.executable`: the kernel
   resolves paths (darwin `getattrlist`, linux `/proc/self/fd`), so selfhost
   drops its `realpath`, `_NSGetExecutablePath`, and `readlink` externs.

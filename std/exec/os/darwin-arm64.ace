@@ -1,0 +1,28 @@
+/* exec — darwin-arm64 spawning over posix_spawnp. */
+
+import sys
+
+pub SpawnErr: error {
+    2: not_found = "program not found",
+    7: too_big = "argument list too long",
+    8: format = "program is not executable",
+    12: memory = "insufficient memory to create process",
+    13: access = "permission denied",
+    22: invalid = "spawn request is invalid",
+    35: retry = "temporary process resource limit reached",
+}
+
+extern "c" {
+    c_posix_spawnp(pid: mut *i32, file: *u8, actions: *u8, attributes: *u8, argv: **u8, envp: **u8): i32 as "posix_spawnp"
+}
+
+/* posix_spawnp over NUL-terminated `argv` and `envp` arrays; it returns its
+ * error code directly rather than through errno.
+ */
+pub spawn(argv: []*u8, envp: []*u8): (sys.Process, Error) {
+    pid: i32 = 0
+    code: i32 = c_posix_spawnp(mut &pid, argv[0], null, null, &argv[0], &envp[0])
+    if code != 0 { return sys.Process(-1), SpawnErr(code) }
+
+    return sys.Process(pid), null
+}
