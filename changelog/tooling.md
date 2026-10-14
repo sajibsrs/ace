@@ -180,3 +180,7 @@
 - selfhost's `Loader.module_of` reads modules through a view instead of
   copying each `Module` (#144): `--check` on `selfhost/main.ace` runs 3.1x
   faster, `--release --ir` 2.2x.
+- selfhost's wrapping arithmetic (static-map hashes, literal negation, arm64
+  division magic) uses `bits.wradd`/`wrsub`/`wrmul`, so a debug build no
+  longer traps on overflow; `check.sh` builds selfhost with `--debug` and has
+  it compile itself in both modes.

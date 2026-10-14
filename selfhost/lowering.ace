@@ -15,6 +15,7 @@
  */
 
 import array
+import bits
 import fmt
 import map
 import mem
@@ -429,7 +430,7 @@ Lw.literal(mut self, ty: u8, x: u32, neg: bool): int {
         mut self.unsupported("float literal at an integer type")
         return mut self.dummy()
     }
-    if neg { return mut self.konst(ty, u64(0) - n.ival) }
+    if neg { return mut self.konst(ty, bits.wrsub(u64(0), n.ival)) }
     return mut self.konst(ty, n.ival)
 }
 
@@ -2162,9 +2163,9 @@ Lw.contract_call(mut self, x: u32, mut res: Agg, want_res: bool, dst: int): int 
 // --- static maps ------------------------------------------------------------
 
 map_hash_int(x: u64, seed: u64): u64 {
-    z: u64 = x + seed + 0x9e3779b97f4a7c15
-    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
-    z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+    z: u64 = bits.wradd(bits.wradd(x, seed), u64(0x9e3779b97f4a7c15))
+    z = bits.wrmul(z ^ (z >> 30), u64(0xbf58476d1ce4e5b9))
+    z = bits.wrmul(z ^ (z >> 27), u64(0x94d049bb133111eb))
     return z ^ (z >> 31)
 }
 
@@ -2172,7 +2173,7 @@ map_hash_string(p: string, seed: u64): u64 {
     h: u64 = 1469598103934665603 ^ seed
     for c: u8 in p {
         h ^= u64(c)
-        h *= 1099511628211
+        h = bits.wrmul(h, u64(1099511628211))
     }
     return h
 }

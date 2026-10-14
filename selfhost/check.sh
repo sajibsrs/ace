@@ -1,5 +1,6 @@
 #!/bin/sh
-# Builds the self-hosted compiler with itself, then diffs its tokens against `ace --tokens`, its tree
+# Builds the self-hosted compiler with itself, checks that a debug build of it
+# compiles itself without a runtime trap, then diffs its tokens against `ace --tokens`, its tree
 # against `ace --ast` (stdout, exit status, and every error line), its module
 # loader against the C one (every import error line; on success, the count of
 # files loaded), its merged, lowered tree against `ace --resolved`, and its
@@ -18,7 +19,8 @@ tmp=$(mktemp -d)
 # of the self-hosted binary in the repository root, as `ace` itself is.
 self="$root/ace-self.$$"
 stage1="$root/ace-stage1.$$"
-trap 'rm -rf "$tmp" "$self" "$stage1" "$stage1.o"' EXIT
+debug="$root/ace-debug.$$"
+trap 'rm -rf "$tmp" "$self" "$stage1" "$stage1.o" "$debug" "$debug.o"' EXIT
 
 # Stage 1 is built by `ace`; stage 2, which every check below runs, is built
 # by stage 1. Their objects must match byte for byte (ld records each object's
@@ -31,6 +33,17 @@ if ! cmp -s "$stage1.o" "$tmp/ace-self.o"; then
 fi
 echo "self-build: stage 2 object matches stage 1"
 cp "$tmp/ace-self" "$self"
+
+# A debug build traps on integer overflow and bounds violations the release
+# build passes silently; compiling itself in both modes exercises every pass.
+"$root/ace" --debug -o "$debug" "$here/main.ace" || exit 1
+for mode in --debug --release; do
+    if ! (cd "$tmp" && "$debug" $mode -c "$here/main.ace" >/dev/null); then
+        echo "debug-build: $mode -c of main.ace failed"
+        exit 1
+    fi
+done
+echo "debug-build: compiles itself in debug and release without a trap"
 
 cd "$root"
 files=$(find std pkg demo tests bench selfhost -name '*.ace' | sort)

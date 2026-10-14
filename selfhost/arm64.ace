@@ -553,7 +553,7 @@ pow2_quotient(w: int, p: int, d: u64): (u64, u64) {
         hi <<= 1
         q <<= 1
         if top != 0 || hi >= d {
-            hi -= d
+            hi = bits.wrsub(hi, d)
             q |= 1
         }
     }
@@ -576,14 +576,14 @@ div_magic(d: u64, w: int, sign: bool, neg: bool): DivMagic {
     q: u64, rem: u64 = pow2_quotient(w, p, d)
     m: DivMagic = DivMagic { shift = p, neg = neg }
     if d - rem >= (u64(1) << u64(l)) { // needs the extra precision bit
-        twice: u64 = (rem * 2) & mask
-        q = (q * 2) & mask
+        twice: u64 = bits.wrmul(rem, u64(2)) & mask
+        q = bits.wrmul(q, u64(2)) & mask
         if twice >= d || twice < rem { q += 1 }
         m.shift = l
         m.add = true
     }
-    q = (q + 1) & mask
-    if neg { m.magic = (0 - q) & mask } else { m.magic = q & mask }
+    q = bits.wradd(q, u64(1)) & mask
+    if neg { m.magic = bits.wrsub(u64(0), q) & mask } else { m.magic = q & mask }
     return m
 }
 
@@ -1319,7 +1319,7 @@ A64.const_divide(mut self, op: u8, rd: int, ra: int, c: u64, t: u8) {
     if !sf { sd = i64(i32(u32(c & 0xFFFFFFFF))) }
     d: u64 = c & mask
     if sig {
-        if sd < 0 { d = (0 - u64(sd)) & mask } else { d = u64(sd) & mask }
+        if sd < 0 { d = bits.wrsub(u64(0), u64(sd)) & mask } else { d = u64(sd) & mask }
     }
     qd: u32 = u32(S0) // the remainder keeps q in x16
     if op == ir.IR_DIV { qd = u32(rd) }
