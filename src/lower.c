@@ -1833,7 +1833,7 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
 
 // Release builds also expand a small leaf function no source marks inline:
 // its body at most AUTO_INLINE_NODES nodes, with no call other than a
-// conversion or compiler-backed operation, and inline's other limits
+// conversion, a compiler-backed operation, or an `inline` function, and inline's other limits
 // (Functions & ABI #8). The verdict is kept per declaration.
 #define AUTO_INLINE_NODES 24
 
@@ -1849,7 +1849,8 @@ static int auto_inline_size(Node* n, int size) {
         int backed = s && s->kind == SYM_FUNC && s->decl && s->decl->kind == N_FUNC &&
                      (s->decl->ival || (s->decl->flags & F_INTRINSIC));
         int conversion = !s && n->a && n->a->kind == N_IDENT;
-        if (!backed && !conversion) return AUTO_INLINE_NODES + 1;
+        int expands = s && s->kind == SYM_FUNC && s->decl && (s->decl->flags & F_INLINE); // expanded in turn
+        if (!backed && !conversion && !expands) return AUTO_INLINE_NODES + 1;
     }
     size++;
     size = auto_inline_size(n->a, size);

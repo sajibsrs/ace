@@ -185,3 +185,7 @@
   address instead of a fresh copy's (Values & Passing #2; C and selfhost,
   #142); extern and function-value calls still copy. Selfhost `--release -c`
   on itself runs 2.4x faster.
+- Release auto-inlining also takes a small function whose only calls are to
+  `inline` functions, which expand in turn (C and selfhost, #144): a by-value
+  accessor over `inline Array.get` now inlines. `bench/core/tree` walk 1.45x,
+  check 1.18x; selfhost `--release -c` on itself 1.40x.

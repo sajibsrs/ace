@@ -57,6 +57,27 @@ b0:
     ret %2
 }
 
+scaled(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = const i64 100
+    %2 = gt bool %0, %1
+    br %2, b3, b4
+b1: ; preds b2
+    %4 = const i64 1
+    %5 = add.chk i64 %9, %4
+    ret %5
+b2: ; preds b3, b4
+    %7 = phi i64 [%1, b3], [%0, b4]
+    %8 = const i64 2
+    %9 = mul.chk i64 %7, %8
+    jmp b1
+b3: ; preds b0
+    jmp b2
+b4: ; preds b0
+    jmp b2
+}
+
 countdown(i64): i64 {
 b0:
     %0 = param i64 0
@@ -161,8 +182,18 @@ b5: ; preds b4
     call @__ace$registry_leaks()
     ret %23
 b6: ; preds b4
-    %26 = const i64 0
+    %26 = const i64 7
+    %27 = call i64 scaled(%26)
+    %28 = const i64 15
+    %29 = ne bool %27, %28
+    br %29, b7, b8
+b7: ; preds b6
+    %31 = const i64 4
     call @__ace$registry_leaks()
-    ret %26
+    ret %31
+b8: ; preds b6
+    %34 = const i64 0
+    call @__ace$registry_leaks()
+    ret %34
 }
 

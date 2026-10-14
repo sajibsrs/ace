@@ -3846,7 +3846,7 @@ Lw.inline_target(self, x: u32): (u32, u32, u32) {
 
 /* Release builds also expand a small leaf function no source marks inline:
  * its body at most AUTO_INLINE_NODES nodes, with no call other than a
- * conversion or compiler-backed operation, and inline's other limits
+ * conversion, a compiler-backed operation, or an `inline` function, and inline's other limits
  * (Functions & ABI #8).
  */
 AUTO_INLINE_NODES: const int = 24
@@ -3867,7 +3867,9 @@ Lw.auto_inline_size(self, at: u32, size: int): int {
             backed = d.kind == Kind.func && (d.ival != 0 || (d.flags & parser.F_INTRINSIC) != 0)
         }
         conversion: bool = s == 0 && n.a != 0 && self.node(n.a).kind == Kind.ident
-        if !backed && !conversion { return AUTO_INLINE_NODES + 1 }
+        expands: bool = s != 0 && self.s.sym(s).kind == sema.SymKind.func && self.s.sym(s).decl != 0 &&
+            (self.node(self.s.sym(s).decl).flags & parser.F_INLINE) != 0 // expanded in turn
+        if !backed && !conversion && !expands { return AUTO_INLINE_NODES + 1 }
     }
     r: int = size + 1
     r = self.auto_inline_size(n.a, r)

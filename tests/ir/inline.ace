@@ -1,7 +1,8 @@
 /* An inline call expands in place: a read-only argument is bound to a copy, a
  * mut parameter or receiver to the argument's own storage; nested callees, an
  * early return, a generic callee, and one with no result all join after the
- * expansion. A function that expands one keeps its self calls in release. */
+ * expansion. A function that expands one keeps its self calls in release. A
+ * small unmarked function calling only inline ones auto-inlines in release. */
 
 Box: struct { v: i64 }
 
@@ -31,6 +32,10 @@ inline step(x: i64): i64 {
     return x - 1
 }
 
+scaled(x: i64): i64 {
+    return twice(x) + 1
+}
+
 countdown(n: i64): i64 {
     if n <= 0 { return 0 }
     return countdown(step(n))
@@ -49,5 +54,6 @@ main(): int {
     if run(mut b, 60) != 180 { return 1 }
     if b.v != 61 { return 2 }
     if countdown(5) != 0 { return 3 }
+    if scaled(7) != 15 { return 4 }
     return 0
 }

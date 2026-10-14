@@ -479,8 +479,9 @@ structs, tuples, and type parameters included; it must not take a
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
 Release builds also expand small leaf functions on their own: a body of at
-most 24 syntax nodes that calls nothing but conversions and compiler-provided
-operations, within the limits above, and not generic, `@cold`, `main`, or
+most 24 syntax nodes that calls nothing but conversions, compiler-provided
+operations, and `inline` functions (a by-value accessor wrapping `Array.get`),
+within the limits above, and not generic, `@cold`, `main`, or
 recursive.
 Debug builds keep those calls, so backtraces show them. Mark a larger or
 non-leaf helper `inline` to expand it.
