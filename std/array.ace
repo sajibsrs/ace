@@ -75,6 +75,11 @@ pub inline Array[T].set(mut self, index: usize, value: T) {
     live[index] = value
 }
 
+/* `get` for an `int` index; a negative index is a bounds violation. */
+pub inline Array[T].get(self, index: int): T {
+    return self.items[..self.len][index]
+}
+
 /* Appends `value`, growing storage when full. */
 pub inline Array[T].push(mut self, value: T): Error {
     len: usize = self.len

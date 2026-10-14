@@ -37,7 +37,7 @@ main(): int {
     r += check(a.len == 100, 6)
     ok: bool = true
     for i: int in 0..100 {
-        if a.get(usize(i)) != 10 + i { ok = false }
+        if a.get(i) != 10 + i { ok = false }
     }
     r += check(ok, 7)
 

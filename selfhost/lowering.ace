@@ -472,10 +472,10 @@ def_key(b: int, var: int): u64 {
 
 Lw.find(mut self, v: int): int {
     r: int = v
-    for usize(r) < self.repl.len && self.repl.get(usize(r)) != 0 { r = self.repl.get(usize(r)) - 1 }
+    for usize(r) < self.repl.len && self.repl.get(r) != 0 { r = self.repl.get(r) - 1 }
     x: int = v
     for x != r { // path compression
-        next: int = self.repl.get(usize(x)) - 1
+        next: int = self.repl.get(x) - 1
         mut self.repl.set(usize(x), r + 1)
         x = next
     }
@@ -499,7 +499,7 @@ Lw.var_new(mut self, s: u32, ty: u8, home: int): int {
 
 /* The address of memory variable `var`. */
 Lw.var_addr(mut self, var: int): int {
-    h: int = self.home.get(usize(var))
+    h: int = self.home.get(var)
     if h >= 0 { return h }
     return mut self.read_var(ADDR_VAR - h, self.cur)
 }
@@ -581,15 +581,15 @@ Lw.read_var(mut self, var: int, b: int): int {
     bb: ir.IrBlock = self.fn.block(b)
     v: int = 0
     if !bb.sealed {
-        v = mut self.fn.new_phi(b, self.vtype.get(usize(var)))
-        fail(mut self.inc.push(Incomplete { var = var, phi = v, next = self.inc_head.get(usize(b)) - 1 }))
+        v = mut self.fn.new_phi(b, self.vtype.get(var))
+        fail(mut self.inc.push(Incomplete { var = var, phi = v, next = self.inc_head.get(b) - 1 }))
         mut self.inc_head.set(usize(b), int(self.inc.len))
     } else if bb.preds.len == 0 {
-        v = mut self.zero_at_entry(self.vtype.get(usize(var)))
+        v = mut self.zero_at_entry(self.vtype.get(var))
     } else if bb.preds.len == 1 {
         v = mut self.read_var(var, bb.preds.get(0))
     } else {
-        v = mut self.fn.new_phi(b, self.vtype.get(usize(var)))
+        v = mut self.fn.new_phi(b, self.vtype.get(var))
         mut self.write_var(var, b, v) // breaks cycles through this block
         v = mut self.add_phi_operands(var, v)
     }
@@ -599,9 +599,9 @@ Lw.read_var(mut self, var: int, b: int): int {
 
 Lw.seal(mut self, b: int) {
     if usize(b) < self.inc_head.len {
-        i: int = self.inc_head.get(usize(b)) - 1
+        i: int = self.inc_head.get(b) - 1
         for i >= 0 {
-            p: Incomplete = self.inc.get(usize(i))
+            p: Incomplete = self.inc.get(i)
             _ = mut self.add_phi_operands(p.var, p.phi)
             i = p.next
         }
@@ -864,7 +864,7 @@ Lw.place(mut self, x: u32): Place {
     c: Capture, captured: bool = self.captured.get(x)
     if captured {
         p.t = c.t
-        if self.home.get(usize(c.var)) == -1 { p.var = c.var } else { p.addr = mut self.var_addr(c.var) }
+        if self.home.get(c.var) == -1 { p.var = c.var } else { p.addr = mut self.var_addr(c.var) }
         return p
     }
     switch n.kind {
@@ -881,7 +881,7 @@ Lw.place(mut self, x: u32): Place {
                 return p
             }
             var: int = mut self.var_of(s)
-            if self.home.get(usize(var)) == -1 { p.var = var } else { p.addr = mut self.var_addr(var) }
+            if self.home.get(var) == -1 { p.var = var } else { p.addr = mut self.var_addr(var) }
             return p
         }
         Kind.unary {
@@ -923,7 +923,7 @@ Lw.place(mut self, x: u32): Place {
 
 /* Assigns variable `var`, in SSA or at its home. */
 Lw.set_var(mut self, var: int, v: int) {
-    if self.home.get(usize(var)) == -1 {
+    if self.home.get(var) == -1 {
         mut self.write_var(var, self.cur, v)
     } else {
         mut self.store(mut self.var_addr(var), 0, v, 0)
@@ -2909,13 +2909,13 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
         pp: ir.IrPart = g.parts.get(g.parts.len - 1)
         esz: u64 = u64(self.size(self.ty(pu).base))
         if by_address { // a descriptor in memory: read it at the address just passed
-            addr: int = g.v.get(usize(pp.first))
+            addr: int = g.v.get(pp.first)
             ptr: int = mut self.load(ir.IT_PTR, addr, 0, 0)
             len: int = mut self.load(ir.IT_U64, addr, 8, 0)
             mut rng.set(usize(i), Range { ptr = ptr, len = len, esz = esz })
             continue
         }
-        mut rng.set(usize(i), Range { ptr = g.v.get(usize(pp.first)), len = g.v.get(usize(pp.first + 1)), esz = esz })
+        mut rng.set(usize(i), Range { ptr = g.v.get(pp.first), len = g.v.get(pp.first + 1), esz = esz })
     }
     if aliasing { mut self.noalias_check(d, rng.view()) }
     return first_var
@@ -4176,7 +4176,7 @@ Lw.inline_call(mut self, x: u32, mut out: Agg, want_out: bool, dst: int): int {
     fail(mut self.inl.push(Expansion { f = f, rt = rt, join = join, res = res, dst = d }))
     mut self.block(body)
     if self.cur >= 0 { // falling off the end: zero
-        for k: int in 0..nres { mut self.write_var(res + k, self.cur, mut self.konst(self.vtype.get(usize(res + k)), 0)) }
+        for k: int in 0..nres { mut self.write_var(res + k, self.cur, mut self.konst(self.vtype.get(res + k), 0)) }
         mut self.jump(join)
     }
     mut self.inl.truncate(self.inl.len - 1)
@@ -4633,7 +4633,7 @@ Lw.ret(mut self, a: Agg) {
 
 /* A variable's leaves: its SSA variables, or stored at its home. */
 Lw.set_leaves(mut self, var: int, t: u32, a: Agg) {
-    if self.home.get(usize(var)) == -1 {
+    if self.home.get(var) == -1 {
         for k: int in 0..a.n { mut self.write_var(var + k, self.cur, a.v[k]) }
         return
     }
@@ -4648,7 +4648,7 @@ Lw.target(mut self, s: u32, is_continue: bool): int {
     labeled: bool = (n.flags & parser.F_TEXT) != 0
     i: int = int(self.tgt.len) - 1
     for i >= 0 {
-        t: Target = self.tgt.get(usize(i))
+        t: Target = self.tgt.get(i)
         if labeled {
             if t.has_label && mem.equal(t.label, n.text) { return i }
         } else if t.cont >= 0 {
@@ -4702,7 +4702,7 @@ Lw.binder_place(mut self, b: u32): Place {
     }
     t: u32 = self.s.sym(bs).ty
     var: int = mut self.var_of(bs)
-    if self.home.get(usize(var)) == -1 { return Place { var = var, t = t } }
+    if self.home.get(var) == -1 { return Place { var = var, t = t } }
     return Place { addr = mut self.var_addr(var), t = t }
 }
 
@@ -4911,7 +4911,7 @@ Lw.assign(mut self, at: u32) {
 /* Local `sym`'s variable `var`, initialized to `x`. */
 Lw.init_var(mut self, var: int, sym: u32, x: u32) {
     t: u32 = self.s.sym(sym).ty
-    if self.home.get(usize(var)) != -1 && self.in_memory(t) { // into its memory, which the value cannot name
+    if self.home.get(var) != -1 && self.in_memory(t) { // into its memory, which the value cannot name
         mut self.store_value(x, t, mut self.var_addr(var), 0)
         return
     }
@@ -5238,7 +5238,7 @@ Lw.switch_stmt(mut self, at: u32) {
     defer mut body.wipe()
     for 0..n { fail(mut body.push(mut self.new_block())) }
     miss: int = end
-    if dflt >= 0 { miss = body.get(usize(dflt)) }
+    if dflt >= 0 { miss = body.get(dflt) }
     if ntests == 0 { mut self.jump(miss) }
     k: u32 = 0
     for i: u32 in 0..n {
@@ -5366,7 +5366,7 @@ Lw.defer_arg(mut self, a: u32, by_address: bool, in_slot: bool) {
     }
     if self.is_untyped(t) || self.is_literal(inner) { return } // nothing to capture
     var: int = mut self.var_make(0, t, in_slot)
-    if self.home.get(usize(var)) != -1 && self.in_memory(t) {
+    if self.home.get(var) != -1 && self.in_memory(t) {
         mut self.store_value(inner, t, mut self.var_addr(var), 0)
     } else {
         v: Agg = blank(Agg)
@@ -5478,7 +5478,7 @@ Lw.asm_stmt(mut self, at: u32) {
                 if self.node(val).kind == Kind.int_lit { v = mut self.konst(ir.IT_I64, self.node(val).ival) }
                 if v < 0 {
                     var: int, vt: u8 = mut self.asm_local(val)
-                    if self.home.get(usize(var)) == -1 { v = mut self.read_var(var, self.cur) } else { v = mut self.load(vt, mut self.var_addr(var), 0, 0) }
+                    if self.home.get(var) == -1 { v = mut self.read_var(var, self.cur) } else { v = mut self.load(vt, mut self.var_addr(var), 0, 0) }
                 }
                 fail(mut inreg.push(r))
                 fail(mut invals.push(v))
@@ -5558,14 +5558,14 @@ Lw.stmt(mut self, at: u32) {
         Kind.break {
             t: int = mut self.target(at, false)
             if t >= 0 {
-                mut self.run_defers(self.tgt.get(usize(t)).ndefers)
-                mut self.jump(self.tgt.get(usize(t)).brk)
+                mut self.run_defers(self.tgt.get(t).ndefers)
+                mut self.jump(self.tgt.get(t).brk)
             }
         }
         Kind.continue {
             t: int = mut self.target(at, true)
             if t >= 0 {
-                tg: Target = self.tgt.get(usize(t))
+                tg: Target = self.tgt.get(t)
                 mut self.run_defers(tg.ndefers)
                 if tg.cont >= 0 { mut self.jump(tg.cont) } else { mut self.jump(tg.restart) }
             }
@@ -5585,8 +5585,8 @@ Lw.stmt(mut self, at: u32) {
                     if self.failed() { break }
                     ps: u32 = self.nsym(self.kid(self.f, i))
                     var: int = mut self.var_of(ps)
-                    if self.home.get(usize(var)) <= ADDR_VAR {
-                        mut self.write_var(ADDR_VAR - self.home.get(usize(var)), self.cur, g.v.get(k))
+                    if self.home.get(var) <= ADDR_VAR {
+                        mut self.write_var(ADDR_VAR - self.home.get(var), self.cur, g.v.get(k))
                         k += 1
                         continue
                     }
@@ -5683,9 +5683,9 @@ Lw.finish(mut self) {
         }
         mut bb.ins.truncate(k)
         preds: mut []int = mut bb.preds.view()
-        for i: usize in 0..preds.len { preds[i] = bmap.get(usize(preds[i])) }
-        if bb.succ0 >= 0 { bb.succ0 = bmap.get(usize(bb.succ0)) }
-        if bb.succ1 >= 0 { bb.succ1 = bmap.get(usize(bb.succ1)) }
+        for i: usize in 0..preds.len { preds[i] = bmap.get(preds[i]) }
+        if bb.succ0 >= 0 { bb.succ0 = bmap.get(bb.succ0) }
+        if bb.succ1 >= 0 { bb.succ1 = bmap.get(bb.succ1) }
         for id: int in bb.ins.view() { mut self.fn.at(id).block = bmap.get(b) }
         mut self.fn.blocks.set(usize(bmap.get(b)), bb)
     }
@@ -5788,7 +5788,7 @@ pub lower(mut s: sema.Sema, f: u32, debug: bool, targs: u32, nt: u32, ft: u32): 
     if l.cur >= 0 && !l.failed() { // falling off the end: zero
         z: Agg = blank(Agg)
         z.n = int(l.fn.rets.len)
-        for k: int in 0..z.n { z.v[k] = mut l.konst(l.fn.rets.get(usize(k)), 0) }
+        for k: int in 0..z.n { z.v[k] = mut l.konst(l.fn.rets.get(k), 0) }
         mut l.ret(z)
     }
     if l.self_head >= 0 { mut l.seal(l.self_head) }

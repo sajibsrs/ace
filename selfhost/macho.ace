@@ -207,7 +207,7 @@ pub Obj.define(mut self, name: string, ext: bool, k: int): int {
     s.ntype = N_SECT
     if ext { s.ntype |= N_EXT }
     s.sect = u8(1 + k)
-    sc: Sec = self.secs.get(usize(k))
+    sc: Sec = self.secs.get(k)
     if (sc.flags & S_ZEROFILL) != 0 { s.value = sc.size } else { s.value = u64(sc.data.len) }
     return id
 }
@@ -309,7 +309,7 @@ putname(mut b: array.Array[u8], name: string) {
 /* Patches every recorded call once all text symbols are defined. */
 pub Obj.patch_fixups(mut self) {
     for f: Fixup in self.fix.view() {
-        t: ESym = self.syms.get(usize(f.target))
+        t: ESym = self.syms.get(f.target)
         if t.ntype == 0 || t.sect != u8(1 + SEC_TEXT) {
             fmt.printf(sys.stderr, "ace: internal call to '%s' is not a text symbol\n", t.name)
             self.errors += 1
@@ -563,8 +563,8 @@ pub Obj.image(mut self): array.Array[u8] {
         fail(mut rel_at.push(u32(rel.len)))
         for r: Rel in s.rels.view() {
             put32(mut rel, r.off)
-            target: u32 = u32(self.syms.get(usize(r.sym)).sect)
-            if r.ext { target = ord.get(usize(r.sym)) }
+            target: u32 = u32(self.syms.get(r.sym).sect)
+            if r.ext { target = ord.get(r.sym) }
             put32(mut rel, (target & 0xFFFFFF) | (bit(r.pcrel) << 24) | (u32(r.len) << 25) | (bit(r.ext) << 27) | (u32(r.rtype) << 28))
         }
     }
@@ -650,8 +650,8 @@ pub Obj.image(mut self): array.Array[u8] {
     for (img.len & 7) != 0 { put8(mut img, 0) }
     symoff: u32 = u32(img.len)
     for k: int in order.view() {
-        s: ESym = self.syms.get(usize(k))
-        put32(mut img, strx.get(usize(k)))
+        s: ESym = self.syms.get(k)
+        put32(mut img, strx.get(k))
         if s.ntype != 0 { put8(mut img, s.ntype) } else { put8(mut img, N_EXT) } // undefined: N_EXT only
         put8(mut img, s.sect)
         put16(mut img, 0)               // n_desc

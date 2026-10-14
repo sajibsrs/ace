@@ -313,7 +313,7 @@ pub entry(s: sema.Sema, fn: Func): (array.Array[Loc], array.Array[Loc], u32) {
     parts: []IrPart = fn.parts.view()[0..0]
     agg: u32 = 0
     if fn.sig >= 0 {
-        sg: ir.IrSig = fn.sigs.get(usize(fn.sig))
+        sg: ir.IrSig = fn.sigs.get(fn.sig)
         parts = fn.parts.view()[usize(sg.parts)..usize(sg.parts + sg.nparts)]
         agg = sg.ret.agg
     }
@@ -352,7 +352,7 @@ pub plan_call(s: sema.Sema, fn: Func, u: int): Plan {
     parts: []IrPart = fn.parts.view()[0..0]
     agg: u32 = 0
     if x.sig >= 0 {
-        sg: ir.IrSig = fn.sigs.get(usize(x.sig))
+        sg: ir.IrSig = fn.sigs.get(x.sig)
         parts = fn.parts.view()[usize(sg.parts)..usize(sg.parts + sg.nparts)]
         agg = sg.ret.agg
     }
@@ -408,7 +408,7 @@ fold_address(s: sema.Sema, fn: Func, a: Ra, u: int): bool {
     x: IrIns = fn.at(u)
     p: int = fn.arg(u, 0)
     px: IrIns = fn.at(p)
-    if a.nuse.get(usize(p)) != 1 || px.block != x.block || (x.flags & ir.IRF_CHECKED) != 0 { return false }
+    if a.nuse.get(p) != 1 || px.block != x.block || (x.flags & ir.IRF_CHECKED) != 0 { return false }
     if px.op == ir.IR_GLOBAL { return x.aux == 0 && !got_data(s, px) }
     if (px.op != ir.IR_PADD && px.op != ir.IR_PSUB) || (px.flags & ir.IRF_CHECKED) != 0 { return false }
     n: int = fn.arg(p, 1)
@@ -434,7 +434,7 @@ pub fuse(s: sema.Sema, fn: Func, mut a: Ra): array.Array[u8] {
             if x.op == ir.IR_BR || x.op == ir.IR_CHECK {
                 c: int = fn.arg(u, 0)
                 cx: IrIns = fn.at(c)
-                if is_compare(cx.op) && a.nuse.get(usize(c)) == 1 && cx.block == b { mut a.fused.set(usize(c), true) }
+                if is_compare(cx.op) && a.nuse.get(c) == 1 && cx.block == b { mut a.fused.set(usize(c), true) }
             } else if x.op == ir.IR_LOAD || x.op == ir.IR_STORE {
                 if fold_address(s, fn, a, u) { mut a.fused.set(usize(fn.arg(u, 0)), true) }
             } else if (x.op == ir.IR_ADD || x.op == ir.IR_SUB) && (x.flags & ir.IRF_CHECKED) == 0 &&
@@ -445,7 +445,7 @@ pub fuse(s: sema.Sema, fn: Func, mut a: Ra): array.Array[u8] {
                     m: int = fn.arg(u, k)
                     mx: IrIns = fn.at(m)
                     // a constant addend would need a register: mul + add #imm is no longer
-                    if mx.op != ir.IR_MUL || (mx.flags & ir.IRF_CHECKED) != 0 || a.nuse.get(usize(m)) != 1 || mx.block != b ||
+                    if mx.op != ir.IR_MUL || (mx.flags & ir.IRF_CHECKED) != 0 || a.nuse.get(m) != 1 || mx.block != b ||
                         fn.at(fn.arg(u, 1 - k)).op == ir.IR_CONST {
                         k += 1
                         continue
@@ -484,7 +484,7 @@ pub hints(s: sema.Sema, fn: Func, mut a: Ra, pin: array.Array[Loc], rin: array.A
                 p: Plan = plan_call(s, fn, u)
                 defer mut p.wipe()
                 for k: int in 0..p.n {
-                    l: Loc = p.arg.get(usize(k))
+                    l: Loc = p.arg.get(k)
                     v: usize = usize(fn.arg(u, u32(p.k0 + k)))
                     if l.kind == L_REG && a.hint.get(v) < 0 { mut a.hint.set(v, l.reg) }
                 }
@@ -990,30 +990,30 @@ A64.opnd(mut self, v: int, scratch: int): int {
         return scratch
     }
     if x.op == ir.IR_SLOT {
-        mut self.add_imm(scratch, 31, self.obj.get(usize(v)))
+        mut self.add_imm(scratch, 31, self.obj.get(v))
         return scratch
     }
-    if self.ra.reg.get(usize(v)) >= 0 { return self.ra.reg.get(usize(v)) }
-    if self.vec_val(v) { mut self.ld_slotq(scratch, self.ra.slot.get(usize(v))) } else { mut self.ld_slot(scratch, self.ra.slot.get(usize(v))) }
+    if self.ra.reg.get(v) >= 0 { return self.ra.reg.get(v) }
+    if self.vec_val(v) { mut self.ld_slotq(scratch, self.ra.slot.get(v)) } else { mut self.ld_slot(scratch, self.ra.slot.get(v)) }
     return scratch
 }
 
 /* The register v's result is computed into; dst_done stores a spilled one. */
 A64.dst(self, v: int): int {
-    if self.ra.reg.get(usize(v)) >= 0 { return self.ra.reg.get(usize(v)) }
+    if self.ra.reg.get(v) >= 0 { return self.ra.reg.get(v) }
     if self.fp_val(v) { return FS0 }
     return S0
 }
 
 A64.dst_done(mut self, v: int, r: int) {
-    if self.ra.reg.get(usize(v)) < 0 && self.ra.slot.get(usize(v)) >= 0 {
-        if self.vec_val(v) { mut self.st_slotq(r, self.ra.slot.get(usize(v))) } else { mut self.st_slot(r, self.ra.slot.get(usize(v))) }
+    if self.ra.reg.get(v) < 0 && self.ra.slot.get(v) >= 0 {
+        if self.vec_val(v) { mut self.st_slotq(r, self.ra.slot.get(v)) } else { mut self.st_slot(r, self.ra.slot.get(v)) }
     }
 }
 
 A64.loc(self, v: int): int { // a move location, or NOREG for an unused value
-    if self.ra.reg.get(usize(v)) >= 0 { return self.ra.reg.get(usize(v)) }
-    if self.ra.slot.get(usize(v)) >= 0 { return SLOT + self.ra.slot.get(usize(v)) }
+    if self.ra.reg.get(v) >= 0 { return self.ra.reg.get(v) }
+    if self.ra.slot.get(v) >= 0 { return SLOT + self.ra.slot.get(v) }
     return NOREG
 }
 
@@ -1124,7 +1124,7 @@ A64.parallel_move(mut self, mut m: array.Array[Move], avoid: u32) {
 A64.move_of(self, dst_loc: int, v: int): Move {
     x: IrIns = self.x(v)
     if x.op == ir.IR_CONST { return Move { dst = dst_loc, imm = x.imm, is_const = 1, sf = is64(x.ty) } }
-    if x.op == ir.IR_SLOT { return Move { dst = dst_loc, imm = u64(self.obj.get(usize(v))), is_const = 2 } }
+    if x.op == ir.IR_SLOT { return Move { dst = dst_loc, imm = u64(self.obj.get(v)), is_const = 2 } }
     return Move { dst = dst_loc, src = self.loc(v), q = is_vec(x.ty) }
 }
 
@@ -1392,8 +1392,8 @@ A64.add_sub(mut self, v: int) {
     sf: u32 = sfb(t)
     chk: bool = (x.flags & ir.IRF_CHECKED) != 0
     sub: bool = x.op == ir.IR_SUB
-    if self.madd.get(usize(v)) != 0 { // rd = other ± m0 * m1
-        k: u32 = u32(self.madd.get(usize(v)) - 1)
+    if self.madd.get(v) != 0 { // rd = other ± m0 * m1
+        k: u32 = u32(self.madd.get(v) - 1)
         mv: int = self.arg(v, k)
         rn: int = mut self.opnd(self.arg(mv, 0), S0)
         rm: int = mut self.opnd(self.arg(mv, 1), S1)
@@ -1988,12 +1988,12 @@ A64.access(mut self, v: int) {
     rn: int = 0
     if px.op == ir.IR_SLOT {
         rn = 31
-        off += i64(self.obj.get(usize(p)))
-    } else if self.ra.fused.get(usize(p)) && px.op == ir.IR_GLOBAL {
+        off += i64(self.obj.get(p))
+    } else if self.ra.fused.get(p) && px.op == ir.IR_GLOBAL {
         mut self.page_ref(S0, px.name, op | (u32(S0) << 5) | R(rt))
         if load { mut self.dst_done(v, rt) }
         return
-    } else if self.ra.fused.get(usize(p)) { // an unchecked pointer offset
+    } else if self.ra.fused.get(p) { // an unchecked pointer offset
         n: int = self.arg(p, 1)
         base: int = self.arg(p, 0)
         if self.is_const(n) {
@@ -2001,7 +2001,7 @@ A64.access(mut self, v: int) {
             if px.op == ir.IR_PADD { off += d } else { off -= d }
             if self.x(base).op == ir.IR_SLOT {
                 rn = 31
-                off += i64(self.obj.get(usize(base)))
+                off += i64(self.obj.get(base))
             } else {
                 rn = mut self.opnd(base, S0)
             }
@@ -2044,7 +2044,7 @@ A64.string_bytes(mut self, v: int) {
     x: IrIns = self.x(v)
     s: int = mut self.o.string(x.name[..usize(x.imm)])
     rd: int = self.dst(v)
-    mut self.page_ref(rd, self.o.syms.get(usize(s)).name, 0x91000000 | (u32(rd) << 5) | u32(rd))
+    mut self.page_ref(rd, self.o.syms.get(s).name, 0x91000000 | (u32(rd) << 5) | u32(rd))
     mut self.dst_done(v, rd)
 }
 
@@ -2177,7 +2177,7 @@ A64.call(mut self, v: int) {
     m: array.Array[Move] = array.Array[Move] {}
     defer mut m.wipe()
     for k: int in 0..p.n {
-        g: Loc = p.arg.get(usize(k))
+        g: Loc = p.arg.get(k)
         w: int = self.arg(v, u32(p.k0 + k))
         if g.kind == L_REG {
             fail(mut m.push(self.move_of(g.reg, w)))
@@ -2216,7 +2216,7 @@ A64.call(mut self, v: int) {
     }
     if own && mem.equal(x.name, "__ace$arithmetic_fail") { self.o.arithmetic_fail_used = true } // a check lowering calls a failure routine directly
     if own && mem.equal(x.name, "__ace$null_fail") { self.o.null_fail_used = true }
-    if x.sig < 0 || self.fn.sigs.get(usize(x.sig)).ret.agg == 0 {
+    if x.sig < 0 || self.fn.sigs.get(x.sig).ret.agg == 0 {
         if self.loc(v) == NOREG { return }
         rd: int = self.dst(v)
         if narrow(x.ty) {
@@ -2306,7 +2306,7 @@ A64.asm_encode(mut self, p: string) {
  */
 A64.asm_select(mut self, v: int) {
     x: IrIns = self.x(v)
-    ab: ir.IrAsm = self.fn.asms.get(usize(x.asm))
+    ab: ir.IrAsm = self.fn.asms.get(x.asm)
     m: array.Array[Move] = array.Array[Move] {}
     defer mut m.wipe()
     for k: u32 in 0..x.nargs { fail(mut m.push(self.move_of(self.fn.asm_regs.get(usize(ab.regs + k)), self.arg(v, k)))) }
@@ -2340,8 +2340,8 @@ A64.line_row(mut self, at: u32) {
 }
 
 A64.next_block(self, b: int): int {
-    i: int = self.ra.eix.get(usize(b)) + 1
-    if i < int(self.fn.blocks.len) { return self.ra.layout.get(usize(i)) }
+    i: int = self.ra.eix.get(b) + 1
+    if i < int(self.fn.blocks.len) { return self.ra.layout.get(i) }
     return -1
 }
 
@@ -2396,7 +2396,7 @@ A64.terminator(mut self, b: int, v: int) {
     }
     c: int = self.arg(v, 0)
     k: Cond = Cond {}
-    if self.ra.fused.get(usize(c)) {
+    if self.ra.fused.get(c) {
         k = mut self.compare(c, true)
     } else {
         reg: int = mut self.opnd(c, S0)
@@ -2420,7 +2420,7 @@ A64.check(mut self, v: int) {
     x: IrIns = self.x(v)
     c: int = self.arg(v, 0)
     t: Cond = Cond {}
-    if self.ra.fused.get(usize(c)) {
+    if self.ra.fused.get(c) {
         t = mut self.compare(c, true)
     } else {
         reg: int = mut self.opnd(c, S0)
@@ -2445,7 +2445,7 @@ A64.emit_block(mut self, b: int) {
     for v: int in bb.ins.view() {
         x: IrIns = self.x(v)
         if x.op != ir.IR_CHECK { mut self.line_row(x.at) } // its at is the site its stub reports
-        if self.ra.fused.get(usize(v)) { continue }
+        if self.ra.fused.get(v) { continue }
         if is_vec(x.ty) && x.op != ir.IR_LOAD && x.op != ir.IR_PHI {
             mut self.vector(v)
             continue
@@ -2532,7 +2532,7 @@ A64.params(mut self) {
 /* A block a later one branches back to, other than a cold arm rejoining. */
 A64.is_loop_head(self, b: int): bool {
     for p: int in self.fn.block(b).preds.view() {
-        if self.ra.eix.get(usize(p)) >= self.ra.eix.get(usize(b)) && !self.ra.cold.get(usize(p)) { return true }
+        if self.ra.eix.get(p) >= self.ra.eix.get(b) && !self.ra.cold.get(p) { return true }
     }
     return false
 }
@@ -2589,14 +2589,14 @@ A64.emit_body(mut self): bool {
         fail(mut self.stub_at.push(self.here()))
         mut self.line_row(sx.at)
         mut self.mov_imm(0, 2, true)
-        mut self.page_ref(1, self.o.syms.get(usize(msg)).name, 0x91000021) // add x1, x1, msg@PAGEOFF
+        mut self.page_ref(1, self.o.syms.get(msg).name, 0x91000021) // add x1, x1, msg@PAGEOFF
         mut self.mov_imm(2, u64(n), true)
         mut self.bl_to("__ace$bounds_fail")
         self.o.bounds_fail_used = true
     }
     for br: Branch in self.br.view() {
         to: u32 = 0
-        if br.target <= LFAIL { to = self.stub_at.get(usize(LFAIL - br.target)) } else if br.target < 0 { to = fail_at[-1 - br.target] } else { to = self.label.get(usize(br.target)) }
+        if br.target <= LFAIL { to = self.stub_at.get(LFAIL - br.target) } else if br.target < 0 { to = fail_at[-1 - br.target] } else { to = self.label.get(br.target) }
         d: i64 = (i64(to) - i64(br.site)) / 4
         w: u32 = br.w
         if br.imm19 {
@@ -2655,7 +2655,7 @@ pub func(s: sema.Sema, mut o: macho.Obj, mut fn: Func, name: string, global: boo
     start: u32 = a.here()
     _ = mut o.define(name, global, macho.SEC_TEXT)
     nfix: usize = o.fix.len
-    nrl: usize = o.secs.get(usize(macho.SEC_TEXT)).rels.len
+    nrl: usize = o.secs.get(macho.SEC_TEXT).rels.len
     nlines: usize = o.lines.len
     last: macho.LineRow = macho.LineRow { addr = 0, line = 0, col = 0, path = "" }
     if nlines > 0 { last = o.lines.get(nlines - 1) }
@@ -2728,7 +2728,7 @@ Rt.cbz(mut self, rt: int, nz: bool, l: int) { mut self.branch(sel(nz, 0x35000000
 
 Rt.patch_branches(mut self) {
     for b: RtBranch in self.bp.view() {
-        target: u32 = self.lab.get(usize(b.lab))
+        target: u32 = self.lab.get(b.lab)
         if target == 0xFFFFFFFF { continue }
         delta: i64 = i64(target) - i64(b.site)
         cur: u32 = self.o.get32(usize(b.site))

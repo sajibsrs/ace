@@ -266,7 +266,7 @@ pub Func.at(mut self, id: int): mut *IrIns {
 }
 
 pub Func.at(self, id: int): IrIns {
-    return self.ins.get(usize(id))
+    return self.ins.get(id)
 }
 
 pub Func.block(mut self, b: int): mut *IrBlock {
@@ -274,7 +274,7 @@ pub Func.block(mut self, b: int): mut *IrBlock {
 }
 
 pub Func.block(self, b: int): IrBlock {
-    return self.blocks.get(usize(b))
+    return self.blocks.get(b)
 }
 
 /* Operand `k` of instruction `id`. */
@@ -283,7 +283,7 @@ pub Func.arg(self, id: int, k: u32): int {
 }
 
 pub Func.set_arg(mut self, id: int, k: u32, v: int) {
-    mut self.args.set(usize(self.ins.get(usize(id)).args + k), v)
+    mut self.args.set(usize(self.ins.get(id).args + k), v)
 }
 
 pub Func.new_block(mut self): int {
@@ -309,7 +309,7 @@ pub Func.new_phi(mut self, block: int, ty: u8): int {
     id: int = mut self.alloc(block, IR_PHI, ty)
     at: usize = 0
     list: []int = self.block(block).ins.view()
-    for at < list.len && self.ins.get(usize(list[at])).op == IR_PHI { at += 1 }
+    for at < list.len && self.ins.get(list[at]).op == IR_PHI { at += 1 }
     b: mut *IrBlock = mut self.block(block)
     fail(mut b.ins.push(id))
     v: mut []int = mut b.ins.view()
@@ -326,7 +326,7 @@ pub Func.new_phi(mut self, block: int, ty: u8): int {
  * another run follows it.
  */
 pub Func.arg_add(mut self, v: int, arg: int) {
-    x: IrIns = self.ins.get(usize(v))
+    x: IrIns = self.ins.get(v)
     if usize(x.args + x.nargs) != self.args.len || x.nargs == 0 {
         start: u32 = u32(self.args.len)
         for k: u32 in 0..x.nargs { fail(mut self.args.push(self.args.get(usize(x.args + k)))) }
@@ -639,10 +639,10 @@ pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
         k: int = stack.get(sp - 1)
         if k < 2 {
             mut stack.set(sp - 1, k + 1)
-            bb: IrBlock = fn.blocks.get(usize(b))
+            bb: IrBlock = fn.blocks.get(b)
             succ: int = bb.succ0
             if k == 1 { succ = bb.succ1 }
-            if succ >= 0 && !seen.get(usize(succ)) {
+            if succ >= 0 && !seen.get(succ) {
                 mut seen.set(usize(succ), true)
                 fail(mut stack.push(succ))
                 fail(mut stack.push(0))
@@ -667,8 +667,8 @@ pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
         for i: usize in 1..npost {
             b: int = o[i]
             nd: int = -1
-            for q: int in fn.blocks.get(usize(b)).preds.view() {
-                if idom.get(usize(q)) < 0 { continue }
+            for q: int in fn.blocks.get(b).preds.view() {
+                if idom.get(q) < 0 { continue }
                 if nd < 0 {
                     nd = q
                     continue
@@ -676,12 +676,12 @@ pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
                 x: int = q
                 y: int = nd
                 for x != y {
-                    for numb.get(usize(x)) > numb.get(usize(y)) { x = idom.get(usize(x)) }
-                    for numb.get(usize(y)) > numb.get(usize(x)) { y = idom.get(usize(y)) }
+                    for numb.get(x) > numb.get(y) { x = idom.get(x) }
+                    for numb.get(y) > numb.get(x) { y = idom.get(y) }
                 }
                 nd = x
             }
-            if nd >= 0 && idom.get(usize(b)) != nd {
+            if nd >= 0 && idom.get(b) != nd {
                 mut idom.set(usize(b), nd)
                 changed = true
             }
@@ -692,7 +692,7 @@ pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
 
 pub dominates(idom: array.Array[int], a: int, b: int): bool {
     x: int = b
-    for x != a && x != 0 { x = idom.get(usize(x)) }
+    for x != a && x != 0 { x = idom.get(x) }
     return x == a
 }
 
@@ -806,7 +806,7 @@ pub verify(s: sema.Sema, fn: Func): bool {
                 ub: int = b
                 if v.op == IR_PHI { ub = bb.preds.get(usize(a)) }
                 dom: bool = false
-                if db == ub { dom = v.op == IR_PHI || pos.get(usize(u)) < int(i) } else { dom = dominates(idom, db, ub) }
+                if db == ub { dom = v.op == IR_PHI || pos.get(u) < int(i) } else { dom = dominates(idom, db, ub) }
                 if !dom { return bad(s, fn, ["%", num(mut b1, id), " uses %", num(mut b2, u), " where its definition does not dominate"]) }
             }
             if !vector_ok(fn, id) { return bad(s, fn, ["%", num(mut b1, id), " misuses a vector type"]) }
@@ -942,7 +942,7 @@ print_types(mut out: Out, fn: Func, t: []u8, sig: int, ret: bool) {
         agg: bool = false
         m: usize = 1
         if sig >= 0 {
-            g: IrSig = fn.sigs.get(usize(sig))
+            g: IrSig = fn.sigs.get(sig)
             pt: IrPart = g.ret
             have: bool = ret
             if !ret && p < g.nparts {
@@ -987,7 +987,7 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
         mut out.printf("mem %u", uint(s.ty(fn.ret_mem).size))
     } else if fn.rets.len == 0 {
         mut out.printf("void")
-    } else if fn.sig >= 0 && fn.sigs.get(usize(fn.sig)).ret.agg != 0 {
+    } else if fn.sig >= 0 && fn.sigs.get(fn.sig).ret.agg != 0 {
         print_types(mut out, fn, fn.rets.view(), fn.sig, true)
     } else {
         mut out.printf("%s", TYPE_NAMES[fn.rets.get(0)])
@@ -1007,8 +1007,8 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
         for id: int in bb.ins.view() {
             v: IrIns = fn.at(id)
             mut out.printf("    ")
-            agg: bool = (v.sig >= 0 && fn.sigs.get(usize(v.sig)).ret.agg != 0) || (v.op == IR_ASM && fn.asms.get(usize(v.asm)).nout > 0) // a call or asm whose leaves its projs read
-            if v.ty != IT_VOID || agg { mut out.printf("%%%d = ", numb.get(usize(id))) }
+            agg: bool = (v.sig >= 0 && fn.sigs.get(v.sig).ret.agg != 0) || (v.op == IR_ASM && fn.asms.get(v.asm).nout > 0) // a call or asm whose leaves its projs read
+            if v.ty != IT_VOID || agg { mut out.printf("%%%d = ", numb.get(id)) }
             mut out.printf("%s", OP_NAMES[v.op])
             if (v.flags & IRF_CHECKED) != 0 { mut out.printf(".chk") }
             if (v.flags & IRF_VOLATILE) != 0 { mut out.printf(".vol") }
@@ -1016,9 +1016,9 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
             if (v.flags & IRF_COLD) != 0 { mut out.printf(".cold") }
             if v.ty != IT_VOID { mut out.printf(" %s", TYPE_NAMES[v.ty]) }
             if agg && v.op == IR_ASM {
-                mut out.printf(" {%d}", int(fn.asms.get(usize(v.asm)).nout))
+                mut out.printf(" {%d}", int(fn.asms.get(v.asm).nout))
             } else if agg {
-                mut out.printf(" {%d}", fn.sigs.get(usize(v.sig)).ret.n)
+                mut out.printf(" {%d}", fn.sigs.get(v.sig).ret.n)
             }
             switch v.op {
                 IR_CONST {
@@ -1026,7 +1026,7 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                     print_imm(mut out, v.ty, v.imm)
                 }
                 IR_PARAM { mut out.printf(" %u", uint(v.imm)) }
-                IR_PROJ { mut out.printf(" %%%d, %u", numb.get(usize(fn.arg(id, 0))), uint(v.imm)) }
+                IR_PROJ { mut out.printf(" %%%d, %u", numb.get(fn.arg(id, 0)), uint(v.imm)) }
                 IR_PHI {
                     for a: u32 in 0..v.nargs {
                         if a > 0 { mut out.printf(",") }
@@ -1053,18 +1053,18 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                     mut out.printf("\"")
                 }
                 IR_LOAD, IR_STORE {
-                    mut out.printf(" [%%%d", numb.get(usize(fn.arg(id, 0))))
+                    mut out.printf(" [%%%d", numb.get(fn.arg(id, 0)))
                     if v.aux != 0 { mut out.printf(" + %d", int(v.aux)) }
                     mut out.printf("]")
-                    if v.op == IR_STORE { mut out.printf(", %%%d", numb.get(usize(fn.arg(id, 1)))) }
+                    if v.op == IR_STORE { mut out.printf(", %%%d", numb.get(fn.arg(id, 1))) }
                 }
-                IR_PADD, IR_PSUB { mut out.printf(" %%%d, %%%d * %u", numb.get(usize(fn.arg(id, 0))), numb.get(usize(fn.arg(id, 1))), uint(v.imm)) }
+                IR_PADD, IR_PSUB { mut out.printf(" %%%d, %%%d * %u", numb.get(fn.arg(id, 0)), numb.get(fn.arg(id, 1)), uint(v.imm)) }
                 IR_CALL, IR_CALLI, IR_RTCALL {
                     first: u32 = 0
                     mut out.printf(" ")
                     if v.op == IR_CALLI {
                         first = 1
-                        mut out.printf("%%%d", numb.get(usize(fn.arg(id, 0))))
+                        mut out.printf("%%%d", numb.get(fn.arg(id, 0)))
                     } else if v.sym != 0 {
                         print_sym(mut out, s, v.sym)
                     } else {
@@ -1074,12 +1074,12 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                     for a: u32 in first..v.nargs {
                         if a > first { mut out.printf(", ") }
                         if (v.flags & IRF_VARARGS) != 0 && i32(a) == v.aux { mut out.printf("... ") }
-                        mut out.printf("%%%d", numb.get(usize(fn.arg(id, a))))
+                        mut out.printf("%%%d", numb.get(fn.arg(id, a)))
                     }
                     mut out.printf(")")
                 }
                 IR_ASM {
-                    ab: IrAsm = fn.asms.get(usize(v.asm))
+                    ab: IrAsm = fn.asms.get(v.asm)
                     mut out.printf(" \"%s\"", v.name)
                     for a: u32 in 0..v.nargs { mut out.printf(" %s=%%%d", asm_register_name(s.target(), fn.asm_regs.get(usize(ab.regs + a))), numb.get(usize(fn.arg(id, a)))) }
                     if ab.nout > 0 {
@@ -1089,7 +1089,7 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                     if ab.reserved != 0 { mut out.printf(", clobbers 0x%x", uint(ab.reserved)) }
                 }
                 IR_CHECK {
-                    mut out.printf(" %%%d", numb.get(usize(fn.arg(id, 0))))
+                    mut out.printf(" %%%d", numb.get(fn.arg(id, 0)))
                     if v.has_name {
                         line: u32 = 0
                         col: u32 = 0
@@ -1103,11 +1103,11 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                     }
                 }
                 IR_JMP { mut out.printf(" b%d", bb.succ0) }
-                IR_BR { mut out.printf(" %%%d, b%d, b%d", numb.get(usize(fn.arg(id, 0))), bb.succ0, bb.succ1) }
+                IR_BR { mut out.printf(" %%%d, b%d, b%d", numb.get(fn.arg(id, 0)), bb.succ0, bb.succ1) }
                 default {
                     for a: u32 in 0..v.nargs {
                         if a > 0 { mut out.printf(", ") } else { mut out.printf(" ") }
-                        mut out.printf("%%%d", numb.get(usize(fn.arg(id, a))))
+                        mut out.printf("%%%d", numb.get(fn.arg(id, a)))
                     }
                 }
             }

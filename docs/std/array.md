@@ -26,7 +26,10 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
 - `pop(): (T, Error)` removes and returns the last element. An empty array
   returns `blank(T)` and `ArrayErr.empty`.
 - `get(index: usize): T` and `set(index: usize, value: T)` access a live
-  element.
+  element. `get` also takes an `int` index, so an `int` loop variable or id
+  needs no cast; a negative index is a bounds violation. `set` has no `int`
+  form: a second overload would type an untyped literal value as `int`
+  (Syntax #6), breaking `xs.set(i, 0)` on an `Array[u32]`.
 - `view(): []T` is the live elements as a slice. It aliases the storage and is
   invalidated by any call that grows the array.
 - `view(mut self): mut []T`, called as `mut xs.view()`, is the same slice

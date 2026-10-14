@@ -81,3 +81,7 @@
 - `math`'s Payne-Hanek `reduce_large` is `inline` into `sin`, `cos`, and
   their `f32` forms: `bench/std` sin-large 18.7 to 15.2 ns (2.4x to 1.9x of
   libm) for about 1 KB of code.
+- `array.Array.get` also takes an `int` index (`get(index: int)`); a negative
+  index is a bounds violation. selfhost drops 264 `usize(...)` casts from
+  `get` calls (2.2 KB); `set` stays `usize`-only, since a second overload
+  would make an untyped literal value `int` (Syntax #6).

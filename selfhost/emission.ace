@@ -925,7 +925,7 @@ Em.global(mut self, d: u32) {
     }
     k: int = macho.SEC_DATA
     if (n.flags & parser.F_CONST) != 0 || (export_c && (n.flags & parser.F_MUT) == 0) { k = macho.SEC_CONST }
-    if export_c && self.o.syms.get(usize(mut self.o.intern(nm))).ntype != 0 { mut self.s.err(d, ["C symbol '", nm[1..], "' is already defined"]) }
+    if export_c && self.o.syms.get(mut self.o.intern(nm)).ntype != 0 { mut self.s.err(d, ["C symbol '", nm[1..], "' is already defined"]) }
     _ = mut self.place(k, nm, export_c, self.align(t), bytes, rels)
 }
 
@@ -1026,7 +1026,7 @@ Em.vtable(mut self, conc: u32, want: u32, conf: u32): int {
     lowering.mangle_type(*self.s, mut b, want)
     nm: string = mut self.names.copy(b.text())
     prior: int = mut self.o.intern(nm)
-    if self.o.syms.get(usize(prior)).ntype != 0 { return prior }
+    if self.o.syms.get(prior).ntype != 0 { return prior }
     c: mut *macho.Sec = mut self.o.sec(macho.SEC_CONST)
     for c.data.len % 8 != 0 { fail(mut c.data.push(0)) }
     out: int = mut self.o.define(nm, false, macho.SEC_CONST)
@@ -1089,7 +1089,7 @@ Em.embed_thunk(mut self, vt: string, slot: u32, target: string, off: u32): int {
     _ = mut b.printf("%s$embed$%d", vt, int(slot))
     nm: string = mut self.names.copy(b.text())
     prior: int = mut self.o.intern(nm)
-    if self.o.syms.get(usize(prior)).ntype != 0 { return prior }
+    if self.o.syms.get(prior).ntype != 0 { return prior }
     out: int = mut self.o.define(nm, false, macho.SEC_TEXT)
     mut self.o.put32(0xA9BF7BFD) // stp x29, x30, [sp, #-16]!
     if off <= 4095 {

@@ -4686,7 +4686,7 @@ Sema.check_keyed_arraylit(mut self, lit: u32, want: u32) {
     e: SType = self.ty(w.key)
     for i: u32 in 0..e.nfields {
         m: SField = self.field(e, i)
-        if !seen.get(usize(m.value)) {
+        if !seen.get(m.value) {
             mut self.err(lit, ["keyed literal of ", mut self.type_name(want), " is missing member ", mut self.type_name(w.key), ".", m.name])
         }
     }
