@@ -45,6 +45,7 @@ struct Binding {
     uint32_t    len;
     struct Module* mod;
     Node*       node; // the import declaration (diagnostics)
+    int         shadows; // live value locals of this name (reference lowering)
     Binding*    next;
 };
 
@@ -55,6 +56,7 @@ struct Select {
     const char* identity;   // target module-private identity
     int         is_type;    // a type, else a value: never both (Names & Scoping #2)
     Node*       node;       // selected member node (diagnostics)
+    int         shadows[2]; // live value, type locals of this name (reference lowering)
     Select*     next;
 };
 
@@ -1139,6 +1141,7 @@ typedef struct {
     const char* from;
     uint32_t    flen;
     const char* to;
+    int         shadows[2]; // live value, type locals of this name (reference lowering)
 } Rename;
 
 typedef struct {
@@ -1157,6 +1160,7 @@ static void renames_add(Renames* rs, const char* from, uint32_t flen, const char
     rs->v[rs->n].from = from;
     rs->v[rs->n].flen = flen;
     rs->v[rs->n].to = to;
+    rs->v[rs->n].shadows[0] = rs->v[rs->n].shadows[1] = 0;
     rs->n++;
 }
 
@@ -1265,6 +1269,7 @@ struct LocalName {
     uint32_t len;
     int depth;
     int is_type;
+    int* shadows[3]; // the counters this local raised: selection, declaration, binding
     LocalName* next;
 };
 
@@ -1292,6 +1297,17 @@ static int local_name(RefLower* c, const char* name, uint32_t len, int is_type) 
     return 0;
 }
 
+static Binding* find_binding(Binding* binds, Node* id) {
+    for (Binding* b = binds; b; b = b->next)
+        if (text_is(id->str, id->len, b->name)) return b;
+    return NULL;
+}
+
+static int shadowed_binding(Binding* binds, Node* id) {
+    Binding* b = find_binding(binds, id);
+    return b && b->shadows;
+}
+
 /* A local or type parameter may shadow a selected name of its own namespace,
  * never one of the other: a type and a value never share a name (Names &
  * Scoping #2). Sema cannot see this clash once the selection is renamed. */
@@ -1306,6 +1322,12 @@ static void bind_local(RefLower* c, Node* at, int is_type) {
     n->len = at->len;
     n->depth = c->depth;
     n->is_type = is_type;
+    Rename* r = c->renames ? find_rename(c->renames, at->str, at->len) : NULL;
+    Binding* b = is_type ? NULL : find_binding(c->binds, at);
+    n->shadows[0] = s ? &s->shadows[is_type] : NULL;
+    n->shadows[1] = r ? &r->shadows[is_type] : NULL;
+    n->shadows[2] = b ? &b->shadows : NULL;
+    for (int i = 0; i < 3; i++) if (n->shadows[i]) (*n->shadows[i])++;
     n->next = c->locals;
     c->locals = n;
 }
@@ -1313,7 +1335,8 @@ static void bind_local(RefLower* c, Node* at, int is_type) {
 static void ref_scope_push(RefLower* c) { c->depth++; }
 
 static void ref_scope_pop(RefLower* c) {
-    while (c->locals && c->locals->depth == c->depth) c->locals = c->locals->next;
+    for (; c->locals && c->locals->depth == c->depth; c->locals = c->locals->next)
+        for (int i = 0; i < 3; i++) if (c->locals->shadows[i]) (*c->locals->shadows[i])--;
     c->depth--;
 }
 
@@ -1325,16 +1348,15 @@ static void replace_name(Node* n, const char* name) {
 /* The private name an unshadowed reference lowers to, or NULL: a selected
  * import's, else this imported file's own declaration's. A value position may
  * also name a selected type (a cast or constructor). Selections never collide
- * with the file's declarations, so the order is not observable. The few
- * selections are searched before the locals; the many declarations after. */
+ * with the file's declarations, so the order is not observable. Each such
+ * name counts the live locals that shadow it, so no lookup scans the locals. */
 static const char* lowered_name(RefLower* c, const char* name, uint32_t len, int is_type) {
     Select* s = find_select(c->sels, name, len, is_type);
-    if (!s && !c->renames) return NULL;
+    Rename* r = !s && c->renames ? find_rename(c->renames, name, len) : NULL;
+    int* shadows = s ? s->shadows : r ? r->shadows : NULL;
     // a value position may name a type (T.make()), which a type parameter shadows
-    if (local_name(c, name, len, is_type) || local_name(c, name, len, 1)) return NULL;
-    if (s) return s->identity;
-    Rename* r = find_rename(c->renames, name, len);
-    return r ? r->to : NULL;
+    if (!shadows || shadows[is_type] || shadows[1]) return NULL;
+    return s ? s->identity : r->to;
 }
 
 static void lower_refs(Node* n, RefLower* c);
@@ -1359,7 +1381,7 @@ static void lower_refs_type(Node* t, RefLower* c) {
 static void lower_qualified_field(Node* n, RefLower* c, int type_position) {
     Node* base = n->a && n->a->kind == N_FIELD_E ? n->a->a : n->a;
     if (base && base->kind == N_IDENT &&
-        (type_position || !local_name(c, base->str, base->len, 0))) {
+        (type_position || !shadowed_binding(c->binds, base))) {
         lower_field(c->L, n, c->binds);
         if (n->kind != N_FIELD_E) return; // now the member's private name
     }
@@ -1546,13 +1568,13 @@ static void lower_refs(Node* n, RefLower* c) {
         return;
     case N_CALL:
         if (n->a && n->a->kind == N_IDENT &&
-            !local_name(c, n->a->str, n->a->len, 0) &&
-            !lowered_name(c, n->a->str, n->a->len, 0) &&
             (text_is(n->a->str, n->a->len, "sizeof") ||
              text_is(n->a->str, n->a->len, "alignof") ||
              text_is(n->a->str, n->a->len, "blank") ||
              text_is(n->a->str, n->a->len, "offsetof") ||
-             text_is(n->a->str, n->a->len, "typeid"))) {
+             text_is(n->a->str, n->a->len, "typeid")) &&
+            !local_name(c, n->a->str, n->a->len, 0) &&
+            !lowered_name(c, n->a->str, n->a->len, 0)) {
             if (n->nkids) lower_refs_type_ref(n->kids[0], c);
             return;
         }

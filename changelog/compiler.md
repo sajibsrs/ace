@@ -202,3 +202,8 @@
   one linear pass, rebuilt after each thread, not one function scan per
   candidate block (C and selfhost). `--release -c` of selfhost: C 0.56 →
   0.52 s, selfhost 0.75 → 0.70 s.
+- Reference lowering keeps, on each selected import, imported declaration,
+  and import binding, a count of the live locals that shadow it, so a shadow
+  check no longer scans every local in scope; a call checks the builtin names
+  first (C and selfhost, #24). 8,000-local imported function: C 1.29G → 0.14G
+  instructions, selfhost `--resolved` 3.63G → 0.26G.

@@ -994,6 +994,13 @@ LocalName: struct {
     name: string,
     depth: int,
     is_type: bool,
+    counted: bool, // raised its name's `Shadow`
+}
+
+/* The live locals shadowing a name a reference could lower to. */
+Shadow: struct {
+    values: int,
+    types: int,
 }
 
 RefLower: struct {
@@ -1003,6 +1010,7 @@ RefLower: struct {
     renames: map.Map[string, string],       // this imported file's declarations
     own: bool,                              // an imported file: lower its own names too
     locals: array.Array[LocalName],
+    shadows: map.Map[string, Shadow],       // keyed by the names a reference could lower to
     depth: int,
 }
 
@@ -1021,12 +1029,29 @@ RefLower.local_name(self, name: string, is_type: bool): bool {
     return false
 }
 
+/* The live value and type locals shadowing `name`, counted only for a name a
+ * reference could lower to.
+ */
+RefLower.shadow(self, name: string): Shadow {
+    sh: Shadow, _ = self.shadows.get(name)
+    return sh
+}
+
+/* Counts a local of `name` in or out of its name's `Shadow`. */
+RefLower.count(mut self, name: string, is_type: bool, by: int) {
+    sh: Shadow = self.shadow(name)
+    if is_type { sh.types += by } else { sh.values += by }
+    fail(mut self.shadows.set(name, sh))
+}
+
 RefLower.push(mut self) {
     self.depth += 1
 }
 
 RefLower.pop(mut self) {
     for self.locals.len > 0 && self.locals.get(self.locals.len - 1).depth == self.depth {
+        x: LocalName = self.locals.get(self.locals.len - 1)
+        if x.counted { mut self.count(x.name, x.is_type, -1) }
         mut self.locals.truncate(self.locals.len - 1)
     }
     self.depth -= 1
@@ -1035,14 +1060,26 @@ RefLower.pop(mut self) {
 /* The private name an unshadowed reference lowers to: a selected import's, else
  * this imported file's own declaration's. A type parameter shadows a type a
  * value position names (`T.make()`). Selections never collide with the file's
- * declarations, so the order is not observable.
+ * declarations, so the order is not observable. Each such name counts the live
+ * locals that shadow it, so no lookup scans the locals.
  */
 RefLower.lowered_name(self, name: string, is_type: bool): (string, bool) {
     s: Select, has_select: bool = find_select(self.sels, name, is_type)
-    if !has_select && !self.own { return "", false }
-    if self.local_name(name, is_type) || self.local_name(name, true) { return "", false }
-    if has_select { return s.identity, true }
-    return self.renames.get(name)
+    to: string = s.identity
+    if !has_select {
+        if !self.own { return "", false }
+        found: bool = false
+        to, found = self.renames.get(name)
+        if !found { return "", false }
+    }
+    sh: Shadow = self.shadow(name)
+    if sh.types > 0 || (!is_type && sh.values > 0) { return "", false }
+    return to, true
+}
+
+/* Whether a value local hides the binding `name`. */
+RefLower.hides_binding(self, name: string): bool {
+    return self.shadow(name).values > 0
 }
 
 /* Renames node `n` to `name`. */
@@ -1064,7 +1101,14 @@ Loader.bind_local(mut self, mi: usize, mut c: RefLower, at: u32, is_type: bool) 
             mut self.err(mi, x, ["'", x.text, "' names a type; a value may not share its name"])
         }
     }
-    fail(mut c.locals.push(LocalName { name = x.text, depth = c.depth, is_type = is_type }))
+    counted: bool = found || (c.own && c.renames.has(x.text))
+    if !counted && !is_type {
+        for b: Binding in c.binds {
+            if mem.equal(x.text, b.name) { counted = true }
+        }
+    }
+    if counted { mut c.count(x.text, is_type, 1) }
+    fail(mut c.locals.push(LocalName { name = x.text, depth = c.depth, is_type = is_type, counted = counted }))
 }
 
 /* A fresh identifier node `name` at `from`'s position. */
@@ -1175,7 +1219,7 @@ Loader.lower_qualified(mut self, mi: usize, mut c: RefLower, n: u32, type_positi
     x: Node = c.p.node(n)
     base: u32 = x.a
     if x.a != 0 && c.p.node(x.a).kind == Kind.selector { base = c.p.node(x.a).a }
-    if base != 0 && c.p.node(base).kind == Kind.ident && (type_position || !c.local_name(c.p.node(base).text, false)) {
+    if base != 0 && c.p.node(base).kind == Kind.ident && (type_position || !c.hides_binding(c.p.node(base).text)) {
         mut self.lower_field(mi, mut c, n)
         if c.p.node(n).kind != Kind.selector { return } // now the member's private name
     } else if base == x.a && base != 0 && c.p.node(base).kind == Kind.ident {
@@ -1392,8 +1436,9 @@ Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
         Kind.call {
             if x.a != 0 && c.p.node(x.a).kind == Kind.ident {
                 callee: string = c.p.node(x.a).text
-                _, renamed: bool = c.lowered_name(callee, false)
-                if !c.local_name(callee, false) && !renamed && type_operand(callee) {
+                renamed: bool = false
+                if type_operand(callee) { _, renamed = c.lowered_name(callee, false) }
+                if type_operand(callee) && !c.local_name(callee, false) && !renamed {
                     if x.nkids > 0 { mut self.lower_type_ref(mi, mut c, c.p.kid(n, 0)) }
                     return
                 }
@@ -1427,12 +1472,14 @@ Loader.lower(mut self, mi: usize, is_root: bool, binds: array.Array[Binding], se
     m: Module = self.mods.get(mi)
     top: u32 = m.file
     count: u32 = m.parser.node(top).nkids
-    c: RefLower = RefLower { p = m.parser, binds = binds.view(), sels = sels.view(), renames = renames, own = !is_root, locals = array.Array[LocalName] {}, depth = 0 }
+    c: RefLower = RefLower { p = m.parser, binds = binds.view(), sels = sels.view(), renames = renames, own = !is_root, locals = array.Array[LocalName] {}, shadows = map.Map[string, Shadow] {}, depth = 0 }
     defer mut c.locals.wipe()
+    defer mut c.shadows.wipe()
     for k: u32 in 0..count {
         id: u32 = c.p.kid(top, k)
         if c.p.node(id).kind == Kind.import { continue }
         mut c.locals.clear()
+        mut c.shadows.clear()
         c.depth = 0
         mut self.lower_node(mi, mut c, id)
     }
