@@ -1529,6 +1529,7 @@ static int thread_branches(Clean* c) {
     int* idom = NULL;
     int* rpo = NULL;
     int nrpo = 0;
+    char* bad = NULL;
     for (int j = 1; j < fn->nblocks; j++) {
         if (c->dead[j]) continue;
         IrBlock* jb = &fn->blocks[j];
@@ -1545,15 +1546,18 @@ static int thread_branches(Clean* c) {
                     (cx->nargs != 2 || !is_int((IrType)fn->ins[cx->args[0]].type))))
             continue;
         if (cx->block != j) continue;
-        for (int b = 0; b < fn->nblocks && ok; b++) { // j's non-phi values stay in j
-            if (b == j) continue;
-            for (int i = 0; i < fn->blocks[b].nins && ok; i++) {
-                const IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
-                for (int a = 0; a < x->nargs && ok; a++)
-                    ok = fn->ins[x->args[a]].block != j || fn->ins[x->args[a]].op == IR_PHI;
-            }
+        if (!bad) { // bad[b]: a non-phi value of b is used outside b
+            bad = xalloc((size_t)fn->nblocks, sizeof(char));
+            for (int b = 0; b < fn->nblocks; b++)
+                for (int i = 0; i < fn->blocks[b].nins; i++) {
+                    const IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
+                    for (int a = 0; a < x->nargs; a++) {
+                        const IrIns* y = &fn->ins[x->args[a]];
+                        if (y->block >= 0 && y->block != b && y->op != IR_PHI) bad[y->block] = 1;
+                    }
+                }
         }
-        if (!ok) continue;
+        if (bad[j]) continue;
         for (int i = 0; i < jb->npreds; i++) {
             int p = jb->preds[i];
             if (fn->blocks[p].succ[1] >= 0 || fn->ins[fn->blocks[p].ins[fn->blocks[p].nins - 1]].op != IR_JMP) continue;
@@ -1598,13 +1602,15 @@ static int thread_branches(Clean* c) {
             drop_pred(fn, j, p);
             free(idom); free(rpo);
             idom = rpo = NULL;
+            free(bad);
+            bad = NULL;
             changed = 1;
             jb = &fn->blocks[j];
             cx = &fn->ins[cond]; // ir_phi_new may have moved fn->ins
             i--; // preds shifted down
         }
     }
-    free(idom); free(rpo);
+    free(idom); free(rpo); free(bad);
     return changed;
 }
 

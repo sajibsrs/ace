@@ -198,3 +198,7 @@
   it: on arm64 whenever the function has a frame, on x64 only when it
   restores callee-saved registers (`leave; ret` alone is no longer than the
   jump). Selfhost `__text` 922,940 → 866,796 B (C and selfhost, #145).
+- Branch threading finds blocks whose non-phi values are used elsewhere in
+  one linear pass, rebuilt after each thread, not one function scan per
+  candidate block (C and selfhost). `--release -c` of selfhost: C 0.56 →
+  0.52 s, selfhost 0.75 → 0.70 s.

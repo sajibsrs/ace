@@ -1812,6 +1812,9 @@ branch_operand(fn: Func, j: int, i: usize, a: int): (u64, bool) {
  */
 Clean.thread_branches(mut self): bool {
     changed: bool = false
+    bad: array.Array[bool] = array.Array[bool] {}
+    defer mut bad.wipe()
+    stale: bool = true
     for j: int in 1..int(self.fn.blocks.len) {
         if self.dead.get(usize(j)) { continue }
         t: int = last(*self.fn, j)
@@ -1829,18 +1832,20 @@ Clean.thread_branches(mut self): bool {
         if !ok || (cx.block == j && cx.op != ir.IR_PHI && cx.op != ir.IR_CONST &&
             (cx.nargs != 2 || !is_int(self.fn.at(self.fn.arg(cond, 0)).ty))) { continue }
         if cx.block != j { continue }
-        for b: int in 0..int(self.fn.blocks.len) { // j's non-phi values stay in j
-            if !ok { break }
-            if b == j { continue }
-            for id: int in self.fn.block(b).ins.view() {
-                if !ok { break }
-                for a: u32 in 0..self.fn.at(id).nargs {
-                    u: IrIns = self.fn.at(self.fn.arg(id, a))
-                    ok = ok && (u.block != j || u.op == ir.IR_PHI)
+        if stale { // bad[b]: a non-phi value of b is used outside b
+            mut bad.clear()
+            fail(mut bad.resize(bad.len + self.fn.blocks.len))
+            for b: int in 0..int(self.fn.blocks.len) {
+                for id: int in self.fn.block(b).ins.view() {
+                    for a: u32 in 0..self.fn.at(id).nargs {
+                        u: IrIns = self.fn.at(self.fn.arg(id, a))
+                        if u.block >= 0 && u.block != b && u.op != ir.IR_PHI { mut bad.set(usize(u.block), true) }
+                    }
                 }
             }
+            stale = false
         }
-        if !ok { continue }
+        if bad.get(usize(j)) { continue }
         plain: bool = cx.op == ir.IR_PHI || cx.op == ir.IR_CONST
         i: usize = 0
         for i < self.fn.block(j).preds.len {
@@ -1918,6 +1923,7 @@ Clean.thread_branches(mut self): bool {
             mut self.fn.block(p).succ0 = s
             drop_pred(self.fn, j, p)
             changed = true
+            stale = true
             // preds shifted down: i stays
         }
     }
