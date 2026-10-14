@@ -30,11 +30,17 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
 - `clear()` drops every live element and keeps the storage.
 - `truncate(count: usize)` drops every live element from `count` onward and
   keeps the storage.
+- `resize(count: usize): Error` sets the length to `count`. Growing appends
+  `blank(T)` elements, so an array can be sized in one call instead of one
+  `push` at a time; an array without storage gets it already zeroed from
+  `mem.zalloc`. Shrinking keeps the storage, like `truncate`, but any `count`
+  is valid. Failure returns `ArrayErr.allocation` and leaves the array
+  unchanged.
 
-`wipe`, `push`, `reserve`, `pop`, `set`, `clear`, and `truncate` mutate, so the
-call site states `mut`. Access is checked against `len`, not capacity: `get`
-and `set` at an index at or beyond `len`, and `truncate` past `len`, are
-bounds violations in debug builds and unchecked in release builds.
+`wipe`, `push`, `reserve`, `pop`, `set`, `clear`, `truncate`, and `resize`
+mutate, so the call site states `mut`. Access is checked against `len`, not
+capacity: `get` and `set` at an index at or beyond `len`, and `truncate` past
+`len`, are bounds violations in debug builds and unchecked in release builds.
 
 ```ace
 import array

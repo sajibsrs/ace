@@ -93,6 +93,28 @@ pub Array[T].reserve(mut self, count: usize): Error {
     return null
 }
 
+/* Sets the live length to `count`. Growing appends `blank(T)` elements;
+ * shrinking drops the tail and keeps storage.
+ */
+pub Array[T].resize(mut self, count: usize): Error {
+    if self.items == null {
+        if count == 0 { return null }
+        fresh: mut []T = mem.zalloc[T](count)
+        if fresh == null { return ArrayErr.allocation }
+        self.items = fresh
+        self.len = count
+        return null
+    }
+    if count > self.items.len {
+        grown: mut []T, ok: bool = mem.grow[T](self.items, count)
+        if !ok { return ArrayErr.allocation }
+        self.items = grown
+    }
+    for i: usize in self.len .. count { self.items[i] = blank(T) }
+    self.len = count
+    return null
+}
+
 /* Drops every live element and keeps the storage. */
 pub Array[T].clear(mut self) {
     self.len = 0

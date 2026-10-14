@@ -1326,14 +1326,16 @@ Sema.resolve_global(mut self, s: u32) {
  * and a constant (sizeof's value, an array's .len, an enum member's value).
  */
 Sema.grow(mut self, e: u32) {
-    for self.nty.len <= usize(e) {
-        fail(mut self.nty.push(0))
-        fail(mut self.nsym.push(0))
-        fail(mut self.nival.push(0))
-        fail(mut self.nrep.push(false))
-        fail(mut self.ncon.push(false))
-        fail(mut self.nproof.push(0))
-    }
+    if usize(e) < self.nty.len { return }
+    // late nodes arrive in bulk: size to the whole tree, not one node at a time
+    n: usize = self.p.nnode
+    if n <= usize(e) { n = usize(e) + 1 }
+    fail(mut self.nty.resize(n))
+    fail(mut self.nsym.resize(n))
+    fail(mut self.nival.resize(n))
+    fail(mut self.nrep.resize(n))
+    fail(mut self.ncon.resize(n))
+    fail(mut self.nproof.resize(n))
 }
 
 pub Sema.node_ty(self, e: u32): u32 {
@@ -9365,6 +9367,10 @@ nominal_kind(k: Kind): TypeKind {
  * reported on stderr and counted in `errors`.
  */
 pub Sema.enter(mut self) {
+    // every top-level declaration lands in one file scope: size it once
+    decls: usize = usize(self.node(self.file).nkids)
+    fail(mut self.files.value_ids.reserve(decls))
+    fail(mut self.files.type_ids.reserve(decls))
     error: u32 = mut self.new_sym(SymKind.type, "Error")
     mut self.sym(error).ty = mut self.new_type(SType { kind = TypeKind.error, name = "Error", size = 8, align = 8 })
     self.t_error = self.sym(error).ty

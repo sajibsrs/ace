@@ -67,3 +67,6 @@
 - `Array[T].view` is overloaded on the receiver (#111): `view(mut self): mut []T`
   returns the live elements writable in place, so `mut xs.view()` edits a field
   without copying the element out and back. The self-hosted loader uses it.
+- `Array[T].resize(count): Error` sets the length, appending `blank(T)`
+  elements (from `mem.zalloc` when the array has no storage) or dropping the
+  tail.

@@ -184,3 +184,7 @@
   division magic) uses `bits.wradd`/`wrsub`/`wrmul`, so a debug build no
   longer traps on overflow; `check.sh` builds selfhost with `--debug` and has
   it compile itself in both modes.
+- selfhost's sema sizes its per-node arrays to the tree in one `resize`,
+  reserves the file scope for every top-level declaration, and finds a node's
+  module by binary search (#144): `--check` sema setup 6.1 → 2.7 ms, body
+  checks 35.1 → 32.7 ms.

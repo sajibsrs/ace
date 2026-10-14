@@ -1478,19 +1478,20 @@ Loader.merge(mut self) {
     mut self.mods.set(0, root)
 }
 
-/* The module whose file holds node `id` of the merged tree. */
+/* The module whose file holds node `id` of the merged tree. Merge splices the
+ * modules in `order`, so their first ids ascend along it: binary search.
+ */
 pub Loader.module_of(self, id: u32): usize {
     ms: []Module = self.mods.view() // view: get would copy the whole Module
-    best: usize = 0
-    bf: u32 = ms[0].first
-    for mi: usize in self.order.view() {
-        first: u32 = ms[mi].first
-        if first <= id && first > bf {
-            best = mi
-            bf = first
-        }
+    order: []usize = self.order.view()
+    lo: usize = 0
+    hi: usize = order.len
+    for lo < hi {
+        mid: usize = lo + (hi - lo) / 2
+        if ms[order[mid]].first <= id { lo = mid + 1 } else { hi = mid }
     }
-    return best
+    if lo == 0 || ms[order[lo - 1]].first <= ms[0].first { return 0 }
+    return order[lo - 1]
 }
 
 /* Whether module `mi`'s `pub` declarations are its external surface: a

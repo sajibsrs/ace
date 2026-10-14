@@ -1,5 +1,6 @@
 /* array: zero value is a usable empty array, push grows storage past the
  * initial capacity, pop returns the last element and an empty-array error,
+ * resize zero-fills growth (fresh or regrown) and drops a shrunk tail,
  * reserve, truncate, and clear keep storage, and views and element access
  * follow len; a mut receiver's view writes elements in place.
  */
@@ -97,5 +98,19 @@ main(): int {
     live[0].x = 7
     r += check(q.get(0).x == 7 && q.get(0).y == 2, 23)
     mut q.wipe()
+
+    // resize: a fresh array zero-fills, shrinking keeps storage, regrowth
+    // zero-fills the stale tail, and growth past capacity zero-fills too
+    z: array.Array[Point] = array.Array[Point] {}
+    err = mut z.resize(4)
+    r += check(err == null && z.len == 4 && z.get(3).x == 0 && z.get(3).y == 0, 24)
+    mut z.set(3, Point { x = 5, y = 6 })
+    mut z.resize(2)
+    r += check(z.len == 2, 25)
+    err = mut z.resize(4)
+    r += check(err == null && z.get(3).x == 0 && z.get(3).y == 0, 26)
+    err = mut z.resize(100)
+    r += check(err == null && z.len == 100 && z.get(99).y == 0, 27)
+    mut z.wipe()
     return r
 }

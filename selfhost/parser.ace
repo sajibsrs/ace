@@ -110,7 +110,7 @@ pub Parser: struct {
     pool: mut []u8 = null, // decoded string literals; never reallocated
     i: usize,
     nodes: mut []Node = null,
-    nnode: usize,
+    pub nnode: usize,
     kids: mut []u32 = null,
     nkid: usize,
     stack: mut []u32 = null,
