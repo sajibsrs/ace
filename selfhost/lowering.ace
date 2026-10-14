@@ -2178,11 +2178,43 @@ map_hash_string(p: string, seed: u64): u64 {
     return h
 }
 
-/* Static map `ms`'s perfect hash, as emit.c's map_plan finds it: the seed,
- * the slot mask, and in `slots` each slot's entry index plus one (0 when
- * empty), or false when there is none.
+/* A static map's perfect hash: the seed, the slot mask, and in `slots` each
+ * slot's entry index plus one (0 when empty); ok is false when there is none.
  */
-pub map_plan(s: sema.Sema, ms: u32, strings: bool, mut slots: array.Array[u32]): (u64, u32, bool) {
+pub MapPlan: struct {
+    ms: u32,
+    seed: u64,
+    mask: u32,
+    pub ok: bool,
+    pub slots: array.Array[u32],
+}
+
+/* Each static map's plan, found once per program as emit.c's map_plans. */
+map_plans: array.Array[MapPlan] = array.Array[MapPlan] {}
+
+/* Releases every plan; emission.object defers it over the whole compile. */
+pub map_plans_wipe() {
+    for p: MapPlan in map_plans.view() {
+        slots: array.Array[u32] = p.slots
+        mut slots.wipe()
+    }
+    mut map_plans.wipe()
+}
+
+/* Static map `ms`'s plan, found on first use. */
+pub map_plan(s: sema.Sema, ms: u32, strings: bool): MapPlan {
+    for p: MapPlan in map_plans.view() {
+        if p.ms == ms { return p }
+    }
+    slots: array.Array[u32] = array.Array[u32] {}
+    seed: u64, mask: u32, ok: bool = hash_plan(s, ms, strings, mut slots)
+    p: MapPlan = MapPlan { ms = ms, seed = seed, mask = mask, ok = ok, slots = slots }
+    fail(mut map_plans.push(p))
+    return p
+}
+
+/* Searches for static map `ms`'s perfect hash, as emit.c's map_plan does. */
+hash_plan(s: sema.Sema, ms: u32, strings: bool, mut slots: array.Array[u32]): (u64, u32, bool) {
     lit: u32 = s.sym_init(ms)
     count: u32 = 0
     if lit != 0 { count = s.node(lit).nkids }
@@ -2269,9 +2301,10 @@ Lw.staticmap_place(mut self, x: u32, mp: u32): Place {
     mask: u32 = 0
     ok: bool = false
     if ms != 0 && self.s.sym(ms).kind == sema.SymKind.var && self.s.sym(ms).is_global && self.s.sym_init(ms) != 0 {
-        slots: array.Array[u32] = array.Array[u32] {}
-        defer mut slots.wipe()
-        seed, mask, ok = map_plan(*self.s, ms, strings, mut slots)
+        plan: MapPlan = map_plan(*self.s, ms, strings)
+        seed = plan.seed
+        mask = plan.mask
+        ok = plan.ok
     }
     if !ok {
         mut self.unsupported("static map")

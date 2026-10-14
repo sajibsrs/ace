@@ -188,3 +188,6 @@
   reserves the file scope for every top-level declaration, and finds a node's
   module by binary search (#144): `--check` sema setup 6.1 → 2.7 ms, body
   checks 35.1 → 32.7 ms.
+- selfhost's lowering caches each static map's perfect-hash plan for the
+  whole compile, as `emit.c`'s `map_plans` does, instead of searching for it
+  on every lookup: `--release -c` on itself 1.06x.

@@ -85,6 +85,7 @@ pub object(mut s: sema.Sema, debug: bool, root: string, out: string): (bool, str
     defer mut e.o.wipe()
     defer mut e.fns.wipe()
     defer mut e.names.wipe()
+    defer lowering.map_plans_wipe()
 
     // Collect every compilable function under its link symbol, then compile
     // only those reachable from main and the C exports: a referenced symbol
@@ -939,10 +940,8 @@ Em.staticmap(mut self, d: u32, vs: u32, t: u32) {
     m: sema.SType = self.ty(t)
     rawkey: u32 = self.unwrap(m.base)
     strings: bool = rawkey != 0 && self.ty(rawkey).kind == TypeKind.prim && self.ty(rawkey).prim == sema.P_STRING
-    slots: array.Array[u32] = array.Array[u32] {}
-    defer mut slots.wipe()
-    _, _, ok: bool = lowering.map_plan(*self.s, vs, strings, mut slots)
-    if !ok {
+    plan: lowering.MapPlan = lowering.map_plan(*self.s, vs, strings)
+    if !plan.ok {
         mut self.s.err(d, ["could not construct StaticMap perfect hash"])
         return
     }
@@ -974,7 +973,7 @@ Em.staticmap(mut self, d: u32, vs: u32, t: u32) {
     _ = mut self.place(macho.SEC_CONST, mut self.names.join(["__ace$map$", name, "$values"]), false, self.align(m.ret), values, value_rels)
     table: array.Array[u8] = array.Array[u8] {}
     defer mut table.wipe()
-    for v: u32 in slots.view() { put_u(mut table, u64(v), 4) }
+    for v: u32 in plan.slots.view() { put_u(mut table, u64(v), 4) }
     _ = mut self.place(macho.SEC_CONST, mut self.names.join(["__ace$map$", name, "$slots"]), false, 4, table, array.Array[CRel] {})
 }
 
