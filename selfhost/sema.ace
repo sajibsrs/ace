@@ -5692,6 +5692,7 @@ pub BI_MEM_ALLOC_SIZE: const u64 = 28
 pub BI_STR_FORMAT: const u64 = 37
 pub BI_FMT_PRINTF_FD: const u64 = 38
 pub BI_FMT_PRINTF_BUF: const u64 = 41
+pub BI_BITS_MUL_WIDE: const u64 = 42
 pub BI_MEM_REALLOC: const u64 = 3
 pub BI_MEM_RELEASE: const u64 = 4
 pub BI_MEM_COPY: const u64 = 5
@@ -9100,6 +9101,12 @@ Sema.intrinsic_fits(self, ft: u32, id: u64): bool {
         return fixed && np == 2 && self.is_prim(p1, P_U64) && self.same_prim(r, p0)
     }
     if id >= BI_BITS_WRAP_ADD && id <= BI_BITS_WRAP_MUL { return fixed && np == 2 && self.same_prim(p1, p0) && self.same_prim(r, p0) }
+    if id == BI_BITS_MUL_WIDE {
+        if np != 2 || !self.is_prim(p0, P_U64) || !self.is_prim(p1, P_U64) || r == 0 { return false }
+        rt: SType = self.ty(r)
+        return rt.kind == TypeKind.tuple && rt.nfields == 2 && self.is_prim(self.field(rt, 0).ty, P_U64) &&
+            self.is_prim(self.field(rt, 1).ty, P_U64)
+    }
     if id >= BI_MATH_SQRT && id <= BI_MATH_CEIL { return np == 1 && self.is_real(p0) && self.same_prim(r, p0) }
     if id == BI_MATH_FMA {
         return np == 3 && self.is_real(p0) && self.same_prim(r, p0) && self.same_prim(p1, p0) && self.same_prim(p2, p0)

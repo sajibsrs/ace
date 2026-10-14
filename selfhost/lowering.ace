@@ -3516,6 +3516,17 @@ Lw.builtin(mut self, x: u32, bi: u64, mut res: Agg, want_res: bool): int {
         if bi == sema.BI_BITS_WRAP_ADD { op = ir.IR_ADD } else if bi == sema.BI_BITS_WRAP_SUB { op = ir.IR_SUB }
         return mut self.emit2(op, t, a, mut self.expr(self.kid(x, 1), int(t)))
     }
+    if bi == sema.BI_BITS_MUL_WIDE { // (high, low): mulh and mul of the same operands
+        a: int = mut self.expr(self.kid(x, 0), int(ir.IT_U64))
+        b: int = mut self.expr(self.kid(x, 1), int(ir.IT_U64))
+        hi: int = mut self.emit2(ir.IR_MULH, ir.IT_U64, a, b)
+        lo: int = mut self.emit2(ir.IR_MUL, ir.IT_U64, a, b)
+        if !want_res { return hi }
+        res.n = 2
+        res.v[0] = hi
+        res.v[1] = lo
+        return -1
+    }
     if bi == sema.BI_MATH_SQRT || bi == sema.BI_MATH_FLOOR || bi == sema.BI_MATH_CEIL {
         t: u8 = mut self.need_type(self.nty(x))
         op: u8 = ir.IR_CEIL

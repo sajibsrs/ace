@@ -44,3 +44,6 @@ pub wrmul(a: u8, b: u8): u8 intrinsic
 pub wrmul(a: u16, b: u16): u16 intrinsic
 pub wrmul(a: u32, b: u32): u32 intrinsic
 pub wrmul(a: u64, b: u64): u64 intrinsic
+
+// The 128-bit product a * b as its high and low words.
+pub mul_wide(a: u64, b: u64): (u64, u64) intrinsic

@@ -37,6 +37,12 @@ fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
         ir.IR_ADD { return ir.wrap(t, bits.wradd(a, b)), true }
         ir.IR_SUB { return ir.wrap(t, bits.wrsub(a, b)), true }
         ir.IR_MUL { return ir.wrap(t, bits.wrmul(a, b)), true }
+        ir.IR_MULH {
+            high: u64 = 0
+            low: u64 = 0
+            high, low = bits.mul_wide(a, b)
+            return high, true
+        }
         ir.IR_AND { return ir.wrap(t, a & b), true }
         ir.IR_OR { return ir.wrap(t, a | b), true }
         ir.IR_XOR { return ir.wrap(t, a ^ b), true }
@@ -163,7 +169,7 @@ foldable(fn: Func, v: int): bool {
     x: IrIns = fn.at(v)
     if (x.flags & ir.IRF_CHECKED) != 0 { return false }
     switch x.op {
-        ir.IR_ADD, ir.IR_SUB, ir.IR_MUL, ir.IR_DIV, ir.IR_REM, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_SHL, ir.IR_SHR, ir.IR_NEG, ir.IR_NOT {
+        ir.IR_ADD, ir.IR_SUB, ir.IR_MUL, ir.IR_DIV, ir.IR_REM, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_SHL, ir.IR_SHR, ir.IR_NEG, ir.IR_NOT, ir.IR_MULH {
             return is_int(x.ty) && x.ty != ir.IT_PTR
         }
         ir.IR_EQ, ir.IR_NE, ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE { return is_int(fn.at(fn.arg(v, 0)).ty) }
@@ -350,7 +356,7 @@ is_pure(x: IrIns): bool {
     switch x.op {
         ir.IR_ADD, ir.IR_SUB, ir.IR_MUL, ir.IR_DIV, ir.IR_REM, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_SHL, ir.IR_SHR, ir.IR_NEG, ir.IR_NOT { return true }
         ir.IR_EQ, ir.IR_NE, ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE, ir.IR_CAST, ir.IR_BITCAST { return true }
-        ir.IR_POPCNT, ir.IR_CLZ, ir.IR_CTZ, ir.IR_BSWAP, ir.IR_ROTL, ir.IR_ROTR, ir.IR_SQRT, ir.IR_FLOOR, ir.IR_CEIL, ir.IR_FMA { return true }
+        ir.IR_POPCNT, ir.IR_CLZ, ir.IR_CTZ, ir.IR_BSWAP, ir.IR_ROTL, ir.IR_ROTR, ir.IR_MULH, ir.IR_SQRT, ir.IR_FLOOR, ir.IR_CEIL, ir.IR_FMA { return true }
         ir.IR_PADD, ir.IR_PSUB, ir.IR_GLOBAL { return true }
         default { return false }
     }
@@ -385,7 +391,7 @@ Vn.chase(self, v: int): int {
 
 commutes(fn: Func, v: int): bool {
     switch fn.at(v).op {
-        ir.IR_ADD, ir.IR_MUL, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_EQ, ir.IR_NE { return !ir.type_float(fn.at(fn.arg(v, 0)).ty) }
+        ir.IR_ADD, ir.IR_MUL, ir.IR_MULH, ir.IR_AND, ir.IR_OR, ir.IR_XOR, ir.IR_EQ, ir.IR_NE { return !ir.type_float(fn.at(fn.arg(v, 0)).ty) }
         default { return false }
     }
 }

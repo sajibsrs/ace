@@ -71,35 +71,36 @@ pub IR_CTZ: const u8 = 25
 pub IR_BSWAP: const u8 = 26
 pub IR_ROTL: const u8 = 27
 pub IR_ROTR: const u8 = 28
-pub IR_SQRT: const u8 = 29
-pub IR_FLOOR: const u8 = 30
-pub IR_CEIL: const u8 = 31
-pub IR_FMA: const u8 = 32
-pub IR_SLOT: const u8 = 33
-pub IR_GLOBAL: const u8 = 34
-pub IR_STR: const u8 = 35
-pub IR_LOAD: const u8 = 36
-pub IR_STORE: const u8 = 37
-pub IR_PADD: const u8 = 38
-pub IR_PSUB: const u8 = 39
-pub IR_CALL: const u8 = 40
-pub IR_CALLI: const u8 = 41
-pub IR_RTCALL: const u8 = 42
-pub IR_ASM: const u8 = 43
-pub IR_RESULT: const u8 = 44
-pub IR_PROJ: const u8 = 45
-pub IR_SPLAT: const u8 = 46
-pub IR_SELECT: const u8 = 47
-pub IR_LANES: const u8 = 48
-pub IR_CHECK: const u8 = 49
-pub IR_JMP: const u8 = 50
-pub IR_BR: const u8 = 51
-pub IR_RET: const u8 = 52
+pub IR_MULH: const u8 = 29
+pub IR_SQRT: const u8 = 30
+pub IR_FLOOR: const u8 = 31
+pub IR_CEIL: const u8 = 32
+pub IR_FMA: const u8 = 33
+pub IR_SLOT: const u8 = 34
+pub IR_GLOBAL: const u8 = 35
+pub IR_STR: const u8 = 36
+pub IR_LOAD: const u8 = 37
+pub IR_STORE: const u8 = 38
+pub IR_PADD: const u8 = 39
+pub IR_PSUB: const u8 = 40
+pub IR_CALL: const u8 = 41
+pub IR_CALLI: const u8 = 42
+pub IR_RTCALL: const u8 = 43
+pub IR_ASM: const u8 = 44
+pub IR_RESULT: const u8 = 45
+pub IR_PROJ: const u8 = 46
+pub IR_SPLAT: const u8 = 47
+pub IR_SELECT: const u8 = 48
+pub IR_LANES: const u8 = 49
+pub IR_CHECK: const u8 = 50
+pub IR_JMP: const u8 = 51
+pub IR_BR: const u8 = 52
+pub IR_RET: const u8 = 53
 
-OP_NAMES: [53]string = [
+OP_NAMES: [54]string = [
     "const", "param", "phi", "add", "sub", "mul", "div", "rem", "and", "or", "xor", "shl", "shr", "neg", "not",
     "eq", "ne", "lt", "le", "gt", "ge", "cast", "bitcast", "popcnt", "clz", "ctz", "bswap", "rotl", "rotr",
-    "sqrt", "floor", "ceil", "fma", "slot", "global", "str", "load", "store", "padd", "psub", "call", "calli",
+    "mulh", "sqrt", "floor", "ceil", "fma", "slot", "global", "str", "load", "store", "padd", "psub", "call", "calli",
     "rtcall", "asm", "result", "proj", "splat", "select", "lanes", "check", "jmp", "br", "ret",
 ]
 

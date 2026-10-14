@@ -50,6 +50,17 @@ h = bits.wrmul(h ^ u32(byte), u32(16777619)) // FNV-1a step
 tail: u8 = bits.wradd(u8(250), u8(10))       // 4
 ```
 
+`mul_wide` takes two `u64` operands and returns their exact 128-bit product
+as its high and low words, lowering to `umulh` and `mul` on arm64 and to one
+`mul` on x64. Narrower products already fit a `u64`, so it has no other
+overload:
+
+```ace
+high: u64 = 0
+low: u64 = 0
+high, low = bits.mul_wide(u64(0xFFFFFFFFFFFFFFFF), u64(2)) // 1, 0xFFFFFFFFFFFFFFFE
+```
+
 Representation access supports algorithms that deliberately operate on a
 float's encoding, including the classic fast inverse-square-root seed:
 

@@ -452,19 +452,6 @@ exponent_field(x: f64): int {
 
 /* Cody-Waite reduction for 0 < x < 2^20 * pi/2: x = n * pi/2 + (y0 + y1). */
 
-/* The high 64 bits of the 128-bit product a * b, for a below 2^53. */
-inline mul_high(a: u64, b: u64): u64 {
-    al: u64 = a & u64(0xFFFFFFFF)
-    ah: u64 = a >> 32
-    bl: u64 = b & u64(0xFFFFFFFF)
-    bh: u64 = b >> 32
-    ll: u64 = al * bl
-    lh: u64 = al * bh
-    hl: u64 = ah * bl
-    middle: u64 = (ll >> 32) + (lh & u64(0xFFFFFFFF)) + (hl & u64(0xFFFFFFFF))
-    return ah * bh + (lh >> 32) + (hl >> 32) + (middle >> 32)
-}
-
 /* The 64 bits of 2/pi from bit k + 1 on (bit 1 weighs 1/2), for k >= -64. */
 inline two_over_pi_bits(k: int): u64 {
     i: usize = usize((k + 64) >> 5)
@@ -488,10 +475,14 @@ reduce_large(x: f64): (f64, f64, int) {
     w1: u64 = two_over_pi_bits(e + 62)
     w2: u64 = two_over_pi_bits(e + 126)
     // m * (w0 * 2^128 + w1 * 2^64 + w2) mod 2^192, most significant word first.
-    p0: u64 = bits.wrmul(m, w2)
-    low1: u64 = bits.wrmul(m, w1)
-    p1: u64 = bits.wradd(mul_high(m, w2), low1)
-    p2: u64 = bits.wradd(mul_high(m, w1), bits.wrmul(m, w0))
+    high2: u64 = 0
+    p0: u64 = 0
+    high1: u64 = 0
+    low1: u64 = 0
+    high2, p0 = bits.mul_wide(m, w2)
+    high1, low1 = bits.mul_wide(m, w1)
+    p1: u64 = bits.wradd(high2, low1)
+    p2: u64 = bits.wradd(high1, bits.wrmul(m, w0))
     if p1 < low1 { p2 = bits.wradd(p2, u64(1)) }
     quotient: int = int(p2 >> 62)
     // The fraction as a signed 192-bit number with its sign at 1/2: one at or

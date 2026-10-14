@@ -2038,6 +2038,11 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
             r->kind == SK_PRIM && r->prim == ip->prim &&
             f->ival >= BI_BITS_WRAP_ADD && f->ival <= BI_BITS_WRAP_MUL;
+        int is_u64 = ip && ip->kind == SK_PRIM && ip->prim == P_U64;
+        int bit_wide = f->ival == BI_BITS_MUL_WIDE && is_u64 && ft->nparams == 2 && ft->params[1]->kind == SK_PRIM &&
+            ft->params[1]->prim == P_U64 && r && r->kind == SK_TUPLE && r->nfields == 2 &&
+            r->fields[0].t->kind == SK_PRIM && r->fields[0].t->prim == P_U64 &&
+            r->fields[1].t->kind == SK_PRIM && r->fields[1].t->prim == P_U64;
         int math_exact = f->ival >= BI_MATH_SQRT && f->ival <= BI_MATH_CEIL &&
             ft->nparams == 1 && p && r && p->kind == SK_PRIM && r->kind == SK_PRIM &&
             p->prim == r->prim && (p->prim == P_F32 || p->prim == P_F64);
@@ -2047,7 +2052,7 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
             ft->params[2]->kind == SK_PRIM && ft->params[2]->prim == ip->prim;
         if (!(load64 || bit_count ||
-              bit_transform || bit_rotate || bit_wrap || math_exact || math_fused))
+              bit_transform || bit_rotate || bit_wrap || bit_wide || math_exact || math_fused))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }

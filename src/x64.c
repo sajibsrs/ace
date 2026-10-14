@@ -644,6 +644,15 @@ static int const_divide(X64* a, int op, int n, uint64_t c, IrType t) {
     return 1;
 }
 
+// mul rcx: the high 64 bits of the unsigned product arrive in rdx
+static void mul_high(X64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    load_val(a, RAX, x->args[0]);
+    load_val(a, RCX, x->args[1]);
+    rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 4, RCX);
+    store_val(a, v, RDX);
+}
+
 static void div_rem(X64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
@@ -1868,6 +1877,9 @@ static void emit_block(X64* a, int b) {
             break;
         case IR_POPCNT: case IR_CLZ: case IR_CTZ: case IR_BSWAP: case IR_ROTL: case IR_ROTR:
             bitop(a, v);
+            break;
+        case IR_MULH:
+            mul_high(a, v);
             break;
         case IR_GLOBAL:
             addr_of(a, RAX, x->name, x->sym && x->sym->is_extern);

@@ -74,3 +74,7 @@
   allocation, element writes only for a non-blank `value`. selfhost's
   `regalloc.filled` and its push-in-a-loop fills use it or `resize`:
   `--release -c` on itself 0.69 → 0.65 s.
+- Added `bits.mul_wide(a, b: u64): (u64, u64)`, the 128-bit product's high
+  and low words, lowered through a new IR op `mulh` (`umulh`; x64 `mul`).
+  `math`'s Payne-Hanek reduction uses it in place of a 32-bit-half
+  `mul_high`: `bench/std` sin-large 23.3 to 18.4 ns on Apple arm64.

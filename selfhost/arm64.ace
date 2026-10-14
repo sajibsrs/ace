@@ -1464,6 +1464,15 @@ A64.mul(mut self, v: int) {
     mut self.dst_done(v, rd)
 }
 
+/* umulh: the high 64 bits of the unsigned product. */
+A64.mul_high(mut self, v: int) {
+    rn: int = mut self.opnd(self.arg(v, 0), S0)
+    rm: int = mut self.opnd(self.arg(v, 1), S1)
+    rd: int = self.dst(v)
+    mut self.put(0x9BC07C00 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
+    mut self.dst_done(v, rd)
+}
+
 A64.div_rem(mut self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
@@ -2453,6 +2462,7 @@ A64.emit_block(mut self, b: int) {
             ir.IR_ASM { mut self.asm_select(v) }
             ir.IR_ADD, ir.IR_SUB { mut self.add_sub(v) }
             ir.IR_MUL { mut self.mul(v) }
+            ir.IR_MULH { mut self.mul_high(v) }
             ir.IR_DIV, ir.IR_REM { mut self.div_rem(v) }
             ir.IR_SHL, ir.IR_SHR { mut self.shift(v) }
             ir.IR_AND, ir.IR_OR, ir.IR_XOR { mut self.logic(v) }

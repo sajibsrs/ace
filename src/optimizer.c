@@ -104,6 +104,7 @@ static int fold(IrOp op, IrType t, IrType ot, uint64_t a, uint64_t b, uint64_t* 
     case IR_ADD: *out = ir_wrap(t, a + b); return 1;
     case IR_SUB: *out = ir_wrap(t, a - b); return 1;
     case IR_MUL: *out = ir_wrap(t, a * b); return 1;
+    case IR_MULH: *out = (uint64_t)(((unsigned __int128)a * b) >> 64); return 1;
     case IR_AND: *out = ir_wrap(t, a & b); return 1;
     case IR_OR:  *out = ir_wrap(t, a | b); return 1;
     case IR_XOR: *out = ir_wrap(t, a ^ b); return 1;
@@ -144,7 +145,7 @@ static int foldable(IrFunc* fn, IrIns* x) {
     switch (x->op) {
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_REM:
     case IR_AND: case IR_OR: case IR_XOR: case IR_SHL: case IR_SHR:
-    case IR_NEG: case IR_NOT:
+    case IR_NEG: case IR_NOT: case IR_MULH:
         return is_int(x->type) && x->type != IT_PTR;
     case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_GT: case IR_GE:
         return is_int(fn->ins[x->args[0]].type);
@@ -315,7 +316,7 @@ static int is_pure(const IrIns* x) {
     case IR_AND: case IR_OR: case IR_XOR: case IR_SHL: case IR_SHR: case IR_NEG: case IR_NOT:
     case IR_EQ: case IR_NE: case IR_LT: case IR_LE: case IR_GT: case IR_GE:
     case IR_CAST: case IR_BITCAST:
-    case IR_POPCNT: case IR_CLZ: case IR_CTZ: case IR_BSWAP: case IR_ROTL: case IR_ROTR:
+    case IR_POPCNT: case IR_CLZ: case IR_CTZ: case IR_BSWAP: case IR_ROTL: case IR_ROTR: case IR_MULH:
     case IR_SQRT: case IR_FLOOR: case IR_CEIL: case IR_FMA:
     case IR_PADD: case IR_PSUB: case IR_GLOBAL:
         return 1;
@@ -341,7 +342,7 @@ static int vn_chase(const Vn* g, int v) {
 
 static int commutes(const IrFunc* fn, const IrIns* x) {
     switch (x->op) {
-    case IR_ADD: case IR_MUL: case IR_AND: case IR_OR: case IR_XOR: case IR_EQ: case IR_NE:
+    case IR_ADD: case IR_MUL: case IR_MULH: case IR_AND: case IR_OR: case IR_XOR: case IR_EQ: case IR_NE:
         return !ir_type_float((IrType)fn->ins[x->args[0]].type);
     default: return 0;
     }

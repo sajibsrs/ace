@@ -1749,6 +1749,15 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         return emit2(l, bi == BI_BITS_WRAP_ADD ? IR_ADD : bi == BI_BITS_WRAP_SUB ? IR_SUB : IR_MUL, t, a,
                      expr(l, x->kids[1], t));
     }
+    case BI_BITS_MUL_WIDE: { // (high, low): mulh and mul of the same operands
+        int a = expr(l, x->kids[0], IT_U64), b = expr(l, x->kids[1], IT_U64);
+        int hi = emit2(l, IR_MULH, IT_U64, a, b), lo = emit2(l, IR_MUL, IT_U64, a, b);
+        if (!res) return hi;
+        res->n = 2;
+        res->v[0] = hi;
+        res->v[1] = lo;
+        return -1;
+    }
     case BI_MATH_SQRT: case BI_MATH_FLOOR: case BI_MATH_CEIL: {
         IrType t = need_type(l, node_ty(x));
         return emit2(l, bi == BI_MATH_SQRT ? IR_SQRT : bi == BI_MATH_FLOOR ? IR_FLOOR : IR_CEIL, t,

@@ -1084,6 +1084,14 @@ static void mul(A64* a, int v) {
     dst_done(a, v, rd);
 }
 
+// umulh: the high 64 bits of the unsigned product
+static void mul_high(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    int rn = opnd(a, x->args[0], S0), rm = opnd(a, x->args[1], S1), rd = dst(a, v);
+    put(a, 0x9BC07C00u | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd);
+    dst_done(a, v, rd);
+}
+
 static void div_rem(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
@@ -1949,6 +1957,9 @@ static void emit_block(A64* a, int b) {
             break;
         case IR_MUL:
             mul(a, v);
+            break;
+        case IR_MULH:
+            mul_high(a, v);
             break;
         case IR_DIV: case IR_REM:
             div_rem(a, v);

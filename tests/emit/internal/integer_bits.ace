@@ -69,5 +69,12 @@ main(): int {
        mul(u64(0xFFFFFFFFFFFFFFFF), u64(2)) != u64(0xFFFFFFFFFFFFFFFE) {
         return 7
     }
+    high: u64 = 0
+    low: u64 = 0
+    high, low = bits.mul_wide(u64(0xFFFFFFFFFFFFFFFF), u64(0xFFFFFFFFFFFFFFFF))
+    if high != u64(0xFFFFFFFFFFFFFFFE) || low != 1 { return 8 }
+    wide: (u64, u64): (u64, u64) = bits.mul_wide
+    high, low = wide(u64(0x123456789ABCDEF0), u64(0x0FEDCBA987654321))
+    if high != u64(0x0121FA00AD77D742) || low != u64(0x2236D88FE5618CF0) { return 9 }
     return 42
 }

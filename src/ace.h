@@ -231,6 +231,7 @@ enum {
     BI_MEM_COPY_T = 39,     // mem.copy[T](noalias dst: mut []T, src: []T)
     BI_MEM_MOVE_T = 40,     // mem.move[T](dst: mut []T, src: []T)
     BI_FMT_PRINTF_BUF = 41, // fmt.printf(mut buffer, "format", ...): fmt.printf into a fmt.Buffer
+    BI_BITS_MUL_WIDE = 42,  // bits.mul_wide(a, b: u64): (u64, u64), the 128-bit product's high and low words
 };
 
 enum {

@@ -45,6 +45,7 @@ typedef enum {
        reversed, and a rotation by u64 args[1] modulo the width */            \
     X(POPCNT, "popcnt") X(CLZ, "clz") X(CTZ, "ctz") X(BSWAP, "bswap")          \
     X(ROTL, "rotl") X(ROTR, "rotr")                                            \
+    X(MULH, "mulh")     /* the high 64 bits of u64 args[0] * args[1] */        \
     /* exact IEEE: the square root, rounding down or up to an integer, and    \
        args[0] * args[1] + args[2] rounded once */                            \
     X(SQRT, "sqrt") X(FLOOR, "floor") X(CEIL, "ceil") X(FMA, "fma")            \

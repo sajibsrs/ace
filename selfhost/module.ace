@@ -477,6 +477,7 @@ BI_FMT_PRINTF_FD: const u64 = 38
 BI_MEM_COPY_T: const u64 = 39
 BI_MEM_MOVE_T: const u64 = 40
 BI_FMT_PRINTF_BUF: const u64 = 41
+BI_BITS_MUL_WIDE: const u64 = 42
 
 /* True when `canon` is std/<name>.ace or std/<name>/mod.ace, or with
  * `internal` std/@/<name>.ace.
@@ -557,6 +558,7 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
         if mem.equal(name, "wradd") { return BI_BITS_WRAP_ADD }
         if mem.equal(name, "wrsub") { return BI_BITS_WRAP_SUB }
         if mem.equal(name, "wrmul") { return BI_BITS_WRAP_MUL }
+        if mem.equal(name, "mul_wide") { return BI_BITS_MUL_WIDE }
         return 0
     }
     if mem.equal(m, "math") {
