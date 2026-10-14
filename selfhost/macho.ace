@@ -155,7 +155,7 @@ pub Obj.sec(mut self, k: int): mut *Sec {
 
 /* The text section's length, and its words written, patched, and read. */
 pub Obj.here(self): u32 {
-    return u32(self.secs.get(usize(SEC_TEXT)).data.len)
+    return u32(self.secs.get(SEC_TEXT).data.len)
 }
 
 pub Obj.put32(mut self, w: u32) {
@@ -169,7 +169,7 @@ pub Obj.patch32(mut self, off: usize, w: u32) {
 }
 
 pub Obj.get32(self, off: usize): u32 {
-    return get32(self.secs.get(usize(SEC_TEXT)).data, off)
+    return get32(self.secs.get(SEC_TEXT).data, off)
 }
 
 pub put32(mut b: array.Array[u8], v: u32) {

@@ -191,3 +191,6 @@
 - selfhost's lowering caches each static map's perfect-hash plan for the
   whole compile, as `emit.c`'s `map_plans` does, instead of searching for it
   on every lookup: `--release -c` on itself 1.06x.
+- selfhost's auto-inline size counts the dereference C's sema makes explicit
+  in `p.m()` (one node per pointer level), so a function at the 24-node
+  budget expands in both compilers or neither (`tests/ir/auto_inline_pointer_receiver`).

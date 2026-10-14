@@ -3930,6 +3930,13 @@ Lw.auto_inline_size(self, at: u32, size: int, mut chain: [INLINE_CHAIN]u32, dept
             if callee == 0 { return AUTO_INLINE_NODES + 1 }
             grown = callee - 1
         }
+        if n.a != 0 && self.node(n.a).kind == Kind.selector { // C's sema makes p.m() the explicit (*p).m(), one node per pointer level
+            t: u32 = self.unwrap(self.nty(self.node(n.a).a))
+            for t != 0 && self.ty(t).kind == TypeKind.ptr {
+                grown += 1
+                t = self.unwrap(self.ty(t).base)
+            }
+        }
     }
     r: int = size + grown + 1
     r = self.auto_inline_size(n.a, r, mut chain, depth)

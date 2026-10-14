@@ -1,0 +1,25 @@
+/* Auto-inline counts the dereference `p.m()` makes explicit: `f` is 24 nodes
+ * without it and 25 with it, so `main` keeps the call in release.
+ */
+
+O: struct {
+    x: u32,
+}
+
+O.m(self): u32 {
+    return self.x
+}
+
+A: struct {
+    o: *O,
+}
+
+A.f(self): u32 {
+    return self.o.m() + 1 + 1 + 1 + 1 + 1 + 1 + 1
+}
+
+main(): int {
+    o: O = O { x = 3 }
+    a: A = A { o = &o }
+    return int(a.f())
+}
