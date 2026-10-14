@@ -12,7 +12,7 @@ reference where one exists.
 | Section | Measures | Runners |
 |---|---|---|
 | `compiler/` | the compiler's own speed and output size | `run-compile.sh` |
-| `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh`, `run-raytrace.sh` |
+| `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh`, `run-raytrace.sh`, `run-tree.sh` |
 | `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh` |
 | `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh` |
 
@@ -799,6 +799,26 @@ four lanes wide, its `axis` branches becoming `select`s on a lane mask; clang
 vectorizes the same loop with its SLP vectorizer. Drawn with SDL (OpenGL
 renderer, vsync off; Metal paces presents to the display regardless), the math
 mattered at `3a8a125` from about 10,000 cubes, where it was 40% of a frame.
+
+### Tree checking
+
+Run a compiler-shaped workload through Ace release output and equivalent C:
+
+```sh
+./bench/core/run-tree.sh
+```
+
+A generator builds 4,000 functions of `let`/`if`/`return` statements over
+literals, names, binary operators, and calls into one node array (about
+210,000 nodes). `walk` visits every node through a switch on its kind; `check`
+also resolves each name through a local scope stack and a string-keyed
+function map, compares operand types, and records every expression's type.
+The Ace side reads nodes, symbols, and locals through by-value accessors, as
+`selfhost/sema.ace` does; the C side reads them through pointers. ns/node is
+per node per round; the runner checks that both produce the same checksums.
+
+Ace release currently trails C `-O2` by about 1.9x on `walk` and 1.5x on
+`check`, the same range as the self-hosted checker against `./ace` (#144).
 
 ## Standard library
 
