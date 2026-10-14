@@ -111,7 +111,7 @@ pub IRF_SRET: const u8 = 8
 pub IRF_COLD: const u8 = 16
 
 /* An aggregate of over this many leaves stays in memory. */
-pub MAX_LEAVES: const int = 16
+pub MAX_LEAVES: const usize = 32
 
 pub IrLeaf: struct {
     pub off: u32,
@@ -121,7 +121,7 @@ pub IrLeaf: struct {
 /* The leaves of an aggregate, or a scalar's one. */
 pub Leaves: struct {
     pub n: int,
-    pub v: [16]IrLeaf,
+    pub v: [MAX_LEAVES]IrLeaf,
 }
 
 /* One argument, parameter, or result as the ABI sees it: n leaves from
@@ -546,7 +546,7 @@ is_word_type(s: sema.Sema, t: u32): bool {
  * the IR does not cover.
  */
 pub leaves(s: sema.Sema, t: u32, mut out: Leaves): (int, u32) {
-    c: Collect = Collect { store = true, out = blank(Leaves), max = MAX_LEAVES }
+    c: Collect = Collect { store = true, out = blank(Leaves), max = int(MAX_LEAVES) }
     n: int = 0
     if is_word_type(s, t) { n = word_leaves(s, unwrap(s, t), mut c) } else { n = leaves_at(s, t, 0, mut c, 0) }
     out = c.out
@@ -565,7 +565,7 @@ pub leaf_count(s: sema.Sema, t: u32): int {
 pub hfa(s: sema.Sema, t: u32): (int, u8) {
     size: u32 = s.ty(t).size
     if size > 32 { return 0, 0 }
-    c: Collect = Collect { store = true, out = blank(Leaves), max = MAX_LEAVES }
+    c: Collect = Collect { store = true, out = blank(Leaves), max = int(MAX_LEAVES) }
     n: int = leaves_at(s, t, 0, mut c, 0)
     if n < 1 || !type_float(c.out.v[0].ty) { return 0, 0 }
     base: u8 = c.out.v[0].ty

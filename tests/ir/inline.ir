@@ -78,6 +78,15 @@ b4: ; preds b0
     jmp b2
 }
 
+tripled(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = call i64 scaled(%0)
+    %2 = const i64 3
+    %3 = mul.chk i64 %1, %2
+    ret %3
+}
+
 countdown(i64): i64 {
 b0:
     %0 = param i64 0
@@ -192,8 +201,18 @@ b7: ; preds b6
     call @__ace$registry_leaks()
     ret %31
 b8: ; preds b6
-    %34 = const i64 0
+    %34 = const i64 7
+    %35 = call i64 tripled(%34)
+    %36 = const i64 45
+    %37 = ne bool %35, %36
+    br %37, b9, b10
+b9: ; preds b8
+    %39 = const i64 5
     call @__ace$registry_leaks()
-    ret %34
+    ret %39
+b10: ; preds b8
+    %42 = const i64 0
+    call @__ace$registry_leaks()
+    ret %42
 }
 

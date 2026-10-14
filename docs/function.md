@@ -23,7 +23,7 @@ compiler may pass as a copy or as the address of the caller's argument, so a
 program must not tell the two apart: a view of a parameter does not outlive the
 call, and the argument's storage must not change while the call runs, as in
 `f(a, mut a)` where `f` writes its `mut` parameter and then reads the plain one.
-The compiler passes an aggregate of over 16 leaves by address: to an Ace
+The compiler passes an aggregate of over 32 leaves by address: to an Ace
 function, the address of the argument itself when it names a variable, a field
 or element of one, or a dereference; otherwise, and always to an `extern "c"`
 function or through a function value, the address of a fresh copy.
@@ -478,13 +478,13 @@ structs, tuples, and type parameters included; it must not take a
 `noalias` parameter, and must not contain `defer` or inline assembly. `intrinsic`
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
-Release builds also expand small leaf functions on their own: a body of at
-most 24 syntax nodes that calls nothing but conversions, compiler-provided
-operations, and `inline` functions (a by-value accessor wrapping `Array.get`),
-within the limits above, and not generic, `@cold`, `main`, or
-recursive.
-Debug builds keep those calls, so backtraces show them. Mark a larger or
-non-leaf helper `inline` to expand it.
+Release builds also expand small functions on their own: a body of at
+most 24 syntax nodes, its auto-inlined callees' nodes included, that calls
+nothing but conversions, compiler-provided operations, `inline` functions (a
+by-value accessor wrapping `Array.get`), and functions that auto-inline in turn
+(an accessor forwarding to another accessor), within the limits above, and not
+generic, `@cold`, `main`, or recursive. Debug builds keep those calls, so
+backtraces show them. Mark a larger helper `inline` to expand it.
 
 An expansion binds a receiver or `mut` parameter to the argument itself when
 that is a local, or a field of one, so a struct or scalar local passed to

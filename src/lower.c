@@ -20,7 +20,7 @@
 // a slot, as does one holding an array, whose elements an index addresses, or a
 // union, whose payload lives in memory (its leaves are then its words, as a
 // union's own). An
-// aggregate of over 16 leaves is never split: it is copied in memory, and a
+// aggregate of over IR_MAX_LEAVES leaves is never split: it is copied in memory, and a
 // parameter of it arrives by address, as AAPCS64 passes it.
 //
 // A function using anything the IR does not cover is not lowered, and
@@ -51,7 +51,7 @@ typedef struct { // an inline call being expanded
     SType* rt;   // its result type, or NULL
     int    join; // the block after the expansion, where each return goes
     int    res;  // the variable holding the result, an aggregate's first leaf's, or -1
-    int    dst;  // an aggregate of over 16 leaves: the address it is stored at, else -1
+    int    dst;  // an aggregate of over IR_MAX_LEAVES leaves: the address it is stored at, else -1
 } Expansion;
 
 typedef struct GenEscape { // a generic inline declaration's escape mask under one instantiation
@@ -240,7 +240,7 @@ static int param_by_address(SType* t) {
 static int leaves(Lw* l, SType* t, IrLeaf* out) {
     SType* bad = NULL;
     int n = ir_leaves(t, out, &bad);
-    if (n < 0) unsupported(l, bad && (ir_type_of(bad) >= 0 || is_view(bad)) ? "aggregate of over 16 leaves" : type_why(bad));
+    if (n < 0) unsupported(l, bad && (ir_type_of(bad) >= 0 || is_view(bad)) ? "aggregate of over 32 leaves" : type_why(bad));
     return n;
 }
 
@@ -1139,7 +1139,7 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
 
 // Emit call id's arguments, and its signature when a part or the result rt
 // is an aggregate; an aggregate result's leaves follow as projections into
-// res (none without res, whose value is unused). One of over 16 leaves goes
+// res (none without res, whose value is unused). One of over IR_MAX_LEAVES leaves goes
 // to memory at dst (a new stack object when dst < 0), passed last.
 static int call_finish(Lw* l, int id, Args* g, SType* rt, Agg* res, int dst) {
     for (int k = 0; k < g->n; k++) ir_arg_add(l->fn, id, g->v[k]);
@@ -1837,7 +1837,9 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
 // (Functions & ABI #8). The verdict is kept per declaration.
 #define AUTO_INLINE_NODES 24
 
-static PtrMap auto_inline_seen; // declaration -> 1 expands, 2 stays a call
+static PtrMap auto_inline_seen; // declaration -> its expanded size + 2 when it expands, 1 when it stays a call
+
+static int auto_inline_decl(Sym* s);
 
 // n's node count, or AUTO_INLINE_NODES + 1 once over it or on any node that
 // rules expansion out
@@ -1850,7 +1852,11 @@ static int auto_inline_size(Node* n, int size) {
                      (s->decl->ival || (s->decl->flags & F_INTRINSIC));
         int conversion = !s && n->a && n->a->kind == N_IDENT;
         int expands = s && s->kind == SYM_FUNC && s->decl && (s->decl->flags & F_INLINE); // expanded in turn
-        if (!backed && !conversion && !expands) return AUTO_INLINE_NODES + 1;
+        if (!backed && !conversion && !expands) {
+            int callee = s && s->kind == SYM_FUNC && s->decl ? auto_inline_decl(s) : 0; // expands in turn, its nodes counted here
+            if (!callee) return AUTO_INLINE_NODES + 1;
+            size += callee - 1;
+        }
     }
     size++;
     size = auto_inline_size(n->a, size);
@@ -1861,22 +1867,31 @@ static int auto_inline_size(Node* n, int size) {
     return size;
 }
 
+// s's expanded node count + 1 when its declaration may auto-inline wherever
+// it is called, else 0. A call cycle stays a call.
+static int auto_inline_decl(Sym* s) {
+    Node* f = s->decl;
+    uintptr_t seen = ptrmap_get(&auto_inline_seen, f);
+    if (seen) return seen == 1 ? 0 : (int)seen - 1;
+    ptrmap_put(&auto_inline_seen, f, 1); // while measuring: a cycle back here stays a call
+    int ok = f->kind == N_FUNC && f->b && !f->c && !s->is_extern && !s->is_generic && !s->spec_args &&
+             !(f->flags & (F_INTRINSIC | F_SPECIALIZED | F_COLD)) && f->nkids <= MAX_PARAMS &&
+             !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
+    for (int i = 0; ok && i < f->nkids; i++)
+        if (f->kids[i]->flags & F_NOALIAS) ok = 0;
+    int size = ok ? auto_inline_size(f->b, 0) : AUTO_INLINE_NODES + 1;
+    if (size > AUTO_INLINE_NODES) return 0;
+    ptrmap_put(&auto_inline_seen, f, (uintptr_t)size + 2);
+    return size + 1;
+}
+
 static int auto_inline(Lw* l, Sym* s) {
     if (l->mode != EMIT_RELEASE || l->self_head >= 0) return 0;
     Node* f = s->decl;
     if (f == l->f) return 0;
     for (int i = 0; i < l->ninl; i++)
         if (l->inl[i].f == f) return 0;
-    uintptr_t seen = ptrmap_get(&auto_inline_seen, f);
-    if (seen) return seen == 1;
-    int ok = f->kind == N_FUNC && f->b && !f->c && !s->is_extern && !s->is_generic && !s->spec_args &&
-             !(f->flags & (F_INTRINSIC | F_SPECIALIZED | F_COLD)) && f->nkids <= MAX_PARAMS &&
-             !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
-    for (int i = 0; ok && i < f->nkids; i++)
-        if (f->kids[i]->flags & F_NOALIAS) ok = 0;
-    if (ok && auto_inline_size(f->b, 0) > AUTO_INLINE_NODES) ok = 0;
-    ptrmap_put(&auto_inline_seen, f, ok ? 1 : 2);
-    return ok;
+    return auto_inline_decl(s) != 0;
 }
 
 // The inline function a direct call names, with the type arguments its body
@@ -1984,7 +1999,7 @@ static int is_layout_builtin(Node* x, const char* name) {
 }
 
 // A call: a scalar result's value; an aggregate's leaves into res. A result
-// of over 16 leaves goes to memory at address dst, or a new stack object when
+// of over IR_MAX_LEAVES leaves goes to memory at address dst, or a new stack object when
 // dst < 0.
 static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     Node* callee = x->a;
@@ -2426,7 +2441,7 @@ static int is_var_place(Node* x) {
 }
 
 // The leaves of field x of a value that is no place: a call's result or a
-// literal. One of over 16 leaves, like one with a union, is stored to a new
+// literal. One of over IR_MAX_LEAVES leaves, like one with a union, is stored to a new
 // stack object and the field read from it.
 static void field_leaves(Lw* l, Node* x, Agg* out) {
     SType* bt = unwrap(node_ty(x->a));
@@ -2847,7 +2862,7 @@ static void store_value(Lw* l, Node* x, SType* t, int dst, int32_t off) {
         call_to(l, x, -1, NULL, offset_addr(l, dst, off));
         return;
     }
-    if (is_big(t)) unsupported(l, "aggregate of over 16 leaves");
+    if (is_big(t)) unsupported(l, "aggregate of over 32 leaves");
     Agg a;
     value(l, x, t, &a);
     IrLeaf lv[IR_MAX_LEAVES];
@@ -3466,7 +3481,7 @@ static int is_discard(const Node* n) {
 
 // Tuple destructuring (Errors #12): the right side once, then each member
 // into a new binder (N_PARAM) or an existing place, in order; a `_` member is
-// dropped. A tuple of over 16 leaves is stored whole first, then its members
+// dropped. A tuple of over IR_MAX_LEAVES leaves is stored whole first, then its members
 // copied out.
 static void destructure(Lw* l, Node** kids, int n, Node* rhs) {
     SType* tt = node_ty(rhs);
@@ -3678,7 +3693,7 @@ static void inline_return(Lw* l, Node* s) {
 // evaluated in order and bound to its parameter, a mut parameter or receiver
 // to the argument's own storage and any other to a copy. Each return jumps to
 // a join block, where the result is a variable read: an aggregate's leaves
-// into res, or one of over 16 leaves stored at dst (a new stack object when
+// into res, or one of over IR_MAX_LEAVES leaves stored at dst (a new stack object when
 // dst < 0), as a call's.
 static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
     SType** targs;

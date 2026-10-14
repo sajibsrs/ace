@@ -40,7 +40,7 @@ Func: type = ir.Func
 /* The leaf values of an aggregate, or a scalar's one. */
 Agg: struct {
     n: int,
-    v: [16]int,
+    v: [ir.MAX_LEAVES]int,
 }
 
 /* An inline expansion in progress: its declaration, result type, the join
@@ -326,7 +326,7 @@ Lw.is_big(self, t: u32): bool {
         n: int, _ = ir.hfa(*self.s, t)
         return self.ty(self.unwrap(t)).size > 16 && n == 0
     }
-    return self.is_agg(t) && ir.leaf_count(*self.s, t) > ir.MAX_LEAVES
+    return self.is_agg(t) && ir.leaf_count(*self.s, t) > int(ir.MAX_LEAVES)
 }
 
 Lw.in_memory(self, t: u32): bool {
@@ -348,7 +348,7 @@ Lw.leaves(mut self, t: u32, mut out: ir.Leaves): int {
     n: int, bad: u32 = ir.leaves(*self.s, t, mut out)
     if n < 0 {
         if bad != 0 && (ir.type_of(*self.s, bad) >= 0 || self.is_view(bad)) {
-            mut self.unsupported("aggregate of over 16 leaves")
+            mut self.unsupported("aggregate of over 32 leaves")
         } else {
             mut self.unsupported(self.type_why(bad))
         }
@@ -1304,7 +1304,7 @@ Lw.store_value(mut self, at: u32, t: u32, dst: int, off: i32) {
         return
     }
     if self.is_big(t) {
-        mut self.unsupported("aggregate of over 16 leaves")
+        mut self.unsupported("aggregate of over 32 leaves")
         return
     }
     a: Agg = blank(Agg)
@@ -1525,7 +1525,7 @@ Lw.bits_assign(mut self, x: u32, op: Token, rhs: u32, v0: int) {
 // --- aggregate values -------------------------------------------------------
 
 /* The leaves of field `x` of a value that is no place: a call's result or a
- * literal. One of over 16 leaves, like one with a union, is stored to a new
+ * literal. One of over MAX_LEAVES leaves, like one with a union, is stored to a new
  * stack object and the field read from it.
  */
 Lw.field_leaves(mut self, x: u32, mut out: Agg) {
@@ -2299,9 +2299,9 @@ Lw.staticmap_place(mut self, x: u32, mp: u32): Place {
         if kt != ir.IT_U64 && kt != ir.IT_I64 { h = mut self.emit2(ir.IR_CAST, ir.IT_U64, k, -1) }
         h = mut self.emit2(ir.IR_ADD, ir.IT_U64, h, mut self.konst(ir.IT_U64, seed + 0x9e3779b97f4a7c15))
         h = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, mut self.emit2(ir.IR_SHR, ir.IT_U64, h, mut self.konst(ir.IT_U64, 30)))
-        h = mut self.emit2(ir.IR_MUL, ir.IT_U64, h, mut self.konst(ir.IT_U64, 0xbf58476d1ce4e5b9))
+        h = mut self.emit2(ir.IR_MUL, ir.IT_U64, h, mut self.konst(ir.IT_U64, u64(0xbf58476d1ce4e5b9)))
         h = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, mut self.emit2(ir.IR_SHR, ir.IT_U64, h, mut self.konst(ir.IT_U64, 27)))
-        h = mut self.emit2(ir.IR_MUL, ir.IT_U64, h, mut self.konst(ir.IT_U64, 0x94d049bb133111eb))
+        h = mut self.emit2(ir.IR_MUL, ir.IT_U64, h, mut self.konst(ir.IT_U64, u64(0x94d049bb133111eb)))
         h = mut self.emit2(ir.IR_XOR, ir.IT_U64, h, mut self.emit2(ir.IR_SHR, ir.IT_U64, h, mut self.konst(ir.IT_U64, 31)))
     } else {
         hv: int = mut self.temp_var(ir.IT_U64, mut self.konst(ir.IT_U64, 1469598103934665603 ^ seed))
@@ -2903,7 +2903,7 @@ Lw.promoting_field(self, a: u32, pt: u32): int {
 
 /* Emits call `id`'s arguments, and its signature when a part or the result
  * `rt` is an aggregate; an aggregate result's leaves follow as projections.
- * One of over 16 leaves goes to memory at `dst` (a new stack object when
+ * One of over MAX_LEAVES leaves goes to memory at `dst` (a new stack object when
  * dst < 0), passed last.
  */
 Lw.call_finish(mut self, id: int, g: Args, rt: u32, mut res: Agg, want_res: bool, dst: int): int {
@@ -3697,7 +3697,7 @@ Lw.special_call(mut self, x: u32, mut res: Agg, want_res: bool, dst: int): int {
 }
 
 /* A call `x`; an aggregate result's leaves go to `res` when `want_res`, one
- * of over 16 leaves to memory at `dst`, or a new stack object when dst < 0.
+ * of over MAX_LEAVES leaves to memory at `dst`, or a new stack object when dst < 0.
  */
 Lw.call(mut self, x: u32, want: int, mut res: Agg, want_res: bool, dst: int): int {
     cn: Node = self.node(x)
@@ -3851,14 +3851,16 @@ Lw.inline_target(self, x: u32): (u32, u32, u32) {
  * (Functions & ABI #8).
  */
 AUTO_INLINE_NODES: const int = 24
+INLINE_CHAIN: const usize = 26 // declarations one auto_inline_decl chain can hold within budget
 
 /* The node count of `at` added to `size`, or AUTO_INLINE_NODES + 1 once over
  * it or on any node that rules expansion out.
  */
-Lw.auto_inline_size(self, at: u32, size: int): int {
+Lw.auto_inline_size(self, at: u32, size: int, mut chain: [INLINE_CHAIN]u32, depth: usize): int {
     if at == 0 || size > AUTO_INLINE_NODES { return size }
     n: Node = self.node(at)
     if n.kind == Kind.defer || n.kind == Kind.asm { return AUTO_INLINE_NODES + 1 }
+    grown: int = 0
     if n.kind == Kind.call {
         s: u32 = self.nsym(at)
         if n.a != 0 && self.node(n.a).kind == Kind.index && self.nsym(n.a) != 0 { s = self.nsym(n.a) }
@@ -3870,20 +3872,25 @@ Lw.auto_inline_size(self, at: u32, size: int): int {
         conversion: bool = s == 0 && n.a != 0 && self.node(n.a).kind == Kind.ident
         expands: bool = s != 0 && self.s.sym(s).kind == sema.SymKind.func && self.s.sym(s).decl != 0 &&
             (self.node(self.s.sym(s).decl).flags & parser.F_INLINE) != 0 // expanded in turn
-        if !backed && !conversion && !expands { return AUTO_INLINE_NODES + 1 }
+        if !backed && !conversion && !expands {
+            callee: int = 0 // expands in turn, its nodes counted here
+            if s != 0 && self.s.sym(s).kind == sema.SymKind.func && self.s.sym(s).decl != 0 { callee = self.auto_inline_decl(s, mut chain, depth) }
+            if callee == 0 { return AUTO_INLINE_NODES + 1 }
+            grown = callee - 1
+        }
     }
-    r: int = size + 1
-    r = self.auto_inline_size(n.a, r)
-    r = self.auto_inline_size(n.b, r)
-    r = self.auto_inline_size(n.c, r)
-    if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { r = self.auto_inline_size(n.d, r) }
-    for i: u32 in 0..n.nkids { r = self.auto_inline_size(self.kid(at, i), r) }
+    r: int = size + grown + 1
+    r = self.auto_inline_size(n.a, r, mut chain, depth)
+    r = self.auto_inline_size(n.b, r, mut chain, depth)
+    r = self.auto_inline_size(n.c, r, mut chain, depth)
+    if n.kind == Kind.for && (n.flags & parser.F_FORGEN) != 0 { r = self.auto_inline_size(n.d, r, mut chain, depth) }
+    for i: u32 in 0..n.nkids { r = self.auto_inline_size(self.kid(at, i), r, mut chain, depth) }
     if n.kind == Kind.structlit && !(n.nkids > 0 && self.node(self.kid(at, 0)).text.len == 0) { // C's sema adds the omitted defaults as fields
         u: u32 = self.unwrap(self.nty(at))
         if u != 0 && self.ty(u).kind == TypeKind.struct {
             for i: u32 in 0..self.ty(u).nfields {
                 dv: u32 = self.lit_default(at, u, i)
-                if dv != 0 { r = self.auto_inline_size(dv, r + 1) }
+                if dv != 0 { r = self.auto_inline_size(dv, r + 1, mut chain, depth) }
             }
         }
     }
@@ -3891,22 +3898,40 @@ Lw.auto_inline_size(self, at: u32, size: int): int {
 }
 
 /* Whether a call to function `s` expands though not marked inline. */
-Lw.auto_inline(self, s: u32): bool {
-    if self.debug || self.self_head >= 0 { return false }
+/* The expanded node count of symbol `s`'s function + 1 when its declaration
+ * may auto-inline wherever it is called, else 0. `chain` holds the
+ * declarations being measured: a call cycle back into one stays a call, as
+ * C's provisional verdict does.
+ */
+Lw.auto_inline_decl(self, s: u32, mut chain: [INLINE_CHAIN]u32, depth: usize): int {
     sy: sema.Sym = self.s.sym(s)
     f: u32 = sy.decl
+    for i: usize in 0..depth {
+        if chain[i] == f { return 0 }
+    }
+    if depth == chain.len { return 0 } // deeper than any chain within budget
+    n: Node = self.node(f)
+    if n.kind != Kind.func || n.b == 0 || n.c != 0 || sy.is_extern || sy.is_generic || sy.spec_args != 0 { return 0 }
+    if (n.flags & (parser.F_INTRINSIC | parser.F_SPECIALIZED | parser.F_COLD)) != 0 || n.nkids > 64 { return 0 }
+    if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main") { return 0 }
+    for i: u32 in 0..n.nkids {
+        if (self.node(self.kid(f, i)).flags & parser.F_NOALIAS) != 0 { return 0 }
+    }
+    chain[depth] = f
+    size: int = self.auto_inline_size(n.b, 0, mut chain, depth + 1)
+    if size > AUTO_INLINE_NODES { return 0 }
+    return size + 1
+}
+
+Lw.auto_inline(self, s: u32): bool {
+    if self.debug || self.self_head >= 0 { return false }
+    f: u32 = self.s.sym(s).decl
     if f == self.f { return false }
     for e: Expansion in self.inl.view() {
         if e.f == f { return false }
     }
-    n: Node = self.node(f)
-    if n.kind != Kind.func || n.b == 0 || n.c != 0 || sy.is_extern || sy.is_generic || sy.spec_args != 0 { return false }
-    if (n.flags & (parser.F_INTRINSIC | parser.F_SPECIALIZED | parser.F_COLD)) != 0 || n.nkids > 64 { return false }
-    if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main") { return false }
-    for i: u32 in 0..n.nkids {
-        if (self.node(self.kid(f, i)).flags & parser.F_NOALIAS) != 0 { return false }
-    }
-    return self.auto_inline_size(n.b, 0) <= AUTO_INLINE_NODES
+    chain: [INLINE_CHAIN]u32 = blank([INLINE_CHAIN]u32)
+    return self.auto_inline_decl(s, mut chain, 0) != 0
 }
 
 /* Whether `x` is a direct call of the function being lowered. */
@@ -3988,7 +4013,7 @@ Lw.inline_return(mut self, at: u32) {
  * evaluated in order and bound to its parameter, a mut parameter or receiver
  * to the argument's own storage and any other to a copy. Each return jumps to
  * a join block, where the result is a variable read: an aggregate's leaves
- * into res, or one of over 16 leaves stored at dst (a new stack object when
+ * into res, or one of over MAX_LEAVES leaves stored at dst (a new stack object when
  * dst < 0), as a call's.
  */
 Lw.inline_call(mut self, x: u32, mut out: Agg, want_out: bool, dst: int): int {
@@ -4643,7 +4668,7 @@ Lw.member_put(mut self, x: u32, m: Agg) {
 
 /* Tuple destructuring (Errors #12): the right side once, then each member
  * into a new binder or an existing place, the first `n` kids of `owner`, in
- * order; a `_` member is dropped. A tuple of over 16 leaves is stored whole
+ * order; a `_` member is dropped. A tuple of over MAX_LEAVES leaves is stored whole
  * first, then its members copied out.
  */
 Lw.destructure(mut self, owner: u32, n: u32, rhs: u32) {

@@ -115,7 +115,7 @@ enum {
 // array, and every string and slice (a ptr and a u64 length), into its scalar
 // leaves (SSA values, or loads and stores for one in memory), and each target
 // maps leaves onto its ABI. One of over IR_MAX_LEAVES leaves stays in memory.
-enum { IR_MAX_LEAVES = 16 };
+enum { IR_MAX_LEAVES = 32 };
 
 typedef struct {
     uint32_t off;  // byte offset in the aggregate

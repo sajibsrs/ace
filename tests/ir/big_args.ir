@@ -16,7 +16,7 @@ b0:
 
 which(ptr): i64 {
 b0:
-    %0 = slot ptr 160, 8
+    %0 = slot ptr 320, 8
     %1 = param ptr 0
     %2 = load i32 [%1]
     %3 = const i32 0
@@ -39,7 +39,7 @@ b4: ; preds b0
     br %15, b1, b3
 b5: ; preds b3, b7
     %17 = phi u64 [%12, b3], [%28, b7]
-    %18 = const u64 20
+    %18 = const u64 40
     %19 = lt bool %17, %18
     br %19, b7, b6
 b6: ; preds b5
@@ -55,9 +55,9 @@ b7: ; preds b5
     jmp b5
 }
 
-make(i64): mem 160 {
+make(i64): mem 320 {
 b0:
-    %0 = slot ptr 160, 8
+    %0 = slot ptr 320, 8
     %1 = result ptr
     %2 = param i64 0
     %3 = const u64 0
@@ -65,7 +65,7 @@ b0:
     jmp b1
 b1: ; preds b0, b3
     %6 = phi u64 [%4, b0], [%16, b3]
-    %7 = const u64 20
+    %7 = const u64 40
     %8 = lt bool %6, %7
     br %8, b3, b2
 b2: ; preds b1
@@ -80,7 +80,7 @@ b3: ; preds b1
     jmp b1
 b4: ; preds b2, b6
     %18 = phi u64 [%11, b2], [%28, b6]
-    %19 = const u64 20
+    %19 = const u64 40
     %20 = lt bool %18, %19
     br %20, b6, b5
 b5: ; preds b4
@@ -109,8 +109,8 @@ b0:
     %9 = const u64 2
     %10 = lt bool %3, %9
     check %10, 40:45 bounds violation
-    %12 = padd ptr %1, %3 * 160
-    %13 = const u64 168
+    %12 = padd ptr %1, %3 * 320
+    %13 = const u64 328
     %14 = padd ptr %12, %13 * 1
     %15 = call i64 sum(%14)
     %16 = add.chk i64 %8, %15
@@ -129,10 +129,10 @@ b0:
 
 copied(ptr, ptr): i64 {
 b0:
-    %0 = slot ptr 168, 8
-    %1 = slot ptr 160, 8
-    %2 = slot ptr 160, 8
-    %3 = slot ptr 160, 8
+    %0 = slot ptr 328, 8
+    %1 = slot ptr 320, 8
+    %2 = slot ptr 320, 8
+    %3 = slot ptr 320, 8
     %4 = param ptr 0
     %5 = param ptr 1
     %6 = const i64 1
@@ -142,7 +142,7 @@ b0:
     jmp b1
 b1: ; preds b0, b3
     %11 = phi u64 [%9, b0], [%24, b3]
-    %12 = const u64 20
+    %12 = const u64 40
     %13 = lt bool %11, %12
     br %13, b3, b2
 b2: ; preds b1
@@ -160,7 +160,7 @@ b3: ; preds b1
     jmp b1
 b4: ; preds b2, b6
     %26 = phi u64 [%17, b2], [%42, b6]
-    %27 = const u64 20
+    %27 = const u64 40
     %28 = lt bool %26, %27
     br %28, b6, b5
 b5: ; preds b4
@@ -183,13 +183,13 @@ b6: ; preds b4
 
 main(): i64 {
 b0:
-    %0 = slot ptr 488, 8
+    %0 = slot ptr 968, 8
     %1 = const u64 0
     %2 = const u64 0
     jmp b1
 b1: ; preds b0, b3
     %4 = phi u64 [%2, b0], [%22, b3]
-    %5 = const u64 61
+    %5 = const u64 121
     %6 = lt bool %4, %5
     br %6, b3, b2
 b2: ; preds b1

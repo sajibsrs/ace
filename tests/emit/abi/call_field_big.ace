@@ -1,4 +1,4 @@
-// A field read straight off a call whose result is over 16 leaves: the call
+// A field read straight off a call whose result is over 32 leaves: the call
 // writes a stack object through the result address and the field loads from
 // it, as it does from a local bound to the same call. Forms: a return, a call
 // argument, an array field element, a method result, a loop condition, an
@@ -31,7 +31,7 @@ Big: struct {
     f14: u64,
     f15: u64,
     f16: u64,
-    arr: [4]u64,
+    arr: [20]u64,
     inner: Inner,
 }
 

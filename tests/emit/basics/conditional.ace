@@ -9,7 +9,7 @@ Point: struct {
 }
 
 Big: struct {
-    words: [20]u64,
+    words: [40]u64,
 }
 
 calls: int = 0
@@ -20,7 +20,7 @@ count(v: int): int {
 }
 
 big(v: u64): Big {
-    return Big { words = [v : 20] }
+    return Big { words = [v : 40] }
 }
 
 pick(c: bool, a: string, b: string): string {

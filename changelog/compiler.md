@@ -189,3 +189,8 @@
   `inline` functions, which expand in turn (C and selfhost, #144): a by-value
   accessor over `inline Array.get` now inlines. `bench/core/tree` walk 1.45x,
   check 1.18x; selfhost `--release -c` on itself 1.40x.
+- Release auto-inlining also takes a function whose calls auto-inline in turn,
+  their nodes counted in its budget (a call cycle stays a call), and an
+  aggregate splits into SSA leaves up to 32 leaves, not 16 (C and selfhost,
+  #144): by-value `Node`/`Sym`/`SType` reads load only the fields used.
+  Selfhost `--check` body checks 1.38x; `bench/` and `pkg/` unchanged.
