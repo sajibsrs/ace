@@ -1,0 +1,50 @@
+/* A plain argument of over 16 leaves goes by address. To an Ace callee that
+ * is its own place's address when it names storage of the parameter's type:
+ * a variable, a field or element of one, or a dereference. Anything else,
+ * and any argument to an extern or through a function value, is the address
+ * of a fresh copy. */
+
+Big: struct { v: [20]i64 }
+
+Outer: struct { tag: i64, big: Big, more: [2]Big }
+
+Maybe: union { none, some: Big }
+
+extern "c" {
+    c_sum(b: Big): i64
+}
+
+sum(b: Big): i64 {
+    return b.v[0] + b.v[19]
+}
+
+first(b: Big): i64 {
+    return b.v[0]
+}
+
+which(m: Maybe): i64 {
+    switch m {
+    Maybe.none { return 0 }
+    Maybe.some(b: Big) { return b.v[1] }
+    }
+    return -1
+}
+
+make(n: i64): Big {
+    b: Big = blank(Big)
+    b.v[0] = n
+    return b
+}
+
+own(b: Big, o: Outer, p: *Outer, i: usize): i64 {
+    return sum(b) + sum(o.big) + sum(o.more[i]) + sum(p.big) + sum(*&o.big)
+}
+
+copied(b: Big, f: (Big): i64): i64 {
+    return sum(make(1)) + c_sum(b) + f(b) + which(Maybe.none)
+}
+
+main(): int {
+    o: Outer = blank(Outer)
+    return int(own(o.big, o, &o, 1) + copied(o.big, first))
+}

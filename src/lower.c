@@ -710,6 +710,7 @@ static int expr(Lw* l, Node* x, int want);
 static Place element(Lw* l, Node* x);
 static Place place(Lw* l, Node* x);
 static int is_place(Node* x);
+static int is_var_place(Node* x);
 static void value(Lw* l, Node* x, SType* t, Agg* out);
 
 // The type *x names: an assignment target's dereferences carry no type of
@@ -1045,8 +1046,10 @@ static Place temp_place(Lw* l, Node* x) {
 
 // A call argument: the address of its place for a mut parameter or method
 // receiver (of a new stack object when it is no place, a call's result), else
-// its leaves at the parameter's type.
-static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
+// its leaves at the parameter's type. A big one is passed by address: of its
+// own place when `ace` is set (an Ace callee, Values & Passing #2), else of a
+// copy, as C's ABI requires.
+static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address, int ace) {
     if (a->kind == N_MUTARG) a = a->a;
     if (by_address && !is_place(a)) {
         arg_scalar(l, g, place_address(l, temp_place(l, a)));
@@ -1060,10 +1063,15 @@ static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address) {
         arg_scalar(l, g, expr(l, a, need_type(l, pt)));
         return;
     }
-    if (is_big(pt)) { // the address of a copy
-        covered(l, pt);
-        int slot = new_slot(l, pt);
-        store_value(l, a, pt, slot, 0);
+    if (is_big(pt)) {
+        int slot;
+        if (ace && is_var_place(a) && unwrap(node_ty(a)) == unwrap(pt)) {
+            slot = place_address(l, place(l, a));
+        } else { // the address of a copy
+            covered(l, pt);
+            slot = new_slot(l, pt);
+            store_value(l, a, pt, slot, 0);
+        }
         args_room(g, 1);
         g->part[g->nparts++] = (IrPart){ pt, g->n, 1, 1 };
         g->v[g->n++] = slot;
@@ -1114,7 +1122,7 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
         }
         int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_MUT)) ||
                          (d && (d->flags & F_METHOD) && i == 0);
-        call_arg(l, g, a, ft->params[i], by_address);
+        call_arg(l, g, a, ft->params[i], by_address, !s->is_extern);
         SType* pu = unwrap(ft->params[i]);
         if (!noalias || !pu || pu->kind != SK_SLICE) continue;
         IrPart* pp = &g->part[g->nparts - 1];
@@ -2148,7 +2156,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
             int fn = load(l, IT_PTR, c.v[0], midx * 8, access_check(l, c.v[0])); // fn slot: vtable checked here
             arg_scalar(l, &g, c.v[1]); // the receiver: always by address
             for (int i = 0; i < x->nkids; i++) // sema: no contract method parameter is mut
-                call_arg(l, &g, x->kids[i], node_ty(x->kids[i]), 0);
+                call_arg(l, &g, x->kids[i], node_ty(x->kids[i]), 0, 0);
             SType* rt = node_ty(x);
             int id = emit(l, IR_CALLI, result_type(l, rt));
             l->fn->ins[id].flags = (uint8_t)null_checked(l); // fn itself, at the call
@@ -2161,7 +2169,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
         int f = expr(l, callee, IT_PTR);
         for (int i = 0; i < x->nkids; i++) // sema: no function-value parameter is mut
-            call_arg(l, &g, x->kids[i], ft->params[i], 0);
+            call_arg(l, &g, x->kids[i], ft->params[i], 0, 0);
         int id = emit(l, IR_CALLI, result_type(l, ft->ret));
         l->fn->ins[id].flags = (uint8_t)null_checked(l);
         ir_arg_add(l->fn, id, f); // the target, then the arguments
@@ -2397,6 +2405,22 @@ static int is_place(Node* x) {
         return (bt && bt->kind == SK_PTR) || is_place(x->a);
     }
     default: return 0;
+    }
+}
+
+// Whether x is a place rooted in a variable or a pointer, not in a name that
+// is no storage (a type's union variant, a constant).
+static int is_var_place(Node* x) {
+    if (!is_place(x)) return 0;
+    for (;;) {
+        if (x->kind == N_IDENT) {
+            Sym* s = node_sym(x);
+            return s && s->kind == SYM_VAR;
+        }
+        if (x->kind == N_UNARY) return 1;
+        SType* bt = unwrap(node_ty(x->a));
+        if (bt && (bt->kind == SK_PTR || bt->kind == SK_SLICE)) return 1;
+        x = x->a;
     }
 }
 

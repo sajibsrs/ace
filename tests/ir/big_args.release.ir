@@ -1,0 +1,370 @@
+sum(ptr): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = load i64 [%0]
+    %2 = load i64 [%0 + 152]
+    %3 = add i64 %1, %2
+    ret %3
+}
+
+first(ptr): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = load i64 [%0]
+    ret %1
+}
+
+which(ptr): i64 {
+b0:
+    %0 = slot ptr 160, 8
+    %1 = param ptr 0
+    %2 = load i32 [%1]
+    %3 = const i32 0
+    %4 = ne bool %2, %3
+    br %4, b4, b2
+b1: ; preds b4
+    %6 = const i64 -1
+    ret %6
+b2: ; preds b0
+    %8 = const i64 0
+    ret %8
+b3: ; preds b4
+    %10 = const u64 8
+    %11 = padd ptr %1, %10 * 1
+    %12 = const u64 0
+    jmp b5
+b4: ; preds b0
+    %14 = const i32 1
+    %15 = ne bool %2, %14
+    br %15, b1, b3
+b5: ; preds b3, b7
+    %17 = phi u64 [%12, b3], [%28, b7]
+    %18 = const u64 20
+    %19 = lt bool %17, %18
+    br %19, b7, b6
+b6: ; preds b5
+    %21 = load i64 [%0 + 8]
+    ret %21
+b7: ; preds b5
+    %23 = padd ptr %11, %17 * 8
+    %24 = padd ptr %0, %17 * 8
+    %25 = load u64 [%23]
+    store [%24], %25
+    %27 = const u64 1
+    %28 = add u64 %17, %27
+    jmp b5
+}
+
+make(i64): mem 160 {
+b0:
+    %0 = slot ptr 160, 8
+    %1 = result ptr
+    %2 = param i64 0
+    %3 = const u64 0
+    %4 = const u64 0
+    jmp b1
+b1: ; preds b0, b3
+    %6 = phi u64 [%4, b0], [%16, b3]
+    %7 = const u64 20
+    %8 = lt bool %6, %7
+    br %8, b3, b2
+b2: ; preds b1
+    store [%0], %2
+    %11 = const u64 0
+    jmp b4
+b3: ; preds b1
+    %13 = padd ptr %0, %6 * 8
+    store [%13], %3
+    %15 = const u64 1
+    %16 = add u64 %6, %15
+    jmp b1
+b4: ; preds b2, b6
+    %18 = phi u64 [%11, b2], [%28, b6]
+    %19 = const u64 20
+    %20 = lt bool %18, %19
+    br %20, b6, b5
+b5: ; preds b4
+    ret
+b6: ; preds b4
+    %23 = padd ptr %0, %18 * 8
+    %24 = padd ptr %1, %18 * 8
+    %25 = load u64 [%23]
+    store [%24], %25
+    %27 = const u64 1
+    %28 = add u64 %18, %27
+    jmp b4
+}
+
+own(ptr, ptr, ptr, u64): i64 {
+b0:
+    %0 = slot ptr 160, 8
+    %1 = slot ptr 160, 8
+    %2 = slot ptr 160, 8
+    %3 = slot ptr 160, 8
+    %4 = slot ptr 160, 8
+    %5 = param ptr 0
+    %6 = param ptr 1
+    %7 = param ptr 2
+    %8 = param u64 3
+    %9 = const u64 0
+    jmp b1
+b1: ; preds b0, b3
+    %11 = phi u64 [%9, b0], [%27, b3]
+    %12 = const u64 20
+    %13 = lt bool %11, %12
+    br %13, b3, b2
+b2: ; preds b1
+    %15 = load i64 [%4]
+    %16 = load i64 [%4 + 152]
+    %17 = add i64 %15, %16
+    %18 = const u64 8
+    %19 = padd ptr %6, %18 * 1
+    %20 = const u64 0
+    jmp b4
+b3: ; preds b1
+    %22 = padd ptr %5, %11 * 8
+    %23 = padd ptr %4, %11 * 8
+    %24 = load u64 [%22]
+    store [%23], %24
+    %26 = const u64 1
+    %27 = add u64 %11, %26
+    jmp b1
+b4: ; preds b2, b6
+    %29 = phi u64 [%20, b2], [%47, b6]
+    %30 = const u64 20
+    %31 = lt bool %29, %30
+    br %31, b6, b5
+b5: ; preds b4
+    %33 = load i64 [%3]
+    %34 = load i64 [%3 + 152]
+    %35 = add i64 %33, %34
+    %36 = add i64 %17, %35
+    %37 = padd ptr %6, %8 * 160
+    %38 = const u64 168
+    %39 = padd ptr %37, %38 * 1
+    %40 = const u64 0
+    jmp b7
+b6: ; preds b4
+    %42 = padd ptr %19, %29 * 8
+    %43 = padd ptr %3, %29 * 8
+    %44 = load u64 [%42]
+    store [%43], %44
+    %46 = const u64 1
+    %47 = add u64 %29, %46
+    jmp b4
+b7: ; preds b5, b9
+    %49 = phi u64 [%40, b5], [%66, b9]
+    %50 = const u64 20
+    %51 = lt bool %49, %50
+    br %51, b9, b8
+b8: ; preds b7
+    %53 = load i64 [%2]
+    %54 = load i64 [%2 + 152]
+    %55 = add i64 %53, %54
+    %56 = add i64 %36, %55
+    %57 = const u64 8
+    %58 = padd ptr %7, %57 * 1
+    %59 = const u64 0
+    jmp b10
+b9: ; preds b7
+    %61 = padd ptr %39, %49 * 8
+    %62 = padd ptr %2, %49 * 8
+    %63 = load u64 [%61]
+    store [%62], %63
+    %65 = const u64 1
+    %66 = add u64 %49, %65
+    jmp b7
+b10: ; preds b8, b12
+    %68 = phi u64 [%59, b8], [%83, b12]
+    %69 = const u64 20
+    %70 = lt bool %68, %69
+    br %70, b12, b11
+b11: ; preds b10
+    %72 = load i64 [%1]
+    %73 = load i64 [%1 + 152]
+    %74 = add i64 %72, %73
+    %75 = add i64 %56, %74
+    %76 = const u64 0
+    jmp b13
+b12: ; preds b10
+    %78 = padd ptr %58, %68 * 8
+    %79 = padd ptr %1, %68 * 8
+    %80 = load u64 [%78]
+    store [%79], %80
+    %82 = const u64 1
+    %83 = add u64 %68, %82
+    jmp b10
+b13: ; preds b11, b15
+    %85 = phi u64 [%76, b11], [%99, b15]
+    %86 = const u64 20
+    %87 = lt bool %85, %86
+    br %87, b15, b14
+b14: ; preds b13
+    %89 = load i64 [%0]
+    %90 = load i64 [%0 + 152]
+    %91 = add i64 %89, %90
+    %92 = add i64 %75, %91
+    ret %92
+b15: ; preds b13
+    %94 = padd ptr %19, %85 * 8
+    %95 = padd ptr %0, %85 * 8
+    %96 = load u64 [%94]
+    store [%95], %96
+    %98 = const u64 1
+    %99 = add u64 %85, %98
+    jmp b13
+}
+
+copied(ptr, ptr): i64 {
+b0:
+    %0 = slot ptr 160, 8
+    %1 = slot ptr 168, 8
+    %2 = slot ptr 160, 8
+    %3 = slot ptr 160, 8
+    %4 = slot ptr 160, 8
+    %5 = slot ptr 160, 8
+    %6 = param ptr 0
+    %7 = param ptr 1
+    %8 = const i64 1
+    %9 = const u64 0
+    %10 = const u64 0
+    jmp b1
+b1: ; preds b0, b3
+    %12 = phi u64 [%10, b0], [%22, b3]
+    %13 = const u64 20
+    %14 = lt bool %12, %13
+    br %14, b3, b2
+b2: ; preds b1
+    store [%4], %8
+    %17 = const u64 0
+    jmp b4
+b3: ; preds b1
+    %19 = padd ptr %4, %12 * 8
+    store [%19], %9
+    %21 = const u64 1
+    %22 = add u64 %12, %21
+    jmp b1
+b4: ; preds b2, b6
+    %24 = phi u64 [%17, b2], [%38, b6]
+    %25 = const u64 20
+    %26 = lt bool %24, %25
+    br %26, b6, b5
+b5: ; preds b4
+    %28 = load i64 [%5]
+    %29 = load i64 [%5 + 152]
+    %30 = add i64 %28, %29
+    %31 = const u64 0
+    jmp b7
+b6: ; preds b4
+    %33 = padd ptr %4, %24 * 8
+    %34 = padd ptr %5, %24 * 8
+    %35 = load u64 [%33]
+    store [%34], %35
+    %37 = const u64 1
+    %38 = add u64 %24, %37
+    jmp b4
+b7: ; preds b5, b9
+    %40 = phi u64 [%31, b5], [%53, b9]
+    %41 = const u64 20
+    %42 = lt bool %40, %41
+    br %42, b9, b8
+b8: ; preds b7
+    %44 = call i64 c_sum(%3)
+    %45 = add i64 %30, %44
+    %46 = const u64 0
+    jmp b10
+b9: ; preds b7
+    %48 = padd ptr %6, %40 * 8
+    %49 = padd ptr %3, %40 * 8
+    %50 = load u64 [%48]
+    store [%49], %50
+    %52 = const u64 1
+    %53 = add u64 %40, %52
+    jmp b7
+b10: ; preds b8, b12
+    %55 = phi u64 [%46, b8], [%72, b12]
+    %56 = const u64 20
+    %57 = lt bool %55, %56
+    br %57, b12, b11
+b11: ; preds b10
+    %59 = calli i64 %7(%2)
+    %60 = add i64 %45, %59
+    %61 = const i32 0
+    store [%1], %61
+    %63 = load i32 [%1]
+    %64 = const i32 0
+    %65 = ne bool %63, %64
+    br %65, b17, b15
+b12: ; preds b10
+    %67 = padd ptr %6, %55 * 8
+    %68 = padd ptr %2, %55 * 8
+    %69 = load u64 [%67]
+    store [%68], %69
+    %71 = const u64 1
+    %72 = add u64 %55, %71
+    jmp b10
+b13: ; preds b15, b19, b14
+    %74 = phi i64 [%79, b15], [%92, b19], [%77, b14]
+    %75 = add i64 %60, %74
+    ret %75
+b14: ; preds b17
+    %77 = const i64 -1
+    jmp b13
+b15: ; preds b11
+    %79 = const i64 0
+    jmp b13
+b16: ; preds b17
+    %81 = const u64 8
+    %82 = padd ptr %1, %81 * 1
+    %83 = const u64 0
+    jmp b18
+b17: ; preds b11
+    %85 = const i32 1
+    %86 = ne bool %63, %85
+    br %86, b14, b16
+b18: ; preds b16, b20
+    %88 = phi u64 [%83, b16], [%99, b20]
+    %89 = const u64 20
+    %90 = lt bool %88, %89
+    br %90, b20, b19
+b19: ; preds b18
+    %92 = load i64 [%0 + 8]
+    jmp b13
+b20: ; preds b18
+    %94 = padd ptr %82, %88 * 8
+    %95 = padd ptr %0, %88 * 8
+    %96 = load u64 [%94]
+    store [%95], %96
+    %98 = const u64 1
+    %99 = add u64 %88, %98
+    jmp b18
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 488, 8
+    %1 = const u64 0
+    %2 = const u64 0
+    jmp b1
+b1: ; preds b0, b3
+    %4 = phi u64 [%2, b0], [%19, b3]
+    %5 = const u64 61
+    %6 = lt bool %4, %5
+    br %6, b3, b2
+b2: ; preds b1
+    %8 = const u64 8
+    %9 = padd ptr %0, %8 * 1
+    %10 = const u64 1
+    %11 = call i64 own(%9, %0, %0, %10)
+    %12 = global ptr first
+    %13 = call i64 copied(%9, %12)
+    %14 = add i64 %11, %13
+    ret %14
+b3: ; preds b1
+    %16 = padd ptr %0, %4 * 8
+    store [%16], %1
+    %18 = const u64 1
+    %19 = add u64 %4, %18
+    jmp b1
+}
+

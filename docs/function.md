@@ -23,6 +23,10 @@ compiler may pass as a copy or as the address of the caller's argument, so a
 program must not tell the two apart: a view of a parameter does not outlive the
 call, and the argument's storage must not change while the call runs, as in
 `f(a, mut a)` where `f` writes its `mut` parameter and then reads the plain one.
+The compiler passes an aggregate of over 16 leaves by address: to an Ace
+function, the address of the argument itself when it names a variable, a field
+or element of one, or a dereference; otherwise, and always to an `extern "c"`
+function or through a function value, the address of a fresh copy.
 
 A function that changes an argument marks the parameter `mut`; its caller must
 repeat `mut`, and the argument must be an lvalue.

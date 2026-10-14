@@ -2151,7 +2151,7 @@ Lw.contract_call(mut self, x: u32, mut res: Agg, want_res: bool, dst: int): int 
     g: Args = Args.init()
     defer mut g.wipe()
     mut g.scalar(c.v[1]) // the receiver: always by address
-    for i: u32 in 0..cn.nkids { mut self.call_arg(mut g, self.kid(x, i), self.nty(self.kid(x, i)), false) }
+    for i: u32 in 0..cn.nkids { mut self.call_arg(mut g, self.kid(x, i), self.nty(self.kid(x, i)), false, false) }
     rt: u32 = self.nty(x)
     id: int = mut self.emit(ir.IR_CALLI, mut self.result_type(rt))
     mut self.fn.at(id).flags = self.null_checked() // fn itself, at the call
@@ -2693,6 +2693,27 @@ Lw.is_place(self, x: u32): bool {
     }
 }
 
+/* Whether `x` is a place rooted in a variable or a pointer, not in a name
+ * that is no storage (a type's union variant, a constant).
+ */
+Lw.is_var_place(self, x: u32): bool {
+    if !self.is_place(x) { return false }
+    y: u32 = x
+    for {
+        if self.captured.has(y) { return true }
+        n: Node = self.node(y)
+        if n.kind == Kind.ident {
+            s: u32 = self.nsym(y)
+            return s != 0 && self.s.sym(s).kind == sema.SymKind.var
+        }
+        if n.kind == Kind.unary { return true }
+        bt: u32 = self.unwrap(self.nty(n.a))
+        if bt != 0 && (self.ty(bt).kind == TypeKind.ptr || self.ty(bt).kind == TypeKind.slice) { return true }
+        y = n.a
+    }
+    return false
+}
+
 Lw.result_type(mut self, rt: u32): u8 {
     if rt == 0 || self.kind(rt) == TypeKind.void || self.is_agg(rt) { return ir.IT_VOID }
     return mut self.need_type(rt)
@@ -2711,9 +2732,11 @@ Lw.call_routine(mut self, name: string, c: bool, t: u8, args: []int): int {
 }
 
 /* A call argument: the address of its place for a mut parameter or method
- * receiver, else its leaves at the parameter's type.
+ * receiver, else its leaves at the parameter's type. A big one is passed by
+ * address: of its own place when `ace` is set (an Ace callee, Values &
+ * Passing #2), else of a copy, as C's ABI requires.
  */
-Lw.call_arg(mut self, mut g: Args, at: u32, pt: u32, by_address: bool) {
+Lw.call_arg(mut self, mut g: Args, at: u32, pt: u32, by_address: bool, ace: bool) {
     a: u32 = at
     if self.node(a).kind == Kind.mutarg { a = self.node(a).a }
     if by_address && !self.is_place(a) {
@@ -2728,10 +2751,15 @@ Lw.call_arg(mut self, mut g: Args, at: u32, pt: u32, by_address: bool) {
         mut g.scalar(mut self.expr(a, int(mut self.need_type(pt))))
         return
     }
-    if self.is_big(pt) { // the address of a copy
-        mut self.covered(pt)
-        slot: int = mut self.new_slot(pt)
-        mut self.store_value(a, pt, slot, 0)
+    if self.is_big(pt) {
+        slot: int = 0
+        if ace && self.is_var_place(a) && self.unwrap(self.nty(a)) == self.unwrap(pt) {
+            slot = mut self.place_address(mut self.place(a))
+        } else { // the address of a copy
+            mut self.covered(pt)
+            slot = mut self.new_slot(pt)
+            mut self.store_value(a, pt, slot, 0)
+        }
         fail(mut g.parts.push(ir.IrPart { agg = pt, first = int(g.v.len), n = 1, addr = true }))
         fail(mut g.v.push(slot))
         g.agg = true
@@ -2833,7 +2861,7 @@ Lw.call_args(mut self, call: u32, s: u32, mut g: Args): int {
             mut g.scalar(mut self.place_address(rp))
             continue
         }
-        mut self.call_arg(mut g, a, pt, by_address)
+        mut self.call_arg(mut g, a, pt, by_address, !sy.is_extern)
         pu: u32 = self.unwrap(pt)
         if !aliasing || pu == 0 || self.ty(pu).kind != TypeKind.slice { continue }
         pp: ir.IrPart = g.parts.get(g.parts.len - 1)
@@ -4105,7 +4133,7 @@ Lw.indirect_call(mut self, x: u32, s: u32, mut res: Agg, want_res: bool, dst: in
     f: int = mut self.expr(cn.a, int(ir.IT_PTR))
     g: Args = Args.init()
     defer mut g.wipe()
-    for i: u32 in 0..cn.nkids { mut self.call_arg(mut g, self.kid(x, i), self.s.param(self.ty(ft), i), false) }
+    for i: u32 in 0..cn.nkids { mut self.call_arg(mut g, self.kid(x, i), self.s.param(self.ty(ft), i), false, false) }
     id: int = mut self.emit(ir.IR_CALLI, mut self.result_type(self.ty(ft).ret))
     mut self.fn.at(id).flags = self.null_checked()
     mut self.fn.arg_add(id, f) // the target, then the arguments

@@ -181,3 +181,7 @@
   method runs `check_mut_args` offset past `self` (C and selfhost), so a
   missing or stray mark is a sema error rather than a lowering failure, and
   `mut` arguments get the lvalue, bit-field, and const-backed checks.
+- A big plain argument to an Ace function is passed by its own place's
+  address instead of a fresh copy's (Values & Passing #2; C and selfhost,
+  #142); extern and function-value calls still copy. Selfhost `--release -c`
+  on itself runs 2.4x faster.
