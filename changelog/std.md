@@ -78,3 +78,6 @@
   and low words, lowered through a new IR op `mulh` (`umulh`; x64 `mul`).
   `math`'s Payne-Hanek reduction uses it in place of a 32-bit-half
   `mul_high`: `bench/std` sin-large 23.3 to 18.4 ns on Apple arm64.
+- `math`'s Payne-Hanek `reduce_large` is `inline` into `sin`, `cos`, and
+  their `f32` forms: `bench/std` sin-large 18.7 to 15.2 ns (2.4x to 1.9x of
+  libm) for about 1 KB of code.

@@ -467,7 +467,7 @@ inline two_over_pi_bits(k: int): u64 {
  * at a fixed position; dropping 2/pi past those 192 bits costs under 2^-137,
  * against a fraction no f64 brings below 2^-62.
  */
-reduce_large(x: f64): (f64, f64, int) {
+inline reduce_large(x: f64): (f64, f64, int) {
     raw: u64 = bitcast(u64, x)
     e: int = exponent_field(x) - 1075
     m: u64 = (raw & u64(0x000FFFFFFFFFFFFF)) | u64(0x0010000000000000)
