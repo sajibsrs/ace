@@ -33,6 +33,19 @@ pub Array[T].new(capacity: usize): (Array[T], Error) {
     return Array[T] { items = items }, null
 }
 
+/* Creates an array of `count` live elements, each `value`, from one zeroed
+ * allocation; elements are written only when `value` is not `blank(T)`. A
+ * zero count allocates nothing. `T` must support `==`.
+ */
+pub Array[T].filled(count: usize, value: T): (Array[T], Error) {
+    a: Array[T] = Array[T] {}
+    if mut a.resize(count) != null { return Array[T] {}, ArrayErr.allocation }
+    if value != blank(T) {
+        for i: usize in 0 .. count { a.items[i] = value }
+    }
+    return a, null
+}
+
 /* Releases the array's storage and leaves it empty. */
 pub inline Array[T].wipe(mut self) {
     items: mut []T = self.items

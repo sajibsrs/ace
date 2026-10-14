@@ -16,13 +16,6 @@ Func: type = ir.Func
 IrIns: type = ir.IrIns
 IrBlock: type = ir.IrBlock
 
-/* `n` copies of `v`. */
-pub filled[T](n: int, v: T): array.Array[T] {
-    a: array.Array[T] = array.Array[T] {}
-    for 0..n { fail(mut a.push(v)) }
-    return a
-}
-
 pub RaUse: struct {
     pub v: int,
     pub block: int,
@@ -150,16 +143,23 @@ pub split_critical_edges(mut fn: Func) {
  */
 emission_order(mut a: Ra, fn: Func) {
     n: int = int(fn.blocks.len)
-    a.layout = filled[int](n, 0)
-    a.eix = filled[int](n, 0)
+    err: Error = null
+    a.layout, err = array.Array[int].filled(usize(n), 0)
+    fail(err)
+    a.eix, err = array.Array[int].filled(usize(n), 0)
+    fail(err)
     for i: int in 0..n { mut a.layout.set(usize(i), a.order.get(usize(i))) }
-    pos: array.Array[int] = filled[int](n, 0)
+    pos: array.Array[int], pos_err: Error = array.Array[int].filled(usize(n), 0)
+    fail(pos_err)
     defer mut pos.wipe()
-    after: array.Array[int] = filled[int](n, -1) // latch -> its deferred header, or -1
+    after: array.Array[int], after_err: Error = array.Array[int].filled(usize(n), -1) // latch -> its deferred header, or -1
+    fail(after_err)
     defer mut after.wipe()
-    deferred: array.Array[bool] = filled[bool](n, false)
+    deferred: array.Array[bool], deferred_err: Error = array.Array[bool].filled(usize(n), false)
+    fail(deferred_err)
     defer mut deferred.wipe()
-    inl: array.Array[bool] = filled[bool](n, false)
+    inl: array.Array[bool], inl_err: Error = array.Array[bool].filled(usize(n), false)
+    fail(inl_err)
     defer mut inl.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
@@ -201,7 +201,8 @@ emission_order(mut a: Ra, fn: Func) {
         moved += 1
     }
     if moved > 0 {
-        old: array.Array[int] = filled[int](n, 0)
+        old: array.Array[int], old_err: Error = array.Array[int].filled(usize(n), 0)
+        fail(old_err)
         defer mut old.wipe()
         for i: int in 0..n { mut old.set(usize(i), a.layout.get(usize(i))) }
         k: usize = 0
@@ -219,7 +220,8 @@ emission_order(mut a: Ra, fn: Func) {
     // predecessor is a two-way branch, with each block reached only from cold
     // blocks, follows every other block in its emission order, so the common
     // path falls through its branch.
-    a.cold = filled[bool](n, false)
+    a.cold, err = array.Array[bool].filled(usize(n), false)
+    fail(err)
     ncold: int = 0
     for i: int in 1..n { // the entry stays first
         b: int = a.layout.get(usize(i))
@@ -242,7 +244,8 @@ emission_order(mut a: Ra, fn: Func) {
         if c { ncold += 1 }
     }
     if ncold > 0 {
-        old: array.Array[int] = filled[int](n, 0)
+        old: array.Array[int], old_err: Error = array.Array[int].filled(usize(n), 0)
+        fail(old_err)
         defer mut old.wipe()
         for i: int in 0..n { mut old.set(usize(i), a.layout.get(usize(i))) }
         k: usize = 0
@@ -271,10 +274,14 @@ pub layout(mut a: Ra, fn: Func) {
     npost: int = 0
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
-    seen: array.Array[bool] = filled[bool](n, false)
+    seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(usize(n), false)
+    fail(seen_err)
     defer mut seen.wipe()
-    a.order = filled[int](n, 0)
-    a.lix = filled[int](n, 0)
+    err: Error = null
+    a.order, err = array.Array[int].filled(usize(n), 0)
+    fail(err)
+    a.lix, err = array.Array[int].filled(usize(n), 0)
+    fail(err)
     fail(mut stack.push(0))
     fail(mut stack.push(0))
     mut seen.set(0, true)
@@ -297,9 +304,12 @@ pub layout(mut a: Ra, fn: Func) {
         _, _ = mut stack.pop()
         _, _ = mut stack.pop()
     }
-    a.bfirst = filled[int](n, 0)
-    a.blast = filled[int](n, 0)
-    a.idx = filled[int](int(fn.ins.len), 0)
+    a.bfirst, err = array.Array[int].filled(usize(n), 0)
+    fail(err)
+    a.blast, err = array.Array[int].filled(usize(n), 0)
+    fail(err)
+    a.idx, err = array.Array[int].filled(fn.ins.len, 0)
+    fail(err)
     k: int = 0
     for i: int in 0..n {
         b: int = a.order.get(usize(i))
@@ -316,8 +326,11 @@ pub layout(mut a: Ra, fn: Func) {
 
 /* Sets nuse; fused all clear. */
 pub count_uses(mut a: Ra, fn: Func) {
-    a.nuse = filled[int](int(fn.ins.len), 0)
-    a.fused = filled[bool](int(fn.ins.len), false)
+    err: Error = null
+    a.nuse, err = array.Array[int].filled(fn.ins.len, 0)
+    fail(err)
+    a.fused, err = array.Array[bool].filled(fn.ins.len, false)
+    fail(err)
     for bb: IrBlock in fn.blocks.view() {
         for u: int in bb.ins.view() {
             for k: u32 in 0..fn.at(u).nargs {
@@ -368,8 +381,11 @@ entry_value(op: u8): bool {
  */
 pub liveness(mut a: Ra, fn: Func) {
     nv: int = int(fn.ins.len)
-    a.start = filled[int](nv, 0)
-    a.end = filled[int](nv, 0)
+    err: Error = null
+    a.start, err = array.Array[int].filled(usize(nv), 0)
+    fail(err)
+    a.end, err = array.Array[int].filled(usize(nv), 0)
+    fail(err)
     for b: int in 0..int(fn.blocks.len) {
         for v: int in fn.block(b).ins.view() {
             x: IrIns = fn.at(v)
@@ -413,11 +429,14 @@ pub liveness(mut a: Ra, fn: Func) {
             }
         }
     }
-    first: array.Array[int] = filled[int](nv + 1, 0) // uses by value (counting sort)
+    first: array.Array[int], first_err: Error = array.Array[int].filled(usize(nv + 1), 0) // uses by value (counting sort)
+    fail(first_err)
     for u: RaUse in uses.view() { mut first.set(usize(u.v + 1), first.get(usize(u.v + 1)) + 1) }
     for v: usize in 0..usize(nv) { mut first.set(v + 1, first.get(v + 1) + first.get(v)) }
-    by: array.Array[RaUse] = filled[RaUse](int(uses.len), RaUse { v = 0, block = 0, pos = 0 })
-    fill: array.Array[int] = filled[int](nv, 0)
+    by: array.Array[RaUse] = array.Array[RaUse] {}
+    fail(mut by.resize(uses.len))
+    fill: array.Array[int], fill_err: Error = array.Array[int].filled(usize(nv), 0)
+    fail(fill_err)
     defer mut fill.wipe()
     for u: RaUse in uses.view() {
         at: usize = usize(first.get(usize(u.v)) + fill.get(usize(u.v)))
@@ -426,7 +445,8 @@ pub liveness(mut a: Ra, fn: Func) {
     }
     a.ufirst = first
     a.uses = by
-    stamp: array.Array[int] = filled[int](int(fn.blocks.len), 0)
+    stamp: array.Array[int], stamp_err: Error = array.Array[int].filled(fn.blocks.len, 0)
+    fail(stamp_err)
     defer mut stamp.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
@@ -453,8 +473,11 @@ pub allocatable(a: Ra, fn: Func, v: int): bool {
 /* Sets phi_of, calls, rtcalls, and the asm positions; hint all -1. */
 pub positions(mut a: Ra, fn: Func) {
     nv: int = int(fn.ins.len)
-    a.hint = filled[int](nv, -1)
-    a.phi_of = filled[int](nv, -1)
+    err: Error = null
+    a.hint, err = array.Array[int].filled(usize(nv), -1)
+    fail(err)
+    a.phi_of, err = array.Array[int].filled(usize(nv), -1)
+    fail(err)
     for b: int in a.order.view() {
         for u: int in fn.block(b).ins.view() {
             x: IrIns = fn.at(u)
@@ -493,10 +516,14 @@ pub positions(mut a: Ra, fn: Func) {
  */
 pub coalesce(mut a: Ra, fn: Func, t: RaTarget) {
     nv: int = int(fn.ins.len)
-    a.with = filled[int](nv, -1)
-    leads: array.Array[bool] = filled[bool](nv, false)
+    err: Error = null
+    a.with, err = array.Array[int].filled(usize(nv), -1)
+    fail(err)
+    leads: array.Array[bool], leads_err: Error = array.Array[bool].filled(usize(nv), false)
+    fail(leads_err)
     defer mut leads.wipe()
-    stamp: array.Array[int] = filled[int](int(fn.blocks.len), 0)
+    stamp: array.Array[int], stamp_err: Error = array.Array[int].filled(fn.blocks.len, 0)
+    fail(stamp_err)
     defer mut stamp.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
@@ -548,7 +575,8 @@ pub coalesce(mut a: Ra, fn: Func, t: RaTarget) {
             }
         }
     }
-    partner: array.Array[int] = filled[int](nv, 0) // a phi -> the one value computed into it + 1
+    partner: array.Array[int], partner_err: Error = array.Array[int].filled(usize(nv), 0) // a phi -> the one value computed into it + 1
+    fail(partner_err)
     defer mut partner.wipe()
     for v: int in 0..nv {
         if a.with.get(usize(v)) >= 0 { mut partner.set(usize(a.with.get(usize(v))), v + 1) }
@@ -641,8 +669,11 @@ free_in(list: []int, owner: [64]int, rt: bool, t: RaTarget, az: u32, check_rt: b
  */
 pub allocate(mut a: Ra, fn: Func, t: RaTarget) {
     nv: int = int(fn.ins.len)
-    a.reg = filled[int](nv, -1)
-    a.slot = filled[int](nv, -1)
+    err: Error = null
+    a.reg, err = array.Array[int].filled(usize(nv), -1)
+    fail(err)
+    a.slot, err = array.Array[int].filled(usize(nv), -1)
+    fail(err)
     seq: array.Array[int] = array.Array[int] {} // allocated values in start order
     defer mut seq.wipe()
     for pass: int in 0..2 { // the values arriving at entry first
@@ -656,7 +687,8 @@ pub allocate(mut a: Ra, fn: Func, t: RaTarget) {
     for r: usize in 0..64 { owner[r] = -1 }
     active: array.Array[int] = array.Array[int] {}
     defer mut active.wipe()
-    spilled: array.Array[bool] = filled[bool](nv, false)
+    spilled: array.Array[bool], spilled_err: Error = array.Array[bool].filled(usize(nv), false)
+    fail(spilled_err)
     defer mut spilled.wipe()
     for v: int in seq.view() {
         k: usize = 0

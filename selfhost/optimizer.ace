@@ -286,10 +286,10 @@ sccp(mut fn: Func) {
         }
     }
     for v: usize in 0..n { us[v + 1] += us[v] }
-    for 0..us[n] { fail(mut s.users.push(0)) }
-    fill: array.Array[int] = array.Array[int] {}
+    fail(mut s.users.resize(s.users.len + usize(us[n])))
+    fill: array.Array[int], fill_err: Error = array.Array[int].filled(n, 0)
+    fail(fill_err)
     defer mut fill.wipe()
-    for 0..n { fail(mut fill.push(0)) }
     for b: usize in 0..fn.blocks.len {
         for u: int in fn.blocks.get(b).ins.view() {
             for a: u32 in 0..fn.at(u).nargs {
@@ -525,14 +525,17 @@ gvn(mut fn: Func) {
     size: usize = 16
     for size < 2 * fn.ins.len { size *= 2 }
     g.mask = u64(size - 1)
-    for 0..size { fail(mut g.head.push(-1)) }
-    for 0..fn.ins.len { fail(mut g.repl.push(-1)) }
+    err: Error = null
+    g.head, err = array.Array[int].filled(size, -1)
+    fail(err)
+    g.repl, err = array.Array[int].filled(fn.ins.len, -1)
+    fail(err)
     idom: array.Array[int], rpo: array.Array[int] = ir.dominators(fn)
     defer mut idom.wipe()
     defer mut rpo.wipe()
-    cstart: array.Array[int] = array.Array[int] {}
+    cstart: array.Array[int], cstart_err: Error = array.Array[int].filled(usize(n + 1), 0)
+    fail(cstart_err)
     defer mut cstart.wipe()
-    for 0..n + 1 { fail(mut cstart.push(0)) }
     cs: mut []int = mut cstart.view()
     for b: int in 1..n { if idom.get(usize(b)) >= 0 { cs[idom.get(usize(b)) + 1] += 1 } }
     for b: int in 0..n { cs[b + 1] += cs[b] }
@@ -729,12 +732,12 @@ lsr(mut fn: Func) {
     idom: array.Array[int], rpo: array.Array[int] = ir.dominators(fn)
     defer mut idom.wipe()
     defer mut rpo.wipe()
-    repl: array.Array[int] = array.Array[int] {}
+    repl: array.Array[int], repl_err: Error = array.Array[int].filled(usize(nins), -1)
+    fail(repl_err)
     defer mut repl.wipe()
-    for 0..nins { fail(mut repl.push(-1)) }
-    body: array.Array[bool] = array.Array[bool] {}
+    body: array.Array[bool], body_err: Error = array.Array[bool].filled(usize(n), false)
+    fail(body_err)
     defer mut body.wipe()
-    for 0..n { fail(mut body.push(false)) }
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
     phis: array.Array[int] = array.Array[int] {}
@@ -1334,7 +1337,7 @@ vec_rewrite(mut fn: Func, L: VecLoop) {
     keep: array.Array[bool] = array.Array[bool] {} // for F > 1, field 0's computation
     defer mut keep.wipe()
     if F > 1 {
-        for 0..nold { fail(mut keep.push(false)) }
+        fail(mut keep.resize(nold))
         stack: array.Array[int] = array.Array[int] {}
         defer mut stack.wipe()
         for u: int in fn.block(L.blk[0]).ins.view() {
@@ -1531,11 +1534,11 @@ Clean.kill_block(mut self, b: int) {
 
 Clean.drop_unreachable(mut self): bool {
     n: usize = self.fn.blocks.len
-    seen: array.Array[bool] = array.Array[bool] {}
+    seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(n, false)
+    fail(seen_err)
     defer mut seen.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
-    for 0..n { fail(mut seen.push(false)) }
     fail(mut stack.push(0))
     mut seen.set(0, true)
     for stack.len > 0 {
@@ -1930,11 +1933,11 @@ has_effect(x: IrIns): bool {
 }
 
 Clean.dce(mut self): bool {
-    live: array.Array[bool] = array.Array[bool] {}
+    live: array.Array[bool], live_err: Error = array.Array[bool].filled(self.fn.ins.len, false)
+    fail(live_err)
     defer mut live.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
-    for 0..self.fn.ins.len { fail(mut live.push(false)) }
     for b: usize in 0..self.fn.blocks.len {
         for v: int in self.fn.blocks.get(b).ins.view() {
             if has_effect(self.fn.at(v)) {
@@ -2012,8 +2015,10 @@ Clean.compact(mut self) {
 cleanup(mut fn: Func) {
     c: Clean = Clean { fn = mut &fn, dead = array.Array[bool] {}, repl = array.Array[int] {} }
     defer mut c.wipe()
-    for 0..fn.blocks.len { fail(mut c.dead.push(false)) }
-    for 0..fn.ins.len { fail(mut c.repl.push(-1)) }
+    fail(mut c.dead.resize(fn.blocks.len))
+    err: Error = null
+    c.repl, err = array.Array[int].filled(fn.ins.len, -1)
+    fail(err)
     changed: bool = true
     for changed {
         changed = mut c.fold_branches()

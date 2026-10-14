@@ -861,7 +861,7 @@ Sema.set_field(mut self, t: SType, i: u32, f: SField) {
 /* `n` blank fields, contiguous before any nested type claims its own; the first. */
 Sema.new_fields(mut self, n: u32): u32 {
     first: u32 = u32(self.fields.len)
-    for 0..n { fail(mut self.fields.push(SField {})) }
+    fail(mut self.fields.resize(self.fields.len + usize(n)))
     return first
 }
 
@@ -2103,7 +2103,7 @@ Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
     nargs: u32 = n.nkids
     if n.b != 0 { nargs = 1 }
     targs: u32 = u32(self.params.len)
-    for 0..nargs { fail(mut self.params.push(0)) }
+    fail(mut self.params.resize(self.params.len + usize(nargs)))
     for i: u32 in 0..nargs {
         w: u32 = n.b
         if w == 0 { w = self.kid(e, i) }
@@ -4498,9 +4498,9 @@ Sema.check_structlit(mut self, lit: u32, want: u32) {
     l: Node = self.node(lit)
     n: u32 = l.nkids
     positional: bool = n > 0 && self.node(self.kid(lit, 0)).text.len == 0
-    seen: array.Array[bool] = array.Array[bool] {}
+    seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(usize(w.nfields), false)
+    fail(seen_err)
     defer mut seen.wipe()
-    for 0..w.nfields { fail(mut seen.push(false)) }
     for i: u32 in 0..n {
         fid: u32 = self.kid(lit, i)
         fi: Node = self.node(fid)
@@ -4555,9 +4555,9 @@ Sema.check_structlit(mut self, lit: u32, want: u32) {
 /* A bits literal: named fields only; omitted ones stay zero. */
 Sema.check_bitslit(mut self, lit: u32, want: u32) {
     w: SType = self.ty(want)
-    seen: array.Array[bool] = array.Array[bool] {}
+    seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(usize(w.nfields), false)
+    fail(seen_err)
     defer mut seen.wipe()
-    for 0..w.nfields { fail(mut seen.push(false)) }
     for i: u32 in 0..self.node(lit).nkids {
         fid: u32 = self.kid(lit, i)
         fi: Node = self.node(fid)
@@ -4653,9 +4653,9 @@ Sema.check_keyed_arraylit(mut self, lit: u32, want: u32) {
         mut self.err(lit, ["keys apply only to an enum-indexed array, not ", mut self.type_name(want)])
         return
     }
-    seen: array.Array[bool] = array.Array[bool] {}
+    seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(usize(w.count), false)
+    fail(seen_err)
     defer mut seen.wipe()
-    for 0..w.count { fail(mut seen.push(false)) }
     ok: bool = true
     for i: u32 in 0..self.node(lit).nkids {
         en: Node = self.node(self.kid(lit, i))
@@ -4918,7 +4918,7 @@ pub Sema.build_type(mut self, id: u32): u32 {
         Kind.func_t {
             mut self.check_param_count(id, t.nkids, false)
             f: SType = SType { kind = TypeKind.func, is_c_abi = (t.flags & parser.F_CABI) != 0, params = u32(self.params.len), nparams = t.nkids }
-            for 0..t.nkids { fail(mut self.params.push(0)) }
+            fail(mut self.params.resize(self.params.len + usize(t.nkids)))
             for i: u32 in 0..t.nkids {
                 p: u32 = mut self.build_type(self.kid(id, i))
                 mut self.params.set(usize(f.params + i), p)
@@ -6209,7 +6209,7 @@ Sema.check_generic_call(mut self, call: u32): u32 {
     nargs: u32 = ix.nkids
     if ix.b != 0 { nargs = 1 }
     targs: u32 = u32(self.params.len)
-    for 0..nargs { fail(mut self.params.push(0)) }
+    fail(mut self.params.resize(self.params.len + usize(nargs)))
     for i: u32 in 0..nargs {
         w: u32 = ix.b
         if w == 0 { w = self.kid(callee, i) }
@@ -6614,9 +6614,9 @@ Sema.union_base_type(mut self, base: u32): u32 {
  * covered once, or `default` covers the rest.
  */
 Sema.check_union_switch(mut self, s: u32, u: u32) {
-    covered: array.Array[bool] = array.Array[bool] {}
+    covered: array.Array[bool], covered_err: Error = array.Array[bool].filled(usize(self.ty(u).nfields), false)
+    fail(covered_err)
     defer mut covered.wipe()
-    for 0..self.ty(u).nfields { fail(mut covered.push(false)) }
     has_default: bool = false
     for i: u32 in 0..self.node(s).nkids {
         c: u32 = self.kid(s, i)
@@ -9023,7 +9023,7 @@ Sema.build_func_type(mut self, f: u32, bound: bool, args: u32, nargs: u32): u32 
         }
     }
     ft: SType = SType { kind = TypeKind.func, params = u32(self.params.len), nparams = n.nkids }
-    for 0..n.nkids { fail(mut self.params.push(0)) }
+    fail(mut self.params.resize(self.params.len + usize(n.nkids)))
     for i: u32 in 0..n.nkids {
         pk: u32 = self.kid(f, i)
         p: u32 = mut self.build_type(self.node(pk).a)
@@ -9224,7 +9224,7 @@ Sema.bind_specialization(mut self, s: u32, head: u32) {
     n: Node = self.node(f)
     nargs: u32 = self.node(n.c).nkids
     targs: u32 = u32(self.params.len)
-    for 0..nargs { fail(mut self.params.push(0)) }
+    fail(mut self.params.resize(self.params.len + usize(nargs)))
     for i: u32 in 0..nargs {
         a: u32 = mut self.build_type_or_void(self.kid(n.c, i))
         mut self.params.set(usize(targs + i), a)

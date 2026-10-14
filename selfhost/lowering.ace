@@ -2240,7 +2240,7 @@ hash_plan(s: sema.Sema, ms: u32, strings: bool, mut slots: array.Array[u32]): (u
     for size < want { size <<= 1 }
     for {
         mut slots.truncate(0)
-        for 0..size { fail(mut slots.push(0)) }
+        fail(mut slots.resize(usize(size)))
         for seed: u64 in 0..1000000 {
             for j: u32 in 0..size { mut slots.set(usize(j), 0) }
             collision: bool = false

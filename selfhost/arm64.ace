@@ -199,7 +199,7 @@ agg_words(mut c: Cc, lv: ir.Leaves, n: int, first: int, mut out: array.Array[Loc
  * ends past the memory the leaves need.
  */
 assign_leaves(s: sema.Sema, mut c: Cc, t: []u8, parts: []IrPart, has_parts: bool, varargs_from: int, mut out: array.Array[Loc]): u32 {
-    for 0..t.len { fail(mut out.push(Loc {})) }
+    fail(mut out.resize(out.len + t.len))
     np: int = int(t.len)
     if has_parts { np = int(parts.len) }
     for p: int in 0..np {
@@ -426,7 +426,8 @@ fold_address(s: sema.Sema, fn: Func, a: Ra, u: int): bool {
  * operand, 1 + its index (the caller's to wipe).
  */
 pub fuse(s: sema.Sema, fn: Func, mut a: Ra): array.Array[u8] {
-    madd: array.Array[u8] = regalloc.filled[u8](int(fn.ins.len), 0)
+    madd: array.Array[u8], madd_err: Error = array.Array[u8].filled(fn.ins.len, 0)
+    fail(madd_err)
     for b: int in 0..int(fn.blocks.len) {
         for u: int in fn.block(b).ins.view() {
             x: IrIns = fn.at(u)
@@ -1211,7 +1212,9 @@ A64.epilogue(mut self) {
 
 /* Lays out the stack objects above the spill slots; returns the frame size. */
 A64.place_objects(mut self): u32 {
-    self.obj = regalloc.filled[u32](int(self.fn.ins.len), 0)
+    err: Error = null
+    self.obj, err = array.Array[u32].filled(self.fn.ins.len, 0)
+    fail(err)
     at: u32 = self.slot_base + 8 * u32(self.ra.nslots)
     if self.nsave != 0 {
         self.save_at = at
@@ -2634,7 +2637,9 @@ pub func(s: sema.Sema, mut o: macho.Obj, mut fn: Func, name: string, global: boo
     a.has_frame = a.ra.calls.len > 0 || a.ra.rtcalls.len > 0 || a.ra.nslots > 0 || a.cs.len > 0 || a.nsave > 0 || (a.ra.asm_all & (u32(3) << 29)) != 0
     a.frame = mut a.place_objects()
     if !a.has_frame { a.frame = 0 }
-    a.label = regalloc.filled[u32](int(fn.blocks.len), 0)
+    err: Error = null
+    a.label, err = array.Array[u32].filled(fn.blocks.len, 0)
+    fail(err)
 
     for usize(o.here()) % FUNC_ALIGN != 0 { mut a.put(NOP) }
     start: u32 = a.here()

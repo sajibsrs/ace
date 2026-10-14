@@ -70,3 +70,7 @@
 - `Array[T].resize(count): Error` sets the length, appending `blank(T)`
   elements (from `mem.zalloc` when the array has no storage) or dropping the
   tail.
+- Added `Array[T].filled(count, value): (Array[T], Error)`: one `resize`
+  allocation, element writes only for a non-blank `value`. selfhost's
+  `regalloc.filled` and its push-in-a-loop fills use it or `resize`:
+  `--release -c` on itself 0.69 → 0.65 s.

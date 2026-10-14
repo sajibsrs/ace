@@ -112,5 +112,15 @@ main(): int {
     err = mut z.resize(100)
     r += check(err == null && z.len == 100 && z.get(99).y == 0, 27)
     mut z.wipe()
+
+    // filled: a non-blank value is written, a blank one comes zeroed, zero allocates nothing
+    f: array.Array[int], ferr: Error = array.Array[int].filled(5, -1)
+    r += check(ferr == null && f.len == 5 && f.get(0) == -1 && f.get(4) == -1, 28)
+    mut f.wipe()
+    g: array.Array[bool], gerr: Error = array.Array[bool].filled(3, false)
+    r += check(gerr == null && g.len == 3 && !g.get(2), 29)
+    mut g.wipe()
+    e: array.Array[int], eerr: Error = array.Array[int].filled(0, 7)
+    r += check(eerr == null && e.len == 0, 30)
     return r
 }

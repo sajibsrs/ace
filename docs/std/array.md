@@ -13,6 +13,11 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
 - `Array[T].new(capacity: usize): (Array[T], Error)` creates an empty array
   with room for `capacity` elements. Zero allocates nothing. Failure returns
   `ArrayErr.allocation`.
+- `Array[T].filled(count: usize, value: T): (Array[T], Error)` creates
+  `count` live copies of `value` in one zeroed allocation, writing elements
+  only when `value` is not `blank(T)`, so a zero fill costs one `mem.zalloc`.
+  `T` must support `==`; a blank fill of any type is `resize` on an empty
+  array. Failure returns `ArrayErr.allocation`.
 - `wipe()` releases the storage and leaves the array empty.
 - `push(value: T): Error` appends, growing when full. Failure returns
   `ArrayErr.allocation` and leaves the array unchanged.
