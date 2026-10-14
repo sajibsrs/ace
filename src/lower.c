@@ -336,7 +336,7 @@ static uint64_t def_key(int b, int var) { return ((uint64_t)(uint32_t)b << 32) |
 
 static size_t def_slot(const DefMap* m, uint64_t k) {
     uint64_t h = k * UINT64_C(0x9E3779B97F4A7C15);
-    return (size_t)(h >> 20) & (m->cap - 1);
+    return (size_t)(h >> (64 - __builtin_ctzll(m->cap))); // top bits: they mix in both b and var
 }
 
 static void def_put(DefMap* m, uint64_t k, int v) {

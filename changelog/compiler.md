@@ -1,5 +1,9 @@
 # Compiler
 
+- Lowering's (block, variable) definition map takes its slot from the top
+  bits of the multiplicative hash; the middle bits it used ignored the block,
+  so each variable's definitions shared one probe chain. The C compiler builds
+  selfhost 1.21x faster (0.565 → 0.466 s).
 - A `pub` declaration in a directory module's implementation file is visible
   to its nested modules' files too, as the loader already let them import it;
   sema compared module roots for equality and reported the call as a generic
