@@ -236,6 +236,7 @@ pub Sema: struct {
     t_byte_slice: u32 = 0,              // []u8 and mut []u8, the memory builtins' views
     t_mut_byte_slice: u32 = 0,
     prims: u32 = 0,                     // the first of the 14 primitives, in P_ order
+    pub auto_seen: map.Map[u32, int],   // lowering: an auto-inline candidate -> size + 2 when it expands, 1 when it stays a call
     ik: InitCk,                         // the definite-initialization walk of one function
     pub unsupported: string = "",       // a construct not yet ported, when nonempty
 }
@@ -243,7 +244,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, origin = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, origin = map.Map[u32, u32] {}, identities = map.Map[u32, u32] {}, auto_seen = map.Map[u32, int] {}, ik = blank(InitCk) }
     fail(mut s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(mut s.types.push(SType { kind = TypeKind.err }))
     s.t_err = mut s.new_type(SType { kind = TypeKind.err })
@@ -292,6 +293,7 @@ pub Sema.wipe(mut self) {
     mut self.fparts.wipe()
     mut self.origin.wipe()
     mut self.identities.wipe()
+    mut self.auto_seen.wipe()
     mut self.ik.wipe()
     mut self.files.wipe()
     mut self.imports.wipe()

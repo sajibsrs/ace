@@ -194,3 +194,6 @@
 - selfhost's auto-inline size counts the dereference C's sema makes explicit
   in `p.m()` (one node per pointer level), so a function at the 24-node
   budget expands in both compilers or neither (`tests/ir/auto_inline_pointer_receiver`).
+- selfhost keeps each auto-inline verdict per declaration (1 stays a call, size
+  + 2 expands), as `lower.c`'s `auto_inline_seen` does, replacing the
+  call-chain re-measure: `--release -c` on itself ~2%.
