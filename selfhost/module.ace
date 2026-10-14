@@ -1480,10 +1480,15 @@ Loader.merge(mut self) {
 
 /* The module whose file holds node `id` of the merged tree. */
 pub Loader.module_of(self, id: u32): usize {
+    ms: []Module = self.mods.view() // view: get would copy the whole Module
     best: usize = 0
+    bf: u32 = ms[0].first
     for mi: usize in self.order.view() {
-        first: u32 = self.mods.get(mi).first
-        if first <= id && first > self.mods.get(best).first { best = mi }
+        first: u32 = ms[mi].first
+        if first <= id && first > bf {
+            best = mi
+            bf = first
+        }
     }
     return best
 }

@@ -177,3 +177,6 @@
   that would overwrite an input, passes `.o`/`.a`/`-L`/`-l`/`-framework` to
   `cc` through `exec.spawn`, and reports as C's driver does. `check.sh` builds
   selfhost with itself and runs every check with that stage-2 binary.
+- selfhost's `Loader.module_of` reads modules through a view instead of
+  copying each `Module` (#144): `--check` on `selfhost/main.ace` runs 3.1x
+  faster, `--release --ir` 2.2x.
