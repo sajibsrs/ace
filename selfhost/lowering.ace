@@ -165,7 +165,7 @@ Lw: struct {
     gesc: array.Array[GenEscape],       // the same for a generic one, per instantiation
     want: u32 = 0,                      // the scan's parameter, or 0 for every local
     hit: bool = false,                  // whether the scan found `want` needing storage
-    in_defer: bool = false,             // scanning under a defer, whose call is never expanded
+    in_defer: bool = false,             // scanning under a defer, whose captured addresses need storage
     scan_auto: bool = false,            // the scan: release auto-inline calls expand (no self tail loop can stop them)
     self_head: int = -1,                // release self tail recursion: the loop head block, or -1
 }
@@ -634,6 +634,15 @@ Lw.root_local(self, at: u32): u32 {
     return s
 }
 
+/* Whether `x` names a local directly: a deferred call re-lowers it at exit
+ * rather than capturing its address (defer_arg).
+ */
+Lw.plain_local(self, x: u32): bool {
+    if self.node(x).kind != Kind.ident { return false }
+    s: u32 = self.nsym(x)
+    return s != 0 && self.s.sym(s).kind == sema.SymKind.var && !self.s.sym(s).is_global
+}
+
 /* Records that local `x` names needs storage: for every local, or whether it
  * is the scanned parameter.
  */
@@ -647,7 +656,6 @@ Lw.need_storage(mut self, x: u32) {
  * type arguments its body is stamped under; 0 when none.
  */
 Lw.scan_target(mut self, x: u32): (u32, u32, u32) {
-    if self.in_defer { return 0, 0, 0 }
     f: u32, args: u32, nargs: u32 = self.inline_target(x)
     if f == 0 || self.node(f).b == 0 || ((self.node(f).flags & parser.F_INLINE) == 0 && !self.scan_auto) { return 0, 0, 0 }
     return f, args, nargs
@@ -728,13 +736,13 @@ Lw.scan_walk(mut self, at: u32) {
         esc: u64 = ESC_ALL
         if f != 0 { esc = mut self.scan_escapes(f, args, nargs) }
         recv: bool = n.a != 0 && self.node(n.a).kind == Kind.selector && !self.assoc_call(at) && !self.field_call(at)
-        if recv && (esc & 1) != 0 && !self.is_pointer(self.node(n.a).a) { mut self.need_storage(self.node(n.a).a) } // p.m() is (*p).m()
+        if recv && ((esc & 1) != 0 || (self.in_defer && !self.plain_local(self.node(n.a).a))) && !self.is_pointer(self.node(n.a).a) { mut self.need_storage(self.node(n.a).a) } // p.m() is (*p).m()
         for i: u32 in 0..n.nkids {
             k: u32 = self.kid(at, i)
             p: u64 = u64(i)
             if recv { p += 1 }
             if p > 63 { p = 63 }
-            if self.node(k).kind == Kind.mutarg && ((esc >> p) & 1) != 0 { mut self.need_storage(self.node(k).a) }
+            if self.node(k).kind == Kind.mutarg && (((esc >> p) & 1) != 0 || (self.in_defer && !self.plain_local(self.node(k).a))) { mut self.need_storage(self.node(k).a) }
         }
         mut self.scan_walk(n.a)
         mut self.scan_walk(n.b)
@@ -5331,7 +5339,7 @@ Lw.is_literal(self, x: u32): bool {
 }
 
 /* Captures argument `a` of a deferred call: its storage's address when
- * by_address, else its value, in a slot when a receiver reads it by address.
+ * by_address (a plain local stays uncaptured, its storage being fixed), else its value, in a slot when a receiver reads it by address.
  */
 Lw.defer_arg(mut self, a: u32, by_address: bool, in_slot: bool) {
     inner: u32 = a
@@ -5339,6 +5347,7 @@ Lw.defer_arg(mut self, a: u32, by_address: bool, in_slot: bool) {
     _ = mut self.captured.unset(inner) // a defer lowered again captures afresh
     t: u32 = self.nty(inner)
     if by_address {
+        if self.plain_local(inner) { return } // its storage never moves: re-lowered at exit, it stays promotable
         p: Place = mut self.place(inner)
         addr: int = mut self.place_address(p)
         fail(mut self.captured.set(inner, Capture { var = mut self.var_new(0, ir.IT_VOID, addr), t = p.t }))

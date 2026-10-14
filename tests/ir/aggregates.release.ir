@@ -52,30 +52,24 @@ b0:
     %11 = add i64 %9, %10
     %12 = const i64 0
     %13 = lt bool %11, %12
-    br %13, b2, b3
-b1: ; preds b2, b3
-    %15 = phi i64 [%20, b2], [%11, b3]
-    %16 = phi u64 [%25, b2], [%27, b3]
-    %17 = const u64 0
-    %18 = ne bool %16, %17
-    br %18, b4, b5
-b2: ; preds b0
-    %20 = const i64 0
-    %21 = const u64 4294967296
-    %22 = cast i32 %11
-    %23 = cast u32 %22
-    %24 = cast u64 %23
-    %25 = or u64 %21, %24
-    jmp b1
-b3: ; preds b0
-    %27 = const u64 0
-    jmp b1
-b4: ; preds b1
-    %29 = cast i32 %16
-    %30 = cast i64 %29
-    ret %30
-b5: ; preds b1
-    %32 = sub i64 %15, %2
-    ret %32
+    br %13, b1, b3
+b1: ; preds b0
+    %15 = const i64 0
+    %16 = const u64 4294967296
+    %17 = cast i32 %11
+    %18 = cast u32 %17
+    %19 = cast u64 %18
+    %20 = or u64 %16, %19
+    %21 = const u64 0
+    %22 = ne bool %20, %21
+    br %22, b2, b3
+b2: ; preds b1
+    %24 = cast i32 %20
+    %25 = cast i64 %24
+    ret %25
+b3: ; preds b1, b0
+    %27 = phi i64 [%15, b1], [%11, b0]
+    %28 = sub i64 %27, %2
+    ret %28
 }
 

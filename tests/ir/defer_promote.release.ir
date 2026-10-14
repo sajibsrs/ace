@@ -1,0 +1,89 @@
+fill(u64): i64 {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = slot ptr 16, 8
+    %2 = param u64 0
+    %3 = const ptr 0
+    %4 = const u64 0
+    %5 = const u64 0
+    %6 = const u64 0
+    jmp b1
+b1: ; preds b0, b5
+    %8 = phi u64 [%6, b0], [%37, b5]
+    %9 = phi u64 [%5, b0], [%35, b5]
+    %10 = phi u64 [%4, b0], [%31, b5]
+    %11 = phi ptr [%3, b0], [%30, b5]
+    %12 = lt bool %8, %2
+    br %12, b2, b3
+b2: ; preds b1
+    %14 = eq bool %9, %10
+    br %14, b4, b5
+b3: ; preds b1
+    %16 = cast i64 %9
+    store [%0], %11
+    store [%0 + 8], %10
+    %19 = load ptr [%0]
+    %20 = const ptr 0
+    %21 = ne bool %19, %20
+    br %21, b9, b10
+b4: ; preds b2
+    %23 = const u64 1
+    %24 = add u64 %9, %23
+    %25 = call.cold {3} mem$grow(%11, %10, %24)
+    %26 = proj ptr %25, 0
+    %27 = proj u64 %25, 1
+    %28 = proj bool %25, 2
+    br %28, b5, b6
+b5: ; preds b2, b4
+    %30 = phi ptr [%11, b2], [%26, b4]
+    %31 = phi u64 [%10, b2], [%27, b4]
+    %32 = padd ptr %30, %9 * 8
+    store [%32], %8
+    %34 = const u64 1
+    %35 = add u64 %9, %34
+    %36 = const u64 1
+    %37 = add u64 %8, %36
+    jmp b1
+b6: ; preds b4
+    %39 = const i64 1
+    store [%1], %11
+    store [%1 + 8], %10
+    %42 = load ptr [%1]
+    %43 = const ptr 0
+    %44 = ne bool %42, %43
+    br %44, b7, b8
+b7: ; preds b6
+    call @_free(%42)
+    jmp b8
+b8: ; preds b6, b7
+    %48 = const ptr 0
+    %49 = const u64 0
+    store [%1], %48
+    store [%1 + 8], %49
+    ret %39
+b9: ; preds b3
+    call @_free(%19)
+    jmp b10
+b10: ; preds b3, b9
+    %55 = const ptr 0
+    %56 = const u64 0
+    store [%0], %55
+    store [%0 + 8], %56
+    ret %16
+}
+
+main(): i64 {
+b0:
+    %0 = const u64 4
+    %1 = call i64 fill(%0)
+    %2 = const i64 4
+    %3 = ne bool %1, %2
+    br %3, b1, b2
+b1: ; preds b0
+    %5 = const i64 1
+    ret %5
+b2: ; preds b0
+    %7 = const i64 0
+    ret %7
+}
+

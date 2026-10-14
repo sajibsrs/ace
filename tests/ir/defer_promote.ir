@@ -1,0 +1,129 @@
+fill(u64): i64 {
+b0:
+    %0 = slot ptr 16, 8
+    %1 = slot ptr 16, 8
+    %2 = param u64 0
+    %3 = const ptr 0
+    %4 = const u64 0
+    %5 = const u64 0
+    %6 = const u64 0
+    jmp b1
+b1: ; preds b0, b4
+    %8 = phi u64 [%6, b0], [%24, b4]
+    %9 = phi u64 [%5, b0], [%29, b4]
+    %10 = phi u64 [%4, b0], [%28, b4]
+    %11 = phi ptr [%3, b0], [%27, b4]
+    %12 = lt bool %8, %2
+    br %12, b2, b3
+b2: ; preds b1
+    %14 = eq bool %9, %10
+    br %14, b6, b7
+b3: ; preds b1
+    %16 = cast i64 %9
+    store [%0], %11
+    store [%0 + 8], %10
+    %19 = load ptr [%0]
+    %20 = const ptr 0
+    %21 = ne bool %19, %20
+    br %21, b16, b17
+b4: ; preds b11
+    %23 = const u64 1
+    %24 = add u64 %8, %23
+    jmp b1
+b5: ; preds b8, b7
+    %26 = phi u64 [%50, b8], [%48, b7]
+    %27 = phi ptr [%11, b8], [%40, b7]
+    %28 = phi u64 [%10, b8], [%41, b7]
+    %29 = phi u64 [%9, b8], [%47, b7]
+    %30 = const u64 0
+    %31 = ne bool %26, %30
+    br %31, b10, b11
+b6: ; preds b2
+    %33 = const u64 1
+    %34 = add.chk u64 %9, %33
+    %35 = call.cold {3} mem$grow(%11, %10, %34)
+    %36 = proj ptr %35, 0
+    %37 = proj u64 %35, 1
+    %38 = proj bool %35, 2
+    br %38, b9, b8
+b7: ; preds b2, b9
+    %40 = phi ptr [%11, b2], [%36, b9]
+    %41 = phi u64 [%10, b2], [%37, b9]
+    %42 = lt bool %9, %41
+    check %42, 86:16 bounds violation
+    %44 = padd ptr %40, %9 * 8
+    store [%44], %8
+    %46 = const u64 1
+    %47 = add.chk u64 %9, %46
+    %48 = const u64 0
+    jmp b5
+b8: ; preds b6
+    %50 = const u64 4294967297
+    jmp b5
+b9: ; preds b6
+    jmp b7
+b10: ; preds b5
+    %53 = const i64 1
+    store [%1], %27
+    store [%1 + 8], %28
+    %56 = load ptr [%1]
+    %57 = const ptr 0
+    %58 = ne bool %56, %57
+    br %58, b13, b14
+b11: ; preds b5
+    jmp b4
+b12: ; preds b14
+    ret %53
+b13: ; preds b10
+    %62 = load u64 [%1 + 8]
+    %63 = const u64 8
+    %64 = mul u64 %62, %63
+    call @__ace$registry_remove(%56, %64)
+    call @_free(%56)
+    jmp b14
+b14: ; preds b10, b13
+    %68 = const ptr 0
+    %69 = const u64 0
+    store [%1], %68
+    store [%1 + 8], %69
+    %72 = const ptr 0
+    %73 = const u64 0
+    %74 = const u64 0
+    jmp b12
+b15: ; preds b17
+    ret %16
+b16: ; preds b3
+    %77 = load u64 [%0 + 8]
+    %78 = const u64 8
+    %79 = mul u64 %77, %78
+    call @__ace$registry_remove(%19, %79)
+    call @_free(%19)
+    jmp b17
+b17: ; preds b3, b16
+    %83 = const ptr 0
+    %84 = const u64 0
+    store [%0], %83
+    store [%0 + 8], %84
+    %87 = const ptr 0
+    %88 = const u64 0
+    %89 = const u64 0
+    jmp b15
+}
+
+main(): i64 {
+b0:
+    %0 = const u64 4
+    %1 = call i64 fill(%0)
+    %2 = const i64 4
+    %3 = ne bool %1, %2
+    br %3, b1, b2
+b1: ; preds b0
+    %5 = const i64 1
+    call @__ace$registry_leaks()
+    ret %5
+b2: ; preds b0
+    %8 = const i64 0
+    call @__ace$registry_leaks()
+    ret %8
+}
+

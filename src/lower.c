@@ -80,7 +80,7 @@ typedef struct {
     struct GenEscape* gesc; // the same for a generic one, per instantiation
     int         ngesc, cgesc;
     int         scan_auto; // scan_storage: release auto-inline calls expand (no self tail loop can stop them)
-    int         in_defer;  // scan_storage: under a defer, whose call is never expanded
+    int         in_defer;  // scan_storage: under a defer, whose captured addresses need storage
     IrType*     vtype;
     int*        home;      // variable -> the address value it lives at, or -1 (SSA)
     int         chome;
@@ -514,6 +514,13 @@ static Sym* root_local(Node* x) {
     return s && s->kind == SYM_VAR && !s->is_global ? s : NULL;
 }
 
+// A local named directly: a deferred call re-lowers it at exit rather than
+// capturing its address (defer_arg).
+static int plain_local(Node* x) {
+    Sym* s = x && x->kind == N_IDENT ? node_sym(x) : NULL;
+    return s && s->kind == SYM_VAR && !s->is_global;
+}
+
 // A storage scan: marks each local whose storage the body needs, or, with want
 // set, only records whether want's is needed.
 typedef struct {
@@ -534,7 +541,6 @@ static uint64_t scan_escapes(Lw* l, Node* f, SType** targs, int ntargs);
 // The inline declaration a call expands, as lowering will decide, with the
 // type arguments its body is stamped under, or NULL.
 static Node* scan_target(Lw* l, Node* call, SType*** targs, int* ntargs) {
-    if (l->in_defer) return NULL;
     Node* f = inline_target(l, call, targs, ntargs);
     if (!f || !f->b || (!(f->flags & F_INLINE) && !l->scan_auto)) return NULL;
     return f;
@@ -563,10 +569,11 @@ static void scan_walk(Lw* l, Scan* sc, Node* n) {
         Node* f = scan_target(l, n, &targs, &ntargs);
         uint64_t esc = f ? scan_escapes(l, f, targs, ntargs) : ~(uint64_t)0;
         int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_ASSOC | F_FIELDCALL));
-        if (recv && (esc & 1)) need_storage(l, sc, n->a->a);
+        if (recv && ((esc & 1) || (l->in_defer && !plain_local(n->a->a)))) need_storage(l, sc, n->a->a);
         for (int i = 0; i < n->nkids; i++) {
             int p = recv + i;
-            if (n->kids[i]->kind == N_MUTARG && (esc >> (p < 63 ? p : 63) & 1)) need_storage(l, sc, n->kids[i]->a);
+            if (n->kids[i]->kind == N_MUTARG && ((esc >> (p < 63 ? p : 63) & 1) || (l->in_defer && !plain_local(n->kids[i]->a))))
+                need_storage(l, sc, n->kids[i]->a);
         }
         scan_walk(l, sc, n->a);
         scan_walk(l, sc, n->b);
@@ -4122,14 +4129,15 @@ static int is_literal(Node* x) {
     return s && s->kind == SYM_VAR && s->is_global && s->is_const; // never changes
 }
 
-// Argument a of the deferred call, captured: its storage's address when byaddr,
-// else its value, in memory when a receiver reads it by address; the name the
+// Argument a of the deferred call, captured: its storage's address when byaddr
+// (a plain local itself, its storage being fixed), else its value, in memory when a receiver reads it by address; the name the
 // exit-time call reads in its place.
 static Node* defer_arg(Lw* l, Node* a, int byaddr, int in_slot) {
     Node* inner = a->kind == N_MUTARG ? a->a : a;
     SType* t = node_ty(inner);
     Node* id;
     if (byaddr) {
+        if (plain_local(inner)) return a; // its storage never moves: re-lowered at exit, it stays promotable
         Place p = place(l, inner);
         id = defer_name(inner, p.t);
         var_new(l, node_sym(id), IT_VOID, place_address(l, p));

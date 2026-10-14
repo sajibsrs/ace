@@ -1,5 +1,9 @@
 # Compiler
 
+- A deferred call's `mut` argument or receiver that names a local directly is
+  lowered again at each exit instead of captured by address, so the local stays
+  in registers. Branch threading also accepts a merge whose phis are used under
+  its other successor when only the merge enters it. `array-push` 2.2x faster.
 - Lowering's (block, variable) definition map takes its slot from the top
   bits of the multiplicative hash; the middle bits it used ignored the block,
   so each variable's definitions shared one probe chain. The C compiler builds

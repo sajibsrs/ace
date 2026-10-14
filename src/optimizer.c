@@ -1492,15 +1492,17 @@ static int use_owner(const IrFunc* fn, const IrIns* x, int a) {
     return x->op == IR_PHI ? fn->blocks[x->block].preds[a] : x->block;
 }
 
-// Whether every use of j's phi v outside j is owned by s.
-static int phi_uses_in(const IrFunc* fn, int v, int j, int s) {
+// Whether every use of j's phi v outside j is owned by s, or by a block t
+// dominates (t >= 0: j's other successor, which only j enters, so every path
+// there still passes j).
+static int phi_uses_in(const IrFunc* fn, const int* idom, int v, int j, int s, int t) {
     for (int b = 0; b < fn->nblocks; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             const IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
             for (int a = 0; a < x->nargs; a++) {
                 if (x->args[a] != v) continue;
                 int o = use_owner(fn, x, a);
-                if (o != j && o != s) return 0;
+                if (o != j && o != s && (t < 0 || (o != t && idom[o] < 0) || !ir_dominates(idom, t, o))) return 0;
             }
         }
     return 1;
@@ -1570,10 +1572,11 @@ static int thread_branches(Clean* c) {
             int s = jb->succ[r ? 0 : 1];
             IrBlock* sb = &fn->blocks[s];
             if (s == j || sb->npreds != 1 || (sb->nins && fn->ins[sb->ins[0]].op == IR_PHI)) continue;
-            int fine = 1;
-            for (int q = 0; q < k && fine; q++) fine = phi_uses_in(fn, jb->ins[q], j, s);
-            if (!fine) continue;
             if (!idom) idom = ir_dominators(fn, &rpo, &nrpo);
+            int t = jb->succ[r ? 1 : 0], fine = 1;
+            if (t == s || fn->blocks[t].npreds != 1) t = -1;
+            for (int q = 0; q < k && fine; q++) fine = phi_uses_in(fn, idom, jb->ins[q], j, s, t);
+            if (!fine) continue;
             int header = 0;
             for (int q = 0; q < jb->npreds && !header; q++) header = idom[jb->preds[q]] >= 0 && ir_dominates(idom, j, jb->preds[q]);
             if (header) break;

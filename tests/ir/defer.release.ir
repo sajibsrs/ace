@@ -80,24 +80,15 @@ b0:
 
 address(): i64 {
 b0:
-    %0 = slot ptr 8, 8
-    %1 = const i64 1
-    store [%0], %1
-    %3 = load i64 [%0]
-    %4 = const i64 2
-    store [%0], %4
-    %6 = load i64 [%0]
-    %7 = const i64 5
-    %8 = load i64 [%0]
-    %9 = add i64 %8, %7
-    store [%0], %9
-    %11 = global ptr total
-    %12 = load i64 [%11]
-    %13 = const i64 10
-    %14 = mul i64 %12, %13
-    %15 = add i64 %14, %3
-    store [%11], %15
-    ret %6
+    %0 = const i64 1
+    %1 = const i64 2
+    %2 = global ptr total
+    %3 = load i64 [%2]
+    %4 = const i64 10
+    %5 = mul i64 %3, %4
+    %6 = add i64 %5, %0
+    store [%2], %6
+    ret %1
 }
 
 paths(i64): i64 {
@@ -160,44 +151,31 @@ b4: ; preds b2
 fall_off(i64): void {
 b0:
     %0 = slot ptr 8, 8
-    %1 = slot ptr 8, 8
-    %2 = param i64 0
-    store [%1], %2
-    %4 = load i64 [%1]
-    store [%0], %4
-    %6 = const i64 9
-    store [%1], %6
-    %8 = global ptr total
-    %9 = load i64 [%8]
-    %10 = const i64 10
-    %11 = mul i64 %9, %10
-    %12 = load i64 [%0]
-    %13 = add i64 %11, %12
-    store [%8], %13
+    %1 = param i64 0
+    store [%0], %1
+    %3 = global ptr total
+    %4 = load i64 [%3]
+    %5 = const i64 10
+    %6 = mul i64 %4, %5
+    %7 = load i64 [%0]
+    %8 = add i64 %6, %7
+    store [%3], %8
     ret
 }
 
 receiver(): i64 {
 b0:
     %0 = slot ptr 8, 8
-    %1 = slot ptr 8, 8
-    %2 = const i64 1
-    store [%1], %2
-    %4 = load i64 [%1]
-    store [%0], %4
-    %6 = load i64 [%1]
-    %7 = global ptr total
-    %8 = load i64 [%7]
-    %9 = const i64 10
-    %10 = mul i64 %8, %9
-    %11 = load i64 [%0]
-    %12 = add i64 %10, %11
-    store [%7], %12
-    %14 = const i64 4
-    %15 = load i64 [%1]
-    %16 = add i64 %15, %14
-    store [%1], %16
-    ret %6
+    %1 = const i64 1
+    store [%0], %1
+    %3 = global ptr total
+    %4 = load i64 [%3]
+    %5 = const i64 10
+    %6 = mul i64 %4, %5
+    %7 = load i64 [%0]
+    %8 = add i64 %6, %7
+    store [%3], %8
+    ret %1
 }
 
 callee(ptr): i64 {
@@ -227,37 +205,28 @@ b0:
 
 release(): i64 {
 b0:
-    %0 = slot ptr 16, 8
-    %1 = const u64 16
-    %2 = const ptr 0
-    %3 = const u64 0
-    %4 = const u64 16
-    %5 = call ptr @_malloc(%4)
-    %6 = const ptr 0
-    %7 = ne bool %5, %6
-    br %7, b1, b2
+    %0 = const u64 16
+    %1 = const ptr 0
+    %2 = const u64 0
+    %3 = const u64 16
+    %4 = call ptr @_malloc(%3)
+    %5 = const ptr 0
+    %6 = ne bool %4, %5
+    br %6, b1, b2
 b1: ; preds b0
     jmp b2
 b2: ; preds b0, b1
-    %10 = phi ptr [%2, b0], [%5, b1]
-    %11 = phi u64 [%3, b0], [%1, b1]
-    store [%0], %10
-    store [%0 + 8], %11
-    %14 = load u64 [%0 + 8]
-    %15 = cast i64 %14
-    %16 = load ptr [%0]
-    %17 = const ptr 0
-    %18 = ne bool %16, %17
-    br %18, b3, b4
+    %9 = phi ptr [%1, b0], [%4, b1]
+    %10 = phi u64 [%2, b0], [%0, b1]
+    %11 = cast i64 %10
+    %12 = const ptr 0
+    %13 = ne bool %9, %12
+    br %13, b3, b4
 b3: ; preds b2
-    call @_free(%16)
+    call @_free(%9)
     jmp b4
 b4: ; preds b2, b3
-    %22 = const ptr 0
-    %23 = const u64 0
-    store [%0], %22
-    store [%0 + 8], %23
-    ret %15
+    ret %11
 }
 
 countdown(i64): i64 {

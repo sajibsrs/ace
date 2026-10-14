@@ -1778,14 +1778,17 @@ use_owner(fn: Func, id: int, a: u32): int {
     return x.block
 }
 
-/* Whether every use of j's phi v outside j is owned by s. */
-phi_uses_in(fn: Func, v: int, j: int, s: int): bool {
+/* Whether every use of j's phi v outside j is owned by s, or by a block t
+ * dominates (t >= 0: j's other successor, which only j enters, so every path
+ * there still passes j).
+ */
+phi_uses_in(fn: Func, idom: array.Array[int], v: int, j: int, s: int, t: int): bool {
     for b: usize in 0..fn.blocks.len {
         for id: int in fn.blocks.get(b).ins.view() {
             for a: u32 in 0..fn.at(id).nargs {
                 if fn.arg(id, a) != v { continue }
                 o: int = use_owner(fn, id, a)
-                if o != j && o != s { return false }
+                if o != j && o != s && (t < 0 || (o != t && idom.get(usize(o)) < 0) || !ir.dominates(idom, t, o)) { return false }
             }
         }
     }
@@ -1808,7 +1811,8 @@ branch_operand(fn: Func, j: int, i: usize, a: int): (u64, bool) {
  * and constants, nothing of which but the phis is used outside j, and j heads
  * no loop, so the edge enters no loop sideways. s has j as its only
  * predecessor and no phis; a phi of j used in s gets a phi in s joining it
- * with its operand from p.
+ * with its operand from p, and one used elsewhere must be under j's other
+ * successor, which only j enters.
  */
 Clean.thread_branches(mut self): bool {
     changed: bool = false
@@ -1880,16 +1884,21 @@ Clean.thread_branches(mut self): bool {
                 i += 1
                 continue
             }
+            idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*self.fn)
+            t: int = self.fn.block(j).succ0
+            if r != 0 { t = self.fn.block(j).succ1 }
+            if t == s || self.fn.block(t).preds.len != 1 { t = -1 }
             fine: bool = true
             for q: usize in 0..k {
                 if !fine { break }
-                fine = phi_uses_in(*self.fn, self.fn.block(j).ins.get(q), j, s)
+                fine = phi_uses_in(*self.fn, idom, self.fn.block(j).ins.get(q), j, s, t)
             }
             if !fine {
+                mut idom.wipe()
+                mut rpo.wipe()
                 i += 1
                 continue
             }
-            idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*self.fn)
             header: bool = false
             for q: int in self.fn.block(j).preds.view() {
                 header = header || (idom.get(usize(q)) >= 0 && ir.dominates(idom, j, q))
