@@ -705,6 +705,7 @@ A64: struct {
     frame: u32 = 0,
     slot_base: u32 = 0,
     has_frame: bool = false,
+    epi: u32 = 0,                      // text offset + 1 of the function's one epilogue, once emitted
     label: array.Array[u32],           // block -> text offset
     br: array.Array[Branch],
     pool: array.Array[u64],            // float constants of the function, 8 bytes each
@@ -1183,8 +1184,15 @@ A64.prologue(mut self) {
     }
 }
 
+/* A frame's restores are emitted once; every later return branches to them. */
 A64.epilogue(mut self) {
+    if self.has_frame && self.epi != 0 {
+        d: i64 = (i64(self.epi) - 1 - i64(self.here())) / 4
+        mut self.put(0x14000000 | (u32(d) & 0x3FFFFFF)) // b epi
+        return
+    }
     if self.has_frame {
+        self.epi = self.here() + 1
         f: u32 = self.frame
         if self.short_frame() {
             mut self.frame_pairs(0, true, false)

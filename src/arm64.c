@@ -70,6 +70,7 @@ typedef struct {
     int8_t    cs[18];  // callee-saved registers used, ascending: x19-x28, then d8-d15
     uint32_t  frame, slot_base;
     int       has_frame;
+    uint32_t  epi;     // text offset + 1 of the function's one epilogue, once emitted
     // emission
     uint32_t* label;   // block -> text offset
     Branch*   br;
@@ -843,8 +844,14 @@ static void prologue(A64* a) {
     }
 }
 
+// A frame's restores are emitted once; every later return branches to them.
 static void epilogue(A64* a) {
+    if (a->has_frame && a->epi) {
+        put(a, 0x14000000u | ((uint32_t)(((int64_t)a->epi - 1 - here(a)) / 4) & 0x3FFFFFFu)); // b epi
+        return;
+    }
     if (a->has_frame) {
+        a->epi = here(a) + 1;
         uint32_t f = a->frame;
         if (short_frame(a)) {
             frame_pairs(a, 0, 1, 0);

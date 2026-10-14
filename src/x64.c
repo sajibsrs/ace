@@ -87,6 +87,7 @@ typedef struct {
     int32_t  sret;    // rbp offset of the saved result address, 0 for a result in registers
     int32_t  saved;   // rbp offset of the callee-saved registers the function uses (keep), ascending
     uint32_t keep;    // those registers, a mask by encoding
+    uint32_t epi;     // text offset + 1 of the function's one epilogue, once emitted
     int32_t  spill;   // rbp offset of spill slot 0; slot k is at spill - 8k
     int32_t  aggs;    // rbp offset of 16 bytes per aggregate parameter arriving in registers
     Ra       ra;      // layout, liveness, and allocation (regalloc.h)
@@ -1778,6 +1779,14 @@ static void terminator(X64* a, int b, int v) {
         } else if (x->nargs) {
             load_val(a, RAX, x->args[0]);
         }
+        // with registers to restore, the epilogue is emitted once and later returns jump to it
+        if (a->keep && a->epi) {
+            int32_t d = (int32_t)(a->epi - 1) - (int32_t)(here(a) + 2);
+            if (d >= -128) { put(a, 0xEB); put(a, (uint8_t)d); } // jmp rel8
+            else { put(a, 0xE9); put32(a, (uint32_t)(d - 3)); } // jmp rel32
+            return;
+        }
+        if (a->keep) a->epi = here(a) + 1;
         if (a->sret) ld64(a, RAX, RBP, a->sret); // the result's address, as the caller passed it
         callee_saved(a, 0);
         put(a, 0xC9); // leave

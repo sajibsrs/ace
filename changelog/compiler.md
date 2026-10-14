@@ -194,3 +194,7 @@
   aggregate splits into SSA leaves up to 32 leaves, not 16 (C and selfhost,
   #144): by-value `Node`/`Sym`/`SType` reads load only the fields used.
   Selfhost `--check` body checks 1.38x; `bench/` and `pkg/` unchanged.
+- A function's epilogue is emitted once and every later return branches to
+  it: on arm64 whenever the function has a frame, on x64 only when it
+  restores callee-saved registers (`leave; ret` alone is no longer than the
+  jump). Selfhost `__text` 922,940 → 866,796 B (C and selfhost, #145).
