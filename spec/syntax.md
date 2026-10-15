@@ -19,6 +19,13 @@
    U+10FFFF) and denotes its UTF-8 encoding in a string literal; it is
    invalid in a char literal, which holds exactly one byte. A string may hold
    any bytes, so `\xHH` can still write non-UTF-8 data.
+6. `@` is the compiler-reserved sigil: whatever it introduces is defined and
+   handled by the compiler, and user code cannot declare or extend it. Its
+   forms are the declaration attributes `@when`, `@packed`, `@align`,
+   `@offset`, and `@cold`, the location expressions `@file` and `@line`
+   (GRAMMAR.md §6 note 14), and the reserved std implementation import source
+   `@name` (Stdlib #5). Each form has its own grammar production; the sigil marks
+   ownership, not a shared syntax.
 
 ## Syntax & Parsing
 1. Fast, simple parsing is the goal — single-lookahead LL(1) is the guideline, not a requirement; small bounded lookahead is acceptable where it buys readability.

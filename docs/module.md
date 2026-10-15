@@ -75,6 +75,8 @@ Compiling a reserved file directly remains valid for standard-library checks,
 and equivalent source copied outside the shipped tree remains ordinary code.
 The suffixless `@name` source is not a general path prefix, attribute, package
 namespace, or user-definable mechanism. Writing `.ace` after it is invalid.
+As everywhere else in Ace (`@when`, `@align`, `@file`), `@` marks something the
+compiler owns and user code cannot define.
 
 Bare selected lists stay on one physical line. Use parentheses for a multiline
 list:
