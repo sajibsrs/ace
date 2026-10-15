@@ -262,7 +262,7 @@ extern "c" {
     c_exit(status: i32) as "_exit"
     c_fork(): i32 as "fork"
     c_waitpid(pid: i32, status: mut *i32, options: i32): i32 as "waitpid"
-    c_pipe(fds: mut *i32): i32 as "pipe"
+    c_pipe(fds: mut *i32, flags: i32): i32 as "pipe2"
     // glibc declares ioctl(int, unsigned long, ...).
     c_ioctl(fd: i32, request: uint, ...): i32 as "ioctl"
 }
@@ -422,7 +422,7 @@ pub wait(process: Process): (ProcessStatus, Error) {
 pub pipe(): (Fd, Fd, Error) {
     fds: [2]i32 = [i32(0) : 2]
 
-    if c_pipe(mut &fds[0]) == -1 { return Fd(-1), Fd(-1), PipeErr(errno()) }
+    if c_pipe(mut &fds[0], O_CLOEXEC) == -1 { return Fd(-1), Fd(-1), PipeErr(errno()) }
     return Fd(fds[0]), Fd(fds[1]), null
 }
 
@@ -482,7 +482,7 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     buf: [4096]u8
 
     if !path_copy(path, mut buf[0..4096]) { return Fd(-1), OpenErr(errno()) }
-    fd: i32 = c_open(&buf[0], flags, mode)
+    fd: i32 = c_open(&buf[0], flags | O_CLOEXEC, mode)
     if fd == -1 { return Fd(-1), OpenErr(errno()) }
 
     return Fd(fd), null

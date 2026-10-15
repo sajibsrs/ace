@@ -315,6 +315,7 @@ extern "c" {
     c_fork(): i32 as "fork"
     c_waitpid(pid: i32, status: mut *i32, options: i32): i32 as "waitpid"
     c_pipe(fds: mut *i32): i32 as "pipe"
+    c_fcntl(fd: i32, command: i32, ...): i32 as "fcntl"
     /* Darwin declares ioctl(int, unsigned long, ...). On Apple arm64 every
      * unnamed variadic argument is passed in an eight-byte stack slot.
      */
@@ -331,6 +332,9 @@ pub O_CREAT: const i32 = 0x0200
 pub O_TRUNC: const i32 = 0x0400
 pub O_EXCL: const i32 = 0x0800
 O_DIRECTORY: const i32 = 0x00100000
+O_CLOEXEC: const i32 = 0x01000000
+F_SETFD: const i32 = 2
+FD_CLOEXEC: const i32 = 1
 
 // Public retry-policy errno values on Darwin.
 pub EINTR: const i32 = 4
@@ -481,6 +485,13 @@ pub pipe(): (Fd, Fd, Error) {
     fds: [2]i32 = [i32(0) : 2]
 
     if c_pipe(mut &fds[0]) == -1 { return Fd(-1), Fd(-1), PipeErr(errno()) }
+    // Darwin has no pipe2: set close-on-exec on both ends right after creation.
+    if c_fcntl(fds[0], F_SETFD, FD_CLOEXEC) == -1 || c_fcntl(fds[1], F_SETFD, FD_CLOEXEC) == -1 {
+        code: i32 = errno()
+        c_close(fds[0])
+        c_close(fds[1])
+        return Fd(-1), Fd(-1), PipeErr(code)
+    }
     return Fd(fds[0]), Fd(fds[1]), null
 }
 
@@ -540,7 +551,7 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     buf: [1024]u8
 
     if !path_copy(path, mut buf[0..1024]) { return Fd(-1), OpenErr(errno()) }
-    fd: i32 = c_open(&buf[0], flags, mode)
+    fd: i32 = c_open(&buf[0], flags | O_CLOEXEC, mode)
     if fd == -1 { return Fd(-1), OpenErr(errno()) }
 
     return Fd(fd), null

@@ -157,7 +157,7 @@ operation retries interruption, allocates, or closes inherited descriptors.
 
 `sys.pipe(): (Fd, Fd, Error)` creates a unidirectional byte pipe and returns
 the read end followed by the write end. Failure returns `Fd(-1)` for both with
-`PipeErr`. The caller closes both descriptors explicitly.
+`PipeErr`. Both ends are close-on-exec (as is every descriptor `open` returns), so a spawned child holds only the descriptors `exec.SpawnOptions` hands it. The caller closes both descriptors explicitly.
 
 `arg(0)` is the program invocation name. `arg(index)` requires
 `index < argc()`, and `env(index)` requires `index < envc()`. These are the

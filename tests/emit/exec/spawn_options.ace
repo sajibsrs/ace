@@ -1,0 +1,102 @@
+/* Spawn options: output redirection, 2>&1, working directory, and pipes
+ * closing on exec so concurrent children each reach end of input.
+ */
+
+// expect-exit: 0
+
+import exec
+import file
+import mem
+import str
+import sys
+import time
+
+PATH: const string = "/tmp/ace_exec_spawn_options.txt"
+
+run(argv: []string, options: exec.SpawnOptions): int {
+    child: sys.Process, err: Error = exec.spawn(argv, options)
+    if err != null { return -1 }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(child)
+    if wait_err != null || !status.exited { return -2 }
+    return status.code
+}
+
+/* Whether the file holds exactly `want`. */
+captured(want: string): bool {
+    data: mut []u8, err: Error = file.read(PATH)
+    defer mem.release[u8](mut data)
+    if err != null { return false }
+    return str.compare(string(data), want) == 0
+}
+
+main(): int {
+    fd: sys.Fd, err: Error = sys.open(PATH, sys.O_WRONLY | sys.O_CREAT | sys.O_TRUNC, sys.S_IRUSR | sys.S_IWUSR)
+    if err != null { return 1 }
+    defer sys.unlink(PATH)
+
+    // Both streams into one file: 2>&1.
+    options: exec.SpawnOptions = blank(exec.SpawnOptions)
+    options.stdout = exec.Redirect.fd
+    options.stdout_fd = fd
+    options.stderr = exec.Redirect.fd
+    options.stderr_fd = fd
+    if run(["sh", "-c", "echo out; echo err >&2; exit 3"], options) != 3 { return 2 }
+    sys.close(fd)
+    if !captured("out\nerr\n") { return 3 }
+
+    // Working directory.
+    fd, err = sys.open(PATH, sys.O_WRONLY | sys.O_TRUNC, u32(0))
+    if err != null { return 4 }
+    options = blank(exec.SpawnOptions)
+    options.dir = "/"
+    options.stdout = exec.Redirect.fd
+    options.stdout_fd = fd
+    if run(["pwd"], options) != 0 { return 5 }
+    sys.close(fd)
+    if !captured("/\n") { return 6 }
+
+    // A missing directory fails the spawn with its code.
+    options = blank(exec.SpawnOptions)
+    options.dir = "/nonexistent/dir"
+    child: sys.Process, spawn_err: Error = exec.spawn(["true"], options)
+    if spawn_err == null || child != -1 { return 7 }
+    options.dir = "a\0b"
+    child, spawn_err = exec.spawn(["true"], options)
+    if spawn_err == null || spawn_err.code != 22 { return 8 }
+
+    // Two children, each with its own pipe: neither inherits the other's
+    // write end, so the second reader sees end of input as soon as its own
+    // child exits, not after the slow first child does.
+    in1: sys.Fd, out1: sys.Fd, pipe_err: Error = sys.pipe()
+    if pipe_err != null { return 9 }
+    in2: sys.Fd, out2: sys.Fd = sys.Fd(-1), sys.Fd(-1)
+    in2, out2, pipe_err = sys.pipe()
+    if pipe_err != null { return 10 }
+    first: exec.SpawnOptions = blank(exec.SpawnOptions)
+    first.stdout = exec.Redirect.fd
+    first.stdout_fd = out1
+    second: exec.SpawnOptions = blank(exec.SpawnOptions)
+    second.stdout = exec.Redirect.fd
+    second.stdout_fd = out2
+    start: u64 = time.awake()
+    p1: sys.Process, e1: Error = exec.spawn(["sh", "-c", "sleep 3; echo one"], first)
+    p2: sys.Process, e2: Error = exec.spawn(["sh", "-c", "echo two"], second)
+    if e1 != null || e2 != null { return 11 }
+    sys.close(out1)
+    sys.close(out2)
+    buf: [16]u8
+    n: int, read_err: Error = sys.read(in2, mut buf[0..16])
+    if read_err != null || n != 4 { return 12 }
+    n, read_err = sys.read(in2, mut buf[0..16])
+    if read_err != null || n != 0 { return 13 }
+    if time.awake() - start > 2000000000 { return 16 }
+    n, read_err = sys.read(in1, mut buf[0..16])
+    if read_err != null || n != 4 { return 14 }
+    n, read_err = sys.read(in1, mut buf[0..16])
+    if read_err != null || n != 0 { return 15 }
+    sys.wait(p1)
+    sys.wait(p2)
+    sys.close(in1)
+    sys.close(in2)
+    return 0
+}

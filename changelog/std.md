@@ -1,5 +1,11 @@
 # Standard library
 
+- Added `exec.spawn(argv, options)` with `SpawnOptions`: a working directory
+  and per-stream `Redirect` (`inherit`/`fd`, zero is inherit), as `posix_spawn`
+  file actions (#148). `sys.open` and `sys.pipe` now mark descriptors
+  close-on-exec (`pipe2` on linux, `fcntl` on darwin) so concurrent children do
+  not inherit each other's pipe ends.
+
 - `sys.FileInfo` carries `device` and `inode` from `stat`/`lstat` on both
   targets (Darwin's signed `st_dev` widened as raw bits). Selfhost's
   output-overwrite check compares them, as the C driver compares `st_dev` and

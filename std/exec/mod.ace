@@ -14,6 +14,23 @@ import os: "./os/linux-x64.ace"
 
 pub SpawnErr: type = os.SpawnErr
 
+/* Where a child's standard stream goes: `inherit` keeps this process's
+ * stream; `fd` duplicates a descriptor onto it.
+ */
+pub Redirect: enum { inherit, fd }
+
+/* Options for a spawned child. Canonical zero changes nothing: an empty `dir`
+ * keeps this process's working directory and both streams inherit. The
+ * `*_fd` field is read only when its stream is `Redirect.fd`.
+ */
+pub SpawnOptions: struct {
+    pub dir: string,
+    pub stdout: Redirect,
+    pub stdout_fd: sys.Fd,
+    pub stderr: Redirect,
+    pub stderr_fd: sys.Fd,
+}
+
 /* Start `argv[0]`, searched in PATH, with `argv` as its arguments and this
  * process's environment; no shell runs between. Wait for it with `sys.wait`.
  * The strings are copied into NUL-terminated storage released before return.
@@ -21,6 +38,18 @@ pub SpawnErr: type = os.SpawnErr
  * `SpawnErr.invalid`.
  */
 pub spawn(argv: []string): (sys.Process, Error) {
+    process: sys.Process, err: Error = spawn(argv, blank(SpawnOptions))
+    return process, err
+}
+
+/* `spawn` with `options`: the child runs in `options.dir` when it is not
+ * empty, and a stream marked `Redirect.fd` has its descriptor duplicated onto
+ * it, so the same descriptor on both is `2>&1`. The caller keeps its own
+ * descriptors open and closes them. A missing or unusable `dir` fails with
+ * the code `posix_spawnp` returns; a `dir` holding a NUL byte fails with
+ * `SpawnErr.invalid`.
+ */
+pub spawn(argv: []string, options: SpawnOptions): (sys.Process, Error) {
     if argv.len == 0 { return sys.Process(-1), SpawnErr.invalid }
     envc: usize = sys.envc()
     size: usize = 0
@@ -30,6 +59,10 @@ pub spawn(argv: []string): (sys.Process, Error) {
         }
         size += argv[i].len + 1
     }
+    for j: usize in 0 .. options.dir.len {
+        if options.dir[j] == 0 { return sys.Process(-1), SpawnErr.invalid }
+    }
+    size += options.dir.len + 1
     for i: usize in 0 .. envc { size += sys.env(i).len + 1 }
 
     bytes: mut []u8 = mem.alloc[u8](size)
@@ -49,6 +82,15 @@ pub spawn(argv: []string): (sys.Process, Error) {
     }
     pointers[argv.len] = null
     pointers[argv.len + envc + 1] = null
-    process: sys.Process, err: Error = os.spawn(pointers[0 .. argv.len + 1], pointers[argv.len + 1 .. argv.len + envc + 2])
+
+    dir: *u8 = null
+    if options.dir.len > 0 {
+        for j: usize in 0 .. options.dir.len { bytes[at + j] = options.dir[j] }
+        bytes[at + options.dir.len] = 0
+        dir = &bytes[at]
+    }
+    out: i32 = options.stdout == Redirect.fd ? i32(options.stdout_fd) : -1
+    err_fd: i32 = options.stderr == Redirect.fd ? i32(options.stderr_fd) : -1
+    process: sys.Process, err: Error = os.spawn(pointers[0 .. argv.len + 1], pointers[argv.len + 1 .. argv.len + envc + 2], dir, out, err_fd)
     return process, err
 }
