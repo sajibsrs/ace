@@ -1,0 +1,148 @@
+/* sort — in-place ordering of slices.
+ *
+ * `unstable` is introsort: median-of-three quicksort that switches to heapsort
+ * when the recursion depth passes twice the base-2 logarithm of the length,
+ * and to insertion sort for short ranges. It runs in O(n log n) in the worst
+ * case, allocates nothing, cannot fail, and may reorder equal elements. The
+ * elements are ordered by `<`, or by a strict `less` that returns true when
+ * its first argument must come before its second.
+ */
+
+SMALL: const int = 16
+
+/* Orders `items` ascending by `less`, which must be a strict weak ordering.
+ * Equal elements may change their relative order.
+ */
+pub unstable[T](items: mut []T, less: (T, T): bool) {
+    n: int = int(items.len)
+    if n < 2 { return }
+
+    depth: int = 0
+    for m: int = n; m > 1; m = m / 2 { depth += 2 }
+    introsort[T](items, 0, n - 1, depth, less)
+}
+
+/* Orders `items` ascending by `<`. Equal elements may change their relative
+ * order.
+ */
+pub unstable[T](items: mut []T) {
+    unstable[T](items, ascending[T])
+}
+
+/* Reports whether `items` is ordered by `less`: no element comes before its
+ * predecessor.
+ */
+pub sorted[T](items: []T, less: (T, T): bool): bool {
+    if items.len < 2 { return true }
+    for i: usize in 1 .. items.len {
+        if less(items[i], items[i - 1]) { return false }
+    }
+    return true
+}
+
+/* Reports whether `items` is ordered by `<`. */
+pub sorted[T](items: []T): bool {
+    return sorted[T](items, ascending[T])
+}
+
+ascending[T](a: T, b: T): bool {
+    return a < b
+}
+
+swap[T](items: mut []T, a: int, b: int) {
+    t: T = items[a]
+    items[a] = items[b]
+    items[b] = t
+}
+
+/* Sorts the inclusive range lo..hi. */
+introsort[T](items: mut []T, lo: int, hi: int, depth: int, less: (T, T): bool) {
+    low: int = lo
+    high: int = hi
+    left: int = depth
+
+    for high - low >= SMALL {
+        if left == 0 {
+            heapsort[T](items, low, high, less)
+            return
+        }
+        left -= 1
+
+        p: int = partition[T](items, low, high, less)
+
+        // recurse into the smaller side so the stack stays logarithmic
+        if p - low < high - p {
+            introsort[T](items, low, p, left, less)
+            low = p + 1
+        } else {
+            introsort[T](items, p + 1, high, left, less)
+            high = p
+        }
+    }
+    insertion[T](items, low, high, less)
+}
+
+/* Hoare partition of the inclusive range lo..hi around the median of its
+ * first, middle, and last elements. Returns j with every element of lo..j
+ * not after every element of j+1..hi, and lo <= j < hi.
+ */
+partition[T](items: mut []T, lo: int, hi: int, less: (T, T): bool): int {
+    mid: int = lo + (hi - lo) / 2
+    if less(items[mid], items[lo]) { swap[T](items, mid, lo) }
+    if less(items[hi], items[lo]) { swap[T](items, hi, lo) }
+    if less(items[hi], items[mid]) { swap[T](items, hi, mid) }
+
+    pivot: T = items[mid]
+    i: int = lo - 1
+    j: int = hi + 1
+    for {
+        i += 1
+        for less(items[i], pivot) { i += 1 }
+        j -= 1
+        for less(pivot, items[j]) { j -= 1 }
+        if i >= j { return j }
+        swap[T](items, i, j)
+    }
+    return j
+}
+
+insertion[T](items: mut []T, lo: int, hi: int, less: (T, T): bool) {
+    for i: int in lo + 1 .. hi + 1 {
+        key: T = items[i]
+        j: int = i
+        for j > lo && less(key, items[j - 1]) {
+            items[j] = items[j - 1]
+            j -= 1
+        }
+        items[j] = key
+    }
+}
+
+heapsort[T](items: mut []T, lo: int, hi: int, less: (T, T): bool) {
+    n: int = hi - lo + 1
+
+    for start: int = n / 2 - 1; start >= 0; start -= 1 {
+        sift[T](items, lo, start, n, less)
+    }
+    for end: int = n - 1; end > 0; end -= 1 {
+        swap[T](items, lo, lo + end)
+        sift[T](items, lo, 0, end, less)
+    }
+}
+
+/* Restores the max-heap property below `root` in the heap of n elements
+ * stored from index lo.
+ */
+sift[T](items: mut []T, lo: int, root: int, n: int, less: (T, T): bool) {
+    r: int = root
+    for {
+        child: int = 2 * r + 1
+        if child >= n { return }
+        if child + 1 < n && less(items[lo + child], items[lo + child + 1]) {
+            child += 1
+        }
+        if !less(items[lo + r], items[lo + child]) { return }
+        swap[T](items, lo + r, lo + child)
+        r = child
+    }
+}

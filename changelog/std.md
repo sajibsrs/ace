@@ -1,5 +1,10 @@
 # Standard library
 
+- Added the `sort` module: `sort.unstable[T](items)` and `unstable[T](items, less)`
+  (introsort: median-of-three Hoare quicksort, heapsort fallback past
+  2·log2(n) depth, insertion below 16 elements; allocation-free and infallible)
+  plus `sorted[T]` (`tests/emit/sort`).
+
 - `Map.len` is now a method, `m.len()`: the entry count is a private field, so
   code outside `map` cannot write it and corrupt the table.
 

@@ -1,0 +1,106 @@
+/* sort: unstable orders every length through the insertion, quicksort, and
+ * heapsort paths (empty, one, sorted, reversed, all equal, organ-pipe,
+ * sawtooth, pseudo-random), keeps the multiset of elements, honors a
+ * descending `less`, orders records by one key, and works on other element
+ * types; sorted reports order.
+ */
+
+// expect-exit: 0
+
+import bits
+import sort
+
+MUL: const u64 = 6364136223846793005
+INC: const u64 = 1442695040888963407
+
+Rec: struct { key: int, tag: int }
+
+check(ok: bool, code: int): int {
+    if ok { return 0 }
+    return code
+}
+
+by_key(a: Rec, b: Rec): bool { return a.key < b.key }
+descending(a: int, b: int): bool { return a > b }
+
+// Fills data[0..n] by shape: 0 sorted, 1 reversed, 2 all equal, 3 organ-pipe,
+// 4 sawtooth, 5 pseudo-random with many duplicates, 6 pseudo-random.
+fill(data: mut []int, n: usize, shape: int) {
+    seed: u64 = 12345
+    for i: usize in 0 .. n {
+        v: int = int(i)
+        if shape == 1 { v = int(n - i) }
+        if shape == 2 { v = 7 }
+        if shape == 3 {
+            v = int(i)
+            if i > n / 2 { v = int(n - i) }
+        }
+        if shape == 4 { v = int(i % 13) }
+        if shape >= 5 {
+            seed = bits.wradd(bits.wrmul(seed, MUL), INC)
+            v = int(seed >> 33)
+            if shape == 5 { v = v % 10 }
+        }
+        data[i] = v
+    }
+}
+
+// Sum and xor of the elements: a sort must keep both.
+sum(data: []int, n: usize): int {
+    s: int = 0
+    for i: usize in 0 .. n { s += data[i] * 31 + (data[i] ^ 5) }
+    return s
+}
+
+main(): int {
+    r: int = 0
+    data: [3000]int
+
+    sizes: [14]usize = [0, 1, 2, 3, 15, 16, 17, 31, 100, 257, 1000, 2047, 2048, 3000]
+    for s: usize in 0 .. 14 {
+        n: usize = sizes[s]
+        for shape: int in 0 .. 7 {
+            fill(mut data[0..3000], n, shape)
+            before: int = sum(data[0..3000], n)
+            sort.unstable[int](mut data[0..n])
+            r += check(sort.sorted[int](data[0..n]), 1)
+            r += check(sum(data[0..3000], n) == before, 2)
+        }
+    }
+
+    // descending order through `less`
+    fill(mut data[0..3000], 500, 6)
+    sort.unstable[int](mut data[0..500], descending)
+    ok: bool = true
+    for i: usize in 1 .. 500 {
+        if data[i] > data[i - 1] { ok = false }
+    }
+    r += check(ok, 3)
+    r += check(sort.sorted[int](data[0..500], descending), 4)
+    r += check(!sort.sorted[int](data[0..500]), 5)
+
+    // records by key: keys end ordered and each tag stays with its key
+    recs: [300]Rec
+    for i: usize in 0 .. 300 {
+        recs[i] = Rec { key = int((i * 7919) % 100), tag = int(i) }
+    }
+    sort.unstable[Rec](mut recs[0..300], by_key)
+    ok = true
+    for i: usize in 0 .. 300 {
+        if i > 0 && recs[i].key < recs[i - 1].key { ok = false }
+        if (usize(recs[i].tag) * 7919) % 100 != usize(recs[i].key) { ok = false }
+    }
+    r += check(ok, 6)
+
+    // other element types
+    bytes: [40]u8
+    for i: usize in 0 .. 40 { bytes[i] = u8((i * 37) % 251) }
+    sort.unstable[u8](mut bytes[0..40])
+    r += check(sort.sorted[u8](bytes[0..40]), 7)
+
+    floats: [5]f64 = [3.5, -1.0, 2.25, -7.5, 0.0]
+    sort.unstable[f64](mut floats[0..5])
+    r += check(floats[0] == -7.5 && floats[4] == 3.5 && sort.sorted[f64](floats[0..5]), 8)
+
+    return r
+}

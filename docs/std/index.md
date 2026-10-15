@@ -9,6 +9,7 @@ Today's modules:
 
 - [`array`](array.md) — growable sequence over the process allocator
 - [`map`](map.md) — hash map over the process allocator
+- [`sort`](sort.md) — in-place allocation-free sorting of slices
 - [`atomic`](atomic.md) — lock-free `u32` and `u64` operations with explicit ordering
 - [`bits`](bits.md) — explicit machine-representation access and operations
 - [`exec`](exec.md) — starting programs as child processes
