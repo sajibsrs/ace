@@ -51,6 +51,14 @@ main(): int {
     o64, k64 = atomic.cas(pd, u64(5), u64(0))
     if o64 != big || k64 { return 21 }
 
+    n: usize = 4
+    pn: mut *usize = mut &n
+    if atomic.add(pn, usize(3)) != 4 || n != 7 { return 23 }
+    ou: usize, ku: bool = atomic.cas(pn, usize(7), usize(1))
+    if ou != 7 || !ku || atomic.load_acquire(pn) != 1 { return 24 }
+    u: uint = 1 // a transparent alias of u64 here
+    if atomic.exchange(mut &u, uint(5)) != 1 || u != 5 { return 25 }
+
     atomic.fence()
     atomic.fence_acquire()
     atomic.fence_release()

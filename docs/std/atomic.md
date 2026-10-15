@@ -2,8 +2,9 @@
 
 [Standard library](index.md)
 
-Indivisible, lock-free operations on shared `u32` and `u64` words. They are the
-only operations that synchronize execution contexts; the ordering rules are in
+Indivisible, lock-free operations on shared `u32`, `u64`, and `usize` words.
+They are the only operations that synchronize execution contexts; the ordering
+rules are in
 [Memory](../memory.md#memory-model). Each operation is a compiler-backed
 `intrinsic` declaration: applications call it as an ordinary public function,
 may store an exact overload in a typed function value, and nothing allocates or
@@ -19,10 +20,9 @@ bump(): u32 {
 }
 ```
 
-An untyped integer literal does not choose between the `u32` and `u64`
-overloads, so values are spelled `u32(1)`. `uint` uses the `u64` overload on
-Apple arm64; `usize` is a distinct type and takes an explicit pointer
-conversion.
+An untyped integer literal does not choose between the overloads, so values are
+spelled `u32(1)`. `uint` uses the `u64` overload on Apple arm64; `usize` has
+its own overloads, so a pointer-sized word needs no conversion.
 
 ## Orderings
 
@@ -93,7 +93,8 @@ Why the rules in `spec/std/atomic.md` are shaped as they are.
 - `seq_cst` default: on arm64 its load and store are `ldar` and `stlr`, the
   same instructions as acquire and release, so the safe default costs nothing
   there.
-- `u32` and `u64` only: a futex-style word needs 32 bits and a counter or
-  pointer needs 64; narrower atomics are rarely needed and easy to misalign.
+- `u32`, `u64`, and `usize` only: a futex-style word needs 32 bits, a counter 64,
+  and an index or address a pointer-sized word; narrower atomics are rarely
+  needed and easy to misalign.
 - No pointer overload: a generic one would break the nongeneric-intrinsic rule,
   and a pointer travels as `usize` through an explicit conversion.

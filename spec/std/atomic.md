@@ -2,9 +2,8 @@
 
 25. `atomic` (implemented on darwin-arm64 and linux-x64) — indivisible, lock-free operations on
     shared integer words; their ordering rules are Memory, "Carved (memory
-    model)". Every operation is an exact `u32` and `u64` overload (`uint` shares
-    the `u64` overload where it is `u64`; `usize` is a distinct type and takes an
-    explicit pointer conversion, as `bits` does); there is no generic
+    model)". Every operation is an exact `u32`, `u64`, and `usize` overload
+    (`uint` shares the `u64` overload where it is `u64`); there is no generic
     atomic type, no narrower width, and no pointer overload (a pointer travels
     as `usize` through an explicit conversion). Operations that write take
     `p: mut *T`, `load` takes `p: *T`. Each is an `intrinsic` declaration

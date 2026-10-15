@@ -2018,7 +2018,7 @@ static int atomic_signature(SType* ft, int kind, int order) {
     if (kind == AK_FENCE) return ft->nparams == 0 && !r;
     SType* p = ft->nparams ? ft->params[0] : NULL;
     if (!p || p->kind != SK_PTR || p->is_mut != (kind != AK_LOAD) || !p->base || p->base->kind != SK_PRIM ||
-        (p->base->prim != P_U32 && p->base->prim != P_U64))
+        (p->base->prim != P_U32 && p->base->prim != P_U64 && p->base->prim != P_USIZE))
         return 0;
     int word = p->base->prim;
     int nparams = kind == AK_LOAD ? 1 : kind == AK_CAS ? 3 : 2;

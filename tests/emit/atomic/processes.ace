@@ -1,0 +1,62 @@
+/* Atomics keep their word whole across real concurrent writers: four forked
+ * processes share an anonymous mapping and each adds to one counter with
+ * add, and to another with a cas retry loop, all released at once by a gate.
+ * A lost update would leave a total short of the sum. */
+
+// expect-exit: 42
+
+import atomic
+import sys
+
+extern "c" {
+    mmap(address: usize, length: usize, protection: i32, flags: i32, fd: i32, offset: i64): usize
+}
+
+// MAP_SHARED | MAP_ANON
+@when(target == "darwin-arm64")
+shared_anon(): i32 { return 0x1001 }
+
+@when(target == "linux-x64")
+shared_anon(): i32 { return 0x21 }
+
+work(gate: mut *u32, added: mut *u64, claimed: mut *u64): int {
+    for atomic.load_acquire(gate) == 0 {}
+    for step: int in 0 .. 200000 {
+        atomic.add_relaxed(added, u64(1))
+    }
+    for step: int in 0 .. 50000 {
+        seen: u64 = atomic.load_relaxed(claimed)
+        won: bool = false
+        for !won {
+            seen, won = atomic.cas_relaxed(claimed, seen, seen + u64(1))
+        }
+    }
+    return 0
+}
+
+main(): int {
+    page: usize = mmap(usize(0), usize(4096), 3, shared_anon(), -1, i64(0))
+    if page == usize(0xFFFFFFFFFFFFFFFF) { return 1 }
+    added: mut *u64 = mut *u64(page)
+    claimed: mut *u64 = mut *u64(page + usize(64))
+    gate: mut *u32 = mut *u32(page + usize(128)) // released once every worker exists
+
+    children: [4]sys.Process = [sys.Process(0) : 4]
+    for worker: int in 0 .. 4 {
+        process: sys.Process, fork_err: Error = sys.fork()
+        if fork_err != null || process == -1 {
+            atomic.store_release(gate, u32(1)) // let the workers already started finish
+            return 2
+        }
+        if process == 0 { sys.exit(work(gate, added, claimed)) }
+        children[worker] = process
+    }
+    atomic.store_release(gate, u32(1))
+    for worker: int in 0 .. 4 {
+        status: sys.ProcessStatus, wait_err: Error = sys.wait(children[worker])
+        if wait_err != null || !status.exited || status.code != 0 { return 3 }
+    }
+    if atomic.load(added) != 800000 { return 4 }
+    if atomic.load(claimed) != 200000 { return 5 }
+    return 42
+}

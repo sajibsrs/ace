@@ -92,3 +92,6 @@
 - `atomic` lowers on linux-x64 to `xchg`, `lock xadd`, `lock cmpxchg`, locked
   `and`/`or`/`xor` (a `cmpxchg` loop when the result is read), and `mfence`
   for a seq_cst fence only, relying on x64's total store order.
+- `atomic` also takes `usize` words (its own overloads, lowered as the IR's
+  64-bit word). `tests/emit/atomic/processes.ace` has four forked processes
+  share a mapping behind a start gate; a plain increment loses updates there.

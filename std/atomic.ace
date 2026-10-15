@@ -1,4 +1,4 @@
-/* atomic — indivisible, lock-free operations on shared u32 and u64 words.
+/* atomic — indivisible, lock-free operations on shared u32, u64, and usize words.
  * Compiler-backed target instructions (spec/std/atomic.md); the unsuffixed name
  * is sequentially consistent and a suffix names a weaker ordering.
  */
@@ -97,6 +97,53 @@ pub xor_relaxed(p: mut *u64, value: u64): u64 intrinsic
 pub cas(p: mut *u64, expected: u64, desired: u64): (u64, bool) intrinsic
 pub cas_acq_rel(p: mut *u64, expected: u64, desired: u64): (u64, bool) intrinsic
 pub cas_relaxed(p: mut *u64, expected: u64, desired: u64): (u64, bool) intrinsic
+
+pub load(p: *usize): usize intrinsic
+pub load_acquire(p: *usize): usize intrinsic
+pub load_relaxed(p: *usize): usize intrinsic
+pub store(p: mut *usize, value: usize) intrinsic
+pub store_release(p: mut *usize, value: usize) intrinsic
+pub store_relaxed(p: mut *usize, value: usize) intrinsic
+
+pub exchange(p: mut *usize, value: usize): usize intrinsic
+pub exchange_acquire(p: mut *usize, value: usize): usize intrinsic
+pub exchange_release(p: mut *usize, value: usize): usize intrinsic
+pub exchange_acq_rel(p: mut *usize, value: usize): usize intrinsic
+pub exchange_relaxed(p: mut *usize, value: usize): usize intrinsic
+
+pub add(p: mut *usize, value: usize): usize intrinsic
+pub add_acquire(p: mut *usize, value: usize): usize intrinsic
+pub add_release(p: mut *usize, value: usize): usize intrinsic
+pub add_acq_rel(p: mut *usize, value: usize): usize intrinsic
+pub add_relaxed(p: mut *usize, value: usize): usize intrinsic
+
+pub sub(p: mut *usize, value: usize): usize intrinsic
+pub sub_acquire(p: mut *usize, value: usize): usize intrinsic
+pub sub_release(p: mut *usize, value: usize): usize intrinsic
+pub sub_acq_rel(p: mut *usize, value: usize): usize intrinsic
+pub sub_relaxed(p: mut *usize, value: usize): usize intrinsic
+
+pub and(p: mut *usize, value: usize): usize intrinsic
+pub and_acquire(p: mut *usize, value: usize): usize intrinsic
+pub and_release(p: mut *usize, value: usize): usize intrinsic
+pub and_acq_rel(p: mut *usize, value: usize): usize intrinsic
+pub and_relaxed(p: mut *usize, value: usize): usize intrinsic
+
+pub or(p: mut *usize, value: usize): usize intrinsic
+pub or_acquire(p: mut *usize, value: usize): usize intrinsic
+pub or_release(p: mut *usize, value: usize): usize intrinsic
+pub or_acq_rel(p: mut *usize, value: usize): usize intrinsic
+pub or_relaxed(p: mut *usize, value: usize): usize intrinsic
+
+pub xor(p: mut *usize, value: usize): usize intrinsic
+pub xor_acquire(p: mut *usize, value: usize): usize intrinsic
+pub xor_release(p: mut *usize, value: usize): usize intrinsic
+pub xor_acq_rel(p: mut *usize, value: usize): usize intrinsic
+pub xor_relaxed(p: mut *usize, value: usize): usize intrinsic
+
+pub cas(p: mut *usize, expected: usize, desired: usize): (usize, bool) intrinsic
+pub cas_acq_rel(p: mut *usize, expected: usize, desired: usize): (usize, bool) intrinsic
+pub cas_relaxed(p: mut *usize, expected: usize, desired: usize): (usize, bool) intrinsic
 
 pub fence() intrinsic
 pub fence_acquire() intrinsic
