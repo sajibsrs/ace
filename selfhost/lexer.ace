@@ -61,6 +61,7 @@ pub LexErr: error {
     11: separator = "malformed '_' separator (must sit between digits)",
     12: digits = "missing digits after base prefix",
     13: binary = "invalid binary digit",
+    24: octal = "invalid octal digit",
     14: range = "integer literal out of range",
     15: colons = "'::' is not an operator; a type's functions are reached with '.'",
     16: non_ascii = "non-ASCII byte (identifiers are ASCII in v1)",
@@ -87,7 +88,7 @@ pub Diag: struct {
 pub report(path: string, d: Diag) {
     if d.err == LexErr.non_ascii {
         fmt.printf(sys.stderr, "%s:%d:%d: error: non-ASCII byte 0x%02X (identifiers are ASCII in v1)\n", path, int(d.line), int(d.col), uint(d.byte))
-    } else if d.err == LexErr.unexpected || d.err == LexErr.binary {
+    } else if d.err == LexErr.unexpected || d.err == LexErr.binary || d.err == LexErr.octal {
         fmt.printf(sys.stderr, "%s:%d:%d: error: %s '%c'\n", path, int(d.line), int(d.col), d.err.message, d.byte)
     } else if d.err == LexErr.escape {
         fmt.printf(sys.stderr, "%s:%d:%d: error: %s '\\%c'\n", path, int(d.line), int(d.col), d.err.message, d.byte)
@@ -385,6 +386,10 @@ Lexer.scan_number(mut self): Token {
         mut self.adv()
         mut self.adv()
         base = 2
+    } else if self.cur() == '0' && (self.peek(1) == 'o' || self.peek(1) == 'O') {
+        mut self.adv()
+        mut self.adv()
+        base = 8
     }
 
     dstart: usize = self.off
@@ -415,6 +420,8 @@ Lexer.scan_number(mut self): Token {
         mut self.fail(LexErr.digits)
     } else if base == 2 && digval(self.cur(), 10) >= 0 {
         mut self.fail(LexErr.binary, self.cur())
+    } else if base == 8 && digval(self.cur(), 10) >= 0 {
+        mut self.fail(LexErr.octal, self.cur())
     }
 
     if is_float {

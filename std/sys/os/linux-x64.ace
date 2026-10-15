@@ -311,18 +311,18 @@ pub random(storage: mut []u8): Error {
 }
 
 // POSIX creation-permission bits for open(2) and mkdir(2).
-pub S_IRWXU: const u32 = 0x1C0
-pub S_IRUSR: const u32 = 0x100
-pub S_IWUSR: const u32 = 0x080
-pub S_IXUSR: const u32 = 0x040
-pub S_IRWXG: const u32 = 0x038
-pub S_IRGRP: const u32 = 0x020
-pub S_IWGRP: const u32 = 0x010
-pub S_IXGRP: const u32 = 0x008
-pub S_IRWXO: const u32 = 0x007
-pub S_IROTH: const u32 = 0x004
-pub S_IWOTH: const u32 = 0x002
-pub S_IXOTH: const u32 = 0x001
+pub S_IRWXU: const u32 = 0o700
+pub S_IRUSR: const u32 = 0o400
+pub S_IWUSR: const u32 = 0o200
+pub S_IXUSR: const u32 = 0o100
+pub S_IRWXG: const u32 = 0o070
+pub S_IRGRP: const u32 = 0o040
+pub S_IWGRP: const u32 = 0o020
+pub S_IXGRP: const u32 = 0o010
+pub S_IRWXO: const u32 = 0o007
+pub S_IROTH: const u32 = 0o004
+pub S_IWOTH: const u32 = 0o002
+pub S_IXOTH: const u32 = 0o001
 
 errno_set(value: i32) {
     slot: mut *i32 = c_errno()

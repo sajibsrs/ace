@@ -118,6 +118,10 @@
           "match": "(?<![A-Za-z0-9_])0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*(?![A-Za-z0-9_])"
         },
         {
+          "name": "constant.numeric.integer.octal.ace",
+          "match": "(?<![A-Za-z0-9_])0o[0-7](?:_?[0-7])*(?![A-Za-z0-9_])"
+        },
+        {
           "name": "constant.numeric.integer.binary.ace",
           "match": "(?<![A-Za-z0-9_])0b[01](?:_?[01])*(?![A-Za-z0-9_])"
         },

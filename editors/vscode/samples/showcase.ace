@@ -152,6 +152,7 @@ main(): int {
     // Literals and built-in constructor-shaped casts.
     decimal: int = 42
     hexadecimal: uint = 0xFF_A0
+    octal: uint = 0o755
     binary: u8 = 0b1010_0101
     fraction: f64 = 6.022e23
     letter: u8 = 'A'

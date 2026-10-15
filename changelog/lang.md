@@ -1,5 +1,10 @@
 # Language
 
+- Added the `0o` octal integer literal beside `0x` and `0b` (C and selfhost
+  lexers, `GRAMMAR.md`, the VS Code grammar): `0o755`, with `_` separators and
+  an `invalid octal digit` error. A bare leading zero stays decimal. The `sys`
+  `S_I*` mode constants are now spelled in octal.
+
 - An expression-position type argument may be a pointer type:
   `mem.alloc[*u8](n)`. The parser reads the bracket's `*T` as a dereference;
   `build_type` (C and selfhost) now checks that unary `*` as the pointer type.

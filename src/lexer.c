@@ -311,6 +311,9 @@ static void scan_number(Lex* L) {
     } else if (cur(L) == '0' && (peek(L, 1) == 'b' || peek(L, 1) == 'B')) {
         adv(L); adv(L);
         base = 2;
+    } else if (cur(L) == '0' && (peek(L, 1) == 'o' || peek(L, 1) == 'O')) {
+        adv(L); adv(L);
+        base = 8;
     }
 
     size_t dstart = L->pos;
@@ -340,7 +343,7 @@ static void scan_number(Lex* L) {
 
     if (!seps_ok(s->buf + dstart, L->pos - dstart, base)) err(L, "malformed '_' separator (must sit between digits)");
     if (dend == dstart) err(L, "missing digits after base prefix");
-    else if (base == 2 && digval(cur(L), 10) >= 0) err(L, "invalid binary digit '%c'", cur(L));
+    else if ((base == 2 || base == 8) && digval(cur(L), 10) >= 0) err(L, "invalid %s digit '%c'", base == 2 ? "binary" : "octal", cur(L));
 
     if (is_float) {
         size_t n = L->pos - L->toff;

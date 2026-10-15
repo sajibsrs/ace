@@ -1,0 +1,17 @@
+/* Integer literals in every radix, with separators, and mode constants. */
+
+// expect-exit: 0
+
+import sys
+
+main(): int {
+    if 0xFF != 255 { return 1 }
+    if 0o755 != 493 { return 2 }
+    if 0O17 != 15 { return 3 }
+    if 0o7_5_5 != 493 { return 4 }
+    if 0b1010_1100 != 172 { return 5 }
+    if 0o777_777_777_777_777_777_777 != 0x7FFF_FFFF_FFFF_FFFF { return 6 }
+    if (sys.S_IRUSR | sys.S_IWUSR) != 0o600 { return 7 }
+    if sys.S_IRWXU != 0o700 || sys.S_IRWXG != 0o070 || sys.S_IRWXO != 0o007 { return 8 }
+    return 0
+}
