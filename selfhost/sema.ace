@@ -8713,12 +8713,15 @@ Sema.init_stmt(mut self, s: u32): bool {
                 mut self.init_undo(from) // each case starts from the scrutinee's state
             }
             mut self.init_end(outer)
-            // without a default, the value matching no case is one more path
+            // without a default, the value matching no case is one more path,
+            // except for a union, whose switch must already name every variant
+            st: u32 = self.node_ty(n.a)
+            closed: bool = has_default || (st != 0 && self.ty(st).kind == TypeKind.union)
             npaths: u32 = np
-            if !has_default { npaths += 1 }
+            if !closed { npaths += 1 }
             mut self.init_join(first, np, npaths)
             mut self.ik.paths.truncate(first)
-            return !has_default || np > 0
+            return !closed || np > 0
         }
         Kind.return {
             mut self.init_expr(n.a)

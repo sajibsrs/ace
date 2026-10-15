@@ -4,6 +4,8 @@
   (`missing return`, no implicit zero result, `main` included; C and selfhost). The check is
   the definite-initialization walk's reachability: `return`, `panic`, and an
   endless `for` with no leaving `break` end a path.
+  A union `switch` is exhaustive, so a variable it assigns in every arm is
+  initialized after it.
 
 - Added the `0o` octal integer literal beside `0x` and `0b` (C and selfhost
   lexers, `GRAMMAR.md`, the VS Code grammar): `0o755`, with `_` separators and

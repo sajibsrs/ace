@@ -1,0 +1,26 @@
+// a union switch names every variant, so no path is left over after it
+
+Shape: union {
+    circle: int,
+    square: int,
+}
+
+f(s: Shape): int {
+    switch s {
+        Shape.circle(r: int) { return r }
+        Shape.square(w: int) { return w }
+    }
+}
+
+g(s: Shape): int {
+    v: int
+    switch s {
+        Shape.circle(r: int) { v = r }
+        Shape.square(w: int) { v = w }
+    }
+    return v
+}
+
+main(): int {
+    return f(Shape.circle(1)) + g(Shape.square(2))
+}

@@ -7309,9 +7309,12 @@ static int init_stmt(InitCk* k, Node* s) {
             init_undo(k, from); // each case starts from the scrutinee's state
         }
         init_end(k, outer);
-        // without a default, the value matching no case is one more path
-        init_join(k, paths, np, np + !has_default);
-        return !has_default || np;
+        // without a default, the value matching no case is one more path,
+        // except for a union, whose switch must already name every variant
+        SType* st = node_ty(s->a);
+        int closed = has_default || (st && st->kind == SK_UNION);
+        init_join(k, paths, np, np + !closed);
+        return !closed || np;
     }
     case N_RETURN:
         init_expr(k, s->a); return 0;
