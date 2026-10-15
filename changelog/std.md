@@ -1,5 +1,8 @@
 # Standard library
 
+- `Map.len` is now a method, `m.len()`: the entry count is a private field, so
+  code outside `map` cannot write it and corrupt the table.
+
 - Added `exec.spawn(argv, options)` with `SpawnOptions`: a working directory
   and per-stream `Redirect` (`inherit`/`fd`, zero is inherit), as `posix_spawn`
   file actions (#148). `sys.open` and `sys.pipe` now mark descriptors

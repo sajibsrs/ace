@@ -1,0 +1,7 @@
+import map
+
+main(): int {
+    m: map.Map[int, int] = map.Map[int, int]{}
+    m.len = 5
+    return 0
+}

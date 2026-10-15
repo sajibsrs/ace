@@ -22,27 +22,27 @@ main(): int {
 
     // canonical zero: empty, lookups miss, first set allocates
     m: map.Map[int, int] = map.Map[int, int] {}
-    r += check(m.len == 0, 1)
+    r += check(m.len() == 0, 1)
     r += check(!m.has(1), 2)
     value: int, found: bool = m.get(1)
     r += check(value == 0 && !found, 3)
     r += check(!mut m.unset(1), 4)
     err = mut m.set(1, 10)
-    r += check(err == null && m.len == 1 && m.has(1), 5)
+    r += check(err == null && m.len() == 1 && m.has(1), 5)
     value, found = m.get(1)
     r += check(value == 10 && found, 6)
 
     // overwrite keeps one entry
     err = mut m.set(1, 11)
     value, found = m.get(1)
-    r += check(err == null && m.len == 1 && value == 11 && found, 7)
+    r += check(err == null && m.len() == 1 && value == 11 && found, 7)
 
     // growth well past the first allocation keeps every entry
     for i: int in 0 .. 5000 {
         err = mut m.set(i * 7 - 300, i)
         r += check(err == null, 8)
     }
-    r += check(m.len == 5000, 9) // key 1 is written twice: i = 43 and the first set
+    r += check(m.len() == 5000, 9) // key 1 is written twice: i = 43 and the first set
     ok: bool = true
     for i: int in 0 .. 5000 {
         v: int, f: bool = m.get(i * 7 - 300)
@@ -79,26 +79,26 @@ main(): int {
 
     // clear keeps storage, drops entries, and the map stays usable
     mut m.clear()
-    r += check(m.len == 0 && !m.has(7 - 300), 16)
+    r += check(m.len() == 0 && !m.has(7 - 300), 16)
     err = mut m.set(5, 50)
     value, found = m.get(5)
-    r += check(err == null && value == 50 && found && m.len == 1, 17)
+    r += check(err == null && value == 50 && found && m.len() == 1, 17)
     mut m.wipe()
-    r += check(m.len == 0, 18)
+    r += check(m.len() == 0, 18)
 
     // reserve and Map.new size the table once
     err = mut m.reserve(100)
-    r += check(err == null && m.len == 0, 19)
+    r += check(err == null && m.len() == 0, 19)
     for i: int in 0 .. 100 { err = mut m.set(i, i) }
-    r += check(m.len == 100, 20)
+    r += check(m.len() == 100, 20)
     mut m.wipe()
     sized: map.Map[int, int]
     sized, err = map.Map[int, int].new(10)
-    r += check(err == null && sized.len == 0, 21)
+    r += check(err == null && sized.len() == 0, 21)
     mut sized.wipe()
     empty: map.Map[int, int]
     empty, err = map.Map[int, int].new(0)
-    r += check(err == null && empty.len == 0, 22)
+    r += check(err == null && empty.len() == 0, 22)
 
     // string keys compare by content and values may be structs
     words: map.Map[string, Point] = map.Map[string, Point] {}
@@ -118,13 +118,13 @@ main(): int {
     r += check(!words.has("gamm") && !words.has("gammas") && !words.has(""), 25)
     removed: bool = mut words.unset("beta")
     r += check(removed && !words.has("beta") && words.has("delta"), 26)
-    r += check(words.len == 3, 27)
+    r += check(words.len() == 3, 27)
     mut words.wipe()
 
     // a full narrow-integer key domain and bool keys
     bytes: map.Map[u8, u16] = map.Map[u8, u16] {}
     for i: int in 0 .. 256 { err = mut bytes.set(u8(i), u16(i * 3)) }
-    ok = bytes.len == 256
+    ok = bytes.len() == 256
     for i: int in 0 .. 256 {
         v: u16, f: bool = bytes.get(u8(i))
         if !f || v != u16(i * 3) { ok = false }
@@ -136,7 +136,7 @@ main(): int {
     err = mut flags.set(false, 2)
     t: int, tf: bool = flags.get(true)
     f: int, ff: bool = flags.get(false)
-    r += check(tf && ff && t == 1 && f == 2 && flags.len == 2, 29)
+    r += check(tf && ff && t == 1 && f == 2 && flags.len() == 2, 29)
     mut flags.wipe()
 
     // signed and usize keys

@@ -4043,7 +4043,7 @@ Lw.frame_storage(self): bool {
         ps: u32 = self.nsym(self.kid(self.f, i))
         if self.by_address(self.f, i) && ps != 0 && self.stored.has(ps) { params += 1 }
     }
-    return self.stored.len > params
+    return self.stored.len() > params
 }
 
 /* A return inside an expansion: the result to the expansion's variable, then

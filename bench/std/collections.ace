@@ -80,7 +80,7 @@ main(): int {
             if mut table.unset(int(i * 7)) { checksum += 2 }
         }
         unset_time += now() - started
-        checksum += table.len
+        checksum += table.len()
     }
     report("map-set", set_time, keys * map_rounds, checksum)
     report("map-get", get_time, keys * map_rounds, checksum)

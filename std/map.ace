@@ -1,6 +1,6 @@
 /* map — a hash map from keys to values over the process allocator.
  *
- * A Map holds `len` live entries in `slots`, whose length is the capacity: a
+ * A Map holds `count` live entries in `slots`, whose length is the capacity: a
  * power of two, or zero for the canonical zero value and the empty literal
  * `Map[K, V]{}`, which are valid empty maps holding no storage. Entries live
  * in open-addressed slots probed linearly from the key's hash; the table
@@ -30,7 +30,7 @@ pub Slot[K, V]: struct {
 
 pub Map[K, V]: struct {
     slots: mut []Slot[K, V] = null,
-    pub len: usize = 0,
+    count: usize = 0,
 }
 
 hash[K](key: K): u64 specialized
@@ -169,7 +169,7 @@ pub Map[K, V].new(capacity: usize): (Map[K, V], Error) {
 /* Releases the map's storage and leaves it empty. */
 pub Map[K, V].wipe(mut self) {
     mem.release[Slot[K, V]](mut self.slots)
-    self.len = 0
+    self.count = 0
 }
 
 /* Moves every live entry into fresh storage of `capacity` slots, a power of
@@ -186,14 +186,19 @@ Map[K, V].rehash(mut self, capacity: usize): Error {
     return null
 }
 
+/* The number of live entries. */
+pub Map[K, V].len(self): usize {
+    return self.count
+}
+
 pub Map[K, V].has(self, key: K): bool {
-    if self.len == 0 { return false }
+    if self.count == 0 { return false }
     return self.slots[probe[K, V](self.slots, key)].used
 }
 
 /* The value stored for `key`. A missing key returns `blank(V)` and false. */
 pub Map[K, V].get(self, key: K): (V, bool) {
-    if self.len == 0 { return blank(V), false }
+    if self.count == 0 { return blank(V), false }
     at: usize = probe[K, V](self.slots, key)
     if !self.slots[at].used { return blank(V), false }
     return self.slots[at].value, true
@@ -203,15 +208,15 @@ pub Map[K, V].get(self, key: K): (V, bool) {
  * when a new entry would exceed the load limit.
  */
 pub Map[K, V].set(mut self, key: K, value: V): Error {
-    if self.len != 0 {
+    if self.count != 0 {
         at: usize = probe[K, V](self.slots, key)
         if self.slots[at].used {
             self.slots[at].value = value
             return null
         }
     }
-    if (self.len + 1) * 4 > self.slots.len * 3 {
-        err: Error = mut self.rehash(capacity_for(self.len + 1))
+    if (self.count + 1) * 4 > self.slots.len * 3 {
+        err: Error = mut self.rehash(capacity_for(self.count + 1))
         if err != null { return err }
     }
     at: usize = probe[K, V](self.slots, key)
@@ -220,13 +225,13 @@ pub Map[K, V].set(mut self, key: K, value: V): Error {
         value = value,
         used = true,
     }
-    self.len += 1
+    self.count += 1
     return null
 }
 
 /* Removes `key`, returning whether it was present. */
 pub Map[K, V].unset(mut self, key: K): bool {
-    if self.len == 0 { return false }
+    if self.count == 0 { return false }
     mask: usize = self.slots.len - 1
     hole: usize = probe[K, V](self.slots, key)
     if !self.slots[hole].used { return false }
@@ -243,7 +248,7 @@ pub Map[K, V].unset(mut self, key: K): bool {
         }
     }
     self.slots[hole].used = false
-    self.len -= 1
+    self.count -= 1
     return true
 }
 
@@ -258,5 +263,5 @@ pub Map[K, V].reserve(mut self, count: usize): Error {
 /* Drops every entry and keeps the storage. */
 pub Map[K, V].clear(mut self) {
     for i: usize in 0 .. self.slots.len { self.slots[i].used = false }
-    self.len = 0
+    self.count = 0
 }

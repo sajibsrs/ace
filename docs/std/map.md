@@ -3,7 +3,7 @@
 [Standard library](index.md)
 
 `map` provides a hash map from keys to values over the process allocator. A
-`Map[K, V]` holds `len` live entries in `slots`, whose length is the capacity:
+`Map[K, V]` holds its live entries in `slots`, whose length is the capacity:
 a power of two, or zero for the canonical zero value and the empty literal
 `Map[K, V]{}`. Those are valid empty maps holding no storage, so no constructor
 is required and the first `set` allocates. Entries live in open-addressed slots
@@ -25,6 +25,7 @@ instantiation. `string` keys compare by content.
 - `get(key: K): (V, bool)` returns the stored value and true. A missing key
   returns `blank(V)` and false.
 - `has(key: K): bool` reports whether `key` is present.
+- `len(): usize` is the number of live entries.
 - `unset(key: K): bool` removes `key` and reports whether it was present.
 - `reserve(count: usize): Error` ensures room for `count` entries in total; it
   never shrinks.
@@ -32,7 +33,7 @@ instantiation. `string` keys compare by content.
 
 `wipe`, `set`, `unset`, `reserve`, and `clear` mutate, so the call site states
 `mut`. `get` and `set` copy values, so no accessor hands out a slot address
-that growth could invalidate. `len` is readable directly.
+that growth could invalidate. The entry count is private, read through `len()`.
 
 ```ace
 import map
