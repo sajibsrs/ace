@@ -1,0 +1,21 @@
+/* Compiler-checked examples from docs/std/atomic.md. */
+import atomic
+
+count: u32
+
+bump(): u32 {
+    return atomic.add(mut &count, u32(1))
+}
+
+claim(flag: mut *u32): bool {
+    seen: u32 = 0
+    won: bool = false
+    seen, won = atomic.cas_acq_rel(flag, u32(0), u32(1))
+    return won
+}
+
+main(): int {
+    flag: u32 = 0
+    if !claim(mut &flag) || claim(mut &flag) { return 1 }
+    return int(bump())
+}

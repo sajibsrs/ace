@@ -398,6 +398,32 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
     }
 }
 
+// atomic.<op>[_<order>]: the operation and ordering named by the declaration
+// (Stdlib #25); no suffix is sequentially consistent.
+static void mark_atomic_intrinsics(Loader* L, Module* m) {
+    static const char* const ops[] = { "load", "store", "exchange", "add", "sub", "and", "or", "xor", "cas", "fence" };
+    static const char* const orders[] = { "relaxed", "acquire", "release", "acq_rel" };
+    if (!is_std_named_module(L, m->canon, "atomic")) return;
+    for (int i = 0; i < m->file->nkids; i++) {
+        Node* n = m->file->kids[i];
+        if (n->kind != N_FUNC || !(n->flags & F_INTRINSIC)) continue;
+        for (int k = 0; k < 10; k++) {
+            size_t ol = strlen(ops[k]);
+            if (n->len < ol || memcmp(n->str, ops[k], ol) != 0) continue;
+            int order = -1;
+            if (n->len == ol) {
+                order = AO_SEQ_CST;
+            } else if (n->str[ol] == '_') {
+                for (int o = 0; o < 4; o++)
+                    if (n->len - ol - 1 == strlen(orders[o]) && memcmp(n->str + ol + 1, orders[o], n->len - ol - 1) == 0)
+                        order = o;
+            }
+            if (order >= 0) n->ival = BI_ATOMIC + k * 8 + order;
+            break;
+        }
+    }
+}
+
 static void mark_math_intrinsics(Loader* L, Module* m) {
     if (!is_std_named_module(L, m->canon, "math")) return;
     for (int i = 0; i < m->file->nkids; i++) {
@@ -1018,6 +1044,7 @@ static Module* ensure_module(Loader* L, Node* imp, const char* src_path) {
     mark_str_intrinsics(L, m);
     mark_sys_intrinsics(L, m);
     mark_bits_intrinsics(L, m);
+    mark_atomic_intrinsics(L, m);
     mark_math_intrinsics(L, m);
     mark_internal_load_intrinsic(L, m);
     mark_internal_formatting(L, m);

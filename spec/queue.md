@@ -5,7 +5,21 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-None.
+- Atomics and the memory model (#36, #37): carved in Memory, "Carved (memory
+  model)" and Stdlib #25. Staged: arm64 lowering and tests (done), then x64,
+  then selfhost. Open limitations, each resolved or dropped before the topic
+  closes:
+  - Staging: linux-x64 refuses atomics; selfhost has no `atomic` support.
+  - Coverage: no test exercises real cross-context behavior (no threads yet),
+    only single-context semantics and the emitted instructions.
+  - Surface: no `u8`, `u16`, pointer, or 128-bit atomics; `usize` needs an
+    explicit pointer conversion.
+  - Language: an untyped integer literal does not choose between the `u32`
+    and `u64` overloads, so every value is cast (`u32(1)`); a tuple result is
+    read only by destructuring.
+  - Checking: data races are unchecked in every build.
+  - arm64: assumes ARMv8.1 atomics (no fallback); an acquire load uses `ldar`,
+    not the cheaper `ldapr`; the debug alignment check expands at every site.
 
 ### Trigger-gated
 
@@ -37,5 +51,4 @@ None.
 - IPv6, UDP, address queries, half-close,
   extra TCP options, and other explicitly additive networking work are carved
   only after the nonblocking proof identifies the required order.
-- Threads and atomics follow the networking proof; their semantics are not yet
-  carved.
+- Threads follow the networking proof; their semantics are not yet carved.

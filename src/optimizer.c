@@ -1621,7 +1621,7 @@ static int thread_branches(Clean* c) {
 static int has_effect(const IrIns* x) {
     switch (x->op) {
     case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ: case IR_ASM:
-    case IR_PARAM: case IR_RESULT: case IR_JMP: case IR_BR: case IR_RET:
+    case IR_ATOMIC: case IR_PARAM: case IR_RESULT: case IR_JMP: case IR_BR: case IR_RET:
         return 1;
     case IR_LOAD: return (x->flags & IRF_VOLATILE) != 0;
     default: return 0;

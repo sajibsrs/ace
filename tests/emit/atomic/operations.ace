@@ -1,0 +1,64 @@
+/* Every atomic operation at both widths and each ordering family returns and
+ * stores what its name states; a cas reports the observed word and whether it
+ * wrote; each is an ordinary callable symbol. */
+
+// expect-exit: 42
+
+import atomic
+
+word: u32
+wide: u64
+
+main(): int {
+    w: u32 = 5
+    pw: mut *u32 = mut &w
+    if atomic.load(pw) != 5 || atomic.load_acquire(pw) != 5 || atomic.load_relaxed(pw) != 5 {
+        return 1
+    }
+    atomic.store(pw, u32(7))
+    if w != 7 { return 2 }
+    atomic.store_release(pw, u32(9))
+    atomic.store_relaxed(pw, u32(11))
+    if atomic.load(pw) != 11 { return 3 }
+
+    if atomic.exchange(pw, u32(20)) != 11 || w != 20 { return 4 }
+    if atomic.exchange_acq_rel(pw, u32(21)) != 20 || w != 21 { return 5 }
+    if atomic.add(pw, u32(4)) != 21 || w != 25 { return 6 }
+    if atomic.sub(pw, u32(5)) != 25 || w != 20 { return 7 }
+    if atomic.and(pw, u32(0x16)) != 20 || w != 20 { return 8 }
+    if atomic.or_relaxed(pw, u32(0x0A)) != 20 || w != 30 { return 9 }
+    if atomic.xor_release(pw, u32(0xFF)) != 30 || w != 0xE1 { return 10 }
+    atomic.store(pw, u32(0xFFFFFFFF))
+    if atomic.add_acquire(pw, u32(2)) != 0xFFFFFFFF || w != 1 { return 11 } // wraps
+    if atomic.sub(pw, u32(2)) != 1 || w != 0xFFFFFFFF { return 12 }
+
+    old: u32, ok: bool = atomic.cas(pw, u32(0xFFFFFFFF), u32(3))
+    if old != 0xFFFFFFFF || !ok || w != 3 { return 13 }
+    old, ok = atomic.cas_acq_rel(pw, u32(99), u32(4))
+    if old != 3 || ok || w != 3 { return 14 }
+    old, ok = atomic.cas_relaxed(pw, u32(3), u32(8))
+    if old != 3 || !ok || w != 8 { return 15 }
+
+    pd: mut *u64 = mut &wide
+    atomic.store(pd, u64(0x100000000))
+    if atomic.add(pd, u64(0x100000000)) != 0x100000000 || wide != 0x200000000 { return 16 }
+    if atomic.sub_relaxed(pd, u64(1)) != 0x200000000 || wide != 0x1FFFFFFFF { return 17 }
+    if atomic.and(pd, u64(0xFFFF)) != 0x1FFFFFFFF || wide != 0xFFFF { return 18 }
+    if atomic.exchange_acquire(pd, u64(6)) != 0xFFFF || atomic.load(pd) != 6 { return 19 }
+    big: u64 = 0x10000000000
+    o64: u64, k64: bool = atomic.cas(pd, u64(6), big)
+    if o64 != 6 || !k64 || wide != big { return 20 }
+    o64, k64 = atomic.cas(pd, u64(5), u64(0))
+    if o64 != big || k64 { return 21 }
+
+    atomic.fence()
+    atomic.fence_acquire()
+    atomic.fence_release()
+
+    // a global, and an intrinsic used as a function value
+    pg: mut *u32 = mut &word
+    ld: (*u32): u32 = atomic.load
+    atomic.store(pg, u32(33))
+    if ld(pg) != 33 { return 22 }
+    return 42
+}

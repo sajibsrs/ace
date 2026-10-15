@@ -54,6 +54,13 @@ typedef enum {
     X(STR, "str")       /* ptr to the bytes of a string literal: name, imm long */ \
     X(LOAD, "load")     /* the result type's value at args[0] + aux */         \
     X(STORE, "store")   /* args[1] to args[0] + aux, at args[1]'s width */     \
+    /* an atomic operation AK_* (aux) at ordering AO_* (imm) on the u32 or    \
+       u64 word at ptr args[0]: load; store args[1]; exchange, add, sub,      \
+       and, or, xor with args[1], the result the previous value; cas with     \
+       expected args[1] and desired args[2], the result the observed value;   \
+       fence, with no arguments. Never removed, combined, or reordered with   \
+       a memory access its ordering forbids; checked: a null address traps */ \
+    X(ATOMIC, "atomic")                                                        \
     /* pointer offset: ptr args[0] +/- u64 args[1] * imm (the element size) */ \
     X(PADD, "padd") X(PSUB, "psub")                                            \
     X(CALL, "call")     /* to name (sym, when an Ace or extern function) */    \

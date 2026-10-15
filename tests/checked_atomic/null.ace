@@ -1,0 +1,6 @@
+import atomic
+
+main(): int {
+    p: mut *u64 = null
+    return int(atomic.add(p, u64(1)))
+}

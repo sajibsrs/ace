@@ -124,6 +124,32 @@ Carved (volatile access):
   switch binders remain local payload copies, not addressable union views, and
   therefore introduce no volatile payload access.
 
+Carved (memory model):
+
+- An execution context is anything that runs concurrently with another over
+  shared memory (a thread, once carved; a signal handler; a process sharing a
+  mapping). Ordinary and volatile accesses assume no concurrent writer.
+- Atomic operations (`atomic`, Stdlib #25) are the only operations that
+  synchronize. Each is indivisible and lock-free: never a lock or runtime call,
+  so usable in any context. All atomic operations on one location are totally
+  ordered, and their orderings add happens-before between contexts.
+- Happens-before is program order within a context plus synchronizes-with: an
+  acquire-or-stronger read that reads the value written by a release-or-stronger
+  write, or by a read-modify-write chained after it, orders everything before
+  the write ahead of everything after the read. A release fence followed by a
+  relaxed write synchronizes with a relaxed read followed by an acquire fence
+  in the same way. Sequentially consistent operations additionally occupy one
+  total order consistent with happens-before.
+- A data race is two accesses to overlapping bytes, at least one a write and at
+  least one not atomic (a volatile access is not atomic), with no happens-before
+  between them. It is programmer error: the value read is unspecified. No build
+  checks it.
+- `noalias` (Mutability #8) and read-only-parameter facts hold for the whole
+  call across every context: another context writing that storage during the
+  call is a data race. Passes never remove, combine, or duplicate an atomic
+  operation, and never move an ordinary access across one in a direction its
+  ordering forbids.
+
 Carved (typed allocation):
 22. The `mem` module exports four explicitly instantiated generic overloads beside the raw byte forms: `mem.alloc[T](count: usize): mut []T`, `mem.zalloc[T](count: usize): mut []T`, `mem.realloc[T](data: []T, new_count: usize): mut []T`, and `mem.release[T](mut data: []T)`. Generic instantiation stays explicit (Generics #5): deallocation is spelled `mem.release[T](mut data)`, never inferred from the argument. As in the raw forms, allocation and successful reallocation originate writable-content proof in their results, while reallocation and release inputs require authoritative descriptors but not element-write permission. The raw and typed forms remain one overload set per name.
 23. `mem.alloc[T](count)` requests storage for exactly `count` contiguous `T` elements. The byte size is `count * sizeof(T)`, computed safely before the platform allocator is called; the alignment is selected automatically from `T` and the caller supplies neither. The returned `mut []T` is the allocation pointer plus `count` as its element length — no capacity, allocator value, ownership marker, header, or other metadata (Memory #18). Storage uses the target's native representation, alignment, and byte order: typed native memory, not serialization.

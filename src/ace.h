@@ -232,7 +232,12 @@ enum {
     BI_MEM_MOVE_T = 40,     // mem.move[T](dst: mut []T, src: []T)
     BI_FMT_PRINTF_BUF = 41, // fmt.printf(mut buffer, "format", ...): fmt.printf into a fmt.Buffer
     BI_BITS_MUL_WIDE = 42,  // bits.mul_wide(a, b: u64): (u64, u64), the 128-bit product's high and low words
+    BI_ATOMIC = 64,         // atomic.*: BI_ATOMIC + AK_* * 8 + AO_*, the operation and its ordering
 };
+
+// atomic operations (Stdlib #25) and their orderings (Memory, memory model)
+enum { AK_LOAD, AK_STORE, AK_XCHG, AK_ADD, AK_SUB, AK_AND, AK_OR, AK_XOR, AK_CAS, AK_FENCE };
+enum { AO_RELAXED, AO_ACQUIRE, AO_RELEASE, AO_ACQ_REL, AO_SEQ_CST };
 
 enum {
     PF_TEXT, PF_SIGNED, PF_UNSIGNED, PF_BINARY, PF_OCTAL,

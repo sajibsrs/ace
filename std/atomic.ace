@@ -1,0 +1,103 @@
+/* atomic — indivisible, lock-free operations on shared u32 and u64 words.
+ * Compiler-backed target instructions (spec/std/atomic.md); the unsuffixed name
+ * is sequentially consistent and a suffix names a weaker ordering.
+ */
+
+
+pub load(p: *u32): u32 intrinsic
+pub load_acquire(p: *u32): u32 intrinsic
+pub load_relaxed(p: *u32): u32 intrinsic
+pub store(p: mut *u32, value: u32) intrinsic
+pub store_release(p: mut *u32, value: u32) intrinsic
+pub store_relaxed(p: mut *u32, value: u32) intrinsic
+
+pub exchange(p: mut *u32, value: u32): u32 intrinsic
+pub exchange_acquire(p: mut *u32, value: u32): u32 intrinsic
+pub exchange_release(p: mut *u32, value: u32): u32 intrinsic
+pub exchange_acq_rel(p: mut *u32, value: u32): u32 intrinsic
+pub exchange_relaxed(p: mut *u32, value: u32): u32 intrinsic
+
+pub add(p: mut *u32, value: u32): u32 intrinsic
+pub add_acquire(p: mut *u32, value: u32): u32 intrinsic
+pub add_release(p: mut *u32, value: u32): u32 intrinsic
+pub add_acq_rel(p: mut *u32, value: u32): u32 intrinsic
+pub add_relaxed(p: mut *u32, value: u32): u32 intrinsic
+
+pub sub(p: mut *u32, value: u32): u32 intrinsic
+pub sub_acquire(p: mut *u32, value: u32): u32 intrinsic
+pub sub_release(p: mut *u32, value: u32): u32 intrinsic
+pub sub_acq_rel(p: mut *u32, value: u32): u32 intrinsic
+pub sub_relaxed(p: mut *u32, value: u32): u32 intrinsic
+
+pub and(p: mut *u32, value: u32): u32 intrinsic
+pub and_acquire(p: mut *u32, value: u32): u32 intrinsic
+pub and_release(p: mut *u32, value: u32): u32 intrinsic
+pub and_acq_rel(p: mut *u32, value: u32): u32 intrinsic
+pub and_relaxed(p: mut *u32, value: u32): u32 intrinsic
+
+pub or(p: mut *u32, value: u32): u32 intrinsic
+pub or_acquire(p: mut *u32, value: u32): u32 intrinsic
+pub or_release(p: mut *u32, value: u32): u32 intrinsic
+pub or_acq_rel(p: mut *u32, value: u32): u32 intrinsic
+pub or_relaxed(p: mut *u32, value: u32): u32 intrinsic
+
+pub xor(p: mut *u32, value: u32): u32 intrinsic
+pub xor_acquire(p: mut *u32, value: u32): u32 intrinsic
+pub xor_release(p: mut *u32, value: u32): u32 intrinsic
+pub xor_acq_rel(p: mut *u32, value: u32): u32 intrinsic
+pub xor_relaxed(p: mut *u32, value: u32): u32 intrinsic
+
+pub cas(p: mut *u32, expected: u32, desired: u32): (u32, bool) intrinsic
+pub cas_acq_rel(p: mut *u32, expected: u32, desired: u32): (u32, bool) intrinsic
+pub cas_relaxed(p: mut *u32, expected: u32, desired: u32): (u32, bool) intrinsic
+
+pub load(p: *u64): u64 intrinsic
+pub load_acquire(p: *u64): u64 intrinsic
+pub load_relaxed(p: *u64): u64 intrinsic
+pub store(p: mut *u64, value: u64) intrinsic
+pub store_release(p: mut *u64, value: u64) intrinsic
+pub store_relaxed(p: mut *u64, value: u64) intrinsic
+
+pub exchange(p: mut *u64, value: u64): u64 intrinsic
+pub exchange_acquire(p: mut *u64, value: u64): u64 intrinsic
+pub exchange_release(p: mut *u64, value: u64): u64 intrinsic
+pub exchange_acq_rel(p: mut *u64, value: u64): u64 intrinsic
+pub exchange_relaxed(p: mut *u64, value: u64): u64 intrinsic
+
+pub add(p: mut *u64, value: u64): u64 intrinsic
+pub add_acquire(p: mut *u64, value: u64): u64 intrinsic
+pub add_release(p: mut *u64, value: u64): u64 intrinsic
+pub add_acq_rel(p: mut *u64, value: u64): u64 intrinsic
+pub add_relaxed(p: mut *u64, value: u64): u64 intrinsic
+
+pub sub(p: mut *u64, value: u64): u64 intrinsic
+pub sub_acquire(p: mut *u64, value: u64): u64 intrinsic
+pub sub_release(p: mut *u64, value: u64): u64 intrinsic
+pub sub_acq_rel(p: mut *u64, value: u64): u64 intrinsic
+pub sub_relaxed(p: mut *u64, value: u64): u64 intrinsic
+
+pub and(p: mut *u64, value: u64): u64 intrinsic
+pub and_acquire(p: mut *u64, value: u64): u64 intrinsic
+pub and_release(p: mut *u64, value: u64): u64 intrinsic
+pub and_acq_rel(p: mut *u64, value: u64): u64 intrinsic
+pub and_relaxed(p: mut *u64, value: u64): u64 intrinsic
+
+pub or(p: mut *u64, value: u64): u64 intrinsic
+pub or_acquire(p: mut *u64, value: u64): u64 intrinsic
+pub or_release(p: mut *u64, value: u64): u64 intrinsic
+pub or_acq_rel(p: mut *u64, value: u64): u64 intrinsic
+pub or_relaxed(p: mut *u64, value: u64): u64 intrinsic
+
+pub xor(p: mut *u64, value: u64): u64 intrinsic
+pub xor_acquire(p: mut *u64, value: u64): u64 intrinsic
+pub xor_release(p: mut *u64, value: u64): u64 intrinsic
+pub xor_acq_rel(p: mut *u64, value: u64): u64 intrinsic
+pub xor_relaxed(p: mut *u64, value: u64): u64 intrinsic
+
+pub cas(p: mut *u64, expected: u64, desired: u64): (u64, bool) intrinsic
+pub cas_acq_rel(p: mut *u64, expected: u64, desired: u64): (u64, bool) intrinsic
+pub cas_relaxed(p: mut *u64, expected: u64, desired: u64): (u64, bool) intrinsic
+
+pub fence() intrinsic
+pub fence_acquire() intrinsic
+pub fence_release() intrinsic

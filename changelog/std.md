@@ -85,3 +85,7 @@
   index is a bounds violation. selfhost drops 264 `usize(...)` casts from
   `get` calls (2.2 KB); `set` stays `usize`-only, since a second overload
   would make an untyped literal value `int` (Syntax #6).
+- Added the `atomic` module: `u32` and `u64` load, store, exchange, add, sub,
+  and, or, xor, cas, and fence, the ordering in the name (unsuffixed is
+  `seq_cst`). One `IR_ATOMIC` lowers on darwin-arm64 to ARMv8.1 `swp`/`ld<op>`/
+  `cas`, `ldar`/`stlr`, and `dmb`; linux-x64 refuses it (#36, #37).

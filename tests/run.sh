@@ -1444,6 +1444,17 @@ for f in pointer function c_function; do
         fail=1
     fi
 done
+for f in null misaligned; do
+    want="ace: null use violation"
+    [ "$f" = misaligned ] && want="misaligned atomic access"
+    if ! "$ACE" --debug -o "/tmp/ace_checked_features/atomic_$f" \
+         "tests/checked_atomic/$f.ace" >/dev/null 2>$T/errs ||
+       "/tmp/ace_checked_features/atomic_$f" >/dev/null 2>$T/errs ||
+       ! grep -qF "$want" $T/errs; then
+        echo "FAIL: checked atomic fixture $f"
+        fail=1
+    fi
+done
 if ! "$ACE" --debug -o /tmp/ace_checked_features/allocator_valid \
      tests/checked_allocator/valid.ace ||
    ! /tmp/ace_checked_features/allocator_valid; then

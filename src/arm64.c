@@ -1489,6 +1489,61 @@ static void page_ref(A64* a, int rd, const char* name, uint32_t w) {
     put(a, w);
 }
 
+// An atomic operation (Stdlib #25) on the word at args[0]: ldar/stlr for an
+// ordered load or store, the ARMv8.1 atomics (swp, ldadd, ldclr, ldset, ldeor,
+// cas), whose acquire and release bits carry the ordering, and dmb for a
+// fence. The result register is never xzr: with it, an acquire ldadd would
+// stop being a load for ordering. Scratch: x15 holds the pointer or a negated
+// or inverted operand, x16 the operand or a cas's expected word.
+static void atomic(A64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    int kind = x->aux, order = (int)x->imm;
+    if (kind == AK_FENCE) {
+        put(a, order == AO_ACQUIRE ? 0xD50339BFu : 0xD5033BBFu); // dmb ishld, dmb ish
+        return;
+    }
+    IrType t = (IrType)(kind == AK_STORE ? ins_of(a, x->args[1])->type : x->type);
+    int w64 = is64(t);
+    uint32_t sz = w64 ? 0xC0000000u : 0x80000000u;
+    uint32_t acq = order == AO_ACQUIRE || order == AO_ACQ_REL || order == AO_SEQ_CST;
+    uint32_t rel = order == AO_RELEASE || order == AO_ACQ_REL || order == AO_SEQ_CST;
+    int rn = opnd(a, x->args[0], S0);
+    if (x->flags & IRF_CHECKED) null_fail_if_zero(a, rn);
+    if (kind == AK_LOAD) {
+        int rd = dst(a, v);
+        put(a, (acq ? (w64 ? 0xC8DFFC00u : 0x88DFFC00u) : (w64 ? 0xF9400000u : 0xB9400000u)) |
+                   ((uint32_t)rn << 5) | (uint32_t)rd); // ldar, ldr
+        dst_done(a, v, rd);
+    } else if (kind == AK_STORE) {
+        int rs = opnd(a, x->args[1], S1);
+        put(a, (rel ? (w64 ? 0xC89FFC00u : 0x889FFC00u) : (w64 ? 0xF9000000u : 0xB9000000u)) |
+                   ((uint32_t)rn << 5) | (uint32_t)rs); // stlr, str
+    } else if (kind == AK_CAS) {
+        int re = opnd(a, x->args[1], S1);
+        mov_reg(a, S1, re); // cas overwrites its expected register with the observed word
+        int rd = opnd(a, x->args[2], S2);
+        put(a, sz | 0x08A07C00u | (acq << 22) | (rel << 15) | ((uint32_t)S1 << 16) | ((uint32_t)rn << 5) | (uint32_t)rd);
+        int rr = dst(a, v);
+        mov_reg(a, rr, S1);
+        dst_done(a, v, rr);
+    } else {
+        int rs = opnd(a, x->args[1], S1);
+        uint32_t opc = kind == AK_XCHG ? 0x8000u : kind == AK_ADD || kind == AK_SUB ? 0u : kind == AK_AND ? 1u << 12
+                     : kind == AK_XOR ? 2u << 12 : 3u << 12; // swp, ldadd, ldclr, ldset, ldeor
+        if (kind == AK_SUB) { // x - y is x + -y
+            put(a, (w64 ? 0xCB0003E0u : 0x4B0003E0u) | ((uint32_t)rs << 16) | (uint32_t)S2);
+            rs = S2;
+        } else if (kind == AK_AND) { // x & y is x & ~~y: clear the inverted bits
+            put(a, (w64 ? 0xAA2003E0u : 0x2A2003E0u) | ((uint32_t)rs << 16) | (uint32_t)S2);
+            rs = S2;
+        }
+        int rd = a->ra.reg[v] >= 0 ? a->ra.reg[v] : S2;
+        put(a, sz | 0x38200000u | (acq << 23) | (rel << 22) | ((uint32_t)rs << 16) | opc | ((uint32_t)rn << 5) |
+                   (uint32_t)rd);
+        dst_done(a, v, rd);
+    }
+}
+
 // Load or store v; the value register is chosen by the caller of mem.
 static void access(A64* a, int v) {
     IrIns* x = ins_of(a, v);
@@ -1999,6 +2054,9 @@ static void emit_block(A64* a, int b) {
             break;
         case IR_LOAD: case IR_STORE:
             access(a, v);
+            break;
+        case IR_ATOMIC:
+            atomic(a, v);
             break;
         case IR_PADD: case IR_PSUB:
             pointer_offset(a, v);

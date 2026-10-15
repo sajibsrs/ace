@@ -156,6 +156,30 @@ atomicity, thread synchronization, memory barrier, or hardware-specific
 ordering. The programmer must also use an address and alignment accepted by the
 target device.
 
+## Memory model
+
+An execution context is anything that runs concurrently with another over
+shared memory: a thread, a signal handler, or a process sharing a mapping.
+Ordinary and volatile accesses assume no concurrent writer; the only
+operations that synchronize are the [`atomic`](std/atomic.md) ones, each
+indivisible and lock-free, so usable in any context. All atomic operations on
+one location are totally ordered.
+
+An acquire-or-stronger read that reads the value written by a
+release-or-stronger write, or by a read-modify-write chained after it, orders
+everything before the write ahead of everything after the read. A release fence
+before a relaxed write and an acquire fence after a relaxed read do the same.
+Sequentially consistent operations also share one total order.
+
+A data race is two accesses to overlapping bytes, at least one a write and at
+least one not atomic (a volatile access is not atomic), with no such ordering
+between them. It is programmer error and the value read is unspecified; no build
+checks it. The `noalias` and read-only-parameter facts hold for the whole call
+across every context, so another context writing that storage during the call is
+a data race. The compiler never removes, combines, or duplicates an atomic
+operation, and never moves an ordinary access across one in a direction its
+ordering forbids.
+
 The direct read-only property `sequence.len` belongs only to built-in sequences:
 
 - `array.len` for `[N]T` is the constant element count `N`.

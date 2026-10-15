@@ -1881,6 +1881,9 @@ static void emit_block(X64* a, int b) {
         case IR_MULH:
             mul_high(a, v);
             break;
+        case IR_ATOMIC:
+            refuse(a, "atomic operations");
+            break;
         case IR_GLOBAL:
             addr_of(a, RAX, x->name, x->sym && x->sym->is_extern);
             store_val(a, v, RAX);

@@ -24,5 +24,6 @@ gives each section's file. Stdlib items keep one numbering across their files.
 | `std/fmt.md` | Stdlib #12 formatted output |
 | `std/net.md` | Stdlib #13 `net`, #14 `poll`, #15 `tcp` |
 | `std/text.md` | Stdlib #16 character and string utilities |
+| `std/atomic.md` | Stdlib #25 `atomic` |
 | `std/collections.md` | Stdlib #18 `array`, #19 `map`, #20 `file` |
 | `pkg/http.md` | Stdlib #17 HTTP (`pkg/http`) |

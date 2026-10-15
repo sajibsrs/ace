@@ -2003,6 +2003,35 @@ static void enter_specialization(Ck* k, Node* f) {
     check_cold_decl(k, f);
 }
 
+// Whether ft is atomic operation kind's signature at that ordering (Stdlib
+// #25): the orderings the operation admits, over a u32 or u64 word.
+static int atomic_signature(SType* ft, int kind, int order) {
+    static const uint8_t orders[] = {
+        [AK_LOAD] = 1 << AO_RELAXED | 1 << AO_ACQUIRE | 1 << AO_SEQ_CST,
+        [AK_STORE] = 1 << AO_RELAXED | 1 << AO_RELEASE | 1 << AO_SEQ_CST,
+        [AK_XCHG] = 31, [AK_ADD] = 31, [AK_SUB] = 31, [AK_AND] = 31, [AK_OR] = 31, [AK_XOR] = 31,
+        [AK_CAS] = 1 << AO_RELAXED | 1 << AO_ACQ_REL | 1 << AO_SEQ_CST,
+        [AK_FENCE] = 1 << AO_ACQUIRE | 1 << AO_RELEASE | 1 << AO_SEQ_CST,
+    };
+    if (kind > AK_FENCE || !(orders[kind] >> order & 1)) return 0;
+    SType* r = ft->ret;
+    if (kind == AK_FENCE) return ft->nparams == 0 && !r;
+    SType* p = ft->nparams ? ft->params[0] : NULL;
+    if (!p || p->kind != SK_PTR || p->is_mut != (kind != AK_LOAD) || !p->base || p->base->kind != SK_PRIM ||
+        (p->base->prim != P_U32 && p->base->prim != P_U64))
+        return 0;
+    int word = p->base->prim;
+    int nparams = kind == AK_LOAD ? 1 : kind == AK_CAS ? 3 : 2;
+    if (ft->nparams != nparams) return 0;
+    for (int i = 1; i < nparams; i++)
+        if (ft->params[i]->kind != SK_PRIM || ft->params[i]->prim != word) return 0;
+    if (kind == AK_STORE) return !r;
+    if (kind == AK_CAS)
+        return r && r->kind == SK_TUPLE && r->nfields == 2 && r->fields[0].t->kind == SK_PRIM &&
+               r->fields[0].t->prim == word && r->fields[1].t->kind == SK_PRIM && r->fields[1].t->prim == P_BOOL;
+    return r && r->kind == SK_PRIM && r->prim == word;
+}
+
 // One member's signature; 0 when it duplicates an earlier member's.
 static int resolve_func(Ck* k, Sym* s, Sym* head) {
     Node* f = s->decl;
@@ -2051,8 +2080,9 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             (ip->prim == P_F32 || ip->prim == P_F64) &&
             ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
             ft->params[2]->kind == SK_PRIM && ft->params[2]->prim == ip->prim;
+        int atomic_ok = f->ival >= BI_ATOMIC && atomic_signature(ft, (f->ival - BI_ATOMIC) / 8, (f->ival - BI_ATOMIC) % 8);
         if (!(load64 || bit_count ||
-              bit_transform || bit_rotate || bit_wrap || bit_wide || math_exact || math_fused))
+              bit_transform || bit_rotate || bit_wrap || bit_wide || math_exact || math_fused || atomic_ok))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }

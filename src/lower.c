@@ -1725,9 +1725,48 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
     return n;
 }
 
+// An atomic.* call (Stdlib #25): one IR_ATOMIC on the word its pointer
+// argument addresses. Debug builds first trap on a misaligned word, then (the
+// IR_ATOMIC's check) on a null one. A cas yields (observed, wrote).
+static int atomic_call(Lw* l, Node* x, int bi, Agg* res) {
+    int kind = (bi - BI_ATOMIC) / 8, order = (bi - BI_ATOMIC) % 8;
+    if (kind == AK_FENCE) {
+        int id = emit(l, IR_ATOMIC, IT_VOID);
+        l->fn->ins[id].aux = kind;
+        l->fn->ins[id].imm = (uint64_t)order;
+        return id;
+    }
+    SType* pt = node_ty(x->kids[0]);
+    if (!pt || pt->kind != SK_PTR) unsupported(l, "atomic address");
+    IrType t = need_type(l, pt->base);
+    int p = expr(l, x->kids[0], IT_PTR);
+    if (l->mode == EMIT_DEBUG) {
+        int low = emit2(l, IR_AND, IT_U64, emit2(l, IR_CAST, IT_U64, p, -1), konst(l, IT_U64, ir_type_bits(t) / 8 - 1));
+        int id = emit2(l, IR_CHECK, IT_VOID, cmp(l, IR_EQ, low, konst(l, IT_U64, 0)), -1);
+        l->fn->ins[id].name = "misaligned atomic access";
+        l->fn->ins[id].at = l->at;
+    }
+    int ops[2] = { -1, -1 };
+    for (int i = 1; i < x->nkids; i++) ops[i - 1] = expr(l, x->kids[i], t);
+    int id = emit(l, IR_ATOMIC, kind == AK_STORE ? IT_VOID : t);
+    ir_arg_add(l->fn, id, p);
+    for (int i = 0; i < x->nkids - 1; i++) ir_arg_add(l->fn, id, ops[i]);
+    l->fn->ins[id].aux = kind;
+    l->fn->ins[id].imm = (uint64_t)order;
+    l->fn->ins[id].flags = (uint8_t)null_checked(l);
+    if (kind != AK_CAS) return id;
+    int wrote = cmp(l, IR_EQ, id, ops[0]);
+    if (!res) return id;
+    res->n = 2;
+    res->v[0] = id;
+    res->v[1] = wrote;
+    return -1;
+}
+
 // A compiler-backed call the IR covers: its value (a slice's or string's
 // leaves into res), or -2 for one it does not.
 static int builtin(Lw* l, Node* x, int bi, Agg* res) {
+    if (bi >= BI_ATOMIC) return atomic_call(l, x, bi, res);
     switch (bi) {
     case BI_BITS_POP_COUNT: case BI_BITS_LEAD_ZEROS: case BI_BITS_TRAIL_ZEROS: case BI_BITS_BYTE_SWAP: {
         IrType t = need_type(l, node_ty(x->kids[0]));

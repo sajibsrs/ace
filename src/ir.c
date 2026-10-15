@@ -486,7 +486,7 @@ int ir_verify(IrFunc* fn) {
                         break;
                     }
                 } else if (fn->ins[u].type == IT_VOID) { ok = bad(fn, "%%%d uses void value %%%d", id, u); break; }
-                int want_ptr = (a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_PADD ||
+                int want_ptr = (a == 0 && (v->op == IR_LOAD || v->op == IR_STORE || v->op == IR_ATOMIC || v->op == IR_PADD ||
                                            v->op == IR_PSUB || v->op == IR_CALLI || v->op == IR_RTCALL)) ||
                                (a == v->nargs - 1 && (v->flags & IRF_SRET));
                 if (want_ptr && fn->ins[u].type != IT_PTR) { ok = bad(fn, "%%%d needs an address, not %%%d", id, u); break; }
@@ -645,6 +645,17 @@ void ir_print(IrFunc* fn, FILE* out) {
                     print_value(out, num, v->args[1]);
                 }
                 break;
+            case IR_ATOMIC: {
+                static const char* const kinds[] = { "load", "store", "xchg", "add", "sub", "and", "or", "xor", "cas",
+                                                     "fence" };
+                static const char* const orders[] = { "relaxed", "acquire", "release", "acq_rel", "seq_cst" };
+                fprintf(out, " %s.%s", kinds[v->aux], orders[v->imm]);
+                for (int a = 0; a < v->nargs; a++) {
+                    fputs(a ? ", " : " ", out);
+                    print_value(out, num, v->args[a]);
+                }
+                break;
+            }
             case IR_PADD: case IR_PSUB:
                 fputc(' ', out);
                 print_value(out, num, v->args[0]);
