@@ -46,7 +46,7 @@
         },
         {
           "name": "keyword.operator.logical.ace",
-          "match": "\\b(?:and|or|not)\\b"
+          "match": "(?<!\\.)\\b(?:and|or|not)\\b"
         }
       ]
     },
@@ -115,15 +115,15 @@
         },
         {
           "name": "constant.numeric.integer.hexadecimal.ace",
-          "match": "(?<![A-Za-z0-9_])0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*(?![A-Za-z0-9_])"
         },
         {
           "name": "constant.numeric.integer.octal.ace",
-          "match": "(?<![A-Za-z0-9_])0o[0-7](?:_?[0-7])*(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])0[oO][0-7](?:_?[0-7])*(?![A-Za-z0-9_])"
         },
         {
           "name": "constant.numeric.integer.binary.ace",
-          "match": "(?<![A-Za-z0-9_])0b[01](?:_?[01])*(?![A-Za-z0-9_])"
+          "match": "(?<![A-Za-z0-9_])0[bB][01](?:_?[01])*(?![A-Za-z0-9_])"
         },
         {
           "name": "constant.numeric.integer.decimal.ace",
@@ -335,10 +335,11 @@
           }
         },
         {
-          "match": "^\\s*()([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^\\n]+?)?(?:\\s+as\\s+\"[^\"]+\")?\\s*$)",
+          "match": "^\\s*(?:(pub)\\s+)?(?:(inline)\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\([^\\n]*\\)(?:\\s*:\\s*[^\\n]+?)?(?:\\s+as\\s+\"[^\"]+\")?\\s*$)",
           "captures": {
             "1": { "name": "keyword.control.ace" },
-            "2": { "name": "entity.name.function.ace" }
+            "2": { "name": "keyword.control.ace" },
+            "3": { "name": "entity.name.function.ace" }
           }
         }
       ]

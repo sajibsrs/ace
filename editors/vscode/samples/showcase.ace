@@ -113,6 +113,10 @@ choose_max[T](left: T, right: T): T {
     return right
 }
 
+// A function may be named like a logical keyword; `and`, `or`, and `not`
+// are operators only outside a declaration or a qualified name.
+pub or(left: u32, right: u32): u32 intrinsic
+
 add(left: int, right: int): int {
     return left + right
 }

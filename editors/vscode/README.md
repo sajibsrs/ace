@@ -20,6 +20,11 @@ It does not yet provide completion, diagnostics, formatting, navigation, or a la
 
 Language changes that affect syntax highlighting or basic editor behavior must update this extension when practical. Any editor support that cannot land with the language change is tracked here.
 
+The logical keywords `and`, `or`, and `not` are colored as operators only when
+unqualified; a declaration name (`pub or(...)`) and a qualified call
+(`atomic.or(...)`) are colored as functions. Integer literals highlight in
+decimal, `0x` hexadecimal, `0o` octal, and `0b` binary.
+
 The highlighter colors `from` only inside a selective import, where it ends the member list; elsewhere it is an ordinary identifier.
 
 The highlighter recognizes case-final `fallthrough` as a control keyword without reserving the same spelling in functions, variables, or calls elsewhere.
