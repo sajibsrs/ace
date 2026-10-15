@@ -6,18 +6,23 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 ### Active
 
 - Atomics and the memory model (#36, #37): carved in Memory, "Carved (memory
-  model)" and Stdlib #25. Staged: arm64 lowering and tests (done), then x64,
-  then selfhost. Open limitations, each resolved or dropped before the topic
-  closes:
-  - Staging: linux-x64 refuses atomics; selfhost has no `atomic` support.
+  model)" and Stdlib #25. Staged: arm64 lowering and tests (done), x64
+  (done), then selfhost. Open limitations, each resolved or dropped before
+  the topic closes:
+  - Staging: selfhost has no `atomic` support.
   - Coverage: no test exercises real cross-context behavior (no threads yet),
-    only single-context semantics and the emitted instructions.
+    only single-context semantics and the emitted instructions. The x64 code
+    has never run: it is checked by disassembly (`tests/x64_atomic`, which
+    skips without an x86-64 `objdump`) and executes only when `make test` runs
+    on a linux-x64 host; its debug null trap is likewise unrun.
   - Surface: no `u8`, `u16`, pointer, or 128-bit atomics; `usize` needs an
     explicit pointer conversion.
   - Language: an untyped integer literal does not choose between the `u32`
     and `u64` overloads, so every value is cast (`u32(1)`); a tuple result is
     read only by destructuring.
   - Checking: data races are unchecked in every build.
+  - x64: a fetch-and, -or, or -xor whose result is read loops on `cmpxchg`;
+    every read-modify-write is sequentially consistent whatever its name says.
   - arm64: assumes ARMv8.1 atomics (no fallback); an acquire load uses `ldar`,
     not the cheaper `ldapr`; the debug alignment check expands at every site.
 

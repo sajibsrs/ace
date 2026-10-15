@@ -1534,6 +1534,29 @@ if [ "$(uname -m)" = x86_64 ] && command -v objdump >/dev/null 2>&1; then
     fi
 fi
 
+# atomic.* on x64: locked instructions in the object, and no barrier for an
+# acquire or release fence (objdump spellings differ, so compare without spaces)
+if command -v objdump >/dev/null 2>&1; then
+    rm -rf /tmp/ace_x64_atomic
+    mkdir -p /tmp/ace_x64_atomic
+    cp tests/x64_atomic/forms.ace /tmp/ace_x64_atomic/
+    if (cd /tmp/ace_x64_atomic && "$ACE" --release --target=linux-x64 -c forms.ace) &&
+       objdump -d -M intel --no-show-raw-insn /tmp/ace_x64_atomic/forms.o >$T/dis 2>/dev/null &&
+       [ -s $T/dis ]; then
+        awk -F'\t' 'NF > 1 { for (i = 2; i <= NF; i++) printf "%s", $i }' $T/dis | tr -d ' ' | tr 'A-Z' 'a-z' >$T/dis_flat
+        for want in lockandd lockord lockxorq lockxadd lockcmpxchgdwordptr lockcmpxchgqwordptr \
+                    xchgdwordptr mfence; do
+            grep -qF "$want" $T/dis_flat || { echo "FAIL: x64 atomic object lacks $want"; fail=1; }
+        done
+        if [ "$(grep -o mfence $T/dis_flat | wc -l)" -ne 1 ]; then
+            echo "FAIL: x64 atomic object has the wrong number of mfence"
+            fail=1
+        fi
+    else
+        echo "SKIP: x64 atomic object (no x86-64 objdump)"
+    fi
+fi
+
 for f in null overflow alignment reinterpret_alignment; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/pointer_construct_$f" \
          "tests/checked_pointer_construct/$f.ace" >/dev/null 2>$T/errs; then

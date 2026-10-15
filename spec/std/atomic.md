@@ -1,6 +1,6 @@
 ## Stdlib: `atomic`
 
-25. `atomic` (implemented on darwin-arm64) — indivisible, lock-free operations on
+25. `atomic` (implemented on darwin-arm64 and linux-x64) — indivisible, lock-free operations on
     shared integer words; their ordering rules are Memory, "Carved (memory
     model)". Every operation is an exact `u32` and `u64` overload (`uint` shares
     the `u64` overload where it is `u64`; `usize` is a distinct type and takes an

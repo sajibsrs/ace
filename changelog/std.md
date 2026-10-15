@@ -89,3 +89,6 @@
   and, or, xor, cas, and fence, the ordering in the name (unsuffixed is
   `seq_cst`). One `IR_ATOMIC` lowers on darwin-arm64 to ARMv8.1 `swp`/`ld<op>`/
   `cas`, `ldar`/`stlr`, and `dmb`; linux-x64 refuses it (#36, #37).
+- `atomic` lowers on linux-x64 to `xchg`, `lock xadd`, `lock cmpxchg`, locked
+  `and`/`or`/`xor` (a `cmpxchg` loop when the result is read), and `mfence`
+  for a seq_cst fence only, relying on x64's total store order.

@@ -1269,6 +1269,86 @@ static int slot_base(X64* a, int s, int32_t* off) {
     return RAX;
 }
 
+// An atomic operation (Stdlib #25) at [base]. x64 orders every plain load and
+// store as acquire and release, so those stay mov; a seq_cst store is xchg, and
+// every locked read-modify-write is already sequentially consistent, whatever
+// its ordering. Only a seq_cst fence emits an instruction (mfence). The
+// pointer takes rax, r11, or rdx, whichever the instruction leaves free; the
+// word's value takes rcx. A fetch-and, -or, or -xor whose result is read has
+// no instruction of its own and loops on cmpxchg, the observed word in rax
+// and the operand in rdx.
+static void atomic(X64* a, int v) {
+    IrIns* x = ins_of(a, v);
+    int kind = x->aux, order = (int)x->imm;
+    if (kind == AK_FENCE) {
+        if (order == AO_SEQ_CST) { put(a, 0x0F); put(a, 0xAE); put(a, 0xF0); } // mfence
+        return;
+    }
+    IrType t = kind == AK_STORE ? type_of(a, x->args[1]) : (IrType)x->type;
+    int w = t == IT_U64;
+    int p = x->args[0], val = kind == AK_LOAD ? -1 : x->args[1];
+    int loop = (kind == AK_AND || kind == AK_OR || kind == AK_XOR) && a->ra.nuse[v] > 0;
+    int base = gp_in(a, p, loop ? R11 : kind == AK_CAS ? RDX : RAX);
+    if (x->flags & IRF_CHECKED) {
+        test_rr(a, base);
+        fail_if(a, CC_E, NFAIL);
+    }
+    static const uint8_t bitop[] = { [AK_AND] = 0x21, [AK_OR] = 0x09, [AK_XOR] = 0x31 };
+    switch (kind) {
+    case AK_LOAD: {
+        int d = gp_out(a, v, RCX);
+        ld_width(a, t, d, base, 0);
+        gp_done(a, v, d);
+        break;
+    }
+    case AK_STORE:
+        if (order == AO_SEQ_CST) { // xchg swaps its register with the word: a copy
+            load_val(a, RCX, val);
+            rm(a, w, (const uint8_t[]){ 0x87 }, 1, RCX, base, 0, 0);
+        } else {
+            st_width(a, t, gp_in(a, val, RCX), base, 0);
+        }
+        break;
+    case AK_XCHG:
+        load_val(a, RCX, val);
+        rm(a, w, (const uint8_t[]){ 0x87 }, 1, RCX, base, 0, 0);
+        store_val(a, v, RCX);
+        break;
+    case AK_ADD: case AK_SUB: // lock xadd leaves the previous word in its register
+        load_val(a, RCX, val);
+        if (kind == AK_SUB) rr(a, w, (const uint8_t[]){ 0xF7 }, 1, 3, RCX); // neg
+        put(a, 0xF0);
+        rm(a, w, (const uint8_t[]){ 0x0F, 0xC1 }, 2, RCX, base, 0, 0);
+        store_val(a, v, RCX);
+        break;
+    case AK_AND: case AK_OR: case AK_XOR:
+        if (!loop) {
+            int r = gp_in(a, val, RCX);
+            put(a, 0xF0);
+            rm(a, w, (const uint8_t[]){ bitop[kind] }, 1, r, base, 0, 0);
+            break;
+        }
+        load_val(a, RDX, val);
+        ld_width(a, t, RAX, base, 0);
+        uint32_t top = here(a);
+        mov_rr(a, RCX, RAX);
+        rr(a, w, (const uint8_t[]){ bitop[kind] }, 1, RDX, RCX);
+        put(a, 0xF0);
+        rm(a, w, (const uint8_t[]){ 0x0F, 0xB1 }, 2, RCX, base, 0, 0); // lock cmpxchg
+        put(a, 0x75);                                                  // jne top
+        put(a, (uint8_t)(int8_t)(top - (here(a) + 1)));
+        store_val(a, v, RAX);
+        break;
+    case AK_CAS:
+        load_val(a, RAX, x->args[1]);
+        int r = gp_in(a, x->args[2], RCX);
+        put(a, 0xF0);
+        rm(a, w, (const uint8_t[]){ 0x0F, 0xB1 }, 2, r, base, 0, 0);
+        store_val(a, v, RAX);
+        break;
+    }
+}
+
 // A load or store of type t at [base + off]: base the pointer's register (a
 // stack object's is rbp and its offset), or the address it folds (fuse): a
 // global rip-relative, an unchecked pointer offset's constant in off or its
@@ -1882,7 +1962,7 @@ static void emit_block(X64* a, int b) {
             mul_high(a, v);
             break;
         case IR_ATOMIC:
-            refuse(a, "atomic operations");
+            atomic(a, v);
             break;
         case IR_GLOBAL:
             addr_of(a, RAX, x->name, x->sym && x->sym->is_extern);

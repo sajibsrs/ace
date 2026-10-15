@@ -70,8 +70,15 @@ The darwin-arm64 target lowers to the ARMv8.1 atomics (`swp`, `ldadd`, `ldclr`,
 `ldset`, `ldeor`, `cas`) with their acquire and release bits, `ldar` and
 `stlr` for an ordered load or store, plain `ldr` and `str` for a relaxed one,
 and `dmb` for a fence. `sub` is `ldadd` of the negated operand and `and` is
-`ldclr` of the inverted one. linux-x64 does not lower atomics yet and rejects a
-program that uses them.
+`ldclr` of the inverted one.
+
+The linux-x64 target relies on x64's total store order: a load and a relaxed,
+release, or acquire store are plain `mov`, a sequentially consistent store is
+`xchg`, and `exchange`, `add`, `sub`, and `cas` are `xchg`, `lock xadd`, and
+`lock cmpxchg`, which are sequentially consistent whatever their name. `and`,
+`or`, and `xor` are one locked instruction when the result is unused and a
+`cmpxchg` loop when it is read. Only `fence()` emits an instruction (`mfence`);
+the acquire and release fences only stop the compiler from reordering.
 
 ## Design rationale
 

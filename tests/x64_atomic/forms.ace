@@ -1,0 +1,25 @@
+/* The x64 target lowers atomics to locked instructions: xadd, xchg, a
+ * cmpxchg loop for a fetch-and, -or, or -xor whose result is read, a plain
+ * locked and, or, or xor when it is not, and mfence for a seq_cst fence only. */
+
+import atomic
+
+word: u32
+wide: u64
+
+main(): int {
+    p: mut *u32 = mut &word
+    q: mut *u64 = mut &wide
+    atomic.and(p, u32(3))
+    atomic.or_relaxed(p, u32(5))
+    atomic.xor(q, u64(6))
+    got: u32 = atomic.and_acquire(p, u32(7)) + atomic.exchange(p, u32(8)) + atomic.sub(p, u32(1))
+    old: u64, ok: bool = atomic.cas(q, u64(9), u64(10))
+    atomic.add_release(q, old)
+    atomic.store(p, got)
+    atomic.fence()
+    atomic.fence_acquire()
+    atomic.fence_release()
+    if ok { return 1 }
+    return int(atomic.load_acquire(q))
+}
