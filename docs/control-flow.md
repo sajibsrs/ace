@@ -363,7 +363,8 @@ Reaching the closing brace still exits normally. Plain `continue` advances
 the nearest `for`; on a labeled loop, `continue label` starts that loop's
 next iteration instead of restarting a block. Ace has no `goto` and no
 non-local jump: there is no `setjmp`/`longjmp` equivalent, so a function
-exits only by `return`, falling off its end, or `panic`.
+exits only by `return`, falling off its end (a function without a return
+type), or `panic`.
 
 ## Deferred calls
 

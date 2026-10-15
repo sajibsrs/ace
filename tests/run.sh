@@ -181,6 +181,9 @@ tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's f
 tests/sema/unions/payload_value_pattern_err.ace|8:18: error: match the union variant, not a payload value: Type.variant(binder: type)
 tests/sema/unions/non_variant_pattern_err.ace|8:9: error: union switch cases must name Event variants (Type.variant)
 tests/sema/functions/indirect_mutarg_err.ace|4:14: error: 'mut' marks mut parameters; parameter 1 is read-only
+tests/sema/functions/missing_return_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
+tests/sema/functions/missing_return_branch_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
+tests/sema/functions/missing_return_loop_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
 tests/sema/unions/generic_payload_bare_err.ace|6:34: error: variant 'ok' carries a payload — construct it with a payload argument
 tests/sema/layout/bits_mutarg_err.ace|13:16: error: bit fields cannot supply mut arguments
 tests/sema/functions/extern_vararg_mut_err.ace|9:28: error: 'mut' marks declared parameters, not variadics

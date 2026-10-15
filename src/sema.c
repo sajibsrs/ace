@@ -7165,6 +7165,33 @@ static void init_exit_path(InitCk* k, InitExit* x, int clone) {
     x->paths[x->n++] = init_delta(k, x->from, clone);
 }
 
+// Whether `s` holds a `break` that leaves `loop`: a plain one outside any
+// nested loop, or a labeled one naming this loop.
+static int loop_exits(Node* s, Node* loop, int nested) {
+    if (!s) return 0;
+    switch (s->kind) {
+    case N_BREAK:
+        if (!s->str) return !nested;
+        return loop->str && s->len == loop->len && memcmp(s->str, loop->str, s->len) == 0;
+    case N_BLOCK:
+        for (int i = 0; i < s->nkids; i++)
+            if (loop_exits(s->kids[i], loop, nested)) return 1;
+        return 0;
+    case N_IF:
+        return loop_exits(s->b, loop, nested) || loop_exits(s->c, loop, nested);
+    case N_FOR:
+        return loop_exits((s->flags & F_FORGEN) ? s->d : s->c, loop, 1);
+    case N_SWITCH:
+        for (int i = 0; i < s->nkids; i++)
+            if (loop_exits(s->kids[i]->b, loop, nested)) return 1;
+        return 0;
+    case N_LABEL:
+        return loop_exits(s->a, loop, nested);
+    default:
+        return 0;
+    }
+}
+
 static int init_block(InitCk* k, Node* b) {
     int falls = 1;
     for (int i = 0; b && i < b->nkids; i++) {
@@ -7215,7 +7242,10 @@ static int init_stmt(InitCk* k, Node* s) {
         }
         return 1;
     case N_EXPRSTMT:
-        init_expr(k, s->a); return 1;
+        init_expr(k, s->a);
+        // a sema-approved panic never returns
+        return !(s->a->kind == N_CALL && s->a->ival == 1 && s->a->a && s->a->a->kind == N_IDENT &&
+                 is_panic_name(s->a->a->str, s->a->a->len));
     case N_IF: {
         init_expr(k, s->a);
         int outer = init_begin(k), from = k->mark;
@@ -7238,7 +7268,7 @@ static int init_stmt(InitCk* k, Node* s) {
             (void)init_block(k, s->d);
             if (s->c) init_stmt(k, s->c); // post-clause reads see the body's state
             init_end(k, outer); // loop may execute zero times
-            return 1;
+            return s->b || loop_exits(s->d, s, 0); // an endless loop ends only by `break`
         }
         init_expr(k, s->b);
         int outer = init_begin(k);
@@ -7345,7 +7375,13 @@ static void check_definite_initialization(Node* file, Diag* d) {
             InitVar* v = init_var(&k, sym, 1);
             if (v) v->state.full = 1;
         }
-        (void)init_block(&k, f->b);
+        int falls = init_block(&k, f->b);
+        if (falls && f->a && !is_void_name(f->a)) {
+            const char* path = f->path ? f->path : d->path;
+            fprintf(stderr, "%s:%d:%d: error: ", path, f->line, f->col);
+            diag_printf("function '%.*s' can reach the end of its body without returning a value\n", (int)f->len, f->str);
+            d->errors++;
+        }
         ptrmap_free(&k.var_ix);
         free(k.trail);
     }

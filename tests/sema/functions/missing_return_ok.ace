@@ -1,0 +1,37 @@
+// every path returns, panics, or never ends
+
+pick(x: int): int {
+    if x > 0 {
+        return 1
+    } else {
+        return 2
+    }
+}
+
+forever(): int {
+    for {
+    }
+}
+
+search(x: int): int {
+    for {
+        if x > 3 {
+            return x
+        }
+    }
+}
+
+stop(): int {
+    panic("stop")
+}
+
+early(x: int) {
+    if x > 0 {
+        return
+    }
+}
+
+main(): int {
+    early(pick(1))
+    return 0
+}

@@ -88,6 +88,20 @@ The match is exact: forwarding `(int, bool)` into `(i32, bool)`, or into a
 different number of values, is rejected. Destructure and return the values
 explicitly to convert them.
 
+A function with a return type must return on every path that reaches its
+closing brace; otherwise it is a compile error. A path may end in `return`,
+`panic`, or an endless `for` with no `break`. A function without a return type
+may fall off its end, which is the same as a bare `return`. `main(): int` has no
+implicit `return 0`.
+
+```ace
+sign(x: int): int {
+    if x > 0 {
+        return 1
+    }
+}   // error: 'sign' can reach the end of its body without returning a value
+```
+
 A bare `_` in a destructuring list drops that value. It takes no type, since
 the call's signature already fixes it, binds no name, may appear more than
 once, and can never be read. `_ = f()` drops a single result. The call still

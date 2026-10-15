@@ -1,5 +1,10 @@
 # Language
 
+- A function with a return type must return on every path to its closing brace
+  (`missing return`, no implicit zero result, `main` included; C and selfhost). The check is
+  the definite-initialization walk's reachability: `return`, `panic`, and an
+  endless `for` with no leaving `break` end a path.
+
 - Added the `0o` octal integer literal beside `0x` and `0b` (C and selfhost
   lexers, `GRAMMAR.md`, the VS Code grammar): `0o755`, with `_` separators and
   an `invalid octal digit` error. A bare leading zero stays decimal. The `sys`

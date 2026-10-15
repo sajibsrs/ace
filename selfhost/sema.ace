@@ -8543,6 +8543,40 @@ Sema.init_exit_path(mut self, x: u32, clone: bool) {
     fail(mut self.ik.exit_paths.push(InitExitPath { exit = x, d = d }))
 }
 
+/* Whether `s` holds a `break` that leaves `loop`: a plain one outside any
+ * nested loop, or a labeled one naming this loop.
+ */
+Sema.loop_exits(self, s: u32, loop: u32, nested: bool): bool {
+    if s == 0 { return false }
+    n: Node = self.node(s)
+    switch n.kind {
+        Kind.break {
+            if n.text.len == 0 { return !nested }
+            return self.node(loop).text.len > 0 && mem.equal(n.text, self.node(loop).text)
+        }
+        Kind.block {
+            for i: u32 in 0..n.nkids {
+                if self.loop_exits(self.kid(s, i), loop, nested) { return true }
+            }
+            return false
+        }
+        Kind.if { return self.loop_exits(n.b, loop, nested) || self.loop_exits(n.c, loop, nested) }
+        Kind.for {
+            if (n.flags & parser.F_FORGEN) != 0 { return self.loop_exits(n.d, loop, true) }
+            return self.loop_exits(n.c, loop, true)
+        }
+        Kind.switch {
+            for i: u32 in 0..n.nkids {
+                if self.loop_exits(self.node(self.kid(s, i)).b, loop, nested) { return true }
+            }
+            return false
+        }
+        Kind.label { return self.loop_exits(n.a, loop, nested) }
+        default { return false }
+    }
+    return false
+}
+
 Sema.init_block(mut self, b: u32): bool {
     falls: bool = true
     if b == 0 { return true }
@@ -8604,7 +8638,9 @@ Sema.init_stmt(mut self, s: u32): bool {
         }
         Kind.exprstmt {
             mut self.init_expr(n.a)
-            return true
+            // a sema-approved panic never returns
+            e: Node = self.node(n.a)
+            return !(e.kind == Kind.call && self.node_ival(n.a) == 1 && e.a != 0 && self.node(e.a).kind == Kind.ident && mem.equal(self.node(e.a).text, "panic"))
         }
         Kind.if {
             mut self.init_expr(n.a)
@@ -8637,7 +8673,7 @@ Sema.init_stmt(mut self, s: u32): bool {
                 _ = mut self.init_block(n.d)
                 if n.c != 0 { _ = mut self.init_stmt(n.c) } // post-clause reads see the body's state
                 mut self.init_end(outer) // loop may execute zero times
-                return true
+                return n.b != 0 || self.loop_exits(n.d, s, false) // an endless loop ends only by `break`
             }
             mut self.init_expr(n.b)
             outer: u32 = mut self.init_begin()
@@ -8772,7 +8808,13 @@ Sema.check_definite_initialization(mut self) {
                 mut self.init_st(self.init_v(v).state).full = true
             }
         }
-        _ = mut self.init_block(n.b)
+        falls: bool = mut self.init_block(n.b)
+        if falls && n.a != 0 && !self.is_void(n.a) {
+            fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(f)).path, int(n.line), int(n.col))
+            mut self.print_shown(mut self.pool.join(["function '", n.text, "' can reach the end of its body without returning a value"]))
+            fmt.printf(sys.stderr, "\n")
+            self.errors += 1
+        }
     }
 }
 

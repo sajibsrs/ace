@@ -1,0 +1,11 @@
+f(x: int): int {
+    for {
+        if x > 0 {
+            break
+        }
+    }
+}
+
+main(): int {
+    return f(1)
+}
