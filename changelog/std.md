@@ -113,3 +113,8 @@
   intrinsic marking and signature check, lowering with the debug alignment and
   null checks, and the arm64 emission, byte-identical to the C compiler's
   (IR and objects, debug and release).
+- Closed the atomics topic (#36, #37). Dropped: `u8`, `u16`, pointer, and
+  128-bit atomics; a data-race check; thread-level tests until threads exist
+  (#38); and `ldapr` for an acquire load (about 6% under contention on an M4,
+  none uncontended). The untyped-literal overload question moved to its own
+  issue; x64 atomics wait with the paused x64 work.

@@ -5,17 +5,7 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-- Atomics and the memory model (#36, #37): carved in Memory, "Carved (memory
-  model)" and Stdlib #25. Staged: arm64 lowering and tests (done), selfhost
-  (done). Open limitations, each resolved or dropped before the topic closes:
-  - Coverage: cross-context behavior is tested only across forked processes
-    (no threads yet).
-  - Surface: no `u8`, `u16`, pointer, or 128-bit atomics.
-  - Language: an untyped integer literal does not choose between the `u32`
-    and `u64` overloads, so every value is cast (`u32(1)`).
-  - Checking: data races are unchecked in every build.
-  - arm64: an acquire load uses `ldar`, not the cheaper `ldapr`; the debug
-    alignment check expands at every site.
+None.
 
 ### Trigger-gated
 
