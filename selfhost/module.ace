@@ -478,6 +478,7 @@ BI_MEM_COPY_T: const u64 = 39
 BI_MEM_MOVE_T: const u64 = 40
 BI_FMT_PRINTF_BUF: const u64 = 41
 BI_BITS_MUL_WIDE: const u64 = 42
+BI_ATOMIC: const u64 = 64 // BI_ATOMIC + kind * 8 + order, as ir.AK_* and ir.AO_*
 
 /* True when `canon` is std/<name>.ace or std/<name>/mod.ace, or with
  * `internal` std/@/<name>.ace.
@@ -500,6 +501,25 @@ Loader.is_std_named(self, canon: string, name: string, internal: bool): bool {
 pick(n: Node, typed: u64, raw: u64): u64 {
     if n.c != 0 { return typed }
     return raw
+}
+
+/* atomic.<op>[_<order>]: BI_ATOMIC plus the operation and ordering `name`
+ * spells, with no suffix sequentially consistent, or 0.
+ */
+atomic_builtin(name: string): u64 {
+    ops: [10]string = ["load", "store", "exchange", "add", "sub", "and", "or", "xor", "cas", "fence"]
+    orders: [4]string = ["relaxed", "acquire", "release", "acq_rel"]
+    for k: u64 in 0..10 {
+        ol: usize = ops[k].len
+        if name.len < ol || !mem.equal(name[..ol], ops[k]) { continue }
+        if name.len == ol { return BI_ATOMIC + k * 8 + 4 }
+        if name[ol] != '_' { return 0 }
+        for o: u64 in 0..4 {
+            if mem.equal(name[ol + 1..], orders[o]) { return BI_ATOMIC + k * 8 + o }
+        }
+        return 0
+    }
+    return 0
 }
 
 /* The compiler-backed operation that std module `m`'s top-level function
@@ -561,6 +581,7 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
         if mem.equal(name, "mul_wide") { return BI_BITS_MUL_WIDE }
         return 0
     }
+    if mem.equal(m, "atomic") { return atomic_builtin(name) }
     if mem.equal(m, "math") {
         if mem.equal(name, "sqrt") { return BI_MATH_SQRT }
         if mem.equal(name, "floor") { return BI_MATH_FLOOR }
@@ -582,7 +603,7 @@ Loader.mark_intrinsics(mut self, mi: usize) {
         return
     }
     m: string = ""
-    for name: string in ["mem", "fmt", "str", "sys", "bits", "math"] {
+    for name: string in ["mem", "fmt", "str", "sys", "bits", "atomic", "math"] {
         if self.is_std_named(canon, name, false) { m = name }
     }
     if self.is_std_named(canon, "byte_load", true) { m = "@byte_load" }

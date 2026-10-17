@@ -3489,10 +3489,58 @@ Lw.count_until_zero(mut self, p: int, stride: u64, t: u8): int {
     return i
 }
 
+/* An atomic.* call (Stdlib #25): one IR_ATOMIC on the word its pointer
+ * argument addresses. Debug builds first trap on a misaligned word, then (the
+ * IR_ATOMIC's check) on a null one. A cas yields (observed, wrote).
+ */
+Lw.atomic_call(mut self, x: u32, bi: u64, mut res: Agg, want_res: bool): int {
+    kind: i32 = i32((bi - sema.BI_ATOMIC) / 8)
+    order: u64 = (bi - sema.BI_ATOMIC) % 8
+    if kind == ir.AK_FENCE {
+        id: int = mut self.emit(ir.IR_ATOMIC, ir.IT_VOID)
+        mut self.fn.at(id).aux = kind
+        mut self.fn.at(id).imm = order
+        return id
+    }
+    pt: u32 = self.unwrap(self.nty(self.kid(x, 0)))
+    if pt == 0 || self.ty(pt).kind != TypeKind.ptr {
+        mut self.unsupported("atomic address")
+        return mut self.dummy()
+    }
+    t: u8 = mut self.need_type(self.ty(pt).base)
+    p: int = mut self.expr(self.kid(x, 0), int(ir.IT_PTR))
+    if self.debug {
+        low: int = mut self.emit2(ir.IR_AND, ir.IT_U64, mut self.emit2(ir.IR_CAST, ir.IT_U64, p, -1), mut self.konst(ir.IT_U64, u64(ir.type_bits(t) / 8 - 1)))
+        id: int = mut self.emit2(ir.IR_CHECK, ir.IT_VOID, mut self.cmp(ir.IR_EQ, low, mut self.konst(ir.IT_U64, 0)), -1)
+        c: mut *ir.IrIns = mut self.fn.at(id)
+        c.name = "misaligned atomic access"
+        c.has_name = true
+        c.at = self.at
+    }
+    ops: [2]int = [-1, -1]
+    nops: u32 = self.node(x).nkids - 1
+    for i: u32 in 0..nops { ops[i] = mut self.expr(self.kid(x, i + 1), int(t)) }
+    rt: u8 = t
+    if kind == ir.AK_STORE { rt = ir.IT_VOID }
+    id: int = mut self.emit(ir.IR_ATOMIC, rt)
+    mut self.fn.arg_add(id, p)
+    for i: u32 in 0..nops { mut self.fn.arg_add(id, ops[i]) }
+    a: mut *ir.IrIns = mut self.fn.at(id)
+    a.aux = kind
+    a.imm = order
+    a.flags = self.null_checked()
+    if kind != ir.AK_CAS || !want_res { return id }
+    res.n = 2
+    res.v[0] = id
+    res.v[1] = mut self.cmp(ir.IR_EQ, id, ops[0])
+    return -1
+}
+
 /* A compiler-backed call the IR covers: its value (a slice's or string's
  * leaves into res), or -2 for one it does not.
  */
 Lw.builtin(mut self, x: u32, bi: u64, mut res: Agg, want_res: bool): int {
+    if bi >= sema.BI_ATOMIC { return mut self.atomic_call(x, bi, mut res, want_res) }
     if bi == sema.BI_BITS_POP_COUNT || bi == sema.BI_BITS_LEAD_ZEROS || bi == sema.BI_BITS_TRAIL_ZEROS || bi == sema.BI_BITS_BYTE_SWAP {
         t: u8 = mut self.need_type(self.nty(self.kid(x, 0)))
         op: u8 = ir.IR_BSWAP

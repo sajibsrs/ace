@@ -1947,7 +1947,7 @@ Clean.thread_branches(mut self): bool {
 
 has_effect(x: IrIns): bool {
     switch x.op {
-        ir.IR_STORE, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_CHECK, ir.IR_PROJ, ir.IR_ASM, ir.IR_PARAM, ir.IR_RESULT, ir.IR_JMP, ir.IR_BR, ir.IR_RET { return true }
+        ir.IR_STORE, ir.IR_ATOMIC, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_CHECK, ir.IR_PROJ, ir.IR_ASM, ir.IR_PARAM, ir.IR_RESULT, ir.IR_JMP, ir.IR_BR, ir.IR_RET { return true }
         ir.IR_LOAD { return (x.flags & ir.IRF_VOLATILE) != 0 }
         default { return false }
     }

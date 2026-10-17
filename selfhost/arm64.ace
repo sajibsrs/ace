@@ -1954,6 +1954,66 @@ A64.page_ref(mut self, rd: int, name: string, w: u32) {
     mut self.put(w)
 }
 
+/* An atomic operation (Stdlib #25) on the word at args[0]: ldar/stlr for an
+ * ordered load or store, the ARMv8.1 atomics (swp, ldadd, ldclr, ldset, ldeor,
+ * cas), whose acquire and release bits carry the ordering, and dmb for a
+ * fence. The result register is never xzr: with it, an acquire ldadd would
+ * stop being a load for ordering. Scratch: x15 holds a negated or inverted
+ * operand, x16 the pointer, x17 the operand or a cas's expected word.
+ */
+A64.atomic(mut self, v: int) {
+    x: IrIns = self.x(v)
+    kind: i32 = x.aux
+    order: u64 = x.imm
+    if kind == ir.AK_FENCE {
+        if order == ir.AO_ACQUIRE { mut self.put(0xD50339BF) } else { mut self.put(0xD5033BBF) } // dmb ishld, dmb ish
+        return
+    }
+    t: u8 = x.ty
+    if kind == ir.AK_STORE { t = self.x(self.arg(v, 1)).ty }
+    w64: bool = is64(t)
+    sz: u32 = sel(w64, 0xC0000000, 0x80000000)
+    acq: u32 = 0
+    rel: u32 = 0
+    if order == ir.AO_ACQUIRE || order == ir.AO_ACQ_REL || order == ir.AO_SEQ_CST { acq = 1 }
+    if order == ir.AO_RELEASE || order == ir.AO_ACQ_REL || order == ir.AO_SEQ_CST { rel = 1 }
+    rn: int = mut self.opnd(self.arg(v, 0), S0)
+    if (x.flags & ir.IRF_CHECKED) != 0 { mut self.null_fail_if_zero(rn) }
+    if kind == ir.AK_LOAD {
+        rd: int = self.dst(v)
+        base: u32 = sel(acq != 0, sel(w64, 0xC8DFFC00, 0x88DFFC00), sel(w64, 0xF9400000, 0xB9400000)) // ldar, ldr
+        mut self.put(base | (u32(rn) << 5) | R(rd))
+        mut self.dst_done(v, rd)
+    } else if kind == ir.AK_STORE {
+        rs: int = mut self.opnd(self.arg(v, 1), S1)
+        base: u32 = sel(rel != 0, sel(w64, 0xC89FFC00, 0x889FFC00), sel(w64, 0xF9000000, 0xB9000000)) // stlr, str
+        mut self.put(base | (u32(rn) << 5) | R(rs))
+    } else if kind == ir.AK_CAS {
+        re: int = mut self.opnd(self.arg(v, 1), S1)
+        mut self.mov_reg(S1, re) // cas overwrites its expected register with the observed word
+        rd: int = mut self.opnd(self.arg(v, 2), S2)
+        mut self.put(sz | 0x08A07C00 | (acq << 22) | (rel << 15) | (u32(S1) << 16) | (u32(rn) << 5) | R(rd))
+        rr: int = self.dst(v)
+        mut self.mov_reg(rr, S1)
+        mut self.dst_done(v, rr)
+    } else {
+        rs: int = mut self.opnd(self.arg(v, 1), S1)
+        opc: u32 = 3 << 12 // ldset
+        if kind == ir.AK_XCHG { opc = 0x8000 } else if kind == ir.AK_ADD || kind == ir.AK_SUB { opc = 0 } else if kind == ir.AK_AND { opc = 1 << 12 } else if kind == ir.AK_XOR { opc = 2 << 12 } // swp, ldadd, ldclr, ldeor
+        if kind == ir.AK_SUB { // x - y is x + -y
+            mut self.put(sel(w64, 0xCB0003E0, 0x4B0003E0) | (u32(rs) << 16) | R(S2))
+            rs = S2
+        } else if kind == ir.AK_AND { // x & y is x & ~~y: clear the inverted bits
+            mut self.put(sel(w64, 0xAA2003E0, 0x2A2003E0) | (u32(rs) << 16) | R(S2))
+            rs = S2
+        }
+        rd: int = S2
+        if self.ra.reg.get(v) >= 0 { rd = self.ra.reg.get(v) }
+        mut self.put(sz | 0x38200000 | (acq << 23) | (rel << 22) | (u32(rs) << 16) | opc | (u32(rn) << 5) | R(rd))
+        mut self.dst_done(v, rd)
+    }
+}
+
 /* Loads or stores v. */
 A64.access(mut self, v: int) {
     x: IrIns = self.x(v)
@@ -2479,6 +2539,7 @@ A64.emit_block(mut self, b: int) {
             ir.IR_GLOBAL { mut self.global(v) }
             ir.IR_STR { mut self.string_bytes(v) }
             ir.IR_LOAD, ir.IR_STORE { mut self.access(v) }
+            ir.IR_ATOMIC { mut self.atomic(v) }
             ir.IR_PADD, ir.IR_PSUB { mut self.pointer_offset(v) }
             ir.IR_CHECK { mut self.check(v) }
             default { mut self.terminator(b, v) }

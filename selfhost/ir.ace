@@ -81,28 +81,49 @@ pub IR_GLOBAL: const u8 = 35
 pub IR_STR: const u8 = 36
 pub IR_LOAD: const u8 = 37
 pub IR_STORE: const u8 = 38
-pub IR_PADD: const u8 = 39
-pub IR_PSUB: const u8 = 40
-pub IR_CALL: const u8 = 41
-pub IR_CALLI: const u8 = 42
-pub IR_RTCALL: const u8 = 43
-pub IR_ASM: const u8 = 44
-pub IR_RESULT: const u8 = 45
-pub IR_PROJ: const u8 = 46
-pub IR_SPLAT: const u8 = 47
-pub IR_SELECT: const u8 = 48
-pub IR_LANES: const u8 = 49
-pub IR_CHECK: const u8 = 50
-pub IR_JMP: const u8 = 51
-pub IR_BR: const u8 = 52
-pub IR_RET: const u8 = 53
+pub IR_ATOMIC: const u8 = 39
+pub IR_PADD: const u8 = 40
+pub IR_PSUB: const u8 = 41
+pub IR_CALL: const u8 = 42
+pub IR_CALLI: const u8 = 43
+pub IR_RTCALL: const u8 = 44
+pub IR_ASM: const u8 = 45
+pub IR_RESULT: const u8 = 46
+pub IR_PROJ: const u8 = 47
+pub IR_SPLAT: const u8 = 48
+pub IR_SELECT: const u8 = 49
+pub IR_LANES: const u8 = 50
+pub IR_CHECK: const u8 = 51
+pub IR_JMP: const u8 = 52
+pub IR_BR: const u8 = 53
+pub IR_RET: const u8 = 54
 
-OP_NAMES: [54]string = [
+OP_NAMES: [55]string = [
     "const", "param", "phi", "add", "sub", "mul", "div", "rem", "and", "or", "xor", "shl", "shr", "neg", "not",
     "eq", "ne", "lt", "le", "gt", "ge", "cast", "bitcast", "popcnt", "clz", "ctz", "bswap", "rotl", "rotr",
-    "mulh", "sqrt", "floor", "ceil", "fma", "slot", "global", "str", "load", "store", "padd", "psub", "call", "calli",
+    "mulh", "sqrt", "floor", "ceil", "fma", "slot", "global", "str", "load", "store", "atomic", "padd", "psub", "call", "calli",
     "rtcall", "asm", "result", "proj", "splat", "select", "lanes", "check", "jmp", "br", "ret",
 ]
+
+/* Atomic operations (IrIns.aux of an IR_ATOMIC) and their orderings (imm). */
+pub AK_LOAD: const i32 = 0
+pub AK_STORE: const i32 = 1
+pub AK_XCHG: const i32 = 2
+pub AK_ADD: const i32 = 3
+pub AK_SUB: const i32 = 4
+pub AK_AND: const i32 = 5
+pub AK_OR: const i32 = 6
+pub AK_XOR: const i32 = 7
+pub AK_CAS: const i32 = 8
+pub AK_FENCE: const i32 = 9
+pub AO_RELAXED: const u64 = 0
+pub AO_ACQUIRE: const u64 = 1
+pub AO_RELEASE: const u64 = 2
+pub AO_ACQ_REL: const u64 = 3
+pub AO_SEQ_CST: const u64 = 4
+
+ATOMIC_KINDS: [10]string = ["load", "store", "xchg", "add", "sub", "and", "or", "xor", "cas", "fence"]
+ATOMIC_ORDERS: [5]string = ["relaxed", "acquire", "release", "acq_rel", "seq_cst"]
 
 /* Instruction flags, src/ir.h's IRF_ values. */
 pub IRF_CHECKED: const u8 = 1
@@ -798,7 +819,7 @@ pub verify(s: sema.Sema, fn: Func): bool {
                 } else if ux.ty == IT_VOID {
                     return bad(s, fn, ["%", num(mut b1, id), " uses void value %", num(mut b2, u)])
                 }
-                want_ptr: bool = (a == 0 && (v.op == IR_LOAD || v.op == IR_STORE || v.op == IR_PADD || v.op == IR_PSUB || v.op == IR_CALLI || v.op == IR_RTCALL)) || (a == v.nargs - 1 && (v.flags & IRF_SRET) != 0)
+                want_ptr: bool = (a == 0 && (v.op == IR_LOAD || v.op == IR_STORE || v.op == IR_ATOMIC || v.op == IR_PADD || v.op == IR_PSUB || v.op == IR_CALLI || v.op == IR_RTCALL)) || (a == v.nargs - 1 && (v.flags & IRF_SRET) != 0)
                 if want_ptr && ux.ty != IT_PTR { return bad(s, fn, ["%", num(mut b1, id), " needs an address, not %", num(mut b2, u)]) }
                 if v.op == IR_CHECK && ux.ty != IT_BOOL { return bad(s, fn, ["check %", num(mut b1, id), " of non-bool %", num(mut b2, u)]) }
                 db: int = ux.block
@@ -1057,6 +1078,13 @@ pub print(mut out: Out, s: sema.Sema, fn: Func) {
                     if v.aux != 0 { mut out.printf(" + %d", int(v.aux)) }
                     mut out.printf("]")
                     if v.op == IR_STORE { mut out.printf(", %%%d", numb.get(fn.arg(id, 1))) }
+                }
+                IR_ATOMIC {
+                    mut out.printf(" %s.%s", ATOMIC_KINDS[v.aux], ATOMIC_ORDERS[v.imm])
+                    for a: u32 in 0..v.nargs {
+                        if a == 0 { mut out.printf(" ") } else { mut out.printf(", ") }
+                        mut out.printf("%%%d", numb.get(fn.arg(id, a)))
+                    }
                 }
                 IR_PADD, IR_PSUB { mut out.printf(" %%%d, %%%d * %u", numb.get(fn.arg(id, 0)), numb.get(fn.arg(id, 1)), uint(v.imm)) }
                 IR_CALL, IR_CALLI, IR_RTCALL {

@@ -6,22 +6,15 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 ### Active
 
 - Atomics and the memory model (#36, #37): carved in Memory, "Carved (memory
-  model)" and Stdlib #25. Staged: arm64 lowering and tests (done), x64
-  (done), then selfhost. Open limitations, each resolved or dropped before
-  the topic closes:
-  - Staging: selfhost has no `atomic` support.
+  model)" and Stdlib #25. Staged: arm64 lowering and tests (done), selfhost
+  (done). Open limitations, each resolved or dropped before the topic closes:
   - Coverage: cross-context behavior is tested only across forked processes
-    (no threads yet). The x64 code has never run: it is checked by
-    disassembly (`tests/x64_atomic`, which skips without an x86-64 `objdump`)
-    and executes only when `make test` runs on a linux-x64 host; its debug
-    null trap is likewise unrun.
+    (no threads yet).
   - Surface: no `u8`, `u16`, pointer, or 128-bit atomics.
   - Language: an untyped integer literal does not choose between the `u32`
     and `u64` overloads, so every value is cast (`u32(1)`); a tuple result is
     read only by destructuring.
   - Checking: data races are unchecked in every build.
-  - x64: a fetch-and, -or, or -xor whose result is read loops on `cmpxchg`;
-    every read-modify-write is sequentially consistent whatever its name says.
   - arm64: an acquire load uses `ldar`, not the cheaper `ldapr`; the debug
     alignment check expands at every site.
 
@@ -43,6 +36,12 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   Package System #3, #13, and #15; remote packages through a central registry
   or resolver remain open under #9. Resume only when package implementation is
   selected.
+- x64 (linux, windows) work waits until darwin is complete, then proceeds as
+  its own effort. Atomics there are lowered (`src/x64.c`, checked by
+  `tests/x64_atomic` disassembly) but have never run: they execute only on a
+  linux-x64 host, as does the debug null trap. A fetch-and, -or, or -xor whose
+  result is read loops on `cmpxchg`, and every read-modify-write is
+  sequentially consistent whatever its name says. Selfhost has no x64 backend.
 - A second target remains trigger-gated until its backend and OS implementations
   are genuinely supported; directory-module facades already select target files
   consistently through `@when`.

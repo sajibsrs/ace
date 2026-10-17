@@ -109,3 +109,7 @@
 - `atomic` also takes `usize` words (its own overloads, lowered as the IR's
   64-bit word). `tests/emit/atomic/processes.ace` has four forked processes
   share a mapping behind a start gate; a plain increment loses updates there.
+- Selfhost supports `atomic` on darwin-arm64: `IR_ATOMIC` and its printer, the
+  intrinsic marking and signature check, lowering with the debug alignment and
+  null checks, and the arm64 emission, byte-identical to the C compiler's
+  (IR and objects, debug and release).

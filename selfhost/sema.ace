@@ -5695,6 +5695,7 @@ pub BI_STR_FORMAT: const u64 = 37
 pub BI_FMT_PRINTF_FD: const u64 = 38
 pub BI_FMT_PRINTF_BUF: const u64 = 41
 pub BI_BITS_MUL_WIDE: const u64 = 42
+pub BI_ATOMIC: const u64 = 64
 pub BI_MEM_REALLOC: const u64 = 3
 pub BI_MEM_RELEASE: const u64 = 4
 pub BI_MEM_COPY: const u64 = 5
@@ -9127,8 +9128,42 @@ Sema.is_real(self, t: u32): bool {
     return t != 0 && (self.is_prim(t, P_F32) || self.is_prim(t, P_F64))
 }
 
+/* Whether `ft` is atomic operation `kind` at ordering `order`: the orderings
+ * the operation admits, over a u32, u64, or usize word.
+ */
+Sema.atomic_fits(self, ft: u32, kind: u64, order: u64): bool {
+    orders: [10]u64 = [
+        1 | 2 | 16, 1 | 4 | 16, 31, 31, 31, 31, 31, 31, 1 | 8 | 16, 2 | 4 | 16,
+    ] // bit o: ordering ir.AO_* o, per ir.AK_* kind
+    if kind > 9 || ((orders[kind] >> order) & 1) == 0 { return false }
+    t: SType = self.ty(ft)
+    r: u32 = t.ret
+    if kind == 9 { return t.nparams == 0 && r == 0 }
+    if t.nparams == 0 { return false }
+    p: u32 = self.params.get(usize(t.params))
+    pt: SType = self.ty(p)
+    if pt.kind != TypeKind.ptr || pt.is_mut != (kind != 0) || pt.base == 0 { return false }
+    w: u32 = pt.base
+    if !self.is_prim(w, P_U32) && !self.is_prim(w, P_U64) && !self.is_prim(w, P_USIZE) { return false }
+    np: u32 = 2
+    if kind == 0 { np = 1 } else if kind == 8 { np = 3 }
+    if t.nparams != np { return false }
+    for i: u32 in 1..np {
+        if !self.same_type(self.params.get(usize(t.params + i)), w) { return false }
+    }
+    if kind == 1 { return r == 0 }
+    if kind == 8 {
+        if r == 0 { return false }
+        rt: SType = self.ty(r)
+        return rt.kind == TypeKind.tuple && rt.nfields == 2 && self.same_type(self.field(rt, 0).ty, w) &&
+            self.is_prim(self.field(rt, 1).ty, P_BOOL)
+    }
+    return r != 0 && self.same_type(r, w)
+}
+
 /* Whether signature `ft` is the one compiler-provided intrinsic `id` has. */
 Sema.intrinsic_fits(self, ft: u32, id: u64): bool {
+    if id >= BI_ATOMIC { return self.atomic_fits(ft, (id - BI_ATOMIC) / 8, (id - BI_ATOMIC) % 8) }
     t: SType = self.ty(ft)
     r: u32 = t.ret
     np: u32 = t.nparams
