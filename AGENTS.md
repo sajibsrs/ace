@@ -27,6 +27,9 @@ history.
 ## Process
 
 - Work on one topic at a time in Decision Queue order.
+- Target darwin-arm64 only. x64 (linux, windows) work is paused: add or extend
+  no x64 lowering, tests, or limitations in any topic, and leave existing x64
+  code as it is. It resumes as its own separate effort once darwin is complete.
 - Implement every code change (`src/`, `std/`, `pkg/`, `tests/`, `bench/`)
   directly in the working tree on `master`, never in a throwaway prototype, and
   leave it uncommitted. Implement, test, and measure there against `HEAD`, then
