@@ -12,8 +12,7 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     (no threads yet).
   - Surface: no `u8`, `u16`, pointer, or 128-bit atomics.
   - Language: an untyped integer literal does not choose between the `u32`
-    and `u64` overloads, so every value is cast (`u32(1)`); a tuple result is
-    read only by destructuring.
+    and `u64` overloads, so every value is cast (`u32(1)`).
   - Checking: data races are unchecked in every build.
   - arm64: an acquire load uses `ldar`, not the cheaper `ldapr`; the debug
     alignment check expands at every site.
