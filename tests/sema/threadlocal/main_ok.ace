@@ -1,0 +1,38 @@
+// A thread-local of every value kind, used as any module variable is: read,
+// assigned, addressed, atomically updated, and reached through an import.
+
+import atomic
+
+Pair: struct { a: u64, b: u64 }
+
+@align(16)
+Wide: struct { lanes: [4]u32 }
+
+Fault: error { 1: broken = "broken" }
+
+threadlocal count: u64
+threadlocal limit: i32 = -3
+threadlocal ratio: f64 = 0.5
+threadlocal name: string = "worker"
+threadlocal pair: Pair = Pair { a = 1, b = 2 }
+threadlocal wide: Wide
+threadlocal ring: [8]u64
+threadlocal next: mut *Pair
+threadlocal last: Error = Fault.broken
+threadlocal ticks: u32
+
+bump(): u64 {
+    count += 1
+    p: mut *u64 = mut &count
+    *p += 1
+    next = mut &pair
+    next.a = 5
+    ring[count & 7] = count
+    atomic.add_relaxed(mut &ticks, u32(1))
+    if last != null && name.len == 6 && ratio > 0.0 && limit < 0 { wide.lanes[0] = 1 }
+    return count + pair.b
+}
+
+main(): int {
+    return int(bump() & 0)
+}

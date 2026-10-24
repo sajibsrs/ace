@@ -407,6 +407,24 @@ tests/sema/cold/specialized_err.ace|@cold needs a body; 'weight' has none
 tests/sema/cold/main_err.ace|the entry function cannot be @cold
 COLD_RULES
 
+# threadlocal marks module variables only (Values & Passing #13)
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF "$want"; then
+        echo "FAIL: $f should report: $want"
+        fail=1
+    fi
+done <<'THREADLOCAL_RULES'
+tests/parser/threadlocal/duplicate_err.ace|duplicate 'threadlocal' modifier
+tests/parser/threadlocal/order_err.ace|visibility must come before 'threadlocal'
+tests/parser/threadlocal/function_err.ace|1:13: error: 'threadlocal' applies only to module variables
+tests/parser/threadlocal/const_err.ace|'threadlocal' applies only to module variables
+tests/parser/threadlocal/struct_err.ace|'threadlocal' applies only to module variables
+tests/parser/threadlocal/extern_err.ace|'threadlocal' applies only to module variables
+tests/parser/threadlocal/local_err.ace|2:5: error: 'threadlocal' applies only to module variables
+tests/parser/threadlocal/extern_block_err.ace|thread-local C variables are not supported
+tests/sema/threadlocal/staticmap_err.ace|'threadlocal' does not apply to a StaticMap declaration
+THREADLOCAL_RULES
+
 # generic function values name their type arguments (spec Generics #6), a
 # parameter's type selects an overloaded function value (Names & Scoping #8),
 # and diagnostics render composite types in full

@@ -1,0 +1,1 @@
+threadlocal extern "c" mut counter: i32 = 0

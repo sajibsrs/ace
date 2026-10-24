@@ -40,5 +40,8 @@
       wake one or every sleeper; they need no mutex held.
     - Copying a `Mutex` or `Condition` while it is locked, contended, or
       waited on is programmer error. Neither is usable from a signal handler.
+    - Per-thread state is a `threadlocal` module variable (Values & Passing
+      #13): a created thread starts with fresh copies, and its copies end when
+      its entry returns.
     - Detaching, stack size, and other attributes; `try_lock`, timed waits,
       and process-shared locks are additive.

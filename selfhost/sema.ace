@@ -53,6 +53,7 @@ pub Sym: struct {
     pub is_literal_backed: bool = false, // a string binding over literal bytes (Mutability #11)
     pub is_const_backed: bool = false,  // a contract binding that may wrap const storage
     pub is_root: bool = false,          // top-level in the root file: unseen from imported files
+    pub is_thread: bool = false,        // a threadlocal module variable: one copy per thread
     pub entered: bool = false,          // entered, not yet resolved (Compiler #5)
     pub resolving: bool = false,
     pub in_cycle: bool = false,         // its dependency cycle is reported
@@ -1300,6 +1301,7 @@ Sema.resolve_global(mut self, s: u32) {
     k: TypeKind = self.ty(t).kind
     mut self.sym(s).ty = t
     mut self.sym(s).is_const = (n.flags & parser.F_CONST) != 0 || k == TypeKind.staticmap
+    if x.is_thread && k == TypeKind.staticmap { mut self.err(x.top, ["'threadlocal' does not apply to a StaticMap declaration"]) }
     if n.b != 0 {
         v: Node = self.node(n.b)
         if k == TypeKind.staticmap {
@@ -9512,6 +9514,7 @@ pub Sema.enter(mut self) {
                 mut self.sym(s).is_const = (n.flags & parser.F_CONST) != 0
                 mut self.sym(s).is_pub = (n.flags & parser.F_PUB) != 0
                 mut self.sym(s).is_mut = (n.flags & parser.F_MUT) != 0
+                mut self.sym(s).is_thread = (n.flags & parser.F_THREADLOCAL) != 0
                 mut self.sym(s).is_global = true
                 mut self.sym(s).decl = binder
                 mut self.sym(s).top = id

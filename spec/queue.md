@@ -5,9 +5,10 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-- Concurrency, in order: thread-local storage (#39), then signals (#41).
-  Darwin implementations bind libSystem's pthread and platform libraries,
-  never its libc.
+- Concurrency: signals (#41). Darwin implementations bind libSystem's
+  pthread and platform libraries, never its libc. Open: whether a handler may
+  use a `threadlocal`, since a thread's first access allocates its copies
+  (Values & Passing #13).
 
 ### Trigger-gated
 

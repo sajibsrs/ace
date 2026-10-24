@@ -58,18 +58,20 @@ pub F_COLD: const u32 = 4194304
 pub F_GROUPED: const u32 = 33554432
 pub F_SHADOWED: const u32 = 268435456
 pub F_OPEN: const u32 = 536870912 // an enum whose member list ends with `_`
+pub F_THREADLOCAL: const u32 = 1073741824 // a module variable with one copy per thread
 pub F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
 
 /* Flag dump names, in `ace --ast` order. */
-FLAG_BITS: [20]u32 = [
+FLAG_BITS: [21]u32 = [
     F_PUB, F_EXPO, F_MUT, F_NOALIAS, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
     F_ASSOC, F_SELECT, F_EMBED, F_SPECIALIZED, F_INTRINSIC, F_INLINE, F_COLD,
-    F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED, F_OPEN,
+    F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED, F_OPEN, F_THREADLOCAL,
 ]
-FLAG_NAMES: [20]string = [
+FLAG_NAMES: [21]string = [
     " pub", " extern-c", " mut", " noalias", " const", " default", " varargs",
     " method", " assoc", " select", " embed", " specialized", " intrinsic",
     " inline", " cold", " packed", " volatile", " c_abi", " shadowed", " open",
+    " threadlocal",
 ]
 
 NOSLIT: const int = 1 // no struct literal at this expression level
@@ -1756,6 +1758,10 @@ Parser.stmt(mut self): u32 {
         }
         Token.switch { return mut self.parse_switch() }
         Token.asm { return mut self.parse_asm() }
+        Token.threadlocal {
+            mut self.fail("'threadlocal' applies only to module variables")
+            return mut self.make(Kind.exprstmt, self.i)
+        }
         Token.return {
             n: u32 = mut self.leaf(Kind.return)
             if !self.at(Token.newline) && !self.at(Token.rbrace) && !self.at(Token.eof) {
@@ -2441,6 +2447,10 @@ Parser.extern_block(mut self): u32 {
         f: u32 = mut self.nd(Kind.externfn)
         start: usize = self.i
         def: bool = false // a body follows: an Ace definition with C linkage
+        if self.at(Token.threadlocal) {
+            mut self.fail("thread-local C variables are not supported; bind the C library's accessor function")
+            break
+        }
         if mut self.eat(Token.mut) { self.nodes[f].flags |= F_MUT }
         name: usize = mut self.expect(Token.ident, "name in extern block")
         mut self.named(f, self.text(name))
@@ -2707,9 +2717,11 @@ Parser.top(mut self): u32 {
     if self.at(Token.import) { mut self.fail("imports must precede declarations") }
     pub_: bool = false
     inl: bool = false
+    tls: bool = false
     for {
         if self.at(Token.pub) {
             if inl { mut self.fail("visibility must come before 'inline'") }
+            if tls { mut self.fail("visibility must come before 'threadlocal'") }
             if pub_ { mut self.fail("duplicate 'pub' modifier") }
             self.i += 1
             pub_ = true
@@ -2717,12 +2729,17 @@ Parser.top(mut self): u32 {
             if inl { mut self.fail("duplicate 'inline' modifier") }
             self.i += 1
             inl = true
+        } else if self.at(Token.threadlocal) {
+            if tls { mut self.fail("duplicate 'threadlocal' modifier") }
+            self.i += 1
+            tls = true
         } else if self.at(Token.mut) {
             mut self.fail("a top-level declaration takes no leading 'mut'; a mutating receiver is written 'mut self'")
         } else {
             break
         }
     }
+    if tls && self.at(Token.extern) { mut self.fail("'threadlocal' applies only to module variables") }
     if self.at(Token.extern) && self.kth(1) == Token.string && (self.kth(2) == Token.ident || self.kth(2) == Token.mut) {
         // `extern "c" name(...) { body }` or `extern "c" [mut] name: T = value`
         self.i += 2
@@ -2752,6 +2769,12 @@ Parser.top(mut self): u32 {
             mut self.fail_at(start, ["'inline' applies only to function declarations"]) // at the declaration's name
         }
         self.nodes[d].flags |= F_INLINE
+    }
+    if tls && !self.failed {
+        if self.nodes[d].kind != Kind.var || (self.nodes[d].flags & F_CONST) != 0 {
+            mut self.fail_at(start, ["'threadlocal' applies only to module variables"])
+        }
+        self.nodes[d].flags |= F_THREADLOCAL
     }
     return d
 }

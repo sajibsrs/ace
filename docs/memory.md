@@ -208,6 +208,36 @@ order with no metadata and no inter-element padding: `sizeof([N]T)` is
 `N * sizeof(T)` with the element's alignment. Strings are never NUL-terminated,
 and a string is a read-only view — its bytes cannot be written through it.
 
+## Thread-local variables
+
+A module variable marked `threadlocal` has one copy per thread:
+
+```ace
+threadlocal hits: u64
+pub threadlocal depth: i32 = -1
+```
+
+Each thread starts with its own copy at the declared initial value, zero or the
+constant initializer, never a copy of the creating thread's value. A use reads
+or writes the running thread's copy. `&hits` is an ordinary pointer to that copy;
+it may be handed to another thread, and the ordinary data-race rules apply. The
+copy ends when its thread's entry returns, before `thread.join` returns, so a
+pointer to it dangles from then on. Nothing runs when a copy ends: a thread-local
+that owns memory is released by its thread, for example with a `defer` in the
+entry. The main thread's copies last until the process ends.
+
+`threadlocal` marks module variables only, after `pub` and before the name; a
+`const`, a StaticMap, a local, and C-interop declarations are rejected. Every Ace
+type aligns to at most 16 bytes, which is what Darwin guarantees a thread's
+copies.
+
+On Darwin arm64 a thread-local is a Mach-O thread-local variable. Each access
+calls the variable's descriptor through dyld's thunk, about 1 ns over a plain
+global, and the first access on a thread allocates that thread's copies of every
+thread-local in the image. The address is fixed within a function, so release
+builds compute it once per function or loop where the optimizer can share it.
+Another target rejects the declaration.
+
 ## Pointer and slice construction
 
 `usize(pointer)` extracts the exact machine address from any data pointer.
@@ -677,6 +707,15 @@ Why the rules in `spec/memory.md` are shaped as they are.
   copy and write-back, as Go's map elements do (`m[k].x = v` is rejected
   there); C (`vec_at(&v, i)->x = v`), Zig (`list.items[i].x = v`), and Rust
   (`v[i].x = v` via `IndexMut`) write in place.
+- Thread-local variables (Values & Passing #13): per-thread state otherwise
+  needs a context pointer through every call or a `pthread_key` created at
+  runtime, and Ace has no module-init hook to create one. C11 `_Thread_local`
+  and Zig `threadlocal var` are the same storage class: constant initializers,
+  no destructor, a plain pointer to the copy. Rust's `thread_local!` adds lazy
+  initializers and destructors, hidden control flow Ace leaves out. Go has none
+  because goroutines move between OS threads; Ace threads are OS threads. The
+  word is Zig's: one reserved modifier beside `pub` and `inline`, where an
+  attribute would read as layout or placement.
 - Mutability (section decision): local mutability is invisible to optimization
   (SSA); mutation through references is what blocks alias analysis. Syntax is
   spent only where the compiler and reader profit.

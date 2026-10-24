@@ -1,0 +1,5 @@
+threadlocal codes: StaticMap[string]i32 = { "one": 1 }
+
+main(): int {
+    return 0
+}

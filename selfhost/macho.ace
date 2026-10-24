@@ -22,9 +22,19 @@ pub SEC_DEBUG_ABBREV: const int = 4
 pub SEC_DEBUG_INFO: const int = 5
 pub SEC_DEBUG_LINE: const int = 6
 pub NSECS: const int = 7
+/* Mach-O thread-local variables (Values & Passing #13): the templates and
+ * descriptors, written after the others only by an object that has one.
+ */
+pub SEC_THREAD_DATA: const int = 7
+pub SEC_THREAD_VARS: const int = 8
+pub SEC_THREAD_BSS: const int = 9
+pub NSECS_THREAD: const int = 10
 
-/* Section flags (mach-o/loader.h). */
+/* Section types (the low byte) and flags (mach-o/loader.h). */
 pub S_ZEROFILL: const u32 = 0x00000001
+pub S_THREAD_LOCAL_REGULAR: const u32 = 0x00000011
+pub S_THREAD_LOCAL_ZEROFILL: const u32 = 0x00000012
+pub S_THREAD_LOCAL_VARIABLES: const u32 = 0x00000013
 pub S_ATTR_SOME_INSTRUCTIONS: const u32 = 0x00000400
 pub S_ATTR_DEBUG: const u32 = 0x02000000
 pub S_ATTR_PURE_INSTRUCTIONS: const u32 = 0x80000000
@@ -36,6 +46,8 @@ pub RM_PAGE21: const u8 = 3
 pub RM_PAGEOFF12: const u8 = 4
 pub RM_GOT_LOAD_PAGE21: const u8 = 5
 pub RM_GOT_LOAD_PAGEOFF12: const u8 = 6
+pub RM_TLVP_LOAD_PAGE21: const u8 = 8
+pub RM_TLVP_LOAD_PAGEOFF12: const u8 = 9
 
 /* n_type bits. */
 pub N_EXT: const u8 = 0x01
@@ -114,6 +126,12 @@ pub Obj: struct {
     pub errors: int = 0,
 }
 
+/* Whether s reserves its bytes rather than holding them (bss). */
+pub Sec.zerofill(self): bool {
+    kind: u32 = self.flags & 0xFF
+    return kind == S_ZEROFILL || kind == S_THREAD_LOCAL_ZEROFILL
+}
+
 sec(name: string, seg: string, flags: u32, align: u8): Sec {
     return Sec { sect = name, seg = seg, flags = flags, align = align, data = array.Array[u8] {}, rels = array.Array[Rel] {} }
 }
@@ -130,6 +148,9 @@ pub Obj.new(debug: bool): Obj {
     fail(mut o.secs.push(sec("__debug_abbrev", "__DWARF", S_ATTR_DEBUG, 0)))
     fail(mut o.secs.push(sec("__debug_info", "__DWARF", S_ATTR_DEBUG, 0)))
     fail(mut o.secs.push(sec("__debug_line", "__DWARF", S_ATTR_DEBUG, 0)))
+    fail(mut o.secs.push(sec("__thread_data", "__DATA", S_THREAD_LOCAL_REGULAR, 4)))
+    fail(mut o.secs.push(sec("__thread_vars", "__DATA", S_THREAD_LOCAL_VARIABLES, 3)))
+    fail(mut o.secs.push(sec("__thread_bss", "__DATA", S_THREAD_LOCAL_ZEROFILL, 4)))
     _ = mut o.define("__ace$text", false, SEC_TEXT)
     return o
 }
@@ -208,7 +229,7 @@ pub Obj.define(mut self, name: string, ext: bool, k: int): int {
     if ext { s.ntype |= N_EXT }
     s.sect = u8(1 + k)
     sc: Sec = self.secs.get(k)
-    if (sc.flags & S_ZEROFILL) != 0 { s.value = sc.size } else { s.value = u64(sc.data.len) }
+    if sc.zerofill() { s.value = sc.size } else { s.value = u64(sc.data.len) }
     return id
 }
 
@@ -490,15 +511,18 @@ align_up32(v: u32, a: u32): u32 { return (v + a - 1) & ~(a - 1) }
  * result owns its memory.
  */
 pub Obj.image(mut self): array.Array[u8] {
-    n: usize = self.secs.len
+    // The thread-local sections follow the others, so an object without a
+    // thread-local writes exactly the first NSECS.
+    n: usize = usize(NSECS)
+    if self.secs.get(SEC_THREAD_VARS).data.len > 0 { n = usize(NSECS_THREAD) }
     for i: usize in 0..n {
         s: mut *Sec = mut self.sec(int(i))
-        if (s.flags & S_ZEROFILL) == 0 { s.size = u64(s.data.len) }
+        if !s.zerofill() { s.size = u64(s.data.len) }
     }
     segcmd: u32 = 72 + 80 * u32(n)
     cmdend: u32 = 32 + segcmd + 24 + 24 + 80 // header + 4 load commands
     max_align: u32 = 1
-    for s: Sec in self.secs.view() {
+    for s: Sec in self.secs.view()[0..n] {
         if max_align < (u32(1) << u32(s.align)) { max_align = u32(1) << u32(s.align) }
     }
     base: u32 = align_up32(cmdend, max_align)
@@ -510,14 +534,14 @@ pub Obj.image(mut self): array.Array[u8] {
     defer mut offs.wipe()
     addr: u64 = 0
     off: u32 = base
-    for s: Sec in self.secs.view() {
+    for s: Sec in self.secs.view()[0..n] {
         a: u32 = u32(1) << u32(s.align)
         addr = (addr + u64(a) - 1) & ~(u64(a) - 1)
         off = align_up32(off, a)
         fail(mut addrs.push(addr))
         fail(mut offs.push(off))
         addr += s.size
-        if (s.flags & S_ZEROFILL) == 0 { off += u32(s.size) }
+        if !s.zerofill() { off += u32(s.size) }
     }
     vmsize: u64 = addr
     filesize: u32 = off - base
@@ -559,7 +583,7 @@ pub Obj.image(mut self): array.Array[u8] {
     defer mut rel.wipe()
     rel_at: array.Array[u32] = array.Array[u32] {}
     defer mut rel_at.wipe()
-    for s: Sec in self.secs.view() {
+    for s: Sec in self.secs.view()[0..n] {
         fail(mut rel_at.push(u32(rel.len)))
         for r: Rel in s.rels.view() {
             put32(mut rel, r.off)
@@ -641,7 +665,7 @@ pub Obj.image(mut self): array.Array[u8] {
     for i: usize in 0..n {
         s: Sec = self.secs.get(i)
         for img.len < usize(offs.get(i)) { put8(mut img, 0) }
-        if (s.flags & S_ZEROFILL) != 0 { continue }
+        if s.zerofill() { continue }
         put_bytes(mut img, s.data.view())
     }
     put_bytes(mut img, rel.view())

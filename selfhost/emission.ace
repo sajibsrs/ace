@@ -895,6 +895,10 @@ Em.global(mut self, d: u32) {
     } else {
         nm = mut self.names.join(["__ace$g$", self.s.node(binder).text])
     }
+    if self.s.sym(vs).is_thread {
+        mut self.thread_local(d, t, nm)
+        return
+    }
     if n.b == 0 {
         b: mut *macho.Sec = mut self.o.sec(macho.SEC_BSS)
         a: u64 = u64(self.align(t))
@@ -980,31 +984,84 @@ Em.staticmap(mut self, d: u32, vs: u32, t: u32) {
 /* A global Error handle: null, a domain entry, or a domain called with a
  * constant code, as one word (domain id above the i32 code).
  */
-Em.error_global(mut self, d: u32, nm: string) {
-    n: Node = self.s.node(d)
-    call: u32 = n.b
+/* The word of global Error `d`'s initializer: null, a domain value, or a
+ * domain call with a constant i32 code; false, after the error, otherwise.
+ */
+Em.error_word(mut self, d: u32): (u64, bool) {
+    call: u32 = self.s.node(d).b
     c: Node = self.s.node(call)
-    word: u64 = 0
-    if c.kind == Kind.null {
-        word = 0
-    } else if c.kind == Kind.selector && self.s.node_ty(call) != 0 && self.ty(self.s.node_ty(call)).kind == TypeKind.error {
-        word = self.s.node_ival(call)
-    } else {
-        code: u64 = 0
-        ok: bool = c.kind == Kind.call && c.nkids <= 1
-        if ok && c.nkids == 1 { ok, code = self.const_int(self.s.kid(call, 0)) }
-        if !ok {
-            mut self.s.err(d, ["global Error initializer must use a domain with a constant i32 code"])
-            return
-        }
-        word = (self.s.node_ival(call) << 32) | u64(u32(code & 0xFFFFFFFF))
+    if c.kind == Kind.null { return 0, true }
+    if c.kind == Kind.selector && self.s.node_ty(call) != 0 && self.ty(self.s.node_ty(call)).kind == TypeKind.error {
+        return self.s.node_ival(call), true
     }
+    code: u64 = 0
+    ok: bool = c.kind == Kind.call && c.nkids <= 1
+    if ok && c.nkids == 1 { ok, code = self.const_int(self.s.kid(call, 0)) }
+    if !ok {
+        mut self.s.err(d, ["global Error initializer must use a domain with a constant i32 code"])
+        return 0, false
+    }
+    return (self.s.node_ival(call) << 32) | u64(u32(code & 0xFFFFFFFF)), true
+}
+
+Em.error_global(mut self, d: u32, nm: string) {
+    word: u64, ok: bool = mut self.error_word(d)
+    if !ok { return }
     k: int = macho.SEC_DATA
-    if (n.flags & parser.F_CONST) != 0 { k = macho.SEC_CONST }
+    if (self.s.node(d).flags & parser.F_CONST) != 0 { k = macho.SEC_CONST }
     bytes: array.Array[u8] = array.Array[u8] {}
     defer mut bytes.wipe()
     put_u(mut bytes, word, 8)
     _ = mut self.place(k, nm, false, 8, bytes, array.Array[CRel] {})
+}
+
+/* Thread-local `d` of type t (Values & Passing #13): its template in
+ * __thread_bss or, with an initializer, __thread_data, under nm$tlv$init, and
+ * its descriptor nm in __thread_vars: the thunk dyld rebinds from
+ * _tlv_bootstrap, a key word, and the template's address.
+ */
+Em.thread_local(mut self, d: u32, t: u32, nm: string) {
+    n: Node = self.s.node(d)
+    init: string = mut self.names.join([nm, "$tlv$init"])
+    tmpl: int = 0
+    if n.b == 0 {
+        b: mut *macho.Sec = mut self.o.sec(macho.SEC_THREAD_BSS)
+        a: u64 = u64(self.align(t))
+        b.size = (b.size + a - 1) / a * a
+        tmpl = mut self.o.define(init, false, macho.SEC_THREAD_BSS)
+        b = mut self.o.sec(macho.SEC_THREAD_BSS)
+        b.size += u64(self.size(t))
+    } else {
+        bytes: array.Array[u8] = array.Array[u8] {}
+        defer mut bytes.wipe()
+        rels: array.Array[CRel] = array.Array[CRel] {}
+        defer mut rels.wipe()
+        errors: int = self.s.errors
+        if self.ty(t).kind == TypeKind.error {
+            word: u64, ok: bool = mut self.error_word(d)
+            if !ok { return }
+            put_u(mut bytes, word, 8)
+        } else if !mut self.eval_const(n.b, t, mut bytes, mut rels) {
+            if self.s.errors != errors { return }
+            if self.ty(t).kind == TypeKind.union {
+                mut self.s.err(d, ["global union initializer must be a compile-time variant value"])
+            } else {
+                mut self.s.err(d, ["global initializer must be a compile-time constant"])
+            }
+            return
+        }
+        tmpl = mut self.place(macho.SEC_THREAD_DATA, init, false, self.align(t), bytes, rels)
+    }
+    _ = mut self.o.define(nm, false, macho.SEC_THREAD_VARS)
+    v: mut *macho.Sec = mut self.o.sec(macho.SEC_THREAD_VARS)
+    at: u32 = u32(v.data.len)
+    mut self.o.reloc(macho.SEC_THREAD_VARS, at, mut self.o.intern("__tlv_bootstrap"), false, 3, true, macho.RM_UNSIGNED)
+    v = mut self.o.sec(macho.SEC_THREAD_VARS)
+    put_u(mut v.data, 0, 8)
+    put_u(mut v.data, 0, 8)
+    mut self.o.reloc(macho.SEC_THREAD_VARS, at + 16, tmpl, false, 3, true, macho.RM_UNSIGNED)
+    v = mut self.o.sec(macho.SEC_THREAD_VARS)
+    put_u(mut v.data, 0, 8)
 }
 
 // --- vtables ----------------------------------------------------------------

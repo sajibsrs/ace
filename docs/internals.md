@@ -106,7 +106,20 @@ repeated in each additional backend.
   rather than beside it.
 - **`macho.c`** — the Mach-O arm64 object shared by every backend: sections,
   symbols, relocations, fixups, the DWARF line table, and the file image.
-  Target-agnostic.
+  Target-agnostic. An object with a `threadlocal` also writes `__thread_data`,
+  `__thread_vars`, and `__thread_bss` after the other sections, so every other
+  object is unchanged. Each thread-local is a 24-byte descriptor in
+  `__thread_vars` (`_tlv_bootstrap`, which dyld rebinds to its thunk, a key
+  word, and the template's address) and its template `name$tlv$init` in
+  `__thread_bss`, or in `__thread_data` with an initializer.
+- **Thread-local access** (`arm64.c`) — `IR_GLOBAL` of a thread-local is
+  `adrp x0` / `ldr x0` (TLVP relocations, which the linker relaxes) /
+  `ldr x16, [x0]` / `blr x16`, the address returned in x0. The thunk preserves
+  every other register Ace allocates (x1–x15, x19–x28, and all of v0–v31,
+  checked on its fast and allocating paths), so a value live across an access
+  only has to avoid x0: regalloc records the access beside the asm statements,
+  with the mask `Ra.thread_reserved`, and the function keeps a frame for x30.
+  A load or store never folds the global's page offset.
 - **`backend.h`** — the `Obj` state shared by every code generator and the
   object writer.
 

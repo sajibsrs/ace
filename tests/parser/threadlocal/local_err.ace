@@ -1,0 +1,4 @@
+main(): int {
+    threadlocal hits: u64 = 0
+    return 0
+}

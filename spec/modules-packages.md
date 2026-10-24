@@ -76,8 +76,9 @@ Decision: one explicit `extern "c"` boundary in both directions; Ace internals s
    the C-ABI whitelist (#3) at struct-field position, so a fixed array is
    allowed. A use reads or writes the C storage in place, and `&name` is `*T`,
    or `mut *T` when `mut`. A read is never assumed unchanged across a call or
-   asm. Thread-local C variables are not supported; C libraries reach them
-   through accessor functions, which an extern block already binds.
+   asm. Thread-local C variables are not supported, and an Ace `threadlocal`
+   (Values & Passing #13) is not visible to C; C libraries reach them through
+   accessor functions, which an extern block already binds.
    A global with an initializer is defined in Ace and visible to C under its
    unmangled name, or under its link name (`name: T as "sym" = value`): `mut ace_counter: i32 = 0` in the block, or the single form
    `extern "c" [mut] name: T = value`, which may be `pub`. It is an ordinary

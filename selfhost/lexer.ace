@@ -18,7 +18,7 @@ pub Token: enum u8 {
     in, switch, default, return, break, continue, defer,
     asm, extern, contract, struct, embed, signs, distinct,
     type, enum, union, specialized, intrinsic, inline,
-    volatile, self, null, true, false,
+    volatile, self, threadlocal, null, true, false,
     int, float, string, char,
     assign, add_eq, sub_eq, mul_eq, div_eq, mod_eq, and_eq, or_eq, xor_eq,
     shl_eq, shr_eq,
@@ -345,6 +345,8 @@ keyword(t: []char): Token {
                 k = Token.type
             } else if mem.equal(t, "true") {
                 k = Token.true
+            } else if mem.equal(t, "threadlocal") {
+                k = Token.threadlocal
             }
         }
         'u' { if mem.equal(t, "union") { k = Token.union } }

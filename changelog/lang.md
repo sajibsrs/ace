@@ -1,5 +1,11 @@
 # Language
 
+- Added `threadlocal` module variables (#39): one copy per thread, starting at
+  zero or the constant initializer. They are Mach-O thread-local variables: a
+  descriptor and template, read through dyld's thunk (x0 kept free across it),
+  with the TLV sections written only by objects that define one. Darwin arm64
+  only; C and selfhost.
+
 - A function with a return type must return on every path to its closing brace
   (`missing return`, no implicit zero result, `main` included; C and selfhost). The check is
   the definite-initialization walk's reachability: `return`, `panic`, and an

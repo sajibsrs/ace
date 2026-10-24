@@ -1379,35 +1379,90 @@ static void add_global(Em* e, Sym* s, ESym* sym) {
     e->globs[e->nglobs++] = (GVar){ s, sym->name, (uint32_t)strlen(sym->name) };
 }
 
-static int emit_error_handle_global(Em* e, Node* n, Sym* vs, const char* nm) {
+// The word of a global Error initializer: null, a domain value, or a domain
+// call with a constant i32 code.
+static int error_handle_word(Em* e, Node* n, uint64_t* word) {
     Node* call = n->b;
     uint64_t code = 0;
     if (call && call->kind == N_NULL) {
-        Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
-        while (d->data.len % 8) buf_put8(&d->data, 0);
-        ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
-        buf_put64(&d->data, 0);
-        add_global(e, vs, g);
+        *word = 0;
         return 1;
     }
     if (call && call->kind == N_FIELD_E && node_ty(call) && node_ty(call)->kind == SK_ERROR) {
-        Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
-        while (d->data.len % 8) buf_put8(&d->data, 0);
-        ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
-        buf_put64(&d->data, call->ival);
-        add_global(e, vs, g);
+        *word = call->ival;
         return 1;
     }
     if (!call || call->kind != N_CALL || call->nkids > 1 || (call->nkids == 1 && !const_int(call->kids[0], &code))) {
         em_err(e, n, "global Error initializer must use a domain with a constant i32 code");
         return 0;
     }
+    *word = (call->ival << 32) | (uint32_t)code;
+    return 1;
+}
+
+static int emit_error_handle_global(Em* e, Node* n, Sym* vs, const char* nm) {
+    uint64_t word;
+    if (!error_handle_word(e, n, &word)) return 0;
     Sec* d = (n->flags & F_CONST) ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
     while (d->data.len % 8) buf_put8(&d->data, 0);
     ESym* g = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, d);
-    buf_put64(&d->data, (call->ival << 32) | (uint32_t)code);
+    buf_put64(&d->data, word);
     add_global(e, vs, g);
     return 1;
+}
+
+// A thread-local (Values & Passing #13): its template in __thread_bss or, with
+// an initializer, __thread_data, under nm$tlv$init, and its descriptor nm in
+// __thread_vars: the thunk dyld rebinds from _tlv_bootstrap, a key word, and
+// the template's address.
+static void emit_thread_local(Em* e, Node* n, Sym* vs, SType* t, const char* nm) {
+    if (strcmp(ace_target, "darwin-arm64") != 0) {
+        em_err(e, n, "threadlocal variables are implemented only on darwin-arm64");
+        return;
+    }
+    uint32_t size = ty_size(t), align = ty_align(t);
+    char init[540];
+    snprintf(init, sizeof init, "%s$tlv$init", nm);
+    ESym* tmpl;
+    if (!n->b) {
+        Sec* b = &e->o.secs[SEC_THREAD_BSS];
+        b->size = align_up(b->size, align);
+        tmpl = sym_define(&e->o.syms, e->o.secs, init, (uint32_t)strlen(init), 0, b);
+        b->size += size;
+    } else {
+        Buf bytes = {0};
+        ConstRels rels = {0};
+        uint64_t word;
+        int errors_before = e->o.d->errors;
+        if (t->kind == SK_ERROR) {
+            if (!error_handle_word(e, n, &word)) return;
+            buf_put64(&bytes, word);
+        } else if (!eval_const(e, n->b, t, &bytes, &rels)) {
+            if (e->o.d->errors != errors_before) {}
+            else if (t->kind == SK_UNION) em_err(e, n, "global union initializer must be a compile-time variant value");
+            else em_err(e, n, "global initializer must be a compile-time constant");
+            free(bytes.d);
+            free(rels.v);
+            return;
+        }
+        Sec* d = &e->o.secs[SEC_THREAD_DATA];
+        while (d->data.len % align) buf_put8(&d->data, 0);
+        tmpl = sym_define(&e->o.syms, e->o.secs, init, (uint32_t)strlen(init), 0, d);
+        uint32_t start = (uint32_t)d->data.len;
+        buf_write(&d->data, bytes.d, bytes.len);
+        for (int i = 0; i < rels.n; i++) reloc_add(d, start + rels.v[i].off, rels.v[i].sym, 0, 3, 1, RM_UNSIGNED);
+        free(bytes.d);
+        free(rels.v);
+    }
+    Sec* v = &e->o.secs[SEC_THREAD_VARS];
+    ESym* desc = sym_define(&e->o.syms, e->o.secs, nm, (uint32_t)strlen(nm), 0, v);
+    uint32_t at = (uint32_t)v->data.len;
+    reloc_add(v, at, sym_intern(&e->o.syms, "__tlv_bootstrap", 15), 0, 3, 1, RM_UNSIGNED);
+    buf_put64(&v->data, 0);
+    buf_put64(&v->data, 0);
+    reloc_add(v, at + 16, tmpl, 0, 3, 1, RM_UNSIGNED);
+    buf_put64(&v->data, 0);
+    add_global(e, vs, desc);
 }
 
 static void emit_global(Em* e, Node* n) {
@@ -1424,6 +1479,10 @@ static void emit_global(Em* e, Node* n) {
     int export_c = (n->flags & F_EXPO) != 0; // a C global defined in Ace: its C name, external
     if (export_c) snprintf(nm, sizeof nm, "_%s", n->cname ? n->cname : binder->str);
     else snprintf(nm, sizeof nm, "__ace$g$%.*s", (int)binder->len, binder->str);
+    if (vs->is_thread) {
+        emit_thread_local(e, n, vs, t, nm);
+        return;
+    }
     if (!n->b) { // no initializer: zero-fill storage
         Sec* b = &e->o.secs[SEC_BSS];
         b->size = align_up(b->size, align);

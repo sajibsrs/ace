@@ -1,0 +1,13 @@
+// Every placement threadlocal accepts: a module variable, public or not, with
+// or without an initializer, under @when.
+
+threadlocal hits: u64
+threadlocal seed: u64 = 7
+pub threadlocal scratch: [256]u8
+
+@when(target == "darwin-arm64")
+pub threadlocal depth: i32 = -1
+
+main(): int {
+    return 0
+}

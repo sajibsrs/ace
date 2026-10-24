@@ -61,11 +61,17 @@ static inline void buf_patch32(Buf* b, size_t off, uint32_t v) {
 enum {
     SEC_TEXT, SEC_CONST, SEC_DATA, SEC_BSS,
     SEC_DEBUG_ABBREV, SEC_DEBUG_INFO, SEC_DEBUG_LINE, NSECS,
+    // Mach-O thread-local variables (Values & Passing #13): the templates and
+    // descriptors, written after the others only by an object that has one
+    SEC_THREAD_DATA = NSECS, SEC_THREAD_VARS, SEC_THREAD_BSS, NSECS_THREAD,
     // nlist_64 n_sect is 1-based: SEC_TEXT -> 1
 };
 
-enum { // section flags (mach-o/loader.h)
+enum { // section types (the low byte) and flags (mach-o/loader.h)
     S_ZEROFILL               = 0x00000001,
+    S_THREAD_LOCAL_REGULAR   = 0x00000011,
+    S_THREAD_LOCAL_ZEROFILL  = 0x00000012,
+    S_THREAD_LOCAL_VARIABLES = 0x00000013,
     S_ATTR_SOME_INSTRUCTIONS = 0x00000400,
     S_ATTR_DEBUG             = 0x02000000,
     S_ATTR_PURE_INSTRUCTIONS = 0x80000000,
@@ -79,6 +85,8 @@ enum { // arm64 relocation types
     RM_PAGEOFF12 = 4,
     RM_GOT_LOAD_PAGE21    = 5,
     RM_GOT_LOAD_PAGEOFF12 = 6,
+    RM_TLVP_LOAD_PAGE21    = 8,
+    RM_TLVP_LOAD_PAGEOFF12 = 9,
 };
 
 enum { // n_type bits
@@ -109,6 +117,12 @@ typedef struct {
     uint32_t    offset, reloff;
 } Sec;
 
+// Whether s reserves its bytes rather than holding them (bss).
+static inline int sec_zerofill(const Sec* s) {
+    uint32_t type = s->flags & 0xFFu;
+    return type == S_ZEROFILL || type == S_THREAD_LOCAL_ZEROFILL;
+}
+
 void  reloc_add(Sec* s, uint32_t off, ESym* sym, int pcrel, int len, int ext, uint32_t type);
 ESym* sym_intern(SymTab* t, const char* p, uint32_t len);
 // Define at the section cursor; bss grows its size cursor instead of data.
@@ -131,7 +145,7 @@ typedef struct { uint32_t addr, size; const char* name; uint32_t nlen; } DebugFn
 typedef struct {
     Diag*    d;
     EmitMode mode;
-    Sec      secs[NSECS];
+    Sec      secs[NSECS_THREAD];
     SymTab   syms;
     Fixup*   fix;
     size_t   nfix, capfix;

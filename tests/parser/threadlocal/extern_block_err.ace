@@ -1,0 +1,3 @@
+extern "c" {
+    threadlocal mut opterr: i32
+}

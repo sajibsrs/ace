@@ -22,6 +22,7 @@
     X(SIGNS, "signs") X(DISTINCT, "distinct") X(TYPE, "type")                \
     X(ENUM, "enum") X(UNION, "union") X(SPECIALIZED, "specialized")            \
     X(INTRINSIC, "intrinsic") X(INLINE, "inline") X(VOLATILE, "volatile") X(SELF, "self")\
+    X(THREADLOCAL, "threadlocal")                                             \
     X(NULL, "null") X(TRUE, "true") X(FALSE, "false")                          \
     /* literals */                                                             \
     X(INT, "int") X(FLOAT, "float") X(STR, "string") X(CHARLIT, "char")        \
@@ -187,6 +188,7 @@ enum {
     F_REEXPORTED = 134217728, // a struct a facade's pub alias makes visible to importers
     F_SHADOWED = 268435456, // `x.m` whose local x hides an import binding x with a member m
     F_OPEN = 536870912, // an enum whose member list ends with `_` (Type System #15)
+    F_THREADLOCAL = 1073741824, // a module variable with one copy per thread (Values & Passing #13)
 };
 
 // Compiler-backed standard-module functions. These markers live only on the

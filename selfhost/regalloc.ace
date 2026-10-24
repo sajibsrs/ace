@@ -10,6 +10,7 @@
 import array
 
 import ir: "./ir.ace"
+import sema: "./sema.ace"
 import fail from "./failure.ace"
 
 Func: type = ir.Func
@@ -60,8 +61,11 @@ pub Ra: struct {
     pub with: array.Array[int],    // value -> the value it shares a location with, or -1
     pub calls: array.Array[int],   // call use positions, ascending
     pub rtcalls: array.Array[int], // byte routine call positions, ascending
-    pub asm_pos: array.Array[int], // asm instruction positions, ascending
+    pub asm_pos: array.Array[int], // asm instruction and thread-local address positions, ascending
     pub asm_mask: array.Array[u32], // that instruction's reserved registers, parallel to asm_pos
+    // set by the target: the registers computing a thread-local's address
+    // disturbs (Values & Passing #13), none of which may hold a value across it
+    pub thread_reserved: u32 = 0,
     pub asm_all: u32 = 0,          // every asm statement's reserved registers
     // allocation
     pub reg: array.Array[int],     // value -> register, or -1
@@ -472,8 +476,10 @@ pub allocatable(a: Ra, fn: Func, v: int): bool {
     return x.ty != ir.IT_VOID && !remat(x.op) && !a.fused.get(v) && a.nuse.get(v) > 0
 }
 
-/* Sets phi_of, calls, rtcalls, and the asm positions; hint all -1. */
-pub positions(mut a: Ra, fn: Func) {
+/* Sets phi_of, calls, rtcalls, and the asm and thread-local positions; hint
+ * all -1.
+ */
+pub positions(mut a: Ra, fn: Func, s: sema.Sema) {
     nv: int = int(fn.ins.len)
     err: Error = null
     a.hint, err = array.Array[int].filled(usize(nv), -1)
@@ -490,6 +496,9 @@ pub positions(mut a: Ra, fn: Func) {
                 }
             } else if x.op == ir.IR_RTCALL {
                 fail(mut a.rtcalls.push(2 * a.idx.get(u)))
+            } else if x.op == ir.IR_GLOBAL && x.sym != 0 && s.sym(x.sym).is_thread {
+                fail(mut a.asm_pos.push(2 * a.idx.get(u)))
+                fail(mut a.asm_mask.push(a.thread_reserved))
             } else if x.op == ir.IR_ASM {
                 reserved: u32 = fn.asms.get(x.asm).reserved
                 fail(mut a.asm_pos.push(2 * a.idx.get(u)))

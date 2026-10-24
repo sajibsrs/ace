@@ -70,6 +70,7 @@ typedef struct {
     int8_t    cs[18];  // callee-saved registers used, ascending: x19-x28, then d8-d15
     uint32_t  frame, slot_base;
     int       has_frame;
+    int       nthread; // thread-local addresses: each calls its descriptor's thunk
     uint32_t  epi;     // text offset + 1 of the function's one epilogue, once emitted
     // emission
     uint32_t* label;   // block -> text offset
@@ -677,6 +678,10 @@ static int access_bytes(A64* a, IrIns* x) {
 // address comes from the GOT rather than a direct page reference.
 static int got_data(IrIns* x) { return x->sym && x->sym->kind == SYM_VAR && x->sym->is_extern; }
 
+// Whether global x is a thread-local, whose address comes from its descriptor's
+// thunk (Values & Passing #13).
+static int thread_data(IrIns* x) { return x->sym && x->sym->kind == SYM_VAR && x->sym->is_thread; }
+
 // Whether load or store u computes its address itself: from a global (adrp
 // and a page offset), or from an unchecked pointer offset (a folded constant,
 // or a register index scaled by the access size).
@@ -685,7 +690,7 @@ static int fold_address(A64* a, int u) {
     int p = x->args[0];
     IrIns* px = ins_of(a, p);
     if (a->ra.nuse[p] != 1 || px->block != x->block || (x->flags & IRF_CHECKED)) return 0;
-    if (px->op == IR_GLOBAL) return x->aux == 0 && !got_data(px);
+    if (px->op == IR_GLOBAL) return x->aux == 0 && !got_data(px) && !thread_data(px);
     if ((px->op != IR_PADD && px->op != IR_PSUB) || (px->flags & IRF_CHECKED)) return 0;
     int n = px->args[1];
     uint64_t d;
@@ -739,6 +744,9 @@ static void hints(A64* a) {
                 if (a->pin[x->imm].kind == L_REG) a->ra.hint[u] = a->pin[x->imm].reg;
             } else if (x->op == IR_RESULT) {
                 a->ra.hint[u] = 8;
+            } else if (x->op == IR_GLOBAL && thread_data(x)) {
+                a->ra.hint[u] = 0;
+                a->nthread++;
             } else if (is_call(x->op)) {
                 if ((x->flags & IRF_SRET) && a->ra.hint[x->args[x->nargs - 1]] < 0) a->ra.hint[x->args[x->nargs - 1]] = 8;
                 Plan p;
@@ -1613,9 +1621,26 @@ static void got_ref(A64* a, int rd, const char* name) {
     put(a, 0xF9400000u | ((uint32_t)rd << 5) | (uint32_t)rd);
 }
 
+// rd = this thread's address of thread-local name, from the thunk its
+// descriptor holds: adrp x0, name@TLVPPAGE; ldr x0, [x0, name@TLVPPAGEOFF];
+// ldr x16, [x0]; blr x16. The thunk disturbs only x0, x16, x17, x30, and the
+// flags; allocation keeps a value live across it out of x0.
+static void thread_ref(A64* a, int rd, const char* name) {
+    ESym* s = sym_intern(&a->o->syms, name, (uint32_t)strlen(name));
+    Sec* t = &a->o->secs[SEC_TEXT];
+    reloc_add(t, here(a), s, 1, 2, 1, RM_TLVP_LOAD_PAGE21);
+    put(a, 0x90000000u);
+    reloc_add(t, here(a), s, 0, 2, 1, RM_TLVP_LOAD_PAGEOFF12);
+    put(a, 0xF9400000u);
+    put(a, 0xF9400000u | (uint32_t)S0); // ldr x16, [x0]
+    put(a, 0xD63F0000u | (S0 << 5));    // blr x16
+    if (rd != 0) mov_reg(a, rd, 0);
+}
+
 static void global(A64* a, int v) {
     int rd = dst(a, v);
-    if (got_data(ins_of(a, v))) got_ref(a, rd, ins_of(a, v)->name);
+    if (thread_data(ins_of(a, v))) thread_ref(a, rd, ins_of(a, v)->name);
+    else if (got_data(ins_of(a, v))) got_ref(a, rd, ins_of(a, v)->name);
     else page_ref(a, rd, ins_of(a, v)->name, 0x91000000u | ((uint32_t)rd << 5) | (uint32_t)rd);
     dst_done(a, v, rd);
 }
@@ -2209,6 +2234,7 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) 
     ra_count_uses(&a.ra);
     fuse(&a);
     ra_liveness(&a.ra);
+    a.ra.thread_reserved = 1u << 0; // the thunk's result register
     ra_positions(&a.ra);
     hints(&a);
     ra_coalesce(&a.ra, &ARM64);
@@ -2216,7 +2242,7 @@ void arm64_func(Obj* o, IrFunc* fn, const char* name, uint32_t len, int global) 
     a.slot_base = a.out + 16u + 8u * (uint32_t)a.ncs;
     // a byte routine's bl needs x30 saved; an asm statement naming x29 or x30
     // needs the return address protected regardless of its own leaf status
-    a.has_frame = a.ra.ncalls || a.ra.nrtcalls || a.ra.nslots || a.ncs || a.nsave || (a.ra.asm_all & (3u << 29)); // an asm reserving x29 or x30 keeps the frame
+    a.has_frame = a.ra.ncalls || a.ra.nrtcalls || a.nthread || a.ra.nslots || a.ncs || a.nsave || (a.ra.asm_all & (3u << 29)); // an asm reserving x29 or x30 keeps the frame
     a.frame = place_objects(&a);
     if (!a.has_frame) a.frame = 0;
     a.label = xcalloc((size_t)fn->nblocks, sizeof(uint32_t));

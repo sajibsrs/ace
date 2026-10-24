@@ -8167,6 +8167,7 @@ static void resolve_global(Ck* k, Sym* s, Node* n) {
     }
     s->type = t;
     s->is_const = (n->flags & F_CONST) != 0 || t->kind == SK_STATICMAP;
+    if (s->is_thread && t->kind == SK_STATICMAP) ck_err(k, n, "'threadlocal' does not apply to a StaticMap declaration");
     if (n->b) {
         if (t->kind == SK_STATICMAP) {
             if (n->flags & F_CONST) ck_err(k, n, "const is not permitted on a StaticMap declaration");
@@ -8336,6 +8337,7 @@ static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
             s->is_const = (n->flags & F_CONST) != 0;
             s->is_pub = (n->flags & F_PUB) != 0;
             s->is_mut = (n->flags & F_MUT) != 0;
+            s->is_thread = (n->flags & F_THREADLOCAL) != 0;
             s->is_global = 1;
             s->decl = binder;
             s->init = n->b;

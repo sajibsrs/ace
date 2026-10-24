@@ -131,14 +131,14 @@ ESym* sym_define(SymTab* t, Sec* secs, const char* p, uint32_t len, int ext, Sec
     if (s->type) return s; // redefinition is a sema error; keep the first
     s->type = N_SECT_ | (ext ? N_EXT_ : 0);
     s->sect = (uint8_t)(1 + (int)(in - secs));
-    s->value = (in->flags & S_ZEROFILL) ? in->size : in->data.len;
+    s->value = sec_zerofill(in) ? in->size : in->data.len;
     return s;
 }
 
 // --- the object under construction -----------------------------------------------------
 
 void obj_init(Obj* o, Diag* d, EmitMode mode) {
-    static const Sec PROTO[NSECS] = {
+    static const Sec PROTO[NSECS_THREAD] = {
         [SEC_TEXT]       = { .sect = "__text",       .seg = "__TEXT",
                              .flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS, .align = 6 },
         [SEC_CONST]      = { .sect = "__const",      .seg = "__DATA_CONST",
@@ -153,11 +153,17 @@ void obj_init(Obj* o, Diag* d, EmitMode mode) {
                              .flags = S_ATTR_DEBUG },
         [SEC_DEBUG_LINE] = { .sect = "__debug_line", .seg = "__DWARF",
                              .flags = S_ATTR_DEBUG },
+        [SEC_THREAD_DATA] = { .sect = "__thread_data", .seg = "__DATA",
+                              .flags = S_THREAD_LOCAL_REGULAR, .align = 4 },
+        [SEC_THREAD_VARS] = { .sect = "__thread_vars", .seg = "__DATA",
+                              .flags = S_THREAD_LOCAL_VARIABLES, .align = 3 },
+        [SEC_THREAD_BSS]  = { .sect = "__thread_bss", .seg = "__DATA",
+                              .flags = S_THREAD_LOCAL_ZEROFILL, .align = 4 },
     };
     memset(o, 0, sizeof *o);
     o->d = d;
     o->mode = mode;
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < NSECS_THREAD; i++) {
         o->secs[i].sect = PROTO[i].sect;
         o->secs[i].seg = PROTO[i].seg;
         o->secs[i].flags = PROTO[i].flags;
@@ -394,13 +400,16 @@ void obj_debug_line(Obj* o, ESym* text_anchor) {
 // --- Mach-O object writing ----------------------------------------------------------
 
 size_t obj_write(Obj* o, const char* path) {
+    // The thread-local sections follow the others, so an object without a
+    // thread-local writes exactly the first NSECS.
+    int nsecs = o->secs[SEC_THREAD_VARS].data.len ? NSECS_THREAD : NSECS;
     // Section size = data length for file-backed sections (bss is reserved).
-    for (int i = 0; i < NSECS; i++) if (!(o->secs[i].flags & S_ZEROFILL)) o->secs[i].size = o->secs[i].data.len;
+    for (int i = 0; i < nsecs; i++) if (!sec_zerofill(&o->secs[i])) o->secs[i].size = o->secs[i].data.len;
 
-    uint32_t segcmd = 72 + 80 * NSECS;
+    uint32_t segcmd = 72 + 80 * (uint32_t)nsecs;
     uint32_t cmdend = 32 + segcmd + 24 + 24 + 80; // header + 4 load commands
     uint32_t max_section_align = 1;
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < nsecs; i++) {
         uint32_t a = 1u << o->secs[i].align;
         if (max_section_align < a) max_section_align = a;
     }
@@ -409,7 +418,7 @@ size_t obj_write(Obj* o, const char* path) {
     // Layout: addrs continuous from 0; file offsets track (bss takes no bytes).
     uint64_t addr = 0;
     uint32_t off = base;
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < nsecs; i++) {
         Sec* s = &o->secs[i];
         uint32_t a = 1u << s->align;
         addr = (addr + a - 1) & ~(uint64_t)(a - 1);
@@ -417,7 +426,7 @@ size_t obj_write(Obj* o, const char* path) {
         s->addr = addr;
         s->offset = off;
         addr += s->size;
-        if (!(s->flags & S_ZEROFILL)) off += (uint32_t)s->size;
+        if (!sec_zerofill(s)) off += (uint32_t)s->size;
     }
     uint64_t vmsize = addr;
     uint32_t filesize = off - base;
@@ -448,9 +457,9 @@ size_t obj_write(Obj* o, const char* path) {
     }
 
     // Serialize structured relocations now that symbol ordinals are known.
-    Buf relocs[NSECS];
+    Buf relocs[NSECS_THREAD];
     memset(relocs, 0, sizeof relocs);
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < nsecs; i++) {
         for (int j = 0; j < o->secs[i].nrl; j++) {
             Rel* r = &o->secs[i].rl[j];
             buf_put32(&relocs[i], r->off);
@@ -463,7 +472,7 @@ size_t obj_write(Obj* o, const char* path) {
 
     // Relocation data follows all section data.
     uint32_t reloff = off;
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < nsecs; i++) {
         o->secs[i].reloff = reloff;
         reloff += (uint32_t)relocs[i].len;
     }
@@ -492,9 +501,9 @@ size_t obj_write(Obj* o, const char* path) {
     buf_put64(&img, filesize);
     buf_put32(&img, 7);                       // maxprot RWX
     buf_put32(&img, 7);                       // initprot RWX
-    buf_put32(&img, NSECS);
+    buf_put32(&img, (uint32_t)nsecs);
     buf_put32(&img, 0);                       // flags
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < nsecs; i++) {
         Sec* s = &o->secs[i];
         buf_putname(&img, s->sect);
         buf_putname(&img, s->seg);
@@ -537,13 +546,13 @@ size_t obj_write(Obj* o, const char* path) {
 
     // Section data (offsets pinned above), then relocations.
     while (img.len < base) buf_put8(&img, 0);
-    for (int i = 0; i < NSECS; i++) {
+    for (int i = 0; i < nsecs; i++) {
         Sec* s = &o->secs[i];
         while (img.len < s->offset) buf_put8(&img, 0);
-        if (s->flags & S_ZEROFILL) continue;
+        if (sec_zerofill(s)) continue;
         buf_write(&img, s->data.d, s->data.len);
     }
-    for (int i = 0; i < NSECS; i++) buf_write(&img, relocs[i].d, relocs[i].len);
+    for (int i = 0; i < nsecs; i++) buf_write(&img, relocs[i].d, relocs[i].len);
 
     // Symbol table (in `order`), then the string table.
     uint32_t symoff = (uint32_t)((img.len + 7) & ~(size_t)7);
@@ -555,7 +564,7 @@ size_t obj_write(Obj* o, const char* path) {
         buf_put8(&img, s->sect);
         buf_put16(&img, 0);                         // n_desc
         uint64_t value = s->value;
-        if (s->sect > 0 && s->sect <= NSECS) value += o->secs[s->sect - 1].addr;
+        if (s->sect > 0 && s->sect <= nsecs) value += o->secs[s->sect - 1].addr;
         buf_put64(&img, value);
     }
     uint32_t stroff = (uint32_t)img.len;
@@ -576,6 +585,6 @@ size_t obj_write(Obj* o, const char* path) {
     free(str.d);
     free(img.d);
     free(order);
-    for (int i = 0; i < NSECS; i++) free(relocs[i].d);
+    for (int i = 0; i < nsecs; i++) free(relocs[i].d);
     return o->d->errors ? 0 : object_size;
 }

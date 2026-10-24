@@ -318,6 +318,10 @@ void ra_positions(Ra* a) {
                     if (a->phi_of[x->args[k]] < 0) a->phi_of[x->args[k]] = u;
             } else if (x->op == IR_RTCALL) {
                 a->rtcalls[a->nrtcalls++] = 2 * a->idx[u];
+            } else if (x->op == IR_GLOBAL && x->sym && x->sym->is_thread) {
+                a->asm_pos[a->nasms] = 2 * a->idx[u];
+                a->asm_mask[a->nasms] = a->thread_reserved;
+                a->nasms++;
             } else if (x->op == IR_ASM) {
                 a->asm_pos[a->nasms] = 2 * a->idx[u];
                 a->asm_mask[a->nasms] = x->asmb->reserved;

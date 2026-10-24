@@ -1575,6 +1575,7 @@ static Node* parse_stmt(P* p) {
     case T_FOR: return parse_for(p);
     case T_SWITCH: return parse_switch(p);
     case T_ASM: return parse_asm(p);
+    case T_THREADLOCAL: perr(p, "'threadlocal' applies only to module variables");
     case T_RETURN: {
         Node* n = nd(p, N_RETURN);
         p->i++;
@@ -2278,6 +2279,8 @@ static Node* parse_extern(P* p) {
         Node* f = nd(p, N_EXTERNFN);
         size_t start = p->i;
         int def = 0; // a body follows: an Ace definition with C linkage
+        if (at(p, T_THREADLOCAL))
+            perr(p, "thread-local C variables are not supported; bind the C library's accessor function");
         if (eat(p, T_MUT)) f->flags |= F_MUT;
         Token* name = expect(p, T_IDENT, "name in extern block");
         f->str = name->str;
@@ -2555,10 +2558,11 @@ static Node* parse_top_named(P* p, int pub);
 
 static Node* parse_top(P* p) {
     if (at(p, T_IMPORT)) perr(p, "imports must precede declarations");
-    int pub = 0, inl = 0;
+    int pub = 0, inl = 0, tls = 0;
     for (;;) {
         if (at(p, T_PUB)) {
             if (inl) perr(p, "visibility must come before 'inline'");
+            if (tls) perr(p, "visibility must come before 'threadlocal'");
             if (pub) perr(p, "duplicate 'pub' modifier");
             p->i++; pub = 1;
         }
@@ -2566,11 +2570,16 @@ static Node* parse_top(P* p) {
             if (inl) perr(p, "duplicate 'inline' modifier");
             p->i++; inl = 1;
         }
+        else if (at(p, T_THREADLOCAL)) {
+            if (tls) perr(p, "duplicate 'threadlocal' modifier");
+            p->i++; tls = 1;
+        }
         else if (at(p, T_MUT)) {
             perr(p, "a top-level declaration takes no leading 'mut'; a mutating receiver is written 'mut self'");
         }
         else break;
     }
+    if (tls && at(p, T_EXTERN)) perr(p, "'threadlocal' applies only to module variables");
     if (at(p, T_EXTERN) && p->i + 2 < p->n && p->toks[p->i + 1].kind == T_STR &&
         (p->toks[p->i + 2].kind == T_IDENT || p->toks[p->i + 2].kind == T_MUT)) {
         // `extern "c" name(...) { body }` or `extern "c" [mut] name: T = value`
@@ -2603,6 +2612,13 @@ static Node* parse_top(P* p) {
             perr(p, "'inline' applies only to function declarations");
         }
         d->flags |= F_INLINE;
+    }
+    if (tls) {
+        if (d->kind != N_VAR || (d->flags & F_CONST)) {
+            p->i = start;
+            perr(p, "'threadlocal' applies only to module variables");
+        }
+        d->flags |= F_THREADLOCAL;
     }
     return d;
 }
@@ -2732,6 +2748,7 @@ static void pflags(Node* x) {
     if (x->flags & F_CABI) printf(" c_abi");
     if (x->flags & F_SHADOWED) printf(" shadowed");
     if (x->flags & F_OPEN) printf(" open");
+    if (x->flags & F_THREADLOCAL) printf(" threadlocal");
 }
 
 static int dump_cnames; // --resolved also shows each link name and builtin mark

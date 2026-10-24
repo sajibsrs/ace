@@ -1,0 +1,15 @@
+/* err: a thread-local's initializer follows the global rule: every thread
+ * starts from one compile-time template, never a runtime call.
+ */
+
+// error: global initializer must be a compile-time constant
+
+make(): int {
+    return 3
+}
+
+threadlocal bad: int = make()
+
+main(): int {
+    return bad
+}

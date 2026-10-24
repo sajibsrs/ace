@@ -64,6 +64,10 @@ to order them.
 | `deadlock`  | thread would join itself |
 | `invalid`   | thread is not joinable   |
 
+A created thread starts with fresh copies of every
+[`threadlocal`](../memory.md#thread-local-variables) variable, and its copies end
+when its entry returns, before `join` returns.
+
 ## Mutex
 
 ```ace

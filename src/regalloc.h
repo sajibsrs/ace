@@ -36,9 +36,14 @@ typedef struct {
     int       ncalls;
     int*      rtcalls; // byte routine call positions, ascending
     int       nrtcalls;
-    int*      asm_pos;  // asm instruction positions, ascending
-    uint32_t* asm_mask; // that instruction's asmb->reserved, parallel to asm_pos
+    // asm instruction and thread-local address positions, ascending
+    int*      asm_pos;
+    // that instruction's asmb->reserved, or thread_reserved, parallel to asm_pos
+    uint32_t* asm_mask;
     int       nasms;
+    // set by the target: the registers computing a thread-local's address
+    // disturbs (Values & Passing #13), none of which may hold a value across it
+    uint32_t  thread_reserved;
     uint32_t  asm_all;  // every asm statement's reserved registers
     // allocation
     int8_t*   reg;     // value -> register, or -1

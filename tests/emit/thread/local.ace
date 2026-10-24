@@ -1,0 +1,103 @@
+/* Four threads each start from fresh copies of every thread-local: zero, or
+ * the initializer's template, never main's or another thread's values. Each
+ * bumps its own copies through a leaf, a loop, and a function with many values
+ * live across the accesses, and writes main's copy through the address main
+ * handed it; main's own copies change only through that address. */
+
+// expect-exit: 42
+
+import thread
+
+Pair: struct { a: u64, b: u64 }
+
+Slot: struct { id: u64, main_mark: mut *u64, result: u64 }
+
+threadlocal hits: u64
+threadlocal seed: u64 = 7
+threadlocal label: string = "worker"
+threadlocal pair: Pair = Pair { a = 3, b = 4 }
+threadlocal ring: [16]u64
+pub threadlocal marks: [4]u64
+
+bump(n: u64) {
+    hits += n
+}
+
+fill(n: u64) {
+    for i: u64 in 0 .. n {
+        ring[i & 15] += i
+        hits += 1
+    }
+}
+
+// Values live across every thread-local access stay out of x0, which the
+// descriptor's thunk returns its address in.
+pressure(x: u64): u64 {
+    a: u64 = x + 1
+    b: u64 = x * 3
+    c: u64 = a ^ b
+    d: u64 = c + seed
+    e: u64 = d * a
+    f: u64 = e + hits
+    g: u64 = f ^ x
+    h: u64 = g + pair.a
+    i: u64 = h * 5
+    j: u64 = i + pair.b
+    hits += 1
+    return a + b + c + d + e + f + g + h + i + j - (a + b + c + d + e + f + g + h + i + j) + hits
+}
+
+// The thread's result: 1 when its copies started fresh, its own bumps and
+// fill landed in its copies, and pressure kept every value.
+check(id: u64): u64 {
+    if hits != 0 || seed != 7 || label.len != 6 || pair.a != 3 || pair.b != 4 { return 0 }
+    for k: u64 in 0 .. 16 {
+        if ring[k] != 0 { return 0 }
+    }
+    bump(id)
+    fill(32)
+    if hits != id + 32 { return 0 }
+    if ring[1] != 1 + 17 { return 0 }
+    if pressure(id) != id + 33 { return 0 }
+    seed = id
+    pair = Pair { a = id, b = id }
+    return 1
+}
+
+extern "c" work(argument: mut *u8): mut *u8 {
+    slot: mut *Slot = mut *Slot(argument)
+    slot.result = check(slot.id)
+    if seed != slot.id || pair.b != slot.id { slot.result = 0 }
+    *slot.main_mark = slot.id * 10
+    marks[slot.id - 1] = 99 // this thread's copy only
+    return argument
+}
+
+main(): int {
+    hits = 1000
+    seed = 1
+    slots: [4]Slot = blank([4]Slot)
+    threads: [4]thread.Thread = [thread.Thread(0) : 4]
+    for i: int in 0 .. 4 {
+        slots[i] = Slot { id = u64(i + 1), main_mark = mut &marks[i], result = 0 }
+        argument: mut *u8 = mut *u8(mut &slots[i])
+        t: thread.Thread, err: Error = thread.create(work, argument)
+        if err != null { return 1 }
+        threads[i] = t
+    }
+    for i: int in 0 .. 4 {
+        result: mut *u8, err: Error = thread.join(threads[i])
+        if err != null || usize(result) != usize(&slots[i]) { return 2 }
+        if slots[i].result != 1 { return 3 }
+    }
+    if hits != 1000 || seed != 1 || pair.a != 3 || ring[1] != 0 { return 4 }
+    for i: int in 0 .. 4 {
+        if marks[i] != u64(i + 1) * 10 { return 5 }
+    }
+    if check(0) != 0 { return 6 } // main's hits is 1000, not fresh
+    hits = 0
+    seed = 7
+    for i: int in 0 .. 4 { marks[i] = 0 }
+    if check(4) != 1 { return 7 }
+    return 42
+}
