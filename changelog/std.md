@@ -1,5 +1,10 @@
 # Standard library
 
+- Added the `thread` module (#38): `create(entry, argument)` starts an
+  `extern "c"` entry over `pthread_create` and `join` returns its result; both
+  synchronize under the memory model. No exit, detach, or attributes; nothing
+  allocates (`tests/emit/thread/join.ace`).
+
 - `Map.set`/`unset` are `inline`, and `set`, `unset`, and `rehash` read the
   slot slice into a local once, so stores to slots no longer force reloads of
   the map's fields. `map-set` 1.33x, `map-unset` 1.32x faster; selfhost

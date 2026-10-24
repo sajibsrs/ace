@@ -1,0 +1,41 @@
+/* thread — darwin-arm64 threads over libSystem's pthread library. */
+
+/* A `pthread_t`, which Darwin defines as a pointer. */
+pub Thread: distinct usize
+
+pub CreateErr: error {
+    1: permission = "thread scheduling not permitted",
+    22: invalid = "thread attributes are invalid",
+    35: retry = "temporary thread resource limit reached",
+}
+
+pub JoinErr: error {
+    3: not_found = "no such thread",
+    11: deadlock = "thread would join itself",
+    22: invalid = "thread is not joinable",
+}
+
+extern "c" {
+    c_create(thread: mut *Thread, attributes: *u8, entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): i32 as "pthread_create"
+    c_join(thread: Thread, result: mut *mut *u8): i32 as "pthread_join"
+}
+
+/* pthread_create and pthread_join return their error code directly rather
+ * than through errno.
+ */
+pub create(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): (Thread, Error) {
+    thread: Thread = Thread(0)
+    code: i32 = c_create(mut &thread, null, entry, argument)
+    if code != 0 { return Thread(0), CreateErr(code) }
+
+    return thread, null
+}
+
+pub join(thread: Thread): (mut *u8, Error) {
+    if thread == Thread(0) { return null, JoinErr.not_found }
+    result: mut *u8 = null
+    code: i32 = c_join(thread, mut &result)
+    if code != 0 { return null, JoinErr(code) }
+
+    return result, null
+}

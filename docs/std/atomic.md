@@ -3,8 +3,8 @@
 [Standard library](index.md)
 
 Indivisible, lock-free operations on shared `u32`, `u64`, and `usize` words.
-They are the only operations that synchronize execution contexts; the ordering
-rules are in
+With thread creation and joining, they are the only operations that
+synchronize execution contexts; the ordering rules are in
 [Memory](../memory.md#memory-model). Each operation is a compiler-backed
 `intrinsic` declaration: applications call it as an ordinary public function,
 may store an exact overload in a typed function value, and nothing allocates or

@@ -1,0 +1,50 @@
+/* Four threads, released at once by a gate, each add to one shared counter
+ * and write a plain result into their own slot; join returns each entry's
+ * result, and its synchronization makes the plain writes visible. A lost
+ * update would leave the counter short. */
+
+// expect-exit: 42
+
+import atomic
+import thread
+
+Slot: struct { gate: mut *u32, counter: mut *u64, id: u64, done: u64 }
+
+extern "c" work(argument: mut *u8): mut *u8 {
+    slot: mut *Slot = mut *Slot(argument)
+    for atomic.load_acquire(slot.gate) == 0 {}
+    for step: int in 0 .. 200000 {
+        atomic.add_relaxed(slot.counter, u64(1))
+    }
+    slot.done = slot.id * 10
+    return argument
+}
+
+main(): int {
+    gate: u32 = 0
+    counter: u64 = 0
+    slots: [4]Slot = blank([4]Slot)
+    threads: [4]thread.Thread = [thread.Thread(0) : 4]
+    for i: int in 0 .. 4 {
+        slots[i] = Slot { gate = mut &gate, counter = mut &counter, id = u64(i + 1), done = 0 }
+        argument: mut *u8 = mut *u8(mut &slots[i])
+        t: thread.Thread, err: Error = thread.create(work, argument)
+        if err != null {
+            atomic.store_release(mut &gate, u32(1)) // let the threads already started finish
+            return 1
+        }
+        threads[i] = t
+    }
+    atomic.store_release(mut &gate, u32(1))
+    for i: int in 0 .. 4 {
+        result: mut *u8, err: Error = thread.join(threads[i])
+        if err != null { return 2 }
+        if usize(result) != usize(&slots[i]) { return 3 }
+        if slots[i].done != u64(i + 1) * 10 { return 4 }
+    }
+    if atomic.load(mut &counter) != 800000 { return 5 }
+
+    none: mut *u8, err: Error = thread.join(thread.Thread(0))
+    if err != thread.JoinErr.not_found || none != null { return 6 }
+    return 42
+}

@@ -1,9 +1,9 @@
 /*
- * Mirrors docs/std/{bits,exec,fmt,sys,net,tcp,str}.md examples (sema
+ * Mirrors docs/std/{bits,exec,fmt,sys,net,tcp,str,thread}.md examples (sema
  * check only; runtime coverage lives in tests/emit/fmt/*.ace,
  * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
  * tests/emit/sys/time.ace, tests/emit/sys/process_control.ace,
- * tests/emit/exec/spawn.ace,
+ * tests/emit/exec/spawn.ace, tests/emit/thread/join.ace,
  * tests/emit/net/main.ace, tests/emit/tcp/main.ace,
  * tests/emit/net/poll.ace, tests/emit/net/nonblocking_echo.ace,
  * tests/emit/net/nonblocking_chat.ace, tests/emit/allocation/typed.ace,
@@ -19,6 +19,7 @@ import net
 import poll
 import str
 import sys
+import thread
 import time
 import net/tcp
 
@@ -241,6 +242,24 @@ spawn_example(): int {
 
     if werr != null || !status.exited { return 2 }
     return status.code
+}
+
+Job: struct { input: u64, output: u64 }
+
+extern "c" square(argument: mut *u8): mut *u8 {
+    job: mut *Job = mut *Job(argument)
+    job.output = job.input * job.input
+    return argument
+}
+
+thread_example(): int {
+    job: Job = Job { input = 7, output = 0 }
+    argument: mut *u8 = mut *u8(mut &job)
+    worker: thread.Thread, err: Error = thread.create(square, argument)
+    if err != null { return 1 }
+    result: mut *u8, jerr: Error = thread.join(worker)
+    if jerr != null { return 2 }
+    return int(job.output) // 49
 }
 
 net_example(): int {

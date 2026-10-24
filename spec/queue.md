@@ -5,7 +5,11 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-None.
+- Concurrency, in order: threads (#38), then the mutex and condition-variable
+  module (#40), thread-local storage (#39), and signals (#41). Darwin
+  implementations bind libSystem's pthread and platform libraries, never its
+  libc. Open for #40: `pthread_mutex`/`pthread_cond` or `os_unfair_lock`, and
+  the module name.
 
 ### Trigger-gated
 
@@ -43,4 +47,3 @@ None.
 - IPv6, UDP, address queries, half-close,
   extra TCP options, and other explicitly additive networking work are carved
   only after the nonblocking proof identifies the required order.
-- Threads follow the networking proof; their semantics are not yet carved.
