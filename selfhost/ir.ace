@@ -317,10 +317,16 @@ Func.alloc(mut self, block: int, op: u8, ty: u8): int {
     return int(self.ins.len) - 1
 }
 
+/* A block's first instruction list capacity: most blocks hold a few, and
+ * growing from one would reallocate on each doubling up to there.
+ */
+BLOCK_INS: const usize = 8
+
 /* A new instruction appended to `block`. */
 pub Func.new_ins(mut self, block: int, op: u8, ty: u8): int {
     id: int = mut self.alloc(block, op, ty)
     b: mut *IrBlock = mut self.block(block)
+    if b.ins.len == 0 { fail(mut b.ins.reserve(BLOCK_INS)) }
     fail(mut b.ins.push(id))
     return id
 }
@@ -639,18 +645,18 @@ num(mut buf: [24]u8, v: int): string {
 pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
     n: usize = fn.blocks.len
     order: array.Array[int] = array.Array[int] {}
-    numb: array.Array[int] = array.Array[int] {}
+    fail(mut order.reserve(n))
+    numb: array.Array[int], numb_err: Error = array.Array[int].filled(n, -1)
+    fail(numb_err)
     defer mut numb.wipe()
-    seen: array.Array[bool] = array.Array[bool] {}
+    seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(n, false)
+    fail(seen_err)
     defer mut seen.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
-    idom: array.Array[int] = array.Array[int] {}
-    for 0 .. n {
-        fail(mut numb.push(-1))
-        fail(mut seen.push(false))
-        fail(mut idom.push(-1))
-    }
+    fail(mut stack.reserve(2 * n))
+    idom: array.Array[int], idom_err: Error = array.Array[int].filled(n, -1)
+    fail(idom_err)
     fail(mut stack.push(0))
     fail(mut stack.push(0))
     mut seen.set(0, true)

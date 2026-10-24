@@ -62,3 +62,11 @@ Why the rules in `spec/std/collections.md` are shaped as they are.
   and `same` expand `inline` (Functions & ABI #8) and preserve a valid zero
   value, which function-valued fields would forfeit at one indirect call per
   operation.
+- An integer key's hash is one multiply by the golden-ratio constant, and its
+  home slot is the product's top bits (Knuth's multiplicative hashing; Linux
+  `hash_64`, rustc's FxHash). Every key bit reaches the top bits, so ids,
+  strides, and `b << 32 | v` keys spread almost evenly and linear probing
+  rarely collides: 2.7–3.3x faster than a finalizer on such keys, equal on
+  random ones. The low bits would depend only on the key's low bits. String
+  keys keep FNV-1a and the finalizer. Keys are not defended against
+  adversarial collisions.

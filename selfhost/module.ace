@@ -224,7 +224,7 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
     if self.mods.len > 0 { prefix = mut self.assign_prefix(canon) }
     display: string, root: string = mut self.display(canon)
     m: Module = Module { canon = canon, prefix = prefix, display = display, root = root, path = shown, src = src, parser = p, file = f, members = array.Array[Member] {}, binds = array.Array[Binding] {}, sels = array.Array[Select] {} }
-    mut self.collect_members(mut m)
+    if self.mods.len > 0 { mut self.collect_members(mut m) }
     fail(mut self.mods.push(m))
     return self.mods.len - 1, true
 }

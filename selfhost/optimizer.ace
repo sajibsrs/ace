@@ -273,18 +273,19 @@ sccp(mut fn: Func) {
     s: Sccp = Sccp { fn = mut &fn, lat = array.Array[u8] {}, val = array.Array[u64] {}, exec = array.Array[bool] {}, edge = array.Array[bool] {}, inq = array.Array[bool] {}, ustart = array.Array[int] {}, users = array.Array[int] {}, work = array.Array[int] {} }
     defer mut s.wipe()
     n: usize = fn.ins.len
-    for 0..n {
-        fail(mut s.lat.push(L_TOP))
-        fail(mut s.val.push(0))
-        fail(mut s.inq.push(false))
-        fail(mut s.ustart.push(0))
-    }
-    fail(mut s.ustart.push(0))
-    for 0..fn.blocks.len {
-        fail(mut s.exec.push(false))
-        fail(mut s.edge.push(false))
-        fail(mut s.edge.push(false))
-    }
+    err: Error = null
+    s.lat, err = array.Array[u8].filled(n, L_TOP)
+    fail(err)
+    s.val, err = array.Array[u64].filled(n, 0)
+    fail(err)
+    s.inq, err = array.Array[bool].filled(n, false)
+    fail(err)
+    s.ustart, err = array.Array[int].filled(n + 1, 0)
+    fail(err)
+    s.exec, err = array.Array[bool].filled(fn.blocks.len, false)
+    fail(err)
+    s.edge, err = array.Array[bool].filled(2 * fn.blocks.len, false)
+    fail(err)
     us: mut []int = mut s.ustart.view()
     for b: usize in 0..fn.blocks.len {
         for id: int in fn.blocks.get(b).ins.view() {

@@ -1,5 +1,16 @@
 # Compiler
 
+- Selfhost builds no member table for the root module, as the C loader does
+  not; its linear duplicate scan made `--check` quadratic in top-level
+  declarations (1.49 → 0.33 s on a 30 000-function file, level with C) (#152).
+- Selfhost's inline expansion records each node's copy and each copy's
+  original in dense per-node tables, a copy current when made since the
+  expansion began, and points the copies at fresh locals in one pass over the
+  new nodes, replacing three hash maps. Selfhost `--release -c` 1.07x (#152).
+- Selfhost sizes its dominator, SCCP, and liveness scratch arrays up front and
+  starts each block's instruction list at eight, where they grew from one
+  element. `--release -c` 1.08x on small functions, 1.03x on selfhost (#152).
+
 - A deferred call's `mut` argument or receiver that names a local directly is
   lowered again at each exit instead of captured by address, so the local stays
   in registers. Branch threading also accepts a merge whose phis are used under

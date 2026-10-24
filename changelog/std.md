@@ -1,5 +1,10 @@
 # Standard library
 
+- `map` hashes integer keys with one multiply by the golden-ratio constant and
+  starts probing at the hash's top bits (as Linux `hash_64`); `set` probes once
+  per insert. Structured keys (ids, strides, `b << 32 | v`) run 2.7–3.3x faster;
+  random keys are unchanged.
+
 - Added the `sort` module: `sort.unstable[T](items)` and `unstable[T](items, less)`
   (introsort: median-of-three Hoare quicksort, heapsort fallback past
   2·log2(n) depth, insertion below 16 elements; allocation-free and infallible)

@@ -404,6 +404,7 @@ pub liveness(mut a: Ra, fn: Func) {
     }
     uses: array.Array[RaUse] = array.Array[RaUse] {}
     defer mut uses.wipe()
+    fail(mut uses.reserve(fn.args.len)) // about one use per operand
     for b: int in 0..int(fn.blocks.len) {
         bb: IrBlock = fn.block(b)
         for u: int in bb.ins.view() {
@@ -450,6 +451,7 @@ pub liveness(mut a: Ra, fn: Func) {
     defer mut stamp.wipe()
     stack: array.Array[int] = array.Array[int] {}
     defer mut stack.wipe()
+    fail(mut stack.reserve(fn.blocks.len))
     for v: int in 0..nv { mut a.end.set(usize(v), live_in(a, fn, v, mut stamp, mut stack, v + 1)) }
 }
 

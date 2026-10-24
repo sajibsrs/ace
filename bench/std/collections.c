@@ -58,15 +58,14 @@ typedef struct {
     size_t len;
 } Map;
 
-static uint64_t mix(uint64_t x) {
-    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
-    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
-    return x ^ (x >> 31);
-}
+static uint64_t hash(int64_t key) { return (uint64_t)key * UINT64_C(0x9e3779b97f4a7c15); }
+
+// The top bits of h, for cap slots: a power of two of at least 8.
+static size_t home(uint64_t h, size_t cap) { return (size_t)(h >> (__builtin_clzll(cap) + 1)); }
 
 static size_t probe(const Slot *slots, size_t cap, int64_t key) {
     size_t mask = cap - 1;
-    size_t at = (size_t)mix((uint64_t)key) & mask;
+    size_t at = home(hash(key), cap);
     while (slots[at].used && slots[at].key != key) at = (at + 1) & mask;
     return at;
 }
@@ -89,15 +88,18 @@ static bool map_rehash(Map *m, size_t capacity) {
 }
 
 static bool map_set(Map *m, int64_t key, int64_t value) {
-    if (m->len != 0) {
-        size_t at = probe(m->slots, m->cap, key);
+    size_t at = 0;
+    if (m->cap != 0) {
+        at = probe(m->slots, m->cap, key);
         if (m->slots[at].used) {
             m->slots[at].value = value;
             return true;
         }
     }
-    if ((m->len + 1) * 4 > m->cap * 3 && !map_rehash(m, capacity_for(m->len + 1))) return false;
-    size_t at = probe(m->slots, m->cap, key);
+    if ((m->len + 1) * 4 > m->cap * 3) {
+        if (!map_rehash(m, capacity_for(m->len + 1))) return false;
+        at = probe(m->slots, m->cap, key);
+    }
     m->slots[at] = (Slot){ key, value, true };
     m->len++;
     return true;
@@ -120,8 +122,8 @@ static bool map_unset(Map *m, int64_t key) {
     for (;;) {
         at = (at + 1) & mask;
         if (!m->slots[at].used) break;
-        size_t home = (size_t)mix((uint64_t)m->slots[at].key) & mask;
-        if (((at + m->cap - home) & mask) >= ((at + m->cap - hole) & mask)) {
+        size_t from = home(hash(m->slots[at].key), m->cap);
+        if (((at + m->cap - from) & mask) >= ((at + m->cap - hole) & mask)) {
             m->slots[hole] = m->slots[at];
             hole = at;
         }
