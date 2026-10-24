@@ -162,8 +162,8 @@ An execution context is anything that runs concurrently with another over
 shared memory: a thread, a signal handler, or a process sharing a mapping.
 Ordinary and volatile accesses assume no concurrent writer; the only
 operations that synchronize are the [`atomic`](std/atomic.md) ones, each
-indivisible and lock-free, so usable in any context, and creating and joining
-a [`thread`](std/thread.md). All atomic operations on one location are totally
+indivisible and lock-free, so usable in any context, creating and joining a
+[`thread`](std/thread.md), and locking and unlocking a `thread.Mutex`. All atomic operations on one location are totally
 ordered.
 
 An acquire-or-stronger read that reads the value written by a
@@ -172,8 +172,9 @@ everything before the write ahead of everything after the read. A release fence
 before a relaxed write and an acquire fence after a relaxed read do the same.
 `thread.create` orders everything before it ahead of the entry it starts, and
 an entry's return orders everything before it ahead of the `thread.join` that
-returns its result. Sequentially consistent operations also share one total
-order.
+returns its result, and a `Mutex.unlock` orders everything before it ahead of
+the next `Mutex.lock` of that mutex. Sequentially consistent operations also
+share one total order.
 
 A data race is two accesses to overlapping bytes, at least one a write and at
 least one not atomic (a volatile access is not atomic), with no such ordering

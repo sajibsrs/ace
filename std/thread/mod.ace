@@ -1,6 +1,9 @@
-/* thread — explicit OS threads. Creation and joining synchronize as the
- * memory model states; the module allocates nothing.
+/* thread — explicit OS threads and their synchronization. Creation, joining,
+ * and locking synchronize as the memory model states; the module allocates
+ * nothing.
  */
+
+import atomic
 
 @when(target == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
@@ -25,4 +28,53 @@ pub create(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): (Thread, Er
 pub join(thread: Thread): (mut *u8, Error) {
     result: mut *u8, err: Error = os.join(thread)
     return result, err
+}
+
+/* A mutual-exclusion lock; canonical zero is unlocked. The thread that locks
+ * it unlocks it, and it is not recursive. It must not be copied while locked
+ * or contended.
+ */
+pub Mutex: struct {
+    word: u32,
+}
+
+/* Block until this thread holds the mutex. */
+pub Mutex.lock(mut self) {
+    os.lock(mut &self.word)
+}
+
+/* Release the mutex this thread holds. */
+pub Mutex.unlock(mut self) {
+    os.unlock(mut &self.word)
+}
+
+/* Threads waiting under a mutex for a change; canonical zero has no waiters.
+ * A wait may return without a wake, so callers recheck their condition in a
+ * loop. It must not be copied while waited on.
+ */
+pub Condition: struct {
+    sequence: u32,
+}
+
+/* Release `mutex`, which this thread holds, sleep until a wake, and lock
+ * `mutex` again. The sequence is read before the release, so a wake after
+ * it is never lost.
+ */
+pub Condition.wait(mut self, mutex: mut *Mutex) {
+    seen: u32 = atomic.load_relaxed(&self.sequence)
+    mut mutex.unlock()
+    os.wait(mut &self.sequence, seen)
+    mut mutex.lock()
+}
+
+/* Wake one waiting thread, if any. */
+pub Condition.wake_one(mut self) {
+    atomic.add_relaxed(mut &self.sequence, u32(1))
+    os.wake_one(mut &self.sequence)
+}
+
+/* Wake every waiting thread. */
+pub Condition.wake_all(mut self) {
+    atomic.add_relaxed(mut &self.sequence, u32(1))
+    os.wake_all(mut &self.sequence)
 }

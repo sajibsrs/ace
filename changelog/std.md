@@ -1,5 +1,10 @@
 # Standard library
 
+- `thread` adds `Mutex` (`lock`/`unlock` over `os_unfair_lock`) and
+  `Condition` (`wait`/`wake_one`/`wake_all`, a sequence counter over
+  `os_sync_wait_on_address`), both 4 bytes and valid at zero (#40). Unlock
+  synchronizes-with the next lock (`tests/emit/thread/{mutex,condition}.ace`).
+
 - Added the `thread` module (#38): `create(entry, argument)` starts an
   `extern "c"` entry over `pthread_create` and `join` returns its result; both
   synchronize under the memory model. No exit, detach, or attributes; nothing

@@ -1,0 +1,36 @@
+/* Four threads each add to one plain counter under a mutex. Unlocking orders
+ * each increment before the next lock, so none is lost; without the mutex
+ * the plain read-modify-write races and the total comes up short. */
+
+// expect-exit: 42
+
+import thread
+
+Shared: struct { guard: thread.Mutex, count: u64 }
+
+extern "c" work(argument: mut *u8): mut *u8 {
+    shared: mut *Shared = mut *Shared(argument)
+    for step: int in 0 .. 100000 {
+        mut shared.guard.lock()
+        shared.count += 1
+        mut shared.guard.unlock()
+    }
+    return null
+}
+
+main(): int {
+    shared: Shared = blank(Shared)
+    argument: mut *u8 = mut *u8(mut &shared)
+    threads: [4]thread.Thread = [thread.Thread(0) : 4]
+    for i: int in 0 .. 4 {
+        t: thread.Thread, err: Error = thread.create(work, argument)
+        if err != null { return 1 }
+        threads[i] = t
+    }
+    for i: int in 0 .. 4 {
+        result: mut *u8, err: Error = thread.join(threads[i])
+        if err != null { return 2 }
+    }
+    if shared.count != 400000 { return 3 }
+    return 42
+}

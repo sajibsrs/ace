@@ -2,13 +2,15 @@
 
 [Standard library](index.md)
 
-`thread` starts and joins OS threads. A thread runs an `extern "c"` entry that
+`thread` starts and joins OS threads and provides the `Mutex` and
+`Condition` they share data under. A thread runs an `extern "c"` entry that
 takes and returns one pointer; creating a thread and joining it synchronize
 as described in [Memory](../memory.md#memory-model), so a value the creator
 writes before `create` is visible to the entry, and one the entry writes
 before returning is visible after `join`. Nothing allocates. On darwin-arm64
-the module calls `pthread_create` and `pthread_join` in libSystem's pthread
-library; it uses no libc function.
+the module calls libSystem's pthread library for threads and its platform
+library (`os_unfair_lock`, `os_sync_wait_on_address`) for locks and waits; it
+uses no libc function.
 
 ```ace
 import thread
@@ -62,6 +64,64 @@ to order them.
 | `deadlock`  | thread would join itself |
 | `invalid`   | thread is not joinable   |
 
+## Mutex
+
+```ace
+import thread
+
+guard: thread.Mutex // zero is unlocked
+total: u64
+
+add(amount: u64) {
+    mut guard.lock()
+    total += amount
+    mut guard.unlock()
+}
+```
+
+- `Mutex` is valid at canonical zero, so a global, a `blank` value, or a
+  zero-filled allocation is an unlocked mutex with nothing to construct or
+  release.
+- `lock(mut self)` blocks until this thread holds the mutex, and
+  `unlock(mut self)` releases it. Neither can fail. Everything a thread
+  writes before `unlock` is visible to the next thread whose `lock` returns.
+- The thread that locked a mutex unlocks it, and locking it again from the
+  same thread is not allowed. Darwin aborts the process on either mistake, in
+  every build.
+- Through a pointer the call keeps its `mut`: `mut shared.guard.lock()`.
+
+## Condition
+
+```ace
+Queue: struct { guard: thread.Mutex, changed: thread.Condition, count: u64 }
+
+take(queue: mut *Queue) {
+    mut queue.guard.lock()
+    for queue.count == 0 { mut queue.changed.wait(mut &queue.guard) }
+    queue.count -= 1
+    mut queue.guard.unlock()
+}
+
+put(queue: mut *Queue) {
+    mut queue.guard.lock()
+    queue.count += 1
+    mut queue.changed.wake_one()
+    mut queue.guard.unlock()
+}
+```
+
+- `Condition` is also valid at zero. `wait(mut self, mutex: mut *Mutex)` takes
+  the mutex the caller holds, releases it while sleeping, and holds it again
+  when it returns.
+- A wait can return without a wake, so always wait in a loop that rechecks
+  the condition, as above.
+- `wake_one(mut self)` wakes one waiting thread and `wake_all(mut self)`
+  wakes every one; with nothing waiting they do nothing. They need no mutex
+  held, but the change they announce must be made under the mutex, or a
+  waiter can check the condition just before it and sleep through the wake.
+- Never copy a `Mutex` or `Condition` while a thread holds or waits on it,
+  and use neither from a signal handler.
+
 ## Design rationale
 
 - The entry is an `extern "c"` definition handed to the OS unchanged, as C11
@@ -76,6 +136,18 @@ to order them.
   `std.Thread` and Rust's `std::thread` have no exit either.
 - `join` checks `Thread(0)` itself, as `sys.wait` rejects a zero process, so
   a handle from a failed `create` fails cleanly instead of reaching the OS.
+- `Mutex` is `os_unfair_lock`, as Zig's `std.Thread.Mutex` is on Darwin, and
+  not `pthread_mutex_t`: the pthread types are 64 and 48 bytes with a nonzero
+  signature word, so a zero-filled one fails with `EINVAL`, and every value
+  would need an `init` call and every `lock` an `Error`. `os_unfair_lock` is
+  4 bytes, zero when unlocked, checks its owner, and records the owner so the
+  system can resolve priority inversions.
+- `Condition` is a counter waited on with `os_sync_wait_on_address`, the
+  algorithm of Rust's futex condition variable and Zig's `Condition`. Its
+  only platform needs are wait-while-equal and wake, which Linux's `futex`
+  also provides.
+- `wait` and `wake` name the pair as futexes, `os_sync`, and Zig's `Futex` do;
+  POSIX `signal` and `broadcast` would collide with process signals.
 - On Darwin, threads go through libSystem rather than raw system calls, whose
   thread interface is private and changes between releases; Go moved to
   libSystem there for the same reason.

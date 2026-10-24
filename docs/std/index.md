@@ -23,7 +23,7 @@ Today's modules:
 - [`str`](str.md) — allocation-free byte-exact string utilities
 - [`tcp`](tcp.md) — explicit blocking IPv4 TCP composition over `net`
 - [`sys`](sys.md) — process arguments/environment, file descriptors, byte I/O, and errno
-- [`thread`](thread.md) — starting and joining OS threads
+- [`thread`](thread.md) — OS threads, mutexes, and condition variables
 - [`time`](time.md) — monotonic clocks
 - [`ascii`](ascii.md) — allocation-free ASCII-only text operations
 - [`utf8`](utf8.md) — allocation-free strict UTF-8 encoding and decoding

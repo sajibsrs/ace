@@ -3,7 +3,7 @@
  * check only; runtime coverage lives in tests/emit/fmt/*.ace,
  * tests/emit/sys/main.ace, tests/emit/sys/standard_descriptors.ace,
  * tests/emit/sys/time.ace, tests/emit/sys/process_control.ace,
- * tests/emit/exec/spawn.ace, tests/emit/thread/join.ace,
+ * tests/emit/exec/spawn.ace, tests/emit/thread/*.ace,
  * tests/emit/net/main.ace, tests/emit/tcp/main.ace,
  * tests/emit/net/poll.ace, tests/emit/net/nonblocking_echo.ace,
  * tests/emit/net/nonblocking_chat.ace, tests/emit/allocation/typed.ace,
@@ -260,6 +260,31 @@ thread_example(): int {
     result: mut *u8, jerr: Error = thread.join(worker)
     if jerr != null { return 2 }
     return int(job.output) // 49
+}
+
+guard: thread.Mutex // zero is unlocked
+total: u64
+
+add(amount: u64) {
+    mut guard.lock()
+    total += amount
+    mut guard.unlock()
+}
+
+Queue: struct { guard: thread.Mutex, changed: thread.Condition, count: u64 }
+
+take(queue: mut *Queue) {
+    mut queue.guard.lock()
+    for queue.count == 0 { mut queue.changed.wait(mut &queue.guard) }
+    queue.count -= 1
+    mut queue.guard.unlock()
+}
+
+put(queue: mut *Queue) {
+    mut queue.guard.lock()
+    queue.count += 1
+    mut queue.changed.wake_one()
+    mut queue.guard.unlock()
 }
 
 net_example(): int {

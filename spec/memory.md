@@ -129,8 +129,9 @@ Carved (memory model):
 - An execution context is anything that runs concurrently with another over
   shared memory (a thread, Stdlib #27; a signal handler; a process sharing a
   mapping). Ordinary and volatile accesses assume no concurrent writer.
-- Atomic operations (`atomic`, Stdlib #25) and thread creation and joining
-  (`thread`, Stdlib #27) are the only operations that synchronize. Each atomic
+- Atomic operations (`atomic`, Stdlib #25), thread creation and joining, and
+  mutex locking and unlocking (`thread`, Stdlib #27) are the only operations
+  that synchronize. Each atomic
   operation is indivisible and lock-free: never a lock or runtime call, so
   usable in any context. All atomic operations on one location are totally
   ordered, and their orderings add happens-before between contexts.
@@ -141,8 +142,9 @@ Carved (memory model):
   relaxed write synchronizes with a relaxed read followed by an acquire fence
   in the same way. `thread.create` synchronizes-with the start of the entry it
   runs, and the entry's return synchronizes-with the `thread.join` that
-  returns its result. Sequentially consistent operations additionally occupy
-  one total order consistent with happens-before.
+  returns its result. A `Mutex.unlock` synchronizes-with the next
+  `Mutex.lock` of that mutex. Sequentially consistent operations additionally
+  occupy one total order consistent with happens-before.
 - A data race is two accesses to overlapping bytes, at least one a write and at
   least one not atomic (a volatile access is not atomic), with no happens-before
   between them. It is programmer error: the value read is unspecified. No build

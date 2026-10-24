@@ -1,4 +1,6 @@
-/* thread — darwin-arm64 threads over libSystem's pthread library. */
+/* thread — darwin-arm64 threads over libSystem's pthread library, and locks
+ * and waits over its platform library.
+ */
 
 /* A `pthread_t`, which Darwin defines as a pointer. */
 pub Thread: distinct usize
@@ -18,6 +20,11 @@ pub JoinErr: error {
 extern "c" {
     c_create(thread: mut *Thread, attributes: *u8, entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): i32 as "pthread_create"
     c_join(thread: Thread, result: mut *mut *u8): i32 as "pthread_join"
+    c_lock(lock: mut *u32) as "os_unfair_lock_lock"
+    c_unlock(lock: mut *u32) as "os_unfair_lock_unlock"
+    c_wait(address: mut *u32, value: u64, size: usize, flags: u32): i32 as "os_sync_wait_on_address"
+    c_wake_any(address: mut *u32, size: usize, flags: u32): i32 as "os_sync_wake_by_address_any"
+    c_wake_all(address: mut *u32, size: usize, flags: u32): i32 as "os_sync_wake_by_address_all"
 }
 
 /* pthread_create and pthread_join return their error code directly rather
@@ -38,4 +45,31 @@ pub join(thread: Thread): (mut *u8, Error) {
     if code != 0 { return null, JoinErr(code) }
 
     return result, null
+}
+
+/* An `os_unfair_lock`, whose unlocked value is zero. Unlocking from another
+ * thread, or locking twice from one, aborts the process.
+ */
+pub lock(word: mut *u32) {
+    c_lock(word)
+}
+
+pub unlock(word: mut *u32) {
+    c_unlock(word)
+}
+
+/* Sleep while `*word` holds `seen`. An interruption or a word already changed
+ * returns at once, which the caller treats as a wake.
+ */
+pub wait(word: mut *u32, seen: u32) {
+    c_wait(word, u64(seen), usize(4), u32(0))
+}
+
+/* Waking with no thread waiting fails with ENOENT, which needs no action. */
+pub wake_one(word: mut *u32) {
+    c_wake_any(word, usize(4), u32(0))
+}
+
+pub wake_all(word: mut *u32) {
+    c_wake_all(word, usize(4), u32(0))
 }
