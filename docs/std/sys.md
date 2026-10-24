@@ -78,6 +78,10 @@ main(): int {
   operation without recursion or retry.
 - `errno(): i32` reads the thread's raw errno. Query it immediately after a
   failed call; any intervening system call may overwrite it.
+- `errno(value: i32)` sets it (darwin-arm64), so a
+  [signal handler](signal.md) can restore the value it found. With the two
+  overloads a bare integer constant selects as `int`, so write a typed value:
+  `sys.errno(saved)` or `sys.errno(i32(0))`.
 - `random(storage: mut []u8): Error` fills caller-owned storage with
   cryptographically secure OS entropy and allocates nothing. Empty storage
   succeeds. `getentropy` requests are chunked to at most 256 bytes, retries

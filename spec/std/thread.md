@@ -3,8 +3,9 @@
 27. `thread` (implemented on darwin-arm64) — explicit OS threads and their
     synchronization; the ordering rules are Memory, "Carved (memory model)".
     `std/thread/mod.ace` selects `std/thread/os/darwin-arm64.ace`, which binds
-    libSystem's pthread and platform libraries and no libc function. The
-    module allocates nothing.
+    libSystem's pthread and platform libraries. libSystem serves OS services
+    only, never a C convenience implementation, whatever sub-library hosts it
+    (C Interop #4). The module allocates nothing.
     - `Thread: distinct usize` is a joinable thread handle; its canonical zero
       names no thread.
     - `create(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8):
@@ -40,6 +41,7 @@
       wake one or every sleeper; they need no mutex held.
     - Copying a `Mutex` or `Condition` while it is locked, contended, or
       waited on is programmer error. Neither is usable from a signal handler.
+    - A created thread starts with its creator's signal mask (Stdlib #28).
     - Per-thread state is a `threadlocal` module variable (Values & Passing
       #13): a created thread starts with fresh copies, and its copies end when
       its entry returns.

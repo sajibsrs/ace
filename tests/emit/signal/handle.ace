@@ -1,0 +1,40 @@
+/* A handler runs before `raise` returns and records the signal through a
+ * relaxed atomic. A signal raised inside a handler runs nested by default
+ * but waits for the handler to return when `HandleOptions.mask` holds it.
+ */
+
+// expect-exit: 42
+
+import atomic
+import signal
+
+first: u32
+second: u32
+second_inside: u32
+
+extern "c" on_first(s: signal.Signal) {
+    if s != signal.SIGUSR1 { return }
+    atomic.add_relaxed(mut &first, u32(1))
+    signal.raise(signal.SIGUSR2)
+    atomic.store_relaxed(mut &second_inside, atomic.load_relaxed(&second))
+}
+
+extern "c" on_second(s: signal.Signal) {
+    atomic.add_relaxed(mut &second, u32(1))
+}
+
+main(): int {
+    if signal.handle(signal.SIGUSR2, on_second) != null { return 1 }
+    if signal.handle(signal.SIGUSR1, on_first) != null { return 2 }
+    if signal.raise(signal.SIGUSR1) != null { return 3 }
+    if atomic.load_relaxed(&first) != 1 || atomic.load_relaxed(&second) != 1 { return 4 }
+    if atomic.load_relaxed(&second_inside) != 1 { return 5 } // nested: ran inside
+
+    options: signal.HandleOptions = blank(signal.HandleOptions)
+    mut options.mask.add(signal.SIGUSR2)
+    if signal.handle(signal.SIGUSR1, on_first, options) != null { return 6 }
+    if signal.raise(signal.SIGUSR1) != null { return 7 }
+    if atomic.load_relaxed(&first) != 2 || atomic.load_relaxed(&second) != 2 { return 8 }
+    if atomic.load_relaxed(&second_inside) != 1 { return 9 } // deferred: ran after
+    return 42
+}

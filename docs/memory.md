@@ -236,7 +236,8 @@ calls the variable's descriptor through dyld's thunk, about 1 ns over a plain
 global, and the first access on a thread allocates that thread's copies of every
 thread-local in the image. The address is fixed within a function, so release
 builds compute it once per function or loop where the optimizer can share it.
-Another target rejects the declaration.
+Because of that allocation a [signal handler](std/signal.md) must not use a
+thread-local. Another target rejects the declaration.
 
 ## Pointer and slice construction
 

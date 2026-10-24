@@ -435,6 +435,10 @@ pub errno(): i32 {
     return *slot
 }
 
+pub errno(value: i32) {
+    errno_set(value)
+}
+
 pub fork(): (Process, Error) {
     pid: i32 = c_fork()
     if pid == -1 { return Process(-1), ForkErr(errno()) }

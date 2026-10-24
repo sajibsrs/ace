@@ -1,5 +1,10 @@
 # Standard library
 
+- Added the `signal` module (#41): `handle`/`ignore`/`reset` over `sigaction`
+  (fault signals refused, `SA_RESTART` opt-in), per-thread `block`/`mask`,
+  `wait`, and `send`/`raise`; `sys.errno(value)` sets errno, and `exec.spawn`
+  children start with an empty mask (`tests/emit/signal/`).
+
 - `thread` adds `Mutex` (`lock`/`unlock` over `os_unfair_lock`) and
   `Condition` (`wait`/`wake_one`/`wake_all`, a sequence counter over
   `os_sync_wait_on_address`), both 4 bytes and valid at zero (#40). Unlock

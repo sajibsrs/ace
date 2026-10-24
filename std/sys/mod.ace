@@ -122,6 +122,14 @@ pub errno(): i32 {
     return os.errno()
 }
 
+/* Set this thread's errno, so a signal handler can restore the value it
+ * found before returning.
+ */
+@when(target == "darwin-arm64")
+pub errno(value: i32) {
+    os.errno(value)
+}
+
 /* Fill caller-owned storage with cryptographically secure operating-system
  * entropy. Empty storage succeeds without making a platform call.
  */

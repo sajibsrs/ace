@@ -13,32 +13,50 @@ pub SpawnErr: error {
 }
 
 extern "c" {
-    c_posix_spawnp(pid: mut *i32, file: *u8, actions: *u64, attributes: *u8, argv: **u8, envp: **u8): i32 as "posix_spawnp"
+    c_posix_spawnp(pid: mut *i32, file: *u8, actions: *u64, attributes: *usize, argv: **u8, envp: **u8): i32 as "posix_spawnp"
     c_actions_init(actions: mut *u64): i32 as "posix_spawn_file_actions_init"
     c_actions_destroy(actions: mut *u64): i32 as "posix_spawn_file_actions_destroy"
     c_actions_dup2(actions: mut *u64, fd: i32, target: i32): i32 as "posix_spawn_file_actions_adddup2"
     c_actions_chdir(actions: mut *u64, path: *u8): i32 as "posix_spawn_file_actions_addchdir_np"
+    c_attributes_init(attributes: mut *usize): i32 as "posix_spawnattr_init"
+    c_attributes_destroy(attributes: mut *usize): i32 as "posix_spawnattr_destroy"
+    c_attributes_flags(attributes: mut *usize, flags: i16): i32 as "posix_spawnattr_setflags"
+    c_attributes_sigmask(attributes: mut *usize, mask: *u32): i32 as "posix_spawnattr_setsigmask"
 }
 
+POSIX_SPAWN_SETSIGMASK: const i16 = 0x0008
+
 /* posix_spawnp over NUL-terminated `argv` and `envp` arrays; it returns its
- * error code directly rather than through errno. A non-null `dir` is the
+ * error code directly rather than through errno. The child starts with an
+ * empty signal mask whatever this thread blocks. A non-null `dir` is the
  * child's working directory; a non-negative `out` or `err` is a descriptor
  * duplicated onto the child's standard output or error. File actions run in
  * the child in that order: directory, then the two duplications. The
  * file-actions object is opaque and at most 80 bytes (glibc; Darwin holds a
- * pointer), so 128 bytes of aligned stack storage hold it.
+ * pointer), so 128 bytes of aligned stack storage hold it. Darwin's
+ * attributes object is a pointer that `posix_spawnattr_init` allocates.
  */
 pub spawn(argv: []*u8, envp: []*u8, dir: *u8, out: i32, err: i32): (sys.Process, Error) {
+    attributes: usize = 0
+    code: i32 = c_attributes_init(mut &attributes)
+    if code != 0 { return sys.Process(-1), SpawnErr(code) }
+    defer c_attributes_destroy(mut &attributes)
+    code = c_attributes_flags(mut &attributes, POSIX_SPAWN_SETSIGMASK)
+    if code != 0 { return sys.Process(-1), SpawnErr(code) }
+    empty: u32 = 0
+    code = c_attributes_sigmask(mut &attributes, &empty)
+    if code != 0 { return sys.Process(-1), SpawnErr(code) }
+
     pid: i32 = 0
     if dir == null && out < 0 && err < 0 {
-        code: i32 = c_posix_spawnp(mut &pid, argv[0], null, null, &argv[0], &envp[0])
+        code = c_posix_spawnp(mut &pid, argv[0], null, &attributes, &argv[0], &envp[0])
         if code != 0 { return sys.Process(-1), SpawnErr(code) }
 
         return sys.Process(pid), null
     }
 
     actions: [16]u64
-    code: i32 = c_actions_init(mut &actions[0])
+    code = c_actions_init(mut &actions[0])
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
     defer c_actions_destroy(mut &actions[0])
     if dir != null {
@@ -53,7 +71,7 @@ pub spawn(argv: []*u8, envp: []*u8, dir: *u8, out: i32, err: i32): (sys.Process,
         code = c_actions_dup2(mut &actions[0], err, 2)
         if code != 0 { return sys.Process(-1), SpawnErr(code) }
     }
-    code = c_posix_spawnp(mut &pid, argv[0], &actions[0], null, &argv[0], &envp[0])
+    code = c_posix_spawnp(mut &pid, argv[0], &actions[0], &attributes, &argv[0], &envp[0])
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
 
     return sys.Process(pid), null

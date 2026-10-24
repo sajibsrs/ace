@@ -1,0 +1,32 @@
+/* `exec.spawn` starts the child with an empty signal mask while the parent
+ * blocks SIGTERM; the program spawns itself, and the child's exit status
+ * reports what it found blocked.
+ */
+
+// expect-exit: 42
+
+import exec
+import signal
+import str
+import sys
+
+main(): int {
+    if sys.argc() == 2 && str.compare(sys.arg(1), "child") == 0 {
+        if signal.mask().has(signal.SIGTERM) { return 1 }
+        return 0
+    }
+    set: signal.Set = blank(signal.Set)
+    mut set.add(signal.SIGTERM)
+    signal.block(set)
+
+    path: [1024]u8
+    length: usize, err: Error = sys.executable(mut path[0..1024])
+    if err != null { return 2 }
+    child: sys.Process, spawn_err: Error = exec.spawn([string(path[0..length]), "child"])
+    if spawn_err != null { return 3 }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(child)
+    if wait_err != null || !status.exited { return 4 }
+    if status.code != 0 { return 5 }
+    if !signal.mask().has(signal.SIGTERM) { return 6 }
+    return 42
+}

@@ -1,0 +1,32 @@
+/* `handle` and `ignore` refuse SIGKILL, SIGSTOP, the seven fault signals,
+ * and numbers outside the range; `reset` accepts a fault signal. `send`
+ * refuses a process of zero or below, which kill would read as a group.
+ */
+
+// expect-exit: 42
+
+import signal
+import sys
+
+extern "c" on_signal(s: signal.Signal) {
+}
+
+refused(s: signal.Signal): bool {
+    return signal.handle(s, on_signal) == signal.HandleErr.invalid &&
+           signal.ignore(s) == signal.IgnoreErr.invalid
+}
+
+main(): int {
+    if !refused(signal.SIGKILL) || !refused(signal.SIGSTOP) { return 1 }
+    if !refused(signal.SIGSEGV) || !refused(signal.SIGBUS) || !refused(signal.SIGILL) { return 2 }
+    if !refused(signal.SIGFPE) || !refused(signal.SIGTRAP) || !refused(signal.SIGABRT) { return 3 }
+    if !refused(signal.SIGSYS) { return 4 }
+    if !refused(signal.Signal(0)) || !refused(signal.Signal(32)) || !refused(signal.Signal(-1)) { return 5 }
+    if sys.errno() != 22 { return 6 }
+    if signal.reset(signal.SIGSEGV) != null { return 7 }
+    if signal.reset(signal.Signal(32)) != signal.ResetErr.invalid { return 8 }
+    if signal.send(sys.Process(0), signal.SIGUSR1) != signal.SendErr.invalid { return 9 }
+    if signal.send(sys.Process(-1), signal.SIGUSR1) != signal.SendErr.invalid { return 10 }
+    if signal.handle(signal.SIGUSR1, on_signal) != null { return 11 }
+    return 42
+}

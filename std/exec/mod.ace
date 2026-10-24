@@ -34,7 +34,8 @@ pub SpawnOptions: struct {
 /* Start `argv[0]`, searched in PATH, with `argv` as its arguments and this
  * process's environment; no shell runs between. Wait for it with `sys.wait`.
  * The strings are copied into NUL-terminated storage released before return.
- * An empty `argv` or an argument holding a NUL byte fails with
+ * The child starts with an empty signal mask; a signal this process ignores
+ * stays ignored. An empty `argv` or an argument holding a NUL byte fails with
  * `SpawnErr.invalid`.
  */
 pub spawn(argv: []string): (sys.Process, Error) {

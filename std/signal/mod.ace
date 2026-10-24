@@ -1,0 +1,154 @@
+/* signal — POSIX signal dispositions, per-thread masks, synchronous waits,
+ * and delivery. A handler is an `extern "c"` definition installed as is,
+ * with no trampoline, thread, or table of std's own; the module allocates
+ * nothing.
+ */
+
+import sys
+import thread
+
+@when(target == "darwin-arm64")
+import os: "./os/darwin-arm64.ace"
+
+pub HandleErr: type = os.HandleErr
+pub IgnoreErr: type = os.IgnoreErr
+pub ResetErr: type = os.ResetErr
+pub WaitErr: type = os.WaitErr
+pub SendErr: type = os.SendErr
+
+/* A signal number, in the target's own numbering. */
+pub Signal: distinct i32
+
+pub SIGHUP: const Signal = Signal(os.SIGHUP)
+pub SIGINT: const Signal = Signal(os.SIGINT)
+pub SIGQUIT: const Signal = Signal(os.SIGQUIT)
+pub SIGILL: const Signal = Signal(os.SIGILL)
+pub SIGTRAP: const Signal = Signal(os.SIGTRAP)
+pub SIGABRT: const Signal = Signal(os.SIGABRT)
+pub SIGEMT: const Signal = Signal(os.SIGEMT)
+pub SIGFPE: const Signal = Signal(os.SIGFPE)
+pub SIGKILL: const Signal = Signal(os.SIGKILL)
+pub SIGBUS: const Signal = Signal(os.SIGBUS)
+pub SIGSEGV: const Signal = Signal(os.SIGSEGV)
+pub SIGSYS: const Signal = Signal(os.SIGSYS)
+pub SIGPIPE: const Signal = Signal(os.SIGPIPE)
+pub SIGALRM: const Signal = Signal(os.SIGALRM)
+pub SIGTERM: const Signal = Signal(os.SIGTERM)
+pub SIGURG: const Signal = Signal(os.SIGURG)
+pub SIGSTOP: const Signal = Signal(os.SIGSTOP)
+pub SIGTSTP: const Signal = Signal(os.SIGTSTP)
+pub SIGCONT: const Signal = Signal(os.SIGCONT)
+pub SIGCHLD: const Signal = Signal(os.SIGCHLD)
+pub SIGTTIN: const Signal = Signal(os.SIGTTIN)
+pub SIGTTOU: const Signal = Signal(os.SIGTTOU)
+pub SIGIO: const Signal = Signal(os.SIGIO)
+pub SIGXCPU: const Signal = Signal(os.SIGXCPU)
+pub SIGXFSZ: const Signal = Signal(os.SIGXFSZ)
+pub SIGVTALRM: const Signal = Signal(os.SIGVTALRM)
+pub SIGPROF: const Signal = Signal(os.SIGPROF)
+pub SIGWINCH: const Signal = Signal(os.SIGWINCH)
+pub SIGINFO: const Signal = Signal(os.SIGINFO)
+pub SIGUSR1: const Signal = Signal(os.SIGUSR1)
+pub SIGUSR2: const Signal = Signal(os.SIGUSR2)
+
+/* A set of signals over the target's `sigset_t` bits: signal n is bit n - 1.
+ * Canonical zero is empty. A signal outside the target's range is programmer
+ * error.
+ */
+pub Set: struct {
+    bits: u32,
+}
+
+pub Set.add(mut self, s: Signal) {
+    self.bits |= u32(1) << u32(i32(s) - 1)
+}
+
+pub Set.remove(mut self, s: Signal) {
+    self.bits &= ~(u32(1) << u32(i32(s) - 1))
+}
+
+pub Set.has(self, s: Signal): bool {
+    return (self.bits & u32(1) << u32(i32(s) - 1)) != 0
+}
+
+/* How `handle` installs a handler. Canonical zero blocks nothing beyond the
+ * signal itself while the handler runs and does not restart interrupted
+ * calls: they fail as interrupted.
+ */
+pub HandleOptions: struct {
+    pub mask: Set,
+    pub restart: bool,
+}
+
+/* Run `handler` when `s` is delivered, with default options. */
+pub handle(s: Signal, handler: extern "c" (Signal): void): Error {
+    return handle(s, handler, blank(HandleOptions))
+}
+
+/* Run `handler` when `s` is delivered. While it runs, `s` and
+ * `options.mask` are blocked in its thread; `options.restart` restarts the
+ * calls it interrupts where the OS can. The seven fault signals (SIGSEGV,
+ * SIGBUS, SIGILL, SIGFPE, SIGTRAP, SIGABRT, SIGSYS), SIGKILL, SIGSTOP, and
+ * numbers outside the range fail with `HandleErr.invalid`.
+ */
+pub handle(s: Signal, handler: extern "c" (Signal): void, options: HandleOptions): Error {
+    return os.handle(i32(s), bitcast(usize, handler), options.mask.bits, options.restart)
+}
+
+/* Discard `s` when delivered; refuses what `handle` refuses. */
+pub ignore(s: Signal): Error {
+    return os.ignore(i32(s))
+}
+
+/* Restore the OS's default action for `s`. */
+pub reset(s: Signal): Error {
+    return os.reset(i32(s))
+}
+
+/* Add `set` to this thread's mask; a blocked signal stays pending. */
+pub block(set: Set) {
+    os.change(true, set.bits)
+}
+
+/* Remove `set` from this thread's mask, delivering what was pending. */
+pub unblock(set: Set) {
+    os.change(false, set.bits)
+}
+
+/* This thread's mask. */
+pub mask(): Set {
+    return Set { bits = os.mask() }
+}
+
+/* Replace this thread's mask with `set`. */
+pub mask(set: Set) {
+    os.mask(set.bits)
+}
+
+/* Take one pending signal of `set`, sleeping until one is. The signals of
+ * `set` should be blocked in every thread, or a handler or default action
+ * may take them first. An empty set fails with `WaitErr.invalid`.
+ */
+pub wait(set: Set): (Signal, Error) {
+    s: i32, err: Error = os.wait(set.bits)
+    return Signal(s), err
+}
+
+/* Send `s` to `process`; a process of zero or below fails with
+ * `SendErr.invalid`.
+ */
+pub send(process: sys.Process, s: Signal): Error {
+    return os.send(process, i32(s))
+}
+
+/* Send `s` to the thread `t` of this process. */
+pub send(t: thread.Thread, s: Signal): Error {
+    return os.send(t, i32(s))
+}
+
+/* Send `s` to the calling thread; it is delivered before `raise` returns
+ * unless blocked.
+ */
+pub raise(s: Signal): Error {
+    return os.raise(i32(s))
+}

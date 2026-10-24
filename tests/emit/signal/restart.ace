@@ -1,0 +1,75 @@
+/* A handled signal interrupts a blocking `sys.read` on an empty pipe, which
+ * fails as interrupted. With `HandleOptions.restart` the read resumes and
+ * returns the byte written after the signals. The main thread keeps sending
+ * until the reader is done, so a signal that lands before the read starts
+ * cannot leave it blocked.
+ */
+
+// expect-exit: 42
+
+import atomic
+import signal
+import sys
+import thread
+import time
+
+hits: u32
+done: u32
+outcome: u32
+input: sys.Fd
+
+extern "c" on_signal(s: signal.Signal) {
+    atomic.add_relaxed(mut &hits, u32(1))
+}
+
+extern "c" reader(argument: mut *u8): mut *u8 {
+    buffer: [1]u8 = [0]
+    count: int, err: Error = sys.read(input, mut buffer[0..1])
+    if err == sys.ReadErr.interrupted {
+        atomic.store_relaxed(mut &outcome, u32(1))
+    } else if err == null && count == 1 && buffer[0] == 7 {
+        atomic.store_relaxed(mut &outcome, u32(2))
+    }
+    atomic.store_release(mut &done, u32(1))
+    return null
+}
+
+pause() {
+    start: u64 = time.elapsed()
+    for time.elapsed() - start < 2000000 {}
+}
+
+/* Run a reader, signal it until it finishes or `want` signals have
+ * arrived, then write one byte for a restarted read to return.
+ */
+run(output: sys.Fd, want: u32): u32 {
+    atomic.store_relaxed(mut &done, u32(0))
+    atomic.store_relaxed(mut &outcome, u32(0))
+    atomic.store_relaxed(mut &hits, u32(0))
+    t: thread.Thread, err: Error = thread.create(reader, null)
+    if err != null { return 0 }
+    for atomic.load_acquire(&done) == 0 && atomic.load_relaxed(&hits) < want {
+        pause()
+        signal.send(t, signal.SIGUSR1)
+    }
+    byte: [1]u8 = [7]
+    if atomic.load_acquire(&done) == 0 { sys.write(output, byte[0..1]) }
+    result: mut *u8, join_err: Error = thread.join(t)
+    if join_err != null { return 0 }
+    return atomic.load_relaxed(&outcome)
+}
+
+main(): int {
+    reading: sys.Fd, output: sys.Fd, err: Error = sys.pipe()
+    if err != null { return 1 }
+    input = reading
+
+    if signal.handle(signal.SIGUSR1, on_signal) != null { return 2 }
+    if run(output, u32(1000000)) != 1 { return 3 }
+
+    options: signal.HandleOptions = blank(signal.HandleOptions)
+    options.restart = true
+    if signal.handle(signal.SIGUSR1, on_signal, options) != null { return 4 }
+    if run(output, u32(5)) != 2 { return 5 }
+    return 42
+}

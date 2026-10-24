@@ -1,0 +1,202 @@
+/* signal — darwin-arm64 dispositions, masks, and delivery over libSystem's
+ * platform, pthread, and kernel libraries.
+ */
+
+import sys
+import thread
+
+pub HandleErr: error {
+    22: invalid = "signal cannot be handled",
+}
+
+pub IgnoreErr: error {
+    22: invalid = "signal cannot be ignored",
+}
+
+pub ResetErr: error {
+    22: invalid = "signal cannot be reset",
+}
+
+pub WaitErr: error {
+    22: invalid = "signal set is empty or invalid",
+}
+
+pub SendErr: error {
+    1: permission = "not permitted to signal the process",
+    3: not_found = "no such process or thread",
+    22: invalid = "signal or target is invalid",
+}
+
+// Darwin signal numbers; NSIG counts signal 0, so 1 through 31 exist.
+pub SIGHUP: const i32 = 1
+pub SIGINT: const i32 = 2
+pub SIGQUIT: const i32 = 3
+pub SIGILL: const i32 = 4
+pub SIGTRAP: const i32 = 5
+pub SIGABRT: const i32 = 6
+pub SIGEMT: const i32 = 7
+pub SIGFPE: const i32 = 8
+pub SIGKILL: const i32 = 9
+pub SIGBUS: const i32 = 10
+pub SIGSEGV: const i32 = 11
+pub SIGSYS: const i32 = 12
+pub SIGPIPE: const i32 = 13
+pub SIGALRM: const i32 = 14
+pub SIGTERM: const i32 = 15
+pub SIGURG: const i32 = 16
+pub SIGSTOP: const i32 = 17
+pub SIGTSTP: const i32 = 18
+pub SIGCONT: const i32 = 19
+pub SIGCHLD: const i32 = 20
+pub SIGTTIN: const i32 = 21
+pub SIGTTOU: const i32 = 22
+pub SIGIO: const i32 = 23
+pub SIGXCPU: const i32 = 24
+pub SIGXFSZ: const i32 = 25
+pub SIGVTALRM: const i32 = 26
+pub SIGPROF: const i32 = 27
+pub SIGWINCH: const i32 = 28
+pub SIGINFO: const i32 = 29
+pub SIGUSR1: const i32 = 30
+pub SIGUSR2: const i32 = 31
+NSIG: const i32 = 32
+
+EINVAL: const i32 = 22
+SIG_DFL: const usize = 0
+SIG_IGN: const usize = 1
+SA_RESTART: const i32 = 0x0002
+SIG_BLOCK: const i32 = 1
+SIG_UNBLOCK: const i32 = 2
+SIG_SETMASK: const i32 = 3
+
+/* Darwin's user-side `struct sigaction`: the handler union, a `sigset_t`,
+ * and the flags. libSystem's `sigaction` installs its own trampoline.
+ */
+DarwinAction: struct {
+    handler: usize,
+    mask: u32,
+    flags: i32,
+}
+
+static_assert(sizeof(DarwinAction) == 16 && alignof(DarwinAction) == 8)
+static_assert(offsetof(DarwinAction, mask) == 8 && offsetof(DarwinAction, flags) == 12)
+
+extern "c" {
+    c_sigaction(signal: i32, action: *DarwinAction, previous: mut *DarwinAction): i32 as "sigaction"
+    c_sigmask(how: i32, set: *u32, previous: mut *u32): i32 as "pthread_sigmask"
+    c_sigwait(set: *u32, signal: mut *i32): i32 as "sigwait"
+    c_kill(process: i32, signal: i32): i32 as "kill"
+    c_pthread_kill(thread: thread.Thread, signal: i32): i32 as "pthread_kill"
+    c_pthread_self(): thread.Thread as "pthread_self"
+}
+
+/* The seven synchronous fault signals, and those the OS refuses to catch or
+ * ignore, are rejected before `sigaction` runs.
+ */
+catchable(signal: i32): bool {
+    if signal <= 0 || signal >= NSIG { return false }
+    return signal != SIGKILL && signal != SIGSTOP && signal != SIGSEGV && signal != SIGBUS &&
+           signal != SIGILL && signal != SIGFPE && signal != SIGTRAP && signal != SIGABRT &&
+           signal != SIGSYS
+}
+
+action(signal: i32, handler: usize, mask: u32, flags: i32): i32 {
+    installed: DarwinAction = DarwinAction {
+        handler = handler,
+        mask = mask,
+        flags = flags,
+    }
+    if c_sigaction(signal, &installed, null) == -1 { return sys.errno() }
+
+    return 0
+}
+
+pub handle(signal: i32, handler: usize, mask: u32, restart: bool): Error {
+    if !catchable(signal) {
+        sys.errno(EINVAL)
+        return HandleErr.invalid
+    }
+    code: i32 = action(signal, handler, mask, restart ? SA_RESTART : 0)
+    if code != 0 { return HandleErr(code) }
+
+    return null
+}
+
+pub ignore(signal: i32): Error {
+    if !catchable(signal) {
+        sys.errno(EINVAL)
+        return IgnoreErr.invalid
+    }
+    code: i32 = action(signal, SIG_IGN, u32(0), 0)
+    if code != 0 { return IgnoreErr(code) }
+
+    return null
+}
+
+pub reset(signal: i32): Error {
+    code: i32 = action(signal, SIG_DFL, u32(0), 0)
+    if code != 0 { return ResetErr(code) }
+
+    return null
+}
+
+/* pthread_sigmask fails only on an invalid `how`, which is never passed. */
+pub change(how_block: bool, set: u32) {
+    c_sigmask(how_block ? SIG_BLOCK : SIG_UNBLOCK, &set, null)
+}
+
+pub mask(): u32 {
+    current: u32 = 0
+    c_sigmask(SIG_BLOCK, null, mut &current)
+    return current
+}
+
+pub mask(set: u32) {
+    c_sigmask(SIG_SETMASK, &set, null)
+}
+
+/* sigwait returns its error code directly. Darwin's turns an interrupted
+ * wait into success without storing a signal, so an unset result waits again.
+ * An empty set would sleep forever, so it is refused first.
+ */
+pub wait(set: u32): (i32, Error) {
+    if set == u32(0) {
+        sys.errno(EINVAL)
+        return 0, WaitErr.invalid
+    }
+    for {
+        signal: i32 = 0
+        code: i32 = c_sigwait(&set, mut &signal)
+        if code != 0 { return 0, WaitErr(code) }
+        if signal != 0 { return signal, null }
+    }
+    return 0, null
+}
+
+/* A process of zero or below names a process group or every process, so it
+ * is refused rather than passed to kill.
+ */
+pub send(process: sys.Process, signal: i32): Error {
+    if i32(process) <= 0 {
+        sys.errno(EINVAL)
+        return SendErr.invalid
+    }
+    if c_kill(i32(process), signal) == -1 { return SendErr(sys.errno()) }
+
+    return null
+}
+
+/* pthread_kill returns its error code directly. */
+pub send(target: thread.Thread, signal: i32): Error {
+    code: i32 = c_pthread_kill(target, signal)
+    if code != 0 { return SendErr(code) }
+
+    return null
+}
+
+pub raise(signal: i32): Error {
+    code: i32 = c_pthread_kill(c_pthread_self(), signal)
+    if code != 0 { return SendErr(code) }
+
+    return null
+}

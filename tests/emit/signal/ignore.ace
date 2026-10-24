@@ -1,0 +1,27 @@
+/* An ignored signal is discarded, and a forked child inherits the
+ * disposition; after `reset` the default action ends the child, and the
+ * parent's `sys.wait` reports the signal.
+ */
+
+// expect-exit: 42
+
+import signal
+import sys
+
+main(): int {
+    if signal.ignore(signal.SIGUSR1) != null { return 1 }
+    if signal.raise(signal.SIGUSR1) != null { return 2 }
+
+    child: sys.Process, err: Error = sys.fork()
+    if err != null { return 3 }
+    if child == sys.Process(0) {
+        signal.raise(signal.SIGUSR1) // still ignored after fork
+        if signal.reset(signal.SIGUSR1) != null { sys.exit(10) }
+        signal.raise(signal.SIGUSR1)
+        sys.exit(11)
+    }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(child)
+    if wait_err != null { return 4 }
+    if status.exited || status.signal != int(i32(signal.SIGUSR1)) { return 5 }
+    return 42
+}

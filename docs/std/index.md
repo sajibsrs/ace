@@ -20,6 +20,7 @@ Today's modules:
   [`bits`](bits.md) and [Memory](../memory.md))
 - [`net`](net.md) — allocation-free IPv4 TCP sockets
 - [`poll`](poll.md) — allocation-free readiness queues for general file descriptors
+- [`signal`](signal.md) — signal handlers, per-thread masks, waits, and delivery
 - [`str`](str.md) — allocation-free byte-exact string utilities
 - [`tcp`](tcp.md) — explicit blocking IPv4 TCP composition over `net`
 - [`sys`](sys.md) — process arguments/environment, file descriptors, byte I/O, and errno

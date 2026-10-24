@@ -1,0 +1,40 @@
+/* A blocked signal stays pending until `unblock` delivers it, and `mask`
+ * reads and replaces this thread's mask.
+ */
+
+// expect-exit: 42
+
+import atomic
+import signal
+
+hits: u32
+
+extern "c" on_signal(s: signal.Signal) {
+    atomic.add_relaxed(mut &hits, u32(1))
+}
+
+main(): int {
+    if signal.handle(signal.SIGUSR1, on_signal) != null { return 1 }
+    if signal.mask().has(signal.SIGUSR1) { return 2 }
+
+    set: signal.Set = blank(signal.Set)
+    mut set.add(signal.SIGUSR1)
+    signal.block(set)
+    if !signal.mask().has(signal.SIGUSR1) { return 3 }
+    if signal.raise(signal.SIGUSR1) != null { return 4 }
+    signal.raise(signal.SIGUSR1) // pending signals do not queue
+    if atomic.load_relaxed(&hits) != 0 { return 5 }
+    signal.unblock(set)
+    if atomic.load_relaxed(&hits) != 1 { return 6 }
+    if signal.mask().has(signal.SIGUSR1) { return 7 }
+
+    mut set.add(signal.SIGTERM)
+    signal.mask(set)
+    current: signal.Set = signal.mask()
+    if !current.has(signal.SIGUSR1) || !current.has(signal.SIGTERM) || current.has(signal.SIGUSR2) { return 8 }
+    mut set.remove(signal.SIGUSR1)
+    if set.has(signal.SIGUSR1) || !set.has(signal.SIGTERM) { return 9 }
+    signal.mask(blank(signal.Set))
+    if signal.mask().has(signal.SIGTERM) { return 10 }
+    return 42
+}

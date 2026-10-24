@@ -5,11 +5,6 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
-- Concurrency: signals (#41). Darwin implementations bind libSystem's
-  pthread and platform libraries, never its libc. Open: whether a handler may
-  use a `threadlocal`, since a thread's first access allocates its copies
-  (Values & Passing #13).
-
 ### Trigger-gated
 
 - The canonical source formatter (`ace fmt`: in-place, check-only, stdout

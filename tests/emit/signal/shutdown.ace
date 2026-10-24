@@ -1,0 +1,129 @@
+/* Graceful shutdown: a forked server polls its listener and a self-pipe that
+ * its SIGTERM handler writes, saving and restoring errno around the write. A
+ * wait the signal interrupts loops. The parent gets a reply to its request,
+ * sends SIGTERM, and sees the server leave its loop, run its deferred calls,
+ * and exit 0. Needs loopback sockets.
+ */
+
+// expect-exit: 42
+
+import mem
+import net
+import poll
+import signal
+import sys
+import net/tcp
+
+REQUEST: const string = "shutdown"
+
+wake: sys.Fd
+
+extern "c" on_term(s: signal.Signal) {
+    saved: i32 = sys.errno()
+    byte: [1]u8 = [1]
+    sys.write(wake, byte[0..1])
+    sys.errno(saved)
+}
+
+loopback(port: u16): net.Addr4 {
+    return net.Addr4 {
+        ip = [127, 0, 0, 1],
+        port = port,
+    }
+}
+
+/* Answer one connection: read the request and send it back. */
+answer(listener: net.Socket): bool {
+    peer: net.Socket, address: net.Addr4, err: Error = net.accept(listener)
+    if err != null { return false }
+    defer sys.close(peer)
+    storage: [8]u8 = [0 : 8]
+    at: usize = 0
+    for at < storage.len {
+        count: int, receive_err: Error = net.receive(peer, mut storage[at..])
+        if receive_err != null || count <= 0 { return false }
+        at += usize(count)
+    }
+    sent: usize = 0
+    for sent < at {
+        count: int, send_err: Error = net.send(peer, storage[sent..at])
+        if send_err != null { return false }
+        sent += usize(count)
+    }
+    return true
+}
+
+/* Serve until SIGTERM; the deferred write tells the parent the loop ended
+ * through its cleanup.
+ */
+serve(listener: net.Socket, report: sys.Fd): int {
+    done: [1]u8 = [100]
+    defer sys.write(report, done[0..1])
+    defer sys.close(listener)
+
+    reading: sys.Fd, writing: sys.Fd, err: Error = sys.pipe()
+    if err != null { return 1 }
+    defer sys.close(reading)
+    defer sys.close(writing)
+    wake = writing
+    if signal.handle(signal.SIGTERM, on_term) != null { return 2 }
+
+    q: poll.Queue, queue_err: Error = poll.queue()
+    if queue_err != null { return 3 }
+    defer sys.close(sys.Fd(q))
+    if poll.watch(q, listener, true, false) != null { return 4 }
+    if poll.watch(q, reading, true, false) != null { return 5 }
+
+    events: [4]poll.Event
+    stopping: bool = false
+    for !stopping {
+        count: usize, wait_err: Error = poll.wait(q, mut events[0..4], poll.FOREVER)
+        if wait_err == poll.WaitErr.interrupted { continue }
+        if wait_err != null { return 6 }
+        for i: usize in 0 .. count {
+            if events[i].fd == reading {
+                stopping = true
+            } else if events[i].fd == listener && !answer(listener) {
+                return 7
+            }
+        }
+    }
+    return 0
+}
+
+main(): int {
+    listener: net.Socket, err: Error = net.socket(net.SocketType.tcp)
+    if err != null { return 1 }
+    if net.reuseaddr(listener, true) != null || net.bind(listener, loopback(u16(0))) != null { return 2 }
+    local: net.Addr4
+    local, err = net.local(listener)
+    if err != null || net.listen(listener, usize(8)) != null { return 3 }
+    reports: sys.Fd, report: sys.Fd, pipe_err: Error = sys.pipe()
+    if pipe_err != null { return 4 }
+
+    server: sys.Process, fork_err: Error = sys.fork()
+    if fork_err != null { return 5 }
+    if server == sys.Process(0) {
+        sys.close(reports)
+        sys.exit(serve(listener, report))
+    }
+    sys.close(listener)
+    sys.close(report)
+
+    connection: tcp.Conn, connect_err: Error = tcp.connect(loopback(local.port))
+    if connect_err != null { return 6 }
+    defer tcp.close(mut connection)
+    sent: usize, send_err: Error = tcp.send_all(connection, REQUEST)
+    if send_err != null || sent != REQUEST.len { return 7 }
+    storage: [8]u8 = [0 : 8]
+    received: usize, receive_err: Error = tcp.receive_all(connection, mut storage[0..])
+    if receive_err != null || received != REQUEST.len || !mem.equal(storage[0..], REQUEST) { return 8 }
+
+    if signal.send(server, signal.SIGTERM) != null { return 9 }
+    status: sys.ProcessStatus, wait_err: Error = sys.wait(server)
+    if wait_err != null || !status.exited || status.code != 0 { return 10 }
+    marker: [1]u8 = [0]
+    count: int, read_err: Error = sys.read(reports, mut marker[0..1])
+    if read_err != null || count != 1 || marker[0] != 100 { return 11 }
+    return 42
+}

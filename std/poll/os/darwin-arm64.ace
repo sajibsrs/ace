@@ -75,12 +75,6 @@ extern "c" {
         event_count: i32,
         timeout: *DarwinTimespec,
     ): i32 as "kevent"
-    c_errno(): mut *i32 as "__error"
-}
-
-errno_set(value: i32) {
-    slot: mut *i32 = c_errno()
-    *slot = value
 }
 
 kevent_change(fd: sys.Fd, filter: i16, flags: u16): DarwinKevent {
@@ -103,7 +97,7 @@ pub queue(): (Queue, Error) {
 
 pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
     if !readable && !writable {
-        errno_set(EINVAL)
+        sys.errno(EINVAL)
         return WatchErr.invalid
     }
     read_flags: u16 = EV_DELETE
@@ -142,7 +136,7 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     }
 
     if !removed {
-        errno_set(ENOENT)
+        sys.errno(ENOENT)
         return UnwatchErr(sys.errno())
     }
     return null
@@ -155,7 +149,7 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
 
 pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
     if events.len == 0 {
-        errno_set(EINVAL)
+        sys.errno(EINVAL)
         return usize(0), WaitErr.invalid
     }
     capacity: usize = events.len

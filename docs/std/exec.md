@@ -16,6 +16,8 @@ status: sys.ProcessStatus, werr: Error = sys.wait(child)
   `PATH`, with the arguments `argv` and this process's environment. No shell
   runs in between, so arguments need no quoting. Wait for the child with
   `sys.wait`, as for a forked one. Failure returns `sys.Process(-1)`.
+  The child starts with an empty [signal mask](signal.md), whatever this
+  thread blocks; a signal this process ignores stays ignored in the child.
 - `spawn(argv: []string, options: SpawnOptions): (sys.Process, Error)` adds a
   working directory and redirection. `SpawnOptions` has `dir: string` (empty
   keeps this process's directory), and, for each of `stdout` and `stderr`, a
@@ -46,6 +48,13 @@ child: sys.Process, serr: Error = exec.spawn(["make"], options)
 | `invalid`   | empty `argv`, or an argument holding a NUL byte |
 
 ## Design rationale
+
+- The child's mask is cleared because a mask blocked for a `signal.wait`
+  thread would otherwise reach programs that never asked for it, a server's
+  SIGTERM blocked in every tool it starts. Python's `subprocess` (since 3.2)
+  and Go's `os/exec` do the same; ignored dispositions stay inherited as
+  POSIX requires and `nohup` relies on. It costs one attributes allocation
+  inside libSystem per spawn.
 
 - `spawn` wraps `posix_spawnp` rather than `fork` plus `exec`, as Go
   `os.StartProcess` and Zig `std.process.Child` do: one call, no duplicated
