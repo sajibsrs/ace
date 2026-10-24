@@ -189,8 +189,9 @@ pub Map[K, V].wipe(mut self) {
 Map[K, V].rehash(mut self, capacity: usize): Error {
     fresh: mut []Slot[K, V] = mem.zalloc[Slot[K, V]](capacity)
     if fresh == null { return MapErr.allocation }
-    for i: usize in 0 .. self.slots.len {
-        if self.slots[i].used { fresh[probe[K, V](fresh, self.slots[i].key)] = self.slots[i] }
+    old: []Slot[K, V] = self.slots
+    for i: usize in 0 .. old.len {
+        if old[i].used { fresh[probe[K, V](fresh, old[i].key)] = old[i] }
     }
     mem.release[Slot[K, V]](mut self.slots)
     self.slots = fresh
@@ -218,12 +219,13 @@ pub inline Map[K, V].get(self, key: K): (V, bool) {
 /* Stores `value` under `key`, replacing any earlier value, and grows storage
  * when a new entry would exceed the load limit.
  */
-pub Map[K, V].set(mut self, key: K, value: V): Error {
+pub inline Map[K, V].set(mut self, key: K, value: V): Error {
     at: usize = 0
-    if self.slots.len != 0 {
-        at = probe[K, V](self.slots, key)
-        if self.slots[at].used {
-            self.slots[at].value = value
+    slots: mut []Slot[K, V] = self.slots
+    if slots.len != 0 {
+        at = probe[K, V](slots, key)
+        if slots[at].used {
+            slots[at].value = value
             return null
         }
     }
@@ -242,24 +244,26 @@ pub Map[K, V].set(mut self, key: K, value: V): Error {
 }
 
 /* Removes `key`, returning whether it was present. */
-pub Map[K, V].unset(mut self, key: K): bool {
+pub inline Map[K, V].unset(mut self, key: K): bool {
     if self.count == 0 { return false }
-    mask: usize = self.slots.len - 1
-    hole: usize = probe[K, V](self.slots, key)
-    if !self.slots[hole].used { return false }
+    slots: mut []Slot[K, V] = self.slots
+    n: usize = slots.len
+    mask: usize = n - 1
+    hole: usize = probe[K, V](slots, key)
+    if !slots[hole].used { return false }
     at: usize = hole
     for {
         at = (at + 1) & mask
-        if !self.slots[at].used { break }
-        from: usize = home(hash[K](self.slots[at].key), self.slots.len)
+        if !slots[at].used { break }
+        from: usize = home(hash[K](slots[at].key), n)
         // The entry may fill the hole unless its home lies cyclically in
         // (hole, at], where the probe from home would no longer reach it.
-        if ((at + self.slots.len - from) & mask) >= ((at + self.slots.len - hole) & mask) {
-            self.slots[hole] = self.slots[at]
+        if ((at + n - from) & mask) >= ((at + n - hole) & mask) {
+            slots[hole] = slots[at]
             hole = at
         }
     }
-    self.slots[hole].used = false
+    slots[hole].used = false
     self.count -= 1
     return true
 }

@@ -1,5 +1,10 @@
 # Standard library
 
+- `Map.set`/`unset` are `inline`, and `set`, `unset`, and `rehash` read the
+  slot slice into a local once, so stores to slots no longer force reloads of
+  the map's fields. `map-set` 1.33x, `map-unset` 1.32x faster; selfhost
+  `__text` +1.2% (#156).
+
 - `map` hashes integer keys with one multiply by the golden-ratio constant and
   starts probing at the hash's top bits (as Linux `hash_64`); `set` probes once
   per insert. Structured keys (ids, strides, `b << 32 | v`) run 2.7–3.3x faster;

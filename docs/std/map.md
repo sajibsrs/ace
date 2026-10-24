@@ -62,6 +62,12 @@ Why the rules in `spec/std/collections.md` are shaped as they are.
   and `same` expand `inline` (Functions & ABI #8) and preserve a valid zero
   value, which function-valued fields would forfeit at one indirect call per
   operation.
+- `get`, `has`, `set`, and `unset` are `inline`, and the methods that write
+  slots copy `self.slots` into a local first. Storage is untyped (Memory), so
+  no pass may assume a store to a slot leaves the map's own fields unchanged;
+  the copy states it, as clang's type-based aliasing does for C.
+  `map-set` went from 1.71x to 1.28x of C and `map-unset` from 1.76x to
+  1.32x, for 1.2% more selfhost machine code.
 - An integer key's hash is one multiply by the golden-ratio constant, and its
   home slot is the product's top bits (Knuth's multiplicative hashing; Linux
   `hash_64`, rustc's FxHash). Every key bit reaches the top bits, so ids,
