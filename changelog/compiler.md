@@ -1,5 +1,9 @@
 # Compiler
 
+- Release hoists a loop's pure non-trapping operations, and its stack-object
+  loads when it neither stores nor calls, to the loop's entry; branch threading
+  enters successors with other predecessors or phis; `Map.get`/`has` are
+  `inline`. `map-miss` 1.95x, `map-get` 1.39x faster (#156).
 - Selfhost builds no member table for the root module, as the C loader does
   not; its linear duplicate scan made `--check` quadratic in top-level
   declarations (1.49 → 0.33 s on a 30 000-function file, level with C) (#152).

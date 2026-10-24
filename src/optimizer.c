@@ -497,6 +497,109 @@ static void gvn(IrFunc* fn) {
     free(rpo); free(idom); free(cstart); free(kids); free(fill); free(sb); free(si); free(sm);
 }
 
+// --- loops ------------------------------------------------------------------------------
+
+// The predecessor index of the back edge into h when h heads a natural loop:
+// two predecessors, a latch h dominates and an entry it does not. body then
+// marks the loop, every block reaching the latch without passing h; -1 when h
+// heads none.
+static int natural_loop(const IrFunc* fn, const int* idom, int h, uint8_t* body, int* stack) {
+    const IrBlock* hb = &fn->blocks[h];
+    if (hb->npreds != 2) return -1;
+    int li = -1;
+    for (int i = 0; i < 2; i++)
+        if (idom[hb->preds[i]] >= 0 && ir_dominates(idom, h, hb->preds[i])) li = li < 0 ? i : -2;
+    if (li < 0) return -1;
+    int latch = hb->preds[li], pre = hb->preds[1 - li];
+    if (idom[pre] < 0 || ir_dominates(idom, h, pre)) return -1;
+    memset(body, 0, (size_t)fn->nblocks);
+    int sp = 0;
+    body[h] = 1;
+    if (!body[latch]) { body[latch] = 1; stack[sp++] = latch; }
+    while (sp) {
+        const IrBlock* bb = &fn->blocks[stack[--sp]];
+        for (int i = 0; i < bb->npreds; i++)
+            if (!body[bb->preds[i]]) { body[bb->preds[i]] = 1; stack[sp++] = bb->preds[i]; }
+    }
+    return li;
+}
+
+// A new instruction in b, before its terminator.
+static int ins_before_term(IrFunc* fn, int b, IrOp op, IrType type) {
+    int v = ir_ins_new(fn, b, op, type);
+    IrBlock* bb = &fn->blocks[b];
+    bb->ins[bb->nins - 1] = bb->ins[bb->nins - 2];
+    bb->ins[bb->nins - 2] = v;
+    return v;
+}
+
+// --- loop-invariant code motion ---------------------------------------------------------
+//
+// A natural loop's instruction whose operands are all defined outside it moves
+// to the end of the loop's entry block, computed once per entry rather than
+// once per iteration: a pure operation that cannot trap (not a division), and
+// a load from a stack object when nothing in the loop stores, calls, or is
+// atomic or asm. Neither faults when the loop runs no iteration. A constant
+// operand gets its own copy there, as lowering makes one per use. Inner loops
+// go first, so a value they hoist can leave the enclosing loop too.
+
+static int clobbers(const IrIns* x) {
+    switch (x->op) {
+    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_ATOMIC: case IR_ASM: return 1;
+    default: return 0;
+    }
+}
+
+static void licm(IrFunc* fn) {
+    int n = fn->nblocks;
+    int* rpo, nrpo;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    uint8_t* body = xalloc((size_t)n, 1);
+    int* stack = xalloc((size_t)n, sizeof(int));
+    for (int r = nrpo - 1; r >= 0; r--) {
+        int h = rpo[r];
+        int li = natural_loop(fn, idom, h, body, stack);
+        if (li < 0) continue;
+        int pre = fn->blocks[h].preds[1 - li], quiet = 1;
+        for (int b = 0; b < n && quiet; b++)
+            for (int i = 0; body[b] && i < fn->blocks[b].nins && quiet; i++) quiet = !clobbers(&fn->ins[fn->blocks[b].ins[i]]);
+        for (int q = 0; q < nrpo; q++) { // dominators first: an operand hoists before its user
+            int b = rpo[q];
+            if (!body[b]) continue;
+            int k = 0;
+            for (int i = 0; i < fn->blocks[b].nins; i++) {
+                int v = fn->blocks[b].ins[i];
+                const IrIns* x = &fn->ins[v];
+                int ok = (is_pure(x) && x->op != IR_DIV && x->op != IR_REM) ||
+                         (x->op == IR_LOAD && !x->flags && quiet && fn->ins[x->args[0]].op == IR_SLOT);
+                for (int a = 0; a < x->nargs && ok; a++) {
+                    const IrIns* y = &fn->ins[x->args[a]];
+                    ok = y->op == IR_CONST || !body[y->block];
+                }
+                if (!ok) {
+                    fn->blocks[b].ins[k++] = v;
+                    continue;
+                }
+                for (int a = 0; a < fn->ins[v].nargs; a++) {
+                    int y = fn->ins[v].args[a];
+                    if (!body[fn->ins[y].block]) continue;
+                    int c = ins_before_term(fn, pre, IR_CONST, (IrType)fn->ins[y].type);
+                    fn->ins[c].imm = fn->ins[y].imm;
+                    fn->ins[v].args[a] = c;
+                }
+                IrBlock* pb = &fn->blocks[pre];
+                pb->ins = xgrow(pb->ins, &pb->cins, pb->nins + 1, sizeof(int));
+                pb->ins[pb->nins] = pb->ins[pb->nins - 1];
+                pb->ins[pb->nins - 1] = v;
+                pb->nins++;
+                fn->ins[v].block = pre;
+            }
+            fn->blocks[b].nins = k;
+        }
+    }
+    free(rpo); free(idom); free(body); free(stack);
+}
+
 // --- loop strength reduction ------------------------------------------------------------
 //
 // A pointer offset `base +/- i * S` of a basic induction variable i (a header
@@ -515,15 +618,6 @@ typedef struct { int base, op, phi, q; uint64_t scale; } LsrPtr;
 // repl covers the values from before the pass; a pointer phi is never replaced.
 static int lsr_chase(const int* repl, int nins, int v) {
     while (v < nins && repl[v] >= 0) v = repl[v];
-    return v;
-}
-
-// A new instruction in b, before its terminator.
-static int ins_before_term(IrFunc* fn, int b, IrOp op, IrType type) {
-    int v = ir_ins_new(fn, b, op, type);
-    IrBlock* bb = &fn->blocks[b];
-    bb->ins[bb->nins - 1] = bb->ins[bb->nins - 2];
-    bb->ins[bb->nins - 2] = v;
     return v;
 }
 
@@ -632,22 +726,9 @@ static void lsr(IrFunc* fn) {
     for (int r = 0; r < nrpo; r++) {
         int h = rpo[r];
         IrBlock* hb = &fn->blocks[h];
-        if (hb->npreds != 2) continue;
-        int li = -1;
-        for (int i = 0; i < 2; i++)
-            if (idom[hb->preds[i]] >= 0 && ir_dominates(idom, h, hb->preds[i])) li = li < 0 ? i : -2;
+        int li = natural_loop(fn, idom, h, body, stack);
         if (li < 0) continue;
         int pi = 1 - li, latch = hb->preds[li], pre = hb->preds[pi];
-        if (idom[pre] < 0 || ir_dominates(idom, h, pre)) continue;
-        memset(body, 0, (size_t)n); // the natural loop: every block reaching the latch without passing h
-        int sp = 0;
-        body[h] = 1;
-        if (!body[latch]) { body[latch] = 1; stack[sp++] = latch; }
-        while (sp) {
-            IrBlock* bb = &fn->blocks[stack[--sp]];
-            for (int i = 0; i < bb->npreds; i++)
-                if (!body[bb->preds[i]]) { body[bb->preds[i]] = 1; stack[sp++] = bb->preds[i]; }
-        }
         int nphi = 0; // the header's basic induction variables, before any pointer phi joins them
         for (int i = 0; i < hb->nins && fn->ins[hb->ins[i]].op == IR_PHI; i++) {
             int phi = hb->ins[i];
@@ -1523,9 +1604,11 @@ static int branch_operand(const IrFunc* fn, int j, int i, int a, uint64_t* out) 
 // edge goes straight to the successor it selects, s. j holds only phis,
 // constants, and the condition, a phi or an integer operation over its phis
 // and constants, nothing of which but the phis is used outside j, and j heads
-// no loop, so the edge enters no loop sideways. s has j as its only
-// predecessor and no phis; a phi of j used in s gets a phi in s joining it
-// with its operand from p.
+// no loop, so the edge enters no loop sideways. When s has j as its only
+// predecessor and no phis, a phi of j used in s gets a phi in s joining it
+// with its operand from p. Otherwise p must not already enter s, no phi of j
+// is used in s, and each phi of s takes from p what it takes from j, through
+// j's phi for p when that is the operand.
 static int thread_branches(Clean* c) {
     IrFunc* fn = c->fn;
     int changed = 0;
@@ -1572,16 +1655,28 @@ static int thread_branches(Clean* c) {
                 continue;
             int s = jb->succ[r ? 0 : 1];
             IrBlock* sb = &fn->blocks[s];
-            if (s == j || sb->npreds != 1 || (sb->nins && fn->ins[sb->ins[0]].op == IR_PHI)) continue;
+            if (s == j) continue;
+            int joins = sb->npreds != 1 || (sb->nins && fn->ins[sb->ins[0]].op == IR_PHI), dup = 0;
+            for (int q = 0; q < sb->npreds; q++) dup |= sb->preds[q] == p;
+            if (dup) continue;
             if (!idom) idom = ir_dominators(fn, &rpo, &nrpo);
             int t = jb->succ[r ? 1 : 0], fine = 1;
             if (t == s || fn->blocks[t].npreds != 1) t = -1;
-            for (int q = 0; q < k && fine; q++) fine = phi_uses_in(fn, idom, jb->ins[q], j, s, t);
+            for (int q = 0; q < k && fine; q++) fine = phi_uses_in(fn, idom, jb->ins[q], j, joins ? j : s, t);
             if (!fine) continue;
             int header = 0;
             for (int q = 0; q < jb->npreds && !header; q++) header = idom[jb->preds[q]] >= 0 && ir_dominates(idom, j, jb->preds[q]);
             if (header) break;
-            for (int q = 0; q < k; q++) { // s's phi for each of j's it uses
+            if (joins) { // each phi of s takes from p what it takes from j
+                int js = 0;
+                while (sb->preds[js] != j) js++;
+                for (int q = 0; q < sb->nins && fn->ins[sb->ins[q]].op == IR_PHI; q++) {
+                    int a = fn->ins[sb->ins[q]].args[js];
+                    if (fn->ins[a].op == IR_PHI && fn->ins[a].block == j) a = fn->ins[a].args[i];
+                    ir_arg_add(fn, sb->ins[q], a);
+                }
+            }
+            for (int q = 0; q < k && !joins; q++) { // s's phi for each of j's it uses
                 int v = fn->blocks[j].ins[q], w = -1;
                 for (int b = 0; b < fn->nblocks; b++)
                     for (int u = 0; u < fn->blocks[b].nins; u++) {
@@ -1708,6 +1803,7 @@ static void cleanup(IrFunc* fn) {
 void ir_optimize(IrFunc* fn) {
     sccp(fn);
     gvn(fn);
+    licm(fn);
     lsr(fn);
     cleanup(fn);
     if (vectorize(fn)) cleanup(fn); // over the merged blocks, which it then tidies

@@ -537,7 +537,7 @@ b82: ; preds b83
     %292 = shr u64 %290, %291
     %293 = const u64 1
     %294 = eq bool %292, %293
-    br %294, b88, b89
+    br %294, b84, b85
 b83: ; preds b42
     %296 = const i64 4
     %297 = call u64 make(%296)
@@ -546,60 +546,40 @@ b83: ; preds b42
     %300 = shr u64 %297, %299
     %301 = eq bool %300, %298
     br %301, b81, b82
-b84: ; preds b87, b91
+b84: ; preds b82, b85, b88, b89
     %303 = const i64 4
     ret %303
-b85: ; preds b91, b86
-    %305 = const i64 5
-    %306 = str ptr "big"
-    %307 = const u64 3
-    %308 = call i64 guard(%305, %306, %307)
-    %309 = const i64 5
-    %310 = ne bool %308, %309
-    br %310, b95, b96
-b86: ; preds b87, b89
-    %312 = const i64 1
-    %313 = call u64 make(%312)
-    %314 = const u64 32
-    %315 = shr u64 %313, %314
-    %316 = const u64 1
-    %317 = eq bool %315, %316
-    br %317, b85, b92
-b87: ; preds b88, b90
-    %319 = phi i64 [%323, b88], [%328, b90]
-    %320 = const i64 2
-    %321 = ne bool %319, %320
-    br %321, b84, b86
-b88: ; preds b82
-    %323 = const i64 1
-    jmp b87
-b89: ; preds b82
-    %325 = const u64 2
-    %326 = eq bool %292, %325
-    br %326, b86, b90
-b90: ; preds b89
+b85: ; preds b82
+    %305 = const u64 2
+    %306 = eq bool %292, %305
+    br %306, b86, b84
+b86: ; preds b85
+    %308 = const i64 1
+    %309 = call u64 make(%308)
+    %310 = const u64 32
+    %311 = shr u64 %309, %310
+    %312 = const u64 1
+    %313 = eq bool %311, %312
+    br %313, b87, b88
+b87: ; preds b86
+    %315 = const i64 5
+    %316 = str ptr "big"
+    %317 = const u64 3
+    %318 = call i64 guard(%315, %316, %317)
+    %319 = const i64 5
+    %320 = ne bool %318, %319
+    br %320, b90, b91
+b88: ; preds b86
+    %322 = const u64 2
+    %323 = eq bool %311, %322
+    br %323, b84, b89
+b89: ; preds b88
+    jmp b84
+b90: ; preds b87
+    %326 = const i64 5
+    ret %326
+b91: ; preds b87
     %328 = const i64 0
-    jmp b87
-b91: ; preds b93, b94
-    %330 = phi i64 [%337, b93], [%339, b94]
-    %331 = const i64 1
-    %332 = ne bool %330, %331
-    br %332, b84, b85
-b92: ; preds b86
-    %334 = const u64 2
-    %335 = eq bool %315, %334
-    br %335, b93, b94
-b93: ; preds b92
-    %337 = const i64 2
-    jmp b91
-b94: ; preds b92
-    %339 = const i64 0
-    jmp b91
-b95: ; preds b85
-    %341 = const i64 5
-    ret %341
-b96: ; preds b85
-    %343 = const i64 0
-    ret %343
+    ret %328
 }
 

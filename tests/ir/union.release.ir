@@ -628,10 +628,10 @@ b7: ; preds b6
     %86 = load f32 [%37 + 4]
     %87 = eq bool %85, %86
     jmp b3
-b8: ; preds b11, b17
+b8: ; preds b11, b16, b14
     %89 = const i64 2
     ret %89
-b9: ; preds b17
+b9: ; preds b16
     %91 = const u32 1
     %92 = call {1} make(%91)
     %93 = proj u64 %92, 0
@@ -644,7 +644,7 @@ b9: ; preds b17
     %100 = load i32 [%32]
     %101 = load i32 [%31]
     %102 = eq bool %100, %101
-    br %102, b27, b26
+    br %102, b26, b25
 b10: ; preds b11
     %104 = load u64 [%40]
     store [%34], %104
@@ -654,9 +654,9 @@ b10: ; preds b11
     %109 = load i32 [%34]
     %110 = load i32 [%33]
     %111 = eq bool %109, %110
-    br %111, b18, b17
-b11: ; preds b2, b13, b15, b16
-    %113 = phi bool [%66, b2], [%122, b13], [%129, b15], [%131, b16]
+    br %111, b17, b16
+b11: ; preds b2, b13, b15
+    %113 = phi bool [%66, b2], [%122, b13], [%129, b15]
     br %113, b8, b10
 b12: ; preds b2
     %115 = const i32 2
@@ -672,709 +672,684 @@ b13: ; preds b12
 b14: ; preds b12
     %124 = const i32 3
     %125 = eq bool %67, %124
-    br %125, b15, b16
+    br %125, b15, b8
 b15: ; preds b14
     %127 = load f32 [%36 + 4]
     %128 = load f32 [%35 + 4]
     %129 = eq bool %127, %128
     jmp b11
-b16: ; preds b14
-    %131 = const bool true
-    jmp b11
-b17: ; preds b10, b19, b21, b22
-    %133 = phi bool [%108, b10], [%143, b19], [%150, b21], [%152, b22]
-    %134 = not bool %133
-    br %134, b9, b8
-b18: ; preds b10
-    %136 = const i32 2
-    %137 = eq bool %109, %136
-    br %137, b19, b20
-b19: ; preds b18
-    %139 = const bool true
-    %140 = load u32 [%34 + 4]
-    %141 = load u32 [%33 + 4]
-    %142 = eq bool %140, %141
-    %143 = and bool %139, %142
-    jmp b17
-b20: ; preds b18
-    %145 = const i32 3
-    %146 = eq bool %109, %145
-    br %146, b21, b22
-b21: ; preds b20
-    %148 = load f32 [%34 + 4]
-    %149 = load f32 [%33 + 4]
-    %150 = eq bool %148, %149
-    jmp b17
-b22: ; preds b20
-    %152 = const bool true
-    jmp b17
-b23: ; preds b26, b31
-    %154 = const i64 3
-    ret %154
-b24: ; preds b31
-    %156 = const i64 1
-    %157 = call {2} wide(%156)
-    %158 = proj u64 %157, 0
-    %159 = proj u64 %157, 1
-    store [%28], %158
-    store [%28 + 8], %159
-    %162 = const f64 2.5
-    store [%27 + 8], %162
-    %164 = const i32 1
-    store [%27], %164
-    %166 = const bool false
-    %167 = load i32 [%28]
-    %168 = load i32 [%27]
-    %169 = eq bool %167, %168
-    br %169, b41, b40
-b25: ; preds b26, b29
-    %171 = const u32 1
-    %172 = call {1} make(%171)
-    %173 = proj u64 %172, 0
-    store [%30], %173
-    %175 = const f32 2.5
-    store [%29 + 4], %175
-    %177 = const i32 3
-    store [%29], %177
-    %179 = const bool false
-    %180 = load i32 [%30]
-    %181 = load i32 [%29]
-    %182 = eq bool %180, %181
-    br %182, b32, b31
-b26: ; preds b9, b28, b30
-    %184 = phi bool [%99, b9], [%193, b28], [%200, b30]
-    br %184, b25, b23
-b27: ; preds b9
-    %186 = const i32 2
-    %187 = eq bool %100, %186
-    br %187, b28, b29
-b28: ; preds b27
-    %189 = const bool true
-    %190 = load u32 [%32 + 4]
-    %191 = load u32 [%31 + 4]
-    %192 = eq bool %190, %191
-    %193 = and bool %189, %192
-    jmp b26
-b29: ; preds b27
-    %195 = const i32 3
-    %196 = eq bool %100, %195
-    br %196, b30, b25
-b30: ; preds b29
-    %198 = load f32 [%32 + 4]
-    %199 = load f32 [%31 + 4]
-    %200 = eq bool %198, %199
-    jmp b26
-b31: ; preds b25, b33, b35, b36
-    %202 = phi bool [%179, b25], [%211, b33], [%218, b35], [%220, b36]
-    br %202, b23, b24
-b32: ; preds b25
-    %204 = const i32 2
-    %205 = eq bool %180, %204
-    br %205, b33, b34
-b33: ; preds b32
-    %207 = const bool true
-    %208 = load u32 [%30 + 4]
-    %209 = load u32 [%29 + 4]
-    %210 = eq bool %208, %209
-    %211 = and bool %207, %210
-    jmp b31
-b34: ; preds b32
-    %213 = const i32 3
-    %214 = eq bool %180, %213
-    br %214, b35, b36
-b35: ; preds b34
-    %216 = load f32 [%30 + 4]
-    %217 = load f32 [%29 + 4]
-    %218 = eq bool %216, %217
-    jmp b31
-b36: ; preds b34
-    %220 = const bool true
-    jmp b31
-b37: ; preds b40, b45
-    %222 = const i64 4
-    ret %222
-b38: ; preds b45
-    %224 = const i64 0
-    %225 = call {2} wide(%224)
-    %226 = proj u64 %225, 0
-    %227 = proj u64 %225, 1
-    store [%24], %226
-    store [%24 + 8], %227
-    %230 = const i64 1
-    %231 = call {2} wide(%230)
-    %232 = proj u64 %231, 0
-    %233 = proj u64 %231, 1
-    store [%23], %232
-    store [%23 + 8], %233
-    %236 = const bool false
-    %237 = load i32 [%24]
-    %238 = load i32 [%23]
-    %239 = eq bool %237, %238
-    br %239, b55, b54
-b39: ; preds b40, b43
-    %241 = const i64 1
-    %242 = call {2} wide(%241)
-    %243 = proj u64 %242, 0
-    %244 = proj u64 %242, 1
-    store [%26], %243
-    store [%26 + 8], %244
-    %247 = const i64 2
-    %248 = call {2} wide(%247)
-    %249 = proj u64 %248, 0
-    %250 = proj u64 %248, 1
-    store [%25], %249
-    store [%25 + 8], %250
-    %253 = const bool false
-    %254 = load i32 [%26]
-    %255 = load i32 [%25]
-    %256 = eq bool %254, %255
-    br %256, b46, b45
-b40: ; preds b24, b42, b44
-    %258 = phi bool [%166, b24], [%265, b42], [%274, b44]
-    br %258, b39, b37
-b41: ; preds b24
-    %260 = const i32 1
-    %261 = eq bool %167, %260
-    br %261, b42, b43
+b16: ; preds b10, b18, b20, b21
+    %131 = phi bool [%108, b10], [%141, b18], [%148, b20], [%150, b21]
+    %132 = not bool %131
+    br %132, b9, b8
+b17: ; preds b10
+    %134 = const i32 2
+    %135 = eq bool %109, %134
+    br %135, b18, b19
+b18: ; preds b17
+    %137 = const bool true
+    %138 = load u32 [%34 + 4]
+    %139 = load u32 [%33 + 4]
+    %140 = eq bool %138, %139
+    %141 = and bool %137, %140
+    jmp b16
+b19: ; preds b17
+    %143 = const i32 3
+    %144 = eq bool %109, %143
+    br %144, b20, b21
+b20: ; preds b19
+    %146 = load f32 [%34 + 4]
+    %147 = load f32 [%33 + 4]
+    %148 = eq bool %146, %147
+    jmp b16
+b21: ; preds b19
+    %150 = const bool true
+    jmp b16
+b22: ; preds b25, b30, b33
+    %152 = const i64 3
+    ret %152
+b23: ; preds b30
+    %154 = const i64 1
+    %155 = call {2} wide(%154)
+    %156 = proj u64 %155, 0
+    %157 = proj u64 %155, 1
+    store [%28], %156
+    store [%28 + 8], %157
+    %160 = const f64 2.5
+    store [%27 + 8], %160
+    %162 = const i32 1
+    store [%27], %162
+    %164 = const bool false
+    %165 = load i32 [%28]
+    %166 = load i32 [%27]
+    %167 = eq bool %165, %166
+    br %167, b39, b38
+b24: ; preds b25, b28
+    %169 = const u32 1
+    %170 = call {1} make(%169)
+    %171 = proj u64 %170, 0
+    store [%30], %171
+    %173 = const f32 2.5
+    store [%29 + 4], %173
+    %175 = const i32 3
+    store [%29], %175
+    %177 = const bool false
+    %178 = load i32 [%30]
+    %179 = load i32 [%29]
+    %180 = eq bool %178, %179
+    br %180, b31, b30
+b25: ; preds b9, b27, b29
+    %182 = phi bool [%99, b9], [%191, b27], [%198, b29]
+    br %182, b24, b22
+b26: ; preds b9
+    %184 = const i32 2
+    %185 = eq bool %100, %184
+    br %185, b27, b28
+b27: ; preds b26
+    %187 = const bool true
+    %188 = load u32 [%32 + 4]
+    %189 = load u32 [%31 + 4]
+    %190 = eq bool %188, %189
+    %191 = and bool %187, %190
+    jmp b25
+b28: ; preds b26
+    %193 = const i32 3
+    %194 = eq bool %100, %193
+    br %194, b29, b24
+b29: ; preds b28
+    %196 = load f32 [%32 + 4]
+    %197 = load f32 [%31 + 4]
+    %198 = eq bool %196, %197
+    jmp b25
+b30: ; preds b24, b32, b34
+    %200 = phi bool [%177, b24], [%209, b32], [%216, b34]
+    br %200, b22, b23
+b31: ; preds b24
+    %202 = const i32 2
+    %203 = eq bool %178, %202
+    br %203, b32, b33
+b32: ; preds b31
+    %205 = const bool true
+    %206 = load u32 [%30 + 4]
+    %207 = load u32 [%29 + 4]
+    %208 = eq bool %206, %207
+    %209 = and bool %205, %208
+    jmp b30
+b33: ; preds b31
+    %211 = const i32 3
+    %212 = eq bool %178, %211
+    br %212, b34, b22
+b34: ; preds b33
+    %214 = load f32 [%30 + 4]
+    %215 = load f32 [%29 + 4]
+    %216 = eq bool %214, %215
+    jmp b30
+b35: ; preds b38, b43, b46
+    %218 = const i64 4
+    ret %218
+b36: ; preds b43
+    %220 = const i64 0
+    %221 = call {2} wide(%220)
+    %222 = proj u64 %221, 0
+    %223 = proj u64 %221, 1
+    store [%24], %222
+    store [%24 + 8], %223
+    %226 = const i64 1
+    %227 = call {2} wide(%226)
+    %228 = proj u64 %227, 0
+    %229 = proj u64 %227, 1
+    store [%23], %228
+    store [%23 + 8], %229
+    %232 = const bool false
+    %233 = load i32 [%24]
+    %234 = load i32 [%23]
+    %235 = eq bool %233, %234
+    br %235, b52, b51
+b37: ; preds b38, b41
+    %237 = const i64 1
+    %238 = call {2} wide(%237)
+    %239 = proj u64 %238, 0
+    %240 = proj u64 %238, 1
+    store [%26], %239
+    store [%26 + 8], %240
+    %243 = const i64 2
+    %244 = call {2} wide(%243)
+    %245 = proj u64 %244, 0
+    %246 = proj u64 %244, 1
+    store [%25], %245
+    store [%25 + 8], %246
+    %249 = const bool false
+    %250 = load i32 [%26]
+    %251 = load i32 [%25]
+    %252 = eq bool %250, %251
+    br %252, b44, b43
+b38: ; preds b23, b40, b42
+    %254 = phi bool [%164, b23], [%261, b40], [%270, b42]
+    br %254, b37, b35
+b39: ; preds b23
+    %256 = const i32 1
+    %257 = eq bool %165, %256
+    br %257, b40, b41
+b40: ; preds b39
+    %259 = load f64 [%28 + 8]
+    %260 = load f64 [%27 + 8]
+    %261 = eq bool %259, %260
+    jmp b38
+b41: ; preds b39
+    %263 = const i32 2
+    %264 = eq bool %165, %263
+    br %264, b42, b37
 b42: ; preds b41
-    %263 = load f64 [%28 + 8]
-    %264 = load f64 [%27 + 8]
-    %265 = eq bool %263, %264
-    jmp b40
-b43: ; preds b41
-    %267 = const i32 2
-    %268 = eq bool %167, %267
-    br %268, b44, b39
-b44: ; preds b43
-    %270 = const bool true
-    %271 = load u64 [%28 + 8]
-    %272 = load u64 [%27 + 8]
-    %273 = eq bool %271, %272
-    %274 = and bool %270, %273
-    jmp b40
-b45: ; preds b39, b47, b49, b50
-    %276 = phi bool [%253, b39], [%283, b47], [%292, b49], [%294, b50]
-    br %276, b37, b38
-b46: ; preds b39
-    %278 = const i32 1
-    %279 = eq bool %254, %278
-    br %279, b47, b48
+    %266 = const bool true
+    %267 = load u64 [%28 + 8]
+    %268 = load u64 [%27 + 8]
+    %269 = eq bool %267, %268
+    %270 = and bool %266, %269
+    jmp b38
+b43: ; preds b37, b45, b47
+    %272 = phi bool [%249, b37], [%279, b45], [%288, b47]
+    br %272, b35, b36
+b44: ; preds b37
+    %274 = const i32 1
+    %275 = eq bool %250, %274
+    br %275, b45, b46
+b45: ; preds b44
+    %277 = load f64 [%26 + 8]
+    %278 = load f64 [%25 + 8]
+    %279 = eq bool %277, %278
+    jmp b43
+b46: ; preds b44
+    %281 = const i32 2
+    %282 = eq bool %250, %281
+    br %282, b47, b35
 b47: ; preds b46
-    %281 = load f64 [%26 + 8]
-    %282 = load f64 [%25 + 8]
-    %283 = eq bool %281, %282
-    jmp b45
-b48: ; preds b46
-    %285 = const i32 2
-    %286 = eq bool %254, %285
-    br %286, b49, b50
-b49: ; preds b48
-    %288 = const bool true
-    %289 = load u64 [%26 + 8]
-    %290 = load u64 [%25 + 8]
-    %291 = eq bool %289, %290
-    %292 = and bool %288, %291
-    jmp b45
-b50: ; preds b48
-    %294 = const bool true
-    jmp b45
-b51: ; preds b54, b60
-    %296 = const i64 5
-    ret %296
-b52: ; preds b60, b63
-    %298 = const i32 1
-    store [%19], %298
-    %300 = load u32 [%19]
-    store [%20], %300
-    %302 = const i32 0
-    store [%17], %302
-    %304 = load u32 [%17]
-    store [%18], %304
-    %306 = const bool false
-    %307 = load i32 [%20]
-    %308 = load i32 [%18]
-    %309 = eq bool %307, %308
-    br %309, b69, b68
-b53: ; preds b54
-    %311 = const i64 0
-    %312 = call {2} wide(%311)
-    %313 = proj u64 %312, 0
-    %314 = proj u64 %312, 1
-    store [%22], %313
-    store [%22 + 8], %314
-    %317 = const i64 0
-    %318 = call {2} wide(%317)
-    %319 = proj u64 %318, 0
-    %320 = proj u64 %318, 1
-    store [%21], %319
-    store [%21 + 8], %320
-    %323 = const bool false
-    %324 = load i32 [%22]
-    %325 = load i32 [%21]
-    %326 = eq bool %324, %325
-    br %326, b61, b60
-b54: ; preds b38, b56, b58, b59
-    %328 = phi bool [%236, b38], [%335, b56], [%344, b58], [%346, b59]
-    br %328, b51, b53
-b55: ; preds b38
-    %330 = const i32 1
-    %331 = eq bool %237, %330
-    br %331, b56, b57
-b56: ; preds b55
-    %333 = load f64 [%24 + 8]
-    %334 = load f64 [%23 + 8]
-    %335 = eq bool %333, %334
-    jmp b54
-b57: ; preds b55
-    %337 = const i32 2
-    %338 = eq bool %237, %337
-    br %338, b58, b59
+    %284 = const bool true
+    %285 = load u64 [%26 + 8]
+    %286 = load u64 [%25 + 8]
+    %287 = eq bool %285, %286
+    %288 = and bool %284, %287
+    jmp b43
+b48: ; preds b51, b56, b54
+    %290 = const i64 5
+    ret %290
+b49: ; preds b56, b59
+    %292 = const i32 1
+    store [%19], %292
+    %294 = load u32 [%19]
+    store [%20], %294
+    %296 = const i32 0
+    store [%17], %296
+    %298 = load u32 [%17]
+    store [%18], %298
+    %300 = load i32 [%20]
+    %301 = load i32 [%18]
+    %302 = eq bool %300, %301
+    br %302, b61, b63
+b50: ; preds b51
+    %304 = const i64 0
+    %305 = call {2} wide(%304)
+    %306 = proj u64 %305, 0
+    %307 = proj u64 %305, 1
+    store [%22], %306
+    store [%22 + 8], %307
+    %310 = const i64 0
+    %311 = call {2} wide(%310)
+    %312 = proj u64 %311, 0
+    %313 = proj u64 %311, 1
+    store [%21], %312
+    store [%21 + 8], %313
+    %316 = const bool false
+    %317 = load i32 [%22]
+    %318 = load i32 [%21]
+    %319 = eq bool %317, %318
+    br %319, b57, b56
+b51: ; preds b36, b53, b55
+    %321 = phi bool [%232, b36], [%328, b53], [%337, b55]
+    br %321, b48, b50
+b52: ; preds b36
+    %323 = const i32 1
+    %324 = eq bool %233, %323
+    br %324, b53, b54
+b53: ; preds b52
+    %326 = load f64 [%24 + 8]
+    %327 = load f64 [%23 + 8]
+    %328 = eq bool %326, %327
+    jmp b51
+b54: ; preds b52
+    %330 = const i32 2
+    %331 = eq bool %233, %330
+    br %331, b55, b48
+b55: ; preds b54
+    %333 = const bool true
+    %334 = load u64 [%24 + 8]
+    %335 = load u64 [%23 + 8]
+    %336 = eq bool %334, %335
+    %337 = and bool %333, %336
+    jmp b51
+b56: ; preds b50, b58, b60
+    %339 = phi bool [%316, b50], [%346, b58], [%355, b60]
+    br %339, b49, b48
+b57: ; preds b50
+    %341 = const i32 1
+    %342 = eq bool %317, %341
+    br %342, b58, b59
 b58: ; preds b57
-    %340 = const bool true
-    %341 = load u64 [%24 + 8]
-    %342 = load u64 [%23 + 8]
-    %343 = eq bool %341, %342
-    %344 = and bool %340, %343
-    jmp b54
+    %344 = load f64 [%22 + 8]
+    %345 = load f64 [%21 + 8]
+    %346 = eq bool %344, %345
+    jmp b56
 b59: ; preds b57
-    %346 = const bool true
-    jmp b54
-b60: ; preds b53, b62, b64
-    %348 = phi bool [%323, b53], [%355, b62], [%364, b64]
-    br %348, b52, b51
-b61: ; preds b53
-    %350 = const i32 1
-    %351 = eq bool %324, %350
-    br %351, b62, b63
-b62: ; preds b61
-    %353 = load f64 [%22 + 8]
-    %354 = load f64 [%21 + 8]
-    %355 = eq bool %353, %354
-    jmp b60
-b63: ; preds b61
-    %357 = const i32 2
-    %358 = eq bool %324, %357
-    br %358, b64, b52
-b64: ; preds b63
-    %360 = const bool true
-    %361 = load u64 [%22 + 8]
-    %362 = load u64 [%21 + 8]
-    %363 = eq bool %361, %362
-    %364 = and bool %360, %363
-    jmp b60
-b65: ; preds b68, b70
-    %366 = const i64 6
-    ret %366
-b66: ; preds b70
-    %368 = const i32 2
-    %369 = call {1} pair(%368)
-    %370 = proj u64 %369, 0
-    store [%13], %370
-    %372 = const i32 2
-    store [%12 + 4], %372
-    %374 = const i32 1
-    store [%12], %374
-    %376 = const bool false
-    %377 = load i32 [%13]
-    %378 = load i32 [%12]
-    %379 = eq bool %377, %378
-    br %379, b75, b74
+    %348 = const i32 2
+    %349 = eq bool %317, %348
+    br %349, b60, b49
+b60: ; preds b59
+    %351 = const bool true
+    %352 = load u64 [%22 + 8]
+    %353 = load u64 [%21 + 8]
+    %354 = eq bool %352, %353
+    %355 = and bool %351, %354
+    jmp b56
+b61: ; preds b64, b49
+    %357 = const i64 6
+    ret %357
+b62: ; preds b64
+    %359 = const i32 2
+    %360 = call {1} pair(%359)
+    %361 = proj u64 %360, 0
+    store [%13], %361
+    %363 = const i32 2
+    store [%12 + 4], %363
+    %365 = const i32 1
+    store [%12], %365
+    %367 = const bool false
+    %368 = load i32 [%13]
+    %369 = load i32 [%12]
+    %370 = eq bool %368, %369
+    br %370, b69, b68
+b63: ; preds b49
+    %372 = const i32 0
+    store [%15], %372
+    %374 = load u32 [%15]
+    store [%16], %374
+    %376 = const i32 0
+    store [%14], %376
+    %378 = const bool false
+    %379 = load i32 [%16]
+    %380 = load i32 [%14]
+    %381 = eq bool %379, %380
+    br %381, b65, b64
+b64: ; preds b63, b65
+    %383 = phi bool [%378, b63], [%386, b65]
+    %384 = not bool %383
+    br %384, b61, b62
+b65: ; preds b63
+    %386 = const bool true
+    jmp b64
+b66: ; preds b68
+    %388 = const i64 7
+    ret %388
 b67: ; preds b68
-    %381 = const i32 0
-    store [%15], %381
-    %383 = load u32 [%15]
-    store [%16], %383
-    %385 = const i32 0
-    store [%14], %385
-    %387 = const bool false
-    %388 = load i32 [%16]
-    %389 = load i32 [%14]
-    %390 = eq bool %388, %389
-    br %390, b71, b70
-b68: ; preds b52, b69
-    %392 = phi bool [%306, b52], [%394, b69]
-    br %392, b65, b67
-b69: ; preds b52
-    %394 = const bool true
+    %390 = const i32 2
+    call.mem blob(%390, %11)
+    %392 = const i32 1
+    call.mem blob(%392, %10)
+    %394 = const i32 0
+    call.mem blob(%394, %9)
+    %396 = const i32 3
+    %397 = call {2} outer(%396)
+    %398 = proj u64 %397, 0
+    %399 = proj u32 %397, 1
+    store [%8], %398
+    store [%8 + 8], %399
+    %402 = const u32 3
+    store [%7 + 8], %402
+    %404 = const i32 2
+    store [%7 + 4], %404
+    %406 = const i32 1
+    store [%7], %406
+    %408 = const bool false
+    %409 = load i32 [%8]
+    %410 = load i32 [%7]
+    %411 = eq bool %409, %410
+    br %411, b76, b75
+b68: ; preds b62, b70, b71
+    %413 = phi bool [%367, b62], [%423, b70], [%425, b71]
+    %414 = not bool %413
+    br %414, b66, b67
+b69: ; preds b62
+    %416 = const i32 1
+    %417 = eq bool %368, %416
+    br %417, b70, b71
+b70: ; preds b69
+    %419 = const bool true
+    %420 = load u32 [%13 + 4]
+    %421 = load u32 [%12 + 4]
+    %422 = eq bool %420, %421
+    %423 = and bool %419, %422
     jmp b68
-b70: ; preds b67, b71
-    %396 = phi bool [%387, b67], [%399, b71]
-    %397 = not bool %396
-    br %397, b65, b66
-b71: ; preds b67
-    %399 = const bool true
-    jmp b70
-b72: ; preds b74
-    %401 = const i64 7
-    ret %401
-b73: ; preds b74
-    %403 = const i32 2
-    call.mem blob(%403, %11)
-    %405 = const i32 1
-    call.mem blob(%405, %10)
-    %407 = const i32 0
-    call.mem blob(%407, %9)
-    %409 = const i32 3
-    %410 = call {2} outer(%409)
-    %411 = proj u64 %410, 0
-    %412 = proj u32 %410, 1
-    store [%8], %411
-    store [%8 + 8], %412
-    %415 = const u32 3
-    store [%7 + 8], %415
-    %417 = const i32 2
-    store [%7 + 4], %417
-    %419 = const i32 1
-    store [%7], %419
-    %421 = const bool false
-    %422 = load i32 [%8]
-    %423 = load i32 [%7]
-    %424 = eq bool %422, %423
-    br %424, b82, b81
-b74: ; preds b66, b76, b77
-    %426 = phi bool [%376, b66], [%436, b76], [%438, b77]
-    %427 = not bool %426
-    br %427, b72, b73
-b75: ; preds b66
+b71: ; preds b69
+    %425 = const bool true
+    jmp b68
+b72: ; preds b75, b86, b89
+    %427 = const i64 11
+    ret %427
+b73: ; preds b86
     %429 = const i32 1
-    %430 = eq bool %377, %429
-    br %430, b76, b77
-b76: ; preds b75
-    %432 = const bool true
-    %433 = load u32 [%13 + 4]
-    %434 = load u32 [%12 + 4]
-    %435 = eq bool %433, %434
-    %436 = and bool %432, %435
-    jmp b74
-b77: ; preds b75
-    %438 = const bool true
-    jmp b74
-b78: ; preds b81, b92
-    %440 = const i64 11
-    ret %440
-b79: ; preds b92
-    %442 = const i32 1
-    %443 = call {2} outer(%442)
-    %444 = proj u64 %443, 0
-    %445 = proj u32 %443, 1
-    store [%4], %444
-    store [%4 + 8], %445
-    %448 = const i32 0
-    %449 = call {2} outer(%448)
-    %450 = proj u64 %449, 0
-    %451 = proj u32 %449, 1
-    store [%3], %450
-    store [%3 + 8], %451
-    %454 = const bool false
-    %455 = load i32 [%4]
-    %456 = load i32 [%3]
-    %457 = eq bool %455, %456
-    br %457, b108, b107
-b80: ; preds b81, b84
-    %459 = const i32 3
-    %460 = call {2} outer(%459)
-    %461 = proj u64 %460, 0
-    %462 = proj u32 %460, 1
-    store [%6], %461
-    store [%6 + 8], %462
-    %465 = const i32 4
-    %466 = call {2} outer(%465)
-    %467 = proj u64 %466, 0
-    %468 = proj u32 %466, 1
-    store [%5], %467
-    store [%5 + 8], %468
-    %471 = const bool false
-    %472 = load i32 [%6]
-    %473 = load i32 [%5]
-    %474 = eq bool %472, %473
-    br %474, b93, b92
-b81: ; preds b73, b85, b91
-    %476 = phi bool [%421, b73], [%493, b85], [%517, b91]
-    br %476, b80, b78
-b82: ; preds b73
-    %478 = const i32 1
-    %479 = eq bool %422, %478
-    br %479, b83, b84
-b83: ; preds b82
-    %481 = const u64 4
-    %482 = padd ptr %8, %481 * 1
-    %483 = const u64 4
-    %484 = padd ptr %7, %483 * 1
-    %485 = const bool false
-    %486 = load i32 [%482]
-    %487 = load i32 [%484]
+    %430 = call {2} outer(%429)
+    %431 = proj u64 %430, 0
+    %432 = proj u32 %430, 1
+    store [%4], %431
+    store [%4 + 8], %432
+    %435 = const i32 0
+    %436 = call {2} outer(%435)
+    %437 = proj u64 %436, 0
+    %438 = proj u32 %436, 1
+    store [%3], %437
+    store [%3 + 8], %438
+    %441 = const bool false
+    %442 = load i32 [%4]
+    %443 = load i32 [%3]
+    %444 = eq bool %442, %443
+    br %444, b101, b100
+b74: ; preds b75, b78
+    %446 = const i32 3
+    %447 = call {2} outer(%446)
+    %448 = proj u64 %447, 0
+    %449 = proj u32 %447, 1
+    store [%6], %448
+    store [%6 + 8], %449
+    %452 = const i32 4
+    %453 = call {2} outer(%452)
+    %454 = proj u64 %453, 0
+    %455 = proj u32 %453, 1
+    store [%5], %454
+    store [%5 + 8], %455
+    %458 = const bool false
+    %459 = load i32 [%6]
+    %460 = load i32 [%5]
+    %461 = eq bool %459, %460
+    br %461, b87, b86
+b75: ; preds b67, b79, b85
+    %463 = phi bool [%408, b67], [%480, b79], [%504, b85]
+    br %463, b74, b72
+b76: ; preds b67
+    %465 = const i32 1
+    %466 = eq bool %409, %465
+    br %466, b77, b78
+b77: ; preds b76
+    %468 = const u64 4
+    %469 = padd ptr %8, %468 * 1
+    %470 = const u64 4
+    %471 = padd ptr %7, %470 * 1
+    %472 = const bool false
+    %473 = load i32 [%469]
+    %474 = load i32 [%471]
+    %475 = eq bool %473, %474
+    br %475, b80, b79
+b78: ; preds b76
+    %477 = const i32 2
+    %478 = eq bool %409, %477
+    br %478, b85, b74
+b79: ; preds b77, b81, b83, b84
+    %480 = phi bool [%472, b77], [%489, b81], [%496, b83], [%498, b84]
+    jmp b75
+b80: ; preds b77
+    %482 = const i32 2
+    %483 = eq bool %473, %482
+    br %483, b81, b82
+b81: ; preds b80
+    %485 = const bool true
+    %486 = load u32 [%469 + 4]
+    %487 = load u32 [%471 + 4]
     %488 = eq bool %486, %487
-    br %488, b86, b85
+    %489 = and bool %485, %488
+    jmp b79
+b82: ; preds b80
+    %491 = const i32 3
+    %492 = eq bool %473, %491
+    br %492, b83, b84
+b83: ; preds b82
+    %494 = load f32 [%469 + 4]
+    %495 = load f32 [%471 + 4]
+    %496 = eq bool %494, %495
+    jmp b79
 b84: ; preds b82
-    %490 = const i32 2
-    %491 = eq bool %422, %490
-    br %491, b91, b80
-b85: ; preds b83, b87, b89, b90
-    %493 = phi bool [%485, b83], [%502, b87], [%509, b89], [%511, b90]
-    jmp b81
-b86: ; preds b83
-    %495 = const i32 2
-    %496 = eq bool %486, %495
-    br %496, b87, b88
-b87: ; preds b86
     %498 = const bool true
-    %499 = load u32 [%482 + 4]
-    %500 = load u32 [%484 + 4]
-    %501 = eq bool %499, %500
-    %502 = and bool %498, %501
-    jmp b85
-b88: ; preds b86
-    %504 = const i32 3
-    %505 = eq bool %486, %504
-    br %505, b89, b90
-b89: ; preds b88
-    %507 = load f32 [%482 + 4]
-    %508 = load f32 [%484 + 4]
-    %509 = eq bool %507, %508
-    jmp b85
-b90: ; preds b88
-    %511 = const bool true
-    jmp b85
-b91: ; preds b84
-    %513 = const bool true
-    %514 = load u32 [%8 + 4]
-    %515 = load u32 [%7 + 4]
-    %516 = eq bool %514, %515
-    %517 = and bool %513, %516
-    jmp b81
-b92: ; preds b80, b96, b102, b103
-    %519 = phi bool [%471, b80], [%536, b96], [%560, b102], [%562, b103]
-    br %519, b78, b79
-b93: ; preds b80
-    %521 = const i32 1
-    %522 = eq bool %472, %521
-    br %522, b94, b95
-b94: ; preds b93
-    %524 = const u64 4
-    %525 = padd ptr %6, %524 * 1
-    %526 = const u64 4
-    %527 = padd ptr %5, %526 * 1
-    %528 = const bool false
-    %529 = load i32 [%525]
-    %530 = load i32 [%527]
+    jmp b79
+b85: ; preds b78
+    %500 = const bool true
+    %501 = load u32 [%8 + 4]
+    %502 = load u32 [%7 + 4]
+    %503 = eq bool %501, %502
+    %504 = and bool %500, %503
+    jmp b75
+b86: ; preds b74, b90, b96
+    %506 = phi bool [%458, b74], [%523, b90], [%547, b96]
+    br %506, b72, b73
+b87: ; preds b74
+    %508 = const i32 1
+    %509 = eq bool %459, %508
+    br %509, b88, b89
+b88: ; preds b87
+    %511 = const u64 4
+    %512 = padd ptr %6, %511 * 1
+    %513 = const u64 4
+    %514 = padd ptr %5, %513 * 1
+    %515 = const bool false
+    %516 = load i32 [%512]
+    %517 = load i32 [%514]
+    %518 = eq bool %516, %517
+    br %518, b91, b90
+b89: ; preds b87
+    %520 = const i32 2
+    %521 = eq bool %459, %520
+    br %521, b96, b72
+b90: ; preds b88, b92, b94, b95
+    %523 = phi bool [%515, b88], [%532, b92], [%539, b94], [%541, b95]
+    jmp b86
+b91: ; preds b88
+    %525 = const i32 2
+    %526 = eq bool %516, %525
+    br %526, b92, b93
+b92: ; preds b91
+    %528 = const bool true
+    %529 = load u32 [%512 + 4]
+    %530 = load u32 [%514 + 4]
     %531 = eq bool %529, %530
-    br %531, b97, b96
+    %532 = and bool %528, %531
+    jmp b90
+b93: ; preds b91
+    %534 = const i32 3
+    %535 = eq bool %516, %534
+    br %535, b94, b95
+b94: ; preds b93
+    %537 = load f32 [%512 + 4]
+    %538 = load f32 [%514 + 4]
+    %539 = eq bool %537, %538
+    jmp b90
 b95: ; preds b93
-    %533 = const i32 2
-    %534 = eq bool %472, %533
-    br %534, b102, b103
-b96: ; preds b94, b98, b100, b101
-    %536 = phi bool [%528, b94], [%545, b98], [%552, b100], [%554, b101]
-    jmp b92
-b97: ; preds b94
-    %538 = const i32 2
-    %539 = eq bool %529, %538
-    br %539, b98, b99
-b98: ; preds b97
     %541 = const bool true
-    %542 = load u32 [%525 + 4]
-    %543 = load u32 [%527 + 4]
-    %544 = eq bool %542, %543
-    %545 = and bool %541, %544
-    jmp b96
-b99: ; preds b97
-    %547 = const i32 3
-    %548 = eq bool %529, %547
-    br %548, b100, b101
-b100: ; preds b99
-    %550 = load f32 [%525 + 4]
-    %551 = load f32 [%527 + 4]
-    %552 = eq bool %550, %551
-    jmp b96
-b101: ; preds b99
-    %554 = const bool true
-    jmp b96
-b102: ; preds b95
-    %556 = const bool true
-    %557 = load u32 [%6 + 4]
-    %558 = load u32 [%5 + 4]
-    %559 = eq bool %557, %558
-    %560 = and bool %556, %559
-    jmp b92
-b103: ; preds b95
-    %562 = const bool true
-    jmp b92
-b104: ; preds b107, b119
-    %564 = const i64 12
-    ret %564
-b105: ; preds b119, b122
-    %566 = call bool local()
-    br %566, b131, b130
-b106: ; preds b107
-    %568 = const i32 1
-    %569 = call {2} outer(%568)
-    %570 = proj u64 %569, 0
-    %571 = proj u32 %569, 1
-    store [%2], %570
-    store [%2 + 8], %571
-    %574 = const i32 1
-    store [%1 + 4], %574
-    %576 = const i32 2
-    store [%1], %576
-    %578 = const bool false
-    %579 = load i32 [%2]
-    %580 = load i32 [%1]
-    %581 = eq bool %579, %580
-    br %581, b120, b119
-b107: ; preds b79, b111, b117, b118
-    %583 = phi bool [%454, b79], [%600, b111], [%624, b117], [%626, b118]
-    br %583, b104, b106
-b108: ; preds b79
-    %585 = const i32 1
-    %586 = eq bool %455, %585
-    br %586, b109, b110
-b109: ; preds b108
-    %588 = const u64 4
-    %589 = padd ptr %4, %588 * 1
-    %590 = const u64 4
-    %591 = padd ptr %3, %590 * 1
-    %592 = const bool false
-    %593 = load i32 [%589]
-    %594 = load i32 [%591]
-    %595 = eq bool %593, %594
-    br %595, b112, b111
-b110: ; preds b108
-    %597 = const i32 2
-    %598 = eq bool %455, %597
-    br %598, b117, b118
-b111: ; preds b109, b113, b115, b116
-    %600 = phi bool [%592, b109], [%609, b113], [%616, b115], [%618, b116]
-    jmp b107
-b112: ; preds b109
-    %602 = const i32 2
-    %603 = eq bool %593, %602
-    br %603, b113, b114
-b113: ; preds b112
+    jmp b90
+b96: ; preds b89
+    %543 = const bool true
+    %544 = load u32 [%6 + 4]
+    %545 = load u32 [%5 + 4]
+    %546 = eq bool %544, %545
+    %547 = and bool %543, %546
+    jmp b86
+b97: ; preds b100, b111, b103
+    %549 = const i64 12
+    ret %549
+b98: ; preds b111, b114
+    %551 = call bool local()
+    br %551, b123, b122
+b99: ; preds b100
+    %553 = const i32 1
+    %554 = call {2} outer(%553)
+    %555 = proj u64 %554, 0
+    %556 = proj u32 %554, 1
+    store [%2], %555
+    store [%2 + 8], %556
+    %559 = const i32 1
+    store [%1 + 4], %559
+    %561 = const i32 2
+    store [%1], %561
+    %563 = const bool false
+    %564 = load i32 [%2]
+    %565 = load i32 [%1]
+    %566 = eq bool %564, %565
+    br %566, b112, b111
+b100: ; preds b73, b104, b110
+    %568 = phi bool [%441, b73], [%585, b104], [%609, b110]
+    br %568, b97, b99
+b101: ; preds b73
+    %570 = const i32 1
+    %571 = eq bool %442, %570
+    br %571, b102, b103
+b102: ; preds b101
+    %573 = const u64 4
+    %574 = padd ptr %4, %573 * 1
+    %575 = const u64 4
+    %576 = padd ptr %3, %575 * 1
+    %577 = const bool false
+    %578 = load i32 [%574]
+    %579 = load i32 [%576]
+    %580 = eq bool %578, %579
+    br %580, b105, b104
+b103: ; preds b101
+    %582 = const i32 2
+    %583 = eq bool %442, %582
+    br %583, b110, b97
+b104: ; preds b102, b106, b108, b109
+    %585 = phi bool [%577, b102], [%594, b106], [%601, b108], [%603, b109]
+    jmp b100
+b105: ; preds b102
+    %587 = const i32 2
+    %588 = eq bool %578, %587
+    br %588, b106, b107
+b106: ; preds b105
+    %590 = const bool true
+    %591 = load u32 [%574 + 4]
+    %592 = load u32 [%576 + 4]
+    %593 = eq bool %591, %592
+    %594 = and bool %590, %593
+    jmp b104
+b107: ; preds b105
+    %596 = const i32 3
+    %597 = eq bool %578, %596
+    br %597, b108, b109
+b108: ; preds b107
+    %599 = load f32 [%574 + 4]
+    %600 = load f32 [%576 + 4]
+    %601 = eq bool %599, %600
+    jmp b104
+b109: ; preds b107
+    %603 = const bool true
+    jmp b104
+b110: ; preds b103
     %605 = const bool true
-    %606 = load u32 [%589 + 4]
-    %607 = load u32 [%591 + 4]
+    %606 = load u32 [%4 + 4]
+    %607 = load u32 [%3 + 4]
     %608 = eq bool %606, %607
     %609 = and bool %605, %608
-    jmp b111
-b114: ; preds b112
-    %611 = const i32 3
-    %612 = eq bool %593, %611
-    br %612, b115, b116
-b115: ; preds b114
-    %614 = load f32 [%589 + 4]
-    %615 = load f32 [%591 + 4]
-    %616 = eq bool %614, %615
-    jmp b111
-b116: ; preds b114
-    %618 = const bool true
-    jmp b111
-b117: ; preds b110
-    %620 = const bool true
-    %621 = load u32 [%4 + 4]
-    %622 = load u32 [%3 + 4]
+    jmp b100
+b111: ; preds b99, b115, b121
+    %611 = phi bool [%563, b99], [%628, b115], [%652, b121]
+    br %611, b98, b97
+b112: ; preds b99
+    %613 = const i32 1
+    %614 = eq bool %564, %613
+    br %614, b113, b114
+b113: ; preds b112
+    %616 = const u64 4
+    %617 = padd ptr %2, %616 * 1
+    %618 = const u64 4
+    %619 = padd ptr %1, %618 * 1
+    %620 = const bool false
+    %621 = load i32 [%617]
+    %622 = load i32 [%619]
     %623 = eq bool %621, %622
-    %624 = and bool %620, %623
-    jmp b107
-b118: ; preds b110
-    %626 = const bool true
-    jmp b107
-b119: ; preds b106, b123, b129
-    %628 = phi bool [%578, b106], [%645, b123], [%669, b129]
-    br %628, b105, b104
-b120: ; preds b106
-    %630 = const i32 1
-    %631 = eq bool %579, %630
-    br %631, b121, b122
-b121: ; preds b120
-    %633 = const u64 4
-    %634 = padd ptr %2, %633 * 1
-    %635 = const u64 4
-    %636 = padd ptr %1, %635 * 1
-    %637 = const bool false
-    %638 = load i32 [%634]
-    %639 = load i32 [%636]
-    %640 = eq bool %638, %639
-    br %640, b124, b123
-b122: ; preds b120
-    %642 = const i32 2
-    %643 = eq bool %579, %642
-    br %643, b129, b105
-b123: ; preds b121, b125, b127, b128
-    %645 = phi bool [%637, b121], [%654, b125], [%661, b127], [%663, b128]
-    jmp b119
-b124: ; preds b121
-    %647 = const i32 2
-    %648 = eq bool %638, %647
-    br %648, b125, b126
-b125: ; preds b124
-    %650 = const bool true
-    %651 = load u32 [%634 + 4]
-    %652 = load u32 [%636 + 4]
-    %653 = eq bool %651, %652
-    %654 = and bool %650, %653
-    jmp b123
-b126: ; preds b124
-    %656 = const i32 3
-    %657 = eq bool %638, %656
-    br %657, b127, b128
-b127: ; preds b126
-    %659 = load f32 [%634 + 4]
-    %660 = load f32 [%636 + 4]
+    br %623, b116, b115
+b114: ; preds b112
+    %625 = const i32 2
+    %626 = eq bool %564, %625
+    br %626, b121, b98
+b115: ; preds b113, b117, b119, b120
+    %628 = phi bool [%620, b113], [%637, b117], [%644, b119], [%646, b120]
+    jmp b111
+b116: ; preds b113
+    %630 = const i32 2
+    %631 = eq bool %621, %630
+    br %631, b117, b118
+b117: ; preds b116
+    %633 = const bool true
+    %634 = load u32 [%617 + 4]
+    %635 = load u32 [%619 + 4]
+    %636 = eq bool %634, %635
+    %637 = and bool %633, %636
+    jmp b115
+b118: ; preds b116
+    %639 = const i32 3
+    %640 = eq bool %621, %639
+    br %640, b119, b120
+b119: ; preds b118
+    %642 = load f32 [%617 + 4]
+    %643 = load f32 [%619 + 4]
+    %644 = eq bool %642, %643
+    jmp b115
+b120: ; preds b118
+    %646 = const bool true
+    jmp b115
+b121: ; preds b114
+    %648 = const bool true
+    %649 = load u32 [%2 + 4]
+    %650 = load u32 [%1 + 4]
+    %651 = eq bool %649, %650
+    %652 = and bool %648, %651
+    jmp b111
+b122: ; preds b98
+    %654 = const i64 9
+    ret %654
+b123: ; preds b98
+    %656 = load u64 [%40]
+    store [%0], %656
+    %658 = const bool false
+    %659 = load i32 [%0]
+    %660 = load i32 [%40]
     %661 = eq bool %659, %660
-    jmp b123
-b128: ; preds b126
-    %663 = const bool true
-    jmp b123
-b129: ; preds b122
-    %665 = const bool true
-    %666 = load u32 [%2 + 4]
-    %667 = load u32 [%1 + 4]
-    %668 = eq bool %666, %667
-    %669 = and bool %665, %668
-    jmp b119
-b130: ; preds b105
-    %671 = const i64 9
-    ret %671
-b131: ; preds b105
-    %673 = load u64 [%40]
-    store [%0], %673
-    %675 = const bool false
-    %676 = load i32 [%0]
-    %677 = load i32 [%40]
-    %678 = eq bool %676, %677
-    br %678, b135, b134
-b132: ; preds b134
-    %680 = const i64 10
-    ret %680
-b133: ; preds b134
-    %682 = const i64 0
-    ret %682
-b134: ; preds b131, b136, b138, b139
-    %684 = phi bool [%675, b131], [%694, b136], [%701, b138], [%703, b139]
-    %685 = not bool %684
-    br %685, b132, b133
-b135: ; preds b131
-    %687 = const i32 2
-    %688 = eq bool %676, %687
-    br %688, b136, b137
-b136: ; preds b135
-    %690 = const bool true
-    %691 = load u32 [%0 + 4]
-    %692 = load u32 [%40 + 4]
-    %693 = eq bool %691, %692
-    %694 = and bool %690, %693
-    jmp b134
-b137: ; preds b135
-    %696 = const i32 3
-    %697 = eq bool %676, %696
-    br %697, b138, b139
-b138: ; preds b137
-    %699 = load f32 [%0 + 4]
-    %700 = load f32 [%40 + 4]
-    %701 = eq bool %699, %700
-    jmp b134
-b139: ; preds b137
-    %703 = const bool true
-    jmp b134
+    br %661, b127, b126
+b124: ; preds b126
+    %663 = const i64 10
+    ret %663
+b125: ; preds b126
+    %665 = const i64 0
+    ret %665
+b126: ; preds b123, b128, b130, b131
+    %667 = phi bool [%658, b123], [%677, b128], [%684, b130], [%686, b131]
+    %668 = not bool %667
+    br %668, b124, b125
+b127: ; preds b123
+    %670 = const i32 2
+    %671 = eq bool %659, %670
+    br %671, b128, b129
+b128: ; preds b127
+    %673 = const bool true
+    %674 = load u32 [%0 + 4]
+    %675 = load u32 [%40 + 4]
+    %676 = eq bool %674, %675
+    %677 = and bool %673, %676
+    jmp b126
+b129: ; preds b127
+    %679 = const i32 3
+    %680 = eq bool %659, %679
+    br %680, b130, b131
+b130: ; preds b129
+    %682 = load f32 [%0 + 4]
+    %683 = load f32 [%40 + 4]
+    %684 = eq bool %682, %683
+    jmp b126
+b131: ; preds b129
+    %686 = const bool true
+    jmp b126
 }
 

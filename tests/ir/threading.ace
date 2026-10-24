@@ -1,0 +1,32 @@
+/* Release threads a jump into a block that only tests a value constant along
+ * that edge straight to the successor the test picks. An inlined bool helper
+ * returns through a phi of constants, so the caller's branch on its result
+ * goes from each return to its target, even one that already joins several
+ * predecessors in phis: each takes from the jump what it took through the
+ * test. */
+
+inline find(xs: [8]i64, key: i64): bool {
+    i: i64 = 0
+    for i < 8 {
+        if xs[i] == key { return true }
+        if xs[i] == 0 { return false }
+        i = i + 1
+    }
+    return false
+}
+
+count(xs: [8]i64, keys: [4]i64): i64 {
+    misses: i64 = 0
+    k: i64 = 0
+    for k < 4 {
+        if !find(xs, keys[k]) { misses = misses + 1 }
+        k = k + 1
+    }
+    return misses
+}
+
+main(): int {
+    xs: [8]i64 = [1, 2, 3, 4, 5, 0, 0, 0]
+    if count(xs, [2, 9, 5, 0]) != 1 { return 1 }
+    return 0
+}

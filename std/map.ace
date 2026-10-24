@@ -202,13 +202,13 @@ pub Map[K, V].len(self): usize {
     return self.count
 }
 
-pub Map[K, V].has(self, key: K): bool {
+pub inline Map[K, V].has(self, key: K): bool {
     if self.count == 0 { return false }
     return self.slots[probe[K, V](self.slots, key)].used
 }
 
 /* The value stored for `key`. A missing key returns `blank(V)` and false. */
-pub Map[K, V].get(self, key: K): (V, bool) {
+pub inline Map[K, V].get(self, key: K): (V, bool) {
     if self.count == 0 { return blank(V), false }
     at: usize = probe[K, V](self.slots, key)
     if !self.slots[at].used { return blank(V), false }

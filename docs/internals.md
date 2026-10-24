@@ -46,8 +46,8 @@ repeated in each additional backend.
   aggregate values), and turns self tail recursion into a loop.
 - **`optimizer.c`** (pass 6, release builds only) — passes over one
   function's IR, each run once, in order: sparse conditional constant
-  propagation, global value numbering, loop strength reduction, dead-code and
-  control-flow cleanup, then auto-vectorization over the cleaned loops (and
+  propagation, global value numbering, loop-invariant code motion, loop
+  strength reduction, dead-code and control-flow cleanup, then auto-vectorization over the cleaned loops (and
   cleanup again when it rewrote one). The vectorizer puts a four-lane loop
   (two-lane for `f64`, which takes arithmetic only and never shares a loop
   with 32-bit lanes), counting whole vectors, ahead of an innermost counted

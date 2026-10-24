@@ -599,6 +599,138 @@ gvn(mut fn: Func) {
     }
 }
 
+// --- loops ------------------------------------------------------------------------------
+
+/* The predecessor index of the back edge into h when h heads a natural loop:
+ * two predecessors, a latch h dominates and an entry it does not. body then
+ * marks the loop, every block reaching the latch without passing h; -1 when h
+ * heads none.
+ */
+natural_loop(fn: Func, idom: array.Array[int], h: int, mut body: array.Array[bool], mut stack: array.Array[int]): int {
+    hb: IrBlock = fn.block(h)
+    if hb.preds.len != 2 { return -1 }
+    li: int = -1
+    for i: int in 0..2 {
+        p: int = hb.preds.get(i)
+        if idom.get(p) >= 0 && ir.dominates(idom, h, p) {
+            if li < 0 { li = i } else { li = -2 }
+        }
+    }
+    if li < 0 { return -1 }
+    latch: int = hb.preds.get(li)
+    pre: int = hb.preds.get(1 - li)
+    if idom.get(pre) < 0 || ir.dominates(idom, h, pre) { return -1 }
+    for b: usize in 0..fn.blocks.len { mut body.set(b, false) }
+    mut body.set(usize(h), true)
+    if !body.get(latch) {
+        mut body.set(usize(latch), true)
+        fail(mut stack.push(latch))
+    }
+    for stack.len > 0 {
+        s: int, _ = mut stack.pop()
+        for p: int in fn.block(s).preds.view() {
+            if !body.get(p) {
+                mut body.set(usize(p), true)
+                fail(mut stack.push(p))
+            }
+        }
+    }
+    return li
+}
+
+/* A new instruction in b, before its terminator. */
+ins_before_term(mut fn: Func, b: int, op: u8, ty: u8): int {
+    v: int = mut fn.new_ins(b, op, ty)
+    bp: mut *IrBlock = mut fn.block(b)
+    l: mut []int = mut bp.ins.view()
+    l[l.len - 1] = l[l.len - 2]
+    l[l.len - 2] = v
+    return v
+}
+
+// --- loop-invariant code motion ---------------------------------------------------------
+//
+// A natural loop's instruction whose operands are all defined outside it moves
+// to the end of the loop's entry block, computed once per entry rather than
+// once per iteration: a pure operation that cannot trap (not a division), and
+// a load from a stack object when nothing in the loop stores, calls, or is
+// atomic or asm. Neither faults when the loop runs no iteration. A constant
+// operand gets its own copy there, as lowering makes one per use. Inner loops
+// go first, so a value they hoist can leave the enclosing loop too.
+
+clobbers(x: IrIns): bool {
+    switch x.op {
+        ir.IR_STORE, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_ATOMIC, ir.IR_ASM { return true }
+        default { return false }
+    }
+}
+
+licm(mut fn: Func) {
+    idom: array.Array[int], rpo: array.Array[int] = ir.dominators(fn)
+    defer mut idom.wipe()
+    defer mut rpo.wipe()
+    body: array.Array[bool], body_err: Error = array.Array[bool].filled(fn.blocks.len, false)
+    fail(body_err)
+    defer mut body.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer mut stack.wipe()
+    r: usize = rpo.len
+    for r > 0 {
+        r -= 1
+        h: int = rpo.get(r)
+        li: int = natural_loop(fn, idom, h, mut body, mut stack)
+        if li < 0 { continue }
+        pre: int = fn.block(h).preds.get(1 - li)
+        quiet: bool = true
+        for b: usize in 0..fn.blocks.len {
+            if !quiet { break }
+            if !body.get(b) { continue }
+            for id: int in fn.blocks.get(b).ins.view() {
+                if clobbers(fn.at(id)) {
+                    quiet = false
+                    break
+                }
+            }
+        }
+        for b: int in rpo.view() { // dominators first: an operand hoists before its user
+            if !body.get(b) { continue }
+            k: usize = 0
+            for i: usize in 0..fn.block(b).ins.len {
+                v: int = fn.block(b).ins.get(i)
+                x: IrIns = fn.at(v)
+                ok: bool = (is_pure(x) && x.op != ir.IR_DIV && x.op != ir.IR_REM) ||
+                    (x.op == ir.IR_LOAD && x.flags == 0 && quiet && fn.at(fn.arg(v, 0)).op == ir.IR_SLOT)
+                for a: u32 in 0..x.nargs {
+                    if !ok { break }
+                    y: IrIns = fn.at(fn.arg(v, a))
+                    ok = y.op == ir.IR_CONST || !body.get(y.block)
+                }
+                if !ok {
+                    bp: mut *IrBlock = mut fn.block(b)
+                    mut bp.ins.set(k, v)
+                    k += 1
+                    continue
+                }
+                for a: u32 in 0..x.nargs {
+                    y: IrIns = fn.at(fn.arg(v, a))
+                    if !body.get(y.block) { continue }
+                    c: int = mut ins_before_term(mut fn, pre, ir.IR_CONST, y.ty)
+                    mut fn.at(c).imm = y.imm
+                    mut fn.set_arg(v, a, c)
+                }
+                pb: mut *IrBlock = mut fn.block(pre)
+                fail(mut pb.ins.push(v))
+                l: mut []int = mut pb.ins.view()
+                l[l.len - 1] = l[l.len - 2]
+                l[l.len - 2] = v
+                mut fn.at(v).block = pre
+            }
+            bp: mut *IrBlock = mut fn.block(b)
+            mut bp.ins.truncate(k)
+        }
+    }
+}
+
 // --- loop strength reduction ------------------------------------------------------------
 //
 // A pointer offset `base +/- i * S` of a basic induction variable i (a header
@@ -621,16 +753,6 @@ lsr_chase(repl: array.Array[int], nins: int, v: int): int {
     x: int = v
     for x < nins && repl.get(x) >= 0 { x = repl.get(x) }
     return x
-}
-
-/* A new instruction in b, before its terminator. */
-ins_before_term(mut fn: Func, b: int, op: u8, ty: u8): int {
-    v: int = mut fn.new_ins(b, op, ty)
-    bp: mut *IrBlock = mut fn.block(b)
-    l: mut []int = mut bp.ins.view()
-    l[l.len - 1] = l[l.len - 2]
-    l[l.len - 2] = v
-    return v
 }
 
 /* The induction variable index v stands for: itself, or the 64-bit value a
@@ -754,34 +876,11 @@ lsr(mut fn: Func) {
     changed: bool = false
     for h: int in rpo.view() {
         hb: IrBlock = fn.block(h)
-        if hb.preds.len != 2 { continue }
-        li: int = -1
-        for i: int in 0..2 {
-            p: int = hb.preds.get(i)
-            if idom.get(p) >= 0 && ir.dominates(idom, h, p) {
-                if li < 0 { li = i } else { li = -2 }
-            }
-        }
+        li: int = natural_loop(fn, idom, h, mut body, mut stack)
         if li < 0 { continue }
         pi: int = 1 - li
         latch: int = hb.preds.get(li)
         pre: int = hb.preds.get(pi)
-        if idom.get(pre) < 0 || ir.dominates(idom, h, pre) { continue }
-        for b: usize in 0..usize(n) { mut body.set(b, false) } // the natural loop: every block reaching the latch without passing h
-        mut body.set(usize(h), true)
-        if !body.get(latch) {
-            mut body.set(usize(latch), true)
-            fail(mut stack.push(latch))
-        }
-        for stack.len > 0 {
-            s: int, _ = mut stack.pop()
-            for p: int in fn.block(s).preds.view() {
-                if !body.get(p) {
-                    mut body.set(usize(p), true)
-                    fail(mut stack.push(p))
-                }
-            }
-        }
         mut phis.clear() // the header's basic induction variables, before any pointer phi joins them
         for phi: int in hb.ins.view() {
             px: IrIns = fn.at(phi)
@@ -1816,10 +1915,12 @@ branch_operand(fn: Func, j: int, i: usize, a: int): (u64, bool) {
  * edge goes straight to the successor it selects, s. j holds only phis,
  * constants, and the condition, a phi or an integer operation over its phis
  * and constants, nothing of which but the phis is used outside j, and j heads
- * no loop, so the edge enters no loop sideways. s has j as its only
- * predecessor and no phis; a phi of j used in s gets a phi in s joining it
- * with its operand from p, and one used elsewhere must be under j's other
- * successor, which only j enters.
+ * no loop, so the edge enters no loop sideways. When s has j as its only
+ * predecessor and no phis, a phi of j used in s gets a phi in s joining it
+ * with its operand from p. Otherwise p must not already enter s, no phi of j
+ * is used in s, and each phi of s takes from p what it takes from j, through
+ * j's phi for p when that is the operand. A phi of j used elsewhere must be
+ * under j's other successor, which only j enters.
  */
 Clean.thread_branches(mut self): bool {
     changed: bool = false
@@ -1887,7 +1988,10 @@ Clean.thread_branches(mut self): bool {
             s: int = self.fn.block(j).succ1
             if r != 0 { s = self.fn.block(j).succ0 }
             sb: IrBlock = self.fn.block(s)
-            if s == j || sb.preds.len != 1 || (sb.ins.len > 0 && self.fn.at(sb.ins.get(0)).op == ir.IR_PHI) {
+            joins: bool = sb.preds.len != 1 || (sb.ins.len > 0 && self.fn.at(sb.ins.get(0)).op == ir.IR_PHI)
+            dup: bool = false
+            for q: int in sb.preds.view() { dup = dup || q == p }
+            if s == j || dup {
                 i += 1
                 continue
             }
@@ -1898,7 +2002,9 @@ Clean.thread_branches(mut self): bool {
             fine: bool = true
             for q: usize in 0..k {
                 if !fine { break }
-                fine = phi_uses_in(*self.fn, idom, self.fn.block(j).ins.get(q), j, s, t)
+                owner: int = s
+                if joins { owner = j }
+                fine = phi_uses_in(*self.fn, idom, self.fn.block(j).ins.get(q), j, owner, t)
             }
             if !fine {
                 mut idom.wipe()
@@ -1913,7 +2019,18 @@ Clean.thread_branches(mut self): bool {
             mut idom.wipe()
             mut rpo.wipe()
             if header { break }
+            if joins { // each phi of s takes from p what it takes from j
+                js: u32 = 0
+                for self.fn.block(s).preds.get(usize(js)) != j { js += 1 }
+                for q: int in self.fn.block(s).ins.view() {
+                    if self.fn.at(q).op != ir.IR_PHI { break }
+                    a: int = self.fn.arg(q, js)
+                    if self.fn.at(a).op == ir.IR_PHI && self.fn.at(a).block == j { a = self.fn.arg(a, u32(i)) }
+                    mut self.fn.arg_add(q, a)
+                }
+            }
             for q: usize in 0..k { // s's phi for each of j's it uses
+                if joins { break }
                 v: int = self.fn.block(j).ins.get(q)
                 w: int = -1
                 for b: int in 0..int(self.fn.blocks.len) {
@@ -2058,6 +2175,7 @@ cleanup(mut fn: Func) {
 pub optimize(mut fn: Func) {
     sccp(mut fn)
     gvn(mut fn)
+    licm(mut fn)
     lsr(mut fn)
     cleanup(mut fn)
     if vectorize(mut fn) { cleanup(mut fn) } // over the merged blocks, which it then tidies

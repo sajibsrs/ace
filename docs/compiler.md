@@ -94,10 +94,15 @@ of the length's bound and of the end not wrapping), then per pair with a
 arguments; its call appears again before every `ret`, last defer first.
 In release, the IR is then optimized before it prints: a value that is constant
 on every path becomes a `const`, a pure operation equal to one that dominates it
-(or an identity such as `x + 0`) is replaced by that value, an offset into an
+(or an identity such as `x + 0`) is replaced by that value, a loop's pure
+operation over values from outside it (never a division, which may trap)
+moves to the block entering the loop, as does a load from a stack object when
+the loop neither stores, calls, nor is atomic or asm, an offset into an
 array whose element size is not a power of two, indexed by a loop counter,
 becomes a pointer `phi` started before the loop and stepped at its end, a branch on a constant becomes a `jmp` and its
-untaken arm disappears, and blocks left empty, unreachable, or with a single
+untaken arm disappears, a jump into a block that only tests a value constant
+along that edge (such as an inlined `bool` helper's result) goes straight to
+the arm the test selects, even one that already joins other blocks, and blocks left empty, unreachable, or with a single
 predecessor are removed or merged. Debug prints the lowered IR unchanged.
 A function the IR does not cover is listed with the first
 construct that kept it out, and compiling it is an error naming that
@@ -193,6 +198,14 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   `bench/core` and `bench/std` compile 1.3–1.9x faster with 1.7–6.7x less
   machine code; the `json` and `regex` packages link 31–37% smaller.
 
+- Compiler #2, loop-invariant code motion and branch threading into joins
+  (PHILOSOPHY.md: performance first): an inlined `Map.get`/`has` probe
+  returns its `bool` through a phi the caller tests again, and loaded the
+  map's fields on every probe step; clang's LICM and jump threading remove
+  both. Hoisting only non-trapping operations and stack-object loads in
+  loops free of stores and calls keeps it correct with no alias analysis.
+  `map-miss` went from 2.87x to 1.47x of C and `map-get` from 1.98x to
+  1.42x; the C compiler compiles 1.3% slower.
 - Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
   every optimization written once per source shape and repeats each in a second
   backend; the compile-time cost ranks below performance, simplicity, and

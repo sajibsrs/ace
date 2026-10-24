@@ -1,0 +1,60 @@
+/* Release moves a loop's invariant work to the block entering it: a pure
+ * operation over values from outside the loop, inner loops first so it can
+ * leave the enclosing one too, and a load from a stack object when nothing in
+ * the loop stores, calls, or is atomic or asm. A division stays, as it may
+ * trap, and so does a load in a loop that calls. */
+
+Pair: struct { a: i64, b: i64 }
+
+grow(p: mut *Pair) { p.a += 1 }
+
+SEEN: i64 = 0
+
+@cold
+note(x: i64) { SEEN += x }
+
+grid(a: i64, b: i64, n: i64): i64 {
+    total: i64 = 0
+    i: i64 = 0
+    for i < n {
+        j: i64 = 0
+        for j < n {
+            total = total + (a << 3) + (b ^ a) + j / b
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+sum(n: i64): i64 {
+    p: Pair = Pair{a = 2, b = 5}
+    grow(mut &p)
+    total: i64 = 0
+    i: i64 = 0
+    for i < n {
+        total = total + p.a * p.b
+        i = i + 1
+    }
+    return total
+}
+
+watch(n: i64): i64 {
+    p: Pair = Pair{a = 2, b = 5}
+    grow(mut &p)
+    total: i64 = 0
+    i: i64 = 0
+    for i < n {
+        note(i)
+        total = total + p.b
+        i = i + 1
+    }
+    return total
+}
+
+main(): int {
+    if grid(1, 2, 3) != 102 { return 1 }
+    if sum(4) != 60 { return 2 }
+    if watch(3) != 15 || SEEN != 3 { return 3 }
+    return 0
+}
