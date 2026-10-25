@@ -1,0 +1,15 @@
+/* Folded constant conversions size arrays at the same value the conversion
+ * yields at runtime, wrapping included. */
+
+// expect-exit: 0
+
+WIDTH: const int = 16
+WRAPS: const int = 260
+
+main(): int {
+    cells: [usize(WIDTH * WIDTH)]u8 = [0 : usize(WIDTH * WIDTH)]
+    small: [usize(u8(WRAPS))]u8 = [0 : usize(u8(WRAPS))]
+    if cells.len != usize(WIDTH * WIDTH) { return 1 }
+    if small.len != usize(u8(WRAPS)) || small.len != 4 { return 2 }
+    return 0
+}

@@ -465,8 +465,12 @@ alias analysis.
 
 `[N]T` is an inline array containing exactly `N` elements, where `N` is a
 compile-time constant expression: a literal, a `const` identifier,
-`sizeof`/`alignof`/`offsetof`, or integer/bitwise arithmetic over these — the
-same restricted surface `@align(N)` uses. `[]T` is a two-word view containing
+`sizeof`/`alignof`/`offsetof`, integer/bitwise arithmetic over these, or an
+integer-primitive conversion of one — the same restricted surface `@align(N)`
+uses. A conversion wraps to its target's width exactly as it does at runtime,
+so `int` dimensions size an array as `[usize(WIDTH * HEIGHT)]T`; a 64-bit
+unsigned result at or above 2^63, such as `usize(-1)` over a `const`, does not
+reduce and is rejected. `[]T` is a two-word view containing
 a pointer and length.
 
 ```ace

@@ -1,0 +1,20 @@
+/* An integer-primitive conversion of constants is itself a constant: it backs
+ * an array length, a repetition count, and an enum discriminant, wrapping to
+ * the target width exactly as the same conversion does at runtime. */
+
+WIDTH: const int = 16
+HEIGHT: const int = 16
+WRAPS: const int = 260
+
+Board: struct {
+    cells: [usize(WIDTH * HEIGHT)]u8 = [0 : usize(WIDTH * HEIGHT)],
+    small: [usize(u8(WRAPS))]u8,
+}
+
+Step: enum u8 { zero, four = u8(WRAPS) }
+
+main(): int {
+    b: Board
+    if b.cells.len != 256 || b.small.len != 4 { return 1 }
+    return int(u8(Step.four)) - 4
+}

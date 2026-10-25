@@ -1780,9 +1780,26 @@ Sema.sym_const(self, s: u32): (i64, bool) {
 }
 
 /* The integer value of checked compile-time expression `e`, as C's ut_const
- * reads it: literals, consts, sizeof/alignof/offsetof, an array's .len,
- * unary minus and complement, and integer arithmetic.
+ * reads it: literals, consts, sizeof/alignof/offsetof, integer-primitive
+ * conversions, an array's .len, unary minus and complement, and integer
+ * arithmetic.
  */
+/* Constant `x` converted to primitive `p`, wrapped to its width; a 64-bit
+ * unsigned result at or above 2^63 has no i64 constant. */
+Sema.conversion_const(self, p: u8, x: u32): (i64, bool) {
+    v: i64, ok: bool = self.ut_const(x)
+    if !ok { return 0, false }
+    if p == P_I8 { return i64(i8(v)), true }
+    if p == P_I16 { return i64(i16(v)), true }
+    if p == P_I32 { return i64(i32(v)), true }
+    if p == P_I64 { return v, true }
+    if p == P_U8 { return i64(u8(v)), true }
+    if p == P_U16 { return i64(u16(v)), true }
+    if p == P_U32 { return i64(u32(v)), true }
+    if (p == P_U64 || p == P_USIZE) && v >= 0 { return v, true }
+    return 0, false
+}
+
 Sema.ut_const(self, e: u32): (i64, bool) {
     n: Node = self.node(e)
     switch n.kind {
@@ -1792,6 +1809,9 @@ Sema.ut_const(self, e: u32): (i64, bool) {
             if n.a != 0 && self.node(n.a).kind == Kind.ident && self.node_sym(e) == 0 {
                 c: string = self.node(n.a).text
                 if mem.equal(c, "sizeof") || mem.equal(c, "alignof") || mem.equal(c, "offsetof") { return i64(self.node_ival(e)), true }
+                // An integer-primitive conversion wraps to the target width, as at runtime.
+                t: u32 = self.prim_by_name(c)
+                if t != 0 && n.nkids == 1 { return self.conversion_const(self.ty(t).prim, self.kid(e, 0)) }
             }
             return 0, false
         }
@@ -1960,6 +1980,11 @@ Sema.coerce(mut self, e: u32, want: u32): bool {
         if !mut self.coerce(n.c, want) { ok = false }
         if ok { mut self.set_node_ty(e, want) } else { mut self.set_node_ty(e, self.t_err) }
         return ok
+    }
+    // An already-reported type leaves a context-typed literal nothing to check against.
+    if want != 0 && wk == TypeKind.err && (n.kind == Kind.arraylit || (n.kind == Kind.structlit && n.a == 0)) {
+        mut self.set_node_ty(e, self.t_err)
+        return false
     }
     if n.kind == Kind.arraylit && wk == TypeKind.slice { return mut self.coerce_slicelit(e, want) }
     if n.kind == Kind.arraylit && wk == TypeKind.array {

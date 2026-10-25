@@ -1,0 +1,13 @@
+/* A conversion folds only when its operand is constant, and a 64-bit unsigned
+ * result at or above 2^63 has no constant value. Each rejected length is
+ * reported once; its array literal adds no second diagnostic. */
+
+f(): int { return 3 }
+RUNTIME: const int = f()
+NEGATIVE: const int = -1
+
+main(): int {
+    a: [usize(RUNTIME)]int = [0 : 3]
+    b: [usize(NEGATIVE)]int = [0 : 3]
+    return 0
+}

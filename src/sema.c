@@ -1011,6 +1011,26 @@ static int ut_const(Node* e, int64_t* out) {
             *out = (int64_t)e->ival;
             return 1;
         }
+        if (e->a && e->a->kind == N_IDENT && !e->sym && e->nkids == 1) {
+            // An integer-primitive conversion wraps to the target width, as at runtime.
+            SType* t = prim_by_name(e->a->str, e->a->len);
+            int64_t v;
+            if (!t || !ut_const(e->kids[0], &v)) return 0;
+            switch (t->prim) {
+            case P_I8: *out = (int8_t)v; return 1;
+            case P_I16: *out = (int16_t)v; return 1;
+            case P_I32: *out = (int32_t)v; return 1;
+            case P_I64: *out = v; return 1;
+            case P_U8: *out = (uint8_t)v; return 1;
+            case P_U16: *out = (uint16_t)v; return 1;
+            case P_U32: *out = (uint32_t)v; return 1;
+            case P_U64: case P_USIZE: // a value at or above 2^63 has no int64 constant
+                if (v < 0) return 0;
+                *out = v;
+                return 1;
+            default: return 0;
+            }
+        }
         return 0;
     case N_FIELD_E: {
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 && e->a) {
@@ -2327,6 +2347,11 @@ static int coerce_slicelit(Ck* k, Node* e, SType* want) {
 static int cond_test(Ck* k, Node* e);
 
 static int coerce(Ck* k, Node* e, SType* want) {
+    // An already-reported type leaves a context-typed literal nothing to check against.
+    if (want && want->kind == SK_ERR && (e->kind == N_ARRAYLIT || (e->kind == N_STRUCTLIT && !e->a))) {
+        e->ty = T_ERR;
+        return 0;
+    }
     if (e->kind == N_COND && want) { // each branch meets the expected type
         int ok = cond_test(k, e);
         ok &= coerce(k, e->b, want);

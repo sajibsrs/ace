@@ -86,7 +86,9 @@
 15. A fixed array type's length `[N]T` is a compile-time constant expression,
     not only a bare integer literal: literals, `const` identifiers (including
     one reached through an imported module, Values & Passing #12),
-    `sizeof`/`alignof`/`offsetof`, and integer/bitwise arithmetic over these —
+    `sizeof`/`alignof`/`offsetof`, integer/bitwise arithmetic over these, and
+    an integer-primitive conversion `T(x)` of one, wrapped to `T`'s width as at
+    runtime (a 64-bit unsigned result at or above 2^63 does not reduce) —
     the same restricted surface `@align(N)` already uses (Type System,
     Carved). The evaluated length must be a positive `usize`; a runtime
     value, a non-positive result, or an expression the compiler cannot

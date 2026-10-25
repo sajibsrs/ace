@@ -693,6 +693,14 @@ if [ "$(printf '%s\n' "$cycle_errors" | grep -c 'error:')" -ne 6 ]; then
     fail=1
 fi
 
+cast_length_errors=$("$ACE" tests/sema/arrays/cast_length_err.ace 2>&1)
+if [ "$(printf '%s\n' "$cast_length_errors" | grep -c 'error: array length must be a compile-time usize expression')" -ne 2 ] ||
+    [ "$(printf '%s\n' "$cast_length_errors" | grep -c 'error:')" -ne 2 ]; then
+    echo "FAIL: each non-constant cast length should be reported once, without its literal"
+    printf '%s\n' "$cast_length_errors"
+    fail=1
+fi
+
 c_abi_errors=$("$ACE" tests/sema/c_abi/rejected_err.ace 2>&1)
 for want in \
     "parameter 'value' has type string, which is not C-ABI compatible" \

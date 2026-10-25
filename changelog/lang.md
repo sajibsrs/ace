@@ -1,5 +1,10 @@
 # Language
 
+- Integer-primitive conversions of constants are compile-time constants, so
+  `[usize(WIDTH * HEIGHT)]T` sizes an array from `int` constants; the fold
+  wraps to the target width as at runtime. A literal whose type already failed
+  no longer reports a second error. C and selfhost.
+
 - A function type's parameters may be named, as a declaration writes them
   (`(mut b: Box): void`); names are ignored for identity. Each position's `mut`
   is a bit in the type's mask, so a function with a `mut` parameter is now a
