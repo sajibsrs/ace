@@ -27,5 +27,11 @@ main(): int {
     if fmt.println(0 - 2147483648) != 12 { return 9 }
 
     if fmt.println(0.0 - 1.5e300) != 9 { return 10 }
+
+    if fmt.println(true) != 5 { return 11 }
+
+    if fmt.println(false) != 6 { return 12 }
+
+    if fmt.print(true) != 4 || fmt.print(false) != 5 { return 13 }
     return 0
 }

@@ -59,9 +59,9 @@ pub T.equal(mut self, got: usize, want: usize): bool {
 pub T.equal(mut self, got: bool, want: bool): bool {
     if begin(mut self, got == want) { return true }
     fmt.print("got ")
-    fmt.print(spell(got))
+    fmt.print(got)
     fmt.print(", want ")
-    fmt.println(spell(want))
+    fmt.println(want)
     return false
 }
 
@@ -79,11 +79,6 @@ pub T.equal(mut self, got: string, want: string): bool {
 pub T.fail(mut self, message: string) {
     begin(mut self, false)
     fmt.println(message)
-}
-
-spell(value: bool): string {
-    if value { return "true" }
-    return "false"
 }
 
 /* Runs `table` in order, printing `ok   name` or `FAIL name` per case and then

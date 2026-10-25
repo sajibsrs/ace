@@ -1,5 +1,7 @@
 # Standard library
 
+- `fmt.print` and `fmt.println` take `bool`, writing `true` or `false`;
+  `std/test` prints its `bool` results through them.
 - Added the `test` module (#90 stage 1): `T.equal` for `int`/`uint`/`usize`/
   `bool`/`string` and `T.fail` print `check N: got X, want Y`; `run(table)` over
   `(name, (mut t: T): void)` cases prints `ok`/`FAIL` per case and a summary,

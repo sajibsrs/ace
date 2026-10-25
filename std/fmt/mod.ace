@@ -296,6 +296,11 @@ pub print(value: f32): int {
     return format_float(negative, dv, converted.count, converted.point)
 }
 
+pub print(value: bool): int {
+    if value { return print("true") }
+    return print("false")
+}
+
 /*
  * The compiler's checked printf lowering opens a sink over fixed storage in
  * the caller's frame, writes each format piece into it through the shared
@@ -440,5 +445,9 @@ pub println(value: f32): int {
 }
 
 pub println(value: f64): int {
+    return finish_line(print(value))
+}
+
+pub println(value: bool): int {
     return finish_line(print(value))
 }

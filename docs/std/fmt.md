@@ -33,6 +33,7 @@ main(): int {
 - `print(value: f32): int` and `print(value: f64): int` — shortest
   round-trip decimal: the fewest significant digits that read back as the
   exact original value.
+- `print(value: bool): int` — `true` or `false`.
 
 Float output spells the special values `nan`, `inf`, and `-inf`, and keeps
 the sign of a negative zero (`-0`). Values print in decimal notation when
@@ -61,8 +62,8 @@ the newline write fails, the newline's failure result is returned. An empty
 string still emits the newline, so `fmt.println("")` returns `1`. There is
 no zero-argument form — `fmt.print("\n")` already writes a bare newline.
 
-The same six overload types are available (`string`, `int`, `uint`,
-`usize`, `f32`, `f64`), selected exactly like `print`; narrower integer
+The same seven overload types are available (`string`, `int`, `uint`,
+`usize`, `f32`, `f64`, `bool`), selected exactly like `print`; narrower integer
 widths convert explicitly (`fmt.println(int(my_i32))`).
 
 ```ace
