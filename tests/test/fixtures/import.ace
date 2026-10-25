@@ -1,0 +1,7 @@
+/* Test files are not modules: importing one is an error. */
+
+import tests: "./empty.test.ace"
+
+main(): int {
+    return 0
+}

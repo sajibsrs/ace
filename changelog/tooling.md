@@ -1,5 +1,9 @@
 # Tooling
 
+- Added `ace test PATH...` (#90): each `*.test.ace` (directories walked,
+  `fixtures/` skipped) gets a generated `main` over its `pub` functions,
+  spliced in after parsing, and is built in a forked child and run as its own
+  binary; importing a test file is an error (`tests/test/`).
 - `@when` compares the builtin `_PLATFORM_` (formerly the contextual `target`),
   and `_NAME_` is the spelling reserved for compiler builtins; the old
   `target` is now an unknown `@when` name.

@@ -1,0 +1,7 @@
+/* A test file needs at least one pub test function. */
+
+import test
+
+check(mut t: test.T) {
+    mut t.equal(1, 1)
+}

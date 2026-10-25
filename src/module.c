@@ -869,6 +869,11 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path, Pac
             target = resolve_module_path(L, imp, dir, "module", segs, nsegs);
             if (!target) return NULL;
         }
+        size_t tn = strlen(target);
+        if (tn >= 9 && strcmp(target + tn - 9, ".test.ace") == 0) {
+            import_err(L->d, imp, "test file '%s' cannot be imported; ace test builds it", raw);
+            return NULL;
+        }
         // A package's ordinary relative imports may not reach outside its own
         // canonical directory, nor into its reserved pkg/ — this is also what
         // keeps a dependency's internal files from being deep-imported by a

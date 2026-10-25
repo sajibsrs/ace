@@ -1,7 +1,5 @@
 /* Every check passes: `test.run` prints `ok` per case and exits 0. */
 
-// expect-exit: 0
-
 import test
 
 pub numbers(mut t: test.T) {
@@ -13,8 +11,4 @@ pub numbers(mut t: test.T) {
 pub text(mut t: test.T) {
     mut t.equal("ace", "ace")
     mut t.equal(true, 1 < 2)
-}
-
-main(): int {
-    return test.run([("numbers", numbers), ("text", text)])
 }

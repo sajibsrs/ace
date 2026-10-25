@@ -2,6 +2,7 @@
 #include "ace.h"
 #include "ir.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -48,6 +49,7 @@ static void usage(void) {
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
                     "       ace pkg <init|build|run|check|add|remove|list> ...\n"
+                    "       ace test [--debug | --release] PATH...\n"
                     "  (default)       full semantic check, no codegen\n"
                     "  --debug         emit runtime diagnostics\n"
                     "  --release       emit without runtime diagnostic machinery\n"
@@ -72,7 +74,9 @@ static void usage(void) {
                     "  ace pkg CMD --dir=DIR  any pkg command but init, walking up from DIR\n"
                     "  ace pkg run   [--debug|--release] [--target=TARGET] [--report] [-- ARGS...]\n"
                     "                build, then execute the exe (exe-only), passing it ARGS\n"
-                    "  ace pkg check full semantic check of the enclosing package, no codegen\n");
+                    "  ace pkg check full semantic check of the enclosing package, no codegen\n"
+                    "  ace test PATH... build and run each *.test.ace (a file, or every one\n"
+                    "                under a directory, skipping fixtures/), with a generated main\n");
     exit(2);
 }
 
@@ -791,8 +795,261 @@ static int package_main(int argc, char** argv) {
     return 2; // unreachable
 }
 
+// --- ace test ---------------------------------------------------------------
+
+#define TEST_RUNNER "ace_test_runner_" // snippet placeholder, renamed to an unspellable binding
+
+static int is_test_func(Node* n) {
+    return n->kind == N_FUNC && (n->flags & F_PUB) && !(n->flags & (F_METHOD | F_ASSOC));
+}
+
+static int is_main_func(Node* n) {
+    return n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
+}
+
+// Splice `import <runner>: test` and `main(): int { return <runner>.run([...]) }`
+// into a parsed test file. Each table entry carries its function's position,
+// so a wrong signature is reported at the declaration.
+static int test_synthesize_main(Node* file, Diag* d, const char* target) {
+    Node** tests = malloc(sizeof(Node*) * (size_t)(file->nkids + 1));
+    if (!tests) {
+        fprintf(stderr, "ace: out of memory\n");
+        exit(1);
+    }
+    int ntests = 0;
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (is_main_func(n)) {
+            fprintf(stderr, "%s:%d:%d: error: a test file may not define main; ace test generates it\n",
+                    d->path, n->line, n->col);
+            d->errors++;
+        } else if (is_test_func(n)) {
+            tests[ntests++] = n;
+        }
+    }
+    if (d->errors > 0) {
+        free(tests);
+        return 1;
+    }
+    if (ntests == 0) {
+        fprintf(stderr, "%s: error: no pub test functions\n", d->path);
+        d->errors++;
+        free(tests);
+        return 1;
+    }
+
+    // Line 1: import; line 2: main header; line 3 + i: entry i.
+    size_t cap = 128;
+    for (int i = 0; i < ntests; i++) cap += 2 * tests[i]->len + 16;
+    char* text = arena_alloc(cap);
+    size_t len = (size_t)snprintf(text, cap, "import " TEST_RUNNER ": test\nmain(): int { return " TEST_RUNNER ".run([\n");
+    for (int i = 0; i < ntests; i++)
+        len += (size_t)snprintf(text + len, cap - len, "(\"%.*s\", %.*s),\n",
+                                (int)tests[i]->len, tests[i]->str, (int)tests[i]->len, tests[i]->str);
+    len += (size_t)snprintf(text + len, cap - len, "]) }\n");
+
+    Source s = {0};
+    s.path = d->path;
+    s.buf = text;
+    s.len = len;
+    size_t ntok;
+    Token* toks = lex(&s, d, &ntok);
+    for (size_t i = 0; i < ntok; i++) {
+        Token* t = &toks[i];
+        if (t->kind == T_IDENT && t->len == strlen(TEST_RUNNER) && memcmp(t->str, TEST_RUNNER, t->len) == 0) {
+            t->str = "@test";
+            t->len = 5;
+        } else if (t->line >= 3 && t->line < 3 + ntests) {
+            Node* f = tests[t->line - 3];
+            t->line = f->line;
+            t->col = f->col;
+        }
+    }
+    free(tests);
+    Node* gen = parse(toks, ntok, d, target);
+    if (d->errors > 0) return 1;
+
+    Node** kids = (Node**)arena_alloc(sizeof(Node*) * (size_t)(file->nkids + 2));
+    kids[0] = gen->kids[0];
+    memcpy(kids + 1, file->kids, sizeof(Node*) * (size_t)file->nkids);
+    kids[file->nkids + 1] = gen->kids[1];
+    file->kids = kids;
+    file->nkids += 2;
+    return 0;
+}
+
+// Compile one test file with its generated main and link it to `bin`.
+static int test_build(const char* path, const char* target, EmitMode mode, const char* bin) {
+    Source s;
+    if (source_load(&s, path) != 0) return 1;
+    Diag d = {path, 0};
+    size_t ntok;
+    Token* toks = lex(&s, &d, &ntok);
+    if (d.errors == 0) {
+        char root_dir[4096];
+        path_dir(root_dir, sizeof root_dir, path);
+        build_roots(root_dir);
+        Node* file = parse(toks, ntok, &d, target);
+        if (d.errors == 0) test_synthesize_main(file, &d, target);
+        if (d.errors == 0) resolve_imports(file, &d, target, NULL, NULL);
+        if (d.errors == 0) sema_check(file, &d);
+        if (d.errors == 0) {
+            char obj[4096];
+            snprintf(obj, sizeof obj, "%s.o", bin);
+            if (emit_object(file, &d, obj, NULL, mode) != 0 && d.errors == 0) d.errors++;
+            if (d.errors == 0) {
+                ArgList cc = {0};
+                arg_push(&cc, "cc");
+                arg_push(&cc, obj);
+                arg_push(&cc, "-o");
+                arg_push(&cc, (char*)bin);
+                arg_push(&cc, NULL);
+                int rc = run_linker(&cc);
+                free(cc.items);
+                if (rc != 0) return 1;
+            }
+        }
+    }
+    if (d.errors > 0) {
+        fprintf(stderr, "%s: %d error%s\n", path, d.errors, d.errors == 1 ? "" : "s");
+        return 1;
+    }
+    return 0;
+}
+
+// Wait for `pid`; its exit status, or 1 for a signal or wait failure.
+static int test_wait(pid_t pid, const char* what) {
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            fprintf(stderr, "ace: cannot wait for '%s': %s\n", what, strerror(errno));
+            return 1;
+        }
+    }
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    fprintf(stderr, "ace: '%s' terminated by signal %d\n", what, WTERMSIG(status));
+    return 1;
+}
+
+static int str_cmp(const void* a, const void* b) {
+    return strcmp(*(char* const*)a, *(char* const*)b);
+}
+
+// Collect the *.test.ace files under `dir`, skipping fixtures/ and dot directories.
+static void test_collect(const char* dir, ArgList* out) {
+    DIR* dp = opendir(dir);
+    if (!dp) {
+        fprintf(stderr, "ace: cannot open directory '%s': %s\n", dir, strerror(errno));
+        exit(1);
+    }
+    struct dirent* e;
+    while ((e = readdir(dp))) {
+        if (e->d_name[0] == '.') continue;
+        size_t n = strlen(dir) + strlen(e->d_name) + 2;
+        char* child = malloc(n);
+        if (!child) {
+            fprintf(stderr, "ace: out of memory\n");
+            exit(1);
+        }
+        snprintf(child, n, "%s/%s", dir, e->d_name);
+        struct stat st;
+        if (stat(child, &st) == 0 && S_ISDIR(st.st_mode)) {
+            if (strcmp(e->d_name, "fixtures") != 0) test_collect(child, out);
+            free(child);
+        } else if (has_suffix(e->d_name, ".test.ace")) {
+            arg_push(out, child);
+        } else {
+            free(child);
+        }
+    }
+    closedir(dp);
+}
+
+// ace test [--debug | --release] PATH...: build each *.test.ace (a file, or
+// every one under a directory) into its own binary and run it.
+static int test_main(int argc, char** argv) {
+    int mode_seen = 0;
+    EmitMode mode = EMIT_RELEASE;
+    ArgList files = {0};
+    for (int i = 0; i < argc; i++) {
+        char* a = argv[i];
+        if (strcmp(a, "--debug") == 0 || strcmp(a, "--release") == 0) {
+            EmitMode m = a[2] == 'd' ? EMIT_DEBUG : EMIT_RELEASE;
+            if (mode_seen && mode != m) cli_error("--debug and --release are mutually exclusive");
+            mode_seen = 1;
+            mode = m;
+        } else if (a[0] == '-' && a[1] != 0) {
+            fprintf(stderr, "ace: unknown option '%s'\n", a);
+            return 2;
+        } else {
+            struct stat st;
+            if (stat(a, &st) != 0) {
+                fprintf(stderr, "ace: cannot open '%s'\n", a);
+                return 2;
+            }
+            size_t first = files.len;
+            if (S_ISDIR(st.st_mode)) test_collect(a, &files);
+            else if (has_suffix(a, ".test.ace")) arg_push(&files, a);
+            else {
+                fprintf(stderr, "ace: '%s' is not a *.test.ace file or a directory\n", a);
+                return 2;
+            }
+            qsort(files.items + first, files.len - first, sizeof(char*), str_cmp);
+        }
+    }
+    if (files.len == 0) {
+        fprintf(stderr, "usage: ace test [--debug | --release] PATH...\n");
+        return 2;
+    }
+    const char* target = host_target();
+    if (!target_select(target)) return 2;
+
+    const char* tmp = getenv("TMPDIR");
+    char work[4096];
+    snprintf(work, sizeof work, "%s/ace-test-XXXXXX", tmp && tmp[0] ? tmp : "/tmp");
+    if (!mkdtemp(work)) {
+        fprintf(stderr, "ace: cannot create a build directory: %s\n", strerror(errno));
+        return 1;
+    }
+
+    size_t failed = 0;
+    for (size_t i = 0; i < files.len; i++) {
+        const char* path = files.items[i];
+        char bin[4200], obj[4300];
+        snprintf(bin, sizeof bin, "%s/t%zu", work, i);
+        snprintf(obj, sizeof obj, "%s.o", bin);
+        printf("== %s\n", path);
+        fflush(stdout);
+        // Each build runs in a child: compiler state stays per file.
+        pid_t pid = fork();
+        if (pid < 0) {
+            fprintf(stderr, "ace: cannot fork: %s\n", strerror(errno));
+            return 1;
+        }
+        if (pid == 0) _exit(test_build(path, target, mode, bin));
+        int rc = test_wait(pid, path);
+        if (rc == 0) {
+            char* args[] = {bin, NULL};
+            int spawn_rc = posix_spawn(&pid, bin, NULL, NULL, args, environ);
+            if (spawn_rc != 0) {
+                fprintf(stderr, "ace: cannot launch '%s': %s\n", bin, strerror(spawn_rc));
+                rc = 1;
+            } else {
+                rc = test_wait(pid, path);
+            }
+        }
+        if (rc != 0) failed++;
+        unlink(bin);
+        unlink(obj);
+    }
+    rmdir(work);
+    printf("%zu module%s, %zu failed\n", files.len, files.len == 1 ? "" : "s", failed);
+    return failed > 0 ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2);
+    if (argc >= 2 && strcmp(argv[1], "test") == 0) return test_main(argc - 2, argv + 2);
     int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_symbols = 0, check_bodies = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_RELEASE;

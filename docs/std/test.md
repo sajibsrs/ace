@@ -3,8 +3,8 @@
 [Standard library](index.md)
 
 `test` runs a table of test functions and reports each one. It allocates
-nothing. A test takes `mut t: test.T` and checks values through it; a file
-named `<name>.test.ace` lists its tests in `main`:
+nothing. A test is a `pub` function taking `mut t: test.T` in a file named
+`<name>.test.ace`; `ace test` generates its `main`:
 
 ```ace
 import test
@@ -13,16 +13,24 @@ pub sums(mut t: test.T) {
     mut t.equal(2 + 2, 4)
     mut t.equal("ace", "ace")
 }
-
-main(): int {
-    return test.run([("sums", sums)])
-}
 ```
 
 ```
+$ ace test sums.test.ace
+== sums.test.ace
 ok   sums
 1 passed, 0 failed
+1 module, 0 failed
 ```
+
+`ace test [--debug | --release] PATH...` takes files and directories; a
+directory runs every `*.test.ace` beneath it in sorted order, skipping
+`fixtures/` (test inputs, including deliberately invalid sources) and dot
+directories. Each file becomes its own binary, so an `assert` abort fails
+only that module, and the command exits 1 when any module failed to build or
+run. Every non-method `pub` function is a test, in declaration order: one with
+another signature is a type error at its declaration. A test file may not
+define `main`, must have a test, and cannot be imported.
 
 - `T.equal(mut self, got, want): bool` compares `int`, `uint`, `usize`, `bool`,
   or `string` (exact bytes). On a mismatch it prints
@@ -42,9 +50,9 @@ check index locate a failure.
 
 ## Design rationale
 
-The table is written by hand in `main` because function values are not
-compile-time constants, so it cannot be a global. The `N passed, M failed`
-line makes a test left out of the table visible as a lower count. Discovering
-`pub` test functions and generating `main` is a toolchain step (`ace test`)
-that only automates the `test.run` call, so test files written now need no
-change when it lands.
+`ace test` writes the table into a generated `main` because function values
+are not compile-time constants, so it cannot be a global. Discovery is by
+signature on `pub` functions, as Go's `go test` does by name: every `pub`
+function of a test file is a test, so a misspelled signature is an error, not
+a silently skipped test. Builds run in a forked child per file so compiler
+state never carries between modules.

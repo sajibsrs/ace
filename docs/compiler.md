@@ -178,6 +178,11 @@ machine-consumable standard output remain unchanged.
 Manifest-aware building (`ace.pkg`, dependencies, native link inputs, and the
 `ace pkg` commands) is described in [Packages](package.md).
 
+## Tests
+
+`ace test PATH...` builds and runs `*.test.ace` files with a generated
+`main`; see [std.test](std/test.md).
+
 ## Design rationale
 
 Why the rules in `spec/compiler.md` are shaped as they are.

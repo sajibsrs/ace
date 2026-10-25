@@ -1,8 +1,6 @@
 /* Failing checks report their index and values; later checks still run, the
  * other cases still run, and `test.run` exits 1. */
 
-// expect-exit: 1
-
 import test
 
 pub good(mut t: test.T) {
@@ -17,8 +15,4 @@ pub bad(mut t: test.T) {
     mut t.equal(false, true)
     mut t.equal("got", "want")
     mut t.fail("unreachable state")
-}
-
-main(): int {
-    return test.run([("good", good), ("bad", bad)])
 }
