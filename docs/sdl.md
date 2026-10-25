@@ -4,8 +4,8 @@
 
 `sdl` is a minimal binding to the host's [SDL3](https://libsdl.org): a
 window, a renderer with a draw color, colored triangle geometry, debug text,
-and vsync, fragment shaders on SDL's GPU render driver, and the keyboard and
-quit events of a classic `SDL_PollEvent` loop. It covers only what its demos
+and vsync, fragment shaders on SDL's GPU render driver, and the keyboard,
+mouse, and quit events of a classic `SDL_PollEvent` loop. It covers only what its demos
 need and grows with its users.
 
 `sdl` is a standalone package at [`pkg/sdl`](../pkg/sdl), not a `std`
@@ -192,6 +192,19 @@ integer for a range check:
 
 ```ace
 if u32(key) >= 'a' && u32(key) <= 'z' { ... }
+```
+
+Mouse input arrives as `mouse_button_down`, `mouse_button_up`, and
+`mouse_motion`. `event.mouse_button(): (MouseButtonEvent, bool)` and
+`event.mouse_motion(): (MouseMotionEvent, bool)` check `type` as `key()`
+does. A `MouseButtonEvent` carries `button` (a `MouseButton`: `left`,
+`middle`, `right`, `x1`, `x2`), `down`, `clicks`, and the window position
+`x`, `y`; a `MouseMotionEvent` carries `x`, `y`, the relative `xrel`, `yrel`,
+and the held buttons, read as `MouseButtons` bits through `buttons()`:
+
+```ace
+m: sdl.MouseMotionEvent, is_motion: bool = event.mouse_motion()
+if is_motion && m.buttons().left == 1 { ... }
 ```
 
 ## Testing

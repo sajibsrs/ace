@@ -1,5 +1,9 @@
 # Packages
 
+- `pkg/sdl` delivers mouse events: `MouseButtonEvent` and `MouseMotionEvent`
+  as `Event` members, read through `Event.mouse_button()` and
+  `Event.mouse_motion()`. Motion's `state` stays a `u32`, since a `bits` field
+  makes the event struct non-C-ABI; `buttons()` reads it as `MouseButtons`.
 - `regex.Output.new` is now `Output.init` (it wraps caller storage) and
   `Regex.new` is now `Regex.compile` (it does work on its input).
   `AGENTS.md` names memory-only constructors `new`/`init`/`wipe` and keeps a

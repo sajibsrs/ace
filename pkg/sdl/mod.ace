@@ -1,6 +1,7 @@
 /* sdl — a minimal SDL3 binding: window, renderer, draw color, colored
  * triangle geometry, debug text, vsync, fragment shaders on the GPU render
- * driver, and the keyboard and quit events of a classic SDL_PollEvent loop.
+ * driver, and the keyboard, mouse, and quit events of a classic SDL_PollEvent
+ * loop.
  *
  * Layouts, values, and signatures mirror the SDL 3.4 headers; the
  * static_asserts pin them. The manifest links Homebrew's
@@ -28,6 +29,9 @@ pub EventType: enum u32 {
     window_close_requested = 0x210,
     key_down = 0x300,
     key_up = 0x301,
+    mouse_motion = 0x400,
+    mouse_button_down = 0x401,
+    mouse_button_up = 0x402,
     _,
 }
 
@@ -148,6 +152,40 @@ pub KeyboardEvent: struct {
     pub repeat: bool,
 }
 
+// SDL_BUTTON_* indices; the enum is open for further buttons.
+pub MouseButton: enum u8 { none, left, middle, right, x1, x2, _ }
+
+// SDL_MouseButtonFlags: the buttons held during a motion, one bit per button.
+pub MouseButtons: bits u32 { left: 1, middle: 1, right: 1, x1: 1, x2: 1, _: 27 }
+
+pub MouseMotionEvent: struct {
+    pub type: EventType,
+    pub reserved: u32,
+    pub timestamp: u64,
+    pub window_id: u32,
+    pub which: u32,
+    // SDL_MouseButtonFlags; buttons() reads it as MouseButtons.
+    pub state: u32,
+    pub x: f32,
+    pub y: f32,
+    pub xrel: f32,
+    pub yrel: f32,
+}
+
+pub MouseButtonEvent: struct {
+    pub type: EventType,
+    pub reserved: u32,
+    pub timestamp: u64,
+    pub window_id: u32,
+    pub which: u32,
+    pub button: MouseButton,
+    pub down: bool,
+    pub clicks: u8,
+    pub padding: u8,
+    pub x: f32,
+    pub y: f32,
+}
+
 // SDL_Event: a C union, written as an overlapping struct.
 pub Event: struct {
     @offset(0)
@@ -158,6 +196,12 @@ pub Event: struct {
 
     @offset(0)
     pub quit: QuitEvent,
+
+    @offset(0)
+    pub motion: MouseMotionEvent,
+
+    @offset(0)
+    pub button: MouseButtonEvent,
 
     @offset(0)
     pub padding: [128]u8,
@@ -197,6 +241,10 @@ static_assert(sizeof(KeyboardEvent) == 40 && alignof(KeyboardEvent) == 8)
 static_assert(offsetof(KeyboardEvent, key) == 28)
 static_assert(offsetof(KeyboardEvent, mod) == 32)
 static_assert(offsetof(KeyboardEvent, down) == 36)
+static_assert(sizeof(MouseMotionEvent) == 48 && offsetof(MouseMotionEvent, state) == 24)
+static_assert(offsetof(MouseMotionEvent, x) == 28 && offsetof(MouseMotionEvent, yrel) == 40)
+static_assert(sizeof(MouseButtonEvent) == 40 && offsetof(MouseButtonEvent, button) == 24)
+static_assert(offsetof(MouseButtonEvent, clicks) == 26 && offsetof(MouseButtonEvent, x) == 28)
 static_assert(sizeof(Event) == 128 && alignof(Event) == 8)
 static_assert(sizeof(Color) == 16)
 static_assert(sizeof(Vertex) == 32 && offsetof(Vertex, color) == 8)
@@ -260,6 +308,19 @@ pub Event.poll(mut self): bool { return c_poll_event(mut &self) }
 // other kind, whose bytes the member would misread.
 pub Event.key(self): (KeyboardEvent, bool) {
     return self.keyboard, self.type == EventType.key_down || self.type == EventType.key_up
+}
+
+// The mouse-motion member, and whether type says it holds one.
+pub Event.mouse_motion(self): (MouseMotionEvent, bool) {
+    return self.motion, self.type == EventType.mouse_motion
+}
+
+// The held buttons of a motion; state holds them as SDL_MouseButtonFlags.
+pub MouseMotionEvent.buttons(self): MouseButtons { return MouseButtons(self.state) }
+
+// The mouse-button member, and whether type says it holds one.
+pub Event.mouse_button(self): (MouseButtonEvent, bool) {
+    return self.button, self.type == EventType.mouse_button_down || self.type == EventType.mouse_button_up
 }
 
 // An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written
