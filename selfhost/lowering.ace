@@ -2006,7 +2006,10 @@ pub mangle_type(s: sema.Sema, mut b: Out, t: u32) {
         }
         TypeKind.func {
             _ = mut b.printf("f")
-            for i: u32 in 0..x.nparams { mangle_type(s, mut b, s.param(x, i)) }
+            for i: u32 in 0..x.nparams {
+                if i < 64 && ((x.mut_params >> u64(i)) & 1) != 0 { _ = mut b.printf("m") } // no type tag starts with 'm'
+                mangle_type(s, mut b, s.param(x, i))
+            }
             _ = mut b.printf("r")
             mangle_type(s, mut b, x.ret)
             _ = mut b.printf("_")
@@ -4267,7 +4270,10 @@ Lw.indirect_call(mut self, x: u32, s: u32, mut res: Agg, want_res: bool, dst: in
     f: int = mut self.expr(cn.a, int(ir.IT_PTR))
     g: Args = Args.init()
     defer mut g.wipe()
-    for i: u32 in 0..cn.nkids { mut self.call_arg(mut g, self.kid(x, i), self.s.param(self.ty(ft), i), false, false) }
+    for i: u32 in 0..cn.nkids { // a mut parameter passes the caller's address
+        by_address: bool = i < 64 && ((self.ty(ft).mut_params >> u64(i)) & 1) != 0
+        mut self.call_arg(mut g, self.kid(x, i), self.s.param(self.ty(ft), i), by_address, false)
+    }
     id: int = mut self.emit(ir.IR_CALLI, mut self.result_type(self.ty(ft).ret))
     mut self.fn.at(id).flags = self.null_checked()
     mut self.fn.arg_add(id, f) // the target, then the arguments

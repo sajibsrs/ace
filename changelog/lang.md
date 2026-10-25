@@ -1,5 +1,11 @@
 # Language
 
+- A function type's parameters may be named, as a declaration writes them
+  (`(mut b: Box): void`); names are ignored for identity. Each position's `mut`
+  is a bit in the type's mask, so a function with a `mut` parameter is now a
+  value, called with the caller's address, and the mask joins symbol mangling.
+  C and selfhost.
+
 - Added `threadlocal` module variables (#39): one copy per thread, starting at
   zero or the constant initializer. They are Mach-O thread-local variables: a
   descriptor and template, read through dyld's thunk (x0 kept free across it),

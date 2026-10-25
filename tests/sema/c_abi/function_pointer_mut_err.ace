@@ -1,0 +1,7 @@
+/* A C function-pointer type has no mut parameters. */
+
+f: extern "c" (mut p: i32): void = null
+
+main(): int {
+    return 0
+}

@@ -50,6 +50,7 @@ struct SType {
     SType*      key;     // SK_ARRAY: the dense enum of an enum-indexed [E]T, else NULL
     SField*     fields; int nfields; // struct/tuple fields or union variants
     SType**     params; int nparams; // function params
+    uint64_t    mut_params; // SK_FUNC: bit i set when parameter i is mut
     SType**     args; int nargs;     // nominal generic instantiation arguments
     SType*      ret;
     Node*       decl;

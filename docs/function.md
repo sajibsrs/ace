@@ -264,9 +264,32 @@ a tuple of two or more members, so `(int)` and `()` alone are not types. A
 function returning a function writes the type without extra parentheses:
 `pick(): (int): int`.
 
-A function with a `mut` parameter cannot become a function value: a
-function-value type has no syntax for a parameter's mutability, so a call
-through one could never validate `mut` agreement against the real callee.
+A function type's parameters may be named, as a declaration names them. The
+names only document: `(a: int, b: int): int`, `(int, b: int): int`, and
+`(int, int): int` are one type. A `mut` parameter is written in its named form,
+and its `mut` is part of the type, so a function with a `mut` parameter is a
+value of exactly that type and a call through it marks the argument:
+
+```ace
+Box: struct {
+    n: int,
+}
+
+bump(mut b: Box) {
+    b.n += 1
+}
+
+bump_twice(f: (mut b: Box): void, mut b: Box) {
+    f(mut b)
+    f(mut b)
+}
+```
+
+`(mut b: Box): void` and `(Box): void` are different types, and neither
+converts to the other. A bare `mut` before a type still marks a writable view:
+`(mut []u8): void` takes a writable slice, `(mut s: []u8): void` may replace the
+caller's slice, and `(mut s: mut []u8): void` does both. Tuple members take no
+name, and a C function-pointer type has no `mut` parameter.
 
 C-callable function values state their convention in the type:
 
@@ -768,6 +791,15 @@ The examples are covered by `tests/sema/docs/function_ok.ace`.
 ## Design rationale
 
 Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and Values & Passing #2 are shaped as they are.
+
+- Named function-type parameters (Syntax & Parsing #5): a declaration tells a
+  `mut` parameter from a writable view by the name between them
+  (`mut b: mut []u8`), and an unnamed type has no such position, so
+  `(mut []u8)` could not mean both. Letting a function type's parameters be
+  written as a declaration's reuses that rule rather than inventing a marker,
+  and the names then document callbacks, as Kotlin, Go, Odin, and Swift
+  function types allow. A `mut` position stays part of the type, so a call
+  through the value checks `mut` agreement exactly as a direct call does.
 
 - Explicit layouts by value: the C ABI classifies an aggregate by the types of
   all its members, overlapping ones included (clang's

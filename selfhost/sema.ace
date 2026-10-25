@@ -94,6 +94,7 @@ pub SType: struct {
     pub nfields: u32 = 0,
     pub params: u32 = 0,
     pub nparams: u32 = 0,
+    pub mut_params: u64 = 0,            // func: bit i set when parameter i is mut
     pub args: u32 = 0,                  // a generic instance's type arguments, a run of Sema.params
     pub nargs: u32 = 0,
 }
@@ -953,6 +954,7 @@ Sema.list_name(mut self, head: string, t: SType, params: bool): string {
         if i > 0 { fail(mut parts.push(", ")) }
         part: u32 = 0
         if params { part = self.params.get(usize(t.params + i)) } else { part = self.field(t, i).ty }
+        if params && i < 64 && ((t.mut_params >> u64(i)) & 1) != 0 { fail(mut parts.push("mut _: ")) }
         fail(mut parts.push(mut self.type_name(part)))
     }
     fail(mut parts.push(")"))
@@ -2077,11 +2079,6 @@ Sema.coerce_overloaded_value(mut self, e: u32, head: u32, want: u32): bool {
         mut self.set_node_ty(e, self.t_err)
         return false
     }
-    if self.has_mut_param(self.sym(found).decl) {
-        mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
-        mut self.set_node_ty(e, self.t_err)
-        return false
-    }
     mut self.set_node_sym(e, found)
     mut self.set_node_ty(e, self.sym(found).ty)
     return true
@@ -2131,10 +2128,6 @@ Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
         }
     }
     if chosen != 0 {
-        if self.has_mut_param(self.sym(chosen).decl) {
-            mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
-            return self.t_err
-        }
         mut self.set_node_sym(e, chosen)
         return self.sym(chosen).ty
     }
@@ -2176,10 +2169,6 @@ Sema.generic_func_value(mut self, e: u32, want: u32): u32 {
     }
     if (d.flags & parser.F_SPECIALIZED) != 0 {
         mut self.err(e, ["'", name, mut self.args_name(targs, nargs), "' matches no specialization \u{2014} '", name, "' is declared 'specialized' (no default body) at line ", mut self.num(d.line)])
-        return self.t_err
-    }
-    if self.has_mut_param(self.sym(chosen).decl) {
-        mut self.err(e, ["'", name, "' has a mut parameter and cannot be used as a function value"])
         return self.t_err
     }
     ft: u32 = mut self.instantiate_func(chosen, targs, nargs, e)
@@ -2244,14 +2233,6 @@ Sema.instantiate_func(mut self, gs: u32, args: u32, nargs: u32, at: u32): u32 {
     }
     mut self.stamps.truncate(self.stamps.len - 1)
     return ft
-}
-
-/* Whether declaration `d` takes any `mut` parameter. */
-Sema.has_mut_param(self, d: u32): bool {
-    for i: u32 = 0; d != 0 && i < self.node(d).nkids; i += 1 {
-        if (self.node(self.kid(d, i)).flags & parser.F_MUT) != 0 { return true }
-    }
-    return false
 }
 
 /* How many overloads of `head`'s set the use site `at` sees. */
@@ -2403,10 +2384,6 @@ Sema.check_ident(mut self, e: u32): u32 {
         }
         if self.visible_count(s, e) > 1 {
             mut self.err(e, ["overloaded function '", n.text, "' needs a call or an explicit function-value type"])
-            return self.t_err
-        }
-        if self.has_mut_param(self.sym(s).decl) {
-            mut self.err(e, ["'", n.text, "' has a mut parameter and cannot be used as a function value"])
             return self.t_err
         }
         x = self.sym(s)
@@ -2834,7 +2811,7 @@ Sema.check_member_call(mut self, call: u32): u32 {
                 mut self.err(call, ["'mut' marks mutating methods; field '", callee.text, "' holds a function value"])
             }
             mut self.check_args(call, ft, false)
-            mut self.check_no_mut_args(call)
+            mut self.check_value_mut_args(call, ft)
             r: u32 = self.ty(ft).ret
             if r == 0 { return self.t_void }
             return r
@@ -2863,7 +2840,7 @@ Sema.check_member_call(mut self, call: u32): u32 {
         }
         ft: u32 = mut self.contract_method_type(b, m)
         mut self.check_args(call, ft, false)
-        mut self.check_no_mut_args(call)
+        mut self.check_value_mut_args(call, ft)
         r: u32 = self.ty(ft).ret
         if r == 0 { return self.t_void }
         return r
@@ -4919,7 +4896,10 @@ pub Sema.build_type(mut self, id: u32): u32 {
         }
         Kind.func_t {
             mut self.check_param_count(id, t.nkids, false)
-            f: SType = SType { kind = TypeKind.func, is_c_abi = (t.flags & parser.F_CABI) != 0, params = u32(self.params.len), nparams = t.nkids }
+            f: SType = SType { kind = TypeKind.func, is_c_abi = (t.flags & parser.F_CABI) != 0, params = u32(self.params.len), nparams = t.nkids, mut_params = t.ival }
+            if f.is_c_abi && f.mut_params != 0 {
+                mut self.err(id, ["a C function-pointer type has no mut parameters; pass writable storage as 'mut *T'"])
+            }
             fail(mut self.params.resize(self.params.len + usize(t.nkids)))
             for i: u32 in 0..t.nkids {
                 p: u32 = mut self.build_type(self.kid(id, i))
@@ -5034,7 +5014,7 @@ pub Sema.same_type(self, a: u32, b: u32): bool {
             return true
         }
         TypeKind.func {
-            if x.is_c_abi != y.is_c_abi || x.nparams != y.nparams { return false }
+            if x.is_c_abi != y.is_c_abi || x.nparams != y.nparams || x.mut_params != y.mut_params { return false }
             for i: u32 in 0..x.nparams {
                 if !self.same_type(self.params.get(usize(x.params + i)), self.params.get(usize(y.params + i))) { return false }
             }
@@ -6040,35 +6020,39 @@ Sema.is_c_variadic_scalar(self, t: u32): bool {
 Sema.check_mut_args(mut self, call: u32, decl: u32, recv: u32) {
     if decl == 0 { return }
     for i: u32 = 0; i < self.node(call).nkids && i + recv < self.node(decl).nkids; i += 1 {
-        arg: u32 = self.kid(call, i)
-        am: bool = self.node(arg).kind == Kind.mutarg
-        pm: bool = self.param_mut(decl, i + recv)
-        if am && !pm {
-            mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"])
-        } else if pm && !am {
-            mut self.err(arg, ["mut parameter needs 'mut' at the call site"])
-        } else if am { // mut passes the caller's address: the argument needs one
-            raw: u32 = self.node(arg).a
-            _ = mut self.check_lvalue(raw, false)
-            _, _, bitsf: bool = self.bits_field(raw)
-            if bitsf { mut self.err(raw, ["bit fields cannot supply mut arguments"]) }
-            if self.node(raw).kind == Kind.ident {
-                v: u32 = mut self.lookup_val(self.node(raw).text)
-                if v != 0 && self.sym(v).is_const_backed {
-                    mut self.err(raw, ["const-backed contract cannot be passed to a mut parameter"])
-                }
+        mut self.check_mut_arg(call, i, self.param_mut(decl, i + recv))
+    }
+}
+
+/* Argument i of `call` against a parameter that is mut (pm) or read-only. */
+Sema.check_mut_arg(mut self, call: u32, i: u32, pm: bool) {
+    arg: u32 = self.kid(call, i)
+    am: bool = self.node(arg).kind == Kind.mutarg
+    if am && !pm {
+        mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"])
+    } else if pm && !am {
+        mut self.err(arg, ["mut parameter needs 'mut' at the call site"])
+    } else if am { // mut passes the caller's address: the argument needs one
+        raw: u32 = self.node(arg).a
+        _ = mut self.check_lvalue(raw, false)
+        _, _, bitsf: bool = self.bits_field(raw)
+        if bitsf { mut self.err(raw, ["bit fields cannot supply mut arguments"]) }
+        if self.node(raw).kind == Kind.ident {
+            v: u32 = mut self.lookup_val(self.node(raw).text)
+            if v != 0 && self.sym(v).is_const_backed {
+                mut self.err(raw, ["const-backed contract cannot be passed to a mut parameter"])
             }
         }
     }
 }
 
-/* An indirect call never targets a mut parameter (a function with one is no
- * callable value), so a 'mut' mark on its arguments is always wrong.
+/* A call through a function value: its type states which parameters are mut
+ * (`(mut name: T): R`), checked as a direct call checks its declaration.
+ * Contract methods have no mut parameters, so their mask is zero.
  */
-Sema.check_no_mut_args(mut self, call: u32) {
-    for i: u32 in 0..self.node(call).nkids {
-        arg: u32 = self.kid(call, i)
-        if self.node(arg).kind == Kind.mutarg { mut self.err(arg, ["'mut' marks mut parameters; parameter ", mut self.num(i + 1), " is read-only"]) }
+Sema.check_value_mut_args(mut self, call: u32, ft: u32) {
+    for i: u32 = 0; i < self.node(call).nkids && i < self.ty(ft).nparams; i += 1 {
+        mut self.check_mut_arg(call, i, i < 64 && ((self.ty(ft).mut_params >> u64(i)) & 1) != 0)
     }
 }
 
@@ -6120,7 +6104,7 @@ Sema.check_direct_call(mut self, call: u32, s: u32): u32 {
     }
     if x.kind == SymKind.var && x.ty != 0 && self.ty(x.ty).kind == TypeKind.func { // through a function value
         mut self.check_args(call, x.ty, false)
-        mut self.check_no_mut_args(call)
+        mut self.check_value_mut_args(call, x.ty)
         mut self.set_node_sym(self.node(call).a, s)
         mut self.set_node_ty(self.node(call).a, x.ty)
         mut self.set_node_sym(call, s)
@@ -9075,6 +9059,7 @@ Sema.build_func_type(mut self, f: u32, bound: bool, args: u32, nargs: u32): u32 
     fail(mut self.params.resize(self.params.len + usize(n.nkids)))
     for i: u32 in 0..n.nkids {
         pk: u32 = self.kid(f, i)
+        if (self.node(pk).flags & parser.F_MUT) != 0 && i < 64 { ft.mut_params |= u64(1) << u64(i) }
         p: u32 = mut self.build_type(self.node(pk).a)
         mut self.params.set(usize(ft.params + i), p)
         if self.ty(p).kind == TypeKind.error_domain {

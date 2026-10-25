@@ -502,13 +502,30 @@ Parser.type_arg(mut self): u32 {
     return v
 }
 
-/* A comma list of types up to `close`, trailing comma allowed. */
-Parser.type_list(mut self, close: Token) {
-    if self.at(close) { return }
+/* A function type's parameter list up to `close`, trailing comma allowed: each
+ * entry a bare type or a declaration's `name: T` or `mut name: T`. The name
+ * documents and is dropped; bit i of the mask marks parameter i mut, and
+ * `named` reports a written name, which a tuple rejects.
+ */
+Parser.func_type_params(mut self, close: Token): (u64, bool) {
+    mask: u64 = 0
+    named: bool = false
+    if self.at(close) { return mask, named }
+    idx: u64 = 0
     for {
+        if self.at(Token.mut) && self.kth(1) == Token.ident && self.kth(2) == Token.colon {
+            if idx < 64 { mask |= u64(1) << idx }
+            self.i += 3
+            named = true
+        } else if self.at(Token.ident) && self.kth(1) == Token.colon {
+            self.i += 2
+            named = true
+        }
         mut self.push(mut self.parse_type())
+        idx += 1
         if !mut self.eat(Token.comma) || self.at(close) { break }
     }
+    return mask, named
 }
 
 pub Parser.parse_type(mut self): u32 {
@@ -544,7 +561,7 @@ pub Parser.parse_type(mut self): u32 {
             self.i += 1
             return t
         }
-        mut self.fail("'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'")
+        mut self.fail("'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'; a function type's mut parameter is written 'mut name: T'")
         return 0
     }
     if self.at(Token.star) {
@@ -574,7 +591,8 @@ pub Parser.parse_type(mut self): u32 {
         if !self.failed && !mem.equal(self.toks[abi].text, "c") { mut self.fail("function types support only the 'c' ABI") }
         mut self.expect(Token.lparen, "'(' after function type ABI")
         mark: usize = self.nstack
-        mut self.type_list(Token.rparen)
+        cmask: u64, cnamed: bool = mut self.func_type_params(Token.rparen)
+        self.nodes[f].ival = cmask
         mut self.expect(Token.rparen, "')' to close function parameter types")
         mut self.close(f, mark)
         mut self.expect(Token.colon, "':' and a return type or 'void' after C function parameter types")
@@ -585,13 +603,19 @@ pub Parser.parse_type(mut self): u32 {
         t: u32 = mut self.nd(Kind.tuple_t)
         self.i += 1
         mark: usize = self.nstack
-        mut self.type_list(Token.rparen)
+        mask: u64, named: bool = mut self.func_type_params(Token.rparen)
         mut self.expect(Token.rparen, "')' to close type list")
         if mut self.eat(Token.colon) { // (params): ret
             f: u32 = mut self.nd(Kind.func_t)
+            self.nodes[f].ival = mask
             mut self.close(f, mark)
             self.nodes[f].a = mut self.func_type_ret()
             return f
+        }
+        if named {
+            mut self.fail("tuple members have no names; only a function type's parameters may be named")
+            self.nstack = mark
+            return 0
         }
         count: usize = self.nstack - mark
         if count < 2 {

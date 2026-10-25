@@ -1,0 +1,49 @@
+/* Function values with mut parameters: stored, passed, held in a field and a
+   table, called through the value with the caller's storage, in generics. */
+
+// expect-exit: 79
+
+Box: struct {
+    n: int,
+    big: [8]int,
+}
+
+bump(mut b: Box) {
+    b.n += 1
+    b.big[7] += 10
+}
+
+trim(mut text: []u8, by: usize) {
+    text = text[0 .. text.len - by]
+}
+
+twice(f: (mut b: Box): void, mut b: Box) {
+    f(mut b)
+    f(mut b)
+}
+
+Holder: struct {
+    run: (mut b: Box): void,
+}
+
+apply[A](f: (mut a: A): void, mut a: A) {
+    f(mut a)
+}
+
+main(): int {
+    b: Box = blank(Box)
+    f: (mut b: Box): void = bump
+    f(mut b)
+    twice(bump, mut b)
+    h: Holder = Holder { run = bump }
+    h.run(mut b)
+    table: [](string, (mut b: Box): void) = [("bump", bump)]
+    name: string, g: (mut b: Box): void = table[0]
+    g(mut b)
+    apply[Box](bump, mut b)
+    t: (mut text: []u8, by: usize): void = trim
+    s: []u8 = "hello"
+    t(mut s, 2)
+    // n = 6, big[7] = 60, name and s lengths 4 and 3, plus 6
+    return b.n + b.big[7] + int(name.len) + int(s.len) + 6
+}

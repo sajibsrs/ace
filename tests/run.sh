@@ -181,6 +181,11 @@ tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's f
 tests/sema/unions/payload_value_pattern_err.ace|8:18: error: match the union variant, not a payload value: Type.variant(binder: type)
 tests/sema/unions/non_variant_pattern_err.ace|8:9: error: union switch cases must name Event variants (Type.variant)
 tests/sema/functions/indirect_mutarg_err.ace|4:14: error: 'mut' marks mut parameters; parameter 1 is read-only
+tests/sema/functions/value_mut_err.ace|13:26: error: type mismatch: (mut _: Box): void given where (Box): void expected
+tests/sema/functions/value_mut_err.ace|14:34: error: type mismatch: (Box): void given where (mut _: Box): void expected
+tests/sema/functions/value_mut_err.ace|17:7: error: mut parameter needs 'mut' at the call site
+tests/sema/functions/value_mut_err.ace|19:7: error: 'mut' marks mut parameters; parameter 1 is read-only
+tests/sema/c_abi/function_pointer_mut_err.ace|3:4: error: a C function-pointer type has no mut parameters
 tests/sema/functions/missing_return_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
 tests/sema/functions/missing_return_branch_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
 tests/sema/functions/missing_return_loop_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
@@ -237,6 +242,8 @@ tests/parser/function_type/void_value_err.ace|4:9: error: 'void' is allowed only
 tests/parser/function_type/single_type_err.ace|'(T)' is not a type
 tests/parser/function_type/empty_type_err.ace|'()' is not a type
 tests/parser/function_type/c_return_err.ace|expected ':' and a return type or 'void'
+tests/parser/function_type/tuple_names_err.ace|3:24: error: tuple members have no names
+tests/parser/function_type/bare_mut_err.ace|a function type's mut parameter is written 'mut name: T'
 tests/sema/fields/method_collision_err.ace|5:8: error: method 'on_click' collides with a field of Button
 tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides with a method promoted from embedded 'base'
 tests/modules/directory_private/main.ace|4:1: error: implementation file 'app/inc/util.ace' is private to directory module 'app/mod.ace'

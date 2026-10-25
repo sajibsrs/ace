@@ -271,8 +271,10 @@ string_type   := ["mut"] "string"                         // string, mut string
 array_type    := "[" expr "]" type_expr                   // [16][8]u8; N is a compile-time constant expression
                | "[" named_type "]" type_expr             // [TokKind]string; a dense enum, by namespace
 tuple_type    := "(" type ("," type)+ ")"
-func_type     := "(" [type_list] ")" ":" func_ret          // (int, int): int, (int): void
-c_func_type   := "extern" string_lit "(" [type_list] ")" ":" func_ret
+func_type     := "(" [ftype_params] ")" ":" func_ret       // (int, int): int, (mut b: Box): void
+c_func_type   := "extern" string_lit "(" [ftype_params] ")" ":" func_ret
+ftype_params  := ftype_param ("," ftype_param)* [","]
+ftype_param   := type | ["mut"] ident ":" type           // a name documents; 'mut' needs one
                                                           // semantic ABI string: exactly "c"
 named_type    := ident ("." ident)* ["[" type_args "]"]   // Vec[int], math.Vec
 static_map_type := "StaticMap" "[" type "]" type           // StaticMap[K]V

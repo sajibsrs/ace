@@ -2239,8 +2239,8 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         SType* ft = unwrap(s ? s->type : node_ty(callee));
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
         int f = expr(l, callee, IT_PTR);
-        for (int i = 0; i < x->nkids; i++) // sema: no function-value parameter is mut
-            call_arg(l, &g, x->kids[i], ft->params[i], 0, 0);
+        for (int i = 0; i < x->nkids; i++) // a mut parameter passes the caller's address
+            call_arg(l, &g, x->kids[i], ft->params[i], i < 64 && ((ft->mut_params >> i) & 1), 0);
         int id = emit(l, IR_CALLI, result_type(l, ft->ret));
         l->fn->ins[id].flags = (uint8_t)null_checked(l);
         ir_arg_add(l->fn, id, f); // the target, then the arguments

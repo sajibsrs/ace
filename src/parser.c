@@ -70,7 +70,8 @@
 //   N_SLICE_T   a = element
 //   N_ARRAY_T   a = element; b = length expression
 //   N_TUPLE_T   kids = types
-//   N_FUNC_T    kids = param types; a = ret; F_CABI for extern "c" type
+//   N_FUNC_T    kids = param types; a = ret; F_CABI for extern "c" type;
+//               ival bit i = parameter i is mut
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
@@ -335,6 +336,24 @@ static Node* type_arg(P* p) {
     return v;
 }
 
+/*
+ * One entry of a parenthesized type list: a bare type, or a function-type
+ * parameter written as a declaration's, `name: T` or `mut name: T`. The name
+ * documents and is ignored for identity; a `mut` parameter sets bit idx of
+ * *mut_params. *named records that a name was written, which a tuple rejects.
+ */
+static Node* func_type_param(P* p, uint64_t* mut_params, int idx, int* named) {
+    if (at(p, T_MUT) && kth(p, 1) == T_IDENT && kth(p, 2) == T_COLON) {
+        if (idx < 64) *mut_params |= (uint64_t)1 << idx;
+        p->i += 3;
+        *named = 1;
+    } else if (at(p, T_IDENT) && kth(p, 1) == T_COLON) {
+        p->i += 2;
+        *named = 1;
+    }
+    return parse_type(p);
+}
+
 static Node* type_atom(P* p) {
     Node* t;
     if (at(p, T_CONST)) {
@@ -373,7 +392,7 @@ static Node* type_atom(P* p) {
             p->i++;
             return t;
         }
-        perr(p, "'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'");
+        perr(p, "'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'; a function type's mut parameter is written 'mut name: T'");
         return NULL;
     }
     if (at(p, T_STAR)) {
@@ -403,9 +422,10 @@ static Node* type_atom(P* p) {
         if (abi->len != 1 || memcmp(abi->str, "c", 1) != 0) perr(p, "function types support only the 'c' ABI");
         expect(p, T_LPAREN, "'(' after function type ABI");
         NV w = {0};
+        int named = 0;
         if (!at(p, T_RPAREN)) {
             for (;;) {
-                nv_push(p, &w, parse_type(p));
+                nv_push(p, &w, func_type_param(p, &f->ival, w.n, &named));
                 if (!eat(p, T_COMMA)) break;
                 if (at(p, T_RPAREN)) break;
             }
@@ -420,9 +440,11 @@ static Node* type_atom(P* p) {
         t = nd(p, N_TUPLE_T);
         p->i++;
         NV w = {0};
+        uint64_t mut_params = 0;
+        int named = 0;
         if (!at(p, T_RPAREN)) {
             for (;;) {
-                nv_push(p, &w, parse_type(p));
+                nv_push(p, &w, func_type_param(p, &mut_params, w.n, &named));
                 if (!eat(p, T_COMMA)) break;
                 if (at(p, T_RPAREN)) break; // trailing comma
             }
@@ -430,9 +452,14 @@ static Node* type_atom(P* p) {
         expect(p, T_RPAREN, "')' to close type list");
         if (eat(p, T_COLON)) { // (params): ret — function value type
             Node* f = nd(p, N_FUNC_T);
+            f->ival = mut_params;
             set_kids(f, &w);
             f->a = func_type_ret(p);
             return f;
+        }
+        if (named) {
+            perr(p, "tuple members have no names; only a function type's parameters may be named");
+            return NULL;
         }
         if (w.n < 2) { // a tuple has two or more members; a function type needs its return
             perr(p, "'(%s)' is not a type: a tuple has two or more members, and a function type needs ': R' or ': void'",

@@ -1,4 +1,4 @@
-/* A function value never has a mut parameter, so 'mut' on its call is wrong. */
+/* 'mut' on a call through a function value marks only its mut parameters. */
 
 apply(f: (int): int, x: int): int {
     return f(mut x)

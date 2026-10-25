@@ -1,0 +1,3 @@
+/* A mut parameter in a function type is written in its named form. */
+
+f: (mut int): void = null

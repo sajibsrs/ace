@@ -579,7 +579,10 @@ static void mangle_type(Buf* b, SType* t) {
         return;
     case SK_FUNC:
         buf_put8(b, 'f');
-        for (int i = 0; i < t->nparams; i++) mangle_type(b, t->params[i]);
+        for (int i = 0; i < t->nparams; i++) {
+            if (i < 64 && ((t->mut_params >> i) & 1)) buf_put8(b, 'm'); // no type tag starts with 'm'
+            mangle_type(b, t->params[i]);
+        }
         buf_put8(b, 'r');
         mangle_type(b, t->ret);
         buf_put8(b, '_');

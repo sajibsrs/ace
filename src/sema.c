@@ -141,7 +141,18 @@ static const char* type_name(SType* t) {
     case SK_FUNC: {
         char name[sizeof bufs[0]];
         snprintf(name, sizeof name, "%s(", t->is_c_abi ? "extern \"c\" " : "");
-        type_list_name(name, sizeof name, t->params, NULL, t->nparams);
+        if (t->mut_params) { // a mut parameter is spelled in its named form
+            for (int i = 0; i < t->nparams; i++) {
+                size_t n = strlen(name);
+                if (n >= sizeof name) break;
+                snprintf(name + n, sizeof name - n, "%s%s%s", i ? ", " : "",
+                         (t->mut_params >> i) & 1 ? "mut _: " : "", type_name(t->params[i]));
+            }
+            size_t n = strlen(name);
+            if (n < sizeof name) snprintf(name + n, sizeof name - n, ")");
+        } else {
+            type_list_name(name, sizeof name, t->params, NULL, t->nparams);
+        }
         size_t at = strlen(name);
         if (at < sizeof name)
             snprintf(name + at, sizeof name - at, ": %s",
@@ -660,7 +671,7 @@ static int same_type(SType* a, SType* b) {
         for (int i = 0; i < a->nfields; i++) if (!same_type(a->fields[i].t, b->fields[i].t)) return 0;
         return 1;
     case SK_FUNC:
-        if (a->is_c_abi != b->is_c_abi || a->nparams != b->nparams) return 0;
+        if (a->is_c_abi != b->is_c_abi || a->nparams != b->nparams || a->mut_params != b->mut_params) return 0;
         for (int i = 0; i < a->nparams; i++) if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
     case SK_STRUCT: case SK_ENUM: case SK_BITS: case SK_CONTRACT: case SK_DISTINCT:
@@ -866,7 +877,7 @@ static int enum_member_value(SType* e, int64_t v);
 static SType* check_lvalue(Ck* k, Node* e, int write);
 static void check_func_body(Ck* k, Node* f);
 static void check_mut_args(Ck* k, Node* call, Node* fndecl, int self);
-static void check_no_mut_args(Ck* k, Node* call);
+static void check_value_mut_args(Ck* k, Node* call, SType* ft);
 static Node* static_string_expr(Ck* k, Node* e);
 
 /*
@@ -1542,6 +1553,9 @@ static SType* build_type(Ck* k, Node* t) {
         SType* f = st_new(SK_FUNC);
         f->is_c_abi = (t->flags & F_CABI) != 0;
         f->nparams = t->nkids;
+        f->mut_params = t->ival;
+        if (f->is_c_abi && f->mut_params)
+            ck_err(k, t, "a C function-pointer type has no mut parameters; pass writable storage as 'mut *T'");
         f->params = (SType**)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SType*));
         for (int i = 0; i < t->nkids; i++) f->params[i] = build_type(k, t->kids[i]);
         f->ret = build_return_type(k, t->a);
@@ -1600,6 +1614,7 @@ static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
     ft->nparams = f->nkids;
     ft->params = (SType**)arena_alloc((size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
     for (int i = 0; i < f->nkids; i++) {
+        if ((f->kids[i]->flags & F_MUT) && i < 64) ft->mut_params |= (uint64_t)1 << i;
         ft->params[i] = build_type(k, f->kids[i]->a);
         if (ft->params[i] && ft->params[i]->kind == SK_ERROR_DOMAIN)
             ck_err(k, f->kids[i], "error-domain names are identities, not parameter types; use Error");
@@ -2273,16 +2288,6 @@ static int accepts_null(SType* t) {
                   (t->prim == P_STRING || t->prim == P_TYPEID)));
 }
 
-// A function-value type has no syntax for a parameter's mutability
-// (GRAMMAR.md func_type), so a call through one could never validate 'mut'
-// agreement against the pointed-to function. A function with a mut
-// parameter may therefore not become a callable value at all.
-static int has_mut_param(Node* decl) {
-    for (int i = 0; decl && i < decl->nkids; i++)
-        if (decl->kids[i]->flags & F_MUT) return 1;
-    return 0;
-}
-
 /*
  * An array literal where []T is expected: an anonymous [N]T, N its own
  * length, viewed as plain []T (aux holds the [N]T). Constant elements make
@@ -2372,12 +2377,6 @@ static int coerce(Ck* k, Node* e, SType* want) {
                                 found->decl->ival == BI_STR_FORMAT)) {
                 ck_err(k, e, "%s is direct-call-only because its checked arguments depend on the static format",
                        found->decl->ival == BI_STR_FORMAT ? "str.format" : "fmt.printf");
-                e->ty = T_ERR;
-                return 0;
-            }
-            if (has_mut_param(found->decl)) {
-                ck_err(k, e, "'%.*s' has a mut parameter and cannot be used as a function value",
-                       (int)e->len, e->str);
                 e->ty = T_ERR;
                 return 0;
             }
@@ -2720,34 +2719,38 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
     }
 }
 
+static void check_mut_arg(Ck* k, Node* call, int i, int pm);
+
 // `self` is 1 for a method call, whose declaration lists self first.
 static void check_mut_args(Ck* k, Node* call, Node* fndecl, int self) {
     if (!fndecl) return;
-    for (int i = 0; i < call->nkids && i + self < fndecl->nkids; i++) {
-        int am = call->kids[i]->kind == N_MUTARG;
-        int pm = (fndecl->kids[i + self]->flags & F_MUT) != 0;
-        if (am && !pm) ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
-        else if (pm && !am) ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
-        else if (am) { // mut passes the caller's address — the arg must have one
-            check_lvalue(k, call->kids[i]->a, 0);
-            Node* raw = call->kids[i]->a;
-            if (is_bits_field(raw, NULL, NULL)) ck_err(k, raw, "bit fields cannot supply mut arguments");
-            if (raw->kind == N_IDENT) {
-                Sym* s = lookup_val(k, raw->str, raw->len);
-                if (s && s->is_const_backed)
-                    ck_err(k, raw, "const-backed contract cannot be passed to a mut parameter");
-            }
+    for (int i = 0; i < call->nkids && i + self < fndecl->nkids; i++)
+        check_mut_arg(k, call, i, (fndecl->kids[i + self]->flags & F_MUT) != 0);
+}
+
+// Argument i against a parameter that is mut (pm) or read-only.
+static void check_mut_arg(Ck* k, Node* call, int i, int pm) {
+    int am = call->kids[i]->kind == N_MUTARG;
+    if (am && !pm) ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
+    else if (pm && !am) ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
+    else if (am) { // mut passes the caller's address — the arg must have one
+        check_lvalue(k, call->kids[i]->a, 0);
+        Node* raw = call->kids[i]->a;
+        if (is_bits_field(raw, NULL, NULL)) ck_err(k, raw, "bit fields cannot supply mut arguments");
+        if (raw->kind == N_IDENT) {
+            Sym* s = lookup_val(k, raw->str, raw->len);
+            if (s && s->is_const_backed)
+                ck_err(k, raw, "const-backed contract cannot be passed to a mut parameter");
         }
     }
 }
 
-// Indirect and contract-method calls never target a mut parameter — a
-// function with one cannot become a callable value (see has_mut_param) — so
-// any 'mut' mark on such a call's own arguments is always wrong.
-static void check_no_mut_args(Ck* k, Node* call) {
-    for (int i = 0; i < call->nkids; i++)
-        if (call->kids[i]->kind == N_MUTARG)
-            ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
+// A call through a function value: its type states which parameters are mut
+// (`(mut name: T): R`), checked as a direct call checks its declaration.
+// Contract methods have no mut parameters, so their mask is zero.
+static void check_value_mut_args(Ck* k, Node* call, SType* ft) {
+    for (int i = 0; i < call->nkids && i < ft->nparams; i++)
+        check_mut_arg(k, call, i, i < 64 && ((ft->mut_params >> i) & 1));
 }
 
 // --- expressions ----------------------------------------------------------------------
@@ -2799,11 +2802,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         if (s->kind == SYM_FUNC && visible_count(s, e) > 1) {
             ck_err(k, e,
                    "overloaded function '%.*s' needs a call or an explicit function-value type",
-                   (int)e->len, e->str);
-            return T_ERR;
-        }
-        if (s->kind == SYM_FUNC && has_mut_param(s->decl)) {
-            ck_err(k, e, "'%.*s' has a mut parameter and cannot be used as a function value",
                    (int)e->len, e->str);
             return T_ERR;
         }
@@ -3420,11 +3418,6 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
         chosen = s;
     }
     if (chosen) {
-        if (has_mut_param(chosen->decl)) {
-            ck_err(k, e, "'%.*s' has a mut parameter and cannot be used as a function value",
-                   (int)e->a->len, e->a->str);
-            return T_ERR;
-        }
         e->sym = chosen;
         return chosen->type;
     }
@@ -3467,11 +3460,6 @@ static SType* generic_func_value(Ck* k, Node* e, SType* want) {
         ck_err(k, e, "'%.*s%s' matches no specialization — '%.*s' is declared 'specialized' (no default body) at line %d",
                (int)e->a->len, e->a->str, spec_tuple_name(targs, nargs), (int)e->a->len, e->a->str,
                chosen->decl->line);
-        return T_ERR;
-    }
-    if (has_mut_param(chosen->decl)) {
-        ck_err(k, e, "'%.*s' has a mut parameter and cannot be used as a function value",
-               (int)e->a->len, e->a->str);
         return T_ERR;
     }
     SType* ft = instantiate_generic_func_args(k, chosen, targs, nargs, e);
@@ -5138,7 +5126,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
         }
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
             check_args(k, call, s->type, 0);
-            check_no_mut_args(k, call);
+            check_value_mut_args(k, call, s->type);
             callee->sym = s;
             callee->ty = s->type;
             call->sym = s; // indirect call through a function value
@@ -5501,7 +5489,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                     ck_err(k, call, "'mut' marks mutating methods; field '%.*s' holds a function value",
                            (int)callee->len, callee->str);
                 check_args(k, call, ft, 0);
-                check_no_mut_args(k, call);
+                check_value_mut_args(k, call, ft);
                 call->flags |= F_FIELDCALL; // emitter: indirect call, no receiver
                 return ft->ret;
             }
@@ -5535,7 +5523,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
             }
             SType* ft = contract_method_type(k, b, m);
             check_args(k, call, ft, 0);
-            check_no_mut_args(k, call);
+            check_value_mut_args(k, call, ft);
             return ft->ret;
         }
         if (b->kind != SK_STRUCT) {
@@ -8243,10 +8231,9 @@ static void resolve_top(Ck* k, Sym* s) {
         check_enum_decl(&top, n, t);
         break;
     case N_CONTRACT:
-        // A contract method dispatches through a vtable slot, the same
-        // "callable value" shape as a function-value type (see
-        // has_mut_param) — a mut parameter has no way to be validated
-        // against the implementing method at the call site.
+        // A contract method dispatches through a vtable slot; contract
+        // conformance does not compare mut positions, so a contract method
+        // takes no mut parameter.
         for (int mi = 0; mi < n->nkids; mi++) {
             Node* m = n->kids[mi];
             check_param_count(&top, m, m->nkids + 1, 1); // the receiver the slot passes

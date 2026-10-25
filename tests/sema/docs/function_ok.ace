@@ -95,7 +95,22 @@ count_down(n: usize, total: usize): usize {
     return count_down(n - 1, total + n)
 }
 
+Box: struct {
+    n: int,
+}
+
+bump(mut b: Box) {
+    b.n += 1
+}
+
+bump_twice(f: (mut b: Box): void, mut b: Box) {
+    f(mut b)
+    f(mut b)
+}
+
 main(): int {
+    box: Box = Box { n = 0 }
+    bump_twice(bump, mut box)
     b: Buffer = Buffer{ at = 0 }
     mut b.skip(2)
     count: int = 12 + int(mix(u64(b.at))) - 6
