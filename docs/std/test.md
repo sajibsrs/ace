@@ -37,6 +37,10 @@ define `main`, must have a test, and cannot be imported.
   `check N: got X, want Y`, where N counts the test's checks from 1, marks the
   test failed, and returns false. The test keeps running, so return early on
   `false` when later checks depend on this one.
+- `test.equal[E](mut t, got, want): bool` compares enum values the same way
+  and prints members by name (`got east, want north`). It is a free generic
+  function rather than a method because methods take no type parameters of
+  their own; `E` must be an enum type.
 - `T.fail(mut self, message)` fails the test, printing `check N: message`.
 - `run(table: []Case): int` runs the cases in order, each on a fresh `T`,
   prints `ok   name` or `FAIL name` after the case's check lines, then

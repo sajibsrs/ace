@@ -1,5 +1,7 @@
 # Standard library
 
+- `test.equal[E](mut t, got, want)` checks enum values, printing members by
+  `.name` on a mismatch.
 - `fmt.print` and `fmt.println` take `bool`, writing `true` or `false`;
   `std/test` prints its `bool` results through them.
 - Added the `test` module (#90 stage 1): `T.equal` for `int`/`uint`/`usize`/

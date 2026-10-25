@@ -3,6 +3,8 @@
 
 import test
 
+Facing: enum { north, east }
+
 pub good(mut t: test.T) {
     mut t.equal(1, 1)
 }
@@ -14,5 +16,6 @@ pub bad(mut t: test.T) {
     mut t.equal(usize(0), usize(1))
     mut t.equal(false, true)
     mut t.equal("got", "want")
+    test.equal[Facing](mut t, Facing.east, Facing.north)
     mut t.fail("unreachable state")
 }

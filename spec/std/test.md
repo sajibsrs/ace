@@ -16,6 +16,8 @@
       `bool`, and `string` (bytes, by `mem.equal`). A mismatch marks the test
       failed, prints `check N: got X, want Y` with N the test's 1-based check
       index, and returns false; the test keeps running.
+    - `equal[E](mut t: T, got: E, want: E): bool` compares enum values with
+      `==` and prints them by `.name` (Type System #14), as `T.equal` does.
     - `T.fail(mut self, message)` fails unconditionally as `check N: message`.
     - `Case: type = (string, (mut t: T): void)`. `run(table: []Case): int`
       runs cases in order on a fresh `T`, prints `ok   name` or `FAIL name`

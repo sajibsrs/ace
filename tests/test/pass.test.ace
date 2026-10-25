@@ -2,6 +2,8 @@
 
 import test
 
+Level: enum u8 { low, high }
+
 pub numbers(mut t: test.T) {
     mut t.equal(2 + 2, 4)
     mut t.equal(uint(7), uint(7))
@@ -11,4 +13,5 @@ pub numbers(mut t: test.T) {
 pub text(mut t: test.T) {
     mut t.equal("ace", "ace")
     mut t.equal(true, 1 < 2)
+    test.equal[Level](mut t, Level.high, Level.high)
 }

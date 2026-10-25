@@ -75,6 +75,17 @@ pub T.equal(mut self, got: string, want: string): bool {
     return false
 }
 
+/* Compares enum values of type `E`, printing members by name; an open
+ * enum's non-member prints as an empty name. */
+pub equal[E](mut t: T, got: E, want: E): bool {
+    if begin(mut t, got == want) { return true }
+    fmt.print("got ")
+    fmt.print(got.name)
+    fmt.print(", want ")
+    fmt.println(want.name)
+    return false
+}
+
 /* Fails the test unconditionally with `message`. */
 pub T.fail(mut self, message: string) {
     begin(mut self, false)
