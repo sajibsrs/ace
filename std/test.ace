@@ -1,0 +1,116 @@
+/* test — table-driven test runner.
+ *
+ * A test is `pub name(mut t: test.T)` in a `<name>.test.ace` file whose
+ * `main` returns `test.run([("name", name), ...])`. Checks report the test's
+ * name and the check's index; nothing allocates.
+ */
+
+import fmt
+import mem
+
+/* One test's state: whether a check failed, and how many checks ran. */
+pub T: struct {
+    failed: bool,
+    checks: int,
+}
+
+/* A named test function. */
+pub Case: type = (string, (mut t: T): void)
+
+/* Counts a check; on failure marks the test failed and prints its index. */
+begin(mut t: T, ok: bool): bool {
+    t.checks += 1
+    if ok { return true }
+
+    t.failed = true
+    fmt.print("    check ")
+    fmt.print(t.checks)
+    fmt.print(": ")
+    return false
+}
+
+pub T.equal(mut self, got: int, want: int): bool {
+    if begin(mut self, got == want) { return true }
+    fmt.print("got ")
+    fmt.print(got)
+    fmt.print(", want ")
+    fmt.println(want)
+    return false
+}
+
+pub T.equal(mut self, got: uint, want: uint): bool {
+    if begin(mut self, got == want) { return true }
+    fmt.print("got ")
+    fmt.print(got)
+    fmt.print(", want ")
+    fmt.println(want)
+    return false
+}
+
+pub T.equal(mut self, got: usize, want: usize): bool {
+    if begin(mut self, got == want) { return true }
+    fmt.print("got ")
+    fmt.print(got)
+    fmt.print(", want ")
+    fmt.println(want)
+    return false
+}
+
+pub T.equal(mut self, got: bool, want: bool): bool {
+    if begin(mut self, got == want) { return true }
+    fmt.print("got ")
+    fmt.print(spell(got))
+    fmt.print(", want ")
+    fmt.println(spell(want))
+    return false
+}
+
+pub T.equal(mut self, got: string, want: string): bool {
+    if begin(mut self, mem.equal(got, want)) { return true }
+    fmt.print("got \"")
+    fmt.print(got)
+    fmt.print("\", want \"")
+    fmt.print(want)
+    fmt.println("\"")
+    return false
+}
+
+/* Fails the test unconditionally with `message`. */
+pub T.fail(mut self, message: string) {
+    begin(mut self, false)
+    fmt.println(message)
+}
+
+spell(value: bool): string {
+    if value { return "true" }
+    return "false"
+}
+
+/* Runs `table` in order, printing `ok   name` or `FAIL name` per case and then
+ * `N passed, M failed`. Returns 0 when every case passed, otherwise 1.
+ */
+pub run(table: []Case): int {
+    passed: int = 0
+    failed: int = 0
+
+    for i: usize = 0; i < table.len; i += 1 {
+        name: string, body: (mut t: T): void = table[i]
+        t: T = blank(T)
+        body(mut t)
+        if t.failed {
+            fmt.print("FAIL ")
+            failed += 1
+        } else {
+            fmt.print("ok   ")
+            passed += 1
+        }
+        fmt.println(name)
+    }
+
+    fmt.print(passed)
+    fmt.print(" passed, ")
+    fmt.print(failed)
+    fmt.println(" failed")
+    if failed > 0 { return 1 }
+    return 0
+}

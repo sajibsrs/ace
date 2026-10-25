@@ -1720,6 +1720,24 @@ if [ -d tests/emit ]; then
         echo "FAIL: maximum negative f64 with %.324f must fit the 640-byte buffer"
         fail=1
     fi
+    test_pass_out=$(/tmp/ace_emit/test/pass.test)
+    test_pass_expected=$(printf 'ok   numbers\nok   text\n2 passed, 0 failed')
+    if [ "$test_pass_out" != "$test_pass_expected" ]; then
+        echo "FAIL: std/test passing output did not match"
+        printf 'got:\n%s\nwant:\n%s\n' "$test_pass_out" "$test_pass_expected"
+        fail=1
+    fi
+    test_fail_out=$(/tmp/ace_emit/test/fail.test)
+    test_fail_expected=$(printf '%s\n' 'ok   good' \
+        '    check 2: got -3, want 4' '    check 3: got 5, want 6' \
+        '    check 4: got 0, want 1' '    check 5: got false, want true' \
+        '    check 6: got "got", want "want"' '    check 7: unreachable state' \
+        'FAIL bad' '1 passed, 1 failed')
+    if [ "$test_fail_out" != "$test_fail_expected" ]; then
+        echo "FAIL: std/test failing output did not match"
+        printf 'got:\n%s\nwant:\n%s\n' "$test_fail_out" "$test_fail_expected"
+        fail=1
+    fi
     process_empty_out=$(/usr/bin/env -i /tmp/ace_emit/sys/process)
     process_empty_expected=$(printf '1\n/tmp/ace_emit/sys/process\n0')
     if [ "$process_empty_out" != "$process_empty_expected" ]; then

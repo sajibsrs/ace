@@ -1,0 +1,24 @@
+/* Failing checks report their index and values; later checks still run, the
+ * other cases still run, and `test.run` exits 1. */
+
+// expect-exit: 1
+
+import test
+
+pub good(mut t: test.T) {
+    mut t.equal(1, 1)
+}
+
+pub bad(mut t: test.T) {
+    mut t.equal(1, 1)
+    mut t.equal(-3, 4)
+    mut t.equal(uint(5), uint(6))
+    mut t.equal(usize(0), usize(1))
+    mut t.equal(false, true)
+    mut t.equal("got", "want")
+    mut t.fail("unreachable state")
+}
+
+main(): int {
+    return test.run([("good", good), ("bad", bad)])
+}

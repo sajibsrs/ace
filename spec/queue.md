@@ -7,6 +7,16 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Trigger-gated
 
+- `ace test` (#90) discovers the `pub` test functions of `*.test.ace` files,
+  generates the `test.run` `main`, and excludes `*.test.ace` from normal
+  builds; existing test files need no change. Resume after `std/test` has
+  users.
+- The Ace fixture runner (#147) replacing `tests/run.sh`, with child-output
+  capture (#151) and the process and filesystem gaps in #155. It is
+  non-blocking tooling, not part of the language; resume when the shell
+  runner becomes a bottleneck. Open: #151's result ownership, size limit, and
+  separate or merged stderr; #155's module placement and the environment
+  option's spelling.
 - The canonical source formatter (`ace fmt`: in-place, check-only, stdout
   modes; compiler/toolchain functionality, not `std/fmt`) is deferred until
   timely. Decided: `.acefmt` stays normative, searched upward with built-in

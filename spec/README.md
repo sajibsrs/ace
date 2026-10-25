@@ -27,5 +27,6 @@ gives each section's file. Stdlib items keep one numbering across their files.
 | `std/atomic.md` | Stdlib #25 `atomic` |
 | `std/thread.md` | Stdlib #27 `thread` |
 | `std/signal.md` | Stdlib #28 `signal` |
+| `std/test.md` | Stdlib #29 `test` |
 | `std/collections.md` | Stdlib #18 `array`, #19 `map`, #20 `file`, #26 `sort` |
 | `pkg/http.md` | Stdlib #17 HTTP (`pkg/http`) |

@@ -1,5 +1,10 @@
 # Standard library
 
+- Added the `test` module (#90 stage 1): `T.equal` for `int`/`uint`/`usize`/
+  `bool`/`string` and `T.fail` print `check N: got X, want Y`; `run(table)` over
+  `(name, (mut t: T): void)` cases prints `ok`/`FAIL` per case and a summary,
+  returning 0 or 1 (`tests/emit/test/`).
+
 - Added the `signal` module (#41): `handle`/`ignore`/`reset` over `sigaction`
   (fault signals refused, `SA_RESTART` opt-in), per-thread `block`/`mask`,
   `wait`, and `send`/`raise`; `sys.errno(value)` sets errno, and `exec.spawn`

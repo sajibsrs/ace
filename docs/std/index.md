@@ -23,6 +23,7 @@ Today's modules:
 - [`signal`](signal.md) — signal handlers, per-thread masks, waits, and delivery
 - [`str`](str.md) — allocation-free byte-exact string utilities
 - [`tcp`](tcp.md) — explicit blocking IPv4 TCP composition over `net`
+- [`test`](test.md) — table-driven test runner
 - [`sys`](sys.md) — process arguments/environment, file descriptors, byte I/O, and errno
 - [`thread`](thread.md) — OS threads, mutexes, and condition variables
 - [`time`](time.md) — monotonic clocks
