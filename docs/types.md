@@ -373,8 +373,11 @@ Assignment preserves every other backing bit. Constant out-of-range writes are
 compile errors; dynamic writes abort in debug builds and retain the low field
 bits in release builds. Whole values copy normally, compare with `==`/`!=` only
 against the same nominal type, compose in aggregates, and support whole-value
-volatile loads and stores. C boundaries use the backing integer plus an explicit
-conversion; a `bits` type itself is not C-ABI-compatible.
+volatile loads and stores. A `bits` type crosses
+`extern "c"` signatures and C structs as exactly its backing integer, so a C
+flags field can be declared with its bits type directly. Every backing value
+is a valid bits value, so unlike a closed enum, nothing C writes can be out of
+range. This is not C bit-field layout: C sees one plain integer.
 
 ## Zero and absence
 

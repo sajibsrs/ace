@@ -165,8 +165,8 @@ Decision: nominal, exact-width bit layouts lower:
    exact nominal bits type.
 7. Bits values are ordinary fixed-size values in aggregates, packed structs,
    arrays, parameters, and returns. Whole-value volatile access transfers
-   exactly the backing width. Bits types are not C-ABI-compatible in `extern "c"`
-   signatures; interop uses the backing integer and explicit conversion.
+   exactly the backing width. A bits type crosses `extern "c"` signatures and C-facing
+   aggregates exactly as its backing integer.
    No C bit-field ABI equivalence, atomic field operation, volatile field RMW,
    reflection, wider backing unit, or cross-statement fusion is implied.
 

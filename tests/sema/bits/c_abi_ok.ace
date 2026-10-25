@@ -1,0 +1,15 @@
+Flags: bits u32 { value: 32 }
+Small: bits u8 { low: 4, high: 4 }
+
+Event: struct { kind: u32, flags: Flags, small: Small }
+
+extern "C" {
+    take(value: Flags)
+    give(): Flags
+    take_event(event: *Event)
+    fill(small: mut *Small)
+}
+
+extern "c" expose(value: Flags, event: Event): Flags {
+    return value
+}

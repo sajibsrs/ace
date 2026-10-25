@@ -1,0 +1,25 @@
+/* Bits values cross the C boundary as their backing integer. */
+
+// expect-exit: 42
+
+Char: bits u32 { code: 8, _: 24 }
+Pair: bits u8 { low: 4, high: 4 }
+Holder: struct { tag: u32, pair: Pair }
+
+extern "c" {
+    toupper(c: Char): Char
+}
+
+extern "c" sum(pair: Pair, holder: *Holder): Pair {
+    return Pair { low = pair.low + holder.pair.low, high = pair.high }
+}
+
+main(): int {
+    up: Char = toupper(Char { code = u32('a') })
+    if up.code != u32('A') { return 1 }
+    f: extern "c" (Pair, *Holder): Pair = sum
+    h: Holder = Holder { tag = 7, pair = Pair { low = 2 } }
+    r: Pair = f(Pair { low = 8, high = 2 }, &h)
+    if r.high != 2 { return 2 }
+    return int(r.low) * 4 + 2
+}

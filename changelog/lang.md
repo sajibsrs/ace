@@ -1,5 +1,8 @@
 # Language
 
+- A `bits` type is C-ABI-compatible in every position, crossing `extern "c"`
+  signatures and C-facing structs as its backing integer. C and selfhost.
+
 - Integer-primitive conversions of constants are compile-time constants, so
   `[usize(WIDTH * HEIGHT)]T` sizes an array from `int` constants; the fold
   wraps to the target width as at runtime. A literal whose type already failed

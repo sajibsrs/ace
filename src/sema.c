@@ -1687,6 +1687,8 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         return is_c_abi_type(t->base, pos, stack, nstack);
     case SK_ENUM:
         return t->decl && t->decl->a && is_c_abi_type(t->base, pos, stack, nstack);
+    case SK_BITS:
+        return 1; // crosses as its backing integer (Type System #7)
     case SK_ARRAY:
         return pos != CABI_DIRECT && is_c_abi_type(t->base, pos, stack, nstack);
     case SK_FUNC:

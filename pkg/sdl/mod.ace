@@ -164,8 +164,7 @@ pub MouseMotionEvent: struct {
     pub timestamp: u64,
     pub window_id: u32,
     pub which: u32,
-    // SDL_MouseButtonFlags; buttons() reads it as MouseButtons.
-    pub state: u32,
+    pub state: MouseButtons,
     pub x: f32,
     pub y: f32,
     pub xrel: f32,
@@ -314,9 +313,6 @@ pub Event.key(self): (KeyboardEvent, bool) {
 pub Event.mouse_motion(self): (MouseMotionEvent, bool) {
     return self.motion, self.type == EventType.mouse_motion
 }
-
-// The held buttons of a motion; state holds them as SDL_MouseButtonFlags.
-pub MouseMotionEvent.buttons(self): MouseButtons { return MouseButtons(self.state) }
 
 // The mouse-button member, and whether type says it holds one.
 pub Event.mouse_button(self): (MouseButtonEvent, bool) {

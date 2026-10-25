@@ -5142,6 +5142,7 @@ Sema.is_c_abi_type(mut self, id: u32, pos: u8, depth: u32): bool {
         TypeKind.ptr { return mut self.is_c_abi_type(t.base, CABI_POINTEE, depth) }
         TypeKind.distinct { return mut self.is_c_abi_type(t.base, pos, depth) }
         TypeKind.enum { return t.decl != 0 && self.node(t.decl).a != 0 && mut self.is_c_abi_type(t.base, pos, depth) }
+        TypeKind.bits { return true } // crosses as its backing integer (Type System #7)
         TypeKind.array { return pos != CABI_DIRECT && mut self.is_c_abi_type(t.base, pos, depth) }
         TypeKind.func {
             if !t.is_c_abi { return false }

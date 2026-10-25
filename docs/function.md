@@ -719,9 +719,9 @@ The initializer must be a compile-time constant, as for every global.
 Boundary parameters cannot use Ace's `mut parameter` convention. Pass an
 explicit `mut *T` when C receives writable storage. An explicitly backed enum
 crosses as its fixed-width backing integer; a default enum states no external
-width and remains rejected. `bool`, strings, slices, contracts, tagged unions,
-errors, tuples, function values, and generic shapes are also rejected at the
-boundary. Wrappers must translate those values to an allowed representation
+width and remains rejected. A `bits` type likewise crosses as its backing
+integer. `bool`, strings, slices, contracts, tagged unions, errors, tuples,
+function values, and generic shapes are also rejected at the boundary. Wrappers must translate those values to an allowed representation
 explicitly.
 
 C variadic imports use `...` after at least one fixed parameter. Unnamed

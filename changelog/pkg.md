@@ -1,5 +1,7 @@
 # Packages
 
+- `pkg/sdl` `MouseMotionEvent.state` is now `MouseButtons`, replacing
+  `buttons()`, since `bits` types cross the C boundary.
 - `pkg/sdl` delivers mouse events: `MouseButtonEvent` and `MouseMotionEvent`
   as `Event` members, read through `Event.mouse_button()` and
   `Event.mouse_motion()`. Motion's `state` stays a `u32`, since a `bits` field

@@ -200,11 +200,11 @@ Mouse input arrives as `mouse_button_down`, `mouse_button_up`, and
 does. A `MouseButtonEvent` carries `button` (a `MouseButton`: `left`,
 `middle`, `right`, `x1`, `x2`), `down`, `clicks`, and the window position
 `x`, `y`; a `MouseMotionEvent` carries `x`, `y`, the relative `xrel`, `yrel`,
-and the held buttons, read as `MouseButtons` bits through `buttons()`:
+and the held buttons in `state`, as `MouseButtons` bits:
 
 ```ace
 m: sdl.MouseMotionEvent, is_motion: bool = event.mouse_motion()
-if is_motion && m.buttons().left == 1 { ... }
+if is_motion && m.state.left == 1 { ... }
 ```
 
 ## Testing
