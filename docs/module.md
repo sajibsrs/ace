@@ -243,18 +243,18 @@ Each file keeps a canonical compilation identity, while the enclosing
 Implementation files are loaded only through imports originating within that
 boundary. OS- and kernel-specific standard-library implementations always live
 at `std/<module>/os/<target>.ace` behind the module's public `mod.ace` facade.
-The facade selects its target file with a top-level `@when(target == "...")`
+The facade selects its target file with a top-level `@when(_PLATFORM_ == "...")`
 import. The name `backend` is kept for compiler/code-generation backends, not
 OS bindings.
 
 `@when` may precede any top-level declaration. Its condition is restricted to
-`target` string equality/inequality, booleans, `and`, `or`, `not`, and
+`_PLATFORM_` string equality/inequality, booleans, `and`, `or`, `not`, and
 parentheses. The attribute has its own line and one blank line separates it
 from any preceding top-level construct. Inactive declarations must have valid
 syntax but are removed before imports are loaded or names and types are checked:
 
 ```ace
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 ```
 

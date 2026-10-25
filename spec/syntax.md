@@ -12,7 +12,10 @@
    bare. A C name that is an Ace keyword keeps its spelling through a link
    name (`as "sym"`, C Interop #2).
 4. An identifier is ASCII and at most 128 characters; a longer one is a lex
-   error. Compiler buffers that hold a name are sized to it.
+   error. Compiler buffers that hold a name are sized to it. An identifier
+   written `_NAME_` (a leading and a trailing underscore around uppercase
+   letters, digits, and inner underscores) belongs to the compiler: it names a
+   builtin such as `_PLATFORM_` (Modules #12), and user code declares none.
 5. The escapes are `\n`, `\t`, `\r`, `\0`, `\\`, `\"`, `\'`, `\xHH` (one
    byte, exactly two hex digits), and `\u{H…}`. `\u{H…}` takes 1–6 hex
    digits naming a Unicode scalar value (not U+D800–U+DFFF, at most

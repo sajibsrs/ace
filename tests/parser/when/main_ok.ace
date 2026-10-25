@@ -1,10 +1,10 @@
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 import m: math
 
 @when(true and not false)
 Enabled: struct { value: int }
 
-@when((target != "linux-arm64") or false)
+@when((_PLATFORM_ != "linux-arm64") or false)
 chosen(): int {
     return m.max[int](1, 2)
 }

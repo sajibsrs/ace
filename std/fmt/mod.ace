@@ -1,9 +1,9 @@
 /* fmt — allocation-free text output. */
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 import os: "./os/linux-x64.ace"
 
 import sys

@@ -40,12 +40,12 @@ when_or       := when_and (contextual_or when_and)*
 when_and      := when_not (contextual_and when_not)*
 when_not      := contextual_not when_not | when_primary
 when_primary  := "true" | "false"
-               | contextual_target ("==" | "!=") string_lit
+               | platform_name ("==" | "!=") string_lit
                | "(" when_expr ")"
 contextual_or := ident                                // exact text "or"
 contextual_and := ident                               // exact text "and"
 contextual_not := ident                               // exact text "not"
-contextual_target := ident                            // exact text "target"
+platform_name := ident                               // exact text "_PLATFORM_"
 layout_attr   := packed_attr | align_attr
 packed_attr   := "@" contextual_packed newline*
 align_attr    := "@" contextual_align "(" expr ")" newline*

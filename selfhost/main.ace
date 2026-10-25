@@ -33,10 +33,10 @@ import fail from "./failure.ace"
 Token: type = lexer.Token
 Out: type = fmt.Buffer
 
-/* What @when compares `target` against: the target this driver runs on. */
-@when(target == "darwin-arm64")
+/* What @when compares `_PLATFORM_` against: the target this driver runs on. */
+@when(_PLATFORM_ == "darwin-arm64")
 TARGET: const string = "darwin-arm64"
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 TARGET: const string = "linux-x64"
 
 main(): int {

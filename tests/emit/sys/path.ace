@@ -12,9 +12,9 @@ DOTTED_PATH: string = "/tmp/ace_sys_path_directory/./../ace_sys_path_directory/e
 MISSING_PATH: string = "/tmp/ace_sys_path_directory/missing/../entry"
 
 // A symlink each target always has.
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 LINK_PATH: string = "/tmp"
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 LINK_PATH: string = "/proc/self/exe"
 
 same(a: []u8, b: []u8): bool {

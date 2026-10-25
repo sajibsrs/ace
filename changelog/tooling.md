@@ -1,5 +1,8 @@
 # Tooling
 
+- `@when` compares the builtin `_PLATFORM_` (formerly the contextual `target`),
+  and `_NAME_` is the spelling reserved for compiler builtins; the old
+  `target` is now an unknown `@when` name.
 - selfhost asks `sys.stat` for a path's type instead of declaring C `stat`
   and reading `st_mode` at a hard-coded offset per target.
 - The self-hosted compiler lives in `selfhost/` (formerly `compiler/`), naming

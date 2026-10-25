@@ -125,7 +125,7 @@ pub Parser: struct {
     errs: array.Array[SyntaxError],
     exports: mut []u32 = null, // an extern block's Ace-defined C symbols
     nexport: usize,
-    target: string,            // what @when compares `target` against
+    target: string,            // what @when compares `_PLATFORM_` against
 }
 
 /* A syntax error; `message` views the parser's message storage. */
@@ -2608,7 +2608,7 @@ Parser.import(mut self): u32 {
     return n
 }
 
-/* @when's deliberately closed evaluator: target/string comparisons,
+/* @when's deliberately closed evaluator: _PLATFORM_/string comparisons,
  * booleans, and/or/not, and parentheses. Inactive declarations are still
  * parsed for syntax, then omitted from the file.
  */
@@ -2620,10 +2620,10 @@ Parser.when_primary(mut self): bool {
         mut self.expect(Token.rparen, "')' after @when expression")
         return value
     }
-    if self.ident_at(0, "target") {
+    if self.ident_at(0, "_PLATFORM_") {
         self.i += 1
         op: Token = self.kth(0)
-        if op != Token.eq_eq && op != Token.bang_eq { mut self.fail("expected '==' or '!=' after target in @when expression") }
+        if op != Token.eq_eq && op != Token.bang_eq { mut self.fail("expected '==' or '!=' after _PLATFORM_ in @when expression") }
         self.i += 1
         value: string = self.text(mut self.expect(Token.string, "target string after comparison"))
         return mem.equal(self.target, value) == (op == Token.eq_eq)

@@ -7,7 +7,7 @@
 import sys
 import thread
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
 pub HandleErr: type = os.HandleErr

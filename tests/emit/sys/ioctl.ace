@@ -5,16 +5,16 @@
 import mem
 import sys
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 NO_ARGUMENT: const uint = sys.BIOCPROMISC
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 WITH_ARGUMENT: const uint = sys.BIOCGBLEN
 
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 NO_ARGUMENT: const uint = 0x5451 // FIOCLEX
 
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 WITH_ARGUMENT: const uint = 0x541B // FIONREAD
 
 main(): int {

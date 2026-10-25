@@ -1,0 +1,2 @@
+@when(target == "darwin-arm64")
+main() {}

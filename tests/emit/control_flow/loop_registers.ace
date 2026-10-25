@@ -109,7 +109,7 @@ sequences(): int {
 
 // an asm statement reserves only the registers it binds, and only across
 // itself, so this loop's values stay in registers around its x9 (r9 on x64)
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 with_asm(n: int): int {
     total: int = 0
     for i: int in 0 .. n {
@@ -123,7 +123,7 @@ with_asm(n: int): int {
     return total
 }
 
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 with_asm(n: int): int {
     total: int = 0
     for i: int in 0 .. n {

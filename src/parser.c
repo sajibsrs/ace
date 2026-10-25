@@ -2454,7 +2454,7 @@ static Node* parse_import(P* p) {
     return n;
 }
 
-// @when has a deliberately closed evaluator: target/string comparisons,
+// @when has a deliberately closed evaluator: _PLATFORM_/string comparisons,
 // booleans, and/or/not, and parentheses. Inactive declarations are still
 // parsed for syntax, then omitted from the file before later compiler stages.
 static int when_or(P* p);
@@ -2467,10 +2467,10 @@ static int when_primary(P* p) {
         expect(p, T_RPAREN, "')' after @when expression");
         return value;
     }
-    if (ident_at(p, "target")) {
+    if (ident_at(p, "_PLATFORM_")) {
         p->i++;
         TokKind op = tk(p)->kind;
-        if (op != T_EQEQ && op != T_BANGEQ) perr(p, "expected '==' or '!=' after target in @when expression");
+        if (op != T_EQEQ && op != T_BANGEQ) perr(p, "expected '==' or '!=' after _PLATFORM_ in @when expression");
         p->i++;
         Token* value = expect(p, T_STR, "target string after comparison");
         int equal = strlen(p->target) == value->len && memcmp(p->target, value->str, value->len) == 0;

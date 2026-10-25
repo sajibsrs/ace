@@ -5,7 +5,7 @@ threadlocal hits: u64
 threadlocal seed: u64 = 7
 pub threadlocal scratch: [256]u8
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 pub threadlocal depth: i32 = -1
 
 main(): int {

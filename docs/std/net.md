@@ -5,7 +5,7 @@
 `net` provides a thin IPv4 TCP layer with allocation-free core socket
 operations. Its public values and operations are
 OS-neutral; `std/net/mod.ace` selects the darwin-arm64 or linux-x64 OS
-layer through `@when(target == "...")`. Platform structures, constants, byte
+layer through `@when(_PLATFORM_ == "...")`. Platform structures, constants, byte
 order, and C bindings stay in that private-by-convention file. Error codes are
 the target's errno values; glibc's resolver codes are negative. `net.Socket` is a transparent
 alias of `sys.Fd`, so close sockets with `sys.close`.

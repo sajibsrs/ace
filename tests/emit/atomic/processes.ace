@@ -13,10 +13,10 @@ extern "c" {
 }
 
 // MAP_SHARED | MAP_ANON
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 shared_anon(): i32 { return 0x1001 }
 
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 shared_anon(): i32 { return 0x21 }
 
 work(gate: mut *u32, added: mut *u64, claimed: mut *u64): int {

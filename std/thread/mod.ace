@@ -5,7 +5,7 @@
 
 import atomic
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
 pub Thread: type = os.Thread

@@ -6,10 +6,10 @@
 
 import fmt
 
-@when(target == "darwin-arm64")
+@when(_PLATFORM_ == "darwin-arm64")
 FE_DOWNWARD: const i32 = 0x00800000
 
-@when(target == "linux-x64")
+@when(_PLATFORM_ == "linux-x64")
 FE_DOWNWARD: const i32 = 0x400
 
 extern "c" {

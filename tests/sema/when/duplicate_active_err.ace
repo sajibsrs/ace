@@ -3,7 +3,7 @@ same(): int {
     return 1
 }
 
-@when(target != "never-supported")
+@when(_PLATFORM_ != "never-supported")
 same(): int {
     return 2
 }

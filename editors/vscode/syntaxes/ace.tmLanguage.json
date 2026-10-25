@@ -41,8 +41,8 @@
           }
         },
         {
-          "name": "variable.language.target.ace",
-          "match": "\\btarget\\b"
+          "name": "variable.language.platform.ace",
+          "match": "\\b_PLATFORM_\\b"
         },
         {
           "name": "keyword.operator.logical.ace",
