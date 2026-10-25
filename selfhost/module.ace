@@ -692,6 +692,10 @@ Loader.import_target(mut self, mi: usize, imp: Node): (string, bool, bool, usize
         }
         target: string, ok: bool = mut self.relative_target(mi, imp, p.text)
         if !ok { return "", false, false, 0 }
+        if str.has(target, ".test.ace", true) {
+            mut self.err(mi, imp, ["test file '", p.text, "' cannot be imported; ace test builds it"])
+            return "", false, false, 0
+        }
         // A package's relative imports stay in its own directory and out of
         // its reserved pkg/, which also keeps a consumer from deep-importing a
         // dependency's internal files.
