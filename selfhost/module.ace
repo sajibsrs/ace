@@ -1491,7 +1491,7 @@ Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
 
 /* The builtins whose operand is a type. */
 type_operand(name: string): bool {
-    return mem.equal(name, "sizeof") || mem.equal(name, "alignof") || mem.equal(name, "blank") || mem.equal(name, "offsetof") || mem.equal(name, "typeid")
+    return mem.equal(name, "sizeof") || mem.equal(name, "alignof") || mem.equal(name, "blank") || mem.equal(name, "members") || mem.equal(name, "offsetof") || mem.equal(name, "typeid")
 }
 
 /* Lowers every reference in module `mi`'s declarations. */

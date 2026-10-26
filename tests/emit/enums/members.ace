@@ -1,0 +1,38 @@
+/* members(E): an enum's named members in declaration order, as a constant
+ * array usable wherever one is. */
+
+// expect-exit: 79
+// expect-output: north,east,south,5,9,
+
+import fmt
+
+F: enum { north, east, south }
+S: enum u8 { low, mid = 5, high = 9 }
+O: enum u8 { a, b, _ }
+G: [members(F).len]int
+K: const [3]F = members(F)
+
+count[E](): usize {
+    n: usize = 0
+    for e: E in members(E) { n += 1 }
+    return n
+}
+
+main(): int {
+    static_assert(members(S).len == 3)
+    for f: F in members(F) {
+        fmt.print(f.name)
+        fmt.print(",")
+    }
+    for i: usize, s: S in members(S) {
+        if i > 0 {
+            fmt.print(int(u8(s)))
+            fmt.print(",")
+        }
+    }
+    v: []O = members(O)[..]
+    x: [3]F = members(F)
+    x[0] = F.south
+    if members(F)[2] != F.south || x[0] != F.south || K[1] != F.east { return 1 }
+    return int(G.len + v.len + count[F]() * 10 + count[S]() * 100)
+}

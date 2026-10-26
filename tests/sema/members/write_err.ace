@@ -1,0 +1,6 @@
+// members(E) is a value, not storage.
+F: enum { a, b }
+main(): int {
+    members(F)[0] = F.b
+    return 0
+}

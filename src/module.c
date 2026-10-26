@@ -1604,6 +1604,7 @@ static void lower_refs(Node* n, RefLower* c) {
             (text_is(n->a->str, n->a->len, "sizeof") ||
              text_is(n->a->str, n->a->len, "alignof") ||
              text_is(n->a->str, n->a->len, "blank") ||
+             text_is(n->a->str, n->a->len, "members") ||
              text_is(n->a->str, n->a->len, "offsetof") ||
              text_is(n->a->str, n->a->len, "typeid")) &&
             !local_name(c, n->a->str, n->a->len, 0) &&

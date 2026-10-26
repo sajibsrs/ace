@@ -315,9 +315,12 @@ pub Sema.kid(self, id: u32, k: u32): u32 {
     return self.p.kid(id, k)
 }
 
-/* Whether node `id` is in an imported file rather than the root. */
+/* Whether node `id` is in an imported file rather than the root; a
+ * synthesized node is in its original's. */
 pub Sema.in_imported(self, id: u32): bool {
-    return id != 0 && self.l.module_of(id) != 0
+    o: u32 = self.origin(id)
+    if o == 0 { o = id }
+    return o != 0 && self.l.module_of(o) != 0
 }
 
 pub Sema.sym(self, id: u32): Sym {
@@ -2328,7 +2331,10 @@ Sema.expr_type_raw(mut self, e: u32): u32 {
         Kind.str_lit { return self.prim(P_STRING) }
         Kind.bool { return self.prim(P_BOOL) }
         Kind.null { return self.t_ut_null }
-        Kind.ident { return mut self.check_ident(e) }
+        Kind.ident {
+            if (n.flags & parser.F_MEMBERS) != 0 { return mut self.check_members(e) } // re-resolved per stamp
+            return mut self.check_ident(e)
+        }
         Kind.tuple {
             tu: SType = SType { kind = TypeKind.tuple, fields = mut self.new_fields(n.nkids), nfields = n.nkids }
             for i: u32 in 0..n.nkids {
@@ -3993,6 +3999,84 @@ Sema.address_const(self, e: u32): (u64, bool) {
     return 0, false
 }
 
+/* members(E) (Type System #14): E's named members in declaration order, as
+ * the hidden const global `__ace$members$E: const [n]E = [E.a, ...]`, entered
+ * and appended to the unit on first use from nodes of E's own file, so it
+ * resolves wherever E does. `e` is the call rewritten to an ident (F_MEMBERS,
+ * a = the type operand), re-resolved at every check so each generic stamp
+ * names its own E's global (C's check_members).
+ */
+Sema.check_members(mut self, e: u32): u32 {
+    t: u32 = mut self.build_type(self.node(e).a)
+    if self.ty(t).kind == TypeKind.err { return self.t_err }
+    if self.ty(t).kind != TypeKind.enum || self.ty(t).decl == 0 {
+        mut self.err(self.node(e).a, ["members takes an enum type, not ", mut self.type_name(t)])
+        return self.t_err
+    }
+    d: u32 = self.ty(t).decl
+    count: u32 = self.node(d).nkids
+    if count == 0 {
+        mut self.err(self.node(e).a, [mut self.type_name(t), " has no named members"])
+        return self.t_err
+    }
+    name: string = mut self.pool.join(["__ace$members$", self.node(d).text])
+    s: u32 = self.files.find(false, name)
+    if s == 0 {
+        elem: u32 = mut self.synth(d, Kind.ident, 0, 0)
+        len: u32 = mut self.synth(d, Kind.int_lit, 0, 0)
+        at: u32 = mut self.synth(d, Kind.array_t, 0, 0)
+        binder: u32 = mut self.synth(d, Kind.param, 0, 0)
+        lit: u32 = mut self.synth(d, Kind.arraylit, 0, 0)
+        var: u32 = mut self.synth(d, Kind.var, 0, 0)
+        ln: Node = self.node(len)
+        ln.ival = u64(count)
+        mut self.p.update(len, ln)
+        an: Node = self.node(at)
+        an.a = elem
+        an.b = len
+        mut self.p.update(at, an)
+        bn: Node = self.node(binder)
+        bn.text = name
+        bn.a = at
+        mut self.p.update(binder, bn)
+        items: array.Array[u32] = array.Array[u32] {}
+        defer mut items.wipe()
+        for i: u32 in 0..count {
+            m: u32 = mut self.synth(self.kid(d, i), Kind.selector, 0, 0)
+            mn: Node = self.node(m)
+            mn.a = mut self.synth(d, Kind.ident, 0, 0)
+            mut self.p.update(m, mn)
+            fail(mut items.push(m))
+        }
+        mut self.p.relink(lit, items.view())
+        vn: Node = self.node(var)
+        vn.flags = parser.F_CONST
+        vn.b = lit
+        mut self.p.update(var, vn)
+        mut self.p.relink(var, [binder])
+        tops: array.Array[u32] = array.Array[u32] {}
+        defer mut tops.wipe()
+        for i: u32 in 0..self.node(self.file).nkids { fail(mut tops.push(self.kid(self.file, i))) }
+        fail(mut tops.push(var))
+        mut self.p.relink(self.file, tops.view())
+        mods: mut []module.Module = mut self.l.mods.view()
+        mods[0].parser = self.p // the loader owns the tree, which adding may have moved
+        s = mut self.new_sym(SymKind.var, name)
+        mut self.sym(s).is_const = true
+        mut self.sym(s).is_global = true
+        mut self.sym(s).decl = binder
+        mut self.sym(s).top = var
+        mut self.sym(s).entered = true
+        mut self.files.insert(false, name, s)
+    }
+    _ = mut self.resolved(s)
+    x: Node = self.node(e)
+    x.text = name
+    mut self.p.update(e, x)
+    mut self.set_node_sym(e, s)
+    return self.sym(s).ty
+}
+
 /* A call by name: an ordinary call through its overload set, a cast, blank,
  * or a layout builtin.
  */
@@ -4010,6 +4094,20 @@ Sema.check_call(mut self, call: u32): u32 {
     name: string = callee.text
     s: u32 = mut self.lookup_val(name)
     if s != 0 { return mut self.check_direct_call(call, s) }
+    if mem.equal(name, "members") {
+        if n.nkids != 1 {
+            mut self.err(call, ["members takes one enum type"])
+            return self.t_err
+        }
+        x: Node = n // now names E's hidden members global
+        x.kind = Kind.ident
+        x.flags |= parser.F_MEMBERS | parser.F_TEXT
+        x.a = self.kid(call, 0)
+        x.text = "members"
+        x.nkids = 0
+        mut self.p.update(call, x)
+        return mut self.check_members(call)
+    }
     if mem.equal(name, "typeid") {
         if n.nkids != 1 {
             mut self.err(call, ["typeid takes one exact named type"])

@@ -1,0 +1,4 @@
+// members takes an enum type: a distinct of one is not.
+F: enum { a, b }
+D: distinct F
+v: [2]F = members(D)

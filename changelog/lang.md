@@ -1,5 +1,9 @@
 # Language
 
+- `members(E)` is a constant `[n]E` of an enum's named members in declaration
+  order, for iteration and the member count; sema rewrites the call to a
+  hidden const global per enum, declared in the enum's file. C and selfhost.
+
 - A `bits` type is C-ABI-compatible in every position, crossing `extern "c"`
   signatures and C-facing structs as its backing integer. C and selfhost.
 

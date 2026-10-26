@@ -105,6 +105,15 @@ Carved (explicit struct layout):
     name a member (Safety #2 covers closed enums only); `.name` of a
     non-member is `""`; an open enum cannot index `[E]T` (#13). Every other
     rule of #10 and #11 applies. [`_` spelling provisional]
+16. Enum members. `members(E)`, with `E` an enum type (a type parameter
+    included, checked per instantiation), is a constant `[n]E` of `E`'s named
+    members in declaration order: `for f: F in members(F)` iterates them and
+    `members(F).len` is the member count wherever an array's `.len` is a
+    constant. It is a value, not storage, so it is never assigned or viewed
+    `mut`; an open enum's `_` contributes no member. Like `blank`, it is a
+    shadowable builtin taking a type in the full type grammar, and its array is
+    static data emitted only for an enum that uses it. A non-enum `E`, a
+    distinct type over an enum included, is an error. [spelling provisional]
 
 Carved (compile-time static lookup maps):
 

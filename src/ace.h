@@ -185,6 +185,7 @@ enum {
     F_FIELDCALL = 16777216, // a call through a function value stored in a struct field
     F_GROUPED = 33554432, // a field expression written in parentheses: (x.f)
     F_STATICLIT = 67108864, // a []T array literal of constant elements: static data
+    F_MEMBERS = F_STATICLIT, // on an N_IDENT: a rewritten members(E); a = the type operand
     F_REEXPORTED = 134217728, // a struct a facade's pub alias makes visible to importers
     F_SHADOWED = 268435456, // `x.m` whose local x hides an import binding x with a member m
     F_OPEN = 536870912, // an enum whose member list ends with `_` (Type System #15)

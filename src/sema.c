@@ -414,6 +414,7 @@ static int is_reserved_builtin(const char* name, uint32_t len) {
     return is_panic_name(name, len) || is_assert_name(name, len) || is_static_assert_name(name, len) ||
            is_bitcast_name(name, len);
 }
+static int is_members_name(const char* name, uint32_t len) { return len == 7 && memcmp(name, "members", 7) == 0; }
 // `_` in an assignment or declaration list: the value is dropped, nothing binds.
 static int is_discard(const Node* n) {
     return n->kind == N_IDENT && n->len == 1 && n->str[0] == '_';
@@ -521,6 +522,7 @@ static void resolve_top(Ck* k, Sym* s);
  * imported file's own are module-prefixed (module.c). Each file sees only its
  * own top level, so root names are unseen from an imported file's code. */
 static const char* g_root_path;
+static Node* g_unit; // the merged file: members(E) appends its hidden globals
 static int in_imported(Node* n) {
     return n && n->path && g_root_path && strcmp(n->path, g_root_path) != 0;
 }
@@ -2791,6 +2793,8 @@ static int cond_test(Ck* k, Node* e) {
     return 0;
 }
 
+static SType* check_members(Ck* k, Node* e);
+
 static SType* expr_type_raw(Ck* k, Node* e) {
     switch (e->kind) {
     case N_INT: case N_CHAR: return T_UT_INT;
@@ -2799,6 +2803,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     case N_BOOL: return st_prim(P_BOOL);
     case N_NULL: return T_UT_NULL;
     case N_IDENT: {
+        if (e->flags & F_MEMBERS) return check_members(k, e); // re-resolved per stamp
         Sym* s = lookup_val(k, e->str, e->len);
         if (!s) {
             if (is_reserved_builtin(e->str, e->len)) {
@@ -4753,6 +4758,93 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
 
 static SType* check_call_raw(Ck* k, Node* call);
 
+/* A node synthesized for a members(E) global, positioned at `at`. */
+static Node* members_node(NKind kind, Node* at) {
+    Node* n = (Node*)arena_alloc(sizeof(Node));
+    memset(n, 0, sizeof *n);
+    n->kind = (uint8_t)kind;
+    n->line = at->line;
+    n->col = at->col;
+    n->path = at->path;
+    return n;
+}
+
+/*
+ * members(E) (Type System #14): E's named members in declaration order, as the
+ * hidden const global `__ace$members$E: const [n]E = [E.a, ...]`, entered and
+ * appended to the unit on first use and declared in E's own file, so it
+ * resolves wherever E does. The call node is rewritten to an N_IDENT naming
+ * it (F_MEMBERS, a = the type operand), re-resolved at every check so each
+ * generic stamp names its own E's global.
+ */
+static SType* check_members(Ck* k, Node* e) {
+    SType* t = build_type(k, e->a);
+    if (t->kind == SK_ERR) return T_ERR;
+    if (t->kind != SK_ENUM || !t->decl) {
+        ck_err(k, e->a, "members takes an enum type, not %s", type_name(t));
+        return T_ERR;
+    }
+    Node* d = t->decl;
+    if (!d->nkids) {
+        ck_err(k, e->a, "%s has no named members", type_name(t));
+        return T_ERR;
+    }
+    char nm[512];
+    int nl = snprintf(nm, sizeof nm, "__ace$members$%.*s", (int)d->len, d->str);
+    Sym* s = scope_find(g_file_scope, 0, nm, (uint32_t)nl);
+    if (!s) {
+        Node* elem = members_node(N_IDENT, d);
+        elem->str = d->str;
+        elem->len = d->len;
+        Node* count = members_node(N_INT, d);
+        count->ival = (uint64_t)d->nkids;
+        Node* at = members_node(N_ARRAY_T, d);
+        at->a = elem;
+        at->b = count;
+        Node* binder = members_node(N_PARAM, d);
+        binder->str = arena_string(nm);
+        binder->len = (uint32_t)nl;
+        binder->a = at;
+        Node* lit = members_node(N_ARRAYLIT, d);
+        lit->nkids = d->nkids;
+        lit->kids = (Node**)arena_alloc((size_t)d->nkids * sizeof(Node*));
+        for (int i = 0; i < d->nkids; i++) {
+            Node* m = members_node(N_FIELD_E, d->kids[i]);
+            m->a = members_node(N_IDENT, d);
+            m->a->str = d->str;
+            m->a->len = d->len;
+            m->str = d->kids[i]->str;
+            m->len = d->kids[i]->len;
+            lit->kids[i] = m;
+        }
+        Node* var = members_node(N_VAR, d);
+        var->flags = F_CONST;
+        var->nkids = 1;
+        var->kids = (Node**)arena_alloc(sizeof(Node*));
+        var->kids[0] = binder;
+        var->b = lit;
+        s = sym_new(SYM_VAR, binder->str, binder->len);
+        s->is_const = 1;
+        s->is_global = 1;
+        s->decl = binder;
+        s->init = lit;
+        s->top = var;
+        s->decl_state = DECL_ENTERED;
+        binder->sym = s;
+        scope_insert(g_file_scope, 0, s);
+        Node** kids = (Node**)arena_alloc((size_t)(g_unit->nkids + 1) * sizeof(Node*));
+        memcpy(kids, g_unit->kids, (size_t)g_unit->nkids * sizeof(Node*));
+        kids[g_unit->nkids] = var;
+        g_unit->kids = kids;
+        g_unit->nkids++;
+    }
+    resolved(k, s);
+    e->str = s->name;
+    e->len = s->len;
+    e->sym = s;
+    return s->type;
+}
+
 static SType* check_call(Ck* k, Node* call) {
     SType* t = check_call_raw(k, call);
     if (k->curfn && inline_callee(call)) k->curfn->flags |= F_INLCALLS; // the emitter plans only these
@@ -4851,6 +4943,18 @@ static SType* check_call_raw(Ck* k, Node* call) {
     if (callee->kind == N_IDENT) {
         Sym* s = lookup_val(k, callee->str, callee->len);
         if (!s) {
+            if (is_members_name(callee->str, callee->len)) {
+                if (call->nkids != 1) {
+                    ck_err(k, call, "members takes one enum type");
+                    return T_ERR;
+                }
+                call->kind = N_IDENT; // now names E's hidden members global
+                call->flags |= F_MEMBERS;
+                call->a = call->kids[0];
+                call->kids = NULL;
+                call->nkids = 0;
+                return check_members(k, call);
+            }
             if (callee->len == 6 && memcmp(callee->str, "typeid", 6) == 0) {
                 if (call->nkids != 1) {
                     ck_err(k, call, "typeid takes one exact named type");
@@ -8424,6 +8528,7 @@ static void sema_enter(Ck* k, Node* file, Diag* d) {
     memset(&import_scope, 0, sizeof import_scope);
     g_file_scope = &file_scope;
     g_root_path = d->path;
+    g_unit = file;
     if (!PRIMS[0]) {
         T_ERR = st_new(SK_ERR);
         T_UT_INT = st_new(SK_UT);

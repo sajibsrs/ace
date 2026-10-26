@@ -402,7 +402,7 @@
     },
     "builtins": {
       "name": "entity.name.function.ace support.function.builtin.ace",
-      "match": "\\b(?:sizeof|alignof|blank|offsetof|typeid|panic|assert|static_assert)\\b(?=\\s*\\()"
+      "match": "\\b(?:sizeof|alignof|blank|members|offsetof|typeid|panic|assert|static_assert)\\b(?=\\s*\\()"
     },
     "constants": {
       "patterns": [

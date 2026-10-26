@@ -859,8 +859,9 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
             if (base->kind == N_IDENT &&
                 ((base->len == 6 && memcmp(base->str, "sizeof", 6) == 0) ||
                  (base->len == 7 && memcmp(base->str, "alignof", 7) == 0) ||
-                 (base->len == 5 && memcmp(base->str, "blank", 5) == 0))) {
-                // sizeof/alignof/blank operands are types: the full inline type
+                 (base->len == 5 && memcmp(base->str, "blank", 5) == 0) ||
+                 (base->len == 7 && memcmp(base->str, "members", 7) == 0))) {
+                // sizeof/alignof/blank/members operands are types: the full inline type
                 // grammar is admitted, so slices and arrays need no named alias
                 NV w = {0};
                 nv_push(p, &w, parse_type(p));

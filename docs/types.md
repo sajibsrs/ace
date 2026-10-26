@@ -810,8 +810,27 @@ label: string = state.name // "running"
 
 The names are static data, and their lookup is emitted only for an enum whose
 `.name` is used. It maps any discriminant, dense or sparse, without allocating,
-and reads through pointers as other fields do. There is no general reflection:
-`.name` is the only such question, and only an enum value answers it.
+and reads through pointers as other fields do.
+
+`members(E)` is a constant array of an enum's named members in declaration
+order, so iterating an enum is an ordinary array loop:
+
+```ace
+for s: State in members(State) { fmt.println(s.name) }
+count: usize = members(State).len
+```
+
+It is a value: it can be copied, indexed, sliced to a read-only `[]E`, and
+used for an array length (`[members(State).len]u32`), but not assigned or
+viewed `mut`. A generic may call it on its type parameter, which must then be
+an enum. The array is static data, emitted only for an enum that uses it. There
+is no general reflection: `.name` and `members` are the only such questions.
+
+Design rationale: `members` is a builtin taking a type, like `blank`, rather
+than a loop form such as `for f: F in F`. Types and values have separate
+namespaces, so a loop head that named a type would be the one head that is not
+an expression; as an array it composes with every existing sequence rule and
+gives the count for free (Zig `std.enums.values`, Swift `allCases`).
 
 An enum whose member list ends with `_` is open: every value of its backing
 type is a value of the enum, as for a C enumeration a library may extend. It
