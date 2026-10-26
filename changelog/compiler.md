@@ -236,3 +236,6 @@
 - Selfhost sema rewrites a pointer receiver `p.m()` to `(*p).m()` with a new
   dereference node per pointer level, as the compiler does; lowering's
   pointer-receiver special cases, `format_call`'s included, are gone (#158).
+- Selfhost sema auto-derefs a sequence (`p.len`, `for x in p`) and wraps a
+  released `*[]T` in new `*`/placearg nodes relinked into the parent, as the
+  compiler does; `wrap_node`, which moved a node to a new id, is gone (#158).

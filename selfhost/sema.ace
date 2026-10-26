@@ -2652,7 +2652,7 @@ Sema.check_selector(self, e: u32): u32 {
         }
     }
     b: u32 = 0
-    if mem.equal(n.text, "len") { b = self.deref_sequence(n.a) } else { b = self.expr_type(n.a) }
+    if mem.equal(n.text, "len") { b = self.deref_sequence(e, n.a) } else { b = self.expr_type(n.a) }
     if self.ty(b).kind == TypeKind.err { return self.t_err }
     bk: TypeKind = self.ty(b).kind
     if mem.equal(n.text, "len") && (bk == TypeKind.array || bk == TypeKind.slice || self.is_prim(b, P_STRING)) {
@@ -3072,42 +3072,30 @@ Sema.is_byte_sequence(self, t: u32): bool {
     return (x.kind == TypeKind.array || x.kind == TypeKind.slice) && x.base != 0 && self.is_prim(x.base, P_U8)
 }
 
-/* Moves node `n` to a new id and makes `n` a `kind` node (`op` for a unary)
- * over it, so every link to `n` now reaches the wrapper; the moved node's id.
- */
-Sema.wrap_node(self, n: u32, kind: Kind, op: lexer.Token): u32 {
-    c: u32 = self.p.add(self.node(n))
-    self.grow(c)
-    self.nty.set(usize(c), self.node_ty(n))
-    self.nsym.set(usize(c), self.node_sym(n))
-    o: u32 = self.origin(n)
-    if o == 0 { o = n }
-    self.norigin.set(usize(c), o)
-    w: *Node = self.p.node(n)
-    w.kind = kind
-    w.op = op
-    w.a = c
-    w.b = 0
-    w.c = 0
-    w.kids = 0
-    w.nkids = 0
-    self.nty.set(usize(n), 0)
-    self.nsym.set(usize(n), 0)
-    return c
+/* A new `*` node of type `ty` over `n`; the caller relinks `n`'s parent to it. */
+Sema.deref_node(self, n: u32, ty: u32): u32 {
+    d: u32 = self.synth(n, Kind.unary, 0, ty)
+    self.p.node(d).op = lexer.Token.star
+    self.p.node(d).a = n
+    mods: []module.Module = self.l.mods.view()
+    mods[0].parser = self.p // the loader owns the tree, which adding may have moved
+    return d
 }
 
 /* A sequence operand reached through pointers (`p.len`, `for x in p` with
  * p: *[]T) auto-derefs as a field access does: each pointer edge becomes an
  * explicit `*` node, so later passes see the sequence itself.
  */
-Sema.deref_sequence(self, at: u32): u32 {
+Sema.deref_sequence(self, parent: u32, at: u32): u32 {
     t: u32 = self.expr_type(at)
     b: u32 = t
     for b != 0 && self.ty(b).kind == TypeKind.ptr { b = self.ty(b).base }
     if t == b || b == 0 || !(self.ty(b).kind == TypeKind.array || self.ty(b).kind == TypeKind.slice || self.is_prim(b, P_STRING)) { return t }
     for self.ty(t).kind == TypeKind.ptr {
-        _ = self.wrap_node(at, Kind.unary, lexer.Token.star)
-        t = self.expr_type(at)
+        t = self.ty(t).base
+        d: u32 = self.deref_node(at, t)
+        if self.node(parent).a == at { self.p.node(parent).a = d } else { self.p.node(parent).b = d }
+        at = d
     }
     return t
 }
@@ -3127,8 +3115,15 @@ Sema.release_place(self, call: u32): bool {
     }
     t: u32 = self.expr_type(arg)
     if t == 0 || self.ty(t).kind != TypeKind.ptr || self.ty(t).base == 0 || self.ty(self.ty(t).base).kind != TypeKind.slice { return false }
-    c: u32 = self.wrap_node(arg, Kind.placearg, a.op)
-    _ = self.wrap_node(c, Kind.unary, lexer.Token.star)
+    d: u32 = self.deref_node(arg, 0)
+    c: u32 = self.synth(arg, Kind.placearg, 0, 0)
+    self.p.node(c).op = a.op
+    self.p.node(c).a = d
+    args: array.Array[u32] = array.Array[u32] {}
+    defer args.wipe()
+    fail(args.push(c))
+    for i: u32 in 1..self.node(call).nkids { fail(args.push(self.kid(call, i))) }
+    self.p.relink(call, args.view())
     return true
 }
 
@@ -6982,7 +6977,7 @@ Sema.check_for(self, s: u32) {
             if self.coerce(n.b, want) { it = want }
         }
     } else {
-        it = self.deref_sequence(n.b)
+        it = self.deref_sequence(s, n.b)
     }
     ik: TypeKind = self.ty(it).kind
     if ik != TypeKind.err {
@@ -7340,7 +7335,7 @@ Sema.check_lvalue_raw(self, e: u32, write: bool): u32 {
 Sema.check_field_lvalue(self, e: u32, write: bool): u32 {
     n: Node = self.node(e)
     direct: u32 = 0
-    if mem.equal(n.text, "len") { direct = self.deref_sequence(n.a) } else { direct = self.expr_type(n.a) }
+    if mem.equal(n.text, "len") { direct = self.deref_sequence(e, n.a) } else { direct = self.expr_type(n.a) }
     dk: TypeKind = self.ty(direct).kind
     if mem.equal(n.text, "len") && (dk == TypeKind.array || dk == TypeKind.slice || self.is_prim(direct, P_STRING)) {
         self.err(e, ["sequence .len is a read-only property, not an assignable place"])
