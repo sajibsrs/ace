@@ -8035,6 +8035,7 @@ static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
                 if (!s) continue;
                 s->is_global = 1;
                 s->is_extern = 1;
+                s->is_const = f->a && f->a->kind == N_CONST_T;
                 s->decl = f;
                 s->top = f;
                 s->decl_state = DECL_ENTERED;

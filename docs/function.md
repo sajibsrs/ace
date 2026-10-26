@@ -746,7 +746,8 @@ result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
 An extern block also binds C global variables, written `name: type` and
 optionally link-named like a function. The name reads and writes C's storage in
 place; Ace allocates and initializes nothing. A C global is writable, and
-`&name` is `*T`. Its type
+`&name` is `*T`, unless it is marked `const` (`limit: const i32`): then, like an
+Ace `const` global, assigning it or taking a writable view is an error. Its type
 follows the struct-field rules above, so a fixed array is allowed. A read is
 never cached across a call, since C may change the value. Thread-local C
 variables such as `errno` are reached through the accessor functions C

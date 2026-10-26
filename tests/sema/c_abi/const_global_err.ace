@@ -1,0 +1,15 @@
+/* A const C global (C Interop #6) rejects assignment and writable views,
+ * like an Ace const global.
+ */
+
+extern "c" {
+    limit: const i32
+}
+
+take(p: *i32) {}
+
+main(): int {
+    limit = 2
+    take(&limit)
+    return int(limit)
+}

@@ -230,3 +230,6 @@
 - A slice of a local array with constant bounds initializes the elements
   between them (Values & Passing #8), not only a slice spanning every
   element; a dynamic bound still initializes nothing (C and selfhost, #158).
+- A `const` C global (`extern "c" { limit: const i32 }`) is a const binding
+  like an Ace `const` global: assignment and writable views are rejected
+  (C and selfhost, #158).

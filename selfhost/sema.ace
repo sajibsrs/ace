@@ -9231,6 +9231,7 @@ pub Sema.enter(self) {
                     if s == 0 { continue }
                     self.sym(s).is_global = true
                     self.sym(s).is_extern = true
+                    self.sym(s).is_const = f.a != 0 && self.node(f.a).kind == Kind.const_t
                     self.sym(s).decl = fid
                     self.sym(s).top = fid
                     self.sym(s).entered = true

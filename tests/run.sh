@@ -264,6 +264,8 @@ tests/sema/generics/alias_recursive_err.ace|3:1: error: generic alias 'Loop' has
 tests/sema/generics/alias_recursive_err.ace|5:21: note: in 'Loop[i64]' instantiated here
 tests/sema/generics/field_stamp_note_err.ace|6:27: note: in 'Inner[[4]u8]' instantiated here
 tests/sema/generics/field_stamp_note_err.ace|8:25: note: in 'Outer[[4]u8]' instantiated here
+tests/sema/c_abi/const_global_err.ace|12:5: error: cannot assign to const 'limit'
+tests/sema/c_abi/const_global_err.ace|13:10: error: const 'limit' cannot give a writable view
 tests/sema/c_abi/function_pointer_err.ace|7:33: error: C function-pointer parameter type [2]u8 is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|7:40: error: C function-pointer return type string is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|8:29: error: C function-pointer parameter type *Fat is not C-ABI compatible

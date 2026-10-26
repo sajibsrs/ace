@@ -11,7 +11,7 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     read-only memory and writing one faults. Precedent: C string literals in
     `__TEXT`/`.rodata`.
   - Globals, Ace and C (`extern`), are writable by default; `const` opts into
-    read-only placement (not yet enforced on `extern` globals).
+    read-only placement.
   - Defined failures: integer overflow follows one fixed rule; oversized
     shifts are defined; bounds, null dereference, and division by zero trap;
     reading uninitialized storage stays a compile error. Precedent: Go (bounds,
