@@ -1,6 +1,6 @@
 /* test — table-driven test runner.
  *
- * A test is `pub name(mut t: test.T)` in a `<name>.test.ace` file whose
+ * A test is `pub name(t: *test.T)` in a `<name>.test.ace` file whose
  * `main` returns `test.run([("name", name), ...])`. Checks report the test's
  * name and the check's index; nothing allocates.
  */
