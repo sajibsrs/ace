@@ -21,9 +21,9 @@ Follow `spec/` for exact rules; do not propose or assume away these decisions:
   operator. Panic aborts.
 - Types and generic instantiations are explicit; no declaration elision,
   comptime, or trait solving.
-- Assignment copies. Parameters are read-only values, passed as a copy or the
-  caller's address at the compiler's choice, unless `mut`; mutation appears in
-  the signature and call site. `noalias` states non-overlap.
+- Assignment copies. Parameters and receivers are writable; `const` opts out.
+  A parameter's writes stay local (the callee copies only if its body writes
+  it); a receiver's reach the caller. `noalias` states non-overlap.
 - Every type has an all-bits-zero representation. Zero pointers and handles are
   `null`; there is no optional type operator. Globals are zeroed; locals require
   definite initialization.

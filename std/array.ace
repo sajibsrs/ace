@@ -57,11 +57,11 @@ pub inline Array[T].wipe(self) {
 /* The live elements. The view aliases the array's storage and is invalidated
  * by any call that grows it.
  */
-pub Array[T].view(self): []T {
+pub Array[T].view(const self): []T {
     return self.items[..self.len]
 }
 
-pub inline Array[T].get(self, index: usize): T {
+pub inline Array[T].get(const self, index: usize): T {
     return self.items[..self.len][index]
 }
 
@@ -71,7 +71,7 @@ pub inline Array[T].set(self, index: usize, value: T) {
 }
 
 /* `get` for an `int` index; a negative index is a bounds violation. */
-pub inline Array[T].get(self, index: int): T {
+pub inline Array[T].get(const self, index: int): T {
     return self.items[..self.len][index]
 }
 

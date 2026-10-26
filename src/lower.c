@@ -4698,6 +4698,11 @@ IrFunc* ir_lower(Node* file, Node* f, EmitMode mode, SType** targs, int ntargs, 
                 g.v[g.n++] = v;
                 g.agg = 1;
             }
+            if (!by_address(f, i) && is_big(ps->type) && ps->is_written) { // the caller's own storage: write a copy
+                int slot = new_slot(&l, ps->type);
+                copy_mem(&l, slot, 0, v, 0, 0, (uint32_t)sema_size(ps->type));
+                v = slot;
+            }
             int a = var_new(&l, NULL, IT_PTR, -1);
             set_var(&l, a, v);
             var_new(&l, ps, IT_VOID, ADDR_VAR - a);

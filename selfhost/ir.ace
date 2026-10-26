@@ -282,16 +282,16 @@ pub Func.wipe(self) {
 }
 
 /* Instruction `id` in place; the pointer dangles once one is added. */
-pub Func.at(self, id: int): *IrIns {
+pub Func.at(const self, id: int): *IrIns {
     return &self.ins.view()[usize(id)]
 }
 
-pub Func.block(self, b: int): *IrBlock {
+pub Func.block(const self, b: int): *IrBlock {
     return &self.blocks.view()[usize(b)]
 }
 
 /* Operand `k` of instruction `id`. */
-pub Func.arg(self, id: int, k: u32): int {
+pub Func.arg(const self, id: int, k: u32): int {
     return self.args.get(usize(self.ins.get(usize(id)).args + k))
 }
 

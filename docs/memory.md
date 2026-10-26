@@ -106,7 +106,7 @@ boundary only behind a pointer. On a field, `@offset` comes before `@align`.
 
 Memory has no dynamic type. Reading storage as `T` reads its `sizeof(T)` bytes
 as `T`, and the compiler never assumes two accesses are disjoint just because
-their types differ; only `noalias` and read-only parameters state non-overlap.
+their types differ; only `noalias` and `const` parameters state non-overlap.
 
 Plain-bits types are those where every byte pattern is a value: integers,
 `char`, floating types, enums, bits types, data pointers, C function values, and structs,
@@ -179,7 +179,7 @@ share one total order.
 A data race is two accesses to overlapping bytes, at least one a write and at
 least one not atomic (a volatile access is not atomic), with no such ordering
 between them. It is programmer error and the value read is unspecified; no build
-checks it. The `noalias` and read-only-parameter facts hold for the whole call
+checks it. The `noalias` and `const`-parameter facts hold for the whole call
 across every context, so another context writing that storage during the call is
 a data race. The compiler never removes, combines, or duplicates an atomic
 operation, and never moves an ordinary access across one in a direction its

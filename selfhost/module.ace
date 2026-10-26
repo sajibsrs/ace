@@ -167,7 +167,7 @@ Loader.node(self, mi: usize, id: u32): Node {
     return *self.mods.get(mi).parser.node(id)
 }
 
-Loader.kid(self, mi: usize, id: u32, k: u32): u32 {
+Loader.kid(const self, mi: usize, id: u32, k: u32): u32 {
     return self.mods.get(mi).parser.kid(id, k)
 }
 
@@ -1555,7 +1555,7 @@ Loader.merge(self) {
 /* The module whose file holds node `id` of the merged tree. Merge splices the
  * modules in `order`, so their first ids ascend along it: binary search.
  */
-pub Loader.module_of(self, id: u32): usize {
+pub Loader.module_of(const self, id: u32): usize {
     ms: []Module = self.mods.view() // view: get would copy the whole Module
     order: []usize = self.order.view()
     lo: usize = 0

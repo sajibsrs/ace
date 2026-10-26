@@ -77,6 +77,7 @@ struct Sym {
     uint8_t     decl_state, in_cycle;
     uint8_t     is_root; // top-level in the root file: unseen from imported files
     uint8_t     is_thread; // a threadlocal module variable: one copy per thread
+    uint8_t     is_written; // a parameter its function writes or views writably: copied on entry
     SType*      type;
     Node*       decl;   // binder/declaration node (slot key for the emitter)
     Node*       init;   // top-level initializer (static Error validation/emission)

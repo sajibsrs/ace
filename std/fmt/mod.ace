@@ -347,12 +347,12 @@ pub Buffer.init(storage: []u8): Buffer {
 }
 
 /* The bytes kept so far: all of them for a storage-only buffer. */
-pub Buffer.text(self): string {
+pub Buffer.text(const self): string {
     return self.sink.storage[0..self.sink.used]
 }
 
 /* The bytes a storage-only buffer dropped for want of room. */
-pub Buffer.dropped(self): usize {
+pub Buffer.dropped(const self): usize {
     return self.sink.dropped
 }
 

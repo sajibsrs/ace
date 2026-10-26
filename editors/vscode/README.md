@@ -31,6 +31,8 @@ The highlighter recognizes case-final `fallthrough` as a control keyword without
 
 The `defer` statement keyword is reserved, so the highlighter colors it as a control keyword everywhere it appears; no contextual disambiguation is needed.
 
+A `const self` receiver and a `p: const T` parameter need no grammar of their own: `const` is a keyword and `self` a language variable wherever they appear.
+
 The reserved line-final `intrinsic` marker is highlighted as a keyword. The
 compiler restricts it to exact compiler-provided standard-library declarations.
 

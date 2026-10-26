@@ -37,7 +37,7 @@ make(n: i64): Big {
 }
 
 own(b: Big, o: Outer, p: *Outer, i: usize): i64 {
-    return sum(b) + sum(o.big) + sum(o.more[i]) + sum(p.big) + sum(*&o.big)
+    return sum(b) + sum(o.big) + sum(o.more[i]) + sum(p.big) + sum(*&p.more[0])
 }
 
 copied(b: Big, f: (Big): i64): i64 {

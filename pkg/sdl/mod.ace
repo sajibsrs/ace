@@ -305,17 +305,17 @@ pub Event.poll(self): bool { return c_poll_event(&self) }
 
 // The keyboard member, and whether type says it holds one; false for every
 // other kind, whose bytes the member would misread.
-pub Event.key(self): (KeyboardEvent, bool) {
+pub Event.key(const self): (KeyboardEvent, bool) {
     return self.keyboard, self.type == EventType.key_down || self.type == EventType.key_up
 }
 
 // The mouse-motion member, and whether type says it holds one.
-pub Event.mouse_motion(self): (MouseMotionEvent, bool) {
+pub Event.mouse_motion(const self): (MouseMotionEvent, bool) {
     return self.motion, self.type == EventType.mouse_motion
 }
 
 // The mouse-button member, and whether type says it holds one.
-pub Event.mouse_button(self): (MouseButtonEvent, bool) {
+pub Event.mouse_button(const self): (MouseButtonEvent, bool) {
     return self.button, self.type == EventType.mouse_button_down || self.type == EventType.mouse_button_up
 }
 
@@ -336,7 +336,7 @@ pub Window.new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
     return Window { handle = c_create_window(&buf[0], w, h, u64(flags)) }
 }
 
-pub Window.ok(self): bool { return self.handle != null }
+pub Window.ok(const self): bool { return self.handle != null }
 pub Window.wipe(self) {
     c_destroy_window(self.handle)
     self.handle = null
@@ -354,7 +354,7 @@ pub Renderer.new(window: Window, driver: string): Renderer {
     return Renderer { handle = c_create_renderer(window.handle, &buf[0]) }
 }
 
-pub Renderer.ok(self): bool { return self.handle != null }
+pub Renderer.ok(const self): bool { return self.handle != null }
 pub Renderer.wipe(self) {
     c_destroy_renderer(self.handle)
     self.handle = null
@@ -364,7 +364,7 @@ pub Renderer.color(self, color: Color): bool {
     return c_set_render_draw_color_float(self.handle, color.r, color.g, color.b, color.a)
 }
 
-pub Renderer.color(self): (Color, bool) {
+pub Renderer.color(const self): (Color, bool) {
     c: Color
     ok: bool = c_get_render_draw_color_float(self.handle, &c.r, &c.g, &c.b, &c.a)
     return c, ok
@@ -374,7 +374,7 @@ pub Renderer.clear(self): bool { return c_render_clear(self.handle) }
 pub Renderer.present(self): bool { return c_render_present(self.handle) }
 
 // The current output size in render pixels, which follows window resizes.
-pub Renderer.size(self): (i32, i32, bool) {
+pub Renderer.size(const self): (i32, i32, bool) {
     w: i32 = 0
     h: i32 = 0
     ok: bool = c_get_current_render_output_size(self.handle, &w, &h)
@@ -415,7 +415,7 @@ pub Renderer.debug_text(self, x: f32, y: f32, text: string): bool {
 // The shader code formats this renderer accepts: none unless it is on
 // GPU_DRIVER, then those of the GPU API beneath it (SPIR-V on Vulkan, MSL on
 // Metal).
-pub Renderer.shader_formats(self): ShaderFormats {
+pub Renderer.shader_formats(const self): ShaderFormats {
     device: *SDL_GPUDevice = c_get_gpu_renderer_device(self.handle)
     if device == null { return ShaderFormats {} }
     return ShaderFormats(c_get_gpu_shader_formats(device))
@@ -436,7 +436,7 @@ pub Shader.new(renderer: Renderer, format: ShaderFormats, code: []u8, uniform_bu
     return Shader { device = device, handle = c_create_gpu_shader(device, &info) }
 }
 
-pub Shader.ok(self): bool { return self.handle != null }
+pub Shader.ok(const self): bool { return self.handle != null }
 pub Shader.wipe(self) {
     if self.handle != null { c_release_gpu_shader(self.device, self.handle) }
     self.handle = null
@@ -451,7 +451,7 @@ pub RenderState.new(renderer: Renderer, shader: Shader): RenderState {
     return RenderState { handle = c_create_gpu_render_state(renderer.handle, &info) }
 }
 
-pub RenderState.ok(self): bool { return self.handle != null }
+pub RenderState.ok(const self): bool { return self.handle != null }
 pub RenderState.wipe(self) {
     if self.handle != null { c_destroy_gpu_render_state(self.handle) }
     self.handle = null

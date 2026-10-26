@@ -184,7 +184,7 @@ pub Program.format(self, destination: []char): (usize, bool) {
 }
 
 /* The index the next instruction will take. */
-Compiler.pc(self): u32 {
+Compiler.pc(const self): u32 {
     return u32(self.insts.len)
 }
 

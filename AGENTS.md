@@ -115,7 +115,7 @@ history.
   says what its result owns.
 - A property's accessors are one overloaded name, told apart by signature:
   `color()` reads it and `color(value)` sets it, never `get_color`/
-  `set_color`. `get`/`set` remain ordinary method names for keyed access
+  `set_color`. The getter takes `const self`. `get`/`set` remain ordinary method names for keyed access
   (`Map.get(key)`/`set(key, value)`).
 - Start strict and add conveniences later.
 - Release a resource that must be freed on every function exit with `defer`,

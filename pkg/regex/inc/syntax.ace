@@ -311,7 +311,7 @@ Parser.collect(self, base: usize, alternate: bool): (u32, Error) {
 }
 
 /* The 1-based line and column of byte `at` in the pattern. */
-Parser.position(self, at: usize): (usize, usize) {
+Parser.position(const self, at: usize): (usize, usize) {
     line: usize = 1
     start: usize = 0
 

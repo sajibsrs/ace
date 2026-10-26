@@ -2431,9 +2431,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         }
         if (write) {
             if (s->is_const) ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
-            else if (s->is_param && !s->is_byaddr)
-                ck_err(k, e, "parameter '%.*s' is read-only — copy it to a local, or take a pointer to write the caller's",
-                       (int)e->len, e->str);
+            else if (s->is_param) s->is_written = 1;
         }
         return s->type;
     }
@@ -3532,18 +3530,21 @@ static void finish_direct_call(Ck* k, Node* call, Sym* s) {
 }
 
 /* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
- * method call on `c` (receivers are by address) are rejected. A path through
- * a pointer reaches other storage and is not checked. */
+ * writable method call on `c` (receivers are by address) are rejected; a plain
+ * parameter's view marks it written. A path through a pointer reaches other
+ * storage and is not checked. */
 static void reject_const_view(Ck* k, Node* at, Node* e) {
     while (e && (e->kind == N_FIELD_E || e->kind == N_INDEX)) {
         SType* t = e->a ? e->a->ty : NULL;
         if (t && t->kind == SK_PTR) return;
+        if (t && e->kind == N_INDEX && (t->kind == SK_SLICE || (t->kind == SK_PRIM && t->prim == P_STRING))) return; // a view's elements
         e = e->a;
     }
     if (!e || e->kind != N_IDENT) return;
     Sym* s = lookup_val(k, e->str, e->len);
     if (s && s->kind == SYM_VAR && s->is_const)
         ck_err(k, at, "const '%.*s' cannot give a writable view", (int)e->len, e->str);
+    else if (s && s->kind == SYM_VAR && s->is_param) s->is_written = 1;
 }
 
 static int const_lvalue(Ck* k, Node* e) {
@@ -4262,7 +4263,8 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
     }
     if (head && head->decl && head->decl->ival == BI_FMT_PRINTF_BUF) { // buffer.printf("format", ...)
         call->flags |= F_BYADDR; // the receiver is passed by address
-        check_lvalue(k, callee->a, 1);
+        SType* rt = check_lvalue(k, callee->a, 0);
+        if (!rt || rt->kind != SK_PTR) reject_const_view(k, call, callee->a); // as a writable method's receiver
         return check_format_call(k, call, head, &PRINTF_BUF_CALL);
     }
     int supplied = call->nkids + 1;
@@ -4346,7 +4348,8 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
         Node* recv = callee->a;
         coerce(k, recv, b);
         SType* rt = (SType*)recv->ty;
-        if (!rt || rt->kind != SK_PTR) reject_const_view(k, call, recv);
+        int const_self = found->decl && found->decl->nkids && (found->decl->kids[0]->flags & F_CONST);
+        if (!const_self && (!rt || rt->kind != SK_PTR)) reject_const_view(k, call, recv);
         call->flags |= F_BYADDR; // the receiver is passed by address
         for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
@@ -7148,6 +7151,7 @@ static void check_func_body(Ck* k, Node* f) {
         if (s) {
             s->type = build_type(k, pa->a);
             s->is_byaddr = (pa->flags & F_BYADDR) != 0;
+            s->is_const = (pa->flags & F_CONST) != 0;
             s->is_param = 1;
             if (s->type && s->type->kind == SK_CONTRACT && !s->is_byaddr)
                 s->is_const_backed = 1; // a read-only contract param may wrap const

@@ -1,0 +1,70 @@
+// expect-exit: 0
+/* A plain parameter is the callee's own writable value (Mutability #2): its
+   writes, views, and writable method calls never reach the caller, a big one
+   included (copied on entry only when written). `const self` methods run on
+   const values (Mutability #6), and a slice field's elements stay writable
+   there. */
+
+P: struct { x: i32 }
+Big: struct { a: [40]i64 }
+S: struct { b: []i32 }
+
+big: Big
+
+P.get(const self): i32 {
+    return self.x
+}
+
+// A slice field is a view: its elements stay writable under `const self`.
+S.poke(const self, i: usize): i32 {
+    q: *i32 = &self.b[i]
+    *q = 3
+    return self.b[i]
+}
+
+P.bump(self) {
+    self.x += 1
+}
+
+bump_all(n: i32, p: P): i32 {
+    n += 1
+    p.bump()
+    q: *P = &p
+    q.x += 10
+    return n + p.get()
+}
+
+read(p: const P): i32 {
+    return p.get()
+}
+
+scribble(b: Big): i64 {
+    b.a[0] = 99
+    return b.a[0]
+}
+
+peek(b: Big): i64 {
+    return b.a[1]
+}
+
+main(): int {
+    c: const P = P{x = 1}
+    v: P = P{x = 1}
+    if bump_all(1, v) != 14 || v.x != 1 {
+        return 1
+    }
+    if read(c) + c.get() != 2 {
+        return 2
+    }
+    big.a[0] = 5
+    big.a[1] = 7
+    if scribble(big) != 99 || big.a[0] != 5 || peek(big) != 7 {
+        return 3
+    }
+    a: [2]i32 = [1, 2]
+    s: const S = S{b = a[..]}
+    if s.poke(1) != 3 || a[1] != 3 {
+        return 4
+    }
+    return 0
+}

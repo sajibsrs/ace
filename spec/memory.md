@@ -78,7 +78,7 @@ Carved (untyped storage):
   `alignof(T)` reads those `sizeof(T)` bytes as `T`, and a write of `T` writes
   exactly those bytes. Passes never assume two accesses are disjoint because
   their types differ; non-overlap comes only from stated facts (`noalias`,
-  read-only parameters).
+  `const` parameters).
 - Plain-bits types are the integers, `char`, `bool`, the floating types, all
   enums, bits types, data pointers, C function values (C Interop #5), distinct
   forms of these, and arrays and structs composed only of them. Every byte pattern of a
@@ -140,7 +140,7 @@ Carved (memory model):
   least one not atomic (a volatile access is not atomic), with no happens-before
   between them. It is programmer error: the value read is unspecified. No build
   checks it.
-- `noalias` (Mutability #8) and read-only-parameter facts hold for the whole
+- `noalias` (Mutability #8) and `const`-parameter facts hold for the whole
   call across every context: another context writing that storage during the
   call is a data race. Passes never remove, combine, or duplicate an atomic
   operation, and never move an ordinary access across one in a direction its
@@ -159,7 +159,7 @@ Carved (typed allocation):
 ## Values & Passing
 Decision: value semantics with explicit copies; references only at call boundaries.
 1. Assignment copies — `q = p` gives `q` its own value storage; mutating that copied value never changes `p`. For a slice this copies only its pointer and length: reassigning/reslicing `q` does not change `p`, while element writes through either view reach their shared backing storage (Memory #12).
-2. A method receiver is a reference to the caller's storage; its writes are visible to the caller. A plain aggregate parameter is a read-only reference to the caller's argument: reads see its current contents, including writes made during the call through a pointer or module variable. Small aggregates may travel in registers when that is unobservable. A plain parameter's address does not outlive the call (Memory #29).
+2. A method receiver is a reference to the caller's storage; its writes are visible to the caller, and a `const self` receiver is not written. A plain parameter is the callee's own writable variable whose initial value is the argument; its writes never reach the caller (Mutability #2). Small aggregates may travel in registers when that is unobservable. A plain parameter's address does not outlive the call (Memory #29).
 3. Plain declarations are stack storage; heap memory exists only via explicit allocation (see: Memory #5).
 4. Copy-on-write is not a language semantic — assignment is a plain copy. COW, where wanted, is an explicit opt-in library type.
 5. The compiler may elide copies when the result is observably identical (codegen freedom, not language semantics).
@@ -173,11 +173,11 @@ Decision: value semantics with explicit copies; references only at call boundari
 13. A module variable declared `threadlocal` (`threadlocal hits: u64`, `pub threadlocal depth: i32 = -1`) has one copy per thread, and a use names the copy of the thread running it. Each thread's copy starts as the declaration's initial value, canonical zero or its initializer under #12, never a copy of another thread's. Only module variables take the mark: a `const`, a StaticMap, a local, and any C-interop declaration are rejected (C Interop #6). The copy's address is fixed while its thread lives, so `&name` is an ordinary pointers that may reach another thread under the ordinary data-race rules; the copy ends when its thread's entry returns, before `thread.join` returns, and a pointer to it dangles afterwards (Memory #29 does not track it). Nothing runs when a copy ends, so a thread-local that owns memory is released by its thread. A signal handler must not use a `threadlocal`: a thread's first access allocates its copies on Darwin (Stdlib #28). Darwin arm64 only: another target rejects the declaration.
 
 ## Mutability
-Decision: every place is writable; write protection comes only from read-only placement.
-1. Locals and module variables are writable. `const` opts a module variable into read-only placement (Philosophy #10: the loader maps the page, the MMU faults on a write). A local `const` is a binding that is not assigned and gives no writable view: `&c`, `c[lo..hi]` of an array, and `c.method()` are rejected ("const 'c' cannot give a writable view"). [keyword provisional]
-2. A parameter binding is never assignable; copy it to a local to modify. A plain aggregate parameter is a read-only reference to the caller's argument: reads see its current contents, fully defined at zero cost. Writing the caller's storage takes a pointer: the parameter is `*T` and the argument `&x` (`mem.release(&data)`). Writes through a pointer, slice, or `string` parameter need no mark: every view is writable.
+Decision: every place is writable; `const` opts out, in every position, and read-only placement enforces it at run time.
+1. Locals, module variables, parameters, and receivers are writable. `const` opts a module variable into read-only placement (Philosophy #10: the loader maps the page, the MMU faults on a write). A local `const` is a binding that is not assigned and gives no writable view: `&c`, `c[lo..hi]` of an array, and `c.method()` are rejected ("const 'c' cannot give a writable view"). [keyword provisional]
+2. A plain parameter is writable and holds its own value: assigning it, writing its fields, `&p`, and a writable method call change only the callee's copy. A function whose body does none of these to an aggregate parameter reads the caller's argument in place and sees writes made during the call through a pointer or module variable; one that does copies the argument on entry. The choice is per function, from its own body. A `const` parameter (`p: const T`) is not assigned and gives no writable view, as #1; it reads the caller's argument in place. Writing the caller's storage takes a pointer: the parameter is `*T` and the argument `&x` (`mem.release(&data)`). Writes through a pointer, slice, or `string` parameter need no mark: every view is writable.
 4. Const globals and string literals live in read-only memory; writing one through a view faults at run time. The type system adds no write-permission layer.
-6. A method receiver is passed by address and spelled plain `self`; the call needs no mark, and its writes are visible to the caller. A pointer receiver auto-derefs (`p.m()` is `(*p).m()`). Definite initialization treats a receiver call like `&receiver`: the call may take a not-yet-initialized receiver and leaves it initialized.
+6. A method receiver is passed by address and spelled plain `self`; the call needs no mark, and its writes are visible to the caller. `const self` declares a receiver that is not assigned and gives no writable view, as #1; only a `const self` method may be called on a `const` local or parameter. A getter takes `const self` by convention; the compiler does not inspect names. A pointer receiver auto-derefs (`p.m()` is `(*p).m()`). Definite initialization treats a receiver call like `&receiver`: the call may take a not-yet-initialized receiver and leaves it initialized.
 8. `noalias` parameter marker: a signature-stated fact that memory reachable through one `noalias` parameter is not reachable through any other parameter. The emitter may vectorize and reorder on it. Debug builds verify slice-range disjointness pairwise in O(1) at call boundaries — a false claim crashes in dev, never in prod. Release cost: zero.
 9. Views carry no permission: `*T`, `[]T`, and `string` are writable through their content wherever the backing storage is. An element of any view-typed expression, a call result included, is a place (`f()[i] = v`, `&f()[i]`); an element of a non-place array value is a temporary and is not assignable.
 

@@ -135,8 +135,10 @@ main(): int {
 }
 ```
 
-A parameter binding is never assignable. A `*T` parameter writes its pointee;
-replacing the caller's pointer takes one more level:
+A plain parameter is the callee's own writable value (see
+[Functions](function.md#parameters-and-mutation)), so assigning it never
+changes the caller's. A `*T` parameter writes its pointee; replacing the
+caller's pointer takes one more level:
 
 ```ace
 set_x(point: *Point, value: int) {
@@ -928,6 +930,21 @@ Number.set(self, value: int) {
 number.set(21)
 ```
 
+`const self` declares a method that only reads its receiver: `self` is not
+assigned and gives no writable view. Only `const self` methods can be called on
+a `const` local or parameter, so a getter takes `const self` by convention. A
+slice or `string` field's elements stay writable, since the view carries no
+permission:
+
+```ace
+Number.get(const self): int {
+    return self.value
+}
+
+fixed: const Number = Number{ value = 7 }
+seven: int = fixed.get()
+```
+
 A function declared on a type without `self` is an associated function, for
 constructors and other operations with no receiver. It is declared and called
 through the type with the same `.`; calling it through a value is an error:
@@ -1095,6 +1112,11 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   functions, as enum members and union variants already did), `.` after a
   value reaches the value. A separate `::` spelling existed only to tell the
   two kinds apart, which `self` now does at the declaration.
+- Mutability #6: `const self` is C++'s `const` member function and Rust's
+  `&self` against `&mut self`. It costs nothing at run time, since every
+  receiver is already passed by address, and lets `const` locals and
+  parameters keep their methods without exposing writes. The compiler checks
+  the body, not the name, so the getter convention is a convention.
 - Names & Scoping #2: forbidding a type and a value from sharing a name in
   overlapping scopes gives `X.m` one lookup with no fallback. Java resolves
   the same ambiguity by letting the value obscure the type (JLS 6.4.2), a rule

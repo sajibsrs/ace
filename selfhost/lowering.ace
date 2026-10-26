@@ -213,7 +213,7 @@ Lw.node(self, n: u32): Node {
     return self.s.node(n)
 }
 
-Lw.kid(self, n: u32, k: u32): u32 {
+Lw.kid(const self, n: u32, k: u32): u32 {
     return self.s.kid(n, k)
 }
 
@@ -5885,6 +5885,11 @@ pub lower(s: *sema.Sema, f: u32, debug: bool, targs: u32, nt: u32, ft: u32): (Fu
                 fail(g.parts.push(ir.IrPart { agg = pt, first = int(g.v.len), n = 1, addr = true }))
                 fail(g.v.push(v))
                 g.agg = true
+            }
+            if !l.by_address(f, i) && l.is_big(pt) && s.sym(ps).is_written { // the caller's own storage: write a copy
+                slot: int = l.new_slot(pt)
+                l.copy_mem(slot, 0, v, 0, 0, l.size(pt))
+                v = slot
             }
             a: int = l.var_new(0, ir.IT_PTR, -1)
             l.set_var(a, v)

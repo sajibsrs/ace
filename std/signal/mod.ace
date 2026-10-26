@@ -67,7 +67,7 @@ pub Set.remove(self, s: Signal) {
     self.bits &= ~(u32(1) << u32(i32(s) - 1))
 }
 
-pub Set.has(self, s: Signal): bool {
+pub Set.has(const self, s: Signal): bool {
     return (self.bits & u32(1) << u32(i32(s) - 1)) != 0
 }
 

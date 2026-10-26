@@ -74,7 +74,7 @@ pub Regex.wipe(self) {
 }
 
 /* The number of capturing groups, not counting the whole match. */
-pub Regex.groups(self): u32 {
+pub Regex.groups(const self): u32 {
     return self.code.slots / 2 - 1
 }
 
@@ -118,7 +118,7 @@ pub Regex.count(self, text: string): usize {
  * `start..end`, both `UNSET` when the group took no part, `k` exceeds
  * `groups()`, or the last search found nothing.
  */
-pub Regex.span(self, k: u32): Span {
+pub Regex.span(const self, k: u32): Span {
     if !self.found || k > self.groups() {
         return Span {
             start = UNSET,
@@ -134,7 +134,7 @@ pub Regex.span(self, k: u32): Span {
 /* The text of `span(k)`: a view into the searched text, valid while that text
  * is, and null when the group is unset.
  */
-pub Regex.group(self, k: u32): string {
+pub Regex.group(const self, k: u32): string {
     span: Span = self.span(k)
     if span.start == UNSET { return null }
 

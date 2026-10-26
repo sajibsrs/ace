@@ -53,6 +53,7 @@ pub Sym: struct {
     pub is_const_backed: bool = false,  // a contract binding that may wrap const storage
     pub is_root: bool = false,          // top-level in the root file: unseen from imported files
     pub is_thread: bool = false,        // a threadlocal module variable: one copy per thread
+    pub is_written: bool = false,       // a parameter its function writes or views writably: copied on entry
     pub entered: bool = false,          // entered, not yet resolved (Compiler #5)
     pub resolving: bool = false,
     pub in_cycle: bool = false,         // its dependency cycle is reported
@@ -299,11 +300,11 @@ pub Sema.wipe(self) {
 
 // --- accessors ----------------------------------------------------------------
 
-pub Sema.node(self, id: u32): Node {
+pub Sema.node(const self, id: u32): Node {
     return *self.p.node(id)
 }
 
-pub Sema.kid(self, id: u32, k: u32): u32 {
+pub Sema.kid(const self, id: u32, k: u32): u32 {
     return self.p.kid(id, k)
 }
 
@@ -316,7 +317,7 @@ pub Sema.in_imported(self, id: u32): bool {
 }
 
 /* Symbol `id` in place; the pointer dangles once a symbol is added. */
-pub Sema.sym(self, id: u32): *Sym {
+pub Sema.sym(const self, id: u32): *Sym {
     return &self.syms.view()[usize(id)]
 }
 
@@ -813,7 +814,7 @@ PRIM_OF_NAME: [18]u8 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 4, 8, 
 MAX_RESOLVING: const u32 = 256
 MAX_PARAMS: const u32 = 64
 
-pub Sema.ty(self, id: u32): SType {
+pub Sema.ty(const self, id: u32): SType {
     return self.types.get(usize(id))
 }
 
@@ -821,12 +822,12 @@ Sema.set_ty(self, id: u32, t: SType) {
     self.types.set(usize(id), t)
 }
 
-pub Sema.field(self, t: SType, i: u32): SField {
+pub Sema.field(const self, t: SType, i: u32): SField {
     return self.fields.get(usize(t.fields + i))
 }
 
 /* Function type `t`'s parameter `i`. */
-pub Sema.param(self, t: SType, i: u32): u32 {
+pub Sema.param(const self, t: SType, i: u32): u32 {
     return self.params.get(usize(t.params + i))
 }
 
@@ -836,19 +837,19 @@ pub Sema.param_at(self, at: u32): u32 {
 }
 
 /* The path diagnostics print for the file node `at` came from. */
-pub Sema.path_of(self, at: u32): string {
+pub Sema.path_of(const self, at: u32): string {
     o: u32 = self.origin(at) // a copy (an inline expansion) is its original's
     if o == 0 { o = at }
     return self.l.mods.get(self.l.module_of(o)).path
 }
 
 /* Type `i` of run `run` of params (a specialization's or instance's type arguments). */
-pub Sema.run_arg(self, run: u32, i: u32): u32 {
+pub Sema.run_arg(const self, run: u32, i: u32): u32 {
     return self.params.get(usize(run + i))
 }
 
 /* Type argument `i` of generic instance `t`. */
-pub Sema.type_arg(self, t: SType, i: u32): u32 {
+pub Sema.type_arg(const self, t: SType, i: u32): u32 {
     return self.params.get(usize(t.args + i))
 }
 
@@ -863,11 +864,11 @@ Sema.new_fields(self, n: u32): u32 {
     return first
 }
 
-pub Sema.prim(self, p: u8): u32 {
+pub Sema.prim(const self, p: u8): u32 {
     return self.prims + u32(p)
 }
 
-Sema.prim_by_name(self, name: string): u32 {
+Sema.prim_by_name(const self, name: string): u32 {
     for i: usize in 0..18 {
         if mem.equal(PRIM_NAMES[i], name) { return self.prim(PRIM_OF_NAME[i]) }
     }
@@ -1336,7 +1337,7 @@ Sema.grow(self, e: u32) {
     fail(self.ncopy.resize(n))
 }
 
-pub Sema.node_ty(self, e: u32): u32 {
+pub Sema.node_ty(const self, e: u32): u32 {
     if usize(e) >= self.nty.len { return 0 }
     return self.nty.get(usize(e))
 }
@@ -1544,17 +1545,17 @@ pub Sema.intrinsic_body(self, f: u32, rt: u32): u32 {
 }
 
 /* The original of inline-expansion copy `e`, or 0 when `e` is no copy. */
-pub Sema.origin(self, e: u32): u32 {
+pub Sema.origin(const self, e: u32): u32 {
     if usize(e) >= self.norigin.len { return 0 }
     return self.norigin.get(usize(e))
 }
 
-pub Sema.node_sym(self, e: u32): u32 {
+pub Sema.node_sym(const self, e: u32): u32 {
     if usize(e) >= self.nsym.len { return 0 }
     return self.nsym.get(usize(e))
 }
 
-pub Sema.node_ival(self, e: u32): u64 {
+pub Sema.node_ival(const self, e: u32): u64 {
     if usize(e) >= self.nival.len { return 0 }
     return self.nival.get(usize(e))
 }
@@ -1605,7 +1606,7 @@ Sema.set_node_proof(self, e: u32, p: u8) {
 }
 
 /* The target being compiled for. */
-pub Sema.target(self): string {
+pub Sema.target(const self): string {
     return self.l.target
 }
 
@@ -1727,13 +1728,13 @@ Sema.enum_member_value(self, e: u32, v: i64): bool {
 }
 
 /* The initializer a const global's value is read from, or 0. */
-pub Sema.sym_init(self, s: u32): u32 {
+pub Sema.sym_init(const self, s: u32): u32 {
     x: Sym = *self.sym(s)
     if x.kind != SymKind.var || x.top == 0 || self.node(x.top).kind != Kind.var { return 0 }
     return self.node(x.top).b
 }
 
-Sema.sym_const(self, s: u32): (i64, bool) {
+Sema.sym_const(const self, s: u32): (i64, bool) {
     if s == 0 { return 0, false }
     x: Sym = *self.sym(s)
     init: u32 = self.sym_init(s)
@@ -1748,7 +1749,7 @@ Sema.sym_const(self, s: u32): (i64, bool) {
  */
 /* Constant `x` converted to primitive `p`, wrapped to its width; a 64-bit
  * unsigned result at or above 2^63 has no i64 constant. */
-Sema.conversion_const(self, p: u8, x: u32): (i64, bool) {
+Sema.conversion_const(const self, p: u8, x: u32): (i64, bool) {
     v: i64, ok: bool = self.ut_const(x)
     if !ok { return 0, false }
     if p == P_I8 { return i64(i8(v)), true }
@@ -1762,7 +1763,7 @@ Sema.conversion_const(self, p: u8, x: u32): (i64, bool) {
     return 0, false
 }
 
-Sema.ut_const(self, e: u32): (i64, bool) {
+Sema.ut_const(const self, e: u32): (i64, bool) {
     n: Node = self.node(e)
     switch n.kind {
         Kind.int_lit, Kind.char_lit { return i64(n.ival), true }
@@ -2869,7 +2870,10 @@ Sema.check_method_call(self, call: u32, b: u32, last: u32): u32 {
     }
     if head != 0 && self.node(self.sym(head).decl).ival == BI_FMT_PRINTF_BUF { // buffer.printf("format", ...)
         self.p.node(call).flags |= parser.F_BYADDR // the receiver is passed by address
-        if last == 0 { _ = self.check_lvalue(callee.a, true) }
+        if last == 0 { // as a writable method's receiver
+            _ = self.check_lvalue(callee.a, false)
+            self.reject_const_view(call, callee.a)
+        }
         return self.check_format_call(call, head, BI_FMT_PRINTF_BUF)
     }
     found: u32, amb: bool = self.method_match(call, head, b)
@@ -2916,7 +2920,8 @@ Sema.check_method_call(self, call: u32, b: u32, last: u32): u32 {
     }
     ft: SType = self.ty(sig)
     if last == 0 && promoted == 0 { _ = self.coerce(recv, b) }
-    if last == 0 { self.reject_const_view(call, recv) }
+    const_self: bool = x.decl != 0 && self.node(x.decl).nkids != 0 && (self.node(self.kid(x.decl, 0)).flags & parser.F_CONST) != 0
+    if last == 0 && !const_self { self.reject_const_view(call, recv) }
     self.p.node(call).flags |= parser.F_BYADDR // the receiver is passed by address
     for i: u32 in 0..n.nkids {
         arg: u32 = self.kid(call, i)
@@ -4242,8 +4247,9 @@ Sema.const_lvalue(self, place: u32): bool {
 }
 
 /* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
- * method call on `c` (receivers are by address) are rejected. A path through
- * a pointer reaches other storage and is not checked.
+ * writable method call on `c` (receivers are by address) are rejected; a plain
+ * parameter's view marks it written. A path through a pointer reaches other
+ * storage and is not checked.
  */
 Sema.reject_const_view(self, at: u32, place: u32) {
     e: u32 = place
@@ -4251,12 +4257,15 @@ Sema.reject_const_view(self, at: u32, place: u32) {
         t: u32 = 0
         if self.node(e).a != 0 { t = self.node_ty(self.node(e).a) }
         if t != 0 && self.ty(t).kind == TypeKind.ptr { return }
+        if t != 0 && self.node(e).kind == Kind.index && (self.ty(t).kind == TypeKind.slice || self.is_prim(t, P_STRING)) { return } // a view's elements
         e = self.node(e).a
     }
     if e == 0 || self.node(e).kind != Kind.ident { return }
     s: u32 = self.lookup_val(self.node(e).text)
     if s != 0 && self.sym(s).kind == SymKind.var && self.sym(s).is_const {
         self.err(at, ["const '", self.node(e).text, "' cannot give a writable view"])
+    } else if s != 0 && self.sym(s).kind == SymKind.var && self.sym(s).is_param {
+        self.sym(s).is_written = true
     }
 }
 
@@ -4636,7 +4645,7 @@ Sema.check_keyed_arraylit(self, lit: u32, want: u32) {
 }
 
 /* A key known exactly at compile time: a bool or an enum member. */
-pub Sema.static_key_int(self, e: u32): (u64, bool) {
+pub Sema.static_key_int(const self, e: u32): (u64, bool) {
     n: Node = self.node(e)
     if n.kind == Kind.bool {
         if n.ival != 0 { return 1, true }
@@ -4661,7 +4670,7 @@ pub Sema.static_key_int(self, e: u32): (u64, bool) {
 }
 
 /* A string key known exactly at compile time, as its literal node, or 0. */
-pub Sema.static_key_string(self, e: u32): u32 {
+pub Sema.static_key_string(const self, e: u32): u32 {
     if e == 0 { return 0 }
     n: Node = self.node(e)
     if n.kind == Kind.str_lit { return e }
@@ -6286,6 +6295,7 @@ Sema.check_func_body(self, f: u32) {
             t: u32 = self.build_type(self.node(pa).a)
             self.sym(s).ty = t
             self.sym(s).is_byaddr = (self.node(pa).flags & parser.F_BYADDR) != 0
+            self.sym(s).is_const = (self.node(pa).flags & parser.F_CONST) != 0
             self.sym(s).is_param = true
             self.sym(s).is_const_backed = self.ty(t).kind == TypeKind.contract && !self.sym(s).is_byaddr // a read-only contract param may wrap const
             self.sym(s).decl = pa
@@ -7340,8 +7350,8 @@ Sema.check_lvalue_raw(self, e: u32, write: bool): u32 {
             if write {
                 if x.is_const {
                     self.err(e, ["cannot assign to const '", n.text, "'"])
-                } else if x.is_param && !x.is_byaddr {
-                    self.err(e, ["parameter '", n.text, "' is read-only \u{2014} copy it to a local, or take a pointer to write the caller's"])
+                } else if x.is_param {
+                    self.sym(s).is_written = true
                 }
             }
             if x.ty == 0 { return self.t_err }

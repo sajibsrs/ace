@@ -73,7 +73,7 @@ Em.compile(self, k: usize) {
     for x: ir.IrLiteral in fn.lits.view() {
         if self.literal_data(x.lit, x.name) < 0 { self.s.err(x.lit, ["array literal is not a compile-time constant"]) }
     }
-    arm64.func(*self.s, &self.o, &fn, f.name, f.global)
+    arm64.func(self.s, &self.o, &fn, f.name, f.global)
 }
 
 /* Writes the object file for checked program s to `out`; `root` is its path

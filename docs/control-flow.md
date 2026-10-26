@@ -409,7 +409,7 @@ work(): int {
 ```
 
 - A deferred call through a function value snapshots the callee itself at the
-  `defer` statement, exactly like a read-only argument. Reassigning the
+  `defer` statement, exactly like an argument. Reassigning the
   variable afterwards cannot change which function the exit-time call
   dispatches to:
 

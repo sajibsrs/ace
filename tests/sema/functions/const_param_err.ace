@@ -1,0 +1,35 @@
+/* `const` opts a parameter or receiver out of writes (Mutability #2, #6):
+   no assignment, no writable view, and only `const self` methods. A slice field's elements stay writable; a const
+   array's do not. */
+
+P: struct { x: i32 }
+
+P.get(const self): i32 {
+    self.x = 2
+    return self.x
+}
+
+S: struct { b: []i32 }
+
+S.poke(const self): *i32 {
+    return &self.b[0]
+}
+
+P.bump(self) {
+    self.x += 1
+}
+
+take(p: const P): i32 {
+    p.x = 1
+    p.bump()
+    q: *P = &p
+    return p.get()
+}
+
+main(): int {
+    c: const P = P{x = 1}
+    c.bump()
+    arr: const [2]i32 = [1, 2]
+    r: *i32 = &arr[0]
+    return int(c.get())
+}

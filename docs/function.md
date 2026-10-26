@@ -18,10 +18,30 @@ Semicolons are not used. A newline terminates a complete statement.
 
 ## Parameters and mutation
 
-A parameter binding is never assignable; copy it to a local to modify it. A
-plain aggregate parameter is a read-only reference to the caller's argument:
-reads see its current contents, including writes made during the call through a
-pointer or a module variable. A view of a parameter does not outlive the call.
+A plain parameter is the callee's own writable variable, initialized from the
+argument. Assigning it, writing its fields, taking `&p`, and calling a writable
+method on it change only the callee's value, never the caller's:
+
+```ace
+countdown(n: int): int {
+    steps: int = 0
+    for n > 0 {
+        n -= 1
+        steps += 1
+    }
+    return steps
+}
+```
+
+A function whose body does none of these to an aggregate parameter reads the
+caller's argument in place, and sees writes made during the call through a
+pointer or a module variable; one that does copies the argument on entry. The
+choice is made per function from its own body, so a caller never sees it.
+
+`p: const T` opts out of writes: `p` is not assigned, gives no writable view
+(`&p`, `p[lo..hi]` of an array), and takes only `const self` method calls. It
+always reads the argument in place. A view of a parameter does not outlive the
+call.
 The compiler passes an aggregate of over 32 leaves by address: to an Ace
 function, the address of the argument itself when it names a variable, a field
 or element of one, or a dereference; otherwise, and always to an `extern "c"`
@@ -483,7 +503,7 @@ main(): int {
 ```
 
 Expansion is guaranteed, not a hint, and does not change what a call means:
-the arguments are evaluated left to right as for any call, a read-only scalar
+the arguments are evaluated left to right as for any call, a scalar
 parameter sees the value it was passed, and a receiver
 writes to the caller's storage. A `return` in the body finishes the expanded
 call with its value. Declaration order and module boundaries do not matter,
@@ -786,14 +806,18 @@ Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and
   overlapping struct from all its members' leaves, and pins each target's
   rules against clang in `tests/driver/layout_abi.ace`.
 
-- Plain parameters (Values & Passing #2): a read-only reference to the
-  caller's argument is the by-address passing large aggregates already use,
-  made defined: reads see the argument's current contents, so no program
-  depends on whether a copy was made, at zero cost. Small aggregates still
-  travel in registers when that is unobservable. Zig passes parameters by
-  reference or copy at the compiler's choice but leaves aliasing writes
-  undefined; Ace defines them. Writing the caller's storage takes an explicit
-  `*T` and `&x`, as in Go and C.
+- Plain parameters (Values & Passing #2, Mutability #2): a parameter is a
+  writable local, as in C, Go, Odin, and Rust's `mut` bindings, so reusing it
+  (a countdown, a cursor) needs no shadow copy. A callee that never writes an
+  aggregate parameter still reads the argument in place, the by-address
+  passing big aggregates already use, so the common read-only case costs
+  nothing; only a body that writes, views, or calls a writable method on one
+  pays one copy on entry. The decision is local to the callee's body, so
+  callers and the ABI never depend on it. `const` states the read-only case
+  in the signature with the same checks as a `const` local, and is the
+  non-overlap fact passes may use; Zig instead leaves aliasing writes to an
+  in-place parameter undefined. Writing the caller's storage takes an
+  explicit `*T` and `&x`, as in Go and C.
 - C Interop #2: one keyword names the C boundary in both directions, as C and
   C++ do (`extern "C" int f(void);` declares, `extern "C" int f(void) { … }`
   defines) and Rust does (`extern "C" { fn f(); }`, `extern "C" fn f() {}`).

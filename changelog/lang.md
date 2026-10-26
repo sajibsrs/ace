@@ -1,5 +1,11 @@
 # Language
 
+- Plain parameters are writable locals: the callee copies an aggregate on
+  entry only when its body writes it, takes `&p`, or calls a non-`const self`
+  method on it (`Sym.is_written`), else reads the argument in place.
+  `p: const T` and `const self` reuse the `const`-local checks; only
+  `const self` methods run on `const` values. C and selfhost.
+
 - `members(E)` is a constant `[n]E` of an enum's named members in declaration
   order, for iteration and the member count; sema rewrites the call to a
   hidden const global per enum, declared in the enum's file. C and selfhost.

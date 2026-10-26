@@ -21,7 +21,8 @@
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations;
 //               F_INLINE marks a function expanded at its direct calls;
 //               F_COLD marks one whose calls are rare (@cold)
-//   N_PARAM     str = name; a = type; F_NOALIAS; F_BYADDR on the receiver
+//   N_PARAM     str = name; a = type; F_NOALIAS; F_BYADDR on the receiver;
+//               F_CONST on a const parameter or receiver
 //               `self`, bound to the caller's storage (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
 //               c = N_TPARAMS; F_PUB/F_PACKED
@@ -1692,6 +1693,10 @@ static Node* parse_params(P* p, const char* closer, int self_ok) {
         for (;;) {
             Node* pa = nd(p, N_PARAM);
             if (eat(p, T_NOALIAS)) pa->flags |= F_NOALIAS;
+            if (at(p, T_CONST) && kth(p, 1) == T_SELF) {
+                pa->flags |= F_CONST; // a receiver the method does not write
+                p->i++;
+            }
             if (at(p, T_SELF)) {
                 if (!self_ok) perr(p, "'self' is only the receiver of a method declaration");
                 if (params.n) perr(p, "'self' must be the first parameter");
@@ -1711,6 +1716,10 @@ static Node* parse_params(P* p, const char* closer, int self_ok) {
             pa->len = name->len;
             expect(p, T_COLON, "':' after parameter name");
             pa->a = parse_type(p);
+            if (pa->a && pa->a->kind == N_CONST_T) { // a parameter the function does not write
+                pa->flags |= F_CONST;
+                pa->a = pa->a->a;
+            }
             nv_push(p, &params, pa);
             if (!eat(p, T_COMMA)) break;
             if (at(p, T_RPAREN)) break; // trailing comma

@@ -22,6 +22,8 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   - Data races (Memory, concurrency) and a C `longjmp` across an Ace frame
     (C Interop #7) are restated under machine semantics; "undefined
     behavior" and "unspecified" leave the spec.
+  - Parameters are writable local values and `const` opts out, as do
+    receivers (`const self`); a getter takes `const self` (Mutability #2, #6).
   Open:
   - [open] Spelling of the by-value receiver (e.g. `val self`).
   - [open] The overflow rule: wrap in every build, or trap in every build.

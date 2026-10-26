@@ -149,13 +149,13 @@ pub Json.field(self, name: string, tree: Value) {
 }
 
 /* The value at JSON Pointer `path`, or `Value.none` and false when absent. */
-pub Json.get(self, path: string): (Value, bool) {
+pub Json.get(const self, path: string): (Value, bool) {
     node: Value, ok: bool = pointer.get(self.root, path)
     return node, ok
 }
 
 /* The string at `path`, or null when it is absent or not a string. */
-pub Json.string(self, path: string): string {
+pub Json.string(const self, path: string): string {
     node: Value, ok: bool = pointer.get(self.root, path)
     switch node {
         Value.string(text: string) { return text }
@@ -165,7 +165,7 @@ pub Json.string(self, path: string): string {
 }
 
 /* The number at `path`, or 0 when it is absent or not a number. */
-pub Json.number(self, path: string): f64 {
+pub Json.number(const self, path: string): f64 {
     node: Value, ok: bool = pointer.get(self.root, path)
     switch node {
         Value.number(number: f64) { return number }
@@ -175,7 +175,7 @@ pub Json.number(self, path: string): f64 {
 }
 
 /* The boolean at `path`, or false when it is absent or not a boolean. */
-pub Json.bool(self, path: string): bool {
+pub Json.bool(const self, path: string): bool {
     node: Value, ok: bool = pointer.get(self.root, path)
     switch node {
         Value.bool(flag: bool) { return flag }

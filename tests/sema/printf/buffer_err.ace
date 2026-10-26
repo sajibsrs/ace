@@ -4,7 +4,7 @@
 import fmt
 import sys
 
-bad(storage: []u8, held: fmt.Buffer): int {
+bad(storage: []u8, held: const fmt.Buffer): int {
     b: fmt.Buffer = fmt.Buffer.init(sys.stdout, storage)
     n: int = b.printf("%d", 1)
     n = held.printf("%d", 1)

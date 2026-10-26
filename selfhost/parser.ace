@@ -233,11 +233,11 @@ pub Parser.errors(self): ([]SyntaxError, bool) {
 /* Node `n` in place, so a later pass can rename or retag it; the pointer
  * dangles once a node is added.
  */
-pub Parser.node(self, n: u32): *Node {
+pub Parser.node(const self, n: u32): *Node {
     return &self.nodes[n]
 }
 
-pub Parser.kid(self, n: u32, k: u32): u32 {
+pub Parser.kid(const self, n: u32, k: u32): u32 {
     return self.kids[self.nodes[n].kids + k]
 }
 
@@ -1853,6 +1853,10 @@ Parser.params(self, closer: string, self_ok: bool) {
         for {
             pa: u32 = self.nd(Kind.param)
             if self.eat(Token.noalias) { self.nodes[pa].flags |= F_NOALIAS }
+            if self.at(Token.const) && self.kth(1) == Token.self {
+                self.nodes[pa].flags |= F_CONST // a receiver the method does not write
+                self.i += 1
+            }
             if self.at(Token.self) {
                 if !self_ok { self.fail("'self' is only the receiver of a method declaration") }
                 if self.nstack != mark { self.fail("'self' must be the first parameter") }
@@ -1869,6 +1873,10 @@ Parser.params(self, closer: string, self_ok: bool) {
             self.named(pa, self.text(name))
             self.expect(Token.colon, "':' after parameter name")
             self.nodes[pa].a = self.parse_type()
+            if self.nodes[self.nodes[pa].a].kind == Kind.const_t { // a parameter the function does not write
+                self.nodes[pa].flags |= F_CONST
+                self.nodes[pa].a = self.nodes[self.nodes[pa].a].a
+            }
             self.push(pa)
             if !self.eat(Token.comma) || self.at(Token.rparen) { break } // trailing comma
         }

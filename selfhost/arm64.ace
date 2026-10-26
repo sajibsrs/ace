@@ -2727,18 +2727,18 @@ A64.emit_body(self): bool {
 /* Compiles lowered function `fn` into o's __text as symbol `name`, global
  * (visible to the linker) for main and a C export.
  */
-pub func(s: sema.Sema, o: *macho.Obj, fn: *Func, name: string, global: bool) {
-    pin: array.Array[Loc], rin: array.Array[Loc], nsave: u32 = entry(s, *fn)
+pub func(s: *sema.Sema, o: *macho.Obj, fn: *Func, name: string, global: bool) {
+    pin: array.Array[Loc], rin: array.Array[Loc], nsave: u32 = entry(*s, *fn)
     regalloc.split_critical_edges(fn)
-    a: A64 = A64 { s = &s, o = o, fn = fn, ra = blank(Ra), madd = array.Array[u8] {}, pin = pin, rin = rin, nsave = nsave, obj = array.Array[u32] {}, cs = array.Array[int] {}, label = array.Array[u32] {}, br = array.Array[Branch] {}, pool = array.Array[u64] {}, psite = array.Array[u32] {}, stub = array.Array[int] {}, stub_at = array.Array[u32] {} }
+    a: A64 = A64 { s = s, o = o, fn = fn, ra = blank(Ra), madd = array.Array[u8] {}, pin = pin, rin = rin, nsave = nsave, obj = array.Array[u32] {}, cs = array.Array[int] {}, label = array.Array[u32] {}, br = array.Array[Branch] {}, pool = array.Array[u64] {}, psite = array.Array[u32] {}, stub = array.Array[int] {}, stub_at = array.Array[u32] {} }
     defer a.wipe()
     regalloc.layout(&a.ra, *fn)
     regalloc.count_uses(&a.ra, *fn)
-    a.madd = fuse(s, *fn, &a.ra)
+    a.madd = fuse(*s, *fn, &a.ra)
     regalloc.liveness(&a.ra, *fn)
     a.ra.thread_reserved = u32(1) << 0 // the thunk's result register
-    regalloc.positions(&a.ra, *fn, s)
-    a.out, a.nthread = hints(s, *fn, &a.ra, a.pin, a.rin)
+    regalloc.positions(&a.ra, *fn, *s)
+    a.out, a.nthread = hints(*s, *fn, &a.ra, a.pin, a.rin)
     regalloc.coalesce(&a.ra, *fn, target())
     a.cs = allocate(&a.ra, *fn)
     a.slot_base = a.out + 16 + 8 * u32(a.cs.len)

@@ -343,8 +343,13 @@ tests/sema/contracts/register/main_err.ace|30:1: error: signing owner must repea
 tests/sema/contracts/register/main_err.ace|31:9: error: signing owner must repeat type parameter 'B'
 tests/sema/contracts/register/main_err.ace|35:14: error: signed contract 'Point' must be a declared contract
 tests/sema/contracts/register/main_err.ace|36:1: error: a signing must be in the struct's defining module
-tests/sema/functions/body_statements_err.ace|24:5: error: parameter 'e' is read-only — copy it to a local, or take a pointer to write the caller's
 tests/sema/functions/body_statements_err.ace|24:7: error: Error fields are read-only
+tests/sema/functions/const_param_err.ace|8:5: error: cannot assign to const 'self'
+tests/sema/functions/const_param_err.ace|23:5: error: cannot assign to const 'p'
+tests/sema/functions/const_param_err.ace|24:11: error: const 'p' cannot give a writable view
+tests/sema/functions/const_param_err.ace|25:13: error: const 'p' cannot give a writable view
+tests/sema/functions/const_param_err.ace|31:11: error: const 'c' cannot give a writable view
+tests/sema/functions/const_param_err.ace|33:15: error: const 'arr' cannot give a writable view
 tests/sema/functions/body_statements_err.ace|29:8: error: unknown name 'b'
 tests/sema/functions/body_statements_err.ace|36:6: error: assignment binds 3 names but the right side has 2 values
 tests/sema/functions/body_statements_err.ace|40:12: error: bit fields are non-addressable
@@ -799,7 +804,7 @@ done
 
 printf_buffer_errors=$("$ACE" tests/sema/printf/buffer_err.ace 2>&1)
 for want in \
-    "10:9: error: parameter 'held' is read-only" \
+    "10:20: error: const 'held' cannot give a writable view" \
     "11:24: error: Buffer.printf argument 1 for conversion at decoded byte 0 requires int" \
     "12:17: error: Buffer.printf format requires 2 value arguments, got 1" \
     "13:18: error: type mismatch: fmt.Buffer given where string expected"; do
