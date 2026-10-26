@@ -1,6 +1,9 @@
+import file
+import mem
 import test
 import grid: "./grid.ace"
 import sim: "./sim.ace"
+import diagram: "./diagram.ace"
 
 /* Places a row of blocks starting at (x, y), one per cell eastward. */
 row(g: *grid.Grid, x: int, y: int, blocks: []grid.Block) {
@@ -200,46 +203,58 @@ ticks(s: *sim.Sim, n: int) {
 }
 
 /* Two NORs, each an OR into a NOT, cross-coupled: Q = NOR(R, Q'), and
- * Q' = NOR(S, Q). The ORs are three cells tall so their two input pins sit
- * apart. Sources R (0,1) and S (0,7); light Q at (12,2). Q' leaves NOT (7,8)
- * and climbs column 9 and row 5 to OR (3,1..3); Q leaves NOT (7,2) and runs
- * down column 11 and row 10 to OR (3,7..9). */
+ * Q' = NOR(S, Q). Sources and pins touch, so wire only carries the two
+ * feedback lines. The ORs are three cells tall so their two input pins sit
+ * apart. Sources R (1,1) and S (1,7); light Q at (10,2). Q' leaves the lower
+ * NOT's output (7,8), climbs column 7 and runs row 5 to OR (3,1..3); Q leaves
+ * the upper NOT along row 2 and runs down column 9 and row 10 to OR (3,7..9),
+ * matching diagram/latch.lgbx. */
 latch(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     for top: int in [1, 7] {
-        mid: int = top + 1
-        row(&g, 0, top, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.or])
-        row(&g, 3, mid, [
-            grid.Block.or, grid.Block.output, grid.Block.wire, grid.Block.input,
-            grid.Block.not, grid.Block.output, grid.Block.wire,
-        ])
-        row(&g, 1, top + 2, [grid.Block.wire, grid.Block.input, grid.Block.or])
+        row(&g, 1, top, [grid.Block.source, grid.Block.input, grid.Block.or])
+        row(&g, 3, top + 1, [grid.Block.or, grid.Block.output, grid.Block.input, grid.Block.not, grid.Block.output])
+        row(&g, 2, top + 2, [grid.Block.input, grid.Block.or])
     }
-    for y: int in 5 .. 8 { g.place(9, y, grid.Block.wire) }
-    for x: int in 1 .. 9 { g.place(x, 5, grid.Block.wire) }
-    g.place(1, 4, grid.Block.wire)
-    row(&g, 10, 2, [grid.Block.wire, grid.Block.wire, grid.Block.light])
-    for y: int in 3 .. 11 { g.place(11, y, grid.Block.wire) }
-    for x: int in 1 .. 11 { g.place(x, 10, grid.Block.wire) }
+    for y: int in 5 .. 8 { g.place(7, y, grid.Block.wire) }
+    for x: int in 2 .. 7 { g.place(x, 5, grid.Block.wire) }
+    g.place(2, 4, grid.Block.wire)
+    row(&g, 8, 2, [grid.Block.wire, grid.Block.wire, grid.Block.light])
+    for y: int in 3 .. 11 { g.place(9, y, grid.Block.wire) }
+    for x: int in 2 .. 9 { g.place(x, 10, grid.Block.wire) }
     return sim.Sim.init(g)
 }
 
-/* Pulsing S sets Q and pulsing R resets it; between pulses the loop holds. */
+/* The latch as diagram/latch.lgbx stores it. */
+pub latch_matches_file(t: *test.T) {
+    data: []u8, err: Error = file.read("diagram/latch.lgbx")
+    defer mem.release[u8](&data)
+    t.equal(err == null, true)
+    stored: sim.Sim, derr: Error = diagram.decode(data)
+    t.equal(derr == null, true)
+    built: sim.Sim = latch()
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            test.equal[grid.Block](t, stored.g.get(x, y), built.g.get(x, y))
+        }
+    }
+}
+
 pub sr_latch_holds_a_bit(t: *test.T) {
     s: sim.Sim = latch()
-    s.toggle(0, 7, true)
+    s.toggle(1, 7, true)
     ticks(&s, 8)
-    s.toggle(0, 7, false)
+    s.toggle(1, 7, false)
     ticks(&s, 8)
-    high(t, s, 12, 2)
-    low(t, s, 9, 8)
+    high(t, s, 10, 2)
+    low(t, s, 7, 7)
 
-    s.toggle(0, 1, true)
+    s.toggle(1, 1, true)
     ticks(&s, 8)
-    s.toggle(0, 1, false)
+    s.toggle(1, 1, false)
     ticks(&s, 8)
-    low(t, s, 12, 2)
-    high(t, s, 9, 8)
+    low(t, s, 10, 2)
+    high(t, s, 7, 7)
 }
 
 /* Sources, pins and lights connect by touching; wire only spans distance. */

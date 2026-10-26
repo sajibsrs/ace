@@ -1,0 +1,105 @@
+/* diagram — the .lgbx blueprint format.
+ *
+ * A diagram is an 8-byte header, then one byte per cell in row-major order:
+ *
+ *   0..4  magic "LGBX"
+ *   4     version (VERSION)
+ *   5     width
+ *   6     height
+ *   7     reserved, zero
+ *
+ * A cell byte's low 7 bits are its code (CODE); the high bit is reserved for
+ * flags and must be zero. A source's switch is part of its code; gate outputs
+ * are not stored, so a decoded diagram starts with every gate low.
+ */
+
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+
+pub EXTENSION: const string = ".lgbx"
+pub VERSION: const u8 = 1
+HEADER: const usize = 8
+/* Bytes in a diagram of the board. */
+pub SIZE: const usize = 8 + 16 * 16
+
+MAGIC: const string = "LGBX"
+
+pub DiagramErr: error {
+    1: magic = "not a logibox diagram",
+    2: version = "unsupported diagram version",
+    3: reserved = "reserved header byte is not zero",
+    4: size = "unsupported board size",
+    5: length = "length does not match the board size",
+    6: code = "unknown cell code",
+    7: space = "output buffer too small",
+}
+
+SOURCE_OFF: const u8 = 1
+SOURCE_ON: const u8 = 2
+
+/* The code of each block; a source's is SOURCE_OFF, or SOURCE_ON when on. */
+CODE: [grid.Block]u8 = [
+    grid.Block.empty = 0,
+    grid.Block.source = SOURCE_OFF,
+    grid.Block.wire = 3,
+    grid.Block.input = 4,
+    grid.Block.output = 5,
+    grid.Block.and = 6,
+    grid.Block.or = 7,
+    grid.Block.not = 8,
+    grid.Block.light = 9,
+]
+
+/* The block of each code, by code. */
+BLOCK: [10]grid.Block = [
+    grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
+    grid.Block.input, grid.Block.output, grid.Block.and, grid.Block.or,
+    grid.Block.not, grid.Block.light,
+]
+
+/* Writes the diagram of `s` into `out` and returns its length, SIZE. */
+pub encode(s: sim.Sim, out: []u8): (usize, Error) {
+    if out.len < SIZE { return 0, DiagramErr.space }
+    for i: usize in 0 .. 4 { out[i] = MAGIC[i] }
+    out[4] = VERSION
+    out[5] = u8(grid.WIDTH)
+    out[6] = u8(grid.HEIGHT)
+    out[7] = 0
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            block: grid.Block = s.g.get(x, y)
+            code: u8 = CODE[block]
+            if block == grid.Block.source && s.level(x, y) == sim.Level.high { code = SOURCE_ON }
+            out[HEADER + usize(y * grid.WIDTH + x)] = code
+        }
+    }
+    return SIZE, null
+}
+
+/* The simulation `data` describes, every gate output low. */
+pub decode(data: []u8): (sim.Sim, Error) {
+    if data.len < HEADER { return sim.Sim {}, DiagramErr.length }
+    for i: usize in 0 .. 4 {
+        if data[i] != MAGIC[i] { return sim.Sim {}, DiagramErr.magic }
+    }
+    if data[4] != VERSION { return sim.Sim {}, DiagramErr.version }
+    if data[7] != 0 { return sim.Sim {}, DiagramErr.reserved }
+    if int(data[5]) != grid.WIDTH || int(data[6]) != grid.HEIGHT { return sim.Sim {}, DiagramErr.size }
+    if data.len != SIZE { return sim.Sim {}, DiagramErr.length }
+
+    g: grid.Grid = grid.Grid {}
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            code: u8 = data[HEADER + usize(y * grid.WIDTH + x)]
+            if usize(code) >= BLOCK.len { return sim.Sim {}, DiagramErr.code }
+            g.place(x, y, BLOCK[code])
+        }
+    }
+    s: sim.Sim = sim.Sim.init(g)
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            if data[HEADER + usize(y * grid.WIDTH + x)] == SOURCE_ON { s.toggle(x, y, true) }
+        }
+    }
+    return s, null
+}

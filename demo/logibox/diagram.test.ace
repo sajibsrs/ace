@@ -1,0 +1,127 @@
+import file
+import mem
+import test
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+import diagram: "./diagram.ace"
+
+/* S - I & O L with the source on, and a lone NOT. */
+sample(): sim.Sim {
+    g: grid.Grid = grid.Grid {}
+    blocks: [6]grid.Block = [
+        grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and,
+        grid.Block.output, grid.Block.light,
+    ]
+    for i: int in 0 .. 6 { g.place(i, 0, blocks[i]) }
+    g.place(15, 15, grid.Block.not)
+    g.place(0, 3, grid.Block.source)
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 0, true)
+    return s
+}
+
+encoded(): [diagram.SIZE]u8 {
+    out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
+    diagram.encode(sample(), out[..])
+    return out
+}
+
+pub layout(t: *test.T) {
+    out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
+    n: usize, err: Error = diagram.encode(sample(), out[..])
+    t.equal(err == null, true)
+    t.equal(n, diagram.SIZE)
+    t.equal(out[0] == 'L' && out[1] == 'G' && out[2] == 'B' && out[3] == 'X', true)
+    t.equal(int(out[4]), int(diagram.VERSION))
+    t.equal(int(out[5]), 16)
+    t.equal(int(out[6]), 16)
+    t.equal(int(out[7]), 0)
+    /* source on, wire, input, AND, output, light; a source off at (0,3). */
+    t.equal(int(out[8]), 2)
+    t.equal(int(out[9]), 3)
+    t.equal(int(out[13]), 9)
+    t.equal(int(out[8 + 3 * 16]), 1)
+    t.equal(int(out[8 + 255]), 8)
+}
+
+pub round_trip(t: *test.T) {
+    out: [diagram.SIZE]u8 = encoded()
+    s: sim.Sim, err: Error = diagram.decode(out[..])
+    t.equal(err == null, true)
+    want: sim.Sim = sample()
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            test.equal[grid.Block](t, s.g.get(x, y), want.g.get(x, y))
+            test.equal[sim.Level](t, s.level(x, y), want.level(x, y))
+        }
+    }
+}
+
+pub small_buffer(t: *test.T) {
+    out: [diagram.SIZE - 1]u8 = [0 : diagram.SIZE - 1]
+    n: usize, err: Error = diagram.encode(sample(), out[..])
+    t.equal(err == diagram.DiagramErr.space, true)
+    t.equal(n, usize(0))
+}
+
+/* Decoding `data` fails with `want`. */
+rejects(t: *test.T, data: []u8, want: Error) {
+    s: sim.Sim, err: Error = diagram.decode(data)
+    t.equal(err == want, true)
+}
+
+pub bad_header(t: *test.T) {
+    out: [diagram.SIZE]u8 = encoded()
+    out[0] = 'X'
+    rejects(t, out[..], diagram.DiagramErr.magic)
+    out = encoded()
+    out[4] = 2
+    rejects(t, out[..], diagram.DiagramErr.version)
+    out = encoded()
+    out[7] = 1
+    rejects(t, out[..], diagram.DiagramErr.reserved)
+    out = encoded()
+    out[5] = 8
+    rejects(t, out[..], diagram.DiagramErr.size)
+}
+
+pub bad_length(t: *test.T) {
+    out: [diagram.SIZE]u8 = encoded()
+    rejects(t, out[..4], diagram.DiagramErr.length)
+    rejects(t, out[..diagram.SIZE - 1], diagram.DiagramErr.length)
+}
+
+pub bad_code(t: *test.T) {
+    out: [diagram.SIZE]u8 = encoded()
+    out[20] = 10
+    rejects(t, out[..], diagram.DiagramErr.code)
+    out[20] = 0x83
+    rejects(t, out[..], diagram.DiagramErr.code)
+}
+
+/* The shipped SR latch powers up held in reset (R on, S off), settles to
+ * Q low, and then holds whatever the last pulse stored. */
+pub latch_file(t: *test.T) {
+    data: []u8, ferr: Error = file.read("diagram/latch.lgbx")
+    defer mem.release[u8](&data)
+    t.equal(ferr == null, true)
+    s: sim.Sim, err: Error = diagram.decode(data)
+    t.equal(err == null, true)
+    test.equal[sim.Level](t, s.level(1, 1), sim.Level.high)
+    test.equal[sim.Level](t, s.level(1, 7), sim.Level.low)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(10, 2), sim.Level.low)
+    s.toggle(1, 1, false)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(10, 2), sim.Level.low)
+    s.toggle(1, 7, true)
+    for i: int in 0 .. 8 { s.tick() }
+    s.toggle(1, 7, false)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(10, 2), sim.Level.high)
+    s.toggle(1, 1, true)
+    for i: int in 0 .. 8 { s.tick() }
+    s.toggle(1, 1, false)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(10, 2), sim.Level.low)
+}

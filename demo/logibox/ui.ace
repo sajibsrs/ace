@@ -1,0 +1,72 @@
+/* ui — drawing primitives for the editor's board, bar and panels.
+ *
+ * A frame draws in layers: fill a Canvas with rectangles, flush it in one
+ * geometry call, then draw text over it. A panel that overlays the board is a
+ * later layer, so it covers the board's text too.
+ */
+
+import Renderer, Vertex, Point, Color, DEBUG_TEXT_SIZE from sdl
+
+/* Side of one debug-text glyph, in pixels. */
+pub GLYPH: const f32 = DEBUG_TEXT_SIZE
+
+pub Rect: struct {
+    pub x: f32 = 0.0,
+    pub y: f32 = 0.0,
+    pub w: f32 = 0.0,
+    pub h: f32 = 0.0,
+}
+
+/* Whether window point (x, y) lies in the rectangle. */
+pub Rect.has(const self, x: f32, y: f32): bool {
+    return x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
+}
+
+/* Triangles for one layer, drawn in a single geometry call. */
+pub Canvas: struct {
+    vertices: [4096]Vertex = [Vertex {} : 4096],
+    count: usize = 0,
+}
+
+pub Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
+    if self.count + 3 > self.vertices.len { return }
+    self.vertices[self.count] = Vertex { position = a, color = color }
+    self.vertices[self.count + 1] = Vertex { position = b, color = color }
+    self.vertices[self.count + 2] = Vertex { position = c, color = color }
+    self.count += 3
+}
+
+pub Canvas.fill(self, box: Rect, color: Color) {
+    a: Point = Point { x = box.x, y = box.y }
+    b: Point = Point { x = box.x + box.w, y = box.y }
+    c: Point = Point { x = box.x + box.w, y = box.y + box.h }
+    d: Point = Point { x = box.x, y = box.y + box.h }
+    self.triangle(a, b, c, color)
+    self.triangle(a, c, d, color)
+}
+
+/* A `thick` outline just inside `box`. */
+pub Canvas.outline(self, box: Rect, thick: f32, color: Color) {
+    self.fill(Rect { x = box.x, y = box.y, w = box.w, h = thick }, color)
+    self.fill(Rect { x = box.x, y = box.y + box.h - thick, w = box.w, h = thick }, color)
+    self.fill(Rect { x = box.x, y = box.y, w = thick, h = box.h }, color)
+    self.fill(Rect { x = box.x + box.w - thick, y = box.y, w = thick, h = box.h }, color)
+}
+
+/* Draws the layer and empties it for the next. */
+pub Canvas.flush(self, r: Renderer) {
+    r.geometry(self.vertices[0..self.count], [])
+    self.count = 0
+}
+
+/* `text` centered in `box`. */
+pub center(r: Renderer, box: Rect, text: string, ink: u32) {
+    r.color(Color.hex(ink))
+    r.debug_text(box.x + (box.w - GLYPH * f32(text.len)) / 2.0, box.y + (box.h - GLYPH) / 2.0, text)
+}
+
+/* `text` left-aligned in `box`, `pad` pixels in, centered vertically. */
+pub left(r: Renderer, box: Rect, pad: f32, text: string, ink: u32) {
+    r.color(Color.hex(ink))
+    r.debug_text(box.x + pad, box.y + (box.h - GLYPH) / 2.0, text)
+}

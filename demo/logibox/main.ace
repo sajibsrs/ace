@@ -11,22 +11,50 @@
  * source; right-click (or drag) removes.
  * Keys: 1-8 select source, wire, input pin, output pin, AND, OR, NOT, light;
  * space steps one tick; a toggles auto-ticking; Escape quits.
+ *
+ * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
+ * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
+ * - and _; Enter saves, Escape cancels). Ctrl+S saves and Ctrl+O opens.
  */
 
+import file
 import fmt
+import mem
+import sort
+import str
+import sys
 import (
-    init, quit, error, delay, ticks, Window, Renderer, Event, Vertex, Point, Color,
-    InitFlags, WindowFlags, EventType, Keycode, MouseButton, MouseButtonEvent,
-    MouseMotionEvent, KeyboardEvent,
+    init, quit, error, ticks, Window, Renderer, Event, Color, InitFlags, WindowFlags,
+    EventType, Keycode, MouseButton, MouseButtonEvent, MouseMotionEvent, KeyboardEvent,
 ) from sdl
 import grid: "./grid.ace"
 import sim: "./sim.ace"
+import diagram: "./diagram.ace"
+import ui: "./ui.ace"
 
 CELL: const f32 = 40.0
 BAR: const f32 = 28.0
+FOOT: const f32 = 24.0
+WIDTH: const f32 = 16.0 * 40.0
 AUTO_MS: const u64 = 250
-/* Side of one SDL debug-text glyph, in pixels. */
-GLYPH: const f32 = 8.0
+
+/* Where diagrams are listed, read and written, relative to the folder that
+ * holds the executable's build/ folder. */
+FOLDER: const string = "../diagram"
+/* Longest diagram name, without the extension. */
+NAME_MAX: const usize = 32
+/* Most diagrams the Open list shows. */
+LIST_MAX: const usize = 24
+ROW: const f32 = 20.0
+
+/* SDL keycodes the binding leaves unnamed. */
+KEY_DELETE: const u32 = 0x7f
+KEY_HOME: const u32 = 0x4000_004a
+KEY_END: const u32 = 0x4000_004d
+
+/* SDL_KMOD_SHIFT and SDL_KMOD_CTRL: either side's key. */
+KMOD_SHIFT: const u16 = 0x0003
+KMOD_CTRL: const u16 = 0x00c0
 
 NAME: [grid.Block]string = [
     grid.Block.empty = "empty",
@@ -44,63 +72,68 @@ NAME: [grid.Block]string = [
 LOW: [grid.Block]u32 = [
     grid.Block.empty = 0x202428,
     grid.Block.source = 0x5a3a12,
-    grid.Block.wire = 0x4a1818,
+    grid.Block.wire = 0x303030,
     grid.Block.input = 0x2a3a2a,
     grid.Block.output = 0x3a2a4a,
     grid.Block.and = 0x1e3a5a,
     grid.Block.or = 0x1e4a3a,
     grid.Block.not = 0x4a3a1e,
-    grid.Block.light = 0x303030,
+    grid.Block.light = 0x4a1818,
 ]
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x202428,
     grid.Block.source = 0xffa726,
-    grid.Block.wire = 0xff3d3d,
+    grid.Block.wire = 0xffffcc,
     grid.Block.input = 0x9ccc65,
     grid.Block.output = 0xce93d8,
     grid.Block.and = 0x64b5f6,
     grid.Block.or = 0x69f0ae,
     grid.Block.not = 0xffd54f,
-    grid.Block.light = 0xffffcc,
+    grid.Block.light = 0xff3d3d,
 ]
 ERROR: const u32 = 0xff00ff
 
-/* Triangles for one frame, drawn in a single geometry call. */
-Canvas: struct {
-    vertices: [4096]Vertex = [Vertex {} : 4096],
-    count: usize = 0,
+/* Bar and panel colors. */
+CHROME: const u32 = 0x181b1f
+BUTTON: const u32 = 0x2c3238
+ACTIVE: const u32 = 0x3d4f63
+INK: const u32 = 0xdddddd
+DIM: const u32 = 0x888888
+
+/* What the editor is doing: editing the board, choosing a diagram to open, or
+ * typing a name to save as. */
+Mode: enum u8 { edit, open, save_as }
+
+/* The bar's buttons, left to right. */
+Button: enum u8 { new, open, save, save_as }
+
+LABEL: [Button]string = [
+    Button.new = "New",
+    Button.open = "Open",
+    Button.save = "Save",
+    Button.save_as = "Save as",
+]
+
+/* The bar rectangle of `button`: each fits its label, 6 pixels apart. */
+place(button: Button): ui.Rect {
+    x: f32 = 6.0
+    for i: usize in 0 .. members(Button).len {
+        each: Button = members(Button)[i]
+        w: f32 = f32(LABEL[each].len) * ui.GLYPH + 16.0
+        if each == button { return ui.Rect { x = x, y = 4.0, w = w, h = BAR - 8.0 } }
+        x += w + 6.0
+    }
+    return ui.Rect {}
 }
 
-Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
-    if self.count + 3 > self.vertices.len { return }
-    self.vertices[self.count] = Vertex { position = a, color = color }
-    self.vertices[self.count + 1] = Vertex { position = b, color = color }
-    self.vertices[self.count + 2] = Vertex { position = c, color = color }
-    self.count += 3
+/* Row `i` of the Open list. */
+row(i: usize): ui.Rect {
+    at: ui.Rect = place(Button.open)
+    return ui.Rect { x = at.x, y = BAR + f32(i) * ROW, w = 280.0, h = ROW }
 }
 
-Canvas.rect(self, x: f32, y: f32, w: f32, h: f32, color: Color) {
-    a: Point = Point { x = x, y = y }
-    b: Point = Point { x = x + w, y = y }
-    c: Point = Point { x = x + w, y = y + h }
-    d: Point = Point { x = x, y = y + h }
-    self.triangle(a, b, c, color)
-    self.triangle(a, c, d, color)
-}
-
-/* The editor: the simulation plus what the player has selected. */
-Game: struct {
-    s: sim.Sim = sim.Sim {},
-    block: grid.Block = grid.Block.wire,
-    auto: bool = false,
-    count: int = 0,
-    /* Hovered cell, or -1 off the board. */
-    hx: int = -1,
-    hy: int = -1,
-    /* Cell the current drag last painted, so a drag paints each cell once. */
-    px: int = -1,
-    py: int = -1,
-}
+/* The Save-as panel, centered on the board. */
+PANEL: const ui.Rect = ui.Rect { x = 160.0, y = 280.0, w = 320.0, h = 72.0 }
 
 /* The cell under window point (x, y), or (-1, -1). */
 cell_at(x: f32, y: f32): (int, int) {
@@ -111,9 +144,242 @@ cell_at(x: f32, y: f32): (int, int) {
     return cx, cy
 }
 
+before(a: string, b: string): bool {
+    return str.compare(a, b) < 0
+}
+
+/* A name typed or chosen for a diagram, without folder or extension, with
+ * the cursor before byte `at`. */
+Name: struct {
+    bytes: [32]u8 = [0 : 32],
+    len: usize = 0,
+    at: usize = 0,
+}
+
+Name.text(self): string {
+    return self.bytes[0..self.len]
+}
+
+/* Inserts `c` at the cursor and moves past it. */
+Name.add(self, c: u8) {
+    if self.len == NAME_MAX { return }
+    for i: usize = self.len; i > self.at; i -= 1 { self.bytes[i] = self.bytes[i - 1] }
+    self.bytes[self.at] = c
+    self.len += 1
+    self.at += 1
+}
+
+/* Removes the byte at `i`, before the cursor or after it. */
+Name.cut(self, i: usize) {
+    for j: usize in i .. self.len - 1 { self.bytes[j] = self.bytes[j + 1] }
+    self.len -= 1
+    if self.at > i { self.at -= 1 }
+}
+
+/* Backspace: removes the byte before the cursor. */
+Name.back(self) {
+    if self.at > 0 { self.cut(self.at - 1) }
+}
+
+/* Delete: removes the byte after the cursor. */
+Name.forward(self) {
+    if self.at < self.len { self.cut(self.at) }
+}
+
+/* Replaces the name with `text`, the cursor at its end. */
+Name.copy(self, text: string) {
+    self.len = 0
+    self.at = 0
+    for i: usize in 0 .. text.len { self.add(text[i]) }
+}
+
+/* The diagrams in a folder, by name without the extension, sorted. */
+Listing: struct {
+    pool: [24 * 32]u8 = [0 : 24 * 32],
+    names: [24]string = ["" : 24],
+    count: usize = 0,
+}
+
+/* Rereads `folder`; a missing folder lists nothing. The names view the pool,
+ * so a Listing stays where it was scanned. */
+Listing.scan(self, folder: string): Error {
+    self.count = 0
+    dir: sys.Dir, err: Error = sys.opendir(folder)
+    defer sys.closedir(&dir)
+    if err != null { return err }
+
+    entry: [256]u8
+    used: usize = 0
+    for self.count < LIST_MAX {
+        n: usize, kind: sys.FileType, done: bool, rerr: Error = sys.readdir(&dir, entry[..])
+        if rerr != null { return rerr }
+        if done { break }
+        if kind != sys.FileType.regular { continue }
+        stem: string, ok: bool = str.trim(entry[0..n], diagram.EXTENSION, true)
+        if !ok || stem.len == 0 || stem.len > NAME_MAX { continue }
+        for i: usize in 0 .. stem.len { self.pool[used + i] = stem[i] }
+        self.names[self.count] = self.pool[used .. used + stem.len]
+        used += stem.len
+        self.count += 1
+    }
+    sort.unstable[string](self.names[0..self.count], before)
+    return null
+}
+
+/* The editor: the simulation, what the player has selected, and the file. */
+Game: struct {
+    s: sim.Sim = sim.Sim {},
+    block: grid.Block = grid.Block.wire,
+    auto: bool = false,
+    count: int = 0,
+    mode: Mode = Mode.edit,
+    /* The open diagram's name; empty until it is saved or opened. */
+    name: Name = Name {},
+    /* The name being typed in the Save-as box. */
+    draft: Name = Name {},
+    list: Listing = Listing {},
+    /* The diagram folder's path, from `locate`. */
+    folders: [1024]u8 = [0 : 1024],
+    folder: usize = 0,
+    /* The last file result, shown in the status line. */
+    notes: [96]u8 = [0 : 96],
+    note: usize = 0,
+    /* Mouse position, and the hovered cell or -1 off the board. */
+    mx: f32 = -1.0,
+    my: f32 = -1.0,
+    hx: int = -1,
+    hy: int = -1,
+    /* Cell the current drag last painted, so a drag paints each cell once. */
+    px: int = -1,
+    py: int = -1,
+}
+
+/* A buffer that replaces the status note. */
+Game.say(self): fmt.Buffer {
+    return fmt.Buffer.init(self.notes[..])
+}
+
+/* Keeps what `b` wrote as the status note. */
+Game.said(self, b: fmt.Buffer) {
+    self.note = b.text().len
+}
+
+/* Notes that `what` failed for `name` with `err`. */
+Game.failed(self, what: string, name: string, err: Error) {
+    b: fmt.Buffer = self.say()
+    if err.message.len > 0 {
+        b.printf("%s %s: %s", what, name, err.message)
+    } else {
+        b.printf("%s %s: error %d", what, name, int(err.code))
+    }
+    self.said(b)
+}
+
+/* Finds the diagram folder beside the executable's folder, so it does not
+ * depend on where the program starts. */
+Game.locate(self): Error {
+    exe: [1024]u8
+    n: usize, err: Error = sys.executable(exe[..])
+    if err != null { return err }
+    end: usize = n
+    for end > 0 && exe[end - 1] != '/' { end -= 1 }
+    b: fmt.Buffer = fmt.Buffer.init(self.folders[..])
+    b.printf("%s%s", exe[0..end], FOLDER)
+    if b.dropped() > 0 { return sys.ExecutableErr.capacity }
+    self.folder = b.text().len
+    return null
+}
+
+/* The diagram folder's path. */
+Game.where(self): string {
+    return self.folders[0..self.folder]
+}
+
+/* The path of diagram `name` in `out`. */
+Game.path(self, name: string, out: []u8): string {
+    b: fmt.Buffer = fmt.Buffer.init(out)
+    b.printf("%s/%s%s", self.where(), name, diagram.EXTENSION)
+    return b.text()
+}
+
 Game.tick(self) {
     self.s.tick()
     self.count += 1
+}
+
+/* Starts a new, unnamed diagram. */
+Game.clear(self) {
+    self.s = sim.Sim.init(grid.Grid {})
+    self.count = 0
+    self.name.len = 0
+    b: fmt.Buffer = self.say()
+    b.printf("new diagram")
+    self.said(b)
+}
+
+/* Writes the board as the draft's name, which then becomes the diagram's. */
+Game.write(self) {
+    storage: [1200]u8
+    bytes: [diagram.SIZE]u8
+    /* A folder that exists already is fine; any real failure shows on write. */
+    sys.mkdir(self.where())
+    n: usize, err: Error = diagram.encode(self.s, bytes[..])
+    if err == null { err = file.write(self.path(self.draft.text(), storage[..]), bytes[0..n]) }
+    if err != null {
+        self.failed("cannot save", self.draft.text(), err)
+        return
+    }
+    self.name.copy(self.draft.text())
+    b: fmt.Buffer = self.say()
+    b.printf("saved %s", self.name.text())
+    self.said(b)
+}
+
+/* Saves under the diagram's name, or asks for one. */
+Game.save(self) {
+    if self.name.len == 0 {
+        self.ask()
+        return
+    }
+    self.draft.copy(self.name.text())
+    self.write()
+}
+
+/* Opens the Save-as box, starting from the current name. */
+Game.ask(self) {
+    self.draft.copy(self.name.text())
+    self.mode = Mode.save_as
+}
+
+/* Opens the Open list, or closes it when it is showing. */
+Game.browse(self) {
+    if self.mode == Mode.open {
+        self.mode = Mode.edit
+        return
+    }
+    /* A missing folder (ENOENT) just lists nothing. */
+    err: Error = self.list.scan(self.where())
+    if err != null && err.code != 2 { self.failed("cannot list", self.where(), err) }
+    self.mode = Mode.open
+}
+
+/* Replaces the board with diagram `name`. */
+Game.load(self, name: string) {
+    storage: [1200]u8
+    data: []u8, err: Error = file.read(self.path(name, storage[..]))
+    defer mem.release[u8](&data)
+    s: sim.Sim = sim.Sim {}
+    if err == null { s, err = diagram.decode(data) }
+    if err != null {
+        self.failed("cannot open", name, err)
+        return
+    }
+    self.s = s
+    self.count = 0
+    self.name.copy(name)
+    b: fmt.Buffer = self.say()
+    b.printf("opened %s", self.name.text())
+    self.said(b)
 }
 
 /* A press or drag over (x, y) with `button`; `press` is true on the click. */
@@ -135,67 +401,193 @@ Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
     self.s.place(x, y, self.block)
 }
 
-Game.key(self, key: Keycode): bool {
-    if key == Keycode.escape { return false }
-    k: u32 = u32(key)
-    if k >= '1' && k <= '8' { self.block = members(grid.Block)[int(k - '0')] }
-    if key == Keycode.space { self.tick() }
-    if key == Keycode.a { self.auto = !self.auto }
+/* A press at window point (x, y). True when the bar or a panel took it, so it
+ * paints nothing. */
+Game.click(self, x: f32, y: f32, button: MouseButton): bool {
+    if self.mode == Mode.save_as { return true }
+    if self.mode == Mode.open {
+        self.mode = Mode.edit
+        for i: usize in 0 .. self.list.count {
+            if row(i).has(x, y) && button == MouseButton.left {
+                self.load(self.list.names[i])
+            }
+        }
+        return true
+    }
+    if y >= BAR { return false }
+    if button != MouseButton.left { return true }
+    if place(Button.new).has(x, y) { self.clear() }
+    if place(Button.open).has(x, y) { self.browse() }
+    if place(Button.save).has(x, y) { self.save() }
+    if place(Button.save_as).has(x, y) { self.ask() }
     return true
 }
 
-Game.draw(const self, canvas: *Canvas, r: Renderer) {
-    canvas.count = 0
+/* A key typed into the Save-as box. */
+Game.type(self, e: KeyboardEvent) {
+    k: u32 = u32(e.key)
+    shift: bool = (e.mod & KMOD_SHIFT) != 0
+    if e.key == Keycode.escape {
+        self.mode = Mode.edit
+    } else if e.key == Keycode.enter {
+        if self.draft.len == 0 { return }
+        self.mode = Mode.edit
+        self.write()
+    } else if e.key == Keycode.backspace {
+        self.draft.back()
+    } else if k == KEY_DELETE {
+        self.draft.forward()
+    } else if e.key == Keycode.left {
+        if self.draft.at > 0 { self.draft.at -= 1 }
+    } else if e.key == Keycode.right {
+        if self.draft.at < self.draft.len { self.draft.at += 1 }
+    } else if k == KEY_HOME {
+        self.draft.at = 0
+    } else if k == KEY_END {
+        self.draft.at = self.draft.len
+    } else if k == '-' && shift {
+        self.draft.add('_')
+    } else if !shift && ((k >= 'a' && k <= 'z') || (k >= '0' && k <= '9') || k == '-') {
+        self.draft.add(u8(k))
+    }
+}
+
+/* A key press; false to quit. A held key repeats only in the Save-as box. */
+Game.key(self, e: KeyboardEvent): bool {
+    if self.mode == Mode.save_as {
+        self.type(e)
+        return true
+    }
+    if e.repeat { return true }
+    if (e.mod & KMOD_CTRL) != 0 {
+        if e.key == Keycode.s { self.save() }
+        if e.key == Keycode.o { self.browse() }
+        return true
+    }
+    if e.key == Keycode.escape {
+        if self.mode == Mode.edit { return false }
+        self.mode = Mode.edit
+        return true
+    }
+    k: u32 = u32(e.key)
+    if k >= '1' && k <= '8' { self.block = members(grid.Block)[int(k - '0')] }
+    if e.key == Keycode.space { self.tick() }
+    if e.key == Keycode.a { self.auto = !self.auto }
+    return true
+}
+
+Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             b: grid.Block = self.s.g.get(x, y)
             v: sim.Level = self.s.level(x, y)
-            x0: f32 = f32(x) * CELL
-            y0: f32 = BAR + f32(y) * CELL
             rgb: u32 = LOW[b]
             if v == sim.Level.high { rgb = HIGH[b] }
             if v == sim.Level.error && b != grid.Block.empty { rgb = ERROR }
             /* Blocks fill their cell; empty cells keep a gap so the grid shows. */
             inset: f32 = 0.0
             if b == grid.Block.empty { inset = 1.0 }
-            canvas.rect(x0 + inset, y0 + inset, CELL - 2.0 * inset, CELL - 2.0 * inset, Color.hex(rgb))
+            box: ui.Rect = ui.Rect {
+                x = f32(x) * CELL + inset, y = BAR + f32(y) * CELL + inset,
+                w = CELL - 2.0 * inset, h = CELL - 2.0 * inset,
+            }
+            canvas.fill(box, Color.hex(rgb))
         }
     }
-    if self.hx >= 0 {
-        x0: f32 = f32(self.hx) * CELL
-        y0: f32 = BAR + f32(self.hy) * CELL
-        white: Color = Color { r = 1.0, g = 1.0, b = 1.0, a = 1.0 }
-        canvas.rect(x0, y0, CELL, 2.0, white)
-        canvas.rect(x0, y0 + CELL - 2.0, CELL, 2.0, white)
-        canvas.rect(x0, y0, 2.0, CELL, white)
-        canvas.rect(x0 + CELL - 2.0, y0, 2.0, CELL, white)
+    if self.mode == Mode.edit && self.hx >= 0 {
+        box: ui.Rect = ui.Rect { x = f32(self.hx) * CELL, y = BAR + f32(self.hy) * CELL, w = CELL, h = CELL }
+        canvas.outline(box, 2.0, Color.hex(0xffffff))
     }
+    canvas.flush(r)
 
-    r.color(Color.hex(0x101214))
-    r.clear()
-    r.geometry(canvas.vertices[0..canvas.count], [])
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             b: grid.Block = self.s.g.get(x, y)
             if b == grid.Block.empty { continue }
             /* Dark text on a lit block, light text on a dark one. */
-            ink: u32 = 0xdddddd
+            ink: u32 = INK
             if self.s.level(x, y) != sim.Level.low { ink = 0x000000 }
-            r.color(Color.hex(ink))
-            label: string = grid.SYMBOL[b]
-            lx: f32 = f32(x) * CELL + (CELL - GLYPH * f32(label.len)) / 2.0
-            ly: f32 = BAR + f32(y) * CELL + (CELL - GLYPH) / 2.0
-            r.debug_text(lx, ly, label)
+            box: ui.Rect = ui.Rect { x = f32(x) * CELL, y = BAR + f32(y) * CELL, w = CELL, h = CELL }
+            ui.center(r, box, grid.SYMBOL[b], ink)
         }
     }
+}
 
+Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
+    foot: ui.Rect = ui.Rect { x = 0.0, y = BAR + 16.0 * CELL, w = WIDTH, h = FOOT }
+    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = WIDTH, h = BAR }, Color.hex(CHROME))
+    canvas.fill(foot, Color.hex(CHROME))
+    for i: usize in 0 .. members(Button).len {
+        each: Button = members(Button)[i]
+        rgb: u32 = BUTTON
+        if place(each).has(self.mx, self.my) || (each == Button.open && self.mode == Mode.open) {
+            rgb = ACTIVE
+        }
+        canvas.fill(place(each), Color.hex(rgb))
+    }
+    canvas.flush(r)
+
+    for i: usize in 0 .. members(Button).len {
+        each: Button = members(Button)[i]
+        ui.center(r, place(each), LABEL[each], INK)
+    }
+    title: string = self.name.text()
+    if title.len == 0 { title = "untitled" }
     storage: [128]u8
     status: fmt.Buffer = fmt.Buffer.init(storage[..])
     auto: string = "off"
     if self.auto { auto = "on" }
     status.printf("%s   tick %d   auto %s", NAME[self.block], self.count, auto)
-    r.color(Color.hex(0xdddddd))
-    r.debug_text(8.0, 10.0, status.text())
+    ui.left(r, foot, 8.0, status.text(), INK)
+    at: ui.Rect = place(Button.save_as)
+    ui.left(r, ui.Rect { x = at.x + at.w, y = 0.0, w = WIDTH, h = BAR }, 16.0, title, INK)
+    note: string = self.notes[0..self.note]
+    ui.left(r, foot, WIDTH - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
+}
+
+Game.draw_list(self, canvas: *ui.Canvas, r: Renderer) {
+    rows: usize = self.list.count
+    if rows == 0 { rows = 1 }
+    for i: usize in 0 .. rows {
+        rgb: u32 = BUTTON
+        if i < self.list.count && row(i).has(self.mx, self.my) { rgb = ACTIVE }
+        canvas.fill(row(i), Color.hex(rgb))
+    }
+    canvas.flush(r)
+
+    if self.list.count == 0 { ui.left(r, row(0), 8.0, "no diagrams in diagram/", DIM) }
+    for i: usize in 0 .. self.list.count {
+        ui.left(r, row(i), 8.0, self.list.names[i], INK)
+    }
+}
+
+Game.draw_ask(self, canvas: *ui.Canvas, r: Renderer) {
+    field: ui.Rect = ui.Rect { x = PANEL.x + 12.0, y = PANEL.y + 32.0, w = PANEL.w - 24.0, h = 28.0 }
+    canvas.fill(PANEL, Color.hex(BUTTON))
+    canvas.outline(PANEL, 1.0, Color.hex(DIM))
+    canvas.fill(field, Color.hex(CHROME))
+    /* The cursor: a bar before byte `at`. */
+    caret: f32 = field.x + 8.0 + f32(self.draft.at) * ui.GLYPH
+    canvas.fill(ui.Rect { x = caret - 1.0, y = field.y + 6.0, w = 2.0, h = field.h - 12.0 }, Color.hex(INK))
+    canvas.flush(r)
+
+    title: ui.Rect = ui.Rect { x = PANEL.x, y = PANEL.y + 4.0, w = PANEL.w, h = 24.0 }
+    ui.left(r, title, 12.0, "Save as     Enter saves, Esc cancels", INK)
+    storage: [64]u8
+    b: fmt.Buffer = fmt.Buffer.init(storage[..])
+    b.printf("%s", self.draft.text())
+    ui.left(r, field, 8.0, b.text(), INK)
+    /* The extension, dimmed: it is added, not typed. */
+    ui.left(r, field, 8.0 + ui.GLYPH * f32(self.draft.len), diagram.EXTENSION, DIM)
+}
+
+Game.draw(self, canvas: *ui.Canvas, r: Renderer) {
+    r.color(Color.hex(0x101214))
+    r.clear()
+    self.draw_board(canvas, r)
+    self.draw_bars(canvas, r)
+    if self.mode == Mode.open { self.draw_list(canvas, r) }
+    if self.mode == Mode.save_as { self.draw_ask(canvas, r) }
     r.present()
 }
 
@@ -208,9 +600,7 @@ main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
 
-    w: i32 = i32(f32(grid.WIDTH) * CELL)
-    h: i32 = i32(BAR + f32(grid.HEIGHT) * CELL)
-    window: Window = Window.new("logibox", w, h, WindowFlags {})
+    window: Window = Window.new("logibox", i32(WIDTH), i32(BAR + 16.0 * CELL + FOOT), WindowFlags {})
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
@@ -220,7 +610,11 @@ main(): int {
     renderer.vsync(1)
 
     game: Game = Game { s = sim.Sim.init(grid.Grid {}) }
-    canvas: Canvas = Canvas {}
+    if game.locate() != null {
+        fmt.println("logibox: cannot find the executable's path")
+        return 1
+    }
+    canvas: ui.Canvas = ui.Canvas {}
     held: MouseButton = MouseButton.none
     last: u64 = ticks()
     running: bool = true
@@ -231,15 +625,17 @@ main(): int {
                 running = false
             }
             key: KeyboardEvent, is_key: bool = event.key()
-            if is_key && key.down && !key.repeat {
-                running = running && game.key(key.key)
+            if is_key && key.down {
+                running = running && game.key(key)
             }
             b: MouseButtonEvent, is_button: bool = event.mouse_button()
             if is_button {
                 if b.down {
-                    held = b.button
-                    x: int, y: int = cell_at(b.x, b.y)
-                    game.paint(x, y, held, true)
+                    if !game.click(b.x, b.y, b.button) {
+                        held = b.button
+                        x: int, y: int = cell_at(b.x, b.y)
+                        game.paint(x, y, held, true)
+                    }
                 } else if b.button == held {
                     held = MouseButton.none
                     game.px = -1
@@ -249,6 +645,8 @@ main(): int {
             m: MouseMotionEvent, is_motion: bool = event.mouse_motion()
             if is_motion {
                 x: int, y: int = cell_at(m.x, m.y)
+                game.mx = m.x
+                game.my = m.y
                 game.hx = x
                 game.hy = y
                 if held != MouseButton.none { game.paint(x, y, held, false) }
