@@ -8100,9 +8100,7 @@ Sema.init_require_path(self, e: u32): bool {
     return true
 }
 
-Sema.init_mark_path(self, e: u32) {
-    p: InitPath = blank(InitPath)
-    if !self.init_path(e, &p) || p.dynamic_index { return }
+Sema.init_mark(self, p: InitPath) {
     v: u32 = self.init_var(p.root, true)
     if v == 0 { return }
     self.init_touch(v)
@@ -8115,8 +8113,14 @@ Sema.init_mark_path(self, e: u32) {
     }
 }
 
-/* A view of a local array is tracked whole: it reads nothing and initializes
- * the array only when it covers every element.
+Sema.init_mark_path(self, e: u32) {
+    p: InitPath = blank(InitPath)
+    if !self.init_path(e, &p) || p.dynamic_index { return }
+    self.init_mark(p)
+}
+
+/* A view of a local array reads nothing and initializes the elements it
+ * certainly covers: those between constant bounds.
  */
 Sema.init_array_view(self, e: u32) {
     n: Node = self.node(e)
@@ -8133,7 +8137,19 @@ Sema.init_array_view(self, e: u32) {
         if !ok { return }
         hi = v
     }
-    if lo == 0 && hi == self.ty(bt).count { self.init_mark_path(n.a) }
+    p: InitPath = blank(InitPath)
+    if !self.init_path(n.a, &p) || p.dynamic_index { return }
+    if p.overlay || (lo == 0 && hi == self.ty(bt).count) {
+        self.init_mark(p)
+        return
+    }
+    if p.n >= 64 || hi > self.ty(bt).count { return }
+    p.types[p.n + 1] = self.ty(bt).base
+    p.n += 1
+    for i: u64 = lo; i < hi; i += 1 {
+        p.keys[p.n - 1] = i
+        self.init_mark(p)
+    }
 }
 
 /* What computing place `e`'s address reads. */

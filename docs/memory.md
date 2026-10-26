@@ -679,8 +679,9 @@ Why the rules in `spec/memory.md` are shaped as they are.
   clear loop was measured 1.5x to 3x slower to initialize tables of 2^14 to 2^22
   24-byte slots.
 - Initialization through views (Values & Passing #8): a view hands storage
-  to be filled without a zero fill, and tracking array slices whole
-  keeps branch joins constant-cost.
+  to be filled without a zero fill. A slice with constant bounds marks
+  each element it covers, so `fill(xs[1..3])` needs no full-range view; a
+  slice with a dynamic bound marks nothing, keeping branch joins bounded.
 - Constant initializers (Values & Passing #12): an initialized constant remains
   a constant across an explicit module boundary, allowing an OS-neutral facade
   to re-export target-selected values without duplicating their machine values.

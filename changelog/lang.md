@@ -227,3 +227,6 @@
   and selfhost: every place is writable, receivers pass by address, parameter
   bindings are read-only (aggregates by reference), and writing the caller's
   storage takes `*T`/`&x`; a local `const` gives no view (`reject_const_view`).
+- A slice of a local array with constant bounds initializes the elements
+  between them (Values & Passing #8), not only a slice spanning every
+  element; a dynamic bound still initializes nothing (C and selfhost, #158).

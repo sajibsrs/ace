@@ -398,7 +398,7 @@ because it may execute zero times.
 
 A view of a local is checked once, where it is created. Creating a view
 (`&path`, `array[lo..hi]`, a method call on it) reads nothing and initializes
-a constant path, or the whole array when the slice spans every element; you
+a constant path, or the elements between a slice's constant bounds; you
 promise the storage is written before it is read. A buffer filled by dynamic
 index is therefore filled through one full-range view:
 

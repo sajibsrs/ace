@@ -6710,31 +6710,47 @@ static int init_require_path(InitCk* k, Node* e) {
     return 1;
 }
 
-static void init_mark_path(InitCk* k, Node* e) {
-    InitPath p = {0};
-    if (!init_path(e, &p) || p.dynamic_index) return;
-    InitVar* v = init_var(k, p.root, 1);
+static void init_mark(InitCk* k, InitPath* p) {
+    InitVar* v = init_var(k, p->root, 1);
     if (!v) return;
     init_touch(k, v);
-    InitState* s = init_path_state(v, &p, 1);
+    InitState* s = init_path_state(v, p, 1);
     s->full = 1;
     s->parts = NULL;
-    for (int i = p.n - 1; i >= 0; i--) {
-        InitPath prefix = p;
+    for (int i = p->n - 1; i >= 0; i--) {
+        InitPath prefix = *p;
         prefix.n = i;
         InitState* parent = init_path_state(v, &prefix, 0);
-        (void)init_state_full(parent, p.type[i]);
+        (void)init_state_full(parent, p->type[i]);
     }
 }
 
-// A view of a local array is tracked whole: it reads nothing and initializes
-// the array only when it covers every element.
+static void init_mark_path(InitCk* k, Node* e) {
+    InitPath p = {0};
+    if (!init_path(e, &p) || p.dynamic_index) return;
+    init_mark(k, &p);
+}
+
+// A view of a local array reads nothing and initializes the elements it
+// certainly covers: those between constant bounds.
 static void init_array_view(InitCk* k, Node* e) {
     SType* bt = init_shape(node_ty(e->a));
     uint64_t lo = 0, hi = bt->count;
     if (e->b && !init_const_index(e->b, &lo)) return;
     if (e->c && !init_const_index(e->c, &hi)) return;
-    if (lo == 0 && hi == bt->count) init_mark_path(k, e->a);
+    InitPath p = {0};
+    if (!init_path(e->a, &p) || p.dynamic_index) return;
+    if (p.overlay || (lo == 0 && hi == bt->count)) {
+        init_mark(k, &p);
+        return;
+    }
+    if (p.n >= 64 || hi > bt->count) return;
+    p.type[p.n + 1] = bt->base;
+    p.n++;
+    for (uint64_t i = lo; i < hi; i++) {
+        p.key[p.n - 1] = i;
+        init_mark(k, &p);
+    }
 }
 
 static void init_expr(InitCk* k, Node* e);
