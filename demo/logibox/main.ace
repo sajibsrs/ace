@@ -11,7 +11,7 @@
  * paint), right-click (or drag) removes. Run (2) simulates it: left-click flips
  * a source, space toggles auto-ticking, and Step ticks once. Letters select a
  * block: s source, w wire, i input pin, o output pin, a AND, r OR, n NOT,
- * l light. Escape quits.
+ * z NAND, v NOR, x XOR, c XNOR, l light. Escape quits.
  *
  * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
@@ -68,6 +68,10 @@ NAME: [grid.Block]string = [
     grid.Block.and = "AND",
     grid.Block.or = "OR",
     grid.Block.not = "NOT",
+    grid.Block.nand = "NAND",
+    grid.Block.nor = "NOR",
+    grid.Block.xor = "XOR",
+    grid.Block.xnor = "XNOR",
     grid.Block.light = "light",
 ]
 
@@ -81,6 +85,10 @@ LOW: [grid.Block]u32 = [
     grid.Block.and = 0x1e3a5a,
     grid.Block.or = 0x1e4a3a,
     grid.Block.not = 0x4a3a1e,
+    grid.Block.nand = 0x2a2a5a,
+    grid.Block.nor = 0x1e4a4a,
+    grid.Block.xor = 0x4a1e2e,
+    grid.Block.xnor = 0x3a3a1e,
     grid.Block.light = 0x4a1818,
 ]
 HIGH: [grid.Block]u32 = [
@@ -92,6 +100,10 @@ HIGH: [grid.Block]u32 = [
     grid.Block.and = 0x3f82b8,
     grid.Block.or = 0x3aa877,
     grid.Block.not = 0xc0a03a,
+    grid.Block.nand = 0x5a5ab8,
+    grid.Block.nor = 0x3a9aa0,
+    grid.Block.xor = 0xb84a6a,
+    grid.Block.xnor = 0x8a9a3a,
     grid.Block.light = 0xc03434,
 ]
 ERROR: const u32 = 0xb030b0
@@ -134,6 +146,10 @@ LETTER: [grid.Block]u8 = [
     grid.Block.and = 'a',
     grid.Block.or = 'r',
     grid.Block.not = 'n',
+    grid.Block.nand = 'z',
+    grid.Block.nor = 'v',
+    grid.Block.xor = 'x',
+    grid.Block.xnor = 'c',
     grid.Block.light = 'l',
 ]
 
@@ -151,8 +167,9 @@ place(button: Button): ui.Rect {
     return ui.Rect {}
 }
 
-/* The block row's button for `block`: eight equal slots across the window. */
-TOOL_W: const f32 = (WIDTH - 6.0) / 8.0
+/* The block row's button for `block`: one equal slot for each
+ * of the 11 blocks. */
+TOOL_W: const f32 = (WIDTH - 6.0) / 11.0
 
 tool(block: grid.Block): ui.Rect {
     i: f32 = f32(int(block) - 1)
@@ -169,6 +186,10 @@ TOOL: [grid.Block]string = [
     grid.Block.and = "AND",
     grid.Block.or = "OR",
     grid.Block.not = "NOT",
+    grid.Block.nand = "NAND",
+    grid.Block.nor = "NOR",
+    grid.Block.xor = "XOR",
+    grid.Block.xnor = "XNOR",
     grid.Block.light = "Light",
 ]
 

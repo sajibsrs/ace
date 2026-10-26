@@ -27,6 +27,10 @@ it can be started from any directory.
 | A   | AND        | `&`   | High when every input is high. Needs at least 2 input pins. |
 | R   | OR         | `\|`  | High when any input is high. Needs at least 1 input pin. |
 | N   | NOT        | `!`   | High when its input is low. Needs exactly 1 input pin. |
+| Z   | NAND       | `D`   | Low when every input is high. Needs at least 2 input pins. |
+| V   | NOR        | `V`   | High when no input is high. Needs at least 1 input pin. |
+| X   | XOR        | `^`   | High when an odd number of inputs are high. Needs at least 2 input pins. |
+| C   | XNOR       | `=`   | High when an even number of inputs are high. Needs at least 2 input pins. |
 | L   | light      | `L`   | Shows the level of what it touches. |
 
 ## Rules
@@ -41,8 +45,8 @@ it can be started from any directory.
 - **Touching cells of one gate type are one gate**, so a gate can be any
   shape, and every input pin around it counts. Different gate types never
   merge.
-- **A gate with no input pins is idle** (low). One with too few (AND) or too
-  many (NOT) is an error.
+- **A gate with no input pins is idle** (low). One with too few (AND, NAND,
+  XOR, XNOR) or too many (NOT) is an error.
 - **A wire is low, high, or error.** With no driver it is low. Drivers that
   agree give their level. Drivers that disagree (for example a high source and
   a low output pin on one net) are contention, an error, shown magenta.
@@ -57,7 +61,7 @@ it can be started from any directory.
 |-------|--------|
 | 1 / Edit | Edit mode: build the board |
 | 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
-| S W I O A R N L | Select a block (see Blocks), or click it in the block row under the bar (Edit only) |
+| S W I O A R N Z V X C L | Select a block (see Blocks), or click it in the block row under the bar (Edit only) |
 | Left click / drag | Edit: place the selected block. Run: flip a source |
 | Right click / drag | Edit: remove |
 | Space | Run: toggle auto-ticking (every 250 ms) |
@@ -123,6 +127,8 @@ An 8-byte header, then one byte per cell, row by row:
 | 2 | source, on | 7 | OR |
 | 3 | wire | 8 | NOT |
 | 4 | input pin | 9 | light |
+| 10 | NAND | 12 | XOR |
+| 11 | NOR | 13 | XNOR |
 
 A cell's top bit is reserved for future flags and must be 0. Gate outputs are
 not stored: a loaded diagram starts with every gate low. A reader rejects a

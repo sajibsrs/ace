@@ -22,6 +22,11 @@ pub Block: enum u8 {
     and,
     or,
     not,
+    nand,
+    nor,
+    /* High on an odd number of high inputs; XNOR on an even number. */
+    xor,
+    xnor,
     /* Shows the level of the wires, sources and output pins it touches. */
     light,
 }
@@ -39,6 +44,10 @@ pub SYMBOL: [Block]string = [
     Block.and = "&",
     Block.or = "|",
     Block.not = "!",
+    Block.nand = "D",
+    Block.nor = "V",
+    Block.xor = "^",
+    Block.xnor = "=",
     Block.light = "L",
 ]
 
@@ -49,7 +58,8 @@ pub inside(x: int, y: int): bool {
 
 /* Whether the block is a gate. */
 pub is_gate(block: Block): bool {
-    return block == Block.and || block == Block.or || block == Block.not
+    return block == Block.and || block == Block.or || block == Block.not ||
+        block == Block.nand || block == Block.nor || block == Block.xor || block == Block.xnor
 }
 
 /* The block at (x, y); off the board it is empty. */

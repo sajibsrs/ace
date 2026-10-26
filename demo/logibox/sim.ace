@@ -35,6 +35,8 @@ Tally: struct {
     pins: int = 0,
     high: bool = false,
     low: bool = false,
+    /* Whether an odd number of pins read high. */
+    odd: bool = false,
     error: bool = false,
 }
 
@@ -65,15 +67,22 @@ join(acc: Level, any: bool, v: Level): Level {
 }
 
 /* A gate's next output from what its input pins read. A gate with no input
- * pin is idle; one with too few (AND) or too many (NOT) is an error. */
+ * pin is idle; one with too few (AND, NAND, XOR, XNOR: 2) or too many (NOT: 1)
+ * is an error. */
 evaluate(block: grid.Block, t: Tally): Level {
     if t.pins == 0 { return Level.low }
-    if (block == grid.Block.and && t.pins < 2) || (block == grid.Block.not && t.pins != 1) {
+    pair: bool = block == grid.Block.and || block == grid.Block.nand ||
+        block == grid.Block.xor || block == grid.Block.xnor
+    if (pair && t.pins < 2) || (block == grid.Block.not && t.pins != 1) {
         return Level.error
     }
     if t.error { return Level.error }
     if block == grid.Block.and { return level(!t.low) }
+    if block == grid.Block.nand { return level(t.low) }
     if block == grid.Block.or { return level(t.high) }
+    if block == grid.Block.xor { return level(t.odd) }
+    if block == grid.Block.xnor { return level(!t.odd) }
+    /* NOT and NOR. */
     return level(!t.high)
 }
 
@@ -174,6 +183,7 @@ pub Sim.tick(self) {
                 id: int = near.ids[k]
                 tallies[id].pins += 1
                 tallies[id].high = tallies[id].high || v == Level.high
+                tallies[id].odd = tallies[id].odd != (v == Level.high)
                 tallies[id].low = tallies[id].low || v == Level.low
                 tallies[id].error = tallies[id].error || v == Level.error
             }

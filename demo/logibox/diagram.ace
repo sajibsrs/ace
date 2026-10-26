@@ -48,13 +48,18 @@ CODE: [grid.Block]u8 = [
     grid.Block.or = 7,
     grid.Block.not = 8,
     grid.Block.light = 9,
+    grid.Block.nand = 10,
+    grid.Block.nor = 11,
+    grid.Block.xor = 12,
+    grid.Block.xnor = 13,
 ]
 
 /* The block of each code, by code. */
-BLOCK: [10]grid.Block = [
+BLOCK: [14]grid.Block = [
     grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
     grid.Block.input, grid.Block.output, grid.Block.and, grid.Block.or,
-    grid.Block.not, grid.Block.light,
+    grid.Block.not, grid.Block.light, grid.Block.nand, grid.Block.nor,
+    grid.Block.xor, grid.Block.xnor,
 ]
 
 /* Writes the diagram of `s` into `out` and returns its length, SIZE. */

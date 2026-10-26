@@ -55,6 +55,59 @@ pub or_truth_table(t: *test.T) {
     test.equal[sim.Level](t, result(grid.Block.or, true, true), sim.Level.high)
 }
 
+pub nand_truth_table(t: *test.T) {
+    test.equal[sim.Level](t, result(grid.Block.nand, false, false), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.nand, true, false), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.nand, false, true), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.nand, true, true), sim.Level.low)
+}
+
+pub nor_truth_table(t: *test.T) {
+    test.equal[sim.Level](t, result(grid.Block.nor, false, false), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.nor, true, false), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.nor, false, true), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.nor, true, true), sim.Level.low)
+}
+
+pub xor_truth_table(t: *test.T) {
+    test.equal[sim.Level](t, result(grid.Block.xor, false, false), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.xor, true, false), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.xor, false, true), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.xor, true, true), sim.Level.low)
+}
+
+pub xnor_truth_table(t: *test.T) {
+    test.equal[sim.Level](t, result(grid.Block.xnor, false, false), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.xnor, true, false), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.xnor, false, true), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.xnor, true, true), sim.Level.high)
+}
+
+/* A five-cell XOR column with pins on rows 0, 2 and 4 is high on an odd count of
+ * high inputs. */
+pub xor_is_parity(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    for y: int in 0 .. 5 { g.place(3, y, grid.Block.xor) }
+    for y: int in [0, 2, 4] { row(&g, 0, y, [grid.Block.source, grid.Block.wire, grid.Block.input]) }
+    row(&g, 4, 2, [grid.Block.output, grid.Block.wire, grid.Block.light])
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 0, true)
+    s.toggle(0, 2, true)
+    s.tick()
+    low(t, s, 6, 2)
+    s.toggle(0, 4, true)
+    s.tick()
+    high(t, s, 6, 2)
+}
+
+pub xor_with_one_pin_is_an_error(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.xor])
+    s: sim.Sim = sim.Sim.init(g)
+    s.tick()
+    error(t, s, 3, 0)
+}
+
 pub source_drives_wire_without_delay(t: *test.T) {
     s: sim.Sim = two_input(grid.Block.and)
     s.toggle(0, 0, true)

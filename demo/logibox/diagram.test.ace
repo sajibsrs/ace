@@ -5,7 +5,8 @@ import grid: "./grid.ace"
 import sim: "./sim.ace"
 import diagram: "./diagram.ace"
 
-/* S - I & O L with the source on, and a lone NOT. */
+/* S - I & O L with the source on, a lone NOT, and NAND, NOR, XOR, XNOR apart
+ * on row 5. */
 sample(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     blocks: [6]grid.Block = [
@@ -15,6 +16,10 @@ sample(): sim.Sim {
     for i: int in 0 .. 6 { g.place(i, 0, blocks[i]) }
     g.place(15, 15, grid.Block.not)
     g.place(0, 3, grid.Block.source)
+    g.place(0, 5, grid.Block.nand)
+    g.place(2, 5, grid.Block.nor)
+    g.place(4, 5, grid.Block.xor)
+    g.place(6, 5, grid.Block.xnor)
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     return s
@@ -42,6 +47,10 @@ pub layout(t: *test.T) {
     t.equal(int(out[13]), 9)
     t.equal(int(out[8 + 3 * 16]), 1)
     t.equal(int(out[8 + 255]), 8)
+    t.equal(int(out[8 + 5 * 16]), 10)
+    t.equal(int(out[8 + 5 * 16 + 2]), 11)
+    t.equal(int(out[8 + 5 * 16 + 4]), 12)
+    t.equal(int(out[8 + 5 * 16 + 6]), 13)
 }
 
 pub round_trip(t: *test.T) {
@@ -93,7 +102,7 @@ pub bad_length(t: *test.T) {
 
 pub bad_code(t: *test.T) {
     out: [diagram.SIZE]u8 = encoded()
-    out[20] = 10
+    out[20] = 14
     rejects(t, out[..], diagram.DiagramErr.code)
     out[20] = 0x83
     rejects(t, out[..], diagram.DiagramErr.code)
