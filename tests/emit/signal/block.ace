@@ -10,7 +10,7 @@ import signal
 hits: u32
 
 extern "c" on_signal(s: signal.Signal) {
-    atomic.add_relaxed(mut &hits, u32(1))
+    atomic.add_relaxed(&hits, u32(1))
 }
 
 main(): int {
@@ -18,7 +18,7 @@ main(): int {
     if signal.mask().has(signal.SIGUSR1) { return 2 }
 
     set: signal.Set = blank(signal.Set)
-    mut set.add(signal.SIGUSR1)
+    set.add(signal.SIGUSR1)
     signal.block(set)
     if !signal.mask().has(signal.SIGUSR1) { return 3 }
     if signal.raise(signal.SIGUSR1) != null { return 4 }
@@ -28,11 +28,11 @@ main(): int {
     if atomic.load_relaxed(&hits) != 1 { return 6 }
     if signal.mask().has(signal.SIGUSR1) { return 7 }
 
-    mut set.add(signal.SIGTERM)
+    set.add(signal.SIGTERM)
     signal.mask(set)
     current: signal.Set = signal.mask()
     if !current.has(signal.SIGUSR1) || !current.has(signal.SIGTERM) || current.has(signal.SIGUSR2) { return 8 }
-    mut set.remove(signal.SIGUSR1)
+    set.remove(signal.SIGUSR1)
     if set.has(signal.SIGUSR1) || !set.has(signal.SIGTERM) { return 9 }
     signal.mask(blank(signal.Set))
     if signal.mask().has(signal.SIGTERM) { return 10 }

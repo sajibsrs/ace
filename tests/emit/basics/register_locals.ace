@@ -12,24 +12,24 @@ id8(x: i8): i8 {
     return x
 }
 
-set(p: mut *int, v: int) {
+set(p: *int, v: int) {
     *p = v
 }
 
-bump(mut x: int, by: int) {
-    x = x + by
+bump(x: *int, by: int) {
+    *x = *x + by
 }
 
 idf(x: f64): f64 {
     return x
 }
 
-setf(p: mut *f64, v: f64) {
+setf(p: *f64, v: f64) {
     *p = v
 }
 
-bumpf(mut x: f64, by: f64) {
-    x = x + by
+bumpf(x: *f64, by: f64) {
+    *x = *x + by
 }
 
 peek(p: *int): int {
@@ -104,9 +104,9 @@ nested_calls(): int {
 // each address-taking use keeps its local in memory
 escapes(): int {
     x: int = 0
-    set(mut &x, 5)
+    set(&x, 5)
     v: int = 1
-    bump(mut v, 2)
+    bump(&v, 2)
     pt: Point = Point {
         x = 7,
         y = 0,
@@ -191,9 +191,9 @@ fsum(a0: f64, a1: f64, a2: f64, a3: f64, a4: f64, a5: f64, a6: f64, a7: f64, a8:
 // address-taking uses keep float locals in memory
 fescapes(): int {
     x: f64 = 0.0
-    setf(mut &x, 2.5)
+    setf(&x, 2.5)
     v: f64 = 1.0
-    bumpf(mut v, 0.5)
+    bumpf(&v, 0.5)
     w: f64 = 0.0
     total: f64 = 0.0
     for i: int in 0 .. 2 {
@@ -289,10 +289,10 @@ binders(): int {
     return 0
 }
 
-// an `in mut` value binder aliases the element and is never promoted
+// an array written by index in a loop stays in memory, never promoted
 alias_loop(): int {
     xs: [3]int = [1, 2, 3]
-    for v: int in mut xs { v = v * 5 }
+    for i: usize in 0 .. xs.len { xs[i] = xs[i] * 5 }
     return xs[0] + xs[1] + xs[2]
 }
 
@@ -312,7 +312,7 @@ deep_nest(): int {
     for a: int in 0 .. 2 {
         for b: int in 0 .. 2 {
             for c: int in 0 .. 2 {
-                for d: int in 0 .. 2 { bump(mut hits, a) }
+                for d: int in 0 .. 2 { bump(&hits, a) }
             }
         }
     }

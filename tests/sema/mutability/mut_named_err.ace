@@ -1,9 +1,0 @@
-/* err: 'mut' marks the three view types only — no mut over a struct type
- * (Mutability #9). */
-
-Point: struct { x: i32, y: i32 }
-
-main(): int {
-    p: mut Point
-    return 0
-}

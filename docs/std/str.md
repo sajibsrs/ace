@@ -45,21 +45,21 @@ Search and ordering:
 
 Caller storage and views:
 
-- `copy(text: string, noalias destination: mut []char): bool` — copies the
+- `copy(text: string, noalias destination: []char): bool` — copies the
   complete text into `destination[0..text.len]`; a shorter destination is
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
   without writing. Unlike `mem.copy`, the ranges need not be equal — only the
   source and the written range must not overlap.
-- `cstring(text: string, noalias destination: mut []char): bool` — copies the
+- `cstring(text: string, noalias destination: []char): bool` — copies the
   text and a trailing NUL for a C function, then passes `&destination[0]`. It
   fails when the text and its NUL do not fit or the text holds a NUL byte,
   which C would read as its end.
-- `concat(parts: []string, destination: mut []char): (usize, bool)` — writes all
+- `concat(parts: []string, destination: []char): (usize, bool)` — writes all
   parts in order and returns the complete byte count and whether it fit. A short
   destination returns `(0, false)` and its contents are unspecified; empty
   parts are valid and on success the unused destination suffix is untouched. Source bytes must not overlap the
   written destination range.
-- `split(text: string, separator: string, parts: mut []string): (usize, bool)`
+- `split(text: string, separator: string, parts: []string): (usize, bool)`
   and the `separator: char` overload — splits left to right on non-overlapping
   exact matches. Separators are omitted, boundaries produce empty parts, empty
   input produces one empty part, and every written part is a zero-copy view
@@ -93,7 +93,7 @@ main(): int {
         return 2
     }
     buf: [32]char = [char(0) : 32]
-    dst: mut []char = mut buf[0..32]
+    dst: []char = buf[0..32]
     count: usize, fit: bool = str.format(dst, n)
     if !fit || count != 3 {
         return 3
@@ -118,14 +118,14 @@ main(): int {
   ties-to-even, assuming the default round-to-nearest floating-point
   environment; parsing allocates nothing and uses no platform decimal parser.
   Naming any other `T` is a compile-time error at the call.
-- `format(destination: mut []char, value): (usize, bool)` — overloads for
+- `format(destination: []char, value): (usize, bool)` — overloads for
   `int`, `uint`, `usize`, `f32`, and `f64`, plus radix-taking overloads for
   the three integer types. A runtime radix outside 2 through 36 writes nothing
   and returns `(0, false)`; insufficient capacity returns `(0, false)` with the
   destination's contents unspecified. Integer radix digits are lowercase ASCII
   with no base prefix, only `int` may emit `-`, and the no-radix float
   representations are exactly the matching `fmt.print` overloads'.
-- `format(destination: mut []char, format: string, ...): (usize, bool)` —
+- `format(destination: []char, format: string, ...): (usize, bool)` —
   formatted text into caller storage, chosen when the second argument is a
   `string`. The format and arguments follow [`fmt.printf`](fmt.md) exactly:
   the format is a string literal or a `const` global, and the compiler checks
@@ -137,7 +137,7 @@ main(): int {
 
 ```ace
 line: [64]u8 = [0 : 64]
-n: usize, ok: bool = str.format(mut line[..], "FPS %d, %.2f ms", fps, frame_ms)
+n: usize, ok: bool = str.format(line[..], "FPS %d, %.2f ms", fps, frame_ms)
 if ok { renderer.debug_text(6.0, 6.0, string(line[..n])) }
 ```
 

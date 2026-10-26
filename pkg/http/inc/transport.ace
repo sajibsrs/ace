@@ -29,25 +29,25 @@ pub ClientErr: error {
 }
 
 pub Storage: struct {
-    pub addresses: mut []net.Addr4,
-    pub output: mut []u8,
-    pub target: mut []u8,
-    pub input: mut []u8,
-    pub headers: mut []Header,
-    pub body: mut []u8,
-    pub url: mut []u8 = null,
+    pub addresses: []net.Addr4,
+    pub output: []u8,
+    pub target: []u8,
+    pub input: []u8,
+    pub headers: []Header,
+    pub body: []u8,
+    pub url: []u8 = null,
 }
 
-pub connect(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) {
+pub connect(parsed: Url, storage: *Storage, resize: bool): (tcp.Conn, Error) {
     zero: tcp.Conn = tcp.Conn {}
     if resize {
-        mem_addresses: mut []net.Addr4, addr_ok: bool = mem.grow[net.Addr4](storage.addresses, 4)
+        mem_addresses: []net.Addr4, addr_ok: bool = mem.grow[net.Addr4](storage.addresses, 4)
         if !addr_ok { return zero, ClientErr.allocation }
 
         storage.addresses = mem_addresses
     }
 
-    count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, mut storage.addresses[..])
+    count: usize, resolve_err: Error = net.resolve4(parsed.host, parsed.port, storage.addresses[..])
     if resolve_err != null { return zero, resolve_err }
     if count == 0 { return zero, ClientErr.address }
 
@@ -69,18 +69,18 @@ pub connect(parsed: Url, mut storage: Storage, resize: bool): (tcp.Conn, Error) 
 pub exchange(
     connection: tcp.Conn,
     parsed: Url,
-    mut storage: Storage,
+    storage: *Storage,
     resize: bool,
 ): (Response, Error) {
 
     /* The request target is known exactly: size to fit before writing. */
     if resize {
-        mem_target: mut []u8, target_ok: bool = mem.grow[u8](storage.target, parsed.path.len + parsed.query.len)
+        mem_target: []u8, target_ok: bool = mem.grow[u8](storage.target, parsed.path.len + parsed.query.len)
         if !target_ok { return Response {}, ClientErr.allocation }
 
         storage.target = mem_target
     }
-    target_count: usize, fit: bool = str.concat([parsed.path, parsed.query], mut storage.target[..])
+    target_count: usize, fit: bool = str.concat([parsed.path, parsed.query], storage.target[..])
     if !fit { return Response {}, ClientErr.target_capacity }
 
     fields: [2]Header = [
@@ -99,13 +99,13 @@ pub exchange(
         headers = fields[..],
     }
 
-    output_count: usize, format_err: Error = request.format(mut storage.output[..])
+    output_count: usize, format_err: Error = request.format(storage.output[..])
     for resize && format_err == FormatErr.capacity {
-        mem_output: mut []u8, output_ok: bool = mem.grow[u8](storage.output, storage.output.len + 1)
+        mem_output: []u8, output_ok: bool = mem.grow[u8](storage.output, storage.output.len + 1)
         if !output_ok { return Response {}, ClientErr.allocation }
 
         storage.output = mem_output
-        output_count, format_err = request.format(mut storage.output[..])
+        output_count, format_err = request.format(storage.output[..])
     }
     if format_err != null { return Response {}, format_err }
 
@@ -124,7 +124,7 @@ pub exchange(
         if !parse_pending {
             if occupied == storage.input.len {
                 if !resize { return Response {}, ClientErr.response }
-                mem_input: mut []u8, input_ok: bool = mem.grow[u8](storage.input, storage.input.len + 1)
+                mem_input: []u8, input_ok: bool = mem.grow[u8](storage.input, storage.input.len + 1)
                 if !input_ok { return Response {}, ClientErr.allocation }
 
                 storage.input = mem_input
@@ -139,7 +139,7 @@ pub exchange(
             }
 
             received: int
-            received, recv_err: Error = tcp.receive(connection, mut storage.input[occupied..])
+            received, recv_err: Error = tcp.receive(connection, storage.input[occupied..])
             if recv_err != null { return Response {}, recv_err }
 
             occupied += usize(received)
@@ -147,10 +147,10 @@ pub exchange(
         }
         parse_pending = false
 
-        result: ResponseResult = mut parser.parse(
+        result: ResponseResult = parser.parse(
             storage.input[..occupied],
-            mut storage.headers[..],
-            mut storage.body[..],
+            storage.headers[..],
+            storage.body[..],
             eof,
             false,
         )
@@ -163,7 +163,7 @@ pub exchange(
             ResponseResult.capacity(capacity_type: ResponseCapacity) {
                 if !resize { return Response {}, ClientErr.response }
                 if capacity_type == ResponseCapacity.headers {
-                    mem_headers: mut []Header, headers_ok: bool = mem.grow[Header](
+                    mem_headers: []Header, headers_ok: bool = mem.grow[Header](
                         storage.headers,
                         storage.headers.len + 1,
                     )
@@ -179,7 +179,7 @@ pub exchange(
                     } else if parser.framing == ResponseFraming.chunked {
                         needed = parser.body_count + parser.chunk_remaining
                     }
-                    mem_body: mut []u8, body_ok: bool = mem.grow[u8](storage.body, needed)
+                    mem_body: []u8, body_ok: bool = mem.grow[u8](storage.body, needed)
                     if !body_ok { return Response {}, ClientErr.allocation }
 
                     storage.body = mem_body
@@ -193,18 +193,18 @@ pub exchange(
     }
 }
 
-pub get(url: string, mut storage: Storage, resize: bool): (Response, Error) {
+pub get(url: string, storage: *Storage, resize: bool): (Response, Error) {
     parsed: Url, url_err: Error = parsing.Url.parse(url, false)
     if url_err != null { return Response {}, url_err }
 
-    connection: tcp.Conn, connect_err: Error = connect(parsed, mut storage, resize)
-    defer tcp.close(mut connection)
+    connection: tcp.Conn, connect_err: Error = connect(parsed, storage, resize)
+    defer tcp.close(&connection)
     if connect_err != null { return Response {}, connect_err }
 
     response: Response, err: Error = exchange(
         connection,
         parsed,
-        mut storage,
+        storage,
         resize,
     )
     return response, err

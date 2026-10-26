@@ -10,7 +10,7 @@ line_comment  := "//" (any – newline) newline
 block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline inside acts as a newline
 newline       := significant — terminates statements (see §6 Notes)
 
-keyword       := "import" | "pub" | "mut" | "const" | "noalias" | "if" | "else"
+keyword       := "import" | "pub" | "const" | "noalias" | "if" | "else"
                 | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
@@ -93,12 +93,11 @@ func_decl     := ident [bracket_args] "(" [params] ")" [ret_clause]
 type_func_decl := owner_type "." member "(" [receiver ["," params] | params] ")" [ret_clause] block
                                                           // with receiver: method, called as x.name(...);
                                                           // without: associated function, called as Type.name(...)
-receiver      := ["mut"] "self"                            // untyped; first parameter only
+receiver      := "self"                                    // untyped; first parameter only
 owner_type    := ident [type_params]                        // declares owner T names
 type_params   := "[" ident ("," ident)* "]"               // max[T] — type declarations always declare params
 params        := param ("," param)* [","]
-param         := param_mod* ident ":" type
-param_mod     := "mut" | "noalias"
+param         := ["noalias"] ident ":" type
 ret_clause    := ":" type                                  // omitted for no value
 block         := "{" stmt* "}"
 
@@ -139,9 +138,9 @@ extern_block  := "extern" string_lit "{" extern_decl* "}"
 extern_decl   := extern_func | extern_var | extern_global | func_decl
                                                           // func_decl: body = defined in Ace, C-visible; link_name may follow its ret_clause
 extern_def    := "extern" string_lit (func_decl | extern_global) // single definition (C Interop #2, #6)
-extern_global := ["mut"] ident ":" type [link_name] "=" expr          // C global defined in Ace; read-only unless mut
+extern_global := ident ":" type [link_name] "=" expr          // C global defined in Ace
 extern_func   := ident "(" [extern_params] ")" [ret_clause] [link_name]
-extern_var    := ["mut"] ident ":" type [link_name]       // C global; read-only unless mut (C Interop #6)
+extern_var    := ident ":" type [link_name]               // C global (C Interop #6)
 link_name     := contextual_as string_lit                 // nonempty, NUL-free; v1 max 510 bytes
 contextual_as := ident                                    // exact text "as"; not reserved
 extern_params := extern_param ("," extern_param)* ["," ["..."]]
@@ -163,13 +162,12 @@ assignment    := lvalue ("," lvalue)* "=" expr_list       // n, err = read()
                 | "volatile" lvalue "=" expr              // exactly one final scalar store
 compound_op   := "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
 target        := ident postfix_part*                      // lvalue: ident, .f, [i]
-               | "mut" ident postfix_part*                // mut a.view()[i].x: marks the last call
 lvalue        := target | "*" unary                       // semantic analysis requires addressable storage
 expr_stmt     := expr
 
 if_stmt       := "if" expr block ["else" (if_stmt | block)]
 for_stmt      := "for" for_head block
-for_head      := loop_binders "in" ["mut"] iterable    // sequence/range head
+for_head      := loop_binders "in" iterable            // sequence/range head
                | range_expr                           // binder-less range head
                | [for_init] ";" [expr] ";" [for_post]  // three-clause head
                | expr                                 // condition-only head
@@ -193,7 +191,7 @@ union_pattern := named_type "." member
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
 continue_stmt := "continue" [ident]                      // nearest loop, or an enclosing label
-defer_stmt    := "defer" ["mut"] expr                   // operand must be a call (semantic rule)
+defer_stmt    := "defer" expr                           // operand must be a call (semantic rule)
 fallthrough_stmt := contextual_fallthrough                // only as final statement of a non-final switch case
 contextual_fallthrough := ident                            // exact text "fallthrough"; not reserved
 
@@ -222,26 +220,20 @@ shift_expr    := add_expr (("<<" | ">>") add_expr)*
 add_expr      := mul_expr (("+" | "-") mul_expr)*
 mul_expr      := unary (("*" | "/" | "%") unary)*
 
-unary         := ("*" | "!" | "~" | "-") unary | "&" lvalue | "mut" "&" lvalue | "mut" postfix
+unary         := ("*" | "!" | "~" | "-") unary | "&" lvalue
                | "volatile" lvalue | postfix
 //  "*"  pointer dereference                 "!"  logical negation
-//  "~"  integer bitwise complement
-//  "&"  read-only address-of                "mut &" writable address-of
-//  "mut p" marks p's last call (receiver) or slice (establishment);
-//  later index and field selectors address a place in its result
-//  (slicing operands only for establishment — Note 25)
-//  "volatile place" exactly one final scalar load
-//  both address forms and establishment require writable lvalues   unary "-" negation
+//  "~"  integer bitwise complement          "&"  address-of
+//  "-"  negation                            "volatile place" one final scalar load
 
 postfix       := primary postfix_part*
-postfix_part  := "(" [arg_list] ")"                       // call; ["mut"] expr args
+postfix_part  := "(" [arg_list] ")"                       // call
                | "[" expr "]"                             // index
                | "[" [expr] ".." [expr] "]"               [P] slice expression
                | "." member                               // field or built-in sequence .len
                | "[" type_args "]"                        // generic instantiation — see Notes
 
-arg_list      := arg ("," arg)*
-arg           := ["mut"] expr                             // call-site mutation mark
+arg_list      := expr ("," expr)*
 
 primary       := literal | ident | location | "(" expr_list ")" | array_lit | struct_lit
                | ptr_type | slice_type | array_type
@@ -265,16 +257,16 @@ type          := ["const"] type_expr                      // limit: const int = 
 type_expr     := ptr_type | slice_type | array_type | func_type | c_func_type
                | tuple_type | string_type | static_map_type | named_type | prim_type
 
-ptr_type      := ["mut"] "*" type_expr                    // *Node, mut *Node
-slice_type    := ["mut"] "[]" type_expr                   // []u8, mut []u8
-string_type   := ["mut"] "string"                         // string, mut string
+ptr_type      := "*" type_expr                            // *Node
+slice_type    := "[]" type_expr                           // []u8
+string_type   := "string"
 array_type    := "[" expr "]" type_expr                   // [16][8]u8; N is a compile-time constant expression
                | "[" named_type "]" type_expr             // [TokKind]string; a dense enum, by namespace
 tuple_type    := "(" type ("," type)+ ")"
-func_type     := "(" [ftype_params] ")" ":" func_ret       // (int, int): int, (mut b: Box): void
+func_type     := "(" [ftype_params] ")" ":" func_ret       // (int, int): int, (b: *Box): void
 c_func_type   := "extern" string_lit "(" [ftype_params] ")" ":" func_ret
 ftype_params  := ftype_param ("," ftype_param)* [","]
-ftype_param   := type | ["mut"] ident ":" type           // a name documents; 'mut' needs one
+ftype_param   := type | ident ":" type                   // a name documents
                                                           // semantic ABI string: exactly "c"
 named_type    := ident ("." ident)* ["[" type_args "]"]   // Vec[int], math.Vec
 static_map_type := "StaticMap" "[" type "]" type           // StaticMap[K]V
@@ -319,12 +311,8 @@ choices that are not evident from the productions.
 9. `intrinsic` is a line-final body substitute accepted syntactically on an
    ordinary function declaration. Semantic analysis restricts it to exact
    compiler-provided standard-library declarations.
-9. Contextual words such as `error`, `step`, and `fallthrough` remain
-   identifiers outside their exact grammatical context.
-10. `mut` uses local lookahead: `mut &` starts writable address-of; in a type
-    before `*`, `[]`, or `string` it qualifies that view; otherwise parsing
-    admits the relevant expression/call-site form and semantic analysis enforces
-    the normative permission rules.
+10. Contextual words such as `error`, `step`, and `fallthrough` remain
+    identifiers outside their exact grammatical context.
 11. Calls spelled `sizeof(`, `alignof(`, `blank(`, or `members(` parse their sole
     operand with the full type grammar.
 12. `offsetof(` parses a type, comma, and dot-separated `member` path;

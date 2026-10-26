@@ -40,16 +40,16 @@ floats(): int {
     return 0
 }
 
-// mut parameters read and write through their stored pointer
-bump(mut n: i16, mut x: f64) {
-    n -= 7
-    x = x + f64(n)
+// pointer parameters read and write through their stored pointer
+bump(n: *i16, x: *f64) {
+    *n -= 7
+    *x = *x + f64(*n)
 }
 
 by_ref(): int {
     n: i16 = 2
     x: f64 = 0.5
-    bump(mut n, mut x)
+    bump(&n, &x)
     if int(n) != -5 { return 6 }
     if x + 4.5 != 0.0 { return 7 }
     return 0

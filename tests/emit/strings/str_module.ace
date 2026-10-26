@@ -38,33 +38,33 @@ main(): int {
         return 10
     }
     buf: [8]u8 = [0 : 8]
-    dst: mut []u8 = mut buf[0..8]
+    dst: []u8 = buf[0..8]
 
     if !str.copy("hi", dst) { return 11 }
 
     if buf[0] != u8('h') || buf[1] != u8('i') || buf[2] != 0 { return 12 }
     short: [1]u8 = [0 : 1]
-    sdst: mut []u8 = mut short[0..1]
+    sdst: []u8 = short[0..1]
 
     if str.copy("hi", sdst) { return 13 }
 
     if short[0] != 0 { return 14 }
     concat_parts: [4]string = ["ace", "", " ", "lang"]
     concat_buffer: [12]u8 = [7 : 12]
-    concat_count: usize, concat_ok: bool = str.concat(concat_parts[..], mut concat_buffer[..])
+    concat_count: usize, concat_ok: bool = str.concat(concat_parts[..], concat_buffer[..])
     if !concat_ok || concat_count != 8 ||
        !mem.equal(concat_buffer[..concat_count], "ace lang") ||
        concat_buffer[8] != 7 || concat_buffer[11] != 7 {
         return 101
     }
     concat_short: [3]u8 = [9 : 3]
-    concat_count, concat_ok = str.concat(concat_parts[..], mut concat_short[..])
+    concat_count, concat_ok = str.concat(concat_parts[..], concat_short[..])
     if concat_ok || concat_count != 0 { return 102 }
     empty_parts: []string = null
-    concat_count, concat_ok = str.concat(empty_parts, mut concat_buffer[..])
+    concat_count, concat_ok = str.concat(empty_parts, concat_buffer[..])
     if !concat_ok || concat_count != 0 || concat_buffer[0] != u8('a') { return 103 }
     parts: [8]string = ["" : 8]
-    sparts: mut []string = mut parts[0..8]
+    sparts: []string = parts[0..8]
     n: usize, done: bool = str.split("a,b,c", ",", sparts)
 
     if !done || n != 3 || !mem.equal(parts[0], "a") ||
@@ -93,7 +93,7 @@ main(): int {
 
     if done || n != 0 { return 20 }
     two: [2]string = ["" : 2]
-    stwo: mut []string = mut two[0..2]
+    stwo: []string = two[0..2]
     n, done = str.split("a,b,c", ",", stwo)
 
     if done || n != 2 || !mem.equal(two[0], "a") || !mem.equal(two[1], "b") { return 21 }
@@ -137,14 +137,14 @@ main(): int {
     }
     c_buffer: [4]u8 = [7 : 4]
 
-    if !str.cstring("abc", mut c_buffer[..]) { return 104 }
+    if !str.cstring("abc", c_buffer[..]) { return 104 }
     if !mem.equal(c_buffer[..3], "abc") || c_buffer[3] != 0 { return 105 }
     tight: [3]u8 = [7 : 3]
 
-    if str.cstring("abc", mut tight[..]) { return 106 }
-    if str.cstring("a\0c", mut c_buffer[..]) { return 107 }
+    if str.cstring("abc", tight[..]) { return 106 }
+    if str.cstring("a\0c", c_buffer[..]) { return 107 }
     empty: [1]u8 = [7 : 1]
 
-    if !str.cstring("", mut empty[..]) || empty[0] != 0 { return 108 }
+    if !str.cstring("", empty[..]) || empty[0] != 0 { return 108 }
     return 0
 }

@@ -13,15 +13,15 @@ pub SpawnErr: error {
 }
 
 extern "c" {
-    c_posix_spawnp(pid: mut *i32, file: *u8, actions: *u64, attributes: *usize, argv: **u8, envp: **u8): i32 as "posix_spawnp"
-    c_actions_init(actions: mut *u64): i32 as "posix_spawn_file_actions_init"
-    c_actions_destroy(actions: mut *u64): i32 as "posix_spawn_file_actions_destroy"
-    c_actions_dup2(actions: mut *u64, fd: i32, target: i32): i32 as "posix_spawn_file_actions_adddup2"
-    c_actions_chdir(actions: mut *u64, path: *u8): i32 as "posix_spawn_file_actions_addchdir_np"
-    c_attributes_init(attributes: mut *usize): i32 as "posix_spawnattr_init"
-    c_attributes_destroy(attributes: mut *usize): i32 as "posix_spawnattr_destroy"
-    c_attributes_flags(attributes: mut *usize, flags: i16): i32 as "posix_spawnattr_setflags"
-    c_attributes_sigmask(attributes: mut *usize, mask: *u32): i32 as "posix_spawnattr_setsigmask"
+    c_posix_spawnp(pid: *i32, file: *u8, actions: *u64, attributes: *usize, argv: **u8, envp: **u8): i32 as "posix_spawnp"
+    c_actions_init(actions: *u64): i32 as "posix_spawn_file_actions_init"
+    c_actions_destroy(actions: *u64): i32 as "posix_spawn_file_actions_destroy"
+    c_actions_dup2(actions: *u64, fd: i32, target: i32): i32 as "posix_spawn_file_actions_adddup2"
+    c_actions_chdir(actions: *u64, path: *u8): i32 as "posix_spawn_file_actions_addchdir_np"
+    c_attributes_init(attributes: *usize): i32 as "posix_spawnattr_init"
+    c_attributes_destroy(attributes: *usize): i32 as "posix_spawnattr_destroy"
+    c_attributes_flags(attributes: *usize, flags: i16): i32 as "posix_spawnattr_setflags"
+    c_attributes_sigmask(attributes: *usize, mask: *u32): i32 as "posix_spawnattr_setsigmask"
 }
 
 POSIX_SPAWN_SETSIGMASK: const i16 = 0x0008
@@ -38,40 +38,40 @@ POSIX_SPAWN_SETSIGMASK: const i16 = 0x0008
  */
 pub spawn(argv: []*u8, envp: []*u8, dir: *u8, out: i32, err: i32): (sys.Process, Error) {
     attributes: usize = 0
-    code: i32 = c_attributes_init(mut &attributes)
+    code: i32 = c_attributes_init(&attributes)
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
-    defer c_attributes_destroy(mut &attributes)
-    code = c_attributes_flags(mut &attributes, POSIX_SPAWN_SETSIGMASK)
+    defer c_attributes_destroy(&attributes)
+    code = c_attributes_flags(&attributes, POSIX_SPAWN_SETSIGMASK)
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
     empty: u32 = 0
-    code = c_attributes_sigmask(mut &attributes, &empty)
+    code = c_attributes_sigmask(&attributes, &empty)
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
 
     pid: i32 = 0
     if dir == null && out < 0 && err < 0 {
-        code = c_posix_spawnp(mut &pid, argv[0], null, &attributes, &argv[0], &envp[0])
+        code = c_posix_spawnp(&pid, argv[0], null, &attributes, &argv[0], &envp[0])
         if code != 0 { return sys.Process(-1), SpawnErr(code) }
 
         return sys.Process(pid), null
     }
 
     actions: [16]u64
-    code = c_actions_init(mut &actions[0])
+    code = c_actions_init(&actions[0])
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
-    defer c_actions_destroy(mut &actions[0])
+    defer c_actions_destroy(&actions[0])
     if dir != null {
-        code = c_actions_chdir(mut &actions[0], dir)
+        code = c_actions_chdir(&actions[0], dir)
         if code != 0 { return sys.Process(-1), SpawnErr(code) }
     }
     if out >= 0 {
-        code = c_actions_dup2(mut &actions[0], out, 1)
+        code = c_actions_dup2(&actions[0], out, 1)
         if code != 0 { return sys.Process(-1), SpawnErr(code) }
     }
     if err >= 0 {
-        code = c_actions_dup2(mut &actions[0], err, 2)
+        code = c_actions_dup2(&actions[0], err, 2)
         if code != 0 { return sys.Process(-1), SpawnErr(code) }
     }
-    code = c_posix_spawnp(mut &pid, argv[0], &actions[0], &attributes, &argv[0], &envp[0])
+    code = c_posix_spawnp(&pid, argv[0], &actions[0], &attributes, &argv[0], &envp[0])
     if code != 0 { return sys.Process(-1), SpawnErr(code) }
 
     return sys.Process(pid), null

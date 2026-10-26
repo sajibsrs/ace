@@ -1,0 +1,83 @@
+/*
+ * Defer address-capture fixture: `&` arguments and method receivers capture
+ * the lvalue address, so the exit-time call reads final storage and its
+ * writes stay visible after the function returns.
+ */
+
+// expect-exit: 0
+// expect-output: address 4
+// expect-output: after-return 5
+// expect-output: recv-address 2
+// expect-output: recv-write 15
+
+import fmt
+
+seen: int
+total: int
+gm: int
+
+snatch_ref(x: *int) {
+    seen = *x
+}
+
+bump(x: *int, by: int) {
+    *x = *x + by
+}
+
+Counter: struct { n: int }
+
+Counter.note_address(self): int {
+    gm = self.n
+    return 0
+}
+
+Counter.add(self, by: int) {
+    self.n = self.n + by
+}
+
+gc: Counter = Counter { n = 0 }
+
+pointer_arg(): int {
+    v: int = 2
+    defer snatch_ref(&v) // address capture: reads final storage
+    defer bump(&v, 2)    // LIFO: runs first, writes v = 4
+    return 0
+}
+
+global_pointer(): int {
+    defer bump(&total, 5) // the write lands in the caller-visible global
+    return total             // returns 0: the write happens at exit
+}
+
+recv_address(): int {
+    c: Counter = Counter { n = 1 }
+    defer c.note_address() // receiver: address, sees final n = 2
+    c.n = 2
+    return 0
+}
+
+recv_write(): int {
+    defer gc.add(10) // receiver: the write lands after the return
+    gc.n = 5
+    return 0
+}
+
+main(): int {
+    pointer_arg()
+    fmt.print("address ")
+    fmt.println(seen)
+    if seen != 4 { return 1 }
+    global_pointer()
+    fmt.print("after-return ")
+    fmt.println(total)
+    if total != 5 { return 2 }
+    recv_address()
+    fmt.print("recv-address ")
+    fmt.println(gm)
+    if gm != 2 { return 4 }
+    recv_write()
+    fmt.print("recv-write ")
+    fmt.println(gc.n)
+    if gc.n != 15 { return 5 }
+    return 0
+}

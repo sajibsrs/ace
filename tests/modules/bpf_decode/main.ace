@@ -4,19 +4,19 @@
 
 import bpf: "../../../demo/darwin-packet-sniffer/packet.ace"
 
-put_native_u16(data: mut []u8, at: usize, value: u16) {
+put_native_u16(data: []u8, at: usize, value: u16) {
     data[at] = u8(value)
     data[at + 1] = u8(value >> 8)
 }
 
-put_native_u32(data: mut []u8, at: usize, value: u32) {
+put_native_u32(data: []u8, at: usize, value: u32) {
     data[at] = u8(value)
     data[at + 1] = u8(value >> 8)
     data[at + 2] = u8(value >> 16)
     data[at + 3] = u8(value >> 24)
 }
 
-put_frame(data: mut []u8, frame: usize, protocol: u8) {
+put_frame(data: []u8, frame: usize, protocol: u8) {
     for i: usize in 0 .. 6 {
         data[frame + i] = u8(0x10 + i)
         data[frame + 6 + i] = u8(0x20 + i)
@@ -39,7 +39,7 @@ put_frame(data: mut []u8, frame: usize, protocol: u8) {
 
 main(): int {
     bytes: [176]u8 = [0 : 176]
-    view: mut []u8 = mut bytes[0..176]
+    view: []u8 = bytes[0..176]
 
     // Native-endian Darwin header: caplen@8, datalen@12, hdrlen@16.
     put_native_u32(view, 8, 34)

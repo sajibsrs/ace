@@ -6,7 +6,7 @@
     (`uint` shares the `u64` overload where it is `u64`); there is no generic
     atomic type, no narrower width, and no pointer overload (a pointer travels
     as `usize` through an explicit conversion). Operations that write take
-    `p: mut *T`, `load` takes `p: *T`. Each is an `intrinsic` declaration
+    `p: *T`, `load` takes `p: *T`. Each is an `intrinsic` declaration
     (Stdlib #8) and allocates nothing.
     - Ordering is part of the name, never an argument. The unsuffixed name is
       sequentially consistent; weaker orders take a suffix, so an invalid

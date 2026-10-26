@@ -1,7 +1,0 @@
-/* Read-only reference parameters are enforced. */
-
-Point: struct { x: f32 }
-
-f(p: *Point) {
-    p.x = 1.0
-}

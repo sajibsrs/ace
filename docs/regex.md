@@ -24,30 +24,30 @@ example.
 
 ```ace
 re: regex.Regex, err: Error = regex.Regex.compile("(\\d+)-(\\d+)")
-defer mut re.wipe()
+defer re.wipe()
 if err != null { return 1 }   // a regex.ParseErr or a regex.CompileErr
 
-if mut re.find("call 12-345", 0) {
+if re.find("call 12-345", 0) {
     fmt.println(re.group(2))           // 345
 }
 
 at: usize = 0
-for mut re.next(text, mut at) {
+for re.next(text, &at) {
     fmt.println(re.group(0))           // every match in turn
 }
 ```
 
 `Regex.compile` parses and compiles the pattern and sizes every buffer a search
 needs, so it is the only call that allocates or fails. When it fails with a
-`ParseErr`, `Regex.compile(pattern, mut diag)` explains it (see Parsing). A
-search reuses that scratch state, which is why each search method takes
-`mut self`; none of them allocates or can fail.
+`ParseErr`, `Regex.compile(pattern, &diag)` explains it (see Parsing). A
+search reuses that scratch state, which each search method writes through
+its receiver; none of them allocates or can fail.
 
 | Method                          | Result                                                     |
 | ------------------------------- | ---------------------------------------------------------- |
 | `match(text): bool`             | whether the pattern matches anywhere                       |
 | `find(text, from): bool`        | whether a leftmost-first match starts at `from` or later   |
-| `next(text, mut at): bool`      | `find` from `at`, then moves `at` past the match           |
+| `next(text, &at): bool`      | `find` from `at`, then moves `at` past the match           |
 | `count(text): usize`            | the number of matches `next` visits                        |
 | `group(k): string`              | the text of group k of the last match, 0 the whole match   |
 | `span(k): Span`                 | the bytes `start..end` of that group                       |
@@ -106,9 +106,9 @@ faster, `(\d+)-(\d+)` 1.9x.
 
 ```ace
 storage: [256]u8
-diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-s: regex.Syntax, err: Error = regex.Syntax.parse("a(b[c-\\q])", mut diag)
-defer mut s.wipe()
+diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+s: regex.Syntax, err: Error = regex.Syntax.parse("a(b[c-\\q])", &diag)
+defer s.wipe()
 
 if err != null {
     fmt.print(diag.text()) // err is a regex.ParseErr
@@ -116,8 +116,8 @@ if err != null {
 ```
 
 `Syntax.parse` reads the complete pattern; on failure the returned `Syntax`
-holds no storage. `Syntax.parse(pattern, mut diag)` and `Regex.compile(pattern,
-mut diag)` also append the failure's context to `diag` (see [error
+holds no storage. `Syntax.parse(pattern, &diag)` and `Regex.compile(pattern,
+&diag)` also append the failure's context to `diag` (see [error
 context](std/fmt.md)), innermost first: the error at line:column, then each
 enclosing class or group by its opening delimiter. The example prints:
 
@@ -209,7 +209,7 @@ a{2,5}     rep{2,5 lit{a}}
 
 ```ace
 p: regex.Program, err: Error = regex.Program.compile(s)
-defer mut p.wipe()
+defer p.wipe()
 ```
 
 `Program.compile` lowers a syntax tree to a flat instruction array. The
@@ -273,9 +273,9 @@ a{2,4}   0 save 0
 
 ```ace
 m: regex.Matcher, err: Error = regex.Matcher.new(p)
-defer mut m.wipe()
+defer m.wipe()
 
-if mut m.run(p, text, 0, false) {
+if m.run(p, text, 0, false) {
     // m.best[2k] .. m.best[2k + 1] bound group k
 }
 ```

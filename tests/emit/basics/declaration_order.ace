@@ -18,8 +18,8 @@ main(): int {
     if sizeof(A) != 32 { return 2 }
     p: Pair = Pair { key = "k", value = Json.none }
     if p.key.len != 1 || sizeof(Pair) != 40 || sizeof(Json) != 24 { return 3 }
-    pairs: mut []Pair = mem.alloc[Pair](2)
-    defer mem.release[Pair](mut pairs)
+    pairs: []Pair = mem.alloc[Pair](2)
+    defer mem.release[Pair](&pairs)
     if pairs.len != 2 { return 9 }
     n: Node = Node { next = null, v = LIMIT, buf = [0 : WIDTH] }
     if n.v != 7 || n.buf.len != 6 { return 4 }

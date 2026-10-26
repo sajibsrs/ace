@@ -217,3 +217,7 @@
   in both compilers. Sema types the branches alike (an untyped one settles to
   the other, or both meet `coerce`'s expected type); lowering joins only the
   selected branch's leaves with phis, branching directly in a test.
+- `mut` left the language in every position, in both compilers, `std/`, `pkg/`
+  and selfhost: every place is writable, receivers pass by address, parameter
+  bindings are read-only (aggregates by reference), and writing the caller's
+  storage takes `*T`/`&x`; a local `const` gives no view (`reject_const_view`).

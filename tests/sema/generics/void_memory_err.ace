@@ -3,6 +3,6 @@
 import mem
 
 main(): int {
-    bytes: mut []u8 = mem.alloc[void](4)
+    bytes: []u8 = mem.alloc[void](4)
     return 0
 }

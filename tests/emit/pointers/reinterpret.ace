@@ -10,12 +10,12 @@ main(): int {
     if *(*u32(&value)) != 0x3F800000 { return 1 }
 
     word: u32 = 0
-    bytes: mut *u8 = mut *u8(mut &word)
+    bytes: *u8 = *u8(&word)
     *(bytes + 1) = 0x12
     if word != 0x1200 { return 2 }
 
     event: Event
-    key: mut *Key = mut *Key(mut &event)
+    key: *Key = *Key(&event)
     key.kind = 7
     key.code = 42
     key.down = true

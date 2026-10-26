@@ -15,13 +15,14 @@
 //               under mixed `=`); b = init (or N_TUPLE_E); F_CONST/F_MIXED
 //   N_FUNC      str = name; kids = params; a = ret; b = body; c = N_TPARAMS;
 //               d = owner type for methods and associated functions;
-//               F_PUB/F_EXPO/F_METHOD/F_MUT/F_ASSOC (F_METHOD: first
+//               F_PUB/F_EXPO/F_METHOD/F_ASSOC (F_METHOD: first
 //               param is the receiver `self`; F_ASSOC: no receiver, called
 //               only through the type, e.g. `Type.new(...)`);
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations;
 //               F_INLINE marks a function expanded at its direct calls;
 //               F_COLD marks one whose calls are rare (@cold)
-//   N_PARAM     str = name; a = type; F_MUT/F_NOALIAS (also used as var binder)
+//   N_PARAM     str = name; a = type; F_NOALIAS; F_BYADDR on the receiver
+//               `self`, bound to the caller's storage (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
 //               c = N_TPARAMS; F_PUB/F_PACKED
 //   N_BITS      str = name; a = backing type; kids = N_FIELD whose ival is
@@ -30,7 +31,7 @@
 //   N_UNION     str = name; kids = N_VARIANT; c = N_TPARAMS; F_PUB
 //   N_VARIANT   str = name; a = payload type or NULL (payloadless variant)
 //   N_CONTRACT str = name; kids = N_METHOD; c = N_TPARAMS; F_PUB
-//   N_METHOD    str = name; kids = params; a = ret; F_MUT (mutating receiver)
+//   N_METHOD    str = name; kids = params; a = ret
 //   N_ENUM      str = name; a = optional backing type; kids = N_IDENT members
 //               whose a is an optional discriminant expression; F_PUB
 //   N_ALIAS     str = name; a = type; c = N_TPARAMS; F_PUB
@@ -39,7 +40,7 @@
 //   N_CONFORMANCE a = signed contract type; kids = resolved methods after sema
 //   N_EXTERN    str = abi string; kids = N_EXTERNFN / N_EXTERNVAR
 //   N_EXTERNFN  str = name; kids = params; a = ret; F_EXPO/F_VARARGS
-//   N_EXTERNVAR str = name; a = type; F_MUT when writable (C Interop #6)
+//   N_EXTERNVAR str = name; a = type (C Interop #6)
 //   N_BLOCK     kids = statements
 //   N_EXPRSTMT  a = expr
 //   N_ASSIGN    kids = targets; a = rhs; op = T_ASSIGN or compound token;
@@ -52,8 +53,6 @@
 //               kids = none (range only), one value binder, or index + value
 //               binders (N_PARAM);
 //               b = iterable (expr) or N_RANGE; c = body; str/len = label.
-//               F_MUT = `in mut iterable`: the value binder aliases the
-//               element (sema requires writable array/slice storage)
 //   N_RANGE     a = first; b = second; c = optional contextual `step` expression
 //   N_SWITCH    a = scrutinee; kids = N_CASE (kids = patterns, each a value, N_VARPAT, or N_RANGE; b = block; F_DEFAULT marks `default`)
 //   N_VARPAT    union-variant case pattern: a = Type.variant (N_FIELD_E);
@@ -66,18 +65,18 @@
 //   N_LABEL     str = label; a = block
 //   N_DEFER     a = call expression deferred to the exit of its block
 //   N_NAMED     str = name; a = qualifier (N_NAMED/N_IDENT chain); kids = generic args (types)
-//   N_PTR       a = pointee; F_MUT
+//   N_PTR       a = pointee
 //   N_SLICE_T   a = element
 //   N_ARRAY_T   a = element; b = length expression
 //   N_TUPLE_T   kids = types
-//   N_FUNC_T    kids = param types; a = ret; F_CABI for extern "c" type;
-//               ival bit i = parameter i is mut
+//   N_FUNC_T    kids = param types; a = ret; F_CABI for extern "c" type
 //   N_CONST_T   a = inner
 //   N_TPARAMS   kids = N_IDENT
 //   N_BINARY    op; a; b      N_CMPCHAIN kids = operands; a = N_OPS{kids = N_OP}
 //   N_COND      a = cond; b = then; c = else
-//   N_UNARY     op (T_STAR = dereference, T_AMP = address-of); a; F_MUT = writable `mut &`
-//   N_CALL      a = callee; kids = args (N_MUTARG wraps mut-marked args); F_MUT = receiver mark
+//   N_UNARY     op (T_STAR = dereference, T_AMP = address-of); a
+//   N_CALL      a = callee; kids = args (N_PLACEARG wraps mem.release's place);
+//               F_BYADDR = receiver passed by address
 //   N_INDEX     a = base; b = index
 //   N_SLICE_E   a = base; b = lo (nullable); c = hi (nullable)
 //   N_FIELD_E   a = base; str = field
@@ -133,7 +132,7 @@ static int at(P* p, TokKind k) { return tk(p)->kind == k; }
 // A conversion callee begins `[]` + a type: the tokens that may start the
 // element type after the brackets. A newline keeps the empty array literal.
 static int slice_type_start(TokKind k) {
-    return k == T_IDENT || k == T_MUT || k == T_STAR || k == T_LBRACK || k == T_LPAREN || k == T_CONST;
+    return k == T_IDENT || k == T_STAR || k == T_LBRACK || k == T_LPAREN || k == T_CONST;
 }
 
 // Whether the tokens from offset k on spell an element type called as a cast,
@@ -142,7 +141,7 @@ static int slice_type_start(TokKind k) {
 static int array_cast_ahead(P* p, int k) {
     for (;;) {
         TokKind t = kth(p, k);
-        if (t == T_STAR || t == T_MUT || t == T_CONST) {
+        if (t == T_STAR || t == T_CONST) {
             k++;
         } else if (t == T_LBRACK) {
             for (int depth = 0;; k++) {
@@ -338,16 +337,12 @@ static Node* type_arg(P* p) {
 
 /*
  * One entry of a parenthesized type list: a bare type, or a function-type
- * parameter written as a declaration's, `name: T` or `mut name: T`. The name
- * documents and is ignored for identity; a `mut` parameter sets bit idx of
- * *mut_params. *named records that a name was written, which a tuple rejects.
+ * parameter written as a declaration's, `name: T`. The name documents and is
+ * ignored for identity. *named records that a name was written, which a tuple
+ * rejects.
  */
-static Node* func_type_param(P* p, uint64_t* mut_params, int idx, int* named) {
-    if (at(p, T_MUT) && kth(p, 1) == T_IDENT && kth(p, 2) == T_COLON) {
-        if (idx < 64) *mut_params |= (uint64_t)1 << idx;
-        p->i += 3;
-        *named = 1;
-    } else if (at(p, T_IDENT) && kth(p, 1) == T_COLON) {
+static Node* func_type_param(P* p, int* named) {
+    if (at(p, T_IDENT) && kth(p, 1) == T_COLON) {
         p->i += 2;
         *named = 1;
     }
@@ -361,39 +356,6 @@ static Node* type_atom(P* p) {
         p->i++;
         t->a = parse_type(p);
         return t;
-    }
-    if (at(p, T_MUT)) { // type-position mut marks writable content (Mutability #9)
-        p->i++;
-        if (at(p, T_STAR)) { // mut *T — writable pointee
-            t = nd(p, N_PTR);
-            t->flags |= F_MUT;
-            p->i++;
-            t->a = type_atom(p);
-            return t;
-        }
-        if (at(p, T_LBRACK)) { // mut []T — writable elements
-            if (kth(p, 1) != T_RBRACK) {
-                perr(p,
-                     "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'); a fixed array is already writable storage; take a writable view with 'mut name[..]'");
-                return NULL;
-            }
-            t = nd(p, N_SLICE_T);
-            t->flags |= F_MUT;
-            p->i += 2;
-            t->a = type_atom(p);
-            return t;
-        }
-        if (at(p, T_IDENT) && tk(p)->len == 6 && memcmp(tk(p)->str, "string", 6) == 0 && kth(p, 1) != T_DOT) {
-            Token* s = tk(p); // mut string — writable bytes
-            t = nd_tok(p, N_NAMED, s);
-            t->str = s->str;
-            t->len = s->len;
-            t->flags |= F_MUT;
-            p->i++;
-            return t;
-        }
-        perr(p, "'mut' in a type marks a writable view: 'mut *T', 'mut []T', or 'mut string'; a function type's mut parameter is written 'mut name: T'");
-        return NULL;
     }
     if (at(p, T_STAR)) {
         t = nd(p, N_PTR);
@@ -425,7 +387,7 @@ static Node* type_atom(P* p) {
         int named = 0;
         if (!at(p, T_RPAREN)) {
             for (;;) {
-                nv_push(p, &w, func_type_param(p, &f->ival, w.n, &named));
+                nv_push(p, &w, func_type_param(p, &named));
                 if (!eat(p, T_COMMA)) break;
                 if (at(p, T_RPAREN)) break;
             }
@@ -440,11 +402,10 @@ static Node* type_atom(P* p) {
         t = nd(p, N_TUPLE_T);
         p->i++;
         NV w = {0};
-        uint64_t mut_params = 0;
         int named = 0;
         if (!at(p, T_RPAREN)) {
             for (;;) {
-                nv_push(p, &w, func_type_param(p, &mut_params, w.n, &named));
+                nv_push(p, &w, func_type_param(p, &named));
                 if (!eat(p, T_COMMA)) break;
                 if (at(p, T_RPAREN)) break; // trailing comma
             }
@@ -452,7 +413,6 @@ static Node* type_atom(P* p) {
         expect(p, T_RPAREN, "')' to close type list");
         if (eat(p, T_COLON)) { // (params): ret — function value type
             Node* f = nd(p, N_FUNC_T);
-            f->ival = mut_params;
             set_kids(f, &w);
             f->a = func_type_ret(p);
             return f;
@@ -538,15 +498,6 @@ static Node* expr_unary(P* p, int ctx);
 static Node* expr_postfix(P* p, int ctx);
 static Node* parse_expr_stmt_from(P* p, int ctx, Token* start, Node* e);
 
-/* Marks the call or slice that a leading `mut` reaches: the last one in the
- * postfix chain `e`, past the index and field selectors that address a place
- * in its result (`mut a.view()[i].x`). Returns 0 when the chain has none. */
-static int mark_mut_chain(Node* e) {
-    while (e->kind == N_INDEX || e->kind == N_FIELD_E) e = e->a;
-    if (e->kind != N_CALL && e->kind != N_SLICE_E) return 0;
-    e->flags |= F_MUT;
-    return 1;
-}
 static Node* expr_postfix_base(P* p, int ctx, Node* base);
 static Node* expr_primary(P* p, int ctx);
 
@@ -558,12 +509,6 @@ static int scan_type(P* p, size_t* at_i) {
     TokKind k = p->toks[i].kind;
     if (k == T_CONST) {
         i++;
-        if (!scan_type(p, &i)) return 0;
-    } else if (k == T_MUT) {
-        i++;
-        if (i >= p->n || (p->toks[i].kind != T_STAR &&
-                          p->toks[i].kind != T_LBRACK &&
-                          p->toks[i].kind != T_IDENT)) return 0;
         if (!scan_type(p, &i)) return 0;
     } else if (k == T_STAR) {
         i++;
@@ -745,32 +690,6 @@ static Node* expr_unary(P* p, int ctx) {
         u->a = expr_unary(p, ctx);
         return u;
     }
-    if (at(p, T_MUT) && kth(p, 1) == T_AMP) { // mut &lvalue -> writable pointer
-        Node* u = nd(p, N_UNARY);
-        u->op = (uint8_t)T_AMP;
-        u->flags |= F_MUT;
-        p->i += 2;
-        u->a = expr_unary(p, ctx);
-        return u;
-    }
-    if (at(p, T_MUT)) {
-        // Type-position mut in expression-position type arguments:
-        // Box[mut string], g[mut []u8]. No establishment form begins with
-        // '*', '[', or the prim name followed by something other than '['.
-        int is_mut_string = kth(p, 1) == T_IDENT && tk(p)[1].len == 6 && memcmp(tk(p)[1].str, "string", 6) == 0;
-        if (kth(p, 1) == T_STAR ||
-            (kth(p, 1) == T_LBRACK && kth(p, 2) == T_RBRACK) ||
-            (is_mut_string && kth(p, 2) != T_LBRACK)) {
-            return expr_postfix_base(p, ctx, parse_type(p));
-        }
-        // A leading mut marks either a value-producing mutating method call
-        // or writable-view establishment through a slice.
-        p->i++;
-        Node* base = expr_postfix(p, ctx);
-        if (!mark_mut_chain(base))
-            perr(p, "'mut' in an expression marks a method receiver or establishes a writable view");
-        return base;
-    }
     if (at(p, T_STAR)) {
         /* `*T(address)` remains the pointer-conversion spelling.  Its type is
          * immediately called; every other leading '*' is dereference. */
@@ -901,31 +820,7 @@ static Node* expr_postfix_base(P* p, int ctx, Node* base) {
             NV args = {0};
             if (!at(p, T_RPAREN)) {
                 for (;;) {
-                    // `mut &value` is one writable-address expression, not a
-                    // mut call argument. `mut &value` could not be a valid mut
-                    // argument anyway because an address expression is not an lvalue.
-                    if (at(p, T_MUT) && kth(p, 1) != T_AMP) {
-                        Token* mut = tk(p);
-                        p->i++;
-                        Node* value = expr(p, 0);
-                        if (value->kind == N_SLICE_E) {
-                            // `mut seq[lo..hi]` establishes the writable view;
-                            // it is the argument value, not a mut-argument mark
-                            value->flags |= F_MUT;
-                            nv_push(p, &args, value);
-                        } else if (value->kind == N_CALL) {
-                            // `mut receiver.method()` marks that nested call's
-                            // receiver; it is not the enclosing call's mut arg.
-                            value->flags |= F_MUT;
-                            nv_push(p, &args, value);
-                        } else {
-                            Node* ma = nd_tok(p, N_MUTARG, mut);
-                            ma->a = value;
-                            nv_push(p, &args, ma);
-                        }
-                    } else {
-                        nv_push(p, &args, expr(p, 0));
-                    }
+                    nv_push(p, &args, expr(p, 0));
                     if (!eat(p, T_COMMA)) break;
                     if (at(p, T_RPAREN)) break; // trailing comma
                 }
@@ -1267,11 +1162,7 @@ static Node* parse_for_head(P* p, Node* n) {
         }
         set_kids(n, &binders);
         expect(p, T_IN, "'in'");
-        if (eat(p, T_MUT)) n->flags |= F_MUT; // `in mut iterable`: aliasing
         Node* it = expr(p, CTX_NOSLIT);
-        if ((n->flags & F_MUT) && it->kind == N_SLICE_E &&
-            !(it->flags & F_MUT))
-            it->flags |= F_MUT; // `in mut xs[lo..hi]` — establish, then alias
         n->b = at(p, T_DOTDOT) ? for_range(p, it) : it;
         n->c = parse_block(p);
         return n;
@@ -1633,24 +1524,8 @@ static Node* parse_stmt(P* p) {
     case T_DEFER: {
         Node* n = nd(p, N_DEFER);
         p->i++;
-        Token* mut = tk(p);
-        if (eat(p, T_MUT)) { // `defer mut c.scale(2.0)` — receiver-marked call
-            Node* e = expr(p, CTX_NOSLIT);
-            if (e->kind != N_CALL) perr_at(p, mut, "'mut' after 'defer' marks a call receiver");
-            e->flags |= F_MUT;
-            n->a = e;
-        } else {
-            n->a = expr(p, CTX_NOSLIT);
-        }
+        n->a = expr(p, CTX_NOSLIT);
         return n;
-    }
-    case T_MUT: { // `mut c.scale(2.0)`, `mut a.view()[i].x = v`
-        Token* mut = tk(p);
-        p->i++;
-        Node* e = expr_postfix(p, 0);
-        if (!mark_mut_chain(e) || e->kind == N_SLICE_E)
-            perr_at(p, mut, "'mut' at statement level marks a call receiver");
-        return parse_expr_stmt_from(p, 0, mut, e);
     }
     case T_IDENT:
         if (kth(p, 1) == T_COLON) {
@@ -1809,22 +1684,19 @@ static Node* parse_block(P* p) {
 
 // --- declarations ---------------------------------------------------------------
 
-/* An explicit receiver `self` / `mut self` parses as an untyped first
+/* An explicit receiver `self` parses as an untyped first
  * parameter (a == NULL); only a method or contract method accepts one. */
 static Node* parse_params(P* p, const char* closer, int self_ok) {
     NV params = {0};
     if (!at(p, T_RPAREN)) {
         for (;;) {
             Node* pa = nd(p, N_PARAM);
-            for (;;) {
-                if (eat(p, T_MUT)) pa->flags |= F_MUT;
-                else if (eat(p, T_NOALIAS)) pa->flags |= F_NOALIAS;
-                else break;
-            }
+            if (eat(p, T_NOALIAS)) pa->flags |= F_NOALIAS;
             if (at(p, T_SELF)) {
                 if (!self_ok) perr(p, "'self' is only the receiver of a method declaration");
                 if (params.n) perr(p, "'self' must be the first parameter");
                 if (pa->flags & F_NOALIAS) perr(p, "'noalias' does not apply to the receiver 'self'");
+                pa->flags |= F_BYADDR; // every receiver is the caller's storage, by address
                 p->i++;
                 if (at(p, T_COLON)) perr(p, "'self' takes no type; its type is the method's owner");
                 pa->str = "self";
@@ -1975,7 +1847,6 @@ static Node* parse_type_func_rest(P* p, Token* owner, Node* tp, int pub) {
     f->d = owner_type(p, owner, tp);
     if (f->nkids && !f->kids[0]->a) {
         f->flags |= F_METHOD;
-        if (f->kids[0]->flags & F_MUT) f->flags |= F_MUT;
         f->kids[0]->a = f->d;
     } else {
         f->flags |= F_ASSOC;
@@ -2109,16 +1980,14 @@ static Node* parse_colon_decl(P* p, Token* name, Node* tp, int pub) {
         while (!at(p, T_RBRACE)) {
             if (at(p, T_EOF)) perr(p, "unexpected end of file in contract");
             Node* m = nd(p, N_METHOD);
-            if (at(p, T_MUT)) perr(p, "a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'");
             Token* mname = expect_member(p, "method name");
             m->str = mname->str;
             m->len = mname->len;
             expect(p, T_LPAREN, "'(' after method name");
             Node* ph = parse_params(p, "')' to close method parameters", 1);
             if (!ph->nkids || ph->kids[0]->a)
-                perr_at(p, mname, "a contract method's first parameter is its receiver 'self' or 'mut self'");
+                perr_at(p, mname, "a contract method's first parameter is its receiver 'self'");
             // the receiver stays implied in the contract's method node
-            if (ph->kids[0]->flags & F_MUT) m->flags |= F_MUT;
             m->kids = ph->kids + 1;
             m->nkids = ph->nkids - 1;
             m->a = parse_ret(p);
@@ -2273,9 +2142,9 @@ static Node* parse_extern_def(P* p, size_t start, int pub) {
     return parse_func_rest(p, name, try_tparams(p), pub, 1, 0); // sema rejects generics
 }
 
-// An exported C global after `[mut] name: T` and `=`: an ordinary global with
-// C linkage, read-only unless mut (C Interop #6).
-static Node* parse_extern_global(P* p, Token* name, Node* type, const char* cname, int mut, int pub) {
+// An exported C global after `name: T` and `=`: an ordinary global with C
+// linkage (C Interop #6).
+static Node* parse_extern_global(P* p, Token* name, Node* type, const char* cname, int pub) {
     Node* n = nd_tok(p, N_VAR, name);
     Node* binder = nd_tok(p, N_PARAM, name);
     binder->str = name->str;
@@ -2284,9 +2153,9 @@ static Node* parse_extern_global(P* p, Token* name, Node* type, const char* cnam
     NV binders = {0};
     nv_push(p, &binders, binder);
     set_kids(n, &binders);
-    n->flags |= F_EXPO | (mut ? F_MUT : 0) | (pub ? F_PUB : 0);
+    n->flags |= F_EXPO | (pub ? F_PUB : 0);
     n->cname = binder->cname = cname;
-    binder->flags |= F_EXPO | (mut ? F_MUT : 0);
+    binder->flags |= F_EXPO;
     expect(p, T_ASSIGN, "'=' and an initializer: a C global defined in Ace");
     n->b = expr_list(p, 0);
     return n;
@@ -2309,7 +2178,6 @@ static Node* parse_extern(P* p) {
         int def = 0; // a body follows: an Ace definition with C linkage
         if (at(p, T_THREADLOCAL))
             perr(p, "thread-local C variables are not supported; bind the C library's accessor function");
-        if (eat(p, T_MUT)) f->flags |= F_MUT;
         Token* name = expect(p, T_IDENT, "name in extern block");
         f->str = name->str;
         f->len = name->len;
@@ -2318,23 +2186,18 @@ static Node* parse_extern(P* p) {
             f->a = parse_type(p);
             f->cname = parse_link_name(p);
             if (at(p, T_ASSIGN)) {
-                nv_push(p, &p->exports, parse_extern_global(p, name, f->a, f->cname, (f->flags & F_MUT) != 0, 0));
+                nv_push(p, &p->exports, parse_extern_global(p, name, f->a, f->cname, 0));
                 if (!eat(p, T_NL) && !at(p, T_RBRACE)) perr(p, "expected newline or '}' after extern declaration");
                 skipnl(p);
                 continue;
             }
         } else {
-            if (f->flags & F_MUT) perr(p, "'mut' marks an extern variable: expected ':' after its name");
             if (at(p, T_LBRACK)) def = 1; // generic: reparsed as a definition for sema to reject
             else expect(p, T_LPAREN, "'(' after extern function name");
             if (!def && !at(p, T_RPAREN)) {
                 NV params = {0};
                 for (;;) {
                     Node* pa = nd(p, N_PARAM);
-                    if (at(p, T_MUT)) { // only a definition can say this; reparsed below
-                        def = 1;
-                        break;
-                    }
                     Token* pname = expect(p, T_IDENT, "parameter name");
                     pa->str = pname->str;
                     pa->len = pname->len;
@@ -2602,24 +2465,20 @@ static Node* parse_top(P* p) {
             if (tls) perr(p, "duplicate 'threadlocal' modifier");
             p->i++; tls = 1;
         }
-        else if (at(p, T_MUT)) {
-            perr(p, "a top-level declaration takes no leading 'mut'; a mutating receiver is written 'mut self'");
-        }
         else break;
     }
     if (tls && at(p, T_EXTERN)) perr(p, "'threadlocal' applies only to module variables");
     if (at(p, T_EXTERN) && p->i + 2 < p->n && p->toks[p->i + 1].kind == T_STR &&
-        (p->toks[p->i + 2].kind == T_IDENT || p->toks[p->i + 2].kind == T_MUT)) {
-        // `extern "c" name(...) { body }` or `extern "c" [mut] name: T = value`
+        p->toks[p->i + 2].kind == T_IDENT) {
+        // `extern "c" name(...) { body }` or `extern "c" name: T = value`
         p->i += 2;
-        int gmut = eat(p, T_MUT);
-        if (gmut || (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_COLON)) {
+        if (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_COLON) {
             if (inl) perr(p, "'inline' applies only to function declarations");
             Token* name = expect(p, T_IDENT, "C global name");
             expect(p, T_COLON, "':' after C global name");
             Node* type = parse_type(p);
             const char* cname = parse_link_name(p);
-            return parse_extern_global(p, name, type, cname, gmut, pub);
+            return parse_extern_global(p, name, type, cname, pub);
         }
         if (p->i + 1 < p->n && p->toks[p->i + 1].kind == T_DOT)
             perr(p, "methods and associated functions cannot use the C ABI");
@@ -2758,7 +2617,7 @@ const char* node_kind_name(NKind k) {
 static void pflags(Node* x) {
     if (x->flags & F_PUB) printf(" pub");
     if (x->flags & F_EXPO) printf(" extern-c");
-    if (x->flags & F_MUT) printf(" mut");
+    if (x->flags & F_BYADDR) printf(" byaddr");
     if (x->flags & F_NOALIAS) printf(" noalias");
     if (x->flags & F_CONST) printf(" const");
     if (x->flags & F_DEFAULT) printf(" default");

@@ -51,7 +51,7 @@ client(port: u16): int {
     received: usize = 0
 
     for received < request.len {
-        view: mut []u8 = mut storage[received..request.len]
+        view: []u8 = storage[received..request.len]
         count: int, receive_err: Error = net.receive(sock, view)
 
         if receive_err != null || count <= 0 {
@@ -149,7 +149,7 @@ main(): int {
         hangup = false,
     }
     event_storage: [4]poll.Event = [zero : 4]
-    events: mut []poll.Event = mut event_storage[0..4]
+    events: []poll.Event = event_storage[0..4]
     peer: net.Socket = net.Socket(-1)
     buffer: [16]u8 = [0 : 16]
     received: usize = 0
@@ -182,7 +182,7 @@ main(): int {
                 poll.unwatch(q, listener)
             } else if peer != -1 && event.fd == peer {
                 if event.readable && received < buffer.len {
-                    view: mut []u8 = mut buffer[received..buffer.len]
+                    view: []u8 = buffer[received..buffer.len]
                     amount: int, err: Error = net.receive(peer, view)
 
                     if err != null || amount <= 0 {
@@ -193,7 +193,7 @@ main(): int {
 
                     if received == buffer.len {
                         probe_storage: [1]u8 = [u8(0)]
-                        probe: mut []u8 = mut probe_storage[0..1]
+                        probe: []u8 = probe_storage[0..1]
                         probe_count: int, probe_err: Error = net.receive(peer, probe)
 
                         if probe_count != 0 || probe_err == null ||

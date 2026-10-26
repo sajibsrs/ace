@@ -5,10 +5,10 @@ import mem
 /* Parses `text` and compares the failure's context with `want`. */
 check(text: string, want: string): bool {
     doc: json.Json = json.Json.new()
-    defer mut doc.wipe()
+    defer doc.wipe()
     storage: [256]u8
-    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-    err: Error = mut doc.parse(text, mut diag)
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    err: Error = doc.parse(text, &diag)
 
     if err == null || mem.equal(diag.text(), want) { return err != null }
     fmt.print(diag.text())
@@ -31,10 +31,10 @@ main(): int {
     if !check("{", "expected a string key at 1:2\n") { return 8 }
 
     small: [12]u8
-    diag: fmt.Buffer = fmt.Buffer.init(mut small[..])
+    diag: fmt.Buffer = fmt.Buffer.init(small[..])
     p: json.Parser = json.Parser.new()
-    defer mut p.wipe()
-    v: json.Value, err: Error = mut p.parse("[[[x]]]", mut diag)
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("[[[x]]]", &diag)
 
     if err != json.ParseErr.unexpected_token || !mem.equal(diag.text(), "expected a v") || diag.dropped() == 0 { return 6 }
     return 0

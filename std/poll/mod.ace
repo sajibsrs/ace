@@ -30,7 +30,7 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     return os.unwatch(q, fd)
 }
 
-pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
+pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
     count: usize, err: Error = os.wait(q, events, timeout_ns)
     return count, err
 }

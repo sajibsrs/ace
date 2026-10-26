@@ -247,22 +247,22 @@ extern "c" {
      */
     c_open(path: *u8, flags: i32, ...): i32 as "open"
     c_close(fd: i32): i32 as "close"
-    c_read(fd: i32, buf: mut *u8, size: usize): i64 as "read"
+    c_read(fd: i32, buf: *u8, size: usize): i64 as "read"
     c_write(fd: i32, buf: *u8, size: usize): i64 as "write"
     // glibc 2.33 and later export stat itself, not only __xstat.
-    c_stat(path: *u8, info: mut *LinuxStat): i32 as "stat"
-    c_lstat(path: *u8, info: mut *LinuxStat): i32 as "lstat"
-    c_readlink(path: *u8, buf: mut *u8, size: usize): i64 as "readlink"
+    c_stat(path: *u8, info: *LinuxStat): i32 as "stat"
+    c_lstat(path: *u8, info: *LinuxStat): i32 as "lstat"
+    c_readlink(path: *u8, buf: *u8, size: usize): i64 as "readlink"
     c_mkdir(path: *u8, mode: u32): i32 as "mkdir"
     c_rename(old_path: *u8, new_path: *u8): i32 as "rename"
     c_unlink(path: *u8): i32 as "unlink"
-    c_getdents64(fd: i32, buf: mut *u8, size: usize): i64 as "getdents64"
-    c_errno(): mut *i32 as "__errno_location"
-    c_getentropy(buffer: mut *u8, size: usize): i32 as "getentropy"
+    c_getdents64(fd: i32, buf: *u8, size: usize): i64 as "getdents64"
+    c_errno(): *i32 as "__errno_location"
+    c_getentropy(buffer: *u8, size: usize): i32 as "getentropy"
     c_exit(status: i32) as "_exit"
     c_fork(): i32 as "fork"
-    c_waitpid(pid: i32, status: mut *i32, options: i32): i32 as "waitpid"
-    c_pipe(fds: mut *i32, flags: i32): i32 as "pipe2"
+    c_waitpid(pid: i32, status: *i32, options: i32): i32 as "waitpid"
+    c_pipe(fds: *i32, flags: i32): i32 as "pipe2"
     // glibc declares ioctl(int, unsigned long, ...).
     c_ioctl(fd: i32, request: uint, ...): i32 as "ioctl"
 }
@@ -295,12 +295,12 @@ PATH_MAX: const usize = 4096
 /* getentropy(3) limits each request to 256 bytes. Retry an interrupted
  * chunk and capture errno immediately for every other failure.
  */
-pub random(storage: mut []u8): Error {
+pub random(storage: []u8): Error {
     at: usize = 0
     for at < storage.len {
         count: usize = storage.len - at
         if count > 256 { count = 256 }
-        if c_getentropy(mut &storage[at], count) == 0 {
+        if c_getentropy(&storage[at], count) == 0 {
             at += count
         } else {
             code: i32 = errno()
@@ -325,7 +325,7 @@ pub S_IWOTH: const u32 = 0o002
 pub S_IXOTH: const u32 = 0o001
 
 errno_set(value: i32) {
-    slot: mut *i32 = c_errno()
+    slot: *i32 = c_errno()
     *slot = value
 }
 
@@ -333,7 +333,7 @@ errno_set(value: i32) {
  * too long (ENAMETOOLONG) or holds a NUL byte (EINVAL), which C would read as
  * its end.
  */
-path_copy(path: string, buf: mut []u8): bool {
+path_copy(path: string, buf: []u8): bool {
     if path.len > PATH_MAX - 1 {
         errno_set(36)
         return false
@@ -369,7 +369,7 @@ file_type_from_dirent(dirent_type: u8): FileType {
  * immediately after a failed call; any intervening call may overwrite it.
  */
 pub errno(): i32 {
-    slot: mut *i32 = c_errno()
+    slot: *i32 = c_errno()
     return *slot
 }
 
@@ -393,7 +393,7 @@ pub wait(process: Process): (ProcessStatus, Error) {
         return zero, WaitErr.invalid
     }
 
-    if c_waitpid(i32(process), mut &raw, 0) == -1 {
+    if c_waitpid(i32(process), &raw, 0) == -1 {
         zero: ProcessStatus = ProcessStatus {
             exited = false,
             code = 0,
@@ -422,13 +422,13 @@ pub wait(process: Process): (ProcessStatus, Error) {
 pub pipe(): (Fd, Fd, Error) {
     fds: [2]i32 = [i32(0) : 2]
 
-    if c_pipe(mut &fds[0], O_CLOEXEC) == -1 { return Fd(-1), Fd(-1), PipeErr(errno()) }
+    if c_pipe(&fds[0], O_CLOEXEC) == -1 { return Fd(-1), Fd(-1), PipeErr(errno()) }
     return Fd(fds[0]), Fd(fds[1]), null
 }
 
-pub read(fd: Fd, buf: mut []u8): (int, Error) {
+pub read(fd: Fd, buf: []u8): (int, Error) {
     if buf.len == 0 { return 0, null }
-    n: i64 = c_read(i32(fd), mut &buf[0], buf.len)
+    n: i64 = c_read(i32(fd), &buf[0], buf.len)
     if n < 0 { return 0, ReadErr(errno()) }
 
     return int(n), null
@@ -456,7 +456,7 @@ pub ioctl(fd: Fd, request: uint): Error {
     return null
 }
 
-pub ioctl(fd: Fd, request: uint, data: mut []u8): Error {
+pub ioctl(fd: Fd, request: uint, data: []u8): Error {
     if data.len == 0 {
         errno_set(22)
         return IoctlErr.empty
@@ -481,7 +481,7 @@ pub open(path: string, flags: i32): (Fd, Error) {
 pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     buf: [4096]u8
 
-    if !path_copy(path, mut buf[0..4096]) { return Fd(-1), OpenErr(errno()) }
+    if !path_copy(path, buf[0..4096]) { return Fd(-1), OpenErr(errno()) }
     fd: i32 = c_open(&buf[0], flags | O_CLOEXEC, mode)
     if fd == -1 { return Fd(-1), OpenErr(errno()) }
 
@@ -507,13 +507,13 @@ stat(path: string, follow: bool): (FileInfo, Error) {
         inode = 0,
     }
 
-    if !path_copy(path, mut path_buf[0..4096]) { return zero, StatErr(errno()) }
+    if !path_copy(path, path_buf[0..4096]) { return zero, StatErr(errno()) }
     raw: LinuxStat = blank(LinuxStat)
     result: i32 = 0
     if follow {
-        result = c_stat(&path_buf[0], mut &raw)
+        result = c_stat(&path_buf[0], &raw)
     } else {
-        result = c_lstat(&path_buf[0], mut &raw)
+        result = c_lstat(&path_buf[0], &raw)
     }
     if result == -1 { return zero, StatErr(errno()) }
     info: FileInfo = FileInfo {
@@ -528,10 +528,10 @@ stat(path: string, follow: bool): (FileInfo, Error) {
 /* The target of the NUL-terminated symlink `link` copied into `buf`; the
  * byte count, or -1 with errno set (ERANGE when it does not fit).
  */
-link_target(link: []u8, buf: mut []u8): int {
+link_target(link: []u8, buf: []u8): int {
     target: [4096]u8
-    out: mut []u8 = mut target[0..4096]
-    count: i64 = c_readlink(&link[0], mut &out[0], 4096)
+    out: []u8 = target[0..4096]
+    count: i64 = c_readlink(&link[0], &out[0], 4096)
     if count == -1 { return -1 }
     if count == 4096 || usize(count) > buf.len {
         errno_set(34)
@@ -544,9 +544,9 @@ link_target(link: []u8, buf: mut []u8): int {
 /* The kernel resolves `path` once on an O_PATH descriptor, which needs no
  * read permission, and /proc/self/fd/N names what it resolved to.
  */
-pub canonical(path: string, buf: mut []u8): (usize, Error) {
+pub canonical(path: string, buf: []u8): (usize, Error) {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return 0, CanonicalErr(errno()) }
+    if !path_copy(path, path_buf[0..4096]) { return 0, CanonicalErr(errno()) }
     fd: i32 = c_open(&path_buf[0], O_PATH | O_CLOEXEC, u32(0))
     defer c_close(fd)
     if fd == -1 { return 0, CanonicalErr(errno()) }
@@ -566,7 +566,7 @@ pub canonical(path: string, buf: mut []u8): (usize, Error) {
     return usize(count), null
 }
 
-pub executable(buf: mut []u8): (usize, Error) {
+pub executable(buf: []u8): (usize, Error) {
     link: [16]u8 = blank([16]u8)
     name: string = "/proc/self/exe"
     for i: usize in 0 .. name.len { link[i] = name[i] }
@@ -577,7 +577,7 @@ pub executable(buf: mut []u8): (usize, Error) {
 
 pub mkdir(path: string, mode: u32): Error {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return MkdirErr(errno()) }
+    if !path_copy(path, path_buf[0..4096]) { return MkdirErr(errno()) }
     if c_mkdir(&path_buf[0], mode) == -1 { return MkdirErr(errno()) }
     return null
 }
@@ -592,22 +592,22 @@ pub mkdir(path: string): Error {
 pub rename(old_path: string, new_path: string): Error {
     from_buf: [4096]u8
     to_buf: [4096]u8
-    if !path_copy(old_path, mut from_buf[0..4096]) { return RenameErr(errno()) }
-    if !path_copy(new_path, mut to_buf[0..4096]) { return RenameErr(errno()) }
+    if !path_copy(old_path, from_buf[0..4096]) { return RenameErr(errno()) }
+    if !path_copy(new_path, to_buf[0..4096]) { return RenameErr(errno()) }
     if c_rename(&from_buf[0], &to_buf[0]) == -1 { return RenameErr(errno()) }
     return null
 }
 
 pub unlink(path: string): Error {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return UnlinkErr(errno()) }
+    if !path_copy(path, path_buf[0..4096]) { return UnlinkErr(errno()) }
     if c_unlink(&path_buf[0]) == -1 { return UnlinkErr(errno()) }
     return null
 }
 
 pub opendir(path: string): (Dir, Error) {
     path_buf: [4096]u8
-    if !path_copy(path, mut path_buf[0..4096]) { return blank(Dir), OpendirErr(errno()) }
+    if !path_copy(path, path_buf[0..4096]) { return blank(Dir), OpendirErr(errno()) }
     fd: i32 = c_open(&path_buf[0], O_RDONLY | O_DIRECTORY, u32(0))
     if fd == -1 { return blank(Dir), OpendirErr(errno()) }
 
@@ -626,7 +626,7 @@ pub opendir(path: string): (Dir, Error) {
  * then the NUL-terminated name, padded to reclen. Entries are retained when
  * the caller's name buffer is too small, so the caller may retry.
  */
-pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
+pub readdir(dir: *Dir, name: []u8): (usize, FileType, bool, Error) {
     if !dir.active {
         errno_set(9)
         return 0, FileType.unknown, false, ReaddirErr.inactive
@@ -635,7 +635,7 @@ pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
 
     for {
         if dir.next == dir.count {
-            count: i64 = c_getdents64(i32(dir.fd), mut &dir.buffer[0], 4096)
+            count: i64 = c_getdents64(i32(dir.fd), &dir.buffer[0], 4096)
             if count < 0 { return 0, FileType.unknown, false, ReaddirErr(errno()) }
             if count == 0 {
                 dir.done = true
@@ -683,13 +683,13 @@ pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
     }
 }
 
-pub closedir(mut dir: Dir): Error {
+pub closedir(dir: *Dir): Error {
     if !dir.active {
         errno_set(9)
         return ClosedirErr.inactive
     }
     fd: i32 = i32(dir.fd)
-    dir = blank(Dir)
+    *dir = blank(Dir)
     if c_close(fd) == -1 { return ClosedirErr(errno()) }
     return null
 }

@@ -3,7 +3,7 @@
 
 main(): int {
     storage: [4]u8
-    text: mut string = mut storage[0..4]
+    text: string = storage[0..4]
     text[-1] = 0
     return 0
 }

@@ -1,5 +1,5 @@
 /* C global variables (C Interop #6): C-ABI types at struct-field position,
- * read-only unless mut.
+ * writable like any global.
  */
 
 extern "c" {
@@ -11,8 +11,8 @@ extern "c" {
 
 main(): int {
     limit = 3
-    pointer: mut *i32 = mut &limit
-    view: mut []i32 = mut names[0..4]
+    pointer: *i32 = &limit
+    view: []i32 = names[0..4]
     names[0] = 1
     return 0
 }

@@ -3,7 +3,7 @@
 Leaf: struct { x: i16, y: u32 }
 Packet: struct { values: [3]f32, leaf: Leaf, next: *Packet }
 Code: distinct i32
-PacketPtr: distinct mut *Packet
+PacketPtr: distinct *Packet
 Opcode: enum u8 { none, load = 16, store }
 EnumPacket: struct { opcode: Opcode, value: u16 }
 
@@ -28,7 +28,7 @@ extern "c" {
     accept_explicit_enum(opcode: Opcode, packet: EnumPacket): Opcode
 }
 
-extern "c" write_value(value: mut *i32): i32 {
+extern "c" write_value(value: *i32): i32 {
     *value = *value + 1
     return *value
 }
@@ -36,28 +36,28 @@ extern "c" write_value(value: mut *i32): i32 {
 extern "c" no_result() {
 }
 
-extern "c" combine(pointer: mut *u8, value: u32): int {
+extern "c" combine(pointer: *u8, value: u32): int {
     return int(value)
 }
 
 zero: extern "c" (): void = no_result
-many: extern "c" (mut *u8, u32): int = combine
-missing: extern "c" (mut *u8): mut *u8 = null
+many: extern "c" (*u8, u32): int = combine
+missing: extern "c" (*u8): *u8 = null
 
 Pair: struct { a: i32, b: f32 }
 
 extern "c" {
     c_limit: i32
-    mut c_table: [4]i32
-    mut c_pair: Pair
+    c_table: [4]i32
+    c_pair: Pair
     c_hook: extern "c" (i32): i32
-    mut c_alias: i32 as "c_counter"
+    c_alias: i32 as "c_counter"
 }
 
 globals(): i32 {
     c_table[0] = c_limit
     c_pair.a += 1
     limit: *i32 = &c_limit
-    alias: mut *i32 = mut &c_alias
+    alias: *i32 = &c_alias
     return c_hook(*limit) + *alias
 }

@@ -8,7 +8,7 @@ Meters: distinct f64
 
 Shape: contract {
     area(self): f32
-    scale(mut self, k: f32)
+    scale(self, k: f32)
 }
 
 Point signs Shape
@@ -17,7 +17,7 @@ Point.area(self): f32 {
     return self.x
 }
 
-Point.scale(mut self, k: f32) {
+Point.scale(self, k: f32) {
     self.x = self.x * k
 }
 
@@ -48,7 +48,7 @@ main(): int {
     n += add(g, 2)
     s: Shape = Shape(&p)
     v: f32 = s.area()
-    mut s.scale(2.0)
+    s.scale(2.0)
     q: *Point = &p
     w: f32 = q.x
     z: usize = sizeof(int)

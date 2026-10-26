@@ -46,9 +46,6 @@ store_global(x: int) {
     held = a[..]
     spot = &a[0]
 }
-store_param(mut out: []int, x: int) {
-    out = [x, x]
-}
 main(): int {
     return 0
 }

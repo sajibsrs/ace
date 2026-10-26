@@ -31,7 +31,7 @@ pub print(text: string): int {
 
 pub print(value: int): int {
     storage: [20]u8
-    digits: mut []u8 = mut storage[0..20]
+    digits: []u8 = storage[0..20]
     at: int = 20
     remaining: int = value
     negative: bool = value < 0
@@ -70,7 +70,7 @@ pub print(value: int): int {
 
 pub print(value: uint): int {
     storage: [20]u8
-    digits: mut []u8 = mut storage[0..20]
+    digits: []u8 = storage[0..20]
     at: int = 20
     remaining: uint = value
 
@@ -98,7 +98,7 @@ pub print(value: uint): int {
 
 pub print(value: usize): int {
     storage: [20]u8
-    digits: mut []u8 = mut storage[0..20]
+    digits: []u8 = storage[0..20]
     at: int = 20
     remaining: usize = value
 
@@ -147,7 +147,7 @@ write_bytes(fd: i32, data: []u8): int {
  */
 format_float(negative: bool, digits: []u8, count: int, decpt: i32): int {
     storage: [48]u8
-    out: mut []u8 = mut storage[0..48]
+    out: []u8 = storage[0..48]
     at: int = 0
 
     if negative {
@@ -262,7 +262,7 @@ pub print(value: f64): int {
         return print("0")
     }
     digits: [24]u8
-    dv: mut []u8 = mut digits[0..17]
+    dv: []u8 = digits[0..17]
     converted: decimal.Decimal = decimal.binary64(mag, dv)
     return format_float(negative, dv, converted.count, converted.point)
 }
@@ -291,7 +291,7 @@ pub print(value: f32): int {
         return print("0")
     }
     digits: [24]u8
-    dv: mut []u8 = mut digits[0..9]
+    dv: []u8 = digits[0..9]
     converted: decimal.Decimal = decimal.binary32(mag, dv)
     return format_float(negative, dv, converted.count, converted.point)
 }
@@ -308,17 +308,17 @@ pub print(value: bool): int {
  * Complete success returns the total byte count; a failed write stops the
  * call and its non-positive result is returned unchanged.
  */
-print_open(mut sink: formatting.Sink, storage: mut []u8) {
-    sink = formatting.Sink.init(storage, STDOUT, write_bytes)
+print_open(sink: *formatting.Sink, storage: []u8) {
+    *sink = formatting.Sink.init(storage, STDOUT, write_bytes)
 }
 
 /* The opener of `printf(fd, ...)`: the same sink, draining to fd. */
-print_to_open(mut sink: formatting.Sink, storage: mut []u8, fd: sys.Fd) {
-    sink = formatting.Sink.init(storage, i32(fd), write_bytes)
+print_to_open(sink: *formatting.Sink, storage: []u8, fd: sys.Fd) {
+    *sink = formatting.Sink.init(storage, i32(fd), write_bytes)
 }
 
-print_close(mut sink: formatting.Sink): int {
-    mut sink.flush()
+print_close(sink: *formatting.Sink): int {
+    sink.flush()
     if sink.failed { return sink.status }
 
     return sink.drained
@@ -335,14 +335,14 @@ pub Buffer: struct {
     mark: int,                  // bytes taken before the current printf
 }
 
-pub Buffer.init(fd: sys.Fd, storage: mut []u8): Buffer {
+pub Buffer.init(fd: sys.Fd, storage: []u8): Buffer {
     return Buffer { sink = formatting.Sink.init(storage, i32(fd), write_bytes), mark = 0 }
 }
 
 /* A buffer that keeps its output in storage, as error context does: bytes
  * past the end are dropped, never written, and `text` reads what was kept.
  */
-pub Buffer.init(storage: mut []u8): Buffer {
+pub Buffer.init(storage: []u8): Buffer {
     return Buffer { sink = formatting.Sink.init(storage, 0, null), mark = 0 }
 }
 
@@ -357,9 +357,9 @@ pub Buffer.dropped(self): usize {
 }
 
 /* Writes the buffered bytes: their count, or the failing write's result. */
-pub Buffer.flush(mut self): int {
+pub Buffer.flush(self): int {
     before: int = self.sink.drained
-    mut self.sink.flush()
+    self.sink.flush()
     if self.sink.failed { return self.sink.status }
 
     return self.sink.drained - before
@@ -369,9 +369,9 @@ pub Buffer.flush(mut self): int {
  * buffer fills or on `flush` rather than before returning; the same checks and
  * lowering. Returns the bytes the call took, or the failing write's result.
  */
-pub Buffer.printf(mut self, format: string): int {
+pub Buffer.printf(self, format: string): int {
     before: int = self.sink.drained + int(self.sink.used)
-    mut self.sink.put(format)
+    self.sink.put(format)
     if self.sink.failed { return self.sink.status }
 
     return self.sink.drained + int(self.sink.used) - before
@@ -381,11 +381,11 @@ pub Buffer.printf(mut self, format: string): int {
  * buffer's sink in place. The closer returns the bytes the call took, or the
  * failing write's result.
  */
-Buffer.print_open(mut self) {
+Buffer.print_open(self) {
     self.mark = self.sink.drained + int(self.sink.used)
 }
 
-Buffer.print_close(mut self): int {
+Buffer.print_close(self): int {
     if self.sink.failed { return self.sink.status }
 
     return self.sink.drained + int(self.sink.used) - self.mark

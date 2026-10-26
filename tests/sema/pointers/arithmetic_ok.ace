@@ -6,13 +6,13 @@ read(pointer: *Pair, offset: usize): int {
     return (pointer + offset).first
 }
 
-write(pointer: mut *Pair, offset: usize, value: int) {
+write(pointer: *Pair, offset: usize, value: int) {
     (pointer + offset).first = value
 }
 
 main(): int {
     values: [3]Pair
-    pointer: mut *Pair = mut &values[0]
+    pointer: *Pair = &values[0]
     pointer += 1
     pointer -= usize(1)
     plain: *Pair = pointer + 2

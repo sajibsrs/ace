@@ -38,24 +38,24 @@ main(): int {
 
     plain: [4096]u8 = blank([4096]u8)
     dotted: [4096]u8 = blank([4096]u8)
-    n: usize, err: Error = sys.canonical(FILE_PATH, mut plain[0..4096])
+    n: usize, err: Error = sys.canonical(FILE_PATH, plain[0..4096])
     if err != null || n == 0 || plain[0] != '/' { return 5 }
-    m: usize, derr: Error = sys.canonical(DOTTED_PATH, mut dotted[0..4096])
+    m: usize, derr: Error = sys.canonical(DOTTED_PATH, dotted[0..4096])
     if derr != null || !same(plain[..n], dotted[..m]) { return 6 }
 
-    _, missing_err: Error = sys.canonical(MISSING_PATH, mut dotted[0..4096])
+    _, missing_err: Error = sys.canonical(MISSING_PATH, dotted[0..4096])
     if missing_err == null || missing_err.domain != typeid(sys.CanonicalErr) { return 7 }
 
     small: [4]u8 = blank([4]u8)
-    _, small_err: Error = sys.canonical(FILE_PATH, mut small[0..4])
+    _, small_err: Error = sys.canonical(FILE_PATH, small[0..4])
     if small_err != sys.CanonicalErr.capacity { return 8 }
 
     exe: [4096]u8 = blank([4096]u8)
-    e: usize, exe_err: Error = sys.executable(mut exe[0..4096])
+    e: usize, exe_err: Error = sys.executable(exe[0..4096])
     if exe_err != null || e == 0 { return 9 }
     exe_info: sys.FileInfo, exe_stat_err: Error = sys.lstat(exe[..e])
     if exe_stat_err != null || exe_info.file_type != sys.FileType.regular { return 10 }
-    _, exe_small_err: Error = sys.executable(mut small[0..4])
+    _, exe_small_err: Error = sys.executable(small[0..4])
     if exe_small_err != sys.ExecutableErr.capacity { return 11 }
 
     if sys.unlink(FILE_PATH) != null { return 12 }

@@ -14,7 +14,7 @@ get(a: [4]i64, i: i32): i64 {
     return a[i] + a[3]
 }
 
-set(mut g: Grid, i: usize, v: u8) {
+set(g: *Grid, i: usize, v: u8) {
     g.cells[i] = v
     g.cells[0] += 1
 }
@@ -42,7 +42,7 @@ bits32(f: f32): u32 {
 main(): int {
     a: [4]i64 = [1, 2, 3, 4]
     g: Grid = Grid { w = 1, cells = [0 : 4] }
-    set(mut g, 2, 7)
+    set(&g, 2, 7)
     b: [64]u8 = [1 : 64]
     c: [64]u8 = b
     c[63] = 2

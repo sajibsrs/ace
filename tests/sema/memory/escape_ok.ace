@@ -21,7 +21,7 @@ through_pointer(p: *Box): *int {
     return &p.n
 }
 
-caller_storage(mut b: Box): *int {
+caller_storage(b: *Box): *int {
     return &b.n
 }
 

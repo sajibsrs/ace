@@ -16,12 +16,12 @@ pub Url: type = parsing.Url
 pub UrlErr: type = parsing.UrlErr
 
 pub Context: struct {
-    pub storage: mut []Storage,
+    pub storage: []Storage,
     pub redirects: RedirectPolicy,
 }
 
 pub Context.new(): Context {
-    storage: mut []Storage = mem.alloc[Storage](1)
+    storage: []Storage = mem.alloc[Storage](1)
     if storage == null {
         return Context {
             storage = null,
@@ -44,16 +44,16 @@ pub Context.new(): Context {
     }
 }
 
-pub Context.wipe(mut self) {
+pub Context.wipe(self) {
     if self.storage == null { return }
-    mem.release[net.Addr4](mut self.storage[0].addresses)
-    mem.release[u8](mut self.storage[0].output)
-    mem.release[u8](mut self.storage[0].target)
-    mem.release[u8](mut self.storage[0].input)
-    mem.release[message.Header](mut self.storage[0].headers)
-    mem.release[u8](mut self.storage[0].body)
-    mem.release[u8](mut self.storage[0].url)
-    mem.release[Storage](mut self.storage)
+    mem.release[net.Addr4](&self.storage[0].addresses)
+    mem.release[u8](&self.storage[0].output)
+    mem.release[u8](&self.storage[0].target)
+    mem.release[u8](&self.storage[0].input)
+    mem.release[message.Header](&self.storage[0].headers)
+    mem.release[u8](&self.storage[0].body)
+    mem.release[u8](&self.storage[0].url)
+    mem.release[Storage](&self.storage)
     self.redirects = RedirectPolicy {}
 }
 
@@ -62,8 +62,8 @@ RedirectState: struct {
     followed: usize,
 }
 
-redirect_start(url: string, mut storage: Storage): (RedirectState, Error) {
-    mem_url: mut []u8, url_ok: bool = mem.grow[u8](storage.url, url.len)
+redirect_start(url: string, storage: *Storage): (RedirectState, Error) {
+    mem_url: []u8, url_ok: bool = mem.grow[u8](storage.url, url.len)
     if !url_ok {
         state: RedirectState = RedirectState {
             current_count = 0,
@@ -84,8 +84,8 @@ redirect_start(url: string, mut storage: Storage): (RedirectState, Error) {
 redirect_next(
     response: Response,
     policy: RedirectPolicy,
-    mut state: RedirectState,
-    mut storage: Storage,
+    state: *RedirectState,
+    storage: *Storage,
 ): (bool, Error) {
     if !redirection.redirects(response.status) { return false, null }
     location: string = redirection.location(response)
@@ -97,7 +97,7 @@ redirect_next(
     if with_location < needed { return false, ClientErr.allocation }
     needed = with_location + 32
     if needed < with_location { return false, ClientErr.allocation }
-    larger: mut []u8, larger_ok: bool = mem.grow[u8](storage.url, needed)
+    larger: []u8, larger_ok: bool = mem.grow[u8](storage.url, needed)
     if !larger_ok { return false, ClientErr.allocation }
 
     storage.url = larger
@@ -107,7 +107,7 @@ redirect_next(
         storage.url[shifted_at + source_at] = storage.url[source_at]
     }
     previous: string = storage.url[shifted_at..]
-    next_count: usize, valid: bool = redirection.resolve(previous, location, mut storage.url[..shifted_at])
+    next_count: usize, valid: bool = redirection.resolve(previous, location, storage.url[..shifted_at])
     if !valid { return false, null }
 
     next_secure: bool = next_count >= 8 && mem.equal(storage.url[..8], "https://")
@@ -118,33 +118,33 @@ redirect_next(
     return true, null
 }
 
-get_redirecting(url: string, policy: RedirectPolicy, mut context: Context): (Response, Error) {
-    state: RedirectState, start_err: Error = redirect_start(url, mut context.storage[0])
+get_redirecting(url: string, policy: RedirectPolicy, context: *Context): (Response, Error) {
+    state: RedirectState, start_err: Error = redirect_start(url, &context.storage[0])
     if start_err != null { return Response {}, start_err }
 
     for {
         response: Response, err: Error = transport.get(
             context.storage[0].url[..state.current_count],
-            mut context.storage[0],
+            &context.storage[0],
             true,
         )
         if err != null { return Response {}, err }
         follow: bool
-        follow, err = redirect_next(response, policy, mut state, mut context.storage[0])
+        follow, err = redirect_next(response, policy, &state, &context.storage[0])
         if err != null { return Response {}, err }
         if !follow { return response, null }
     }
 }
 
-pub get(url: string, mut context: Context): (Response, Error) {
+pub get(url: string, context: *Context): (Response, Error) {
     if context.storage == null { return Response {}, ClientErr.allocation }
     _, url_err: Error = parsing.Url.parse(url)
     if url_err != null { return Response {}, url_err }
 
     if context.redirects.limit == 0 {
-        response: Response, err: Error = transport.get(url, mut context.storage[0], true)
+        response: Response, err: Error = transport.get(url, &context.storage[0], true)
         return response, err
     }
-    response: Response, err: Error = get_redirecting(url, context.redirects, mut context)
+    response: Response, err: Error = get_redirecting(url, context.redirects, context)
     return response, err
 }

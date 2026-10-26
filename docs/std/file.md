@@ -7,14 +7,14 @@ calls and `mem`, and it is a module of its own so that importing `sys` never
 links the allocator.
 
 ```ace
-data: mut []u8, err: Error = file.read("notes.txt")
-defer mem.release[u8](mut data)
+data: []u8, err: Error = file.read("notes.txt")
+defer mem.release[u8](&data)
 if err != null { return 1 }
 err = file.write("copy.txt", data)
 ```
 
-- `read(path: string): (mut []u8, Error)` returns the whole file in one
-  allocation; release it with `mem.release[u8](mut data)`. On failure the slice
+- `read(path: string): ([]u8, Error)` returns the whole file in one
+  allocation; release it with `mem.release[u8](&data)`. On failure the slice
   is null, and an empty file is a null slice with no error, so a `defer`red
   release placed before the error check is always safe. The buffer is sized
   from `sys.stat` once: a file that grows meanwhile yields its leading bytes.

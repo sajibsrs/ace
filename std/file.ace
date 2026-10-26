@@ -16,7 +16,7 @@ pub FileErr: error {
  * The size is taken once, so a file that grows while being read yields its
  * leading bytes, and one that shrinks is `FileErr.truncated`.
  */
-pub read(path: string): (mut []u8, Error) {
+pub read(path: string): ([]u8, Error) {
     fd: sys.Fd, err: Error = sys.open(path, sys.O_RDONLY)
     defer sys.close(fd)
     if err != null { return null, err }
@@ -25,7 +25,7 @@ pub read(path: string): (mut []u8, Error) {
     info, err = sys.stat(path)
     if err != null { return null, err }
 
-    data: mut []u8 = mem.alloc[u8](usize(info.size))
+    data: []u8 = mem.alloc[u8](usize(info.size))
     if data == null && info.size != 0 { return null, FileErr.allocation }
 
     total: usize = 0
@@ -35,7 +35,7 @@ pub read(path: string): (mut []u8, Error) {
         if rerr == sys.ReadErr.interrupted { continue }
         if rerr == null && count == 0 { rerr = FileErr.truncated }
         if rerr != null {
-            mem.release[u8](mut data)
+            mem.release[u8](&data)
             return null, rerr
         }
 

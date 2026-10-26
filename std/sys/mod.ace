@@ -133,7 +133,7 @@ pub errno(value: i32) {
 /* Fill caller-owned storage with cryptographically secure operating-system
  * entropy. Empty storage succeeds without making a platform call.
  */
-pub random(storage: mut []u8): Error {
+pub random(storage: []u8): Error {
     return os.random(storage)
 }
 
@@ -152,7 +152,7 @@ pub pipe(): (Fd, Fd, Error) {
     return input, output, err
 }
 
-pub read(fd: Fd, buf: mut []u8): (int, Error) {
+pub read(fd: Fd, buf: []u8): (int, Error) {
     count: int, err: Error = os.read(fd, buf)
     return count, err
 }
@@ -170,7 +170,7 @@ pub ioctl(fd: Fd, request: uint): Error {
     return os.ioctl(fd, request)
 }
 
-pub ioctl(fd: Fd, request: uint, data: mut []u8): Error {
+pub ioctl(fd: Fd, request: uint, data: []u8): Error {
     return os.ioctl(fd, request, data)
 }
 
@@ -194,12 +194,12 @@ pub lstat(path: string): (FileInfo, Error) {
     return info, err
 }
 
-pub canonical(path: string, buf: mut []u8): (usize, Error) {
+pub canonical(path: string, buf: []u8): (usize, Error) {
     count: usize, err: Error = os.canonical(path, buf)
     return count, err
 }
 
-pub executable(buf: mut []u8): (usize, Error) {
+pub executable(buf: []u8): (usize, Error) {
     count: usize, err: Error = os.executable(buf)
     return count, err
 }
@@ -225,11 +225,11 @@ pub opendir(path: string): (Dir, Error) {
     return dir, err
 }
 
-pub readdir(mut dir: Dir, name: mut []u8): (usize, FileType, bool, Error) {
-    length: usize, file_type: FileType, done: bool, err: Error = os.readdir(mut dir, name)
+pub readdir(dir: *Dir, name: []u8): (usize, FileType, bool, Error) {
+    length: usize, file_type: FileType, done: bool, err: Error = os.readdir(dir, name)
     return length, file_type, done, err
 }
 
-pub closedir(mut dir: Dir): Error {
-    return os.closedir(mut dir)
+pub closedir(dir: *Dir): Error {
+    return os.closedir(dir)
 }

@@ -18,7 +18,7 @@ pub ArrayErr: error {
 }
 
 pub Array[T]: struct {
-    items: mut []T = null,
+    items: []T = null,
     pub len: usize = 0,
 }
 
@@ -27,7 +27,7 @@ pub Array[T]: struct {
  */
 pub Array[T].new(capacity: usize): (Array[T], Error) {
     if capacity == 0 { return Array[T] {}, null }
-    items: mut []T = mem.alloc[T](capacity)
+    items: []T = mem.alloc[T](capacity)
     if items == null { return Array[T] {}, ArrayErr.allocation }
 
     return Array[T] { items = items }, null
@@ -39,7 +39,7 @@ pub Array[T].new(capacity: usize): (Array[T], Error) {
  */
 pub Array[T].filled(count: usize, value: T): (Array[T], Error) {
     a: Array[T] = Array[T] {}
-    if mut a.resize(count) != null { return Array[T] {}, ArrayErr.allocation }
+    if a.resize(count) != null { return Array[T] {}, ArrayErr.allocation }
     if value != blank(T) {
         for i: usize in 0 .. count { a.items[i] = value }
     }
@@ -47,9 +47,9 @@ pub Array[T].filled(count: usize, value: T): (Array[T], Error) {
 }
 
 /* Releases the array's storage and leaves it empty. */
-pub inline Array[T].wipe(mut self) {
-    items: mut []T = self.items
-    mem.release[T](mut items)
+pub inline Array[T].wipe(self) {
+    items: []T = self.items
+    mem.release[T](&items)
     self.items = null
     self.len = 0
 }
@@ -61,17 +61,12 @@ pub Array[T].view(self): []T {
     return self.items[..self.len]
 }
 
-/* The live elements, writable in place. Same aliasing as the read-only view. */
-pub Array[T].view(mut self): mut []T {
-    return self.items[..self.len]
-}
-
 pub inline Array[T].get(self, index: usize): T {
     return self.items[..self.len][index]
 }
 
-pub inline Array[T].set(mut self, index: usize, value: T) {
-    live: mut []T = self.items[..self.len]
+pub inline Array[T].set(self, index: usize, value: T) {
+    live: []T = self.items[..self.len]
     live[index] = value
 }
 
@@ -81,10 +76,10 @@ pub inline Array[T].get(self, index: int): T {
 }
 
 /* Appends `value`, growing storage when full. */
-pub inline Array[T].push(mut self, value: T): Error {
+pub inline Array[T].push(self, value: T): Error {
     len: usize = self.len
     if len == self.items.len {
-        grown: mut []T, ok: bool = mem.grow[T](self.items, len + 1)
+        grown: []T, ok: bool = mem.grow[T](self.items, len + 1)
         if !ok { return ArrayErr.allocation }
         self.items = grown
     }
@@ -96,15 +91,15 @@ pub inline Array[T].push(mut self, value: T): Error {
 /* Removes and returns the last element. An empty array returns `blank(T)` and
  * `ArrayErr.empty`.
  */
-pub Array[T].pop(mut self): (T, Error) {
+pub Array[T].pop(self): (T, Error) {
     if self.len == 0 { return blank(T), ArrayErr.empty }
     self.len -= 1
     return self.items[self.len], null
 }
 
 /* Ensures capacity for at least `count` elements in total. */
-pub Array[T].reserve(mut self, count: usize): Error {
-    grown: mut []T, ok: bool = mem.grow[T](self.items, count)
+pub Array[T].reserve(self, count: usize): Error {
+    grown: []T, ok: bool = mem.grow[T](self.items, count)
     if !ok { return ArrayErr.allocation }
 
     self.items = grown
@@ -114,17 +109,17 @@ pub Array[T].reserve(mut self, count: usize): Error {
 /* Sets the live length to `count`. Growing appends `blank(T)` elements;
  * shrinking drops the tail and keeps storage.
  */
-pub Array[T].resize(mut self, count: usize): Error {
+pub Array[T].resize(self, count: usize): Error {
     if self.items == null {
         if count == 0 { return null }
-        fresh: mut []T = mem.zalloc[T](count)
+        fresh: []T = mem.zalloc[T](count)
         if fresh == null { return ArrayErr.allocation }
         self.items = fresh
         self.len = count
         return null
     }
     if count > self.items.len {
-        grown: mut []T, ok: bool = mem.grow[T](self.items, count)
+        grown: []T, ok: bool = mem.grow[T](self.items, count)
         if !ok { return ArrayErr.allocation }
         self.items = grown
     }
@@ -134,7 +129,7 @@ pub Array[T].resize(mut self, count: usize): Error {
 }
 
 /* Drops every live element and keeps the storage. */
-pub Array[T].clear(mut self) {
+pub Array[T].clear(self) {
     self.len = 0
 }
 
@@ -142,6 +137,6 @@ pub Array[T].clear(mut self) {
  * follows the ordinary sequence bounds contract: debug builds diagnose a
  * count past the current length and release assumes it.
  */
-pub Array[T].truncate(mut self, count: usize) {
+pub Array[T].truncate(self, count: usize) {
     self.len = self.view()[..count].len
 }

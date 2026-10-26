@@ -30,20 +30,21 @@ b3: ; preds b1
 double(ptr): void {
 b0:
     %0 = param ptr 0
-    %1 = const u64 3
-    %2 = padd ptr %0, %1 * 1
+    %1 = const u64 0
+    %2 = const u64 3
     jmp b1
 b1: ; preds b0, b2
-    %4 = phi ptr [%0, b0], [%12, b2]
+    %4 = phi u64 [%1, b0], [%13, b2]
     %5 = lt bool %4, %2
     br %5, b2, b3
 b2: ; preds b1
-    %7 = load u8 [%4]
-    %8 = const u8 2
-    %9 = mul u8 %7, %8
-    store [%4], %9
-    %11 = const u64 1
-    %12 = padd ptr %4, %11 * 1
+    %7 = padd ptr %0, %4 * 1
+    %8 = load u8 [%7]
+    %9 = const u8 2
+    %10 = mul u8 %8, %9
+    store [%7], %10
+    %12 = const u64 1
+    %13 = add u64 %4, %12
     jmp b1
 b3: ; preds b1
     ret
@@ -132,109 +133,110 @@ b2: ; preds b0
     store [%3 + 1], %14
     %16 = const u8 3
     store [%3 + 2], %16
-    %18 = const u64 3
-    %19 = padd ptr %3, %18 * 1
+    %18 = const u64 0
+    %19 = const u64 3
     jmp b3
 b3: ; preds b2, b4
-    %21 = phi ptr [%3, b2], [%29, b4]
+    %21 = phi u64 [%18, b2], [%30, b4]
     %22 = lt bool %21, %19
     br %22, b4, b5
 b4: ; preds b3
-    %24 = load u8 [%21]
-    %25 = const u8 2
-    %26 = mul u8 %24, %25
-    store [%21], %26
-    %28 = const u64 1
-    %29 = padd ptr %21, %28 * 1
+    %24 = padd ptr %3, %21 * 1
+    %25 = load u8 [%24]
+    %26 = const u8 2
+    %27 = mul u8 %25, %26
+    store [%24], %27
+    %29 = const u64 1
+    %30 = add u64 %21, %29
     jmp b3
 b5: ; preds b3
-    %31 = load u8 [%3]
-    %32 = const u8 2
-    %33 = ne bool %31, %32
-    br %33, b6, b8
+    %32 = load u8 [%3]
+    %33 = const u8 2
+    %34 = ne bool %32, %33
+    br %34, b6, b8
 b6: ; preds b5, b8
-    %35 = const i64 2
-    ret %35
+    %36 = const i64 2
+    ret %36
 b7: ; preds b8
-    %37 = const i32 5
-    %38 = const i32 1
-    store [%2], %37
-    store [%2 + 4], %38
-    %41 = const i32 2
-    %42 = const i32 7
-    store [%2 + 8], %41
-    store [%2 + 12], %42
-    %45 = const u64 2
-    %46 = const i64 0
-    %47 = padd ptr %2, %45 * 8
+    %38 = const i32 5
+    %39 = const i32 1
+    store [%2], %38
+    store [%2 + 4], %39
+    %42 = const i32 2
+    %43 = const i32 7
+    store [%2 + 8], %42
+    store [%2 + 12], %43
+    %46 = const u64 2
+    %47 = const i64 0
+    %48 = padd ptr %2, %46 * 8
     jmp b11
 b8: ; preds b5
-    %49 = load u8 [%3 + 2]
-    %50 = const u8 6
-    %51 = ne bool %49, %50
-    br %51, b6, b7
+    %50 = load u8 [%3 + 2]
+    %51 = const u8 6
+    %52 = ne bool %50, %51
+    br %52, b6, b7
 b9: ; preds b13
-    %53 = const i64 3
-    ret %53
+    %54 = const i64 3
+    ret %54
 b10: ; preds b13
-    %55 = const u8 1
-    store [%1], %55
-    %57 = const u8 2
-    store [%1 + 1], %57
-    %59 = const u8 3
-    store [%1 + 2], %59
-    %61 = const u8 4
-    store [%1 + 3], %61
-    %63 = load u32 [%1]
-    store [%0], %63
-    %65 = const u8 3
-    %66 = const i64 0
-    %67 = const u64 4
-    %68 = padd ptr %0, %67 * 1
+    %56 = const u8 1
+    store [%1], %56
+    %58 = const u8 2
+    store [%1 + 1], %58
+    %60 = const u8 3
+    store [%1 + 2], %60
+    %62 = const u8 4
+    store [%1 + 3], %62
+    %64 = load u32 [%1]
+    store [%0], %64
+    %66 = const u8 3
+    %67 = const i64 0
+    %68 = const u64 4
+    %69 = padd ptr %0, %68 * 1
     jmp b16
 b11: ; preds b7, b12
-    %70 = phi ptr [%2, b7], [%81, b12]
-    %71 = phi i64 [%46, b7], [%79, b12]
-    %72 = lt bool %70, %47
-    br %72, b12, b13
+    %71 = phi ptr [%2, b7], [%82, b12]
+    %72 = phi i64 [%47, b7], [%80, b12]
+    %73 = lt bool %71, %48
+    br %73, b12, b13
 b12: ; preds b11
-    %74 = load i32 [%70]
-    %75 = load i32 [%70 + 4]
-    %76 = cast i64 %74
+    %75 = load i32 [%71]
+    %76 = load i32 [%71 + 4]
     %77 = cast i64 %75
-    %78 = sub i64 %76, %77
-    %79 = add i64 %71, %78
-    %80 = const u64 1
-    %81 = padd ptr %70, %80 * 8
+    %78 = cast i64 %76
+    %79 = sub i64 %77, %78
+    %80 = add i64 %72, %79
+    %81 = const u64 1
+    %82 = padd ptr %71, %81 * 8
     jmp b11
 b13: ; preds b11
-    %83 = const i64 -1
-    %84 = ne bool %71, %83
-    br %84, b9, b10
+    %84 = const i64 -1
+    %85 = ne bool %72, %84
+    br %85, b9, b10
 b14: ; preds b18
-    %86 = const i64 4
-    ret %86
+    %87 = const i64 4
+    ret %87
 b15: ; preds b18
-    %88 = const i64 0
-    ret %88
+    %89 = const i64 0
+    ret %89
 b16: ; preds b10, b19
-    %90 = phi ptr [%0, b10], [%103, b19]
-    %91 = phi i64 [%66, b10], [%101, b19]
-    %92 = lt bool %90, %68
-    br %92, b17, b18
+    %91 = phi ptr [%0, b10], [%104, b19]
+    %92 = phi i64 [%67, b10], [%102, b19]
+    %93 = lt bool %91, %69
+    br %93, b17, b18
 b17: ; preds b16
-    %94 = load u8 [%90]
-    %95 = eq bool %94, %65
-    br %95, b18, b19
+    %95 = load u8 [%91]
+    %96 = eq bool %95, %66
+    br %96, b18, b19
 b18: ; preds b16, b17
-    %97 = const i64 2
-    %98 = ne bool %91, %97
-    br %98, b14, b15
+    %98 = const i64 2
+    %99 = ne bool %92, %98
+    br %99, b14, b15
 b19: ; preds b17
-    %100 = const i64 1
-    %101 = add i64 %91, %100
-    %102 = const u64 1
-    %103 = padd ptr %90, %102 * 1
+    %101 = const i64 1
+    %102 = add i64 %92, %101
+    %103 = const u64 1
+    %104 = padd ptr %91, %103 * 1
     jmp b16
 }
 

@@ -4,6 +4,6 @@ Point: struct { x: int }
 
 main(): int {
     point: const Point = Point { x = 1 }
-    pointer: mut *Point = mut &point
+    pointer: *Point = &point
     return pointer.x
 }

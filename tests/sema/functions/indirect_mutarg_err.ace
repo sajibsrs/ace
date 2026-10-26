@@ -1,9 +1,0 @@
-/* 'mut' on a call through a function value marks only its mut parameters. */
-
-apply(f: (int): int, x: int): int {
-    return f(mut x)
-}
-
-main(): int {
-    return 0
-}

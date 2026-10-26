@@ -11,7 +11,7 @@ wide: u64
 
 main(): int {
     w: u32 = 5
-    pw: mut *u32 = mut &w
+    pw: *u32 = &w
     if atomic.load(pw) != 5 || atomic.load_acquire(pw) != 5 || atomic.load_relaxed(pw) != 5 {
         return 1
     }
@@ -39,7 +39,7 @@ main(): int {
     old, ok = atomic.cas_relaxed(pw, u32(3), u32(8))
     if old != 3 || !ok || w != 8 { return 15 }
 
-    pd: mut *u64 = mut &wide
+    pd: *u64 = &wide
     atomic.store(pd, u64(0x100000000))
     if atomic.add(pd, u64(0x100000000)) != 0x100000000 || wide != 0x200000000 { return 16 }
     if atomic.sub_relaxed(pd, u64(1)) != 0x200000000 || wide != 0x1FFFFFFFF { return 17 }
@@ -52,19 +52,19 @@ main(): int {
     if o64 != big || k64 { return 21 }
 
     n: usize = 4
-    pn: mut *usize = mut &n
+    pn: *usize = &n
     if atomic.add(pn, usize(3)) != 4 || n != 7 { return 23 }
     ou: usize, ku: bool = atomic.cas(pn, usize(7), usize(1))
     if ou != 7 || !ku || atomic.load_acquire(pn) != 1 { return 24 }
     u: uint = 1 // a transparent alias of u64 here
-    if atomic.exchange(mut &u, uint(5)) != 1 || u != 5 { return 25 }
+    if atomic.exchange(&u, uint(5)) != 1 || u != 5 { return 25 }
 
     atomic.fence()
     atomic.fence_acquire()
     atomic.fence_release()
 
     // a global, and an intrinsic used as a function value
-    pg: mut *u32 = mut &word
+    pg: *u32 = &word
     ld: (*u32): u32 = atomic.load
     atomic.store(pg, u32(33))
     if ld(pg) != 33 { return 22 }

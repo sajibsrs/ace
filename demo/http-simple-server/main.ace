@@ -31,16 +31,16 @@ main(): int {
     fmt.printf("listening on %s (Ctrl+C to stop)\n", endpoint)
 
     router: http.Router = http.Router.new()
-    defer mut router.wipe()
-    route_err: Error = mut router.handle(http.GET, "/", handle)
+    defer router.wipe()
+    route_err: Error = router.handle(http.GET, "/", handle)
     if route_err != null {
         fmt.printf("failed to register route: error %d\n", int(route_err.code))
         return 1
     }
 
     context: http.ServerContext = http.ServerContext.new()
-    defer mut context.wipe()
-    err: Error = http.serve(endpoint, mut context, router)
+    defer context.wipe()
+    err: Error = http.serve(endpoint, &context, router)
     if err != null {
         fmt.printf("failed to start server on %s: error %d\n", endpoint, int(err.code))
         return 1

@@ -10,11 +10,10 @@ import sys
 bad(): int {
     n: int = fmt.printf(sys.stderr, "%d\n", "text")
     n = fmt.printf(sys.stderr, "%d %d\n", 1)
-    n = fmt.printf(mut sys.stderr, "x\n")
     n = fmt.printf(sys.stderr)
     to_fd: (sys.Fd, string): int = fmt.printf
     plain: (string): int = fmt.printf
-    into: (mut []char, string): (usize, bool) = str.format
+    into: ([]char, string): (usize, bool) = str.format
     return n
 }
 

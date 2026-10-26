@@ -1,4 +1,4 @@
-/* Uninitialized read-only address fixture. */
+/* Taking `&x` of a local initializes it, so the callee may read it. */
 
 Span: struct { start: usize, end: usize }
 

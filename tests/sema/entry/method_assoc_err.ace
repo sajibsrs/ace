@@ -2,7 +2,7 @@
 
 Counter: struct { n: int }
 
-Counter.reset(mut self) {
+Counter.reset(self) {
     self.n = 0
 }
 

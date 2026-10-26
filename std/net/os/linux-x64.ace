@@ -187,22 +187,22 @@ HOST_NAME_MAX: const usize = 253
 extern "c" {
     c_socket(domain: i32, socket_type: i32, protocol: i32): i32 as "socket"
     c_setsockopt(socket: i32, level: i32, option: i32, value: *i32, length: u32): i32 as "setsockopt"
-    c_getsockopt(socket: i32, level: i32, option: i32, value: mut *i32, length: mut *u32): i32 as "getsockopt"
+    c_getsockopt(socket: i32, level: i32, option: i32, value: *i32, length: *u32): i32 as "getsockopt"
     c_bind(socket: i32, address: *LinuxAddr4, length: u32): i32 as "bind"
     c_listen(socket: i32, backlog: i32): i32 as "listen"
-    c_accept(socket: i32, address: mut *LinuxAddr4, length: mut *u32): i32 as "accept"
+    c_accept(socket: i32, address: *LinuxAddr4, length: *u32): i32 as "accept"
     c_connect(socket: i32, address: *LinuxAddr4, length: u32): i32 as "connect"
-    c_getsockname(socket: i32, address: mut *LinuxAddr4, length: mut *u32): i32 as "getsockname"
-    c_recv(socket: i32, buffer: mut *u8, length: usize, flags: i32): i64 as "recv"
+    c_getsockname(socket: i32, address: *LinuxAddr4, length: *u32): i32 as "getsockname"
+    c_recv(socket: i32, buffer: *u8, length: usize, flags: i32): i64 as "recv"
     c_send(socket: i32, data: *u8, length: usize, flags: i32): i64 as "send"
     c_fcntl(socket: i32, command: i32, ...): i32 as "fcntl"
-    c_getaddrinfo(host: *u8, service: *u8, hints: *LinuxAddrInfo, result: mut **LinuxAddrInfo): i32 as "getaddrinfo"
+    c_getaddrinfo(host: *u8, service: *u8, hints: *LinuxAddrInfo, result: **LinuxAddrInfo): i32 as "getaddrinfo"
     c_freeaddrinfo(result: *LinuxAddrInfo) as "freeaddrinfo"
-    c_errno(): mut *i32 as "__errno_location"
+    c_errno(): *i32 as "__errno_location"
 }
 
 errno_set(value: i32) {
-    slot: mut *i32 = c_errno()
+    slot: *i32 = c_errno()
     *slot = value
 }
 
@@ -300,7 +300,7 @@ pub accept(listener: Socket): (Socket, Addr4, Error) {
         zero = zero,
     }
     length: u32 = SOCKADDR4_SIZE
-    accepted: i32 = c_accept(i32(listener), mut &raw, mut &length)
+    accepted: i32 = c_accept(i32(listener), &raw, &length)
     if accepted == -1 { return Socket(-1), blank(Addr4), AcceptErr(sys.errno()) }
 
     return Socket(accepted), from_linux(raw), null
@@ -317,7 +317,7 @@ pub pending_error(sock: Socket): Error {
     value: i32 = 0
     length: u32 = u32(sizeof(i32))
 
-    if c_getsockopt(i32(sock), SOL_SOCKET, SO_ERROR, mut &value, mut &length) == -1 {
+    if c_getsockopt(i32(sock), SOL_SOCKET, SO_ERROR, &value, &length) == -1 {
         return PendingErrorErr(sys.errno())
     }
     if value != 0 { return ConnectErr(value) }
@@ -333,13 +333,13 @@ pub local(sock: Socket): (Addr4, Error) {
     }
     length: u32 = SOCKADDR4_SIZE
 
-    if c_getsockname(i32(sock), mut &raw, mut &length) == -1 { return blank(Addr4), LocalErr(sys.errno()) }
+    if c_getsockname(i32(sock), &raw, &length) == -1 { return blank(Addr4), LocalErr(sys.errno()) }
     return from_linux(raw), null
 }
 
-pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
+pub receive(sock: Socket, buffer: []u8): (int, Error) {
     if buffer.len == 0 { return 0, null }
-    count: i64 = c_recv(i32(sock), mut &buffer[0], buffer.len, 0)
+    count: i64 = c_recv(i32(sock), &buffer[0], buffer.len, 0)
     if count < 0 { return 0, ReceiveErr(sys.errno()) }
 
     return int(count), null
@@ -353,10 +353,10 @@ pub send(sock: Socket, data: []u8): (int, Error) {
     return int(count), null
 }
 
-pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
+pub resolve4(host: string, port: u16, addresses: []Addr4): (usize, Error) {
     if host.len > HOST_NAME_MAX || addresses.len == 0 { return usize(0), ResolveErr.invalid }
     storage: [254]u8
-    name: mut []u8 = mut storage[0..254]
+    name: []u8 = storage[0..254]
 
     for index: usize in usize(0) .. host.len {
         byte: u8 = host[index]
@@ -378,7 +378,7 @@ pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
     }
     result: *LinuxAddrInfo = null
 
-    status: i32 = c_getaddrinfo(&name[0], null, &hints, mut &result)
+    status: i32 = c_getaddrinfo(&name[0], null, &hints, &result)
     if status != 0 || result == null {
         if status == 0 { status = ResolveErr.invalid.code }
         return usize(0), ResolveErr(status)

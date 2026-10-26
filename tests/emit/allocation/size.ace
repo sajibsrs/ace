@@ -5,20 +5,20 @@
 import alloc, realloc, release, usable from mem
 
 main(): int {
-    none: mut []u8 = null
+    none: []u8 = null
 
     if usable(none) != 0 { return 1 }
-    block: mut []u8 = alloc(100, 16)
+    block: []u8 = alloc(100, 16)
 
     if block == null { return 2 }
 
     if usable(block) < 100 { return 3 }
-    grown: mut []u8 = realloc(block, 1000)
+    grown: []u8 = realloc(block, 1000)
 
     if grown == null { return 4 }
 
     if usable(grown) < 1000 { return 5 }
-    release(mut grown)
+    release(&grown)
 
     if usable(grown) != 0 { return 6 }
     return 42

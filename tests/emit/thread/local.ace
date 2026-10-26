@@ -10,7 +10,7 @@ import thread
 
 Pair: struct { a: u64, b: u64 }
 
-Slot: struct { id: u64, main_mark: mut *u64, result: u64 }
+Slot: struct { id: u64, main_mark: *u64, result: u64 }
 
 threadlocal hits: u64
 threadlocal seed: u64 = 7
@@ -64,8 +64,8 @@ check(id: u64): u64 {
     return 1
 }
 
-extern "c" work(argument: mut *u8): mut *u8 {
-    slot: mut *Slot = mut *Slot(argument)
+extern "c" work(argument: *u8): *u8 {
+    slot: *Slot = *Slot(argument)
     slot.result = check(slot.id)
     if seed != slot.id || pair.b != slot.id { slot.result = 0 }
     *slot.main_mark = slot.id * 10
@@ -79,14 +79,14 @@ main(): int {
     slots: [4]Slot = blank([4]Slot)
     threads: [4]thread.Thread = [thread.Thread(0) : 4]
     for i: int in 0 .. 4 {
-        slots[i] = Slot { id = u64(i + 1), main_mark = mut &marks[i], result = 0 }
-        argument: mut *u8 = mut *u8(mut &slots[i])
+        slots[i] = Slot { id = u64(i + 1), main_mark = &marks[i], result = 0 }
+        argument: *u8 = *u8(&slots[i])
         t: thread.Thread, err: Error = thread.create(work, argument)
         if err != null { return 1 }
         threads[i] = t
     }
     for i: int in 0 .. 4 {
-        result: mut *u8, err: Error = thread.join(threads[i])
+        result: *u8, err: Error = thread.join(threads[i])
         if err != null || usize(result) != usize(&slots[i]) { return 2 }
         if slots[i].result != 1 { return 3 }
     }

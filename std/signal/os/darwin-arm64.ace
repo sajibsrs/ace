@@ -82,9 +82,9 @@ static_assert(sizeof(DarwinAction) == 16 && alignof(DarwinAction) == 8)
 static_assert(offsetof(DarwinAction, mask) == 8 && offsetof(DarwinAction, flags) == 12)
 
 extern "c" {
-    c_sigaction(signal: i32, action: *DarwinAction, previous: mut *DarwinAction): i32 as "sigaction"
-    c_sigmask(how: i32, set: *u32, previous: mut *u32): i32 as "pthread_sigmask"
-    c_sigwait(set: *u32, signal: mut *i32): i32 as "sigwait"
+    c_sigaction(signal: i32, action: *DarwinAction, previous: *DarwinAction): i32 as "sigaction"
+    c_sigmask(how: i32, set: *u32, previous: *u32): i32 as "pthread_sigmask"
+    c_sigwait(set: *u32, signal: *i32): i32 as "sigwait"
     c_kill(process: i32, signal: i32): i32 as "kill"
     c_pthread_kill(thread: thread.Thread, signal: i32): i32 as "pthread_kill"
     c_pthread_self(): thread.Thread as "pthread_self"
@@ -147,7 +147,7 @@ pub change(how_block: bool, set: u32) {
 
 pub mask(): u32 {
     current: u32 = 0
-    c_sigmask(SIG_BLOCK, null, mut &current)
+    c_sigmask(SIG_BLOCK, null, &current)
     return current
 }
 
@@ -166,7 +166,7 @@ pub wait(set: u32): (i32, Error) {
     }
     for {
         signal: i32 = 0
-        code: i32 = c_sigwait(&set, mut &signal)
+        code: i32 = c_sigwait(&set, &signal)
         if code != 0 { return 0, WaitErr(code) }
         if signal != 0 { return signal, null }
     }

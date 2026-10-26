@@ -22,7 +22,7 @@ main(): int {
 
     sys.close(writer)
     buffer: [32]u8 = [0 : 32]
-    n: int, rerr: Error = sys.read(reader, mut buffer[..])
+    n: int, rerr: Error = sys.read(reader, buffer[..])
     sys.close(reader)
     if rerr != null || n != 15 { return 5 }
 

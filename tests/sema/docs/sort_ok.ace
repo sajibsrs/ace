@@ -6,9 +6,9 @@ by_age(a: Person, b: Person): bool { return a.age < b.age }
 
 main(): int {
     values: [5]int = [4, 1, 3, 5, 2]
-    sort.unstable[int](mut values[0..5])
+    sort.unstable[int](values[0..5])
 
     people: [2]Person = [Person { age = 40 }, Person { age = 30 }]
-    sort.unstable[Person](mut people[0..2], by_age)
+    sort.unstable[Person](people[0..2], by_age)
     return 0
 }

@@ -31,24 +31,23 @@ instantiation. `string` keys compare by content.
   never shrinks.
 - `clear()` drops every entry and keeps the storage.
 
-`wipe`, `set`, `unset`, `reserve`, and `clear` mutate, so the call site states
-`mut`. `get` and `set` copy values, so no accessor hands out a slot address
+`get` and `set` copy values, so no accessor hands out a slot address
 that growth could invalidate. The entry count is private, read through `len()`.
 
 ```ace
 import map
 
 ports: map.Map[string, int] = map.Map[string, int]{}
-defer mut ports.wipe()
+defer ports.wipe()
 
-err: Error = mut ports.set("http", 80)
+err: Error = ports.set("http", 80)
 
 if err != null {
     /* allocation failed; ports is unchanged */
 }
 
 port: int, found: bool = ports.get("http")   /* 80, true */
-gone: bool = mut ports.unset("http")         /* true */
+gone: bool = ports.unset("http")         /* true */
 ```
 
 Iteration order is unspecified and iteration is not offered. Removal shifts

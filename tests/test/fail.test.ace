@@ -5,17 +5,17 @@ import test
 
 Facing: enum { north, east }
 
-pub good(mut t: test.T) {
-    mut t.equal(1, 1)
+pub good(t: *test.T) {
+    t.equal(1, 1)
 }
 
-pub bad(mut t: test.T) {
-    mut t.equal(1, 1)
-    mut t.equal(-3, 4)
-    mut t.equal(uint(5), uint(6))
-    mut t.equal(usize(0), usize(1))
-    mut t.equal(false, true)
-    mut t.equal("got", "want")
-    test.equal[Facing](mut t, Facing.east, Facing.north)
-    mut t.fail("unreachable state")
+pub bad(t: *test.T) {
+    t.equal(1, 1)
+    t.equal(-3, 4)
+    t.equal(uint(5), uint(6))
+    t.equal(usize(0), usize(1))
+    t.equal(false, true)
+    t.equal("got", "want")
+    test.equal[Facing](t, Facing.east, Facing.north)
+    t.fail("unreachable state")
 }

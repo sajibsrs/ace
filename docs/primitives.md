@@ -143,11 +143,9 @@ clef: string = "\u{1D11E}"      // four bytes
 `string` is the text-intent spelling of the same type as `[]char` and `[]u8`:
 a byte pointer and a byte count, so `sizeof(string)` is 16. String literals have static
 read-only storage, do not allocate, and contain exactly their encoded bytes; the
-language appends no terminator. A plain string is a read-only view — indexed
-reads stay value reads, and no syntax writes through its bytes. The
-`mut string` spelling of `mut []char`/`mut []u8` ([Types](types.md)) carries writable bytes: it
-establishes only where `mut` is written over proven-writable storage, so a
-literal can never back one, and `s[i] = c` through it assigns exactly one byte.
+language appends no terminator. `s[i] = c` assigns exactly one byte through
+any string view ([Types](types.md#views)); a write into literal storage
+faults, since the page is read-only.
 The empty literal `""` is a valid non-null string (pointer, length 0); only the
 all-bits-zero string is `null`.
 

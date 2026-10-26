@@ -2,13 +2,13 @@ Item: struct { value: int }
 Other: struct { value: int }
 Empty: struct {}
 
-bad(readonly: *Item, writable: mut *Item, other: *Other, count: usize, signed: int) {
-    a: mut []Item = mut []Item(readonly, count)
+bad(readonly: *Item, writable: *Item, other: *Other, count: usize, signed: int) {
+    a: []Item = []Item(readonly, count)
     b: []Item = []Item(other, count)
     c: []Item = []Item(writable, signed)
     d: []Item = []Item(writable)
     e: []Item = []Item(writable, count, count)
-    f: []Empty = []Empty(mut *Empty(usize(8)), count)
+    f: []Empty = []Empty(*Empty(usize(8)), count)
     g: *Item = *Item(signed)
     h: *Item = *Item(usize(3))
     i: []Item = []Item(*Item(usize(0)), usize(1))

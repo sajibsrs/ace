@@ -7,29 +7,29 @@ import mem
 main(): int {
     source: [6]u8 = [1, 2, 3, 4, 5, 6]
     target: [6]u8 = [0, 0, 0, 0, 0, 0]
-    target_view: mut []u8 = mut target[..]
+    target_view: []u8 = target[..]
     source_view: []u8 = source[..]
     mem.copy(target_view, source_view)
 
     if !mem.equal(target, source) { return 1 }
 
     right: [6]u8 = [1, 2, 3, 4, 5, 6]
-    right_dst: mut []u8 = mut right[1..6]
+    right_dst: []u8 = right[1..6]
     right_src: []u8 = right[0..5]
     mem.move(right_dst, right_src)
     expected_right: [6]u8 = [1, 1, 2, 3, 4, 5]
     if !mem.equal(right, expected_right) { return 2 }
 
     left: [6]u8 = [1, 2, 3, 4, 5, 6]
-    left_dst: mut []u8 = mut left[0..5]
+    left_dst: []u8 = left[0..5]
     left_src: []u8 = left[1..6]
     mem.move(left_dst, left_src)
     expected_left: [6]u8 = [2, 3, 4, 5, 6, 6]
     if !mem.equal(left, expected_left) { return 3 }
 
-    left_whole: mut []u8 = mut left[..]
+    left_whole: []u8 = left[..]
     mem.move(left_whole, left[..])
-    empty: mut []u8 = mut target[0..0]
+    empty: []u8 = target[0..0]
     empty_source: []u8 = source[0..0]
     mem.copy(empty, empty_source)
     mem.move(empty, empty)

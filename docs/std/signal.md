@@ -15,7 +15,7 @@ import signal
 stop: u32
 
 extern "c" on_term(s: signal.Signal) {
-    atomic.store_relaxed(mut &stop, u32(1))
+    atomic.store_relaxed(&stop, u32(1))
 }
 
 main(): int {
@@ -29,8 +29,8 @@ main(): int {
 
 - `Signal` is a signal number; `SIGHUP` … `SIGUSR2` have the OS spellings and
   Darwin values.
-- `Set` is a set of signals, empty at zero: `add(mut self, s)`,
-  `remove(mut self, s)`, `has(self, s): bool`.
+- `Set` is a set of signals, empty at zero: `add(self, s)`,
+  `remove(self, s)`, `has(self, s): bool`.
 - `handle(s, handler)` and `handle(s, handler, options: HandleOptions)` run
   `handler` when `s` arrives. `HandleOptions.mask` lists further signals to
   hold back while the handler runs (`s` itself always is), and
@@ -93,8 +93,8 @@ in `main` first and let one thread `wait`:
 
 ```ace
 set: signal.Set = blank(signal.Set)
-mut set.add(signal.SIGTERM)
-mut set.add(signal.SIGINT)
+set.add(signal.SIGTERM)
+set.add(signal.SIGINT)
 signal.block(set) // before any thread.create
 // ... create workers, then in one thread:
 s: signal.Signal, err: Error = signal.wait(set)

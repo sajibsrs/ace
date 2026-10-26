@@ -6,7 +6,7 @@
 import sdl
 
 extern "c" {
-    push_event(event: mut *sdl.Event): bool as "SDL_PushEvent"
+    push_event(event: *sdl.Event): bool as "SDL_PushEvent"
 }
 
 main(): int {
@@ -22,7 +22,7 @@ main(): int {
     click.button.clicks = 2
     click.button.x = 12.5
     click.button.y = 40.0
-    if !push_event(mut &click) { return 2 }
+    if !push_event(&click) { return 2 }
 
     move: sdl.Event
     move.padding = [0 : 128]
@@ -33,11 +33,11 @@ main(): int {
     move.motion.y = 4.0
     move.motion.xrel = -1.5
     move.motion.yrel = 2.0
-    if !push_event(mut &move) { return 2 }
+    if !push_event(&move) { return 2 }
 
     seen: int = 0
     got: sdl.Event
-    for mut got.poll() {
+    for got.poll() {
         b: sdl.MouseButtonEvent, is_button: bool = got.mouse_button()
         m: sdl.MouseMotionEvent, is_motion: bool = got.mouse_motion()
         if is_button && is_motion { return 3 }

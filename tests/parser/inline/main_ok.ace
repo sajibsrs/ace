@@ -8,7 +8,7 @@ pub inline Owner.read(self): int {
     return self.n
 }
 
-pub inline Owner.write(mut self) {
+pub inline Owner.write(self) {
     self.n = 1
 }
 

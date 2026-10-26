@@ -5,7 +5,7 @@ extern "c" {
     twice(value: i32): i32 {
         return value * 2
     }
-    mut opterr: i32
+    opterr: i32
 }
 
 pub extern "c" negate(value: i32): i32 {

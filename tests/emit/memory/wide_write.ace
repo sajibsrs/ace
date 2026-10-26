@@ -9,7 +9,7 @@ import mem
 
 GUARD: u8 = 238
 
-seed(data: mut []u8, salt: usize) {
+seed(data: []u8, salt: usize) {
     for i: usize in 0 .. data.len { data[i] = u8((i * 7 + salt) % 251) }
 }
 
@@ -21,11 +21,11 @@ length_at(i: usize): usize {
     return 4096
 }
 
-check_copy(source_all: mut []u8, target_all: mut []u8, move: bool): bool {
+check_copy(source_all: []u8, target_all: []u8, move: bool): bool {
     for li: usize in 0 .. 133 {
         count: usize = length_at(li)
-        source: mut []u8 = mut source_all[0 .. count + 16]
-        target: mut []u8 = mut target_all[0 .. count + 80]
+        source: []u8 = source_all[0 .. count + 16]
+        target: []u8 = target_all[0 .. count + 80]
 
         for so: usize in 0 .. 16 {
             for dof: usize in 0 .. 16 {
@@ -33,7 +33,7 @@ check_copy(source_all: mut []u8, target_all: mut []u8, move: bool): bool {
                 seed(source, so + count)
                 mem.fill(target, GUARD)
                 view: []u8 = source[so .. so + count]
-                to: mut []u8 = mut target[dof + 32 .. dof + 32 + count]
+                to: []u8 = target[dof + 32 .. dof + 32 + count]
 
                 if move {
                     mem.move(to, view)
@@ -54,13 +54,13 @@ check_copy(source_all: mut []u8, target_all: mut []u8, move: bool): bool {
     return true
 }
 
-check_overlap(data_all: mut []u8, expect_all: mut []u8, scratch: mut []u8): bool {
+check_overlap(data_all: []u8, expect_all: []u8, scratch: []u8): bool {
     base: usize = 64
 
     for li: usize in 0 .. 133 {
         count: usize = length_at(li)
-        data: mut []u8 = mut data_all[0 .. count + 128]
-        expect: mut []u8 = mut expect_all[0 .. count + 128]
+        data: []u8 = data_all[0 .. count + 128]
+        expect: []u8 = expect_all[0 .. count + 128]
 
         for shift: usize in 0 .. 81 {
             if count > 130 && shift % 8 != 1 { continue }
@@ -72,7 +72,7 @@ check_overlap(data_all: mut []u8, expect_all: mut []u8, scratch: mut []u8): bool
             for i: usize in 0 .. count { scratch[i] = expect[base + i] }
 
             for i: usize in 0 .. count { expect[dst + i] = scratch[i] }
-            mem.move(mut data[dst .. dst + count], data[base .. base + count])
+            mem.move(data[dst .. dst + count], data[base .. base + count])
 
             for i: usize in 0 .. data.len {
                 if data[i] != expect[i] { return false }
@@ -82,15 +82,15 @@ check_overlap(data_all: mut []u8, expect_all: mut []u8, scratch: mut []u8): bool
     return true
 }
 
-check_fill(target_all: mut []u8, zero: bool): bool {
+check_fill(target_all: []u8, zero: bool): bool {
     for li: usize in 0 .. 133 {
         count: usize = length_at(li)
-        target: mut []u8 = mut target_all[0 .. count + 80]
+        target: []u8 = target_all[0 .. count + 80]
 
         for dof: usize in 0 .. 16 {
             value: u8 = u8(count % 200 + 1)
             mem.fill(target, GUARD)
-            to: mut []u8 = mut target[dof + 32 .. dof + 32 + count]
+            to: []u8 = target[dof + 32 .. dof + 32 + count]
 
             if zero {
                 value = 0
@@ -117,14 +117,14 @@ main(): int {
     expect: [4300]u8 = [0 : 4300]
     data: [4300]u8 = [0 : 4300]
 
-    if !check_copy(mut source[..], mut target[..], false) { return 1 }
+    if !check_copy(source[..], target[..], false) { return 1 }
 
-    if !check_copy(mut source[..], mut target[..], true) { return 2 }
+    if !check_copy(source[..], target[..], true) { return 2 }
 
-    if !check_overlap(mut data[..], mut expect[..], mut target[..]) { return 3 }
+    if !check_overlap(data[..], expect[..], target[..]) { return 3 }
 
-    if !check_fill(mut target[..], false) { return 4 }
+    if !check_fill(target[..], false) { return 4 }
 
-    if !check_fill(mut target[..], true) { return 5 }
+    if !check_fill(target[..], true) { return 5 }
     return 42
 }

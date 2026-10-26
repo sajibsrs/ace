@@ -46,13 +46,6 @@ if ! printf '%s\n' "$struct_literal_colon_error" | grep -qF \
     fail=1
 fi
 
-mut_array_type=$("$ACE" tests/parser/mut_array_type_err.ace 2>&1)
-if ! printf '%s\n' "$mut_array_type" | grep -qF \
-    "a fixed array is already writable storage; take a writable view with 'mut name[..]'"; then
-    echo "FAIL: 'mut' on a fixed array type should point to the writable view spelling"
-    fail=1
-fi
-
 bitwise_compare=$("$ACE" tests/parser/bitwise_compare/equality_err.ace 2>&1)
 if ! printf '%s\n' "$bitwise_compare" | grep -qF \
     "equality_err.ace:4:14: error: a bitwise operator and a comparison need parentheses to mix"; then
@@ -174,33 +167,20 @@ tests/parser/associated/export_err.ace|methods and associated functions cannot u
 tests/parser/receiver/self_not_first_err.ace|2:13: error: 'self' must be the first parameter
 tests/parser/receiver/self_typed_err.ace|2:9: error: 'self' takes no type; its type is the method's owner
 tests/parser/receiver/self_free_err.ace|1:3: error: 'self' is only the receiver of a method declaration
-tests/parser/receiver/leading_mut_err.ace|2:1: error: a top-level declaration takes no leading 'mut'; a mutating receiver is written 'mut self'
-tests/parser/receiver/contract_double_mut_err.ace|2:5: error: a contract method takes no leading 'mut'; a mutating receiver is written 'mut self'
 tests/parser/associated/coloncolon_err.ace|6:13: error: '::' is not an operator; a type's functions are reached with '.'
-tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self' or 'mut self'
+tests/parser/receiver/contract_no_self_err.ace|4:5: error: a contract method's first parameter is its receiver 'self'
 tests/sema/unions/payload_value_pattern_err.ace|8:18: error: match the union variant, not a payload value: Type.variant(binder: type)
 tests/sema/unions/non_variant_pattern_err.ace|8:9: error: union switch cases must name Event variants (Type.variant)
-tests/sema/functions/indirect_mutarg_err.ace|4:14: error: 'mut' marks mut parameters; parameter 1 is read-only
-tests/sema/functions/value_mut_err.ace|13:26: error: type mismatch: (mut _: Box): void given where (Box): void expected
-tests/sema/functions/value_mut_err.ace|14:34: error: type mismatch: (Box): void given where (mut _: Box): void expected
-tests/sema/functions/value_mut_err.ace|17:7: error: mut parameter needs 'mut' at the call site
-tests/sema/functions/value_mut_err.ace|19:7: error: 'mut' marks mut parameters; parameter 1 is read-only
-tests/sema/c_abi/function_pointer_mut_err.ace|3:4: error: a C function-pointer type has no mut parameters
 tests/sema/functions/missing_return_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
 tests/sema/functions/missing_return_branch_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
 tests/sema/functions/missing_return_loop_err.ace|1:1: error: function 'f' can reach the end of its body without returning a value
 tests/sema/unions/generic_payload_bare_err.ace|6:34: error: variant 'ok' carries a payload — construct it with a payload argument
-tests/sema/layout/bits_mutarg_err.ace|13:16: error: bit fields cannot supply mut arguments
-tests/sema/functions/extern_vararg_mut_err.ace|9:28: error: 'mut' marks declared parameters, not variadics
 tests/sema/errors/construct_arity_err.ace|4:23: error: error-domain construction takes zero or one i32 code
 tests/sema/mutability/call_array_err.ace|7:7: error: not an assignable target
-tests/sema/mutability/call_view_plain_err.ace|7:10: error: cannot write through the read-only view []P
 tests/sema/discard/typed_err.ace|6:5: error: '_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'
 tests/sema/discard/mixed_typed_err.ace|7:5: error: '_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'
 tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]i64
 tests/sema/shadowing/module_member_err.ace|5:12: note: local 'mem' hides the imported module 'mem'
-tests/sema/mutability/receiver_call_err.ace|8:11: error: method 'wipe' takes 'mut self'; it needs 'mut' at the call: mut x.wipe(...)
-tests/sema/mutability/assoc_arg_err.ace|10:19: error: 'mut' marks mut parameters; parameter 'storage' of 'init' is not one
 tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
@@ -221,7 +201,7 @@ for at in 12:14 16:12 19:13 22:15 26:12 30:20 34:14 38:21 42:18; do
     want="$want$f:$at: error: returned value views storage of this function, which ends when it returns
 "
 done
-for at in 46:14 47:12 50:12; do
+for at in 46:14 47:12; do
     want="$want$f:$at: error: stored value views storage of this function, which ends when it returns
 "
 done
@@ -243,7 +223,6 @@ tests/parser/function_type/single_type_err.ace|'(T)' is not a type
 tests/parser/function_type/empty_type_err.ace|'()' is not a type
 tests/parser/function_type/c_return_err.ace|expected ':' and a return type or 'void'
 tests/parser/function_type/tuple_names_err.ace|3:24: error: tuple members have no names
-tests/parser/function_type/bare_mut_err.ace|a function type's mut parameter is written 'mut name: T'
 tests/sema/fields/method_collision_err.ace|5:8: error: method 'on_click' collides with a field of Button
 tests/sema/fields/promoted_collision_err.ace|11:5: error: field 'area' collides with a method promoted from embedded 'base'
 tests/modules/directory_private/main.ace|4:1: error: implementation file 'app/inc/util.ace' is private to directory module 'app/mod.ace'
@@ -336,22 +315,19 @@ tests/sema/defaults/casts_err.ace|25:26: error: constant does not fit Mode.low u
 tests/sema/defaults/casts_err.ace|26:25: error: bits literals require named fields
 tests/sema/defaults/casts_err.ace|27:23: error: bits type Mode has no accessible field 'wide'
 tests/sema/defaults/views_err.ace|13:24: error: null is not a value of i64
-tests/sema/defaults/views_err.ace|14:28: error: array literal cannot establish a writable view: mut []i64 needs storage that is written
-tests/sema/defaults/views_err.ace|15:21: error: keyed array literal needs an [E]T context, not []i64
-tests/sema/defaults/views_err.ace|16:21: error: bare struct literal needs its type from context
-tests/sema/defaults/views_err.ace|17:20: error: array literal needs its array type from context
-tests/sema/defaults/views_err.ace|18:22: error: overlapping struct Word has no literal; declare it and assign a member
-tests/sema/defaults/views_err.ace|19:45: error: cannot compare Point and Point
-tests/sema/defaults/calls/main_err.ace|48:21: error: wrong number of arguments: 2 given, 1 expected
-tests/sema/defaults/calls/main_err.ace|49:20: error: no matching overload 'two' for these argument types
-tests/sema/defaults/calls/main_err.ace|50:21: error: ambiguous call to overloaded function 'amb'
-tests/sema/defaults/calls/main_err.ace|51:23: error: generic function 'gen' needs type arguments: gen[T](...)
-tests/sema/defaults/calls/main_err.ace|52:23: error: overloaded function 'two' needs an explicit function-value type: 'two' is overloaded
-tests/sema/defaults/calls/main_err.ace|53:23: error: 'mut' marks mut parameters; parameter 1 is read-only
-tests/sema/defaults/calls/main_err.ace|54:25: error: mut parameter needs 'mut' at the call site
-tests/sema/defaults/calls/main_err.ace|55:22: error: type mismatch: u8 given where i64 expected (casts are explicit)
-tests/sema/defaults/calls/main_err.ace|57:29: error: the overload of 'other.pick' matching these arguments is private
-tests/sema/defaults/calls/main_err.ace|58:23: error: 'VALUE' is not callable
+tests/sema/defaults/views_err.ace|14:21: error: keyed array literal needs an [E]T context, not []i64
+tests/sema/defaults/views_err.ace|15:21: error: bare struct literal needs its type from context
+tests/sema/defaults/views_err.ace|16:20: error: array literal needs its array type from context
+tests/sema/defaults/views_err.ace|17:22: error: overlapping struct Word has no literal; declare it and assign a member
+tests/sema/defaults/views_err.ace|18:45: error: cannot compare Point and Point
+tests/sema/defaults/calls/main_err.ace|44:21: error: wrong number of arguments: 2 given, 1 expected
+tests/sema/defaults/calls/main_err.ace|45:20: error: no matching overload 'two' for these argument types
+tests/sema/defaults/calls/main_err.ace|46:21: error: ambiguous call to overloaded function 'amb'
+tests/sema/defaults/calls/main_err.ace|47:23: error: generic function 'gen' needs type arguments: gen[T](...)
+tests/sema/defaults/calls/main_err.ace|48:23: error: overloaded function 'two' needs an explicit function-value type: 'two' is overloaded
+tests/sema/defaults/calls/main_err.ace|49:22: error: type mismatch: u8 given where i64 expected (casts are explicit)
+tests/sema/defaults/calls/main_err.ace|51:29: error: the overload of 'other.pick' matching these arguments is private
+tests/sema/defaults/calls/main_err.ace|52:23: error: 'VALUE' is not callable
 tests/sema/defaults/generic_calls_err.ace|52:22: error: 'one' is not generic; call it without type arguments
 tests/sema/defaults/generic_calls_err.ace|53:28: error: 'VALUE' is not a generic function
 tests/sema/defaults/generic_calls_err.ace|56:27: error: type mismatch: string given where u8 expected (casts are explicit)
@@ -367,7 +343,7 @@ tests/sema/contracts/register/main_err.ace|30:1: error: signing owner must repea
 tests/sema/contracts/register/main_err.ace|31:9: error: signing owner must repeat type parameter 'B'
 tests/sema/contracts/register/main_err.ace|35:14: error: signed contract 'Point' must be a declared contract
 tests/sema/contracts/register/main_err.ace|36:1: error: a signing must be in the struct's defining module
-tests/sema/functions/body_statements_err.ace|24:5: error: parameter 'e' is read-only — mark it 'mut' in the signature
+tests/sema/functions/body_statements_err.ace|24:5: error: parameter 'e' is read-only — copy it to a local, or take a pointer to write the caller's
 tests/sema/functions/body_statements_err.ace|24:7: error: Error fields are read-only
 tests/sema/functions/body_statements_err.ace|29:8: error: unknown name 'b'
 tests/sema/functions/body_statements_err.ace|36:6: error: assignment binds 3 names but the right side has 2 values
@@ -380,8 +356,8 @@ tests/sema/functions/body_statements_err.ace|64:19: error: for-in iterates slice
 tests/sema/functions/body_statements_err.ace|69:5: error: function returns nothing
 tests/sema/functions/body_statements_err.ace|74:11: error: index must be an integer, not float literal
 tests/sema/functions/body_statements_err.ace|78:17: error: type mismatch: null + integer literal — operands need one type (casts are explicit)
-tests/sema/functions/body_statements_err.ace|83:10: error: pointer compound-assignment offset must be usize, not i64
-tests/sema/functions/body_statements_err.ace|87:10: error: pointer offset must be a nonnegative usize
+tests/sema/functions/body_statements_err.ace|83:11: error: pointer compound-assignment offset must be usize, not i64
+tests/sema/functions/body_statements_err.ace|87:11: error: pointer offset must be a nonnegative usize
 tests/sema/functions/body_statements_err.ace|93:21: error: range bounds must be one integer type, got i64 and u8
 tests/sema/functions/body_statements_err.ace|98:5: error: range loop variable must be an integer type, not f64
 tests/sema/functions/body_statements_err.ace|104:14: error: returned value views storage of this function, which ends when it returns
@@ -391,7 +367,7 @@ tests/sema/functions/body_statements_err.ace|120:12: error: stored value views s
 tests/sema/functions/body_statements_err.ace|124:16: error: typeid takes one exact named type
 tests/sema/functions/body_statements_err.ace|128:5: error: untyped literal expression has no effect — bind it to a type
 tests/sema/functions/body_statements_err.ace|132:20: error: volatile access is allowed only on a complete bits value
-tests/sema/functions/body_statements_err.ace|136:16: error: volatile access requires an eligible scalar place, got Point
+tests/sema/functions/body_statements_err.ace|136:17: error: volatile access requires an eligible scalar place, got Point
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
 tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared
@@ -550,13 +526,12 @@ for want in \
     fi
 done
 
-# a mut argument, an expression statement, and a range are positioned at
+# an expression statement and a range are positioned at
 # their own first token or operator
 node_position=$("$ACE" tests/sema/operators/node_position_err.ace 2>&1)
 for want in \
-    "9:18: error: 'mut' marks mut parameters; mem.equal parameter 1 is read-only" \
-    "10:5: error: untyped literal expression has no effect" \
-    "14:22: error: range bounds must be one integer type, got i32 and i64"; do
+    "9:5: error: untyped literal expression has no effect" \
+    "13:22: error: range bounds must be one integer type, got i32 and i64"; do
     if ! printf '%s\n' "$node_position" | grep -qF "$want"; then
         echo "FAIL: node position should report: $want"
         fail=1
@@ -569,9 +544,6 @@ while IFS='|' read -r f want; do
         fail=1
     fi
 done <<'RECEIVER_MUT'
-tests/parser/mut_statement_err.ace|6:5: error: 'mut' at statement level marks a call receiver
-tests/parser/defer_mut_err.ace|6:11: error: 'mut' after 'defer' marks a call receiver
-tests/parser/mut_target_err.ace|6:5: error: 'mut' at statement level marks a call receiver
 RECEIVER_MUT
 
 compound_operand=$("$ACE" tests/sema/operators/compound_operand_err.ace 2>&1)
@@ -709,7 +681,6 @@ for want in \
     "parameter 'value' has type *string, which is not C-ABI compatible" \
     "parameter 'value' has type BadField, which is not C-ABI compatible" \
     "parameter 'value' has type Box, which is not C-ABI compatible" \
-    "parameter 'value' is 'mut' — mut parameters stay internal; pass a mut *T instead" \
     "function 'bad_generic' cannot be generic"; do
     if ! printf '%s\n' "$c_abi_errors" | grep -qF "$want"; then
         echo "FAIL: missing C ABI diagnostic '$want'"
@@ -720,9 +691,7 @@ done
 exported_global_errors=$("$ACE" tests/sema/c_abi/exported_globals_err.ace 2>&1)
 for want in \
     "5:11: error: C global 'text' has type string, which is not C-ABI compatible" \
-    "8:21: error: C global 'bytes' has type []u8, which is not C-ABI compatible" \
-    "11:5: error: C global 'limit' is read-only" \
-    "12:30: error: C global 'limit' is read-only"; do
+    "8:21: error: C global 'bytes' has type []u8, which is not C-ABI compatible"; do
     if ! printf '%s\n' "$exported_global_errors" | grep -qF "$want"; then
         echo "FAIL: missing exported C global diagnostic '$want'"
         fail=1
@@ -730,10 +699,6 @@ for want in \
 done
 c_global_errors=$("$ACE" tests/sema/c_abi/globals_err.ace 2>&1)
 for want in \
-    "13:5: error: C global 'limit' is read-only — mark its declaration 'mut'" \
-    "14:30: error: C global 'limit' is read-only" \
-    "15:27: error: C global 'names' is read-only" \
-    "16:5: error: C global 'names' is read-only" \
     "C global 'bad_text' has type string, which is not C-ABI compatible" \
     "C global 'bad_bytes' has type []u8, which is not C-ABI compatible"; do
     if ! printf '%s\n' "$c_global_errors" | grep -qF "$want"; then
@@ -741,16 +706,10 @@ for want in \
         fail=1
     fi
 done
-for case in export mut_function; do
-    case $case in
-        export)       want="extern link name cannot be empty" ;;
-        mut_function) want="'mut' marks an extern variable: expected ':' after its name" ;;
-    esac
-    if ! "$ACE" --ast "tests/parser/extern_var/${case}_err.ace" 2>&1 | grep -qF "$want"; then
-        echo "FAIL: extern variable $case diagnostic"
-        fail=1
-    fi
-done
+if ! "$ACE" --ast tests/parser/extern_var/export_err.ace 2>&1 | grep -qF "extern link name cannot be empty"; then
+    echo "FAIL: extern variable export diagnostic"
+    fail=1
+fi
 
 overlap_errors=$("$ACE" tests/sema/overlap/main_err.ace 2>&1)
 if [ "$(printf '%s\n' "$overlap_errors" | grep -c 'error:')" -ne 6 ]; then
@@ -765,7 +724,7 @@ if [ "$(printf '%s\n' "$bitcast_errors" | grep -c 'error:')" -ne 7 ]; then
 fi
 
 reinterpret_errors=$("$ACE" tests/sema/pointers/reinterpret_err.ace 2>&1)
-if [ "$(printf '%s\n' "$reinterpret_errors" | grep -c 'pointer reinterpretation')" -ne 9 ]; then
+if [ "$(printf '%s\n' "$reinterpret_errors" | grep -c 'pointer reinterpretation')" -ne 8 ]; then
     echo "FAIL: pointer reinterpretation diagnostics"
     fail=1
 fi
@@ -817,8 +776,7 @@ for want in \
     "str.format format requires 2 value arguments, got 1" \
     "extra str.format argument 2 is not consumed by the format" \
     "str.format format must be a string literal or static-literal const global" \
-    "unsupported str.format conversion '%q'" \
-    "[]u8 given where mut []u8 expected"; do
+    "unsupported str.format conversion '%q'"; do
     if ! printf '%s\n' "$str_format_errors" | grep -qF "$want"; then
         echo "FAIL: missing str.format diagnostic '$want'"
         fail=1
@@ -829,11 +787,10 @@ printf_fd_errors=$("$ACE" tests/sema/printf/fd_err.ace 2>&1)
 for want in \
     "11:45: error: fmt.printf argument 1 for conversion at decoded byte 0 requires int" \
     "12:19: error: fmt.printf format requires 2 value arguments, got 1" \
-    "13:20: error: fmt.printf writes to the descriptor; it takes no 'mut'" \
-    "14:19: error: fmt.printf requires a compile-time-static format string" \
-    "15:40: error: fmt.printf is direct-call-only" \
-    "16:32: error: fmt.printf is direct-call-only" \
-    "17:53: error: str.format is direct-call-only"; do
+    "13:19: error: fmt.printf requires a compile-time-static format string" \
+    "14:40: error: fmt.printf is direct-call-only" \
+    "15:32: error: fmt.printf is direct-call-only" \
+    "16:49: error: str.format is direct-call-only"; do
     if ! printf '%s\n' "$printf_fd_errors" | grep -qF "$want"; then
         echo "FAIL: missing fmt.printf(fd, ...) diagnostic '$want'"
         fail=1
@@ -842,11 +799,10 @@ done
 
 printf_buffer_errors=$("$ACE" tests/sema/printf/buffer_err.ace 2>&1)
 for want in \
-    "10:22: error: Buffer.printf appends to the buffer; it needs 'mut' at the call" \
-    "11:13: error: parameter 'held' is read-only" \
-    "12:28: error: Buffer.printf argument 1 for conversion at decoded byte 0 requires int" \
-    "13:21: error: Buffer.printf format requires 2 value arguments, got 1" \
-    "14:26: error: type mismatch: fmt.Buffer given where string expected"; do
+    "10:9: error: parameter 'held' is read-only" \
+    "11:24: error: Buffer.printf argument 1 for conversion at decoded byte 0 requires int" \
+    "12:17: error: Buffer.printf format requires 2 value arguments, got 1" \
+    "13:18: error: type mismatch: fmt.Buffer given where string expected"; do
     if ! printf '%s\n' "$printf_buffer_errors" | grep -qF "$want"; then
         echo "FAIL: missing Buffer.printf diagnostic '$want'"
         fail=1
@@ -872,11 +828,9 @@ done
 
 slice_literal_errors=$("$ACE" tests/sema/arrays/slice_literal_err.ace 2>&1)
 for want in \
-    "11:11: error: array literal cannot establish a writable view: mut []i64" \
     "12:24: error: keyed array literal needs an [E]T context, not []string" \
     "13:24: error: type mismatch: string given where i64 expected" \
-    "14:23: error: array literal cannot establish a writable view for mut iteration" \
-    "15:16: error: ambiguous call to overloaded function 'pick'"; do
+    "14:16: error: ambiguous call to overloaded function 'pick'"; do
     if ! printf '%s\n' "$slice_literal_errors" | grep -qF "$want"; then
         echo "FAIL: missing slice literal diagnostic '$want'"
         fail=1
@@ -885,14 +839,13 @@ done
 
 mem_typed_errors=$("$ACE" tests/sema/memory/typed_err.ace 2>&1)
 for want in \
-    "type mismatch: mut []usize given where []i32 expected" \
+    "type mismatch: []usize given where []i32 expected" \
     "type mismatch: i64 given where usize expected" \
-    "'mut' marks mut parameters; mem.alloc[T] arguments are read-only" \
     "unknown type 'Missing'" \
-    "mem.release[T] needs 'mut' at the call site: mem.release[T](mut data)" \
-    "mem.release[T] requires a mutable []usize allocation variable" \
-    "mem.release requires a mutable []u8 allocation variable — a typed slice states its element type: mem.release[T](mut data)" \
-    "type mismatch: mut []u8 given where []usize expected" \
+    "mem.release[T] takes the allocation variable's address: mem.release[T](&data)" \
+    "mem.release[T] requires a []usize allocation variable" \
+    "mem.release requires a []u8 allocation variable — a typed slice states its element type: mem.release[T](&data)" \
+    "type mismatch: []u8 given where []usize expected" \
     "mem.alloc[T] takes exactly one element count" \
     "mem.zalloc[T] takes exactly one element count" \
     "mem.alloc takes exactly size and alignment"; do
@@ -905,12 +858,6 @@ done
 string_view_errors=$("$ACE" tests/sema/sequences/view_rejections_err.ace 2>&1)
 if ! printf '%s\n' "$string_view_errors" | grep -qF "cannot cast [2]u8 to string"; then
     echo "FAIL: missing string view-conversion rejection diagnostic"
-    fail=1
-fi
-aggregate_readonly=$("$ACE" tests/sema/sequences/aggregate_readonly_err.ace 2>&1)
-if ! printf '%s\n' "$aggregate_readonly" | grep -qF \
-    "cannot write through the read-only view []Point"; then
-    echo "FAIL: missing read-only aggregate-slice diagnostic"
     fail=1
 fi
 aggregate_identity=$("$ACE" tests/sema/sequences/aggregate_identity_err.ace 2>&1)
@@ -1336,7 +1283,7 @@ if ! "$ACE" --debug -o /tmp/ace_checked_bounds/proven_iteration \
 fi
 for f in array_negative array_equal aggregate_array_equal array_slice_upper array_slice_order \
          aggregate_slice_greater slice_greater string_equal \
-         mut_string_greater slice_lower slice_upper slice_order \
+         string_write_greater slice_lower slice_upper slice_order \
          slice_source_length; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_bounds/$f" \
          "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>$T/errs; then
@@ -1848,7 +1795,7 @@ if [ -d tests/emit ]; then
             echo "FAIL: byte comparison must be emitted directly"
             fail=1
         fi
-        if undef /tmp/ace_emit/mut_string/main.o | grep -qx memset; then
+        if undef /tmp/ace_emit/memory/wide_write.o | grep -qx memset; then
             echo "FAIL: byte fill and zero must be emitted directly"
             fail=1
         fi
@@ -2662,8 +2609,8 @@ if ! ast | grep -q "(enum 'Color'"; then
     echo "FAIL: enum Color should appear in the AST"
     fail=1
 fi
-if ! ast | grep -q "(func 'scale' pub mut method"; then
-    echo "FAIL: visibility-first mut type-owned method should appear in the AST"
+if ! ast | grep -q "(func 'scale' pub method"; then
+    echo "FAIL: visibility-first type-owned method should appear in the AST"
     fail=1
 fi
 if ! ast | grep -q "(conformance"; then

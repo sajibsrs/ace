@@ -48,11 +48,11 @@ pub status(code: u16): string {
     return message.status(code)
 }
 
-pub get(value: string, mut context: ClientContext): (Response, Error) {
-    response: Response, err: Error = client.get(value, mut context)
+pub get(value: string, context: *ClientContext): (Response, Error) {
+    response: Response, err: Error = client.get(value, context)
     return response, err
 }
 
-pub serve(endpoint: string, mut context: ServerContext, router: Router): Error {
-    return server.serve(endpoint, mut context, router)
+pub serve(endpoint: string, context: *ServerContext, router: Router): Error {
+    return server.serve(endpoint, context, router)
 }

@@ -45,7 +45,7 @@ write_token(fd: sys.Fd): bool {
 
 read_token(fd: sys.Fd): bool {
     token: [1]u8 = [u8(0)]
-    count: int, err: Error = sys.read(fd, mut token[0..1])
+    count: int, err: Error = sys.read(fd, token[0..1])
     return err == null && count == 1
 }
 
@@ -72,7 +72,7 @@ receive_exact(sock: net.Socket, expected: string): bool {
         /* Bound each receive to one byte so message assembly necessarily
          * retains partial progress across multiple operations.
          */
-        count: int, err: Error = net.receive(sock, mut storage[received..received + 1])
+        count: int, err: Error = net.receive(sock, storage[received..received + 1])
 
         if err != null || count != 1 { return false }
         received += 1
@@ -186,7 +186,7 @@ find_free(clients: []Client): usize {
     return clients.len
 }
 
-broadcast(clients: mut []Client, message: []u8): bool {
+broadcast(clients: []Client, message: []u8): bool {
     for index: usize in 0 .. clients.len {
         if clients[index].socket != -1 {
             if clients[index].output_count != clients[index].output_sent ||
@@ -206,12 +206,12 @@ set_interest(q: poll.Queue, client: Client): bool {
     return poll.watch(q, client.socket, true, writable) == null
 }
 
-close_client(q: poll.Queue, mut client: Client) {
+close_client(q: poll.Queue, client: *Client) {
     if client.socket != -1 {
         poll.unwatch(q, client.socket)
         sys.close(client.socket)
     }
-    client = zero_client()
+    *client = zero_client()
 }
 
 all_flushed(clients: []Client): bool {
@@ -299,7 +299,7 @@ main(): int {
         hangup = false,
     }
     event_storage: [4]poll.Event = [zero_event : 4]
-    events: mut []poll.Event = mut event_storage[0..4]
+    events: []poll.Event = event_storage[0..4]
     accepted_count: usize = 0
     stage: int = 0
     reused_slot: usize = CLIENT_CAPACITY
@@ -382,7 +382,7 @@ main(): int {
                     begin: usize = clients[slot].input_count
                     amount: int, receive_err: Error = net.receive(
                         clients[slot].socket,
-                        mut clients[slot].input[begin..begin + 1],
+                        clients[slot].input[begin..begin + 1],
                     )
 
                     if receive_err != null {
@@ -392,7 +392,7 @@ main(): int {
                         }
                     } else if amount == 0 {
                         old_slot: usize = slot
-                        close_client(q, mut clients[slot])
+                        close_client(q, &clients[slot])
 
                         if stage == 5 && old_slot == first_slot {
                             if !wait_child(processes[0]) {
@@ -426,7 +426,7 @@ main(): int {
                     } else {
                         clients[slot].input_count += usize(amount)
                         if clients[slot].input_count == 2 {
-                            if !broadcast(mut clients[0..2], clients[slot].input[0..2]) {
+                            if !broadcast(clients[0..2], clients[slot].input[0..2]) {
                                 failure = 33
                                 break
                             }
@@ -512,7 +512,7 @@ main(): int {
         }
     }
 
-    for index: usize in 0 .. CLIENT_CAPACITY { close_client(q, mut clients[index]) }
+    for index: usize in 0 .. CLIENT_CAPACITY { close_client(q, &clients[index]) }
     poll.unwatch(q, listener)
     sys.close(listener)
     sys.close(sys.Fd(q))

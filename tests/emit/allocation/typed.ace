@@ -7,12 +7,12 @@ import mem
 Item: struct { tag: u32, weight: u64, live: bool }
 
 main(): int {
-    numbers: mut []usize = mem.alloc[usize](4)
+    numbers: []usize = mem.alloc[usize](4)
 
     if numbers == null { return 1 }
 
     if numbers.len != 4 {
-        mem.release[usize](mut numbers)
+        mem.release[usize](&numbers)
         return 2
     }
 
@@ -20,20 +20,20 @@ main(): int {
     numbers[1] = 2
 
     if numbers[0] + numbers[1] != 42 {
-        mem.release[usize](mut numbers)
+        mem.release[usize](&numbers)
         return 3
     }
 
     alias: []usize = numbers
-    writable_alias: mut []usize = numbers[0..4]
+    writable_alias: []usize = numbers[0..4]
     writable_alias[2] = 9
 
     if numbers[2] != 9 {
-        mem.release[usize](mut numbers)
+        mem.release[usize](&numbers)
         return 4
     }
 
-    grown: mut []usize = mem.realloc[usize](numbers, 8)
+    grown: []usize = mem.realloc[usize](numbers, 8)
 
     if grown == null { return 5 }
 
@@ -53,17 +53,17 @@ main(): int {
 
     if grown[0] + grown[1] != 42 || grown[7] != 70 { return 11 }
 
-    mem.release[usize](mut grown)
+    mem.release[usize](&grown)
 
     if grown != null { return 12 }
-    mem.release[usize](mut grown)
+    mem.release[usize](&grown)
 
     dangling: bool = alias != null
 
     if !dangling { return 13 }
 
     if sizeof(Item) != 24 { return 14 }
-    items: mut []Item = mem.alloc[Item](3)
+    items: []Item = mem.alloc[Item](3)
 
     if items == null { return 15 }
 
@@ -88,7 +88,7 @@ main(): int {
     total: u64 = items[0].weight + items[1].weight + items[2].weight
 
     if total != 60 { return 18 }
-    more: mut []Item = mem.realloc[Item](items, 6)
+    more: []Item = mem.realloc[Item](items, 6)
 
     if more == null { return 19 }
 
@@ -102,7 +102,7 @@ main(): int {
     }
 
     if more[5].weight != 60 { return 22 }
-    mem.release[Item](mut more)
+    mem.release[Item](&more)
 
     empty: []usize = mem.alloc[usize](0)
 
@@ -114,16 +114,16 @@ main(): int {
 
     if big != null { return 25 }
 
-    raw: mut []u8 = mem.alloc(8, 8)
+    raw: []u8 = mem.alloc(8, 8)
 
     if raw == null { return 26 }
     raw[0] = 7
-    raw_grown: mut []u8 = mem.realloc(raw, 16)
+    raw_grown: []u8 = mem.realloc(raw, 16)
 
     if raw_grown == null { return 27 }
 
     if raw_grown[0] != 7 || raw_grown.len != 16 { return 28 }
-    mem.release(mut raw_grown)
+    mem.release(&raw_grown)
 
     if raw_grown != null { return 29 }
     return 0

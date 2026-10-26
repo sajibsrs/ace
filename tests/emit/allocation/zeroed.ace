@@ -13,8 +13,8 @@ Slot: struct { key: u64, value: i32, used: bool }
 Empty: struct {}
 
 main(): int {
-    slots: mut []Slot = mem.zalloc[Slot](1000)
-    defer mem.release[Slot](mut slots)
+    slots: []Slot = mem.zalloc[Slot](1000)
+    defer mem.release[Slot](&slots)
     if slots == null || slots.len != 1000 { return 1 }
     for i: usize in 0 .. slots.len {
         if slots[i].key != 0 || slots[i].value != 0 || slots[i].used { return 2 }
@@ -22,8 +22,8 @@ main(): int {
     slots[999].used = true
     if !slots[999].used || slots[0].used { return 3 }
 
-    bytes: mut []u8 = mem.zalloc[u8](4096)
-    defer mem.release[u8](mut bytes)
+    bytes: []u8 = mem.zalloc[u8](4096)
+    defer mem.release[u8](&bytes)
     if bytes == null || bytes.len != 4096 { return 4 }
     bytes[4095] = 7
     if bytes[0] != 0 || bytes[4095] != 7 { return 5 }

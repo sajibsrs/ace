@@ -1,7 +1,7 @@
 import mem
 
 main(): int {
-    data: mut []u32 = mem.alloc[u32](8)
+    data: []u32 = mem.alloc[u32](8)
     if data == null { return 2 }
     mem.copy[u32](data[..4], data[4..6])
     return 0

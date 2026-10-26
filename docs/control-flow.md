@@ -264,45 +264,12 @@ for index: usize in 0 .. values.len {
 
 ## Mutating iteration
 
-`in mut` before the iterable opts the loop into aliasing. The value binder
-then names the element's own storage: reads and writes hit the backing
-sequence directly, with no per-iteration copy and no write-back. `&value`
-yields a pointer into the backing storage, and `mut &value` yields a
-`mut *T` whose writes land there:
+A sequence loop's binders are copies. To write elements, iterate the indices:
 
 ```ace
 xs: [4]i32 = [1, 2, 3, 4]
-for item: i32 in mut xs {
-    item *= 10 // lands in xs
-}
+for i: usize in 0 .. xs.len { xs[i] *= 10 }
 ```
-
-The two-binder form works the same way, and the index binder stays an
-ordinary `usize` copy:
-
-```ace
-for index: usize, item: i32 in mut xs {
-    item += i32(index)
-}
-```
-
-The iterable must establish a writable view. A writable lvalue naming array or
-slice storage — a local, field path, mutable global, or `mut` parameter —
-establishes directly; a `mut []T` or `mut string` view value establishes
-through its type, with no storage check; and `in mut xs[lo..hi]` establishes a
-writable window of the storage. By-value parameters, `const` globals, array
-literals, call results, plain slicing results, and ranges are rejected. The
-alias reads the loop's entry-captured pointer and length, so binder writes
-never disturb the cursor: reslicing the iterable variable mid-loop changes
-neither the running loop nor where the alias points.
-
-Strings participate with no special case: `for c: u8 in mut text` requires
-`text` to be a `mut string` (or a writable slice of one), and the alias writes
-the string's bytes directly; a plain `string` is rejected by the same
-writable-storage rule as any read-only view.
-
-A plain (non-`mut`) loop keeps the per-iteration copy; `in mut` is a strict
-superset, not a replacement.
 
 ## Strings
 
@@ -399,7 +366,7 @@ the branch or iteration that needs it:
 ```ace
 for line: string in lines {
     words: array.Array[string] = split(line)
-    defer mut words.wipe() // released at the end of every iteration
+    defer words.wipe() // released at the end of every iteration
     if words.len == 0 { continue } // also released here
     count(words.view())
 }
@@ -423,20 +390,19 @@ work(): int {
 }
 ```
 
-- An argument marked `mut` at the call, and the receiver in the
-  receiver-marked form `defer mut c.method()`, capture the variable's address
-  instead. The exit-time call sees the variable's final value, and writes the
+- An `&x` argument snapshots the variable's address, and the receiver of
+  `defer c.method()` is captured by address too. The exit-time call sees the variable's final value, and writes the
   callee makes land before the function's storage is released:
 
 ```ace
 total: int
 
-bump(mut n: int) {
-    n += 1
+bump(n: *int) {
+    *n += 1
 }
 
 work(): int {
-    defer bump(mut total) // captures the global itself, not its value
+    defer bump(&total) // captures the global itself, not its value
     total = 10
     return total // returns 10; the bump lands after, leaving total at 11
 }
@@ -465,10 +431,6 @@ work(): int {
     return 0 // the exit-time call runs a, not b
 }
 ```
-
-  The callee position is always read-only-captured. `mut` marks a receiver,
-  and through a function value there is no receiver, so `defer mut f()` marks
-  nothing.
 
 Only leaving the block runs its defers:
 
@@ -515,18 +477,15 @@ Why the rules in `spec/control-flow.md` are shaped as they are.
 - Deferred calls #2, #7: cleanup ordering is what C reaches for `goto` to
   obtain. Anchoring each list at its block keeps every exit statically known —
   the block's end and each jump past it — so inline expansion stays free of
-  runtime machinery, and a `mut` capture of a block-local never outlives its
-  storage. A function-level list fed from nested blocks (Go's model) needs a
+  runtime machinery, and an address capture of a block-local never outlives
+  its storage. A function-level list fed from nested blocks (Go's model) needs a
   runtime record of which defers ran; Zig, Swift, Odin, and C's `cleanup`
-  attribute scope defers to blocks as Ace does. The two-tier
-  capture keeps the ordinary `mut` call contract truthful at a distance:
-  read-only arguments behave like call-by-value snapshots, while `mut`-marked
-  arguments keep their by-reference meaning up to the block's final moment.
-- Sequences #9: every view operation is explicit and allocation-free; permission
-  is established where `mut` is written, carried in types thereafter, and never
-  escalated — writable bytes exist only from proven-writable provenance, so the
-  literal-storage fault class is rejected at declarations rather than handled at
-  runtime. Removing sequence equality operators avoids both hidden
+  attribute scope defers to blocks as Ace does. Snapshotting every argument
+  keeps a deferred call meaning what it would at the `defer` statement; an
+  `&x` argument or a receiver still reaches the variable's final state.
+- Sequences #9: every view operation is explicit and allocation-free; a write
+  into literal storage faults through the platform's page protection rather
+  than a type-level permission (Philosophy #10). Removing sequence equality operators avoids both hidden
   arbitrary-element work and descriptor identity masquerading as value equality.
   Byte content remains available through the explicit `mem.equal` operation,
   while the literal-`null` form states nullness directly without granting

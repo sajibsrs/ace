@@ -77,7 +77,7 @@ copy_live(): int {
     y: int = 5
     total: int = 0
     for r: int in 0 .. 4 {
-        target_view: mut []u8 = mut target[..]
+        target_view: []u8 = target[..]
         mem.copy(target_view, source[..])
         total += x * y + int(target[63])
         x += 1

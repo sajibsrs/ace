@@ -1,5 +1,5 @@
 /* Memory and the scalar ABI: globals, pointers and their arithmetic, locals
- * whose storage is needed (a slot), mut parameters and method receivers (at
+ * whose storage is needed (a slot), pointer parameters and method receivers (at
  * the caller's address), function values, externs, and range loops. Debug
  * null-checks every access through a pointer value and every call through a
  * function value. */
@@ -17,7 +17,7 @@ extern "c" {
     printf(format: *u8, ...): i32
 }
 
-Counter.add(mut self, n: i64) {
+Counter.add(self, n: i64) {
     self.hits += n
     if n > 9 { self.mode = Mode.on }
 }
@@ -34,8 +34,8 @@ apply(f: (i64): i64, x: i64): i64 {
     return f(x)
 }
 
-bump(mut n: i64, p: mut *i32) {
-    n += 1
+bump(n: *i64, p: *i32) {
+    *n += 1
     *p = *(p + 1) - 2
 }
 
@@ -53,9 +53,9 @@ sum(c: *Counter, lo: i64, hi: i64): i64 {
 main(): int {
     cell: i32 = 5
     n: i64 = 1
-    bump(mut n, mut &cell)
+    bump(&n, &cell)
     TOTAL = apply(twice, n)
-    q: mut *i64 = mut &n
+    q: *i64 = &n
     *q += TOTAL
     volatile n = n + 1
     return int(volatile n)

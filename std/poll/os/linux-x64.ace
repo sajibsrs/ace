@@ -71,13 +71,13 @@ MAX_WAIT_EVENTS: const usize = 64
 
 extern "c" {
     c_epoll_create1(flags: i32): i32 as "epoll_create1"
-    c_epoll_ctl(queue: i32, operation: i32, fd: i32, event: mut *LinuxEpollEvent): i32 as "epoll_ctl"
-    c_epoll_wait(queue: i32, events: mut *LinuxEpollEvent, event_count: i32, timeout_ms: i32): i32 as "epoll_wait"
-    c_errno(): mut *i32 as "__errno_location"
+    c_epoll_ctl(queue: i32, operation: i32, fd: i32, event: *LinuxEpollEvent): i32 as "epoll_ctl"
+    c_epoll_wait(queue: i32, events: *LinuxEpollEvent, event_count: i32, timeout_ms: i32): i32 as "epoll_wait"
+    c_errno(): *i32 as "__errno_location"
 }
 
 errno_set(value: i32) {
-    slot: mut *i32 = c_errno()
+    slot: *i32 = c_errno()
     *slot = value
 }
 
@@ -108,11 +108,11 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
 
     if writable { change.events = change.events | EPOLLOUT }
 
-    if c_epoll_ctl(i32(sys.Fd(q)), EPOLL_CTL_ADD, i32(fd), mut &change) == 0 { return null }
+    if c_epoll_ctl(i32(sys.Fd(q)), EPOLL_CTL_ADD, i32(fd), &change) == 0 { return null }
 
     if sys.errno() != EEXIST { return WatchErr(sys.errno()) }
 
-    if c_epoll_ctl(i32(sys.Fd(q)), EPOLL_CTL_MOD, i32(fd), mut &change) == -1 {
+    if c_epoll_ctl(i32(sys.Fd(q)), EPOLL_CTL_MOD, i32(fd), &change) == -1 {
         return WatchErr(sys.errno())
     }
     return null
@@ -120,13 +120,13 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
 
 pub unwatch(q: Queue, fd: sys.Fd): Error {
     change: LinuxEpollEvent = blank(LinuxEpollEvent)
-    if c_epoll_ctl(i32(sys.Fd(q)), EPOLL_CTL_DEL, i32(fd), mut &change) == -1 {
+    if c_epoll_ctl(i32(sys.Fd(q)), EPOLL_CTL_DEL, i32(fd), &change) == -1 {
         return UnwatchErr(sys.errno())
     }
     return null
 }
 
-pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
+pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
     if events.len == 0 {
         errno_set(EINVAL)
         return usize(0), WaitErr.invalid
@@ -149,7 +149,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
         timeout_ms = i32(milliseconds)
     }
     raw: [64]LinuxEpollEvent = [blank(LinuxEpollEvent) : 64]
-    ready: i32 = c_epoll_wait(i32(sys.Fd(q)), mut &raw[0], i32(capacity), timeout_ms)
+    ready: i32 = c_epoll_wait(i32(sys.Fd(q)), &raw[0], i32(capacity), timeout_ms)
     if ready == -1 { return usize(0), WaitErr(sys.errno()) }
 
     // epoll reports each fd at most once per wait, so events map one to one.

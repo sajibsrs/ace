@@ -1,16 +1,15 @@
-/* Buffer.printf fixture: the call takes 'mut' on a writable buffer, and
- * printf's checks apply to its format and values.
+/* Buffer.printf fixture: printf's checks apply to its format and values.
  */
 
 import fmt
 import sys
 
-bad(storage: mut []u8, held: fmt.Buffer): int {
+bad(storage: []u8, held: fmt.Buffer): int {
     b: fmt.Buffer = fmt.Buffer.init(sys.stdout, storage)
     n: int = b.printf("%d", 1)
-    n = mut held.printf("%d", 1)
-    n = mut b.printf("%d", "text")
-    n = mut b.printf("%d %d", 1)
-    n = mut b.printf(mut b, "%d", 1)
+    n = held.printf("%d", 1)
+    n = b.printf("%d", "text")
+    n = b.printf("%d %d", 1)
+    n = b.printf(b, "%d", 1)
     return n
 }

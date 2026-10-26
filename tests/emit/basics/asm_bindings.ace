@@ -104,7 +104,7 @@ own_pid(): i64 {
 @when(_PLATFORM_ == "darwin-arm64")
 smash_home(x: i64) {
     ap: i64 = x
-    home: mut *i64 = mut &ap // address-taken in every mode: ap lives in its home
+    home: *i64 = &ap // address-taken in every mode: ap lives in its home
     asm "nop" {
         in: x19 = ap, x23 = x
         clobbers: x26
@@ -114,7 +114,7 @@ smash_home(x: i64) {
 @when(_PLATFORM_ == "linux-x64")
 smash_home(x: i64) {
     ap: i64 = x
-    home: mut *i64 = mut &ap // address-taken in every mode: ap lives in its home
+    home: *i64 = &ap // address-taken in every mode: ap lives in its home
     asm "nop" {
         in: rbx = ap, r12 = x
         clobbers: r15

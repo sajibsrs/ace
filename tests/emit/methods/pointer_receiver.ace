@@ -10,15 +10,15 @@ Counter.get(self): int {
     return self.value
 }
 
-Counter.bump(mut self) {
+Counter.bump(self) {
     self.value += 1
 }
 
 main(): int {
     c: Counter = Counter{value = 40}
-    p: mut *Counter = mut &c
-    mut p.bump()
-    pp: *mut *Counter = &p
-    mut pp.bump()
+    p: *Counter = &c
+    p.bump()
+    pp: **Counter = &p
+    pp.bump()
     return pp.get()
 }

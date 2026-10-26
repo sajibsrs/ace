@@ -1,4 +1,4 @@
-/* Blocking TCP public surface, mut close, byte-view identity, and domains. */
+/* Blocking TCP public surface, close, byte-view identity, and domains. */
 
 import net
 import sys
@@ -23,7 +23,7 @@ import (
     send_all,
 ) from net/tcp
 
-check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8, text: string): int {
+check(address: net.Addr4, listener: Listener, connection: Conn, bytes: []u8, text: string): int {
     bound: net.Addr4, local_err: Error = local(listener)
     accepted: Conn, peer: net.Addr4, accept_err: Error = accept(listener)
     received: usize, receive_err: Error = receive_all(connection, bytes)
@@ -34,16 +34,16 @@ check(address: net.Addr4, listener: Listener, connection: Conn, bytes: mut []u8,
     if send_err != null && send_err.domain == typeid(SendAllErr) { sent = usize(send_err.code) }
     if local_err != null || accept_err != null || bound.port == peer.port { return int(received + sent) }
     if current == Interest.none {
-        event: Event = progress_receive(mut accepted, bytes)
+        event: Event = progress_receive(&accepted, bytes)
         switch event {
             Event.data(count: usize) { received = count }
             Event.failed(err: Error) { send_err = err }
             default {}
         }
-        event = progress_send(mut accepted, text)
-        event = progress_connect(mut accepted)
+        event = progress_send(&accepted, text)
+        event = progress_connect(&accepted)
     }
-    close(mut accepted)
+    close(&accepted)
     return 0
 }
 
@@ -55,9 +55,9 @@ main(): int {
     listener: Listener, listen_err: Error = listen(address, usize(8))
     connection: Conn, connect_err: Error = connect(address)
     pending: Conn, pending_err: Error = connect_nonblock(address)
-    if listen_err == null { close(mut listener) }
-    if connect_err == null { close(mut connection) }
-    if pending_err == null { close(mut pending) }
+    if listen_err == null { close(&listener) }
+    if connect_err == null { close(&connection) }
+    if pending_err == null { close(&pending) }
     interrupted: i32 = sys.EINTR
     return int(interrupted - interrupted)
 }

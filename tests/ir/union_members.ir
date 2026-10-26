@@ -199,7 +199,7 @@ b0:
     store [%1 + 16], %6
     %8 = load u64 [%0 + 16]
     store [%1 + 24], %8
-    store [%1], %2
+    store.chk [%1], %2
     ret
 }
 

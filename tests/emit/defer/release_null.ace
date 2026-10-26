@@ -17,18 +17,18 @@ buf: []u8
 tbuf: []usize
 
 release_buf(): int {
-    defer mem.release(mut buf)
+    defer mem.release(&buf)
     return 0
 }
 
 double_release(): int {
-    defer mem.release(mut buf) // runs second: sees the null left by the first
-    defer mem.release(mut buf) // runs first: frees and nulls buf itself
+    defer mem.release(&buf) // runs second: sees the null left by the first
+    defer mem.release(&buf) // runs first: frees and nulls buf itself
     return 0
 }
 
 release_typed(): int {
-    defer mem.release[usize](mut tbuf)
+    defer mem.release[usize](&tbuf)
     return 0
 }
 
@@ -46,6 +46,6 @@ main(): int {
     tbuf = mem.alloc[usize](8)
     release_typed()
     if tbuf.len != 0 { return 2 }
-    mem.release[usize](mut tbuf) // null no-op again at the original storage
+    mem.release[usize](&tbuf) // null no-op again at the original storage
     return 0
 }

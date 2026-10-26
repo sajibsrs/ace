@@ -1,5 +1,5 @@
 /* A defer captures its call at the statement: a read-only argument into a
- * fresh variable, a mut argument or receiver as its address. The call is
+ * fresh variable, a `&` argument or receiver as its address. The call is
  * lowered again before every return and at the fall-off end, last defer
  * first, with the result already computed. A self call keeps its frame only
  * while no defer is pending. */
@@ -15,7 +15,7 @@ Box.note(self): i64 {
     return 0
 }
 
-Box.add(mut self, n: i64) {
+Box.add(self, n: i64) {
     self.v += n
 }
 
@@ -32,8 +32,8 @@ twice(x: i64): i64 {
     return x * 2
 }
 
-grow(mut n: i64, by: i64) {
-    n += by
+grow(n: *i64, by: i64) {
+    *n += by
 }
 
 snapshot(n: i64): i64 {
@@ -46,7 +46,7 @@ snapshot(n: i64): i64 {
 address(): i64 {
     v: i64 = 1
     defer note(v)
-    defer grow(mut v, 5)
+    defer grow(&v, 5)
     v = 2
     return v
 }
@@ -67,7 +67,7 @@ fall_off(n: i64) {
 
 receiver(): i64 {
     b: Box = Box { v = 1 }
-    defer mut b.add(4)
+    defer b.add(4)
     defer b.note()
     return b.v
 }
@@ -86,7 +86,7 @@ pair(a: i64): (i64, i64) {
 
 release(): i64 {
     buf: []u8 = mem.alloc[u8](16)
-    defer mem.release(mut buf)
+    defer mem.release(&buf)
     return i64(buf.len)
 }
 

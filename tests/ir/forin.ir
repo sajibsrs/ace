@@ -34,24 +34,32 @@ b4: ; preds b2
 double(ptr): void {
 b0:
     %0 = param ptr 0
-    %1 = const u64 3
-    %2 = padd ptr %0, %1 * 1
+    %1 = const u64 0
+    %2 = const u64 3
     jmp b1
 b1: ; preds b0, b4
-    %4 = phi ptr [%0, b0], [%14, b4]
+    %4 = phi u64 [%1, b0], [%22, b4]
     %5 = lt bool %4, %2
     br %5, b2, b3
 b2: ; preds b1
-    %7 = load u8 [%4]
-    %8 = const u8 2
-    %9 = mul.chk u8 %7, %8
-    store [%4], %9
+    %7 = const u64 3
+    %8 = lt bool %4, %7
+    check %8, 16:24 bounds violation
+    %10 = padd.chk ptr %0, %4 * 1
+    %11 = load u8 [%10]
+    %12 = const u8 2
+    %13 = mul.chk u8 %11, %12
+    %14 = const u64 3
+    %15 = lt bool %4, %14
+    check %15, 16:14 bounds violation
+    %17 = padd.chk ptr %0, %4 * 1
+    store [%17], %13
     jmp b4
 b3: ; preds b1
     ret
 b4: ; preds b2
-    %13 = const u64 1
-    %14 = padd ptr %4, %13 * 1
+    %21 = const u64 1
+    %22 = add u64 %4, %21
     jmp b1
 }
 

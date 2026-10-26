@@ -79,17 +79,17 @@ main(): int {
 
     /* Encode round trip and failures. */
     buffer: [4]char = [char(0) : 4]
-    written: usize, fits: bool = utf8.encode(0x10FFFF, mut buffer[..])
+    written: usize, fits: bool = utf8.encode(0x10FFFF, buffer[..])
 
     if !fits || written != 4 || !decodes(buffer[..], 0x10FFFF, 4) { return 10 }
-    written, fits = utf8.encode(0xE9, mut buffer[..])
+    written, fits = utf8.encode(0xE9, buffer[..])
 
     if !fits || written != 2 || buffer[0] != 0xC3 || buffer[1] != 0xA9 || buffer[2] != 0xBF { return 11 }
     small: [1]char = [char('x') : 1]
-    written, fits = utf8.encode(0xE9, mut small[..])
+    written, fits = utf8.encode(0xE9, small[..])
 
     if fits || written != 0 || small[0] != 'x' { return 12 }
-    written, fits = utf8.encode(0xDC00, mut buffer[..])
+    written, fits = utf8.encode(0xDC00, buffer[..])
 
     if fits || written != 0 { return 13 }
 

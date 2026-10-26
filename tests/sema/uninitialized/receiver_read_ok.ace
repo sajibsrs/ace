@@ -1,4 +1,4 @@
-/* A read-only receiver is read by the call, so it must be initialized. */
+/* A receiver is passed by address, so the call initializes it. */
 
 Pair: struct { x: int, y: int }
 

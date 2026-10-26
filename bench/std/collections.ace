@@ -26,15 +26,15 @@ main(): int {
 
     for round: usize in 0 .. rounds {
         items: array.Array[u64] = array.Array[u64] {}
-        defer mut items.wipe()
+        defer items.wipe()
         started: u64 = now()
         for i: usize in 0 .. count {
-            err: Error = mut items.push(u64(i))
+            err: Error = items.push(u64(i))
             if err != null { return 1 }
         }
         push_time += now() - started
         started = now()
-        for i: usize in 0 .. count { mut items.set(i, u64(i * 3 + round)) }
+        for i: usize in 0 .. count { items.set(i, u64(i * 3 + round)) }
         set_time += now() - started
         started = now()
         sum: u64 = 0
@@ -56,10 +56,10 @@ main(): int {
 
     for round: usize in 0 .. map_rounds {
         table: map.Map[int, int] = map.Map[int, int] {}
-        defer mut table.wipe()
+        defer table.wipe()
         started: u64 = now()
         for i: usize in 0 .. keys {
-            err: Error = mut table.set(int(i * 7), int(i + round))
+            err: Error = table.set(int(i * 7), int(i + round))
             if err != null { return 2 }
         }
         set_time += now() - started
@@ -77,7 +77,7 @@ main(): int {
         miss_time += now() - started
         started = now()
         for i: usize in 0 .. keys {
-            if mut table.unset(int(i * 7)) { checksum += 2 }
+            if table.unset(int(i * 7)) { checksum += 2 }
         }
         unset_time += now() - started
         checksum += table.len()

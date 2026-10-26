@@ -10,8 +10,8 @@
 // trivial and is replaced by that value.
 //
 // A local lives in a stack slot instead when something needs its storage (its
-// address, a mut argument or method receiver, a volatile access); a mut
-// parameter or method receiver lives at the address it arrives as. Those
+// address, the mem.release place or a method receiver, a volatile access); a
+// method receiver lives at the address it arrives as. Those
 // variables are read and written by load and store.
 //
 // A struct, tuple, or array is its scalar leaves (ir_leaves): a local is one
@@ -77,6 +77,7 @@ typedef struct {
     PtrMap      var_ix;    // binder Sym -> variable index + 1
     PtrMap      stored;    // Syms whose storage something needs: they live in a slot
     PtrMap      escapes;   // inline declaration -> its parameters' escape mask (scan_escapes)
+    PtrMap      pointee;   // inline *T parameter bound to a local's &: Sym -> the local's variable index + 1
     struct GenEscape* gesc; // the same for a generic one, per instantiation
     int         ngesc, cgesc;
     int         scan_auto; // scan_storage: release auto-inline calls expand (no self tail loop can stop them)
@@ -528,7 +529,40 @@ typedef struct {
     int  hit;
 } Scan;
 
+// A *T parameter of an inline declaration, which an expansion may bind to the
+// variables of a local whose address the argument takes (inline_call).
+static SType* pointee_of(Sym* s) {
+    SType* t = s ? unwrap(s->type) : NULL;
+    if (!t || t->kind != SK_PTR) return NULL;
+    SType* b = unwrap(t->base);
+    return b && b->kind != SK_PTR && b->kind != SK_VOID ? b : NULL;
+}
+
+// Whether x dereferences pointer parameter p once: `*p`, or a field of the
+// pointee through p's auto-deref.
+static int deref_of(Node* x, Sym* p) {
+    if (x->kind == N_UNARY && x->op == T_STAR) return x->a->kind == N_IDENT && node_sym(x->a) == p;
+    if (x->kind != N_FIELD_E || x->a->kind != N_IDENT || node_sym(x->a) != p) return 0;
+    SType* t = unwrap(node_ty(x->a));
+    return t && t->kind == SK_PTR;
+}
+
+// Whether place x lies in the pointee of p: through fields of a struct value
+// and elements of an array value, down to a dereference of p.
+static int in_pointee(Node* x, Sym* p) {
+    while (x && !deref_of(x, p) && (x->kind == N_FIELD_E || x->kind == N_INDEX)) {
+        SType* bt = unwrap(node_ty(x->a));
+        if (!bt || bt->kind == SK_PTR || (x->kind == N_INDEX && bt->kind != SK_ARRAY)) return 0;
+        x = x->a;
+    }
+    return x && deref_of(x, p);
+}
+
 static void need_storage(Lw* l, Scan* sc, Node* x) {
+    if (sc->want && pointee_of(sc->want)) { // the pointee is the argument's local
+        if (in_pointee(x, sc->want)) sc->hit = 1;
+        return;
+    }
     Sym* s = root_local(x);
     if (!s) return;
     if (!sc->want) ptrmap_put(&l->stored, s, 1);
@@ -548,6 +582,16 @@ static Node* scan_target(Lw* l, Node* call, SType*** targs, int* ntargs) {
 
 static void scan_walk(Lw* l, Scan* sc, Node* n) {
     if (!n || n->kind == N_FUNC) return;
+    if (sc->want && pointee_of(sc->want)) { // only dereferences keep the pointee in variables
+        if (n->kind == N_IDENT && node_sym(n) == sc->want) sc->hit = 1;
+        if (deref_of(n, sc->want)) {
+            if (l->in_defer) sc->hit = 1;
+            return;
+        }
+        if (n->kind == N_CALL && n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_ASSOC | F_FIELDCALL)) &&
+            n->a->a->kind == N_IDENT && node_sym(n->a->a) == sc->want)
+            sc->hit = 1; // p.method(): the receiver is p's value
+    }
     if (n->kind == N_UNARY && (n->op == T_AMP || n->op == T_VOLATILE)) need_storage(l, sc, n->a);
     if (n->kind == N_ASSIGN && (n->flags & F_VOLATILE))
         for (int i = 0; i < n->nkids; i++) need_storage(l, sc, n->kids[i]);
@@ -563,26 +607,32 @@ static void scan_walk(Lw* l, Scan* sc, Node* n) {
         l->in_defer = was;
         return;
     }
-    if (n->kind == N_CALL) { // a receiver or mut argument: storage unless an expansion binds it in place
+    if (n->kind == N_CALL) { // a receiver or release place: storage unless an expansion binds it in place
         SType** targs;
         int ntargs;
         Node* f = scan_target(l, n, &targs, &ntargs);
         uint64_t esc = f ? scan_escapes(l, f, targs, ntargs) : ~(uint64_t)0;
         int recv = n->a && n->a->kind == N_FIELD_E && !(n->flags & (F_ASSOC | F_FIELDCALL));
         if (recv && ((esc & 1) || (l->in_defer && !plain_local(n->a->a)))) need_storage(l, sc, n->a->a);
+        uint64_t bound = 0; // &local arguments an expansion binds in place
         for (int i = 0; i < n->nkids; i++) {
             int p = recv + i;
-            if (n->kids[i]->kind == N_MUTARG && ((esc >> (p < 63 ? p : 63) & 1) || (l->in_defer && !plain_local(n->kids[i]->a))))
-                need_storage(l, sc, n->kids[i]->a);
+            Node* k = n->kids[i];
+            int escapes = (esc >> (p < 63 ? p : 63) & 1) != 0;
+            if (k->kind == N_PLACEARG && (escapes || (l->in_defer && !plain_local(k->a))))
+                need_storage(l, sc, k->a);
+            if (f && !escapes && (!l->in_defer || plain_local(k->a)) && i < 63 && k->kind == N_UNARY && k->op == T_AMP &&
+                pointee_of(node_sym(f->kids[p])))
+                bound |= (uint64_t)1 << i;
         }
         scan_walk(l, sc, n->a);
         scan_walk(l, sc, n->b);
         scan_walk(l, sc, n->c);
-        for (int i = 0; i < n->nkids; i++) // a mut argument's place: its call decided above
-            scan_walk(l, sc, n->kids[i]->kind == N_MUTARG ? n->kids[i]->a : n->kids[i]);
+        for (int i = 0; i < n->nkids; i++) // a release or bound argument's place: its call decided above
+            scan_walk(l, sc, n->kids[i]->kind == N_PLACEARG || (bound >> i & 1) ? n->kids[i]->a : n->kids[i]);
         return;
     }
-    if (n->kind == N_MUTARG) need_storage(l, sc, n->a);
+    if (n->kind == N_PLACEARG) need_storage(l, sc, n->a);
     scan_walk(l, sc, n->a);
     scan_walk(l, sc, n->b);
     scan_walk(l, sc, n->c);
@@ -729,12 +779,17 @@ static SType* deref_type(Node* x) {
 }
 
 // The place field x is read from: x.a, or what it points to through every
-// level (p.x is (*p).x, and q.x through *mut *T); *bt its type.
+// level (p.x is (*p).x, and q.x through **T); *bt its type.
 static Place field_base(Lw* l, Node* x, SType** bt) {
     SType* t = unwrap(node_ty(x->a));
     if (!t || t->kind != SK_PTR) {
         *bt = t;
         return place(l, x->a);
+    }
+    if (x->a->kind == N_IDENT && ptrmap_get(&l->pointee, node_sym(x->a))) { // bound to a local's variables
+        Place v = { (int)ptrmap_get(&l->pointee, node_sym(x->a)) - 1, -1, 0, 0, pointee_of(node_sym(x->a)) };
+        *bt = v.t;
+        return v;
     }
     Place p = { -1, expr(l, x->a, IT_PTR), 0, 0, NULL };
     p.flags = access_check(l, p.addr);
@@ -752,6 +807,7 @@ static Place place(Lw* l, Node* x) {
     case N_IDENT: {
         Sym* s = node_sym(x);
         if (!s || s->kind != SYM_VAR) unsupported(l, "non-variable name");
+        if (ptrmap_get(&l->pointee, s)) unsupported(l, "bound pointer parameter's value"); // scan_escapes missed it
         p.t = s->type;
         if (s->is_global) {
             p.addr = global_addr(l, s);
@@ -764,6 +820,11 @@ static Place place(Lw* l, Node* x) {
     }
     case N_UNARY:
         if (x->op != T_STAR) break;
+        if (x->a->kind == N_IDENT && ptrmap_get(&l->pointee, node_sym(x->a))) {
+            p.var = (int)ptrmap_get(&l->pointee, node_sym(x->a)) - 1;
+            p.t = pointee_of(node_sym(x->a));
+            return p;
+        }
         p.addr = expr(l, x->a, IT_PTR);
         p.flags = access_check(l, p.addr);
         p.t = deref_type(x); // an assignment target's node carries no type
@@ -1051,13 +1112,13 @@ static Place temp_place(Lw* l, Node* x) {
     return (Place){ -1, slot, 0, 0, t };
 }
 
-// A call argument: the address of its place for a mut parameter or method
-// receiver (of a new stack object when it is no place, a call's result), else
-// its leaves at the parameter's type. A big one is passed by address: of its
+// A call argument: the address of its place for a method receiver (of a new
+// stack object when it is no place, a call's result), else its leaves at the
+// parameter's type. A big one is passed by address: of its
 // own place when `ace` is set (an Ace callee, Values & Passing #2), else of a
 // copy, as C's ABI requires.
 static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address, int ace) {
-    if (a->kind == N_MUTARG) a = a->a;
+    if (a->kind == N_PLACEARG) a = a->a;
     if (by_address && !is_place(a)) {
         arg_scalar(l, g, place_address(l, temp_place(l, a)));
         return;
@@ -1127,7 +1188,7 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
             arg_scalar(l, g, v);
             continue;
         }
-        int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_MUT)) ||
+        int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_BYADDR)) ||
                          (d && (d->flags & F_METHOD) && i == 0);
         call_arg(l, g, a, ft->params[i], by_address, !s->is_extern);
         SType* pu = unwrap(ft->params[i]);
@@ -1326,7 +1387,7 @@ static void view_parts(Lw* l, Node* x, int* ptr, int* len);
 
 // The bytes of [N]u8, []u8, or string x: its address and length.
 static void bytes_parts(Lw* l, Node* x, int* ptr, int* len) {
-    if (x->kind == N_MUTARG) x = x->a;
+    if (x->kind == N_PLACEARG) x = x->a;
     SType* t = unwrap(node_ty(x));
     if (t && t->kind == SK_ARRAY) {
         *ptr = place_address(l, array_place(l, x));
@@ -1484,10 +1545,10 @@ static int mem_alloc_typed(Lw* l, Node* x, int bi, Agg* res) {
     return slice_out(l, res, pv, nv);
 }
 
-// mem.release(mut data), mem.release[T](mut data): free a non-null data
+// mem.release(&data), mem.release[T](&data): free a non-null data
 // (debug first drops its registry record), then data becomes null.
 static int mem_release(Lw* l, Node* x) {
-    Node* raw = x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0];
+    Node* raw = x->kids[0]->kind == N_PLACEARG ? x->kids[0]->a : x->kids[0];
     Place p = place(l, raw);
     SType* st = unwrap(p.t);
     uint64_t esz = st && st->kind == SK_SLICE ? sema_size(st->base) : 1;
@@ -1526,7 +1587,7 @@ static int mem_write(Lw* l, Node* x, int bi) {
         bi = bi == BI_MEM_COPY_T ? BI_MEM_COPY : BI_MEM_MOVE;
     }
     int dst, dlen;
-    view_parts(l, x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0], &dst, &dlen);
+    view_parts(l, x->kids[0]->kind == N_PLACEARG ? x->kids[0]->a : x->kids[0], &dst, &dlen);
     if (bi == BI_MEM_FILL || bi == BI_MEM_ZERO) {
         int v = bi == BI_MEM_FILL ? expr(l, x->kids[1], IT_U8) : konst(l, IT_U8, 0);
         rtcall(l, "__ace$mem_fill", dst, v, dlen);
@@ -1618,7 +1679,7 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
     Sym* close = (Sym*)plan->close;
     int dp = -1, dn = -1, fd = -1;
     Node* dest = to_fd == 2 ? x->a->a // the Buffer.printf receiver
-               : fi ? (x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0]) : NULL;
+               : fi ? (x->kids[0]->kind == N_PLACEARG ? x->kids[0]->a : x->kids[0]) : NULL;
     int sink = -1;
     if (to_fd == 2) {
         Place p = place(l, dest);
@@ -1639,7 +1700,7 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
     Agg* cap = (Agg*)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(Agg));
     SType** capt = (SType**)arena_alloc((size_t)(nargs ? nargs : 1) * sizeof(SType*));
     for (int i = 0; i < nargs; i++) {
-        Node* arg = x->kids[i + fi + 1]->kind == N_MUTARG ? x->kids[i + fi + 1]->a : x->kids[i + fi + 1];
+        Node* arg = x->kids[i + fi + 1]->kind == N_PLACEARG ? x->kids[i + fi + 1]->a : x->kids[i + fi + 1];
         SType* t = node_ty(arg);
         for (int k = 0; k < plan->nparts && is_untyped(t); k++) // an untyped constant takes its writer's type
             if (plan->parts[k].arg == i + fi + 1 && plan->parts[k].helper)
@@ -1658,7 +1719,7 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
     if (to_fd == 2) {
         arg_scalar(l, &g, fd);
     } else {
-        sink = new_slot(l, open->type->params[0]);
+        sink = new_slot(l, open->type->params[0]->base); // the opener takes *Sink
         arg_scalar(l, &g, sink);
         g.part[g.nparts++] = (IrPart){ open->type->params[1], g.n, 2, 0 };
         g.v[g.n++] = dp;
@@ -2213,7 +2274,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
     }
     Args g;
     args_init(&g);
-    if (!s && callee->kind == N_FIELD_E) { // contract dispatch: s.area() / mut s.scale(2.0)
+    if (!s && callee->kind == N_FIELD_E) { // contract dispatch: s.area() / s.scale(2.0)
         SType* ct = node_ty(callee->a);
         if (ct && ct->kind == SK_CONTRACT) {
             int midx = -1;
@@ -2226,7 +2287,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
             value(l, callee->a, ct, &c);
             int fn = load(l, IT_PTR, c.v[0], midx * 8, access_check(l, c.v[0])); // fn slot: vtable checked here
             arg_scalar(l, &g, c.v[1]); // the receiver: always by address
-            for (int i = 0; i < x->nkids; i++) // sema: no contract method parameter is mut
+            for (int i = 0; i < x->nkids; i++)
                 call_arg(l, &g, x->kids[i], node_ty(x->kids[i]), 0, 0);
             SType* rt = node_ty(x);
             int id = emit(l, IR_CALLI, result_type(l, rt));
@@ -2239,8 +2300,8 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         SType* ft = unwrap(s ? s->type : node_ty(callee));
         if (!ft || ft->kind != SK_FUNC || x->nkids != ft->nparams) unsupported(l, "indirect call");
         int f = expr(l, callee, IT_PTR);
-        for (int i = 0; i < x->nkids; i++) // a mut parameter passes the caller's address
-            call_arg(l, &g, x->kids[i], ft->params[i], i < 64 && ((ft->mut_params >> i) & 1), 0);
+        for (int i = 0; i < x->nkids; i++)
+            call_arg(l, &g, x->kids[i], ft->params[i], 0, 0);
         int id = emit(l, IR_CALLI, result_type(l, ft->ret));
         l->fn->ins[id].flags = (uint8_t)null_checked(l);
         ir_arg_add(l->fn, id, f); // the target, then the arguments
@@ -2732,7 +2793,7 @@ static int union_ctor(Node* x, int* variant, Node** payload) {
     }
     if (x->kind != N_CALL || x->sym || !x->a || x->a->kind != N_FIELD_E || !union_of_base(x->a->a)) return 0;
     *variant = (int)x->a->ival;
-    if (x->nkids == 1) *payload = x->kids[0]->kind == N_MUTARG ? x->kids[0]->a : x->kids[0];
+    if (x->nkids == 1) *payload = x->kids[0]->kind == N_PLACEARG ? x->kids[0]->a : x->kids[0];
     return 1;
 }
 
@@ -3745,8 +3806,8 @@ static void inline_return(Lw* l, Node* s) {
 }
 
 // A call to an inline function: its body copied in place. Each argument is
-// evaluated in order and bound to its parameter, a mut parameter or receiver
-// to the argument's own storage and any other to a copy. Each return jumps to
+// evaluated in order and bound to its parameter, the receiver to the
+// argument's own storage and any other to a copy. Each return jumps to
 // a join block, where the result is a variable read: an aggregate's leaves
 // into res, or one of over IR_MAX_LEAVES leaves stored at dst (a new stack object when
 // dst < 0), as a call's.
@@ -3775,7 +3836,7 @@ static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
         Sym* ps = node_sym(bind[i]);
         if (!ps) unsupported(l, "unresolved parameter");
         Node* a = args[i];
-        if (a->kind == N_MUTARG) a = a->a;
+        if (a->kind == N_PLACEARG) a = a->a;
         if (by_address(f, i) && !is_place(a)) { // a call's result, or a field of one: a new stack object
             var_new(l, ps, IT_VOID, place_address(l, temp_place(l, a)));
             continue;
@@ -3787,6 +3848,12 @@ static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
                 continue;
             }
             var_new(l, ps, IT_VOID, place_address(l, p));
+            continue;
+        }
+        if (a->kind == N_UNARY && a->op == T_AMP && pointee_of(ps) && is_place(a->a)) {
+            Place p = place(l, a->a); // a local kept in variables: *ps is those variables
+            if (p.var >= 0 && unwrap(p.t) == pointee_of(ps)) ptrmap_put(&l->pointee, ps, (uintptr_t)p.var + 1);
+            else write_var(l, var_of(l, ps), l->cur, place_address(l, p));
             continue;
         }
         init_var(l, var_of(l, ps), ps, a);
@@ -3946,11 +4013,11 @@ static void range_loop(Lw* l, Node* s) {
     enter(l, exit);
 }
 
-// for v: T in seq, for i: usize, v: T in seq, and either under `in mut`
-// (Iterations #7-10): the sequence's pointer and length are fixed at entry, and
-// a pointer runs from the start to the end, bumped by the element size. The
-// value binder is a copy of the element at the pointer, or under `in mut` an
-// alias of it; the index binder counts from zero. The body has no bounds checks.
+// for v: T in seq and for i: usize, v: T in seq (Iterations #7-10): the
+// sequence's pointer and length are fixed at entry, and a pointer runs from the
+// start to the end, bumped by the element size. The value binder is a copy of
+// the element at the pointer; the index binder counts from zero. The body has
+// no bounds checks.
 static void seq_loop(Lw* l, Node* s) {
     static SType byte = { .kind = SK_PRIM, .prim = P_U8, .size = 1, .align = 1 };
     if (s->nkids < 1 || s->nkids > 2) unsupported(l, "sequence binders");
@@ -3959,7 +4026,6 @@ static void seq_loop(Lw* l, Node* s) {
     Sym* vs = node_sym(vb);
     Sym* is = ib ? node_sym(ib) : NULL;
     if (!vs || (ib && !is)) unsupported(l, "unresolved binder");
-    int mut = (s->flags & F_MUT) != 0;
     SType* st = unwrap(node_ty(s->b));
     SType* et;
     int ptr, len = -1;
@@ -3977,11 +4043,6 @@ static void seq_loop(Lw* l, Node* s) {
     l->fn->ins[end].imm = esz;
     int cur = var_new(l, NULL, IT_PTR, -1);
     int ix = is ? var_new(l, NULL, IT_U64, -1) : -1;
-    int alias = -1;
-    if (mut) { // the binder lives at the element's address, which changes each iteration
-        alias = var_new(l, NULL, IT_PTR, -1);
-        var_new(l, vs, IT_VOID, ADDR_VAR - alias);
-    }
     write_var(l, cur, l->cur, ptr);
     if (is) write_var(l, ix, l->cur, konst(l, IT_U64, 0));
     int head = new_block(l), body = new_block(l), exit = new_block(l);
@@ -3991,12 +4052,8 @@ static void seq_loop(Lw* l, Node* s) {
     seal(l, body);
     enter(l, body);
     int p = read_var(l, cur, body);
-    if (mut) {
-        write_var(l, alias, l->cur, p);
-    } else {
-        Place src = { -1, p, 0, 0, et };
-        move_place(l, binder_place(l, vb), src);
-    }
+    Place src = { -1, p, 0, 0, et };
+    move_place(l, binder_place(l, vb), src);
     if (is) {
         Agg g;
         g.n = 1;
@@ -4143,7 +4200,7 @@ static void switch_stmt(Lw* l, Node* s) {
 
 // --- defer ------------------------------------------------------------------------------
 // A `defer` captures its call: each read-only argument is evaluated there into
-// a fresh variable, and a `mut` argument or receiver keeps its storage's
+// a fresh variable, and the release place or receiver keeps its storage's
 // address, so the call re-lowered at every exit from its block (the block's
 // end, a return, or a break/continue past it), last defer first, reads the
 // snapshots and the final storage. The result being returned is already SSA values (or memory the
@@ -4181,7 +4238,7 @@ static int is_literal(Node* x) {
 // (a plain local itself, its storage being fixed), else its value, in memory when a receiver reads it by address; the name the
 // exit-time call reads in its place.
 static Node* defer_arg(Lw* l, Node* a, int byaddr, int in_slot) {
-    Node* inner = a->kind == N_MUTARG ? a->a : a;
+    Node* inner = a->kind == N_PLACEARG ? a->a : a;
     SType* t = node_ty(inner);
     Node* id;
     if (byaddr) {
@@ -4191,11 +4248,12 @@ static Node* defer_arg(Lw* l, Node* a, int byaddr, int in_slot) {
         var_new(l, node_sym(id), IT_VOID, place_address(l, p));
     } else {
         if (is_untyped(t) || is_literal(inner)) return a; // nothing to snapshot
+        if (inner->kind == N_UNARY && inner->op == T_AMP && plain_local(inner->a)) return a; // a fixed address
         id = defer_name(inner, t);
         if (in_slot) ptrmap_put(&l->stored, node_sym(id), 1);
         init_var(l, var_of(l, node_sym(id)), node_sym(id), inner);
     }
-    if (a->kind != N_MUTARG) return id;
+    if (a->kind != N_PLACEARG) return id;
     Node* w = (Node*)arena_alloc(sizeof(Node));
     *w = *a;
     w->a = id;
@@ -4218,7 +4276,7 @@ static void defer_capture(Lw* l, Node* s) {
     if (instance || contract) {
         Node* sf = (Node*)arena_alloc(sizeof(Node));
         *sf = *callee;
-        sf->a = defer_arg(l, callee->a, (call->flags & F_MUT) != 0, 1);
+        sf->a = defer_arg(l, callee->a, (call->flags & F_BYADDR) != 0, 1);
         sc->a = sf;
     } else if (tgt && tgt->kind == SYM_VAR) { // the function value is snapshotted too
         sc->a = defer_arg(l, callee, 0, 0);
@@ -4226,7 +4284,7 @@ static void defer_capture(Lw* l, Node* s) {
     if (call->nkids) {
         sc->kids = (Node**)arena_alloc((size_t)call->nkids * sizeof(Node*));
         for (int i = 0; i < call->nkids; i++)
-            sc->kids[i] = defer_arg(l, call->kids[i], call->kids[i]->kind == N_MUTARG, 0);
+            sc->kids[i] = defer_arg(l, call->kids[i], call->kids[i]->kind == N_PLACEARG, 0);
     }
     l->defers = grow(l->defers, &l->cdefers, l->ndefers + 1, sizeof(Deferred));
     l->defers[l->ndefers++] = (Deferred){ sc, s };
@@ -4452,7 +4510,7 @@ static void stmt(Lw* l, Node* s) {
 // --- functions --------------------------------------------------------------------------
 
 static int by_address(Node* f, int i) {
-    return (f->kids[i]->flags & F_MUT) || ((f->flags & F_METHOD) && i == 0);
+    return (f->kids[i]->flags & F_BYADDR) || ((f->flags & F_METHOD) && i == 0);
 }
 
 // Whether a local or parameter of f lives in this frame (a slot): the levels

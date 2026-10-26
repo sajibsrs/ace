@@ -1,6 +1,6 @@
 /* C function types are distinct in type position. */
 
 zero: extern "c" (): void
-one: extern "c" (mut *u8): mut *u8
-many: extern "c" (mut *u8, u32): int
+one: extern "c" (*u8): *u8
+many: extern "c" (*u8, u32): int
 ordinary_zero: (): int

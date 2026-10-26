@@ -11,7 +11,6 @@ Point: struct { x: int, y: int }
 
 Views: struct {
     nothing: int = null,
-    writable: mut []int = [1, 2],
     keyed: []int = [Color.red = 1],
     point: [2]int = { x = 1 },
     list: Point = [1, 2],

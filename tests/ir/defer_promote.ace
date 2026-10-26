@@ -1,4 +1,4 @@
-/* A deferred call's mut receiver that is a plain local is lowered again at
+/* A deferred call's receiver that is a plain local is lowered again at
  * each exit rather than captured by address, so the local stays in SSA
  * values. The error check after each push threads past the merge whose phis
  * the early return's deferred wipe reads, leaving the loop free of it. */
@@ -7,9 +7,9 @@ import array
 
 fill(n: usize): int {
     items: array.Array[u64] = array.Array[u64] {}
-    defer mut items.wipe()
+    defer items.wipe()
     for i: usize in 0 .. n {
-        err: Error = mut items.push(u64(i))
+        err: Error = items.push(u64(i))
         if err != null { return 1 }
     }
     return int(items.len)

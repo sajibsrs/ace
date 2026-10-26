@@ -23,8 +23,8 @@ run(argv: []string, options: exec.SpawnOptions): int {
 
 /* Whether the file holds exactly `want`. */
 captured(want: string): bool {
-    data: mut []u8, err: Error = file.read(PATH)
-    defer mem.release[u8](mut data)
+    data: []u8, err: Error = file.read(PATH)
+    defer mem.release[u8](&data)
     if err != null { return false }
     return str.compare(string(data), want) == 0
 }
@@ -85,14 +85,14 @@ main(): int {
     sys.close(out1)
     sys.close(out2)
     buf: [16]u8
-    n: int, read_err: Error = sys.read(in2, mut buf[0..16])
+    n: int, read_err: Error = sys.read(in2, buf[0..16])
     if read_err != null || n != 4 { return 12 }
-    n, read_err = sys.read(in2, mut buf[0..16])
+    n, read_err = sys.read(in2, buf[0..16])
     if read_err != null || n != 0 { return 13 }
     if time.awake() - start > 2000000000 { return 16 }
-    n, read_err = sys.read(in1, mut buf[0..16])
+    n, read_err = sys.read(in1, buf[0..16])
     if read_err != null || n != 4 { return 14 }
-    n, read_err = sys.read(in1, mut buf[0..16])
+    n, read_err = sys.read(in1, buf[0..16])
     if read_err != null || n != 0 { return 15 }
     sys.wait(p1)
     sys.wait(p2)

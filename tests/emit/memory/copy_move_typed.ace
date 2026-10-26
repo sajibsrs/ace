@@ -7,21 +7,21 @@ import mem
 main(): int {
     source: [4]u32 = [0x01020304, 5, 6, 0xffffffff]
     target: [4]u32 = [0, 0, 0, 0]
-    mem.copy[u32](mut target[..], source[..])
+    mem.copy[u32](target[..], source[..])
     for i: usize in 0..4 {
         if target[i] != source[i] { return 1 }
     }
 
     right: [5]u64 = [1, 2, 3, 4, 5]
-    mem.move[u64](mut right[1..5], right[0..4])
+    mem.move[u64](right[1..5], right[0..4])
     if right[0] != 1 || right[1] != 1 || right[2] != 2 || right[4] != 4 { return 2 }
 
     left: [5]i16 = [1, 2, 3, 4, -5]
-    mem.move[i16](mut left[0..4], left[1..5])
+    mem.move[i16](left[0..4], left[1..5])
     if left[0] != 2 || left[3] != -5 || left[4] != -5 { return 3 }
 
-    heap: mut []u32 = mem.alloc[u32](3)
-    defer mem.release[u32](mut heap)
+    heap: []u32 = mem.alloc[u32](3)
+    defer mem.release[u32](&heap)
     if heap == null { return 4 }
     mem.copy[u32](heap, source[1..4])
     if heap[0] != 5 || heap[2] != 0xffffffff { return 5 }

@@ -40,7 +40,7 @@ answer(listener: net.Socket): bool {
     storage: [8]u8 = [0 : 8]
     at: usize = 0
     for at < storage.len {
-        count: int, receive_err: Error = net.receive(peer, mut storage[at..])
+        count: int, receive_err: Error = net.receive(peer, storage[at..])
         if receive_err != null || count <= 0 { return false }
         at += usize(count)
     }
@@ -77,7 +77,7 @@ serve(listener: net.Socket, report: sys.Fd): int {
     events: [4]poll.Event
     stopping: bool = false
     for !stopping {
-        count: usize, wait_err: Error = poll.wait(q, mut events[0..4], poll.FOREVER)
+        count: usize, wait_err: Error = poll.wait(q, events[0..4], poll.FOREVER)
         if wait_err == poll.WaitErr.interrupted { continue }
         if wait_err != null { return 6 }
         for i: usize in 0 .. count {
@@ -112,18 +112,18 @@ main(): int {
 
     connection: tcp.Conn, connect_err: Error = tcp.connect(loopback(local.port))
     if connect_err != null { return 6 }
-    defer tcp.close(mut connection)
+    defer tcp.close(&connection)
     sent: usize, send_err: Error = tcp.send_all(connection, REQUEST)
     if send_err != null || sent != REQUEST.len { return 7 }
     storage: [8]u8 = [0 : 8]
-    received: usize, receive_err: Error = tcp.receive_all(connection, mut storage[0..])
+    received: usize, receive_err: Error = tcp.receive_all(connection, storage[0..])
     if receive_err != null || received != REQUEST.len || !mem.equal(storage[0..], REQUEST) { return 8 }
 
     if signal.send(server, signal.SIGTERM) != null { return 9 }
     status: sys.ProcessStatus, wait_err: Error = sys.wait(server)
     if wait_err != null || !status.exited || status.code != 0 { return 10 }
     marker: [1]u8 = [0]
-    count: int, read_err: Error = sys.read(reports, mut marker[0..1])
+    count: int, read_err: Error = sys.read(reports, marker[0..1])
     if read_err != null || count != 1 || marker[0] != 100 { return 11 }
     return 42
 }

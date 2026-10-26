@@ -32,7 +32,7 @@ report(name: string, elapsed: u64, operations: usize, checksum: usize) {
 /* A 64-bit LCG, one output byte per step, from the top bits. Kind 0 of 16 is
  * a space, 1 a newline, 2-4 a digit, 5 a dash, and the rest a letter.
  */
-fill(text: mut []u8) {
+fill(text: []u8) {
     x: u64 = 88172645463325252
 
     for i: usize in 0 .. text.len {
@@ -64,12 +64,12 @@ compile(pattern: string): regex.Regex {
 /* Every match of `pattern`, as `next` visits them. */
 find_all(name: string, pattern: string, text: string) {
     re: regex.Regex = compile(pattern)
-    defer mut re.wipe()
+    defer re.wipe()
     checksum: usize = 0
     at: usize = 0
     started: u64 = now()
 
-    for mut re.next(text, mut at) {
+    for re.next(text, &at) {
         span: regex.Span = re.span(0)
         checksum += 1 + span.start + span.end
     }
@@ -79,13 +79,13 @@ find_all(name: string, pattern: string, text: string) {
 /* Every match of `(\d+)-(\d+)`, summing both groups' positions. */
 captures(text: string) {
     re: regex.Regex = compile("(\\d+)-(\\d+)")
-    defer mut re.wipe()
+    defer re.wipe()
     checksum: usize = 0
     at: usize = 0
     started: u64 = now()
 
     for at <= text.len {
-        if !mut re.find(text, at) { break }
+        if !re.find(text, at) { break }
         checksum += 1 + re.span(1).start + re.span(2).end
         at = re.span(0).end
     }
@@ -94,13 +94,13 @@ captures(text: string) {
 
 pathological() {
     re: regex.Regex = compile("(a|aa)*c")
-    defer mut re.wipe()
+    defer re.wipe()
     text: string = "aaaaaaaaaaaaaabc"
     checksum: usize = 0
     started: u64 = now()
 
     for 0 .. CALLS {
-        if mut re.find(text, 0) {
+        if re.find(text, 0) {
             span: regex.Span = re.span(0)
             checksum += 1 + span.start + span.end
         }
@@ -109,8 +109,8 @@ pathological() {
 }
 
 main(): int {
-    text: mut []u8 = mem.alloc[u8](SIZE)
-    defer mem.release[u8](mut text)
+    text: []u8 = mem.alloc[u8](SIZE)
+    defer mem.release[u8](&text)
     if text == null { return 1 }
 
     fill(text)

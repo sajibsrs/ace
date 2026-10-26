@@ -84,31 +84,31 @@ str_examples(): int {
 
     if !radix_ok || r != 255 { return 4 }
     buf: [32]u8 = [0 : 32]
-    dst: mut []u8 = mut buf[0..32]
+    dst: []u8 = buf[0..32]
     count: usize, fit: bool = str.format(dst, n)
 
     if !fit || count != 3 { return 5 }
     fps: int = 60
     frame_ms: f64 = 16.67
     line: [64]u8 = [0 : 64]
-    written: usize, ok_line: bool = str.format(mut line[..], "FPS %d, %.2f ms", fps, frame_ms)
+    written: usize, ok_line: bool = str.format(line[..], "FPS %d, %.2f ms", fps, frame_ms)
 
     if !ok_line || written != 16 { return 6 }
     return 0
 }
 
 mem_examples(): int {
-    data: mut []u8 = mem.alloc(64, 8)
+    data: []u8 = mem.alloc(64, 8)
 
     if data == null { return 1 }
-    mem.release(mut data)
+    mem.release(&data)
 
-    numbers: mut []usize = mem.alloc[usize](4)
+    numbers: []usize = mem.alloc[usize](4)
 
     if numbers == null { return 2 }
 
     numbers[0] = 42
-    mem.release[usize](mut numbers)
+    mem.release[usize](&numbers)
     return 0
 }
 
@@ -130,7 +130,7 @@ write_note(): int {
 
 standard_descriptors(): int {
     storage: [8]u8 = [0 : 8]
-    buf: mut []u8 = mut storage[0..8]
+    buf: []u8 = storage[0..8]
     n: int, rerr: Error = sys.read(sys.stdin, buf)
 
     if rerr != null { return 1 }
@@ -160,13 +160,13 @@ filesystem_examples(): int {
     dir: sys.Dir, open_err: Error = sys.opendir("/tmp")
     if open_err != null { return 3 }
     storage: [256]u8 = [0 : 256]
-    name: mut []u8 = mut storage[0..256]
-    count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.readdir(mut dir, name)
+    name: []u8 = storage[0..256]
+    count: usize, file_type: sys.FileType, done: bool, read_err: Error = sys.readdir(&dir, name)
     if read_err != null || (!done && count == 0) || file_type == sys.FileType.symlink {
-        sys.closedir(mut dir)
+        sys.closedir(&dir)
         return 4
     }
-    if sys.closedir(mut dir) != null { return 5 }
+    if sys.closedir(&dir) != null { return 5 }
     return 0
 }
 
@@ -204,9 +204,9 @@ printf_examples(): int {
     fmt.printf("%u %x %X %f %c %%", uint(7), usize(15), uint(15), f32(0.5), byte)
     warned: int = fmt.printf(sys.stderr, "warning: %d retries\n", 3)
     storage: [4096]u8
-    out: fmt.Buffer = fmt.Buffer.init(sys.stdout, mut storage[..])
-    for i: int in 0 .. 3 { mut out.printf("line %d\n", i) }
-    flushed: int = mut out.flush()
+    out: fmt.Buffer = fmt.Buffer.init(sys.stdout, storage[..])
+    for i: int in 0 .. 3 { out.printf("line %d\n", i) }
+    flushed: int = out.flush()
     if warned != 19 { return 2 }
     if flushed != 21 { return 3 }
     return 0
@@ -246,18 +246,18 @@ spawn_example(): int {
 
 Job: struct { input: u64, output: u64 }
 
-extern "c" square(argument: mut *u8): mut *u8 {
-    job: mut *Job = mut *Job(argument)
+extern "c" square(argument: *u8): *u8 {
+    job: *Job = *Job(argument)
     job.output = job.input * job.input
     return argument
 }
 
 thread_example(): int {
     job: Job = Job { input = 7, output = 0 }
-    argument: mut *u8 = mut *u8(mut &job)
+    argument: *u8 = *u8(&job)
     worker: thread.Thread, err: Error = thread.create(square, argument)
     if err != null { return 1 }
-    result: mut *u8, jerr: Error = thread.join(worker)
+    result: *u8, jerr: Error = thread.join(worker)
     if jerr != null { return 2 }
     return int(job.output) // 49
 }
@@ -266,25 +266,25 @@ guard: thread.Mutex // zero is unlocked
 total: u64
 
 add(amount: u64) {
-    mut guard.lock()
+    guard.lock()
     total += amount
-    mut guard.unlock()
+    guard.unlock()
 }
 
 Queue: struct { guard: thread.Mutex, changed: thread.Condition, count: u64 }
 
-take(queue: mut *Queue) {
-    mut queue.guard.lock()
-    for queue.count == 0 { mut queue.changed.wait(mut &queue.guard) }
+take(queue: *Queue) {
+    queue.guard.lock()
+    for queue.count == 0 { queue.changed.wait(&queue.guard) }
     queue.count -= 1
-    mut queue.guard.unlock()
+    queue.guard.unlock()
 }
 
-put(queue: mut *Queue) {
-    mut queue.guard.lock()
+put(queue: *Queue) {
+    queue.guard.lock()
     queue.count += 1
-    mut queue.changed.wake_one()
-    mut queue.guard.unlock()
+    queue.changed.wake_one()
+    queue.guard.unlock()
 }
 
 net_example(): int {
@@ -313,7 +313,7 @@ net_example(): int {
     if sys.close(sock) != null { return 3 }
 
     storage: [8]net.Addr4
-    addresses: mut []net.Addr4 = mut storage[0..8]
+    addresses: []net.Addr4 = storage[0..8]
     count: usize, resolve_err: Error = net.resolve4("example.com", u16(80), addresses)
 
     if resolve_err == null && count != 0 {
@@ -332,18 +332,18 @@ tcp_example(address: net.Addr4): int {
     if err != null { return 1 }
     local: net.Addr4, local_err: Error = tcp.local(listener)
     if local_err != null || local.port == 0 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 2
     }
     connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
     if accept_err == null {
         storage: [4]u8 = [0 : 4]
-        buffer: mut []u8 = mut storage[0..]
+        buffer: []u8 = storage[0..]
         count: usize, ioerr: Error = tcp.receive_all(connection, buffer)
         if ioerr == null && count == 4 { count, ioerr = tcp.send_all(connection, "pong") }
-        tcp.close(mut connection)
+        tcp.close(&connection)
     }
-    tcp.close(mut listener)
+    tcp.close(&listener)
     return 0
 }
 
@@ -351,19 +351,19 @@ tcp_nonblocking_example(address: net.Addr4): int {
     connection: tcp.Conn, err: Error = tcp.connect_nonblock(address)
     if err != null { return 1 }
     if tcp.interest(connection) == tcp.Interest.write {
-        event: tcp.Event = tcp.progress_connect(mut connection)
+        event: tcp.Event = tcp.progress_connect(&connection)
         switch event {
             tcp.Event.connected {}
             tcp.Event.failed(connect_err: Error) {
                 if connect_err != null {
-                    tcp.close(mut connection)
+                    tcp.close(&connection)
                     return 2
                 }
             }
             default {}
         }
     }
-    tcp.close(mut connection)
+    tcp.close(&connection)
     return 0
 }
 
@@ -385,7 +385,7 @@ readiness_example(fd: sys.Fd): int {
         hangup = false,
     }
     storage: [16]poll.Event = [zero : 16]
-    events: mut []poll.Event = mut storage[0..16]
+    events: []poll.Event = storage[0..16]
     count: usize, wait_err: Error = poll.wait(q, events, poll.FOREVER)
 
     if wait_err == null {

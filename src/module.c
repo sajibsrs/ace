@@ -462,7 +462,7 @@ static void mark_fmt_intrinsics(Loader* L, Module* m) {
     for (int i = 0; i < m->file->nkids; i++) {
         Node* n = m->file->kids[i];
         if (n->kind == N_FUNC && (n->flags & F_PUB) && text_is(n->str, n->len, "printf"))
-            n->ival = (n->flags & F_METHOD) ? BI_FMT_PRINTF_BUF          // Buffer.printf(mut self, format)
+            n->ival = (n->flags & F_METHOD) ? BI_FMT_PRINTF_BUF          // Buffer.printf(self, format)
                     : n->nkids == 2 ? BI_FMT_PRINTF_FD : BI_FMT_PRINTF;  // (fd, format) or (format)
     }
 }

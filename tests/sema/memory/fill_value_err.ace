@@ -6,6 +6,6 @@ main(): int {
     a: [1]u8 = [1]
     dst: []u8 = a[0..1]
     value: int = 7
-    fill(mut dst, value)
+    fill(dst, value)
     return 0
 }

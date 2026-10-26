@@ -48,12 +48,15 @@ When goals conflict, resolve in this order:
 Distilled from the closed philosophy decisions; operative rules live in spec/.
 1. Memory is manual and explicit. Ace permits only small, local compile-time safety rules with zero runtime cost; broader diagnostics belong in debug builds, never in ownership or lifetime machinery.
 2. No hidden control flow, no hidden costs: no exceptions, no propagation sugar, no COW, no inference, no implicit instantiation.
-3. Mutation is visible — in signatures and at call sites; an unmarked call changes nothing you passed.
+3. Portable assembler: Ace is a well-planned way to write the machine's own operations, with the tools needed to map them properly. Every construct lowers to code the programmer can predict; storage is writable unless placed in read-only memory.
 4. Machine truth: layout, sizes, and stack vs heap are statically known and visible.
 5. Composition over inheritance; dispatch is an explicit value, never hidden machinery.
 6. Errors are values, checked by hand; panic is abort, never a channel.
 7. Start strict, relax later — never tighten.
 8. Modules are explicit compilation boundaries; modularity must not require hidden runtime machinery or whole-program analysis.
+9. No undefined behavior. Every operation is boolean: it works, or it definitely fails — never "maybe". A failure the language can define at no cost is defined (one fixed result, or a trap); where catching it would need a runtime check in release, the operation has machine semantics (it happens as written, and the compiler never assumes it cannot); debug builds add detection on top.
+10. Memory permissions belong to the platform. The compiler and linker only choose sections — literals and `const` globals go in read-only memory — the OS loader maps page protections, and the MMU faults on a violating write. The type system adds no write-permission layer.
+11. The optimizer uses only facts the hardware guarantees or the programmer stated explicitly (`noalias`, `volatile`, atomics). It never derives facts from types (no type-based aliasing) or from the absence of undefined behavior.
 
 ## Considerations
 1. Start strict, relax later: adding convenience later is backward-compatible; removing it is a break. Explicitness-first is the safe default (applies to types, syntax, stdlib).

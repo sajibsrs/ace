@@ -25,8 +25,8 @@ note(text: string) {
     fmt.println(text)
 }
 
-add(mut total: int, n: int) {
-    total += n
+add(total: *int, n: int) {
+    *total += n
 }
 
 show(total: int) {
@@ -82,7 +82,7 @@ captures(): int {
     total: int = 0
     for i: int in 0 .. 3 {
         local: int = i
-        defer add(mut total, local)
+        defer add(&total, local)
         local += 1
     }
     if true {

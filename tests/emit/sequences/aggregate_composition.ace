@@ -20,7 +20,7 @@ id[T](value: T): T {
     return value
 }
 
-replace[T](values: mut []T, index: int, value: T) {
+replace[T](values: []T, index: int, value: T) {
     values[index] = value
 }
 
@@ -48,7 +48,7 @@ main(): int {
     points: [2][2]Point = id[Points](make_points())
     points_copy: [2][2]Point = points
     points_copy[0][0].x = 10
-    point_view: mut []Point = mut points_copy[0][0..2]
+    point_view: []Point = points_copy[0][0..2]
     replace[Point](point_view, 1, Point {
         x = 20,
         y = 21,
@@ -56,22 +56,22 @@ main(): int {
     if points[0][0].x != 1 || points_copy[0][0].x != 10 || point_view[1].y != 21 { return 1 }
 
     colors: [2][2]Color = id[Colors](make_colors())
-    color_view: mut []Color = mut colors[1][0..2]
+    color_view: []Color = colors[1][0..2]
     replace[Color](color_view, 1, Color.green)
     if colors[0][1] != Color.green || color_view[1] != Color.green { return 2 }
 
     scores: [2][2]Score = id[Scores](make_scores())
-    score_view: mut []Score = mut scores[1][0..2]
+    score_view: []Score = scores[1][0..2]
     replace[Score](score_view, 0, Score(30))
     if i32(scores[0][1]) != 2 || i32(score_view[0]) != 30 { return 3 }
 
     boxes: [2][2]Box[i32] = id[Boxes](make_boxes())
-    box_view: mut []Box[i32] = mut boxes[1][0..2]
+    box_view: []Box[i32] = boxes[1][0..2]
     replace[Box[i32]](box_view, 1, Box[i32] { value = 40 })
     if boxes[0][0].value != 1 || box_view[1].value != 40 { return 4 }
 
     choices: [2][2]Choice[i32] = id[Choices](make_choices())
-    choice_view: mut []Choice[i32] = mut choices[0][0..2]
+    choice_view: []Choice[i32] = choices[0][0..2]
     replace[Choice[i32]](choice_view, 1, Choice[i32].value(20))
     switch choice_view[1] {
         Choice[i32].value(value: i32) {

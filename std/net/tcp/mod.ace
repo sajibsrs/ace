@@ -184,7 +184,7 @@ pub interest(conn: Conn): Interest {
     return conn.interest
 }
 
-pub progress_connect(mut conn: Conn): Event {
+pub progress_connect(conn: *Conn): Event {
     err: Error = net.pending_error(conn.socket)
     if err == null {
         conn.interest = Interest.read
@@ -195,7 +195,7 @@ pub progress_connect(mut conn: Conn): Event {
     return Event.failed(err)
 }
 
-pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
+pub progress_receive(conn: *Conn, dest: []u8): Event {
     if dest.len == 0 {
         conn.interest = with_read(conn.interest, false)
         return Event.none
@@ -222,7 +222,7 @@ pub progress_receive(mut conn: Conn, dest: mut []u8): Event {
     }
 }
 
-pub progress_send(mut conn: Conn, src: []u8): Event {
+pub progress_send(conn: *Conn, src: []u8): Event {
     if src.len == 0 {
         conn.send_offset = usize(0)
         conn.interest = with_write(conn.interest, false)
@@ -257,11 +257,11 @@ pub progress_send(mut conn: Conn, src: []u8): Event {
 }
 
 /* One receive into `buffer`: the byte count, zero at end of stream. */
-pub receive(connection: Conn, buffer: mut []u8): (int, Error) {
+pub receive(connection: Conn, buffer: []u8): (int, Error) {
     return net.receive(connection.socket, buffer)
 }
 
-pub receive_all(connection: Conn, buffer: mut []u8): (usize, Error) {
+pub receive_all(connection: Conn, buffer: []u8): (usize, Error) {
     received: usize = 0
 
     for received < buffer.len {
@@ -297,16 +297,16 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
 /* A no-op returning null on an inactive handle, so a deferred close may
  * precede the constructor's error check.
  */
-pub close(mut listener: Listener): Error {
+pub close(listener: *Listener): Error {
     if !listener.active { return null }
     err: Error = sys.close(listener.socket)
-    listener = Listener {}
+    *listener = Listener {}
     return err
 }
 
-pub close(mut connection: Conn): Error {
+pub close(connection: *Conn): Error {
     if !connection.active { return null }
     err: Error = sys.close(connection.socket)
-    connection = Conn {}
+    *connection = Conn {}
     return err
 }

@@ -38,38 +38,7 @@ b0:
 
 main(): i64 {
 b0:
-    %0 = slot ptr 16, 8
-    %1 = const f64 0.5
-    %2 = const i64 3
-    store [%0], %2
-    store [%0 + 8], %1
-    %5 = const i64 1
-    %6 = load i64 [%0]
-    %7 = add i64 %6, %5
-    store [%0], %7
-    %9 = load i64 [%0]
-    %10 = const i64 1
-    %11 = add i64 %9, %10
-    %12 = const i64 0
-    %13 = lt bool %11, %12
-    br %13, b1, b3
-b1: ; preds b0
-    %15 = const i64 0
-    %16 = const u64 4294967296
-    %17 = cast i32 %11
-    %18 = cast u32 %17
-    %19 = cast u64 %18
-    %20 = or u64 %16, %19
-    %21 = const u64 0
-    %22 = ne bool %20, %21
-    br %22, b2, b3
-b2: ; preds b1
-    %24 = cast i32 %20
-    %25 = cast i64 %24
-    ret %25
-b3: ; preds b1, b0
-    %27 = phi i64 [%15, b1], [%11, b0]
-    %28 = sub i64 %27, %2
-    ret %28
+    %0 = const i64 2
+    ret %0
 }
 

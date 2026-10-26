@@ -82,13 +82,13 @@ main(): int {
         }
     }
 
-    // Mutating iteration: the value binder aliases the element, so writes
-    // land in the backing array; the index binder stays a plain copy
+    // Writing elements in place: index the sequence, as the value binder is a
+    // copy
     xs: [4]i32 = [1, 2, 3, 4]
-    for item: i32 in mut xs { item *= 10 }
+    for i: usize in 0 .. xs.len { xs[i] *= 10 }
     if xs[0] != 10 || xs[3] != 40 { return 1 }
 
-    for index: usize, item: i32 in mut xs { item += i32(index) }
+    for index: usize, item: i32 in xs { xs[index] = item + i32(index) }
     if xs[3] != 43 { return 1 }
 
     // A plain loop keeps its per-iteration copy

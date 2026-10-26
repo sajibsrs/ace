@@ -2,7 +2,7 @@
 
 29. `test` (implemented) — a table-driven test runner. `std/test.ace` imports
     only `fmt` and `mem` and allocates nothing.
-    - A test is `pub name(mut t: test.T)` in a `<name>.test.ace` file.
+    - A test is `pub name(t: *test.T)` in a `<name>.test.ace` file.
       `ace test PATH...` builds each such file (a file, or every one under a
       directory, skipping `fixtures/` and dot directories, in sorted order)
       with a generated `main` returning `test.run([("name", name), ...])` over
@@ -12,14 +12,14 @@
       user `main`, or a file with no `pub` function, is a compile error.
     - Importing a `*.test.ace` file is a compile error.
     - `T: struct` has private fields: whether a check failed and how many ran.
-    - `T.equal(mut self, got, want): bool` overloads `int`, `uint`, `usize`,
+    - `T.equal(self, got, want): bool` overloads `int`, `uint`, `usize`,
       `bool`, and `string` (bytes, by `mem.equal`). A mismatch marks the test
       failed, prints `check N: got X, want Y` with N the test's 1-based check
       index, and returns false; the test keeps running.
-    - `equal[E](mut t: T, got: E, want: E): bool` compares enum values with
+    - `equal[E](t: *T, got: E, want: E): bool` compares enum values with
       `==` and prints them by `.name` (Type System #14), as `T.equal` does.
-    - `T.fail(mut self, message)` fails unconditionally as `check N: message`.
-    - `Case: type = (string, (mut t: T): void)`. `run(table: []Case): int`
+    - `T.fail(self, message)` fails unconditionally as `check N: message`.
+    - `Case: type = (string, (t: *T): void)`. `run(table: []Case): int`
       runs cases in order on a fresh `T`, prints `ok   name` or `FAIL name`
       to stdout after each case's check lines, then `N passed, M failed`, and
       returns 0 when none failed, otherwise 1.

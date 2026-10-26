@@ -86,52 +86,52 @@ main(): int {
     if symbols { return dump_symbols(path) }
     if check || full || lower || object {
         pool: path.Pool = blank(path.Pool)
-        defer mut pool.wipe()
+        defer pool.wipe()
         obj: string = ""
-        if object { obj = mut pool.join([stem(path), ".o"]) }
+        if object { obj = pool.join([stem(path), ".o"]) }
         return check_bodies(path, full || lower || object, lower, obj, debug)
     }
-    src: mut []u8, rerr: Error = file.read(path)
-    defer mem.release[u8](mut src)
+    src: []u8, rerr: Error = file.read(path)
+    defer mem.release[u8](&src)
     if rerr != null {
         fmt.printf(sys.stderr, "ace: cannot open '%s'\n", path)
         return 1
     }
 
-    storage: mut []u8 = mem.alloc[u8](65536)
-    defer mem.release[u8](mut storage)
+    storage: []u8 = mem.alloc[u8](65536)
+    defer mem.release[u8](&storage)
     out: Out = Out.init(sys.stdout, storage)
-    if ast { return dump_ast(mut out, src, path) }
+    if ast { return dump_ast(&out, src, path) }
     lx: lexer.Lexer = lexer.Lexer.new(src)
-    defer mut lx.wipe()
+    defer lx.wipe()
 
     for {
-        t: Token = mut lx.next()
+        t: Token = lx.next()
         line: u32, col: u32 = lx.pos()
-        mut out.printf("%d:%d\t%s", int(line), int(col), lexer.disp(t))
+        out.printf("%d:%d\t%s", int(line), int(col), lexer.disp(t))
         switch t {
-            Token.ident { mut out.printf("\t%s", lx.lit()) }
-            Token.int { mut out.printf("\t%u", uint(lx.int())) }
-            Token.float { mut out.printf("\t%g", lx.float()) }
+            Token.ident { out.printf("\t%s", lx.lit()) }
+            Token.int { out.printf("\t%u", uint(lx.int())) }
+            Token.float { out.printf("\t%g", lx.float()) }
             Token.string {
-                mut out.printf("\t\"")
-                output.quoted(mut out, lx.lit())
-                mut out.printf("\"")
+                out.printf("\t\"")
+                output.quoted(&out, lx.lit())
+                out.printf("\"")
             }
             Token.char {
                 if lx.int() >= 33 && lx.int() <= 126 {
-                    mut out.printf("\t'%c'", u8(lx.int()))
+                    out.printf("\t'%c'", u8(lx.int()))
                 } else {
-                    mut out.printf("\t%u", uint(lx.int()))
+                    out.printf("\t%u", uint(lx.int()))
                 }
             }
             default {}
         }
-        mut out.printf("\n")
+        out.printf("\n")
         if t == Token.eof { break }
     }
     for d: lexer.Diag in lx.errors() { lexer.report(path, d) }
-    mut out.flush()
+    out.flush()
     return summary(path, int(lx.errors().len))
 }
 
@@ -147,23 +147,23 @@ summary(path: string, errors: int): int {
 }
 
 /* Parses `src` for the host target and dumps the tree; 1 on any error. */
-dump_ast(mut out: Out, src: string, src_path: string): int {
+dump_ast(out: *Out, src: string, src_path: string): int {
     p: parser.Parser, lex_errors: int = parser.Parser.new(src, src_path)
-    defer mut p.wipe()
+    defer p.wipe()
     if lex_errors > 0 { return summary(src_path, lex_errors) }
     pool: path.Pool = blank(path.Pool)
-    defer mut pool.wipe()
-    roots: path.Roots = path.Roots.init(mut pool, path.dir(src_path))
-    p.file = roots.show(mut pool, src_path)
-    f: u32 = mut p.parse(TARGET)
+    defer pool.wipe()
+    roots: path.Roots = path.Roots.init(&pool, path.dir(src_path))
+    p.file = roots.show(&pool, src_path)
+    f: u32 = p.parse(TARGET)
     errors: []parser.SyntaxError, stopped: bool = p.errors()
     for e: parser.SyntaxError in errors {
         fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", src_path, int(e.line), int(e.col), e.message)
     }
     if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", src_path, int(parser.ERROR_LIMIT)) }
     if errors.len > 0 { return summary(src_path, int(errors.len)) }
-    p.dump(mut out, f, 0)
-    mut out.flush()
+    p.dump(out, f, 0)
+    out.flush()
     return 0
 }
 
@@ -172,15 +172,15 @@ dump_ast(mut out: Out, src: string, src_path: string): int {
  */
 dump_modules(path: string, tree: bool): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
-    defer mut l.wipe()
+    defer l.wipe()
     if !found { return 1 }
-    ok: bool = mut l.resolve(path)
+    ok: bool = l.resolve(path)
     if !ok { return summary(path, l.errors) }
-    storage: mut []u8 = mem.alloc[u8](65536)
-    defer mem.release[u8](mut storage)
+    storage: []u8 = mem.alloc[u8](65536)
+    defer mem.release[u8](&storage)
     out: Out = Out.init(sys.stdout, storage)
-    if tree { l.dump_resolved(mut out) } else { l.dump(mut out) }
-    mut out.flush()
+    if tree { l.dump_resolved(&out) } else { l.dump(&out) }
+    out.flush()
     return 0
 }
 
@@ -189,25 +189,25 @@ dump_modules(path: string, tree: bool): int {
  */
 dump_symbols(path: string): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
-    defer mut l.wipe()
+    defer l.wipe()
     if !found { return 1 }
-    if !mut l.resolve(path) { return summary(path, l.errors) }
+    if !l.resolve(path) { return summary(path, l.errors) }
     s: sema.Sema = sema.Sema.new(l)
-    defer mut s.wipe()
-    mut s.enter()
+    defer s.wipe()
+    s.enter()
     if s.errors > 0 { return summary(path, s.errors) }
-    mut s.complete()
-    if s.errors == 0 { mut s.signatures() }
+    s.complete()
+    if s.errors == 0 { s.signatures() }
     if s.unsupported.len > 0 {
         fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
         return 1
     }
     if s.errors > 0 { return summary(path, s.errors) }
-    storage: mut []u8 = mem.alloc[u8](65536)
-    defer mem.release[u8](mut storage)
+    storage: []u8 = mem.alloc[u8](65536)
+    defer mem.release[u8](&storage)
     out: Out = Out.init(sys.stdout, storage)
-    mut s.dump(mut out)
-    mut out.flush()
+    s.dump(&out)
+    out.flush()
     return 0
 }
 
@@ -224,35 +224,35 @@ stem(name: string): string {
  */
 check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
-    defer mut l.wipe()
+    defer l.wipe()
     if !found { return 1 }
-    if !mut l.resolve(path) { return summary(path, l.errors) }
+    if !l.resolve(path) { return summary(path, l.errors) }
     s: sema.Sema = sema.Sema.new(l)
-    defer mut s.wipe()
-    mut s.enter() // as C's sema_check, every stage runs whatever came before
-    mut s.complete()
-    mut s.promoted_collisions()
-    mut s.signatures()
-    mut s.check_bodies()
-    if full && s.unsupported.len == 0 { mut s.check_end() }
+    defer s.wipe()
+    s.enter() // as C's sema_check, every stage runs whatever came before
+    s.complete()
+    s.promoted_collisions()
+    s.signatures()
+    s.check_bodies()
+    if full && s.unsupported.len == 0 { s.check_end() }
     if s.unsupported.len > 0 {
         fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
         return 1
     }
     if s.errors > 0 { return summary(path, s.errors) }
     if !lower && obj.len == 0 { return 0 }
-    mut s.layout_all()
+    s.layout_all()
     if obj.len > 0 {
-        ok: bool, why: string = emission.object(mut s, debug, path, obj)
+        ok: bool, why: string = emission.object(&s, debug, path, obj)
         if why.len > 0 { fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", why) }
         if !ok { return 1 }
         return 0
     }
-    storage: mut []u8 = mem.alloc[u8](65536)
-    defer mem.release[u8](mut storage)
+    storage: []u8 = mem.alloc[u8](65536)
+    defer mem.release[u8](&storage)
     out: Out = Out.init(sys.stdout, storage)
-    ok: bool = lowering.dump_file(mut out, mut s, debug)
-    mut out.flush()
+    ok: bool = lowering.dump_file(&out, &s, debug)
+    out.flush()
     if !ok { return 1 }
     return 0
 }
@@ -267,13 +267,13 @@ packages(graph_dir: string, check_dir: string, target: string): int {
         return 2
     }
     l: module.Loader, found: bool = module.Loader.new(target)
-    defer mut l.wipe()
+    defer l.wipe()
     if !found { return 1 }
     dir: string = graph_dir
     if dir.len == 0 { dir = check_dir }
     g: package.Graph = package.Graph.init(target, l.std_dir)
-    defer mut g.wipe()
-    root: usize, ok: bool = mut g.resolve(dir)
+    defer g.wipe()
+    root: usize, ok: bool = g.resolve(dir)
     if !ok { return summary(dir, g.errors) }
     if graph_dir.len > 0 {
         for pi: usize in g.order.view() {
@@ -284,20 +284,20 @@ packages(graph_dir: string, check_dir: string, target: string): int {
         }
         return 0
     }
-    if !mut l.resolve_package(g, root) { return summary(g.pkgs.get(root).root_file, l.errors) }
+    if !l.resolve_package(g, root) { return summary(g.pkgs.get(root).root_file, l.errors) }
     return 0
 }
 
 /* The value after option `i`, advancing `i`; a missing value, or one that
  * looks like an option, is C's usage error.
  */
-option_value(mut i: usize, option: string, what: string): (string, bool) {
-    if i + 1 >= sys.argc() || (sys.arg(i + 1).len > 1 && sys.arg(i + 1)[0] == '-') {
+option_value(i: *usize, option: string, what: string): (string, bool) {
+    if *i + 1 >= sys.argc() || (sys.arg(*i + 1).len > 1 && sys.arg(*i + 1)[0] == '-') {
         fmt.printf(sys.stderr, "ace: %s requires %s\n", option, what)
         return "", false
     }
-    i += 1
-    return sys.arg(i), true
+    *i += 1
+    return sys.arg(*i), true
 }
 
 /* Whether `a` and `b` name one file: the same text, which also catches an
@@ -363,9 +363,9 @@ build(): int {
     root: string = ""
     out: string = ""
     links: array.Array[string] = array.Array[string] {}
-    defer mut links.wipe()
+    defer links.wipe()
     inputs: array.Array[string] = array.Array[string] {}
-    defer mut inputs.wipe()
+    defer inputs.wipe()
     i: usize = 1
     for i < sys.argc() {
         a: string = sys.arg(i)
@@ -377,17 +377,17 @@ build(): int {
             mode_seen = true
             debug = mem.equal(a, "--debug")
         } else if mem.equal(a, "-o") {
-            value: string, ok: bool = option_value(mut i, "-o", "an output name")
+            value: string, ok: bool = option_value(&i, "-o", "an output name")
             if !ok { return 2 }
             out = value
         } else if mem.equal(a, "-L") || mem.equal(a, "-l") || mem.equal(a, "-framework") {
             what: string = "a directory"
             if mem.equal(a, "-l") { what = "a library name" }
             if mem.equal(a, "-framework") { what = "a framework name" }
-            value: string, ok: bool = option_value(mut i, a, what)
+            value: string, ok: bool = option_value(&i, a, what)
             if !ok { return 2 }
-            fail(mut links.push(a))
-            fail(mut links.push(value))
+            fail(links.push(a))
+            fail(links.push(value))
         } else if a.len > 1 && a[0] == '-' {
             if !driver_option(a) {
                 fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
@@ -402,8 +402,8 @@ build(): int {
             }
             root = a
         } else if a.len >= 2 && (mem.equal(a[a.len - 2..], ".o") || mem.equal(a[a.len - 2..], ".a")) {
-            fail(mut links.push(a))
-            fail(mut inputs.push(a))
+            fail(links.push(a))
+            fail(inputs.push(a))
         } else {
             fmt.printf(sys.stderr, "ace: unrecognized input '%s' (expected .ace, .o, or .a)\n", a)
             return 2
@@ -427,8 +427,8 @@ build(): int {
         return 2
     }
     pool: path.Pool = blank(path.Pool)
-    defer mut pool.wipe()
-    obj: string = mut pool.join([out, ".o"])
+    defer pool.wipe()
+    obj: string = pool.join([out, ".o"])
     if !distinct_output(obj, root, "generated object") || !distinct_output(out, root, "linked output") { return 2 }
     for input: string in inputs.view() {
         if !distinct_output(obj, input, "generated object") || !distinct_output(out, input, "linked output") { return 2 }
@@ -436,12 +436,12 @@ build(): int {
     if check_bodies(root, true, false, obj, debug) != 0 { return 1 }
 
     argv: array.Array[string] = array.Array[string] {}
-    defer mut argv.wipe()
-    fail(mut argv.push("cc"))
-    fail(mut argv.push(obj))
-    for link: string in links.view() { fail(mut argv.push(link)) }
-    fail(mut argv.push("-o"))
-    fail(mut argv.push(out))
+    defer argv.wipe()
+    fail(argv.push("cc"))
+    fail(argv.push(obj))
+    for link: string in links.view() { fail(argv.push(link)) }
+    fail(argv.push("-o"))
+    fail(argv.push(out))
     if !run_linker(argv.view()) { return 1 }
     return 0
 }

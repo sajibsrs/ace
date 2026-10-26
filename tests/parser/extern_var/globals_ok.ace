@@ -2,7 +2,7 @@
 
 extern "c" {
     environ: **u8
-    mut opterr: i32
+    opterr: i32
     c_out: *u8 as "__stdoutp"
     getpid(): i32
 }

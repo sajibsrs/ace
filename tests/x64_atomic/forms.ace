@@ -8,8 +8,8 @@ word: u32
 wide: u64
 
 main(): int {
-    p: mut *u32 = mut &word
-    q: mut *u64 = mut &wide
+    p: *u32 = &word
+    q: *u64 = &wide
     atomic.and(p, u32(3))
     atomic.or_relaxed(p, u32(5))
     atomic.xor(q, u64(6))

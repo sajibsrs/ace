@@ -44,8 +44,8 @@ main(): int {
     if text.len != 2 || bytes_again[0] != 'x' { return 10 }
 
     letters: [2]char = ['o', 'k']
-    writable_text: mut string = mut letters[..]
-    writable_bytes: mut []u8 = writable_text
+    writable_text: string = letters[..]
+    writable_bytes: []u8 = writable_text
     writable_bytes[0] = 'O'
 
     if writable_text[0] != 'O' { return 11 }

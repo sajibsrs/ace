@@ -105,7 +105,7 @@ pub local(sock: Socket): (Addr4, Error) {
     return address, err
 }
 
-pub receive(sock: Socket, buffer: mut []u8): (int, Error) {
+pub receive(sock: Socket, buffer: []u8): (int, Error) {
     count: int, err: Error = os.receive(sock, buffer)
     return count, err
 }
@@ -115,7 +115,7 @@ pub send(sock: Socket, data: []u8): (int, Error) {
     return count, err
 }
 
-pub resolve4(host: string, port: u16, addresses: mut []Addr4): (usize, Error) {
+pub resolve4(host: string, port: u16, addresses: []Addr4): (usize, Error) {
     count: usize, err: Error = os.resolve4(host, port, addresses)
     return count, err
 }

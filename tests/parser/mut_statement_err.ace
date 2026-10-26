@@ -1,9 +1,0 @@
-/* 'mut' at statement level marks a call receiver; the error names that
- * 'mut', not the token after the expression it heads. */
-
-main(): int {
-    x: int = 1
-    mut x + 1
-
-    return 0
-}

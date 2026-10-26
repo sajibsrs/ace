@@ -29,7 +29,7 @@ main(): int {
 
     if err != null { return 6 }
     storage: [5]u8 = [u8(0), u8(0), u8(0), u8(0), u8(0)]
-    data: mut []u8 = mut storage[0..5]
+    data: []u8 = storage[0..5]
     count: int, read_err: Error = sys.read(fd, data)
 
     if read_err != null || count != 5 { return 7 }

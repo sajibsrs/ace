@@ -2,7 +2,7 @@
 
 main(): int {
     answer: int
-    pointer: mut *int = mut &answer
+    pointer: *int = &answer
     *pointer = 42
     return *pointer
 }

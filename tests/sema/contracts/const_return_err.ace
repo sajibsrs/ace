@@ -1,11 +1,11 @@
 /* Contract const return fixture. */
 
 Thing: struct { value: int }
-Writable: contract { write(mut self, value: int) }
+Writable: contract { write(self, value: int) }
 
 Thing signs Writable
 
-Thing.write(mut self, value: int) {
+Thing.write(self, value: int) {
     self.value = value
 }
 
@@ -17,6 +17,6 @@ main(): int {
     thing: const Thing = Thing { value = 1 }
     first: Writable = Writable(&thing)
     second: Writable = identity(first)
-    mut second.write(2)
+    second.write(2)
     return 0
 }

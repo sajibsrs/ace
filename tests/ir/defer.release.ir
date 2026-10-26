@@ -150,32 +150,27 @@ b4: ; preds b2
 
 fall_off(i64): void {
 b0:
-    %0 = slot ptr 8, 8
-    %1 = param i64 0
-    store [%0], %1
-    %3 = global ptr total
-    %4 = load i64 [%3]
-    %5 = const i64 10
-    %6 = mul i64 %4, %5
-    %7 = load i64 [%0]
-    %8 = add i64 %6, %7
-    store [%3], %8
+    %0 = param i64 0
+    %1 = const i64 9
+    %2 = global ptr total
+    %3 = load i64 [%2]
+    %4 = const i64 10
+    %5 = mul i64 %3, %4
+    %6 = add i64 %5, %1
+    store [%2], %6
     ret
 }
 
 receiver(): i64 {
 b0:
-    %0 = slot ptr 8, 8
-    %1 = const i64 1
-    store [%0], %1
-    %3 = global ptr total
-    %4 = load i64 [%3]
-    %5 = const i64 10
-    %6 = mul i64 %4, %5
-    %7 = load i64 [%0]
-    %8 = add i64 %6, %7
-    store [%3], %8
-    ret %1
+    %0 = const i64 1
+    %1 = global ptr total
+    %2 = load i64 [%1]
+    %3 = const i64 10
+    %4 = mul i64 %2, %3
+    %5 = add i64 %4, %0
+    store [%1], %5
+    ret %0
 }
 
 callee(ptr): i64 {

@@ -5,26 +5,26 @@ alias_view(views: []char): string {
     return views
 }
 
-from_call_result(view: mut []u8): mut string { // selection is type-driven
+from_call_result(view: []u8): string { // selection is type-driven
     return view
 }
 
-round_trip(text: mut string): mut []u8 {
+round_trip(text: string): []u8 {
     return text
 }
 
-shrink(text: mut string): string {
+shrink(text: string): string {
     return text // permission shrink is implicit; widening never
 }
 
 main(): int {
     storage: [6]u8
-    view: mut []u8 = mut storage[0..6]
-    text: mut string = view
-    w: mut string = text
+    view: []u8 = storage[0..6]
+    text: string = view
+    w: string = text
     plain: string = view[0..3]
     p: string = plain
-    back: mut []u8 = text
+    back: []u8 = text
     b: []u8 = back // and its result shrinks like any writable view
     chars: []char = view
     same: string = chars

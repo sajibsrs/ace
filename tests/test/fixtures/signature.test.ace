@@ -2,8 +2,8 @@
 
 import test
 
-pub ok(mut t: test.T) {
-    mut t.equal(1, 1)
+pub ok(t: *test.T) {
+    t.equal(1, 1)
 }
 
 pub helper(x: int): int {

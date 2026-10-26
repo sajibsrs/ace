@@ -1,8 +1,0 @@
-/* `in mut` with a missing iterable reports cleanly at the block. */
-
-main(): int {
-    for v: i32 in mut {
-        return 0
-    }
-    return 1
-}

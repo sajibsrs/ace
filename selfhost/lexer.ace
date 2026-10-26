@@ -14,7 +14,7 @@ import sys
 
 pub Token: enum u8 {
     eof, newline, ident,
-    import, pub, mut, const, noalias, if, else, for,
+    import, pub, const, noalias, if, else, for,
     in, switch, default, return, break, continue, defer,
     asm, extern, contract, struct, embed, signs, distinct,
     type, enum, union, specialized, intrinsic, inline,
@@ -108,7 +108,7 @@ pub Lexer: struct {
     tcol: u32,
     prev: Token,    // last returned token; newline = none or already emitted
     count: usize,   // tokens returned so far
-    scratch: mut []u8 = null,
+    scratch: []u8 = null,
     used: usize,
     text: string,   // ident: source view; string: decoded bytes (scratch)
     ival: u64,      // int value, char byte
@@ -130,9 +130,9 @@ pub Lexer.new(src: string): Lexer {
     return lx
 }
 
-pub Lexer.wipe(mut self) {
-    mem.release[u8](mut self.scratch)
-    mut self.errs.wipe()
+pub Lexer.wipe(self) {
+    mem.release[u8](&self.scratch)
+    self.errs.wipe()
     self.used = 0
 }
 
@@ -174,7 +174,7 @@ inline Lexer.peek(self, k: usize): u8 {
     return 0
 }
 
-inline Lexer.adv(mut self): u8 {
+inline Lexer.adv(self): u8 {
     if self.off >= self.src.len { return 0 }
     c: u8 = self.src[self.off]
     self.off += 1
@@ -186,30 +186,30 @@ inline Lexer.adv(mut self): u8 {
 }
 
 /* Starts a token (or block comment) at the current byte. */
-inline Lexer.mark(mut self) {
+inline Lexer.mark(self) {
     self.tline = self.line
     self.tcol = u32(self.off - self.lstart + 1)
 }
 
-Lexer.fail(mut self, e: Error) {
-    mut self.fail(e, u8(0))
+Lexer.fail(self, e: Error) {
+    self.fail(e, u8(0))
 }
 
 /* Records `e` at the current token's start; aborts when out of memory, as
  * the C compiler's arena does.
  */
-Lexer.fail(mut self, e: Error, byte: u8) {
-    if mut self.errs.push(Diag { err = e, line = self.tline, col = self.tcol, byte = byte }) != null {
+Lexer.fail(self, e: Error, byte: u8) {
+    if self.errs.push(Diag { err = e, line = self.tline, col = self.tcol, byte = byte }) != null {
         fmt.printf(sys.stderr, "ace: out of memory\n")
         sys.exit(1)
     }
 }
 
-Lexer.push(mut self, c: u8) {
+Lexer.push(self, c: u8) {
     if self.used == self.scratch.len {
-        grown: mut []u8, ok: bool = mem.grow[u8](self.scratch, self.used + 1)
+        grown: []u8, ok: bool = mem.grow[u8](self.scratch, self.used + 1)
         if !ok {
-            mut self.fail(LexErr.allocation)
+            self.fail(LexErr.allocation)
             return
         }
         self.scratch = grown
@@ -317,7 +317,6 @@ keyword(t: []char): Token {
                 k = Token.inline
             }
         }
-        'm' { if mem.equal(t, "mut") { k = Token.mut } }
         'n' {
             if mem.equal(t, "noalias") {
                 k = Token.noalias
@@ -359,77 +358,77 @@ keyword(t: []char): Token {
 /* The longest identifier, in characters (ASCII, so bytes). */
 IDENT_MAX: const usize = 128
 
-Lexer.scan_ident(mut self): Token {
+Lexer.scan_ident(self): Token {
     start: usize = self.off
     i: usize = self.off
     for i < self.src.len && ident_char(self.src[i]) { i += 1 }
     self.off = i
     text: string = self.src[start..self.off]
-    if text.len > IDENT_MAX { mut self.fail(LexErr.ident) }
+    if text.len > IDENT_MAX { self.fail(LexErr.ident) }
     self.text = text
     return keyword(text)
 }
 
 /* Skips a run of digits in `base` and '_' separators (no newlines). */
-inline Lexer.digits(mut self, base: int) {
+inline Lexer.digits(self, base: int) {
     i: usize = self.off
     for i < self.src.len && (self.src[i] == '_' || digval(self.src[i], base) >= 0) { i += 1 }
     self.off = i
 }
 
-Lexer.scan_number(mut self): Token {
+Lexer.scan_number(self): Token {
     start: usize = self.off
     base: int = 10
     if self.cur() == '0' && (self.peek(1) == 'x' || self.peek(1) == 'X') {
-        mut self.adv()
-        mut self.adv()
+        self.adv()
+        self.adv()
         base = 16
     } else if self.cur() == '0' && (self.peek(1) == 'b' || self.peek(1) == 'B') {
-        mut self.adv()
-        mut self.adv()
+        self.adv()
+        self.adv()
         base = 2
     } else if self.cur() == '0' && (self.peek(1) == 'o' || self.peek(1) == 'O') {
-        mut self.adv()
-        mut self.adv()
+        self.adv()
+        self.adv()
         base = 8
     }
 
     dstart: usize = self.off
-    mut self.digits(base)
+    self.digits(base)
     dend: usize = self.off
 
     is_float: bool = false
     if base == 10 && self.cur() == '.' && digval(self.peek(1), 10) >= 0 {
         is_float = true
-        mut self.adv()
-        mut self.digits(10)
+        self.adv()
+        self.digits(10)
         if self.cur() == 'e' || self.cur() == 'E' {
-            mut self.adv()
-            if self.cur() == '+' || self.cur() == '-' { mut self.adv() }
-            if digval(self.cur(), 10) < 0 { mut self.fail(LexErr.exponent) }
-            mut self.digits(10)
+            self.adv()
+            if self.cur() == '+' || self.cur() == '-' { self.adv() }
+            if digval(self.cur(), 10) < 0 { self.fail(LexErr.exponent) }
+            self.digits(10)
         }
     } else if base == 10 && (self.cur() == 'e' || self.cur() == 'E') {
         n1: u8 = self.peek(1)
         n2: u8 = self.peek(2)
         if digval(n1, 10) >= 0 || ((n1 == '+' || n1 == '-') && digval(n2, 10) >= 0) {
-            mut self.fail(LexErr.exponent_dot)
+            self.fail(LexErr.exponent_dot)
         }
     }
 
-    if !seps_ok(self.src[dstart..self.off], base) { mut self.fail(LexErr.separator) }
+    if !seps_ok(self.src[dstart..self.off], base) { self.fail(LexErr.separator) }
     if dend == dstart {
-        mut self.fail(LexErr.digits)
+        self.fail(LexErr.digits)
     } else if base == 2 && digval(self.cur(), 10) >= 0 {
-        mut self.fail(LexErr.binary, self.cur())
+        self.fail(LexErr.binary, self.cur())
     } else if base == 8 && digval(self.cur(), 10) >= 0 {
-        mut self.fail(LexErr.octal, self.cur())
+        self.fail(LexErr.octal, self.cur())
     }
 
     if is_float {
         self.used = 0
         for i: usize in start .. self.off {
-            if self.src[i] != '_' { mut self.push(self.src[i]) }
+            if self.src[i] != '_' { self.push(self.src[i]) }
         }
         v: f64, ok: bool = str.parse[f64](self.scratch[..self.used])
         self.fval = v
@@ -450,18 +449,18 @@ Lexer.scan_number(mut self): Token {
         v = v * b + dv
     }
     self.ival = v // on overflow, the digits read so far (as the C lexer keeps them)
-    if over { mut self.fail(LexErr.range) }
+    if over { self.fail(LexErr.range) }
     return Token.int
 }
 
 /* Called with the backslash already consumed. */
-Lexer.escape(mut self): u8 {
+Lexer.escape(self): u8 {
     c: u8 = self.cur()
     if c == 0 {
-        mut self.fail(LexErr.escape_end)
+        self.fail(LexErr.escape_end)
         return '?'
     }
-    mut self.adv()
+    self.adv()
     switch c {
         'n' { return '\n' }
         't' { return '\t' }
@@ -471,127 +470,127 @@ Lexer.escape(mut self): u8 {
         'x' {
             h: int = digval(self.cur(), 16)
             if h < 0 {
-                mut self.fail(LexErr.escape_hex)
+                self.fail(LexErr.escape_hex)
                 return '?'
             }
-            mut self.adv()
+            self.adv()
             l: int = digval(self.cur(), 16)
             if l < 0 {
-                mut self.fail(LexErr.escape_hex)
+                self.fail(LexErr.escape_hex)
                 return '?'
             }
-            mut self.adv()
+            self.adv()
             return u8(h * 16 + l)
         }
         default {}
     }
-    mut self.fail(LexErr.escape, c)
+    self.fail(LexErr.escape, c)
     return '?'
 }
 
 /* Called with `\\u` consumed. Pushes the UTF-8 encoding of a Unicode scalar
  * value written as 1-6 hex digits in braces.
  */
-Lexer.unicode(mut self) {
+Lexer.unicode(self) {
     v: u32 = 0
     n: int = 0
     if self.cur() == '{' {
-        mut self.adv()
+        self.adv()
         for {
             d: int = digval(self.cur(), 16)
             if d < 0 { break }
             if n < 6 { v = v * 16 + u32(d) }
-            mut self.adv()
+            self.adv()
             n += 1
         }
     }
     if n < 1 || n > 6 || self.cur() != '}' {
-        if self.cur() == '}' { mut self.adv() }
-        mut self.fail(LexErr.escape_unicode)
+        if self.cur() == '}' { self.adv() }
+        self.fail(LexErr.escape_unicode)
         return
     }
-    mut self.adv()
+    self.adv()
     if v > 0x10FFFF || (v >= 0xD800 && v <= 0xDFFF) {
-        mut self.fail(LexErr.scalar)
+        self.fail(LexErr.scalar)
         return
     }
     if v < 0x80 {
-        mut self.push(u8(v))
+        self.push(u8(v))
     } else if v < 0x800 {
-        mut self.push(u8(0xC0 | v >> 6))
-        mut self.push(u8(0x80 | (v & 0x3F)))
+        self.push(u8(0xC0 | v >> 6))
+        self.push(u8(0x80 | (v & 0x3F)))
     } else if v < 0x10000 {
-        mut self.push(u8(0xE0 | v >> 12))
-        mut self.push(u8(0x80 | (v >> 6 & 0x3F)))
-        mut self.push(u8(0x80 | (v & 0x3F)))
+        self.push(u8(0xE0 | v >> 12))
+        self.push(u8(0x80 | (v >> 6 & 0x3F)))
+        self.push(u8(0x80 | (v & 0x3F)))
     } else {
-        mut self.push(u8(0xF0 | v >> 18))
-        mut self.push(u8(0x80 | (v >> 12 & 0x3F)))
-        mut self.push(u8(0x80 | (v >> 6 & 0x3F)))
-        mut self.push(u8(0x80 | (v & 0x3F)))
+        self.push(u8(0xF0 | v >> 18))
+        self.push(u8(0x80 | (v >> 12 & 0x3F)))
+        self.push(u8(0x80 | (v >> 6 & 0x3F)))
+        self.push(u8(0x80 | (v & 0x3F)))
     }
 }
 
-Lexer.scan_string(mut self): Token {
-    mut self.adv() // opening quote
+Lexer.scan_string(self): Token {
+    self.adv() // opening quote
     self.used = 0
     for {
         c: u8 = self.cur()
         if c == '"' {
-            mut self.adv()
+            self.adv()
             break
         }
         if c == 0 || c == '\n' {
-            mut self.fail(LexErr.string)
+            self.fail(LexErr.string)
             break
         }
         if c == '\\' {
-            mut self.adv()
+            self.adv()
             if self.cur() == 'u' {
-                mut self.adv()
-                mut self.unicode()
+                self.adv()
+                self.unicode()
             } else {
-                e: u8 = mut self.escape()
-                mut self.push(e)
+                e: u8 = self.escape()
+                self.push(e)
             }
         } else {
-            mut self.push(mut self.adv()) // UTF-8 bytes pass through
+            self.push(self.adv()) // UTF-8 bytes pass through
         }
     }
     self.text = self.scratch[..self.used]
     return Token.string
 }
 
-Lexer.scan_char(mut self): Token {
-    mut self.adv() // opening quote
+Lexer.scan_char(self): Token {
+    self.adv() // opening quote
     val: u8 = 0
     ok: bool = true
     if self.cur() == 0 || self.cur() == '\n' {
-        mut self.fail(LexErr.char_end)
+        self.fail(LexErr.char_end)
         ok = false
     } else if self.cur() == '\'' {
-        mut self.adv()
-        mut self.fail(LexErr.char_empty)
+        self.adv()
+        self.fail(LexErr.char_empty)
         ok = false
     } else if self.cur() == '\\' {
-        mut self.adv()
+        self.adv()
         if self.cur() == 'u' {
-            mut self.adv()
-            mut self.fail(LexErr.char_unicode)
-            for self.cur() != 0 && self.cur() != '\'' && self.cur() != '\n' { mut self.adv() }
+            self.adv()
+            self.fail(LexErr.char_unicode)
+            for self.cur() != 0 && self.cur() != '\'' && self.cur() != '\n' { self.adv() }
         } else {
-            val = mut self.escape()
+            val = self.escape()
         }
     } else {
-        val = mut self.adv()
+        val = self.adv()
     }
     if ok {
         if self.cur() != '\'' {
-            mut self.fail(LexErr.char_size)
-            for self.cur() != 0 && self.cur() != '\'' && self.cur() != '\n' { mut self.adv() }
-            if self.cur() == '\'' { mut self.adv() }
+            self.fail(LexErr.char_size)
+            for self.cur() != 0 && self.cur() != '\'' && self.cur() != '\n' { self.adv() }
+            if self.cur() == '\'' { self.adv() }
         } else {
-            mut self.adv()
+            self.adv()
         }
     }
     self.ival = u64(val)
@@ -599,17 +598,17 @@ Lexer.scan_char(mut self): Token {
 }
 
 /* `plain`, or `with_eq` when an '=' follows (consumed). */
-Lexer.eq(mut self, plain: Token, with_eq: Token): Token {
+Lexer.eq(self, plain: Token, with_eq: Token): Token {
     if self.cur() == '=' {
-        mut self.adv()
+        self.adv()
         return with_eq
     }
     return plain
 }
 
 /* A punctuation token, or false after an unexpected byte (reported). */
-Lexer.scan_punct(mut self, c: u8): (Token, bool) {
-    mut self.adv()
+Lexer.scan_punct(self, c: u8): (Token, bool) {
+    self.adv()
     k: Token = Token.eof
     switch c {
         '(' { k = Token.lparen }
@@ -620,57 +619,57 @@ Lexer.scan_punct(mut self, c: u8): (Token, bool) {
         '}' { k = Token.rbrace }
         ',' { k = Token.comma }
         ':' {
-            if self.cur() == ':' { mut self.fail(LexErr.colons) }
+            if self.cur() == ':' { self.fail(LexErr.colons) }
             k = Token.colon
         }
         '~' { k = Token.tilde }
-        '+' { k = mut self.eq(Token.plus, Token.add_eq) }
-        '-' { k = mut self.eq(Token.minus, Token.sub_eq) }
-        '*' { k = mut self.eq(Token.star, Token.mul_eq) }
-        '%' { k = mut self.eq(Token.percent, Token.mod_eq) }
-        '^' { k = mut self.eq(Token.caret, Token.xor_eq) }
-        '=' { k = mut self.eq(Token.assign, Token.eq_eq) }
-        '!' { k = mut self.eq(Token.bang, Token.bang_eq) }
-        '/' { k = mut self.eq(Token.slash, Token.div_eq) }
+        '+' { k = self.eq(Token.plus, Token.add_eq) }
+        '-' { k = self.eq(Token.minus, Token.sub_eq) }
+        '*' { k = self.eq(Token.star, Token.mul_eq) }
+        '%' { k = self.eq(Token.percent, Token.mod_eq) }
+        '^' { k = self.eq(Token.caret, Token.xor_eq) }
+        '=' { k = self.eq(Token.assign, Token.eq_eq) }
+        '!' { k = self.eq(Token.bang, Token.bang_eq) }
+        '/' { k = self.eq(Token.slash, Token.div_eq) }
         '&' {
             if self.cur() == '&' {
-                mut self.adv()
+                self.adv()
                 k = Token.and_and
             } else {
-                k = mut self.eq(Token.amp, Token.and_eq)
+                k = self.eq(Token.amp, Token.and_eq)
             }
         }
         '|' {
             if self.cur() == '|' {
-                mut self.adv()
+                self.adv()
                 k = Token.or_or
             } else {
-                k = mut self.eq(Token.pipe, Token.or_eq)
+                k = self.eq(Token.pipe, Token.or_eq)
             }
         }
         '<' {
             if self.cur() == '<' {
-                mut self.adv()
-                k = mut self.eq(Token.shl, Token.shl_eq)
+                self.adv()
+                k = self.eq(Token.shl, Token.shl_eq)
             } else {
-                k = mut self.eq(Token.lt, Token.le)
+                k = self.eq(Token.lt, Token.le)
             }
         }
         '>' {
             if self.cur() == '>' {
-                mut self.adv()
-                k = mut self.eq(Token.shr, Token.shr_eq)
+                self.adv()
+                k = self.eq(Token.shr, Token.shr_eq)
             } else {
-                k = mut self.eq(Token.gt, Token.ge)
+                k = self.eq(Token.gt, Token.ge)
             }
         }
         '.' {
             k = Token.dot
             if self.cur() == '.' {
-                mut self.adv()
+                self.adv()
                 k = Token.dot_dot
                 if self.cur() == '.' {
-                    mut self.adv()
+                    self.adv()
                     k = Token.dot_dot_dot
                 }
             }
@@ -680,11 +679,11 @@ Lexer.scan_punct(mut self, c: u8): (Token, bool) {
         '?' { k = Token.question }
         default {
             if c >= 0x80 {
-                mut self.fail(LexErr.non_ascii, c)
+                self.fail(LexErr.non_ascii, c)
             } else if c > ' ' && c <= '~' {
-                mut self.fail(LexErr.unexpected, c)
+                self.fail(LexErr.unexpected, c)
             } else {
-                mut self.fail(LexErr.byte, c)
+                self.fail(LexErr.byte, c)
             }
             return k, false
         }
@@ -693,7 +692,7 @@ Lexer.scan_punct(mut self, c: u8): (Token, bool) {
 }
 
 /* Skips whitespace and comments; true when a newline was crossed. */
-Lexer.trivia(mut self): bool {
+Lexer.trivia(self): bool {
     src: string = self.src
     i: usize = self.off
     nl: bool = false
@@ -719,11 +718,11 @@ Lexer.trivia(mut self): bool {
             for i < src.len && src[i] != 0 && src[i] != '\n' { i += 1 }
         } else if c == '/' && i + 1 < src.len && src[i + 1] == '*' {
             self.off = i
-            mut self.mark()
+            self.mark()
             i += 2
             for {
                 if i >= src.len || src[i] == 0 {
-                    mut self.fail(LexErr.comment)
+                    self.fail(LexErr.comment)
                     break
                 }
                 b: u8 = src[i]
@@ -746,7 +745,7 @@ Lexer.trivia(mut self): bool {
     return nl
 }
 
-Lexer.emit(mut self, t: Token): Token {
+Lexer.emit(self, t: Token): Token {
     // A keyword after '.' is a member name: it ends an expression as an ident does.
     if self.prev == Token.dot && u8(t) >= u8(Token.import) && u8(t) <= u8(Token.false) {
         self.prev = Token.ident
@@ -760,28 +759,28 @@ Lexer.emit(mut self, t: Token): Token {
 /* The next token; after eof, eof again. A token with an error is still a
  * token (as in the C lexer); `errors` holds the errors.
  */
-pub Lexer.next(mut self): Token {
+pub Lexer.next(self): Token {
     for {
-        nl: bool = mut self.trivia()
-        mut self.mark()
+        nl: bool = self.trivia()
+        self.mark()
 
         if self.cur() == 0 {
             if self.count > 0 && self.prev != Token.newline && self.prev != Token.eof {
-                return mut self.emit(Token.newline)
+                return self.emit(Token.newline)
             }
-            return mut self.emit(Token.eof)
+            return self.emit(Token.eof)
         }
 
         // No newline before ';' (for-head clauses stay joined).
-        if nl && ends_expr(self.prev) && self.cur() != ';' { return mut self.emit(Token.newline) }
+        if nl && ends_expr(self.prev) && self.cur() != ';' { return self.emit(Token.newline) }
 
         c: u8 = self.cur()
-        if ident_start(c) { return mut self.emit(mut self.scan_ident()) }
-        if c >= '0' && c <= '9' { return mut self.emit(mut self.scan_number()) }
-        if c == '"' { return mut self.emit(mut self.scan_string()) }
-        if c == '\'' { return mut self.emit(mut self.scan_char()) }
-        k: Token, ok: bool = mut self.scan_punct(c)
-        if ok { return mut self.emit(k) }
+        if ident_start(c) { return self.emit(self.scan_ident()) }
+        if c >= '0' && c <= '9' { return self.emit(self.scan_number()) }
+        if c == '"' { return self.emit(self.scan_string()) }
+        if c == '\'' { return self.emit(self.scan_char()) }
+        k: Token, ok: bool = self.scan_punct(c)
+        if ok { return self.emit(k) }
         // An unexpected byte yields no token, only its error.
     }
 }

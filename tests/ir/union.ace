@@ -38,8 +38,8 @@ differ(a: Event, b: Event): bool {
     return a != b
 }
 
-copy(mut into: Event, from: Event) {
-    into = from
+copy(into: *Event, from: Event) {
+    *into = from
 }
 
 wide(n: i64): Wide {
@@ -85,7 +85,7 @@ local(): bool {
     e: Event = make(5)
     f: Event
     f = e
-    copy(mut e, Event.quit)
+    copy(&e, Event.quit)
     return same(f, Event.key(5)) && e == Event.quit && first != f
 }
 

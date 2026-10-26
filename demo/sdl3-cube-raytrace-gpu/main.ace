@@ -40,11 +40,11 @@ main(): int {
     defer sdl.quit()
 
     window: sdl.Window = sdl.Window.new("Ace + SDL3 GPU raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
-    defer mut window.wipe()
+    defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
     renderer: sdl.Renderer = sdl.Renderer.new(window, sdl.GPU_DRIVER)
-    defer mut renderer.wipe()
+    defer renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     vsync: bool = renderer.vsync(1)
 
@@ -64,11 +64,11 @@ main(): int {
         code = shader.MSL[..]
     }
     program: sdl.Shader = sdl.Shader.new(renderer, format, code, 1)
-    defer mut program.wipe()
+    defer program.wipe()
     if !program.ok() { return fail("SDL_CreateGPUShader") }
 
     state: sdl.RenderState = sdl.RenderState.new(renderer, program)
-    defer mut state.wipe()
+    defer state.wipe()
     if !state.ok() { return fail("SDL_CreateGPURenderState") }
 
     // Light arrives from above, left, and behind the camera.
@@ -87,7 +87,7 @@ main(): int {
     running: bool = true
     for running {
         event: sdl.Event
-        for mut event.poll() {
+        for event.poll() {
             if event.type == sdl.EventType.quit || event.type == sdl.EventType.window_close_requested {
                 running = false
             } else if event.type == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
@@ -145,19 +145,19 @@ main(): int {
         // A line that does not fit is skipped, as the overlay is only
         // informational.
         line: [64]u8 = [0 : 64]
-        n: usize, fit: bool = str.format(mut line[..], "FPS %d", fps)
+        n: usize, fit: bool = str.format(line[..], "FPS %d", fps)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
+        n, fit = str.format(line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "rays %u, one per pixel (GPU)", usize(w) * usize(h))
+        n, fit = str.format(line[..], "rays %u, one per pixel (GPU)", usize(w) * usize(h))
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "output %d x %d", int(w), int(h))
+        n, fit = str.format(line[..], "output %d x %d", int(w), int(h))
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "shader %s", format_name)
+        n, fit = str.format(line[..], "shader %s", format_name)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
 

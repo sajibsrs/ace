@@ -5,10 +5,10 @@
 
 T: struct { a: int }
 
-f(s: mut []u8): int { return int(s.len) + 1 }
+f(s: []u8): int { return int(s.len) + 1 }
 f(x: int): int { return x }
 
-T.g(s: mut []u8): int { return int(s.len) + 2 }
-T.g(x: int, s: mut []u8): int { return x }
+T.g(s: []u8): int { return int(s.len) + 2 }
+T.g(x: int, s: []u8): int { return x }
 
 main(): int { return f(null) + T.g(null) }

@@ -30,7 +30,8 @@ main(): int {
             fmt.print(",")
         }
     }
-    v: []O = members(O)[..]
+    os: [members(O).len]O = members(O)
+    v: []O = os[..]
     x: [3]F = members(F)
     x[0] = F.south
     if members(F)[2] != F.south || x[0] != F.south || K[1] != F.east { return 1 }

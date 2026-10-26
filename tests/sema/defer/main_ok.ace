@@ -1,10 +1,10 @@
 /* `defer` is valid as a direct statement of a function's top-level body
- * block: function calls, method calls through the receiver-marked `mut`
+ * block: function calls, method calls through the receiver
  * form, and multi-return calls discarded like ordinary call statements. */
 
 Counter: struct { value: int }
 
-Counter.add(mut self, amount: int) {
+Counter.add(self, amount: int) {
     self.value = self.value + amount
 }
 
@@ -25,7 +25,7 @@ solo(): int {
 several(): int {
     defer record()
     counter: Counter = Counter { value = 5 }
-    defer mut counter.add(1)
+    defer counter.add(1)
     if false { return 9 }
     defer record()
     return 3

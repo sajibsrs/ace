@@ -1,7 +1,0 @@
-/* err: a string literal cannot initialize a mut string (Mutability #11) —
- * the declaration is rejected at compile time, never a runtime page fault. */
-
-main(): int {
-    s: mut string = "no"
-    return 0
-}

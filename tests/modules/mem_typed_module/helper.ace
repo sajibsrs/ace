@@ -4,11 +4,11 @@ import alloc, release from mem
 
 pub Point: struct { pub x: i32, pub y: i32 }
 
-pub make_points(count: usize): mut []Point {
-    points: mut []Point = alloc[Point](count)
+pub make_points(count: usize): []Point {
+    points: []Point = alloc[Point](count)
     return points
 }
 
-pub drop_points(mut points: []Point) {
-    release[Point](mut points)
+pub drop_points(points: *[]Point) {
+    release[Point](&*points)
 }

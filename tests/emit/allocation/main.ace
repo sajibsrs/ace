@@ -15,58 +15,58 @@ main(): int {
     invalid: []u8 = alloc(4, 3)
 
     if invalid != null {
-        release(mut invalid)
+        release(&invalid)
         return 3
     }
 
-    data: mut []u8 = alloc(4, 8)
+    data: []u8 = alloc(4, 8)
 
     if data != null {
         if data.len != 4 {
-            release(mut data)
+            release(&data)
             return 4
         }
-        writable: mut []u8 = data[0..4]
+        writable: []u8 = data[0..4]
         writable[0] = 40
         writable[1] = 2
 
         alias: []u8 = data
 
         if alias.len != 4 {
-            release(mut data)
+            release(&data)
             return 5
         }
 
         failed: []u8 = realloc(data, 0)
 
         if failed != null {
-            release(mut failed)
-            release(mut data)
+            release(&failed)
+            release(&data)
             return 6
         }
 
         if data[0] != 40 {
-            release(mut data)
+            release(&data)
             return 7
         }
 
-        grown: mut []u8 = realloc(data, 8)
+        grown: []u8 = realloc(data, 8)
 
         if grown != null {
             data = grown
 
             if data.len != 8 {
-                release(mut data)
+                release(&data)
                 return 8
             }
             answer: u8 = data[0] + data[1]
-            release(mut data)
+            release(&data)
 
             if data != null { return 9 }
-            release(mut data)
+            release(&data)
             return int(answer)
         }
-        release(mut data)
+        release(&data)
     }
     return 10
 }

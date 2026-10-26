@@ -88,7 +88,7 @@ Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
 
 // Narrow the span to the slab -1 <= o + t * d <= 1 of one axis; false when
 // the ray misses it.
-inline Span.clip(mut self, o: f32, d: f32, axis: i32): bool {
+inline Span.clip(self, o: f32, d: f32, axis: i32): bool {
     if d == 0.0 { return o >= -1.0 && o <= 1.0 }
     t0: f32 = (-1.0 - o) / d
     t1: f32 = (1.0 - o) / d
@@ -114,9 +114,9 @@ inline hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
     lo: Vec = spin.to_cube(Vec { x = o.x, y = o.y, z = o.z - DISTANCE })
     ld: Vec = spin.to_cube(d)
     span: Span = Span {}
-    if !mut span.clip(lo.x, ld.x, 0) { return 0.0, -1 }
-    if !mut span.clip(lo.y, ld.y, 1) { return 0.0, -1 }
-    if !mut span.clip(lo.z, ld.z, 2) { return 0.0, -1 }
+    if !span.clip(lo.x, ld.x, 0) { return 0.0, -1 }
+    if !span.clip(lo.y, ld.y, 1) { return 0.0, -1 }
+    if !span.clip(lo.z, ld.z, 2) { return 0.0, -1 }
     if span.face < 0 || span.near < EPSILON { return 0.0, -1 }
     return span.near, span.face
 }
@@ -168,11 +168,11 @@ main(): int {
     defer sdl.quit()
 
     window: sdl.Window = sdl.Window.new("Ace + SDL3 raytraced cube", 640, 640, sdl.WindowFlags { resizable = 1 })
-    defer mut window.wipe()
+    defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
     renderer: sdl.Renderer = sdl.Renderer.new(window)
-    defer mut renderer.wipe()
+    defer renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     vsync: bool = renderer.vsync(1)
 
@@ -184,10 +184,10 @@ main(): int {
 
     // Four vertices and six indices per cell, grown with the output size;
     // a cell's indices never change, so only new ones are written.
-    vertices: mut []sdl.Vertex = null
-    defer mem.release[sdl.Vertex](mut vertices)
-    indices: mut []i32 = null
-    defer mem.release[i32](mut indices)
+    vertices: []sdl.Vertex = null
+    defer mem.release[sdl.Vertex](&vertices)
+    indices: []i32 = null
+    defer mem.release[i32](&indices)
     indexed: usize = 0
 
     // Frames and their time since the last statistics refresh, and the
@@ -204,7 +204,7 @@ main(): int {
     running: bool = true
     for running {
         event: sdl.Event
-        for mut event.poll() {
+        for event.poll() {
             if event.type == sdl.EventType.quit || event.type == sdl.EventType.window_close_requested {
                 running = false
             } else if event.type == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
@@ -223,10 +223,10 @@ main(): int {
         columns: i32 = (w + CELL - 1) / CELL
         rows: i32 = (h + CELL - 1) / CELL
         cells: usize = usize(columns) * usize(rows)
-        grown_vertices: mut []sdl.Vertex, vertices_ok: bool = mem.grow[sdl.Vertex](vertices, cells * 4)
+        grown_vertices: []sdl.Vertex, vertices_ok: bool = mem.grow[sdl.Vertex](vertices, cells * 4)
         if !vertices_ok { return fail("vertex allocation") }
         vertices = grown_vertices
-        grown_indices: mut []i32, indices_ok: bool = mem.grow[i32](indices, cells * 6)
+        grown_indices: []i32, indices_ok: bool = mem.grow[i32](indices, cells * 6)
         if !indices_ok { return fail("index allocation") }
         indices = grown_indices
         for indexed < cells {
@@ -299,19 +299,19 @@ main(): int {
         // A line that does not fit is skipped, as the overlay is only
         // informational.
         line: [64]u8 = [0 : 64]
-        n: usize, fit: bool = str.format(mut line[..], "FPS %d", fps)
+        n: usize, fit: bool = str.format(line[..], "FPS %d", fps)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
+        n, fit = str.format(line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "trace %d us (CPU)", draw_us)
+        n, fit = str.format(line[..], "trace %d us (CPU)", draw_us)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "rays %u, one per %dx%d", cells, int(CELL), int(CELL))
+        n, fit = str.format(line[..], "rays %u, one per %dx%d", cells, int(CELL), int(CELL))
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "output %d x %d", int(w), int(h))
+        n, fit = str.format(line[..], "output %d x %d", int(w), int(h))
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
 

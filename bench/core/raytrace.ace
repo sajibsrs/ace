@@ -58,7 +58,7 @@ inline Spin.to_cube(self, v: Vec): Vec {
 
 Span: struct { near: f32 = 0.0, far: f32 = FAR, face: i32 = -1 }
 
-inline Span.clip(mut self, o: f32, d: f32, axis: i32): bool {
+inline Span.clip(self, o: f32, d: f32, axis: i32): bool {
     if d == 0.0 { return o >= -1.0 && o <= 1.0 }
     t0: f32 = (-1.0 - o) / d
     t1: f32 = (1.0 - o) / d
@@ -81,9 +81,9 @@ inline hit(spin: Spin, o: Vec, d: Vec): (f32, i32) {
     lo: Vec = spin.to_cube(Vec { x = o.x, y = o.y, z = o.z - DISTANCE })
     ld: Vec = spin.to_cube(d)
     span: Span = Span {}
-    if !mut span.clip(lo.x, ld.x, 0) { return 0.0, -1 }
-    if !mut span.clip(lo.y, ld.y, 1) { return 0.0, -1 }
-    if !mut span.clip(lo.z, ld.z, 2) { return 0.0, -1 }
+    if !span.clip(lo.x, ld.x, 0) { return 0.0, -1 }
+    if !span.clip(lo.y, ld.y, 1) { return 0.0, -1 }
+    if !span.clip(lo.z, ld.z, 2) { return 0.0, -1 }
     if span.face < 0 || span.near < EPSILON { return 0.0, -1 }
     return span.near, span.face
 }
@@ -133,8 +133,8 @@ main(): int {
     columns: i32 = (w + CELL - 1) / CELL
     rows: i32 = (h + CELL - 1) / CELL
     cells: usize = usize(columns) * usize(rows)
-    vertices: mut []Vertex, ok: bool = mem.grow[Vertex](null, cells * 4)
-    defer mem.release[Vertex](mut vertices)
+    vertices: []Vertex, ok: bool = mem.grow[Vertex](null, cells * 4)
+    defer mem.release[Vertex](&vertices)
     if !ok { return 1 }
 
     checksum: u64 = 0

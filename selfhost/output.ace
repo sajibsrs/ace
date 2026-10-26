@@ -5,19 +5,19 @@ import fmt
 /* `text` escaped as an Ace string literal's body that lexes back to the same
  * bytes; UTF-8 passes through.
  */
-pub quoted(mut out: fmt.Buffer, text: string) {
+pub quoted(out: *fmt.Buffer, text: string) {
     for c: u8 in text {
         switch c {
-            '"', '\\' { mut out.printf("\\%c", c) }
-            '\n' { mut out.printf("\\n") }
-            '\t' { mut out.printf("\\t") }
-            '\r' { mut out.printf("\\r") }
-            0 { mut out.printf("\\0") }
+            '"', '\\' { out.printf("\\%c", c) }
+            '\n' { out.printf("\\n") }
+            '\t' { out.printf("\\t") }
+            '\r' { out.printf("\\r") }
+            0 { out.printf("\\0") }
             default {
                 if c < 0x20 || c == 0x7F {
-                    mut out.printf("\\x%x%x", uint(c >> 4), uint(c & 15))
+                    out.printf("\\x%x%x", uint(c >> 4), uint(c & 15))
                 } else {
-                    mut out.printf("%c", c)
+                    out.printf("%c", c)
                 }
             }
         }

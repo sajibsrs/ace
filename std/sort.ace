@@ -13,7 +13,7 @@ SMALL: const int = 16
 /* Orders `items` ascending by `less`, which must be a strict weak ordering.
  * Equal elements may change their relative order.
  */
-pub unstable[T](items: mut []T, less: (T, T): bool) {
+pub unstable[T](items: []T, less: (T, T): bool) {
     n: int = int(items.len)
     if n < 2 { return }
 
@@ -25,7 +25,7 @@ pub unstable[T](items: mut []T, less: (T, T): bool) {
 /* Orders `items` ascending by `<`. Equal elements may change their relative
  * order.
  */
-pub unstable[T](items: mut []T) {
+pub unstable[T](items: []T) {
     unstable[T](items, ascending[T])
 }
 
@@ -49,14 +49,14 @@ ascending[T](a: T, b: T): bool {
     return a < b
 }
 
-swap[T](items: mut []T, a: int, b: int) {
+swap[T](items: []T, a: int, b: int) {
     t: T = items[a]
     items[a] = items[b]
     items[b] = t
 }
 
 /* Sorts the inclusive range lo..hi. */
-introsort[T](items: mut []T, lo: int, hi: int, depth: int, less: (T, T): bool) {
+introsort[T](items: []T, lo: int, hi: int, depth: int, less: (T, T): bool) {
     low: int = lo
     high: int = hi
     left: int = depth
@@ -86,7 +86,7 @@ introsort[T](items: mut []T, lo: int, hi: int, depth: int, less: (T, T): bool) {
  * first, middle, and last elements. Returns j with every element of lo..j
  * not after every element of j+1..hi, and lo <= j < hi.
  */
-partition[T](items: mut []T, lo: int, hi: int, less: (T, T): bool): int {
+partition[T](items: []T, lo: int, hi: int, less: (T, T): bool): int {
     mid: int = lo + (hi - lo) / 2
     if less(items[mid], items[lo]) { swap[T](items, mid, lo) }
     if less(items[hi], items[lo]) { swap[T](items, hi, lo) }
@@ -106,7 +106,7 @@ partition[T](items: mut []T, lo: int, hi: int, less: (T, T): bool): int {
     return j
 }
 
-insertion[T](items: mut []T, lo: int, hi: int, less: (T, T): bool) {
+insertion[T](items: []T, lo: int, hi: int, less: (T, T): bool) {
     for i: int in lo + 1 .. hi + 1 {
         key: T = items[i]
         j: int = i
@@ -118,7 +118,7 @@ insertion[T](items: mut []T, lo: int, hi: int, less: (T, T): bool) {
     }
 }
 
-heapsort[T](items: mut []T, lo: int, hi: int, less: (T, T): bool) {
+heapsort[T](items: []T, lo: int, hi: int, less: (T, T): bool) {
     n: int = hi - lo + 1
 
     for start: int = n / 2 - 1; start >= 0; start -= 1 {
@@ -133,7 +133,7 @@ heapsort[T](items: mut []T, lo: int, hi: int, less: (T, T): bool) {
 /* Restores the max-heap property below `root` in the heap of n elements
  * stored from index lo.
  */
-sift[T](items: mut []T, lo: int, root: int, n: int, less: (T, T): bool) {
+sift[T](items: []T, lo: int, root: int, n: int, less: (T, T): bool) {
     r: int = root
     for {
         child: int = 2 * r + 1

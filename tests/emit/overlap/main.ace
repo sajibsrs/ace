@@ -25,7 +25,7 @@ Word: struct {
     bytes: [4]u8,
 }
 
-fill(event: mut *Event) {
+fill(event: *Event) {
     event.key.kind = 3
     event.key.code = 42
     event.key.down = true
@@ -41,7 +41,7 @@ main(): int {
     if offsetof(Event, motion) != 0 || offsetof(Event, motion.y) != 8 { return 2 }
 
     event: Event
-    fill(mut &event)
+    fill(&event)
     if event.kind != 3 || !event.key.down { return 3 }
     if describe(event) != 42 { return 4 }
 

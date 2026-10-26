@@ -4,14 +4,14 @@ import test
 
 Level: enum u8 { low, high }
 
-pub numbers(mut t: test.T) {
-    mut t.equal(2 + 2, 4)
-    mut t.equal(uint(7), uint(7))
-    mut t.equal(usize(3), usize(3))
+pub numbers(t: *test.T) {
+    t.equal(2 + 2, 4)
+    t.equal(uint(7), uint(7))
+    t.equal(usize(3), usize(3))
 }
 
-pub text(mut t: test.T) {
-    mut t.equal("ace", "ace")
-    mut t.equal(true, 1 < 2)
-    test.equal[Level](mut t, Level.high, Level.high)
+pub text(t: *test.T) {
+    t.equal("ace", "ace")
+    t.equal(true, 1 < 2)
+    test.equal[Level](t, Level.high, Level.high)
 }

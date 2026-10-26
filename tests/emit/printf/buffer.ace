@@ -15,26 +15,26 @@ main(): int {
     if err != null { return 1 }
 
     storage: [8]u8
-    b: fmt.Buffer = fmt.Buffer.init(writer, mut storage[..])
-    if mut b.printf("%d:%u%c", -4, uint(25), u8(';')) != 6 { return 2 }
-    if mut b.printf("%s|", "write-through") != 14 { return 3 }
-    if mut b.printf("%%") != 1 { return 4 }
-    if mut b.printf("") != 0 { return 5 }
-    if mut b.flush() != 2 { return 6 } // "|%"
-    if mut b.flush() != 0 { return 7 }
+    b: fmt.Buffer = fmt.Buffer.init(writer, storage[..])
+    if b.printf("%d:%u%c", -4, uint(25), u8(';')) != 6 { return 2 }
+    if b.printf("%s|", "write-through") != 14 { return 3 }
+    if b.printf("%%") != 1 { return 4 }
+    if b.printf("") != 0 { return 5 }
+    if b.flush() != 2 { return 6 } // "|%"
+    if b.flush() != 0 { return 7 }
 
     sys.close(writer)
     got: [32]u8 = [0 : 32]
-    n: int, rerr: Error = sys.read(reader, mut got[..])
+    n: int, rerr: Error = sys.read(reader, got[..])
     if rerr != null || n != 21 { return 8 }
     if !mem.equal(got[..21], "-4:25;write-through|%") { return 9 }
 
-    closed: fmt.Buffer = fmt.Buffer.init(writer, mut storage[..])
-    if mut closed.printf("ab") != 2 { return 10 }
-    failed: int = mut closed.flush()
+    closed: fmt.Buffer = fmt.Buffer.init(writer, storage[..])
+    if closed.printf("ab") != 2 { return 10 }
+    failed: int = closed.flush()
     if failed >= 0 { return 11 }
-    if mut closed.printf("%d", 1) != failed { return 12 }
-    if mut closed.flush() != failed { return 13 }
+    if closed.printf("%d", 1) != failed { return 12 }
+    if closed.flush() != failed { return 13 }
 
     sys.close(reader)
     return 0

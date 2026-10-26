@@ -219,7 +219,7 @@ for a `pub` struct left in an implementation file.
 
 ```ace
 pub Array[T]: struct {
-    items: mut []T = null,   // only std/array.ace reads or writes it
+    items: []T = null,   // only std/array.ace reads or writes it
     pub len: usize = 0,      // every importer reads it
 }
 ```

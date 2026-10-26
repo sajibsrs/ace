@@ -24,15 +24,15 @@ pub Router.new(): Router {
 }
 
 /* Releases route storage. Call once the router is no longer served. */
-pub Router.wipe(mut self) {
-    mut self.routes.wipe()
+pub Router.wipe(self) {
+    self.routes.wipe()
 }
 
 /* Registers `handler` for exact `method` and path-segment prefix `path`.
  * Grows route storage as needed; fails only if that growth fails.
  */
-pub Router.handle(mut self, method: string, path: string, handler: (Request): Response): Error {
-    return mut self.routes.push(Route {
+pub Router.handle(self, method: string, path: string, handler: (Request): Response): Error {
+    return self.routes.push(Route {
         method = method,
         path = path,
         handler = handler,

@@ -1,0 +1,31 @@
+/* A sequence reached through pointers auto-derefs for .len and for-in, as a
+   struct field access does: *[N]T, *[]T, *string, and **[]T. */
+
+// expect-exit: 0
+// expect-output: 118
+
+import fmt
+
+trim(text: *[]u8, by: usize) {
+    *text = (*text)[0 .. text.len - by]
+}
+
+count(a: *[4]i32, s: *string, t: **[]u8): usize {
+    total: usize = 0
+    for v: i32 in a { total += usize(v) }
+    for c: u8 in t { total += usize(c) }
+    return total + a.len + s.len + t.len
+}
+
+main(): int {
+    b: [5]u8 = [1, 2, 3, 4, 5]
+    v: []u8 = b[..]
+    trim(&v, 2)
+    w: [4]i32 = [10, 20, 30, 40]
+    s: string = "hello"
+    p: *[]u8 = &v
+    n: usize = count(&w, &s, &p)
+    fmt.println(n)
+    if v.len != 3 || n != 100 + 6 + 4 + 5 + 3 { return 1 }
+    return 0
+}

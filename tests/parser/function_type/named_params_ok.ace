@@ -1,9 +1,9 @@
 /* Function-type parameters may be named, as a declaration writes them; the
-   names document and are ignored for identity. A mut parameter is named. */
+   names document and are ignored for identity. A parameter is named. */
 
 Box: struct { n: int }
 
-bump(mut b: Box) {
+bump(b: *Box) {
     b.n += 1
 }
 
@@ -11,15 +11,15 @@ add(a: int, b: int): int {
     return a + b
 }
 
-view(mut text: []u8, bytes: mut []u8, label: mut string) {
+view(text: *[]u8, bytes: []u8, label: string) {
 }
 
 main(): int {
-    f: (mut b: Box): void = bump
-    g: (mut other: Box): void = f
+    f: (b: *Box): void = bump
+    g: (other: *Box): void = f
     named: (a: int, b: int): int = add
     mixed: (int, b: int): int = named
     plain: (int, int): int = mixed
-    v: (mut text: []u8, mut []u8, label: mut string): void = view
+    v: (text: *[]u8, []u8, label: string): void = view
     return plain(1, 2) - 3
 }

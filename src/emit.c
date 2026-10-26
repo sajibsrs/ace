@@ -15,8 +15,8 @@
 //     outgoing area sits at [sp, #0..] at the bl.
 //   - Apple arm64 variadic extras use 8-byte stack slots from [sp, #0], while
 //     the fixed parameters retain ordinary register/stack classification.
-//   - internal-only freedom (spec Functions & ABI #3): `mut` params and >16B
-//     read-only params pass the caller's ADDRESS in an x reg.
+//   - internal-only freedom (spec Functions & ABI #3): the receiver and
+//     >16B params pass the caller's ADDRESS in an x reg.
 //   - extern calls are `bl` + ARM64_RELOC_BRANCH26 to an undefined `_name`
 //     symbol.
 //   - symbols: `_main` / `_export` at the C boundary; internals mangled
@@ -579,10 +579,7 @@ static void mangle_type(Buf* b, SType* t) {
         return;
     case SK_FUNC:
         buf_put8(b, 'f');
-        for (int i = 0; i < t->nparams; i++) {
-            if (i < 64 && ((t->mut_params >> i) & 1)) buf_put8(b, 'm'); // no type tag starts with 'm'
-            mangle_type(b, t->params[i]);
-        }
+        for (int i = 0; i < t->nparams; i++) mangle_type(b, t->params[i]);
         buf_put8(b, 'r');
         mangle_type(b, t->ret);
         buf_put8(b, '_');
@@ -605,7 +602,7 @@ const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, STy
     buf_write(&b, "$p", 2);
     if (ft && ft->kind == SK_FUNC) {
         for (int i = 0; i < ft->nparams; i++) {
-            buf_put8(&b, decl && i < decl->nkids && (decl->kids[i]->flags & F_MUT) ? 'm' : 'r');
+            buf_put8(&b, decl && i < decl->nkids && (decl->kids[i]->flags & F_BYADDR) ? 'm' : 'r');
             mangle_type(&b, ft->params[i]);
             buf_put8(&b, '$');
         }
@@ -1510,7 +1507,7 @@ static void emit_global(Em* e, Node* n) {
         free(rels.v);
         return;
     }
-    int readonly = (n->flags & F_CONST) || (export_c && !(n->flags & F_MUT));
+    int readonly = (n->flags & F_CONST) != 0;
     Sec* d = readonly ? &e->o.secs[SEC_CONST] : &e->o.secs[SEC_DATA];
     while (d->data.len % align) buf_put8(&d->data, 0);
     if (export_c && sym_intern(&e->o.syms, nm, (uint32_t)strlen(nm))->type)

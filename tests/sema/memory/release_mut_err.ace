@@ -1,9 +1,0 @@
-/* Memory release mut fixture. */
-
-import alloc, release from mem
-
-main(): int {
-    data: []u8 = alloc(8, 8)
-    release(data)
-    return 0
-}

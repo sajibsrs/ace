@@ -10,7 +10,7 @@ import mem
 
 main(): int {
     text: [3000]u8 = [0 : 3000]
-    mem.fill(mut text[..], 'a')
+    mem.fill(text[..], 'a')
     written: int = fmt.printf("<%2000d|%s>", 7, string(text[..]))
     if written != 5003 { return 1 }
     return 0

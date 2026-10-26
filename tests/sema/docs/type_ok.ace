@@ -45,15 +45,15 @@ read_x(point: *Point): int {
     return point.x
 }
 
-set_x(point: mut *Point, value: int) {
+set_x(point: *Point, value: int) {
     point.x = value
 }
 
-retarget(mut point: *Point, replacement: *Point) {
-    point = replacement
+retarget(point: **Point, replacement: *Point) {
+    *point = replacement
 }
 
-fill(data: mut []u8, value: u8) {
+fill(data: []u8, value: u8) {
     for i: usize in 0 .. data.len { data[i] = value }
 }
 
@@ -73,7 +73,7 @@ Number.get(self): int {
     return self.value
 }
 
-Number.set(mut self, value: int) {
+Number.set(self, value: int) {
     self.value = value
 }
 
@@ -91,14 +91,14 @@ Human: struct {
     embed named: Named,
 }
 
-fill_prefix(bytes: mut []u8): usize {
+fill_prefix(bytes: []u8): usize {
     bytes[0] = u8(97)
     return 1
 }
 
 view_initialized(): int {
     storage: [16]u8
-    bytes: mut []u8 = mut storage[0..16] // storage is now initialized
+    bytes: []u8 = storage[0..16] // storage is now initialized
     count: usize = fill_prefix(bytes)
     return int(string(bytes[0..count]).len)
 }
@@ -138,14 +138,14 @@ main(): int {
         y = 29,
     }
     pointer: *Point = &point
-    writable: mut *Point = mut &point
+    writable: *Point = &point
     set_x(writable, 14)
     other: Point = Point {
         x = 15,
         y = 31,
     }
-    retarget(mut pointer, &other)
-    outer: *mut *Point = &writable
+    retarget(&pointer, &other)
+    outer: **Point = &writable
     outer.x = 16
     maybe: *Point = null
     node: Node = { next = null }
@@ -190,7 +190,7 @@ main(): int {
     partial.y = 2
     number_object: Number = Number { value = 13 }
     zero_number: Number = Number.zero()
-    mut zero_number.set(21)
+    zero_number.set(21)
     value: Value = Value(&number_object)
     human: Human = Human { named = Named { text = "Ada" } }
     promoted_name: string = human.name()
@@ -198,12 +198,12 @@ main(): int {
     view: string = ok_bytes[0..3]
     tail: string = view[1..]
     buffer: [4]u8 = [0, 0, 0, 0]
-    fill(mut buffer[0..4], 7)
-    w: mut []u8 = mut buffer[0..4]
+    fill(buffer[0..4], 7)
+    w: []u8 = buffer[0..4]
     w[0] = 42
     plain: []u8 = w
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
-    writable_view: mut string = mut letters[0..]
+    writable_view: string = letters[0..]
 
     if sizeof([]char) != 16 || sizeof([3]char) != 3 { return 90 }
     return count + int(raw) + read_x(pointer) + middle[0] + middle[1] +

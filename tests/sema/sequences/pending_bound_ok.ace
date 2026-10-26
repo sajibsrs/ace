@@ -1,7 +1,7 @@
 /* ok: a slice bound whose call waits for end of file to choose its overload
  * (an untyped float argument) is checked once the call resolves. */
 
-bytes: mut []u8
+bytes: []u8
 text: string = "hello"
 
 width(x: f32): u64 {

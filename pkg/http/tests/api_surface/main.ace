@@ -1,16 +1,16 @@
 import http
 import net
 
-check_client(mut context: http.ClientContext) {
-    response: http.Response, err: Error = http.get("http://example.com/", mut context)
+check_client(context: *http.ClientContext) {
+    response: http.Response, err: Error = http.get("http://example.com/", context)
 }
 
 check(
-    mut state: http.ResponseParser,
-    mut request_parser: http.RequestParser,
-    headers: mut []http.Header,
-    body: mut []u8,
-    output: mut []u8,
+    state: *http.ResponseParser,
+    request_parser: *http.RequestParser,
+    headers: []http.Header,
+    body: []u8,
+    output: []u8,
 ): int {
     address: net.Addr4, valid: bool = net.parse4("127.0.0.1:80")
     url: http.Url, err: Error = http.Url.parse("http://example.com/?q=1")
@@ -43,8 +43,8 @@ check(
     count, err = request.format(output)
     if err != null && err.domain != typeid(http.FormatErr) { return 2 }
 
-    request_result: http.RequestResult = mut request_parser.parse("GET / HTTP/1.1\r\n\r\n", headers, body, false)
-    result: http.ResponseResult = mut state.parse("HTTP/1.1 204 No Content\r\n\r\n", headers, body, false, false)
+    request_result: http.RequestResult = request_parser.parse("GET / HTTP/1.1\r\n\r\n", headers, body, false)
+    result: http.ResponseResult = state.parse("HTTP/1.1 204 No Content\r\n\r\n", headers, body, false, false)
     switch result {
         http.ResponseResult.complete(response: http.Response) {
             count += usize(response.status)
@@ -71,8 +71,8 @@ check(
 
 main(): int {
     context: http.ClientContext = http.ClientContext.new()
-    defer mut context.wipe()
+    defer context.wipe()
     context.redirects = http.RedirectPolicy { limit = 10 }
-    check_client(mut context)
+    check_client(&context)
     return 0
 }

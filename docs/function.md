@@ -18,37 +18,33 @@ Semicolons are not used. A newline terminates a complete statement.
 
 ## Parameters and mutation
 
-Parameter bindings are read-only by default. A plain parameter is a value the
-compiler may pass as a copy or as the address of the caller's argument, so a
-program must not tell the two apart: a view of a parameter does not outlive the
-call, and the argument's storage must not change while the call runs, as in
-`f(a, mut a)` where `f` writes its `mut` parameter and then reads the plain one.
+A parameter binding is never assignable; copy it to a local to modify it. A
+plain aggregate parameter is a read-only reference to the caller's argument:
+reads see its current contents, including writes made during the call through a
+pointer or a module variable. A view of a parameter does not outlive the call.
 The compiler passes an aggregate of over 32 leaves by address: to an Ace
 function, the address of the argument itself when it names a variable, a field
 or element of one, or a dereference; otherwise, and always to an `extern "c"`
 function or through a function value, the address of a fresh copy.
 
-A function that changes an argument marks the parameter `mut`; its caller must
-repeat `mut`, and the argument must be an lvalue.
+A function that changes the caller's variable takes a pointer, and the caller
+passes its address:
 
 ```ace
-increment(mut value: int) {
-    value += 1
+increment(value: *int) {
+    *value += 1
 }
 
 main(): int {
     count: int = 12
-    increment(mut count)
+    increment(&count)
     return count
 }
 ```
 
-An unmarked call cannot replace the caller's argument value. Assigning to an
-unmarked parameter is a compile error. This is independent from content
-writes: a parameter whose type carries type-position `mut` — such as
-`mut *T`, `mut []T`, or `mut string` — writes through the view with no
-argument-level `mut`, because the permission is stated in the parameter's
-type. See [Types and declarations](types.md#writable-views).
+A call without `&x` cannot replace the caller's variable. Views carry no
+permission: a `*T`, `[]T`, or `string` parameter writes through to the
+caller's storage. See [Types and declarations](types.md#views).
 
 ## Returns and multiple values
 
@@ -127,7 +123,7 @@ comma after the final parameter:
 ```ace
 pub get(
     url: string,
-    mut context: Context,
+    context: *Context,
 ): (Response, Error) {
     // ...
 }
@@ -141,7 +137,7 @@ declaration merely because the parameter list could be written vertically.
 ## Overloads
 
 Free functions may share a name when their parameter signatures differ.
-Selection uses the exact argument count, exact types, and `mut` positions.
+Selection uses the exact argument count and exact types.
 
 ```ace
 render(value: string): int {
@@ -167,17 +163,10 @@ does not fit (`['a', 300]`) is an error, never truncated. An empty literal
 has no element type, so a cast names its type: `f([]int([]))`, or `f([2]int([x, y]))` for an array parameter.
 
 Return types do not distinguish overloads. `noalias` also does not distinguish
-them. `mut` does because it is visible at the call site, and type-position
-`mut` forms distinguish themselves as distinct types.
+them.
 
 Transparent aliases do not distinguish overloads. In particular, `char`/`u8`
 and `string`/`[]char`/`[]u8` variations are duplicate declarations.
-
-A `mut`-qualified view argument (`mut *T`, `mut []T`, `mut string`) resolves
-exactly when a candidate states that form. When no exact candidate fits, the
-call may still resolve against a plain-form candidate through implicit
-permission shrink. Exact matches always win first, so `f(s: string)` and
-`f(s: mut string)` are distinct, unambiguous overloads.
 
 On the current AArch64 target, `int` and `i64` are the same type, so these cannot
 be separate overloads.
@@ -197,10 +186,9 @@ Overloads are resolved during compilation. The emitted call targets a
 signature-mangled function directly; overloads add no runtime dispatch, tag,
 boxing, or allocation.
 
-Type-owned methods use the same exact overload rule. Receiver type and receiver
-`mut` participate in selection, parameters must match exactly, and the return
-type must match after selection, with the same shrink-only fallback for
-view permission. Return type alone never creates or selects an
+Type-owned methods use the same exact overload rule. The receiver type
+participates in selection, parameters must match exactly, and the return
+type must match after selection. Return type alone never creates or selects an
 overload. Methods must be called; they are not first-class function values.
 
 ## Function values
@@ -266,39 +254,35 @@ function returning a function writes the type without extra parentheses:
 
 A function type's parameters may be named, as a declaration names them. The
 names only document: `(a: int, b: int): int`, `(int, b: int): int`, and
-`(int, int): int` are one type. A `mut` parameter is written in its named form,
-and its `mut` is part of the type, so a function with a `mut` parameter is a
-value of exactly that type and a call through it marks the argument:
+`(int, int): int` are one type. A call through a function value passes
+arguments exactly as a direct call does:
 
 ```ace
 Box: struct {
     n: int,
 }
 
-bump(mut b: Box) {
+bump(b: *Box) {
     b.n += 1
 }
 
-bump_twice(f: (mut b: Box): void, mut b: Box) {
-    f(mut b)
-    f(mut b)
+bump_twice(f: (b: *Box): void, b: *Box) {
+    f(b)
+    f(b)
 }
 ```
 
-`(mut b: Box): void` and `(Box): void` are different types, and neither
-converts to the other. A bare `mut` before a type still marks a writable view:
-`(mut []u8): void` takes a writable slice, `(mut s: []u8): void` may replace the
-caller's slice, and `(mut s: mut []u8): void` does both. Tuple members take no
-name, and a C function-pointer type has no `mut` parameter.
+`(b: *Box): void` and `(Box): void` are different types, and neither
+converts to the other. Tuple members take no name.
 
 C-callable function values state their convention in the type:
 
 ```ace
-extern "c" thread_entry(argument: mut *u8): mut *u8 {
+extern "c" thread_entry(argument: *u8): *u8 {
     return argument
 }
 
-entry: extern "c" (mut *u8): mut *u8 = thread_entry
+entry: extern "c" (*u8): *u8 = thread_entry
 empty: extern "c" (): void = null
 ```
 
@@ -430,7 +414,7 @@ silent new generic. Each generic overload of a
 name specializes independently.
 
 The declaration is checked against the generic at declaration time: the
-specialization's parameters, `mut` positions, and return type must equal the
+specialization's parameters and return type must equal the
 substituted generic signature. Duplicate specializations for one exact tuple on
 one generic overload are a declaration error.
 
@@ -487,20 +471,20 @@ inline mix(value: u64): u64 {
 
 Buffer: struct { at: usize }
 
-pub inline Buffer.skip(mut self, n: usize) {
+pub inline Buffer.skip(self, n: usize) {
     self.at += n
 }
 
 main(): int {
     b: Buffer = Buffer{ at = 0 }
-    mut b.skip(2)
+    b.skip(2)
     return int(mix(u64(b.at)))
 }
 ```
 
 Expansion is guaranteed, not a hint, and does not change what a call means:
 the arguments are evaluated left to right as for any call, a read-only scalar
-parameter sees the value it was passed, and a `mut` parameter or receiver
+parameter sees the value it was passed, and a receiver
 writes to the caller's storage. A `return` in the body finishes the expanded
 call with its value. Declaration order and module boundaries do not matter,
 and a call inside an inline function's body expands too, so small helpers can
@@ -523,10 +507,10 @@ by-value accessor wrapping `Array.get`), and functions that auto-inline in turn
 generic, `@cold`, `main`, or recursive. Debug builds keep those calls, so
 backtraces show them. Mark a larger helper `inline` to expand it.
 
-An expansion binds a receiver or `mut` parameter to the argument itself when
+An expansion binds a receiver to the argument itself when
 that is a local, or a field of one, so a struct or scalar local passed to
 inline methods stays in registers. It lives in memory for the whole function
-once anything needs its address: `&`, a `mut` or receiver argument to a call
+once anything needs its address: `&`, a receiver of a call
 that is not expanded (a deferred call, a helper too large to auto-inline), or
 an inline body that passes its parameter on by address.
 
@@ -586,11 +570,11 @@ observed:
 
 - no `defer` is pending at the `return`;
 - the parameters fit the argument registers: at most 8 integer-class ones (a
-  scalar, pointer, `mut` parameter, or method receiver takes 1; a slice or
+  scalar, pointer, or method receiver takes 1; a slice or
   `string` takes 2) and at most 8 float ones;
 - every by-value parameter and every local is a scalar, a slice, or a `string`;
 - the function takes no address of its own locals or by-value parameters
-  (`&x`, `mut x` at a call, or a method call on one);
+  (`&x`, or a method call on one);
 - the function is not `main`, generic, or exported, and contains no call to
   an `inline` function.
 
@@ -680,7 +664,7 @@ extern "c" {
     }
 }
 
-extern "c" increment(value: mut *i32): i32 {
+extern "c" increment(value: *i32): i32 {
     *value += 1
     return *value
 }
@@ -692,23 +676,23 @@ module can keep a short Ace name and export `ace_increment`. Two definitions
 cannot export one symbol. A variadic function can be imported but not defined.
 
 ```ace
-extern "c" increment(value: mut *i32): i32 as "ace_increment" {
+extern "c" increment(value: *i32): i32 as "ace_increment" {
     *value += 1
     return *value
 }
 
-extern "c" mut total: i32 as "ace_total" = 0
+extern "c" total: i32 as "ace_total" = 0
 ```
 
 Globals follow the same rule: one without an initializer binds C storage, and
-one with an initializer is defined in Ace and visible to C. It is read-only
-unless `mut`, and a read-only one is placed in read-only data:
+one with an initializer is defined in Ace and visible to C. It is writable
+unless `const`, and a `const` one is placed in read-only data:
 
 ```ace
 extern "c" {
-    mut opterr: i32                 // C's storage
-    mut ace_counter: i32 = 0        // defined here; C reads and writes it
-    ace_version: u32 = 3            // defined here; read-only
+    opterr: i32                     // C's storage
+    ace_counter: i32 = 0            // defined here; C reads and writes it
+    ace_version: u32 = 3            // defined here
 }
 
 pub extern "c" ace_scale: f64 = 2.5
@@ -716,8 +700,7 @@ pub extern "c" ace_scale: f64 = 2.5
 
 The initializer must be a compile-time constant, as for every global.
 
-Boundary parameters cannot use Ace's `mut parameter` convention. Pass an
-explicit `mut *T` when C receives writable storage. An explicitly backed enum
+Pass an explicit `*T` when C receives writable storage. An explicitly backed enum
 crosses as its fixed-width backing integer; a default enum states no external
 width and remains rejected. A `bits` type likewise crosses as its backing
 integer. `bool`, strings, slices, contracts, tagged unions, errors, tuples,
@@ -742,8 +725,8 @@ result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
 
 An extern block also binds C global variables, written `name: type` and
 optionally link-named like a function. The name reads and writes C's storage in
-place; Ace allocates and initializes nothing. A C global is read-only unless
-marked `mut`, and `&name` is `*T`, or `mut *T` when it is `mut`. Its type
+place; Ace allocates and initializes nothing. A C global is writable, and
+`&name` is `*T`. Its type
 follows the struct-field rules above, so a fixed array is allowed. A read is
 never cached across a call, since C may change the value. Thread-local C
 variables such as `errno` are reached through the accessor functions C
@@ -759,8 +742,8 @@ compiler does not detect a crossing.
 ```ace
 extern "c" {
     c_limit: i32
-    mut c_counter: i32
-    mut c_table: [4]i32
+    c_counter: i32
+    c_table: [4]i32
     c_bump()
 }
 
@@ -792,14 +775,9 @@ The examples are covered by `tests/sema/docs/function_ok.ace`.
 
 Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and Values & Passing #2 are shaped as they are.
 
-- Named function-type parameters (Syntax & Parsing #5): a declaration tells a
-  `mut` parameter from a writable view by the name between them
-  (`mut b: mut []u8`), and an unnamed type has no such position, so
-  `(mut []u8)` could not mean both. Letting a function type's parameters be
-  written as a declaration's reuses that rule rather than inventing a marker,
-  and the names then document callbacks, as Kotlin, Go, Odin, and Swift
-  function types allow. A `mut` position stays part of the type, so a call
-  through the value checks `mut` agreement exactly as a direct call does.
+- Named function-type parameters (Syntax & Parsing #5): letting a function
+  type's parameters be written as a declaration's names document callbacks,
+  as Kotlin, Go, Odin, and Swift function types allow.
 
 - Explicit layouts by value: the C ABI classifies an aggregate by the types of
   all its members, overlapping ones included (clang's
@@ -808,11 +786,14 @@ Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and
   overlapping struct from all its members' leaves, and pins each target's
   rules against clang in `tests/driver/layout_abi.ace`.
 
-- Plain parameters (Values & Passing #2): leaving copy versus address to the
-  compiler lets each argument use the cheapest machine passing (registers for
-  small values, an address for large ones) with no alias analysis, as Carbon's
-  value bindings and Mojo's `read` arguments do. Fixing either choice would
-  either force every aggregate through memory or promise a copy on every call.
+- Plain parameters (Values & Passing #2): a read-only reference to the
+  caller's argument is the by-address passing large aggregates already use,
+  made defined: reads see the argument's current contents, so no program
+  depends on whether a copy was made, at zero cost. Small aggregates still
+  travel in registers when that is unobservable. Zig passes parameters by
+  reference or copy at the compiler's choice but leaves aliasing writes
+  undefined; Ace defines them. Writing the caller's storage takes an explicit
+  `*T` and `&x`, as in Go and C.
 - C Interop #2: one keyword names the C boundary in both directions, as C and
   C++ do (`extern "C" int f(void);` declares, `extern "C" int f(void) { … }`
   defines) and Rust does (`extern "C" { fn f(); }`, `extern "C" fn f() {}`).
@@ -824,9 +805,9 @@ Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and
   needs.
 - C Interop #6: binding C data uses the storage form Ace already has rather
   than accessor shims, as Zig (`extern var`/`extern const`) and Rust
-  (`static`/`static mut`) do. Whether C storage may be written is stated at the
-  declaration, read-only by default like `*T` and unmarked parameters, because
-  writing a C `const` global faults. Data in a shared library is reached
+  (`static`/`static mut`) do. C storage is writable like every Ace global;
+  `const` records that C may have placed it in read-only memory, where a
+  write faults. Data in a shared library is reached
   through the GOT, which the dynamic linker fills (`GOT_LOAD` on Apple arm64,
   `GOTPCREL` on x64).
 

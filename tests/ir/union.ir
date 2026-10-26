@@ -130,7 +130,7 @@ b0:
     %2 = param u64 1
     store [%0], %2
     %4 = load u64 [%0]
-    store [%1], %4
+    store.chk [%1], %4
     ret
 }
 

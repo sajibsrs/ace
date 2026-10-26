@@ -20,34 +20,34 @@ report(name: string, elapsed: u64, operations: usize, bytes: usize, checksum: us
     fmt.printf("%s %u %u %u %u\n", name, usize(elapsed), operations, bytes, checksum)
 }
 
-write_document(mut doc: json.Json, salt: int) {
-    mut doc.reset()
-    mut doc.array()
+write_document(doc: *json.Json, salt: int) {
+    doc.reset()
+    doc.array()
     for i: int in 0 .. RECORDS {
-        mut doc.object()
-        mut doc.field("id", i * 1000 + salt)
-        mut doc.field("name", NAMES[i % 4])
-        mut doc.field("active", i % 3 != 0)
-        mut doc.field("score", f64(i) * 1.25 + 0.5)
-        mut doc.key("tags")
-        mut doc.array()
-        for t: int in 0 .. i % 4 + 1 { mut doc.value(TAGS[(i + t) % 4]) }
-        mut doc.end()
-        mut doc.end()
+        doc.object()
+        doc.field("id", i * 1000 + salt)
+        doc.field("name", NAMES[i % 4])
+        doc.field("active", i % 3 != 0)
+        doc.field("score", f64(i) * 1.25 + 0.5)
+        doc.key("tags")
+        doc.array()
+        for t: int in 0 .. i % 4 + 1 { doc.value(TAGS[(i + t) % 4]) }
+        doc.end()
+        doc.end()
     }
-    mut doc.end()
+    doc.end()
 }
 
 main(): int {
     iterations: usize = 20000
     writer: json.Json = json.Json.new()
-    defer mut writer.wipe()
+    defer writer.wipe()
     checksum: usize = 0
     bytes: usize = 0
     started: u64 = now()
 
     for i: usize in 0 .. iterations {
-        write_document(mut writer, int(i % 7))
+        write_document(&writer, int(i % 7))
         text: string, err: Error = writer.format()
         if err != null { return 1 }
 
@@ -56,17 +56,17 @@ main(): int {
     }
     report("format", now() - started, iterations, bytes, checksum)
 
-    write_document(mut writer, 0)
+    write_document(&writer, 0)
     document: string, err: Error = writer.format()
     if err != null { return 2 }
 
     reader: json.Json = json.Json.new()
-    defer mut reader.wipe()
+    defer reader.wipe()
     checksum = 0
     started = now()
 
     for 0 .. iterations {
-        perr: Error = mut reader.parse(document)
+        perr: Error = reader.parse(document)
         if perr != null { return 3 }
     }
     report("parse", now() - started, iterations, document.len * iterations, document.len)

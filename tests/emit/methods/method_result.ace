@@ -4,7 +4,7 @@ Counter: struct {
     value: int,
 }
 
-Counter.add(mut self, amount: int): int {
+Counter.add(self, amount: int): int {
     self.value += amount
     return self.value
 }
@@ -15,9 +15,9 @@ twice(value: int): int {
 
 main(): int {
     counter: Counter = Counter { value = 1 }
-    result: int = mut counter.add(2)
-    result = mut counter.add(3)
-    nested: int = twice(mut counter.add(4))
+    result: int = counter.add(2)
+    result = counter.add(3)
+    nested: int = twice(counter.add(4))
     if result != 6 || nested != 20 || counter.value != 10 { return 1 }
     return 0
 }

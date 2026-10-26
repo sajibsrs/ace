@@ -1,4 +1,4 @@
-/* Exported C globals are read-only unless mut, and C-ABI typed. */
+/* Exported C globals are writable like any global, and C-ABI typed. */
 
 extern "c" {
     limit: i32 = 4
@@ -9,6 +9,6 @@ extern "c" bytes: []u8 = null
 
 main(): int {
     limit = 5
-    pointer: mut *i32 = mut &limit
+    pointer: *i32 = &limit
     return int(*pointer)
 }

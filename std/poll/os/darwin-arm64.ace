@@ -71,7 +71,7 @@ extern "c" {
         queue: i32,
         changes: *DarwinKevent,
         change_count: i32,
-        events: mut *DarwinKevent,
+        events: *DarwinKevent,
         event_count: i32,
         timeout: *DarwinTimespec,
     ): i32 as "kevent"
@@ -147,7 +147,7 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
     return c_kevent(i32(sys.Fd(q)), &change, 1, null, 0, null)
 }
 
-pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
+pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
     if events.len == 0 {
         sys.errno(EINVAL)
         return usize(0), WaitErr.invalid
@@ -168,7 +168,7 @@ pub wait(q: Queue, events: mut []Event, timeout_ns: u64): (usize, Error) {
         timeout_pointer = &timeout
     }
     raw: [64]DarwinKevent = [blank(DarwinKevent) : 64]
-    ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, mut &raw[0], i32(capacity), timeout_pointer)
+    ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, &raw[0], i32(capacity), timeout_pointer)
     if ready == -1 { return usize(0), WaitErr(sys.errno()) }
 
     written: usize = 0

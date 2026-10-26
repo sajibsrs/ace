@@ -5,29 +5,29 @@
 
 Pair: struct { a: i32, b: i32 }
 
-blit(noalias dst: mut []u8, src: []u8) {
+blit(noalias dst: []u8, src: []u8) {
     for i: usize in 0 .. dst.len {
         dst[i] = src[i]
     }
 }
 
-mix(noalias out: mut []i32, a: []i32, noalias b: []i32): i32 {
+mix(noalias out: []i32, a: []i32, noalias b: []i32): i32 {
     return out[0] + a[0] + b[0]
 }
 
-scale(noalias xs: mut []Pair, k: i32) {
+scale(noalias xs: []Pair, k: i32) {
     xs[0].a *= k
 }
 
 main(): int {
     buf: [16]u8 = [0 : 16]
     for i: usize in 0 .. 16 { buf[i] = u8(i) }
-    blit(mut buf[0..8], buf[8..16])
+    blit(buf[0..8], buf[8..16])
     if buf[0] != 8 { return 1 }
     nums: [6]i32 = [1, 2, 3, 4, 5, 6]
-    if mix(mut nums[0..2], nums[2..4], nums[4..6]) != 9 { return 2 }
+    if mix(nums[0..2], nums[2..4], nums[4..6]) != 9 { return 2 }
     pairs: [2]Pair = [Pair { a = 1, b = 2 }, Pair { a = 3, b = 4 }]
-    scale(mut pairs[0..1], 5)
+    scale(pairs[0..1], 5)
     if pairs[0].a != 5 { return 3 }
     return 0
 }

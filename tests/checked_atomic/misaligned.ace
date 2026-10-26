@@ -1,12 +1,12 @@
 import atomic
 
 extern "c" {
-    strchr(text: *u8, byte: i32): mut *u32
+    strchr(text: *u8, byte: i32): *u32
 }
 
 main(): int {
     words: [2]u64
     words[0] = u64(0x0201)
-    p: mut *u32 = strchr(*u8(&words[0]), 2) // one byte past an aligned word
+    p: *u32 = strchr(*u8(&words[0]), 2) // one byte past an aligned word
     return int(atomic.load(p))
 }

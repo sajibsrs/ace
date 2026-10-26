@@ -116,7 +116,7 @@ separately, so the error stays one word and callers that ignore the position
 pay nothing:
 
 ```ace
-tok: Token, err: Error = mut lex.next()
+tok: Token, err: Error = lex.next()
 if err != null {
     line: u32, col: u32 = lex.where()
     fmt.printf("%d:%d: %s\n", int(line), int(col), err.message)

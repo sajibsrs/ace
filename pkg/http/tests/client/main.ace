@@ -7,9 +7,9 @@ main(): int {
     if context.storage == null { return 98 }
 
     context.redirects = http.RedirectPolicy { limit = 4 }
-    mut context.wipe()
+    context.wipe()
     if context.storage != null || context.redirects.limit != 0 { return 99 }
-    mut context.wipe()
+    context.wipe()
 
     if !mem.equal(http.status(u16(200)), "OK") ||
        !mem.equal(http.status(u16(209)), "") ||
@@ -94,11 +94,11 @@ main(): int {
     }
     output_storage: [128]u8 = [0 : 128]
     written: usize
-    written, err = request.format(mut output_storage[..])
+    written, err = request.format(output_storage[..])
     expected: string = "POST /submit HTTP/1.1\r\nHost: example.com\r\nX-Test: caf\u{E9}\r\n\r\nok"
     if err != null || !mem.equal(output_storage[..written], expected) { return 4 }
     small: [4]u8 = [7 : 4]
-    written, err = request.format(mut small[..])
+    written, err = request.format(small[..])
     if written != 0 || err != http.FormatErr.capacity ||
         !mem.equal(err.name, "FormatErr") ||
         !mem.equal(err.message, "output storage is too small") ||
@@ -113,7 +113,7 @@ main(): int {
         },
     ]
     request.headers = bad_headers[..]
-    written, err = request.format(mut output_storage[..])
+    written, err = request.format(output_storage[..])
     if written != 0 || err != http.FormatErr.header_name ||
         !mem.equal(err.message, "invalid header name") {
         return 42
@@ -123,24 +123,24 @@ main(): int {
         method = http.GET,
         target = "/health",
     }
-    written, err = default_request.format(mut output_storage[..])
+    written, err = default_request.format(output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "GET /health HTTP/1.1\r\n\r\n") { return 43 }
 
     default_response: http.Response = http.Response {}
-    written, err = default_response.format(mut output_storage[..])
+    written, err = default_response.format(output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 OK\r\n\r\n") { return 44 }
 
     default_response.status = 404
-    written, err = default_response.format(mut output_storage[..])
+    written, err = default_response.format(output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 404 Not Found\r\n\r\n") { return 45 }
 
     default_response.status = u16(599)
-    written, err = default_response.format(mut output_storage[..])
+    written, err = default_response.format(output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 599 \r\n\r\n") { return 46 }
 
     default_response.status = 200
     default_response.reason = ""
-    written, err = default_response.format(mut output_storage[..])
+    written, err = default_response.format(output_storage[..])
     if err != null || !mem.equal(output_storage[..written], "HTTP/1.1 200 \r\n\r\n") { return 47 }
 
     response_headers: [4]http.Header
@@ -149,10 +149,10 @@ main(): int {
         phase = http.ResponsePhase.status,
         framing = http.ResponseFraming.undecided,
     }
-    result: http.ResponseResult = mut state.parse(
+    result: http.ResponseResult = state.parse(
         "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Text: caf\u{E9}\r\n\r\nh\u{E9}!",
-        mut response_headers[..],
-        mut response_body[..],
+        response_headers[..],
+        response_body[..],
         false,
         false,
     )

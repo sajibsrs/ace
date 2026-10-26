@@ -25,7 +25,7 @@ descending(a: int, b: int): bool { return a > b }
 
 // Fills data[0..n] by shape: 0 sorted, 1 reversed, 2 all equal, 3 organ-pipe,
 // 4 sawtooth, 5 pseudo-random with many duplicates, 6 pseudo-random.
-fill(data: mut []int, n: usize, shape: int) {
+fill(data: []int, n: usize, shape: int) {
     seed: u64 = 12345
     for i: usize in 0 .. n {
         v: int = int(i)
@@ -60,17 +60,17 @@ main(): int {
     for s: usize in 0 .. 14 {
         n: usize = sizes[s]
         for shape: int in 0 .. 7 {
-            fill(mut data[0..3000], n, shape)
+            fill(data[0..3000], n, shape)
             before: int = sum(data[0..3000], n)
-            sort.unstable[int](mut data[0..n])
+            sort.unstable[int](data[0..n])
             r += check(sort.sorted[int](data[0..n]), 1)
             r += check(sum(data[0..3000], n) == before, 2)
         }
     }
 
     // descending order through `less`
-    fill(mut data[0..3000], 500, 6)
-    sort.unstable[int](mut data[0..500], descending)
+    fill(data[0..3000], 500, 6)
+    sort.unstable[int](data[0..500], descending)
     ok: bool = true
     for i: usize in 1 .. 500 {
         if data[i] > data[i - 1] { ok = false }
@@ -84,7 +84,7 @@ main(): int {
     for i: usize in 0 .. 300 {
         recs[i] = Rec { key = int((i * 7919) % 100), tag = int(i) }
     }
-    sort.unstable[Rec](mut recs[0..300], by_key)
+    sort.unstable[Rec](recs[0..300], by_key)
     ok = true
     for i: usize in 0 .. 300 {
         if i > 0 && recs[i].key < recs[i - 1].key { ok = false }
@@ -95,11 +95,11 @@ main(): int {
     // other element types
     bytes: [40]u8
     for i: usize in 0 .. 40 { bytes[i] = u8((i * 37) % 251) }
-    sort.unstable[u8](mut bytes[0..40])
+    sort.unstable[u8](bytes[0..40])
     r += check(sort.sorted[u8](bytes[0..40]), 7)
 
     floats: [5]f64 = [3.5, -1.0, 2.25, -7.5, 0.0]
-    sort.unstable[f64](mut floats[0..5])
+    sort.unstable[f64](floats[0..5])
     r += check(floats[0] == -7.5 && floats[4] == 3.5 && sort.sorted[f64](floats[0..5]), 8)
 
     return r

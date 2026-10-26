@@ -48,10 +48,10 @@ main(): int {
     headers: [4]http.Header
     body: [16]u8 = [0 : 16]
     parser: http.RequestParser = new_parser()
-    result: http.RequestResult = mut parser.parse(
+    result: http.RequestResult = parser.parse(
         "POST /submit HTTP/1.1\r\nContent-Length: 4\r\nX-Test: yes\r\n\r\ndata",
-        mut headers[..],
-        mut body[..],
+        headers[..],
+        body[..],
         false,
     )
     switch result {
@@ -65,10 +65,10 @@ main(): int {
     }
 
     parser = new_parser()
-    result = mut parser.parse(
+    result = parser.parse(
         "POST / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nx",
-        mut headers[..1],
-        mut body[..],
+        headers[..1],
+        body[..],
         false,
     )
     switch result {
@@ -76,10 +76,10 @@ main(): int {
         default { return 30 }
     }
     parser = new_parser()
-    result = mut parser.parse(
+    result = parser.parse(
         "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
-        mut headers[..0],
-        mut body[..],
+        headers[..0],
+        body[..],
         false,
     )
     switch result {
@@ -88,10 +88,10 @@ main(): int {
         }
         default { return 32 }
     }
-    result = mut parser.parse(
+    result = parser.parse(
         "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
-        mut headers[..],
-        mut body[..],
+        headers[..],
+        body[..],
         false,
     )
     switch result {
@@ -100,10 +100,10 @@ main(): int {
     }
 
     parser = new_parser()
-    result = mut parser.parse(
+    result = parser.parse(
         "POST /chunk HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n",
-        mut headers[..],
-        mut body[..],
+        headers[..],
+        body[..],
         false,
     )
     switch result {
@@ -118,7 +118,7 @@ main(): int {
     previous_scan: usize = 0
     previous_body: usize = 0
     for occupied: usize in 1 .. request_text.len + 1 {
-        result = mut parser.parse(request_text[..occupied], mut headers[..], mut body[..], false)
+        result = parser.parse(request_text[..occupied], headers[..], body[..], false)
         if parser.scan_offset < previous_scan || parser.body_count < previous_body { return 10 }
         previous_scan = parser.scan_offset
         previous_body = parser.body_count
@@ -139,10 +139,10 @@ main(): int {
     previous_scan = 0
     previous_body = 0
     for occupied: usize in 1 .. response_text.len + 1 {
-        response_result = mut response_parser.parse(
+        response_result = response_parser.parse(
             response_text[..occupied],
-            mut headers[..],
-            mut body[..],
+            headers[..],
+            body[..],
             false,
             false,
         )
@@ -177,12 +177,12 @@ main(): int {
         body = "ok",
     }
     output: [64]u8 = [0 : 64]
-    count: usize, err: Error = response.format(mut output[..])
+    count: usize, err: Error = response.format(output[..])
     expected: string = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"
     if err != null || !mem.equal(output[..count], expected) { return 8 }
 
     small: [4]u8 = [7 : 4]
-    count, err = response.format(mut small[..])
+    count, err = response.format(small[..])
     if count != 0 || err == null || small[0] != 7 || small[3] != 7 { return 9 }
 
     return 0

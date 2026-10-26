@@ -29,7 +29,7 @@ weight[u8](key: u8): u64 {
 
 Counter: struct { n: int }
 
-inline Counter.bump(mut self, by: int): bool {
+inline Counter.bump(self, by: int): bool {
     if by < 0 { return false }
     self.n += by
     return true
@@ -47,8 +47,8 @@ inline flag(): Error {
     return null
 }
 
-inline done(mut total: int) {
-    total += 1
+inline done(total: *int) {
+    *total += 1
 }
 
 pub inline shared(x: f64): f64 {
@@ -58,8 +58,8 @@ pub inline shared(x: f64): f64 {
 main(): int {
     c: Counter = Counter{ n = Counter.zero() }
     total: int = 0
-    defer done(mut total)
-    ok: bool = mut c.bump(2)
+    defer done(&total)
+    ok: bool = c.bump(2)
     f: (u64): u64 = mix
     xs: [2]int = [1, 2]
     if !ok || c.big() || flag() != null { return 1 }

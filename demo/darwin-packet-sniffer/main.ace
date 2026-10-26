@@ -96,7 +96,7 @@ main(): int {
     debug: bool = sys.argc() > 2 && mem.equal(sys.arg(2), "--debug")
     interface_request: [32]u8 = [0 : 32]
     for i: usize in 0 .. interface.len { interface_request[i] = interface[i] }
-    err: Error = sys.ioctl(fd, sys.BIOCSETIF, mut interface_request[0..32])
+    err: Error = sys.ioctl(fd, sys.BIOCSETIF, interface_request[0..32])
     if err != null {
         fmt.printf("BIOCSETIF %s: error %d\n", interface, int(err.code))
         sys.close(fd)
@@ -111,7 +111,7 @@ main(): int {
     }
 
     immediate: [4]u8 = [u8(1), u8(0), u8(0), u8(0)]
-    err = sys.ioctl(fd, sys.BIOCIMMEDIATE, mut immediate[0..4])
+    err = sys.ioctl(fd, sys.BIOCIMMEDIATE, immediate[0..4])
     if err != null {
         report("BIOCIMMEDIATE", err)
         sys.close(fd)
@@ -119,7 +119,7 @@ main(): int {
     }
 
     length_bytes: [4]u8 = [0 : 4]
-    err = sys.ioctl(fd, sys.BIOCGBLEN, mut length_bytes[0..4])
+    err = sys.ioctl(fd, sys.BIOCGBLEN, length_bytes[0..4])
     if err != null {
         report("BIOCGBLEN", err)
         sys.close(fd)
@@ -140,9 +140,9 @@ main(): int {
     fmt.printf("listening on %s with a %u-byte BPF buffer\n", interface, buffer_length)
 
     backing: [524288]u8
-    storage: mut []u8 = mut backing[0..524288]
+    storage: []u8 = backing[0..524288]
     for {
-        count: int, read_error: Error = sys.read(fd, mut storage[0..buffer_length])
+        count: int, read_error: Error = sys.read(fd, storage[0..buffer_length])
         if read_error != null {
             report("BPF read", read_error)
             sys.close(fd)

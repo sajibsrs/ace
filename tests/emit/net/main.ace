@@ -52,7 +52,7 @@ check_failures(): int {
     }
 
     bytes: [1]u8 = [0]
-    view: mut []u8 = mut bytes[0..1]
+    view: []u8 = bytes[0..1]
     count: int, rerr: Error = net.receive(invalid, view)
 
     if count != 0 || !check_error(rerr, typeid(net.ReceiveErr)) { return 9 }
@@ -69,7 +69,7 @@ check_resolution(): int {
     storage: [2]net.Addr4
     storage[0] = loopback(u16(1))
     storage[1] = loopback(u16(54321))
-    first: mut []net.Addr4 = mut storage[0..1]
+    first: []net.Addr4 = storage[0..1]
 
     count: usize, err: Error = net.resolve4("localhost", u16(8080), first)
 
@@ -83,7 +83,7 @@ check_resolution(): int {
 
     if storage[1].port != 54321 { return 3 }
 
-    empty: mut []net.Addr4 = null
+    empty: []net.Addr4 = null
     count, err = net.resolve4("localhost", u16(80), empty)
 
     if count != 0 || err != net.ResolveErr.invalid ||
@@ -117,7 +117,7 @@ child(port: u16): int {
         return 3
     }
     storage: [4]u8 = [0 : 4]
-    reply: mut []u8 = mut storage[0..4]
+    reply: []u8 = storage[0..4]
     count, ioerr = net.receive(sock, reply)
 
     if ioerr != null || count != 4 || !mem.equal(storage, "pong") {
@@ -206,7 +206,7 @@ main(): int {
     }
 
     storage: [4]u8 = [0 : 4]
-    request: mut []u8 = mut storage[0..4]
+    request: []u8 = storage[0..4]
     count: int, ioerr: Error = net.receive(peer, request)
 
     if ioerr != null || count != 4 || !mem.equal(storage, "ping") {

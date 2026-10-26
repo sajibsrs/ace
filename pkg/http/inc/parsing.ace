@@ -277,7 +277,7 @@ scan_line(input: string, scan_offset: usize): (usize, usize, usize, LineStatus) 
     return 0, 0, input.len, LineStatus.incomplete
 }
 
-RequestParser.prepare_line(mut self, input: string): LineStatus {
+RequestParser.prepare_line(self, input: string): LineStatus {
     if self.line_ready { return LineStatus.complete }
     stop: usize, next: usize, scan: usize, status: LineStatus =
         scan_line(input, self.scan_offset)
@@ -290,14 +290,14 @@ RequestParser.prepare_line(mut self, input: string): LineStatus {
     return status
 }
 
-RequestParser.consume_line(mut self) {
+RequestParser.consume_line(self) {
     self.input_offset = self.line_next
     self.line_start = self.line_next
     self.scan_offset = self.line_next
     self.line_ready = false
 }
 
-ResponseParser.prepare_line(mut self, input: string): LineStatus {
+ResponseParser.prepare_line(self, input: string): LineStatus {
     if self.line_ready { return LineStatus.complete }
     stop: usize, next: usize, scan: usize, status: LineStatus =
         scan_line(input, self.scan_offset)
@@ -310,7 +310,7 @@ ResponseParser.prepare_line(mut self, input: string): LineStatus {
     return status
 }
 
-ResponseParser.consume_line(mut self) {
+ResponseParser.consume_line(self) {
     self.input_offset = self.line_next
     self.line_start = self.line_next
     self.scan_offset = self.line_next
@@ -386,12 +386,12 @@ RequestParser.progress(self): RequestResult {
     })
 }
 
-RequestParser.syntax_failure(mut self): RequestResult {
+RequestParser.syntax_failure(self): RequestResult {
     self.phase = RequestPhase.failed
     return RequestResult.syntax
 }
 
-RequestParser.framing_failure(mut self): RequestResult {
+RequestParser.framing_failure(self): RequestResult {
     self.phase = RequestPhase.failed
     return RequestResult.framing
 }
@@ -408,16 +408,16 @@ request_complete_result(method: string, target: string, headers: []Header, body:
 /* Resumes request parsing at the saved phase and scans only newly appended
  * input bytes.
  */
-pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mut []u8, eof: bool): RequestResult {
-    if input.len < self.input_offset || input.len < self.scan_offset { return mut self.syntax_failure() }
+pub RequestParser.parse(self, input: string, headers: []Header, body: []u8, eof: bool): RequestResult {
+    if input.len < self.input_offset || input.len < self.scan_offset { return self.syntax_failure() }
     parse_loop: {
         if self.phase == RequestPhase.request {
-            status: LineStatus = mut self.prepare_line(input)
+            status: LineStatus = self.prepare_line(input)
             if status == LineStatus.incomplete {
-                if eof { return mut self.syntax_failure() }
+                if eof { return self.syntax_failure() }
                 return self.progress()
             }
-            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            if status == LineStatus.malformed { return self.syntax_failure() }
 
             first: usize = self.line_stop
             second: usize = self.line_stop
@@ -433,36 +433,36 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
             }
             if first == self.line_start || second == self.line_stop || second == first + 1 ||
                 self.line_stop - second != 9 {
-                return mut self.syntax_failure()
+                return self.syntax_failure()
             }
             method: string = input[self.line_start..first]
             target: string = input[first + 1..second]
             for i: usize in 0 .. method.len {
-                if !message.tchar(method[i]) { return mut self.syntax_failure() }
+                if !message.tchar(method[i]) { return self.syntax_failure() }
             }
             for i: usize in 0 .. target.len {
-                if target[i] <= 32 || target[i] == 127 { return mut self.syntax_failure() }
+                if target[i] <= 32 || target[i] == 127 { return self.syntax_failure() }
             }
             version: string = input[second + 1..self.line_stop]
-            if !mem.equal(version, "HTTP/1.0") && !mem.equal(version, "HTTP/1.1") { return mut self.syntax_failure() }
+            if !mem.equal(version, "HTTP/1.0") && !mem.equal(version, "HTTP/1.1") { return self.syntax_failure() }
             self.method_start = self.line_start
             self.method_count = first - self.line_start
             self.target_start = first + 1
             self.target_count = second - self.target_start
-            mut self.consume_line()
+            self.consume_line()
             self.phase = RequestPhase.headers
             continue parse_loop
         }
         if self.phase == RequestPhase.headers {
-            status: LineStatus = mut self.prepare_line(input)
+            status: LineStatus = self.prepare_line(input)
             if status == LineStatus.incomplete {
-                if eof { return mut self.syntax_failure() }
+                if eof { return self.syntax_failure() }
                 return self.progress()
             }
-            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            if status == LineStatus.malformed { return self.syntax_failure() }
 
             if self.line_stop == self.line_start {
-                mut self.consume_line()
+                self.consume_line()
                 if self.framing == RequestFraming.undecided {
                     self.framing = RequestFraming.none
                     self.phase = RequestPhase.complete
@@ -480,24 +480,24 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
+            if colon == self.line_start || colon == self.line_stop { return self.syntax_failure() }
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
-                if !message.tchar(name[i]) { return mut self.syntax_failure() }
+                if !message.tchar(name[i]) { return self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
-                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return mut self.syntax_failure() }
+                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return self.syntax_failure() }
             }
             value: string = trim_ows(raw)
             full: bool = self.header_count >= headers.len
             if ascii.equal(name, "content-length", false) {
-                if self.framing == RequestFraming.chunked { return mut self.framing_failure() }
+                if self.framing == RequestFraming.chunked { return self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
-                if !valid { return mut self.framing_failure() }
+                if !valid { return self.framing_failure() }
 
                 if self.framing == RequestFraming.content_length &&
-                    length != self.content_length { return mut self.framing_failure() }
+                    length != self.content_length { return self.framing_failure() }
                 if full { return RequestResult.capacity(RequestCapacity.headers) }
                 self.framing = RequestFraming.content_length
                 self.content_length = length
@@ -505,7 +505,7 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
             if ascii.equal(name, "transfer-encoding", false) {
                 if self.framing != RequestFraming.undecided ||
                     !ascii.equal(value, "chunked", false) {
-                    return mut self.framing_failure()
+                    return self.framing_failure()
                 }
                 if full { return RequestResult.capacity(RequestCapacity.headers) }
                 self.framing = RequestFraming.chunked
@@ -516,7 +516,7 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
                 value = value,
             }
             self.header_count += 1
-            mut self.consume_line()
+            self.consume_line()
             continue parse_loop
         }
         if self.phase == RequestPhase.body {
@@ -535,19 +535,19 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
                 self.input_offset += count
             }
             if self.body_count < self.content_length {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
             self.phase = RequestPhase.complete
             continue parse_loop
         }
         if self.phase == RequestPhase.chunk_size {
-            status: LineStatus = mut self.prepare_line(input)
+            status: LineStatus = self.prepare_line(input)
             if status == LineStatus.incomplete {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
-            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            if status == LineStatus.malformed { return self.syntax_failure() }
 
             semicolon: usize = self.line_stop
             for i: usize in self.line_start .. self.line_stop {
@@ -559,11 +559,11 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
             chunk: usize, valid: bool = str.parse[usize](input[self.line_start..semicolon], u8(16))
             if !valid || (semicolon < self.line_stop &&
                 !is_chunk_ext(input[semicolon..self.line_stop])) {
-                return mut self.syntax_failure()
+                return self.syntax_failure()
             }
 
             self.chunk_remaining = chunk
-            mut self.consume_line()
+            self.consume_line()
             if chunk == 0 {
                 self.phase = RequestPhase.trailers
             } else {
@@ -587,7 +587,7 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
                 self.chunk_remaining -= count
             }
             if self.chunk_remaining > 0 {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
             self.line_start = self.input_offset
@@ -596,27 +596,27 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
             continue parse_loop
         }
         if self.phase == RequestPhase.chunk_end {
-            status: LineStatus = mut self.prepare_line(input)
+            status: LineStatus = self.prepare_line(input)
             if status == LineStatus.incomplete {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
-            if status == LineStatus.malformed || self.line_stop != self.line_start { return mut self.syntax_failure() }
+            if status == LineStatus.malformed || self.line_stop != self.line_start { return self.syntax_failure() }
 
-            mut self.consume_line()
+            self.consume_line()
             self.phase = RequestPhase.chunk_size
             continue parse_loop
         }
         if self.phase == RequestPhase.trailers {
-            status: LineStatus = mut self.prepare_line(input)
+            status: LineStatus = self.prepare_line(input)
             if status == LineStatus.incomplete {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
-            if status == LineStatus.malformed { return mut self.syntax_failure() }
+            if status == LineStatus.malformed { return self.syntax_failure() }
 
             if self.line_stop == self.line_start {
-                mut self.consume_line()
+                self.consume_line()
                 self.phase = RequestPhase.complete
                 continue parse_loop
             }
@@ -627,14 +627,14 @@ pub RequestParser.parse(mut self, input: string, headers: mut []Header, body: mu
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
+            if colon == self.line_start || colon == self.line_stop { return self.syntax_failure() }
             for i: usize in self.line_start .. colon {
-                if !message.tchar(input[i]) { return mut self.syntax_failure() }
+                if !message.tchar(input[i]) { return self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
-                if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return mut self.syntax_failure() }
+                if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return self.syntax_failure() }
             }
-            mut self.consume_line()
+            self.consume_line()
             continue parse_loop
         }
         if self.phase == RequestPhase.complete {
@@ -657,13 +657,13 @@ ResponseParser.progress(self): ResponseResult {
 }
 
 /* Marks this parser failed and returns a syntax result. */
-ResponseParser.syntax_failure(mut self): ResponseResult {
+ResponseParser.syntax_failure(self): ResponseResult {
     self.phase = ResponsePhase.failed
     return ResponseResult.syntax
 }
 
 /* Marks this parser failed and returns a framing result. */
-ResponseParser.framing_failure(mut self): ResponseResult {
+ResponseParser.framing_failure(self): ResponseResult {
     self.phase = ResponsePhase.failed
     return ResponseResult.framing
 }
@@ -683,39 +683,39 @@ complete_result(version_minor: u8, status: u16, reason: string, headers: []Heade
  * input bytes.
  */
 pub ResponseParser.parse(
-    mut self,
+    self,
     input: string,
-    headers: mut []Header,
-    body: mut []u8,
+    headers: []Header,
+    body: []u8,
     eof: bool,
     no_body: bool,
 ): ResponseResult {
-    if input.len < self.input_offset || input.len < self.scan_offset { return mut self.syntax_failure() }
+    if input.len < self.input_offset || input.len < self.scan_offset { return self.syntax_failure() }
     parse_loop: {
         if self.phase == ResponsePhase.status {
-            line_status: LineStatus = mut self.prepare_line(input)
+            line_status: LineStatus = self.prepare_line(input)
             if line_status == LineStatus.incomplete {
-                if eof { return mut self.syntax_failure() }
+                if eof { return self.syntax_failure() }
                 return self.progress()
             }
-            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            if line_status == LineStatus.malformed { return self.syntax_failure() }
 
             count: usize = self.line_stop - self.line_start
-            if count < 12 { return mut self.syntax_failure() }
+            if count < 12 { return self.syntax_failure() }
             start: usize = self.line_start
             if mem.equal(input[start..start + 8], "HTTP/1.0") {
                 self.version_minor = 0
             } else if mem.equal(input[start..start + 8], "HTTP/1.1") {
                 self.version_minor = 1
             } else {
-                return mut self.syntax_failure()
+                return self.syntax_failure()
             }
             if input[start + 8] != ' ' || input[start + 9] < '0' || input[start + 9] > '9' ||
                 input[start + 10] < '0' || input[start + 10] > '9' ||
                 input[start + 11] < '0' || input[start + 11] > '9' {
-                return mut self.syntax_failure()
+                return self.syntax_failure()
             }
-            if count > 12 && input[start + 12] != ' ' { return mut self.syntax_failure() }
+            if count > 12 && input[start + 12] != ' ' { return self.syntax_failure() }
             self.status = u16(input[start + 9] - '0') * 100 +
                 u16(input[start + 10] - '0') * 10 + u16(input[start + 11] - '0')
             if count > 12 {
@@ -725,25 +725,25 @@ pub ResponseParser.parse(
                 self.reason_start = self.line_stop
                 self.reason_count = 0
             }
-            mut self.consume_line()
+            self.consume_line()
             self.phase = ResponsePhase.headers
             self.framing = ResponseFraming.undecided
             self.content_length = 0
             continue parse_loop
         }
         if self.phase == ResponsePhase.headers {
-            line_status: LineStatus = mut self.prepare_line(input)
+            line_status: LineStatus = self.prepare_line(input)
             if line_status == LineStatus.incomplete {
-                if eof { return mut self.syntax_failure() }
+                if eof { return self.syntax_failure() }
                 return self.progress()
             }
-            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            if line_status == LineStatus.malformed { return self.syntax_failure() }
 
             if self.line_stop == self.line_start {
-                mut self.consume_line()
+                self.consume_line()
                 if self.status >= 100 && self.status < 200 {
                     if self.status == 101 || self.framing != ResponseFraming.undecided {
-                        return mut self.framing_failure()
+                        return self.framing_failure()
                     }
                     self.informational_count += 1
                     self.header_count = 0
@@ -770,24 +770,24 @@ pub ResponseParser.parse(
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
+            if colon == self.line_start || colon == self.line_stop { return self.syntax_failure() }
             name: string = input[self.line_start..colon]
             raw: string = input[colon + 1..self.line_stop]
             for i: usize in 0 .. name.len {
-                if !message.tchar(name[i]) { return mut self.syntax_failure() }
+                if !message.tchar(name[i]) { return self.syntax_failure() }
             }
             for i: usize in 0 .. raw.len {
-                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return mut self.syntax_failure() }
+                if (raw[i] < 32 && raw[i] != 9) || raw[i] == 127 { return self.syntax_failure() }
             }
             value: string = trim_ows(raw)
             full: bool = (self.status < 100 || self.status >= 200) && self.header_count >= headers.len
             if ascii.equal(name, "content-length", false) {
-                if self.framing == ResponseFraming.chunked { return mut self.framing_failure() }
+                if self.framing == ResponseFraming.chunked { return self.framing_failure() }
                 length: usize, valid: bool = str.parse[usize](value)
-                if !valid { return mut self.framing_failure() }
+                if !valid { return self.framing_failure() }
 
                 if self.framing == ResponseFraming.content_length &&
-                    length != self.content_length { return mut self.framing_failure() }
+                    length != self.content_length { return self.framing_failure() }
                 if full { return ResponseResult.capacity(ResponseCapacity.headers) }
                 self.framing = ResponseFraming.content_length
                 self.content_length = length
@@ -795,7 +795,7 @@ pub ResponseParser.parse(
             if ascii.equal(name, "transfer-encoding", false) {
                 if self.framing != ResponseFraming.undecided ||
                     !ascii.equal(value, "chunked", false) {
-                    return mut self.framing_failure()
+                    return self.framing_failure()
                 }
                 if full { return ResponseResult.capacity(ResponseCapacity.headers) }
                 self.framing = ResponseFraming.chunked
@@ -808,7 +808,7 @@ pub ResponseParser.parse(
                 }
                 self.header_count += 1
             }
-            mut self.consume_line()
+            self.consume_line()
             continue parse_loop
         }
         if self.phase == ResponsePhase.body {
@@ -828,7 +828,7 @@ pub ResponseParser.parse(
                     self.input_offset += count
                 }
                 if self.body_count < self.content_length {
-                    if eof { return mut self.framing_failure() }
+                    if eof { return self.framing_failure() }
                     return self.progress()
                 }
                 self.phase = ResponsePhase.complete
@@ -848,12 +848,12 @@ pub ResponseParser.parse(
             continue parse_loop
         }
         if self.phase == ResponsePhase.chunk_size {
-            line_status: LineStatus = mut self.prepare_line(input)
+            line_status: LineStatus = self.prepare_line(input)
             if line_status == LineStatus.incomplete {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
-            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            if line_status == LineStatus.malformed { return self.syntax_failure() }
 
             semicolon: usize = self.line_stop
             for i: usize in self.line_start .. self.line_stop {
@@ -865,11 +865,11 @@ pub ResponseParser.parse(
             chunk: usize, valid: bool = str.parse[usize](input[self.line_start..semicolon], u8(16))
             if !valid || (semicolon < self.line_stop &&
                 !is_chunk_ext(input[semicolon..self.line_stop])) {
-                return mut self.syntax_failure()
+                return self.syntax_failure()
             }
 
             self.chunk_remaining = chunk
-            mut self.consume_line()
+            self.consume_line()
             if chunk == 0 {
                 self.phase = ResponsePhase.trailers
             } else {
@@ -893,7 +893,7 @@ pub ResponseParser.parse(
                 self.chunk_remaining -= count
             }
             if self.chunk_remaining > 0 {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
             self.line_start = self.input_offset
@@ -902,29 +902,29 @@ pub ResponseParser.parse(
             continue parse_loop
         }
         if self.phase == ResponsePhase.chunk_end {
-            line_status: LineStatus = mut self.prepare_line(input)
+            line_status: LineStatus = self.prepare_line(input)
             if line_status == LineStatus.incomplete {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
             if line_status == LineStatus.malformed || self.line_stop != self.line_start {
-                return mut self.syntax_failure()
+                return self.syntax_failure()
             }
 
-            mut self.consume_line()
+            self.consume_line()
             self.phase = ResponsePhase.chunk_size
             continue parse_loop
         }
         if self.phase == ResponsePhase.trailers {
-            line_status: LineStatus = mut self.prepare_line(input)
+            line_status: LineStatus = self.prepare_line(input)
             if line_status == LineStatus.incomplete {
-                if eof { return mut self.framing_failure() }
+                if eof { return self.framing_failure() }
                 return self.progress()
             }
-            if line_status == LineStatus.malformed { return mut self.syntax_failure() }
+            if line_status == LineStatus.malformed { return self.syntax_failure() }
 
             if self.line_stop == self.line_start {
-                mut self.consume_line()
+                self.consume_line()
                 self.phase = ResponsePhase.complete
                 continue parse_loop
             }
@@ -935,14 +935,14 @@ pub ResponseParser.parse(
                     break
                 }
             }
-            if colon == self.line_start || colon == self.line_stop { return mut self.syntax_failure() }
+            if colon == self.line_start || colon == self.line_stop { return self.syntax_failure() }
             for i: usize in self.line_start .. colon {
-                if !message.tchar(input[i]) { return mut self.syntax_failure() }
+                if !message.tchar(input[i]) { return self.syntax_failure() }
             }
             for i: usize in colon + 1 .. self.line_stop {
-                if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return mut self.syntax_failure() }
+                if (input[i] < 32 && input[i] != 9) || input[i] == 127 { return self.syntax_failure() }
             }
-            mut self.consume_line()
+            self.consume_line()
             continue parse_loop
         }
         if self.phase == ResponsePhase.complete {

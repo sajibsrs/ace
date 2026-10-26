@@ -17,30 +17,30 @@ import thread
 
 Job: struct { input: u64, output: u64 }
 
-extern "c" square(argument: mut *u8): mut *u8 {
-    job: mut *Job = mut *Job(argument)
+extern "c" square(argument: *u8): *u8 {
+    job: *Job = *Job(argument)
     job.output = job.input * job.input
     return argument
 }
 
 main(): int {
     job: Job = Job { input = 7, output = 0 }
-    argument: mut *u8 = mut *u8(mut &job)
+    argument: *u8 = *u8(&job)
     worker: thread.Thread, err: Error = thread.create(square, argument)
     if err != null { return 1 }
-    result: mut *u8, jerr: Error = thread.join(worker)
+    result: *u8, jerr: Error = thread.join(worker)
     if jerr != null { return 2 }
     return int(job.output) // 49
 }
 ```
 
 - `Thread` is a joinable thread handle; `Thread(0)` names no thread.
-- `create(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8):
+- `create(entry: extern "c" (*u8): *u8, argument: *u8):
   (Thread, Error)` starts a thread running `entry(argument)` with the
   platform's default attributes. Darwin gives such a thread a 512 KiB stack,
   far less than the main thread's 8 MiB, so keep large arrays off its stack.
   Failure returns `Thread(0)`.
-- `join(thread: Thread): (mut *u8, Error)` waits for the entry to return,
+- `join(thread: Thread): (*u8, Error)` waits for the entry to return,
   releases the thread, and returns the entry's result. Join every created
   thread exactly once; joining a handle again is programmer error.
   `Thread(0)` fails with `JoinErr.not_found`.
@@ -80,49 +80,49 @@ guard: thread.Mutex // zero is unlocked
 total: u64
 
 add(amount: u64) {
-    mut guard.lock()
+    guard.lock()
     total += amount
-    mut guard.unlock()
+    guard.unlock()
 }
 ```
 
 - `Mutex` is valid at canonical zero, so a global, a `blank` value, or a
   zero-filled allocation is an unlocked mutex with nothing to construct or
   release.
-- `lock(mut self)` blocks until this thread holds the mutex, and
-  `unlock(mut self)` releases it. Neither can fail. Everything a thread
+- `lock(self)` blocks until this thread holds the mutex, and
+  `unlock(self)` releases it. Neither can fail. Everything a thread
   writes before `unlock` is visible to the next thread whose `lock` returns.
 - The thread that locked a mutex unlocks it, and locking it again from the
   same thread is not allowed. Darwin aborts the process on either mistake, in
   every build.
-- Through a pointer the call keeps its `mut`: `mut shared.guard.lock()`.
+- Through a pointer the call auto-derefs: `shared.guard.lock()`.
 
 ## Condition
 
 ```ace
 Queue: struct { guard: thread.Mutex, changed: thread.Condition, count: u64 }
 
-take(queue: mut *Queue) {
-    mut queue.guard.lock()
-    for queue.count == 0 { mut queue.changed.wait(mut &queue.guard) }
+take(queue: *Queue) {
+    queue.guard.lock()
+    for queue.count == 0 { queue.changed.wait(&queue.guard) }
     queue.count -= 1
-    mut queue.guard.unlock()
+    queue.guard.unlock()
 }
 
-put(queue: mut *Queue) {
-    mut queue.guard.lock()
+put(queue: *Queue) {
+    queue.guard.lock()
     queue.count += 1
-    mut queue.changed.wake_one()
-    mut queue.guard.unlock()
+    queue.changed.wake_one()
+    queue.guard.unlock()
 }
 ```
 
-- `Condition` is also valid at zero. `wait(mut self, mutex: mut *Mutex)` takes
+- `Condition` is also valid at zero. `wait(self, mutex: *Mutex)` takes
   the mutex the caller holds, releases it while sleeping, and holds it again
   when it returns.
 - A wait can return without a wake, so always wait in a loop that rechecks
   the condition, as above.
-- `wake_one(mut self)` wakes one waiting thread and `wake_all(mut self)`
+- `wake_one(self)` wakes one waiting thread and `wake_all(self)`
   wakes every one; with nothing waiting they do nothing. They need no mutex
   held, but the change they announce must be made under the mutex, or a
   waiter can check the condition just before it and sleep through the wake.

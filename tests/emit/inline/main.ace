@@ -1,4 +1,4 @@
-/* inline expansion: value, mut, and receiver bindings; nested, forward, and
+/* inline expansion: value, pointer, and receiver bindings; nested, forward, and
  * generic callees; a specialization; a loop with an early return; a float
  * result; calls inside operands, loop conditions, and short-circuit
  * operands with temps live around them; a real call inside an inlined body;
@@ -25,7 +25,7 @@ inline twice(a: int): int {
 
 Counter: struct { n: int, hits: int }
 
-inline Counter.bump(mut self, by: int): bool {
+inline Counter.bump(self, by: int): bool {
     if by < 0 { return false }
     self.n += by
     self.hits += 1
@@ -36,8 +36,8 @@ inline Counter.big(self): bool {
     return self.n > 10
 }
 
-inline add_to(mut total: int, v: int) {
-    total += v
+inline add_to(total: *int, v: int) {
+    *total += v
 }
 
 inline find(xs: []int, want: int): usize {
@@ -104,10 +104,10 @@ main(): int {
     c: Counter = Counter{ n = 0, hits = 0 }
     total: int = 0
     for i: int in 0 .. 5 {
-        if !mut c.bump(i) { return 1 }
-        add_to(mut total, i + twice(i))
+        if !c.bump(i) { return 1 }
+        add_to(&total, i + twice(i))
     }
-    ok: bool = mut c.bump(-1)
+    ok: bool = c.bump(-1)
     arr: [4]int = [3, 5, 7, 9]
     at: usize = find(arr[..], 7)
     big: int = 0

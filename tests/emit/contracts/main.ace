@@ -8,7 +8,7 @@ Circle: struct {
 
 Shape: contract {
     area(self): i32
-    scale(mut self, k: i32)
+    scale(self, k: i32)
 }
 
 Metric: contract {
@@ -24,7 +24,7 @@ Circle.area(self): i32 {
     return self.radius * self.radius * 3
 }
 
-Circle.scale(mut self, k: i32) {
+Circle.scale(self, k: i32) {
     self.radius = self.radius * k
 }
 
@@ -40,8 +40,8 @@ main(): int {
     circle: Circle = Circle { radius = 3 }
     shape: Shape = Shape(&circle)
     metric: Metric = Metric(&circle)
-    mut shape.scale(2)
-    mut circle.scale(1)
+    shape.scale(2)
+    circle.scale(1)
     direct: int = circle.value(36)
     measured: int = metric.value(36)
     floating: f64 = circle.value(1.0)

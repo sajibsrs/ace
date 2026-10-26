@@ -8,7 +8,7 @@
 
 import mem
 
-seed(data: mut []u8, salt: usize) {
+seed(data: []u8, salt: usize) {
     for i: usize in 0 .. data.len { data[i] = u8((i * 13 + salt) % 97 + 64) }
 }
 
@@ -20,15 +20,15 @@ length_at(i: usize): usize {
     return 4096
 }
 
-check_order(a_all: mut []u8, b_all: mut []u8): bool {
+check_order(a_all: []u8, b_all: []u8): bool {
     for li: usize in 0 .. 133 {
         count: usize = length_at(li)
 
         for shift: usize in 0 .. 4 {
             ao: usize = shift * 5 % 16
             bo: usize = shift * 3 % 16
-            a: mut []u8 = mut a_all[ao .. ao + count]
-            b: mut []u8 = mut b_all[bo .. bo + count]
+            a: []u8 = a_all[ao .. ao + count]
+            b: []u8 = b_all[bo .. bo + count]
             seed(a, count)
             seed(b, count)
 
@@ -66,11 +66,11 @@ check_order(a_all: mut []u8, b_all: mut []u8): bool {
     return true
 }
 
-check_prefix(a_all: mut []u8, b_all: mut []u8): bool {
+check_prefix(a_all: []u8, b_all: []u8): bool {
     for li: usize in 0 .. 132 {
         count: usize = length_at(li)
-        a: mut []u8 = mut a_all[0 .. count + 3]
-        b: mut []u8 = mut b_all[0 .. count + 3]
+        a: []u8 = a_all[0 .. count + 3]
+        b: []u8 = b_all[0 .. count + 3]
         seed(a, 1)
         seed(b, 1)
         shorter: []u8 = a[0 .. count]
@@ -86,9 +86,9 @@ main(): int {
     a: [4200]u8 = [0 : 4200]
     b: [4200]u8 = [0 : 4200]
 
-    if !check_order(mut a[..], mut b[..]) { return 1 }
+    if !check_order(a[..], b[..]) { return 1 }
 
-    if !check_prefix(mut a[..], mut b[..]) { return 2 }
+    if !check_prefix(a[..], b[..]) { return 2 }
     empty: []u8 = a[0 .. 0]
 
     if mem.compare(empty, empty) != 0 || !mem.equal(empty, empty) { return 3 }

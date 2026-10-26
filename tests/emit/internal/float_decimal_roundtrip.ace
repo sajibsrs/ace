@@ -16,7 +16,7 @@ main(): int {
 
         if exponent != u64(0x7FF) {
             value: f64 = bitcast(f64, state64)
-            count: usize, ok: bool = str.format(mut text[0..64], value)
+            count: usize, ok: bool = str.format(text[0..64], value)
 
             if !ok { return 1 }
             parsed: f64, parsed_ok: bool = str.parse[f64](text[0..count])
@@ -34,7 +34,7 @@ main(): int {
 
         if exponent != u32(0xFF) {
             value: f32 = bitcast(f32, state32)
-            count: usize, ok: bool = str.format(mut text[0..64], value)
+            count: usize, ok: bool = str.format(text[0..64], value)
 
             if !ok { return 3 }
             parsed: f32, parsed_ok: bool = str.parse[f32](text[0..count])

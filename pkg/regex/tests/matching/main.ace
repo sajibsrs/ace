@@ -4,7 +4,7 @@ import regex
 import str
 
 /* Writes spans as `start-end` separated by spaces, `-` for an unset group. */
-render(spans: []regex.Span, out: mut []char): usize {
+render(spans: []regex.Span, out: []char): usize {
     at: usize = 0
 
     for i: usize, span: regex.Span in spans {
@@ -18,11 +18,11 @@ render(spans: []regex.Span, out: mut []char): usize {
             at += 1
             continue
         }
-        n: usize, ok: bool = str.format(mut out[at..out.len], span.start)
+        n: usize, ok: bool = str.format(out[at..out.len], span.start)
         at += n
         out[at] = '-'
         at += 1
-        n, ok = str.format(mut out[at..out.len], span.end)
+        n, ok = str.format(out[at..out.len], span.end)
         at += n
     }
     return at
@@ -54,13 +54,13 @@ report(pattern: string, text: string, got: string, want: string) {
  */
 found(pattern: string, text: string, from: usize, want: string): int {
     re: regex.Regex = compile(pattern)
-    defer mut re.wipe()
+    defer re.wipe()
     buffer: [64]u8
     got: string = "none"
 
-    if mut re.find(text, from) {
+    if re.find(text, from) {
         spans: [1]regex.Span = [re.span(0)]
-        got = string(buffer[0..render(spans[0..1], mut buffer[0..64])])
+        got = string(buffer[0..render(spans[0..1], buffer[0..64])])
     }
 
     if !mem.equal(got, want) {
@@ -73,13 +73,13 @@ found(pattern: string, text: string, from: usize, want: string): int {
 /* The first match's groups 0 to 3, rendered; groups past the last are unset. */
 groups(pattern: string, text: string, want: string): int {
     re: regex.Regex = compile(pattern)
-    defer mut re.wipe()
+    defer re.wipe()
     buffer: [128]u8
     got: string = "none"
 
-    if mut re.find(text, 0) {
+    if re.find(text, 0) {
         spans: [4]regex.Span = [re.span(0), re.span(1), re.span(2), re.span(3)]
-        got = string(buffer[0..render(spans[0..4], mut buffer[0..128])])
+        got = string(buffer[0..render(spans[0..4], buffer[0..128])])
     }
 
     if !mem.equal(got, want) {
@@ -92,18 +92,18 @@ groups(pattern: string, text: string, want: string): int {
 /* Every match `next` visits, which steps past empty matches. */
 every(pattern: string, text: string, want: string): int {
     re: regex.Regex = compile(pattern)
-    defer mut re.wipe()
+    defer re.wipe()
     storage: [16]regex.Span
-    spans: mut []regex.Span = mut storage[0..16]
+    spans: []regex.Span = storage[0..16]
     count: usize = 0
     at: usize = 0
 
-    for count < 16 && mut re.next(text, mut at) {
+    for count < 16 && re.next(text, &at) {
         spans[count] = re.span(0)
         count += 1
     }
     buffer: [256]u8
-    got: string = string(buffer[0..render(spans[0..count], mut buffer[0..256])])
+    got: string = string(buffer[0..render(spans[0..count], buffer[0..256])])
 
     if !mem.equal(got, want) {
         report(pattern, text, got, want)
@@ -191,7 +191,7 @@ iteration(): int {
 linear(): int {
     bad: int = 0
     storage: [100000]u8
-    text: mut []u8 = mut storage[0..100000]
+    text: []u8 = storage[0..100000]
 
     for i: usize in 0 .. 100000 { text[i] = 'a' }
     bad += found("(a*)*b", string(text[0..100000]), 0, "none")
@@ -203,18 +203,18 @@ linear(): int {
 surface(): int {
     bad: int = 0
     re: regex.Regex = compile("(a)(?:b)(c)")
-    defer mut re.wipe()
+    defer re.wipe()
     if re.groups() != 2 {
         fmt.println("(a)(?:b)(c) should have 2 groups")
         bad += 1
     }
 
-    if !mut re.match("xxabcx") || mut re.match("xxabx") {
+    if !re.match("xxabcx") || re.match("xxabx") {
         fmt.println("match disagrees with (a)(?:b)(c)")
         bad += 1
     }
 
-    if mut re.find("xxabcx", 0) && (!mem.equal(re.group(0), "abc") || !mem.equal(re.group(2), "c")) {
+    if re.find("xxabcx", 0) && (!mem.equal(re.group(0), "abc") || !mem.equal(re.group(2), "c")) {
         fmt.println("group should read abc and c from xxabcx")
         bad += 1
     }
@@ -224,24 +224,24 @@ surface(): int {
         bad += 1
     }
 
-    if mut re.match("xxabcx") && re.group(0) != null {
+    if re.match("xxabcx") && re.group(0) != null {
         fmt.println("match should record no match for group")
         bad += 1
     }
 
-    if mut re.find("xxabx", 0) || re.group(0) != null {
+    if re.find("xxabx", 0) || re.group(0) != null {
         fmt.println("a failed find should leave no match for group")
         bad += 1
     }
     q: regex.Regex, err: Error = regex.Regex.compile("a(")
-    mut q.wipe()
+    q.wipe()
 
     if err != regex.ParseErr.missing_paren {
         fmt.println("a( should fail with missing_paren")
         bad += 1
     }
     q, err = regex.Regex.compile("((a{1000}){1000}){1000}")
-    mut q.wipe()
+    q.wipe()
 
     if err != regex.CompileErr.too_large {
         fmt.println("nested counts should fail with too_large")
@@ -256,21 +256,21 @@ surface(): int {
 counting(): int {
     bad: int = 0
     re: regex.Regex = compile("(x)?(y*)")
-    defer mut re.wipe()
+    defer re.wipe()
 
-    if mut re.count("zxyz") != 4 {
+    if re.count("zxyz") != 4 {
         fmt.println("(x)?(y*) should match 4 times in zxyz")
         bad += 1
     }
 
-    if !mut re.find("z", 0) || re.group(1) != null || re.group(2) == null || re.group(2).len != 0 {
+    if !re.find("z", 0) || re.group(1) != null || re.group(2) == null || re.group(2).len != 0 {
         fmt.println("(x)?(y*) on z should leave group 1 null and group 2 empty")
         bad += 1
     }
     digits: regex.Regex = compile("\\d+")
-    defer mut digits.wipe()
+    defer digits.wipe()
 
-    if mut digits.count("a1b22c333") != 3 || mut digits.count("") != 0 {
+    if digits.count("a1b22c333") != 3 || digits.count("") != 0 {
         fmt.println("\\d+ counts should be 3 and 0")
         bad += 1
     }

@@ -268,7 +268,7 @@
           ]
         },
         {
-          "begin": "^\\s*(?:(pub)\\s+)?(?:(mut)\\s+)?([A-Za-z_][A-Za-z0-9_]*)(\\[)(?=[^\\n]+\\]\\s*\\.[A-Za-z_][A-Za-z0-9_]*\\s*\\()",
+          "begin": "^\\s*(?:(pub)\\s+)?(?:(inline)\\s+)?([A-Za-z_][A-Za-z0-9_]*)(\\[)(?=[^\\n]+\\]\\s*\\.[A-Za-z_][A-Za-z0-9_]*\\s*\\()",
           "beginCaptures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "keyword.control.ace" },
@@ -313,7 +313,7 @@
     "method-declarations": {
       "patterns": [
         {
-          "match": "^\\s*(?:(pub)\\s+)?(?:(mut)\\s+)?([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\[[^\\n]+\\])?)\\.([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+          "match": "^\\s*(?:(pub)\\s+)?(?:(inline)\\s+)?([A-Za-z_][A-Za-z0-9_]*(?:\\s*\\[[^\\n]+\\])?)\\.([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
           "captures": {
             "1": { "name": "keyword.control.ace" },
             "2": { "name": "keyword.control.ace" },
@@ -368,15 +368,15 @@
       "patterns": [
         {
           "name": "variable.other.ace",
-          "match": "(?<=\\.)(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile|self|null|true|false)\\b"
+          "match": "(?<=\\.)(?:import|pub|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile|self|null|true|false)\\b"
         },
         {
           "name": "variable.other.member.ace",
-          "match": "^\\s*(?:import|pub|mut|const|noalias|if|else|for|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile|self|null|true|false)\\b(?=\\s*:(?!:))"
+          "match": "^\\s*(?:import|pub|const|noalias|if|else|for|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile|self|null|true|false)\\b(?=\\s*:(?!:))"
         },
         {
           "name": "variable.other.member.ace",
-          "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile|self|null|true|false)\\b(?=\\s*=(?!=))"
+          "match": "\\b(?:import|pub|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile|self|null|true|false)\\b(?=\\s*=(?!=))"
         },
         {
           "name": "keyword.control.ace",
@@ -388,7 +388,7 @@
         },
         {
           "name": "keyword.control.ace",
-          "match": "\\b(?:import|pub|mut|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile)\\b"
+          "match": "\\b(?:import|pub|const|noalias|if|else|for|in|switch|default|return|break|continue|defer|asm|extern|contract|struct|embed|union|signs|specialized|intrinsic|inline|threadlocal|distinct|type|enum|volatile)\\b"
         },
         {
           "name": "variable.language.self.ace",

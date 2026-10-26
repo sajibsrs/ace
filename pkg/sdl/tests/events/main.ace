@@ -5,7 +5,7 @@
 import sdl
 
 extern "c" {
-    push_event(event: mut *sdl.Event): bool as "SDL_PushEvent"
+    push_event(event: *sdl.Event): bool as "SDL_PushEvent"
 }
 
 SCANCODE_ESCAPE: const u32 = 41
@@ -30,7 +30,7 @@ main(): int {
     sent.keyboard.raw = 0
     sent.keyboard.down = true
     sent.keyboard.repeat = false
-    if !push_event(mut &sent) { return 2 }
+    if !push_event(&sent) { return 2 }
 
     quit: sdl.Event
     quit.padding = [0 : 128]
@@ -39,7 +39,7 @@ main(): int {
     if quit_is_key { return 8 }
 
     got: sdl.Event
-    for mut got.poll() {
+    for got.poll() {
         key: sdl.KeyboardEvent, is_key: bool = got.key()
         if !is_key { continue }
         if key.key != sdl.Keycode.escape || key.scancode != SCANCODE_ESCAPE { return 3 }

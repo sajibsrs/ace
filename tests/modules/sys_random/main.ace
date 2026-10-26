@@ -3,12 +3,12 @@
 import sys
 
 main(): int {
-    empty: mut []u8 = null
+    empty: []u8 = null
     if sys.random(empty) != null { return 1 }
 
     /* Exceeds Darwin's per-call ceiling, proving that the private layer
      * completes a caller-owned destination across multiple calls. */
     seed: [513]u8
-    if sys.random(mut seed[..]) != null { return 2 }
+    if sys.random(seed[..]) != null { return 2 }
     return 0
 }

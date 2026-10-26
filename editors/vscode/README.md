@@ -31,8 +31,6 @@ The highlighter recognizes case-final `fallthrough` as a control keyword without
 
 The `defer` statement keyword is reserved, so the highlighter colors it as a control keyword everywhere it appears; no contextual disambiguation is needed.
 
-The `mut` keyword covers the parameter mark, the call-site argument mark, and the type-position view qualifier (`mut []T`, `mut string`, `mut x[lo..hi]`) alike. The grammar colors one keyword token in every role, so type-position mutability required no grammar change; no editor work remains outstanding for it.
-
 The reserved line-final `intrinsic` marker is highlighted as a keyword. The
 compiler restricts it to exact compiler-provided standard-library declarations.
 

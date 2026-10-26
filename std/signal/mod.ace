@@ -59,11 +59,11 @@ pub Set: struct {
     bits: u32,
 }
 
-pub Set.add(mut self, s: Signal) {
+pub Set.add(self, s: Signal) {
     self.bits |= u32(1) << u32(i32(s) - 1)
 }
 
-pub Set.remove(mut self, s: Signal) {
+pub Set.remove(self, s: Signal) {
     self.bits &= ~(u32(1) << u32(i32(s) - 1))
 }
 

@@ -16,11 +16,11 @@ main(): int {
         return 0
     }
     set: signal.Set = blank(signal.Set)
-    mut set.add(signal.SIGTERM)
+    set.add(signal.SIGTERM)
     signal.block(set)
 
     path: [1024]u8
-    length: usize, err: Error = sys.executable(mut path[0..1024])
+    length: usize, err: Error = sys.executable(path[0..1024])
     if err != null { return 2 }
     child: sys.Process, spawn_err: Error = exec.spawn([string(path[0..length]), "child"])
     if spawn_err != null { return 3 }

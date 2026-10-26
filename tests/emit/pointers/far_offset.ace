@@ -6,11 +6,11 @@
 
 Pair: struct { first: int, second: int }
 
-far(values: mut *Pair, take: bool): int {
+far(values: *Pair, take: bool): int {
     local: [4]Pair
     local[1].first = 40
     local[2].second = 2
-    pointer: mut *Pair = mut &local[0]
+    pointer: *Pair = &local[0]
     if take {
         (pointer - 134217727).second = 7
         return (pointer - 134217726).first
@@ -22,7 +22,7 @@ far(values: mut *Pair, take: bool): int {
 
 main(): int {
     pair: Pair = { first = 0, second = 0 }
-    result: int = far(mut &pair, false)
+    result: int = far(&pair, false)
     if pair.first != 40 { return 1 }
     return result
 }

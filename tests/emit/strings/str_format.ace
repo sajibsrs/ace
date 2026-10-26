@@ -15,7 +15,7 @@ show(buf: []u8, n: usize, ok: bool) {
 
 main(): int {
     buf: [128]u8 = [0 : 128]
-    dst: mut []u8 = mut buf[0..128]
+    dst: []u8 = buf[0..128]
     n: usize, ok: bool = str.format(dst, 42)
     show(dst, n, ok)
     fmt.print("|")
@@ -79,7 +79,7 @@ main(): int {
     show(dst, n, ok)
     fmt.print("|")
     small: [2]u8 = [0 : 2]
-    sdst: mut []u8 = mut small[0..2]
+    sdst: []u8 = small[0..2]
     n, ok = str.format(sdst, 12345)
 
     if ok || n != 0 { return 1 }

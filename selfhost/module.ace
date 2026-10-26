@@ -65,7 +65,7 @@ pub Module: struct {
     pub display: string = "",               // the `mod` name users import it as; the root's is ""
     pub root: string = "",                  // its directory module's directory, "" for a single-file module
     pub path: string,                       // as diagnostics print it
-    src: mut []u8 = null,
+    src: []u8 = null,
     pub parser: parser.Parser,
     pub file: u32 = 0,
     pub first: u32 = 1,                     // its first node's id in the merged tree
@@ -98,65 +98,65 @@ pub Loader: struct {
  */
 pub Loader.new(target: string): (Loader, bool) {
     l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {}, graph = blank(package.Graph) }
-    exe: string, ok: bool = path.executable_dir(mut l.pool)
+    exe: string, ok: bool = path.executable_dir(&l.pool)
     if !ok {
         fmt.printf(sys.stderr, "ace: cannot locate the ace executable to find std/\n")
         return l, false
     }
-    l.std_dir = mut l.pool.join([exe, "/std"])
-    root: string, found: bool = path.canonical(mut l.pool, l.std_dir)
+    l.std_dir = l.pool.join([exe, "/std"])
+    root: string, found: bool = path.canonical(&l.pool, l.std_dir)
     if found { l.std_root = root }
     return l, true
 }
 
-pub Loader.wipe(mut self) {
+pub Loader.wipe(self) {
     for i: usize in 0..self.mods.len {
         m: Module = self.mods.get(i)
-        mem.release[u8](mut m.src)
-        mut m.parser.wipe()
-        mut m.members.wipe()
-        mut m.binds.wipe()
-        mut m.sels.wipe()
+        mem.release[u8](&m.src)
+        m.parser.wipe()
+        m.members.wipe()
+        m.binds.wipe()
+        m.sels.wipe()
     }
-    mut self.mods.wipe()
-    mut self.order.wipe()
-    mut self.prefixes.wipe()
-    mut self.stack.wipe()
-    mut self.pool.wipe()
+    self.mods.wipe()
+    self.order.wipe()
+    self.prefixes.wipe()
+    self.stack.wipe()
+    self.pool.wipe()
 }
 
 /* The root file at `root_path` and, from its imports, every module it needs;
  * false on any error, each reported on stderr as C reports it.
  */
-pub Loader.resolve(mut self, root_path: string): bool {
-    self.roots = path.Roots.init(mut self.pool, path.dir(root_path))
-    return mut self.resolve_root(root_path, false, 0)
+pub Loader.resolve(self, root_path: string): bool {
+    self.roots = path.Roots.init(&self.pool, path.dir(root_path))
+    return self.resolve_root(root_path, false, 0)
 }
 
 /* The root file of package `root` in `graph` and every module it needs,
  * dependencies' imports resolved through the graph; as `resolve`.
  */
-pub Loader.resolve_package(mut self, graph: package.Graph, root: usize): bool {
+pub Loader.resolve_package(self, graph: package.Graph, root: usize): bool {
     self.graph = graph
     p: package.Package = graph.pkgs.get(root)
-    self.roots = path.Roots.init(mut self.pool, p.dir)
-    return mut self.resolve_root(p.root_file, true, root)
+    self.roots = path.Roots.init(&self.pool, p.dir)
+    return self.resolve_root(p.root_file, true, root)
 }
 
-Loader.resolve_root(mut self, root_path: string, in_package: bool, pkg: usize): bool {
-    canon: string, found: bool = path.canonical(mut self.pool, root_path)
+Loader.resolve_root(self, root_path: string, in_package: bool, pkg: usize): bool {
+    canon: string, found: bool = path.canonical(&self.pool, root_path)
     if !found { canon = root_path }
-    mi: usize, ok: bool = mut self.load(root_path, canon)
+    mi: usize, ok: bool = self.load(root_path, canon)
     if !ok { return false }
-    mods: mut []Module = mut self.mods.view()
+    mods: []Module = self.mods.view()
     mods[mi].in_package = in_package
     mods[mi].package = pkg
     // The root is on the stack so a self-import or root cycle shows its chain.
-    fail(mut self.stack.push(mi))
-    mut self.resolve_file(mi, true)
-    mut self.stack.truncate(0)
+    fail(self.stack.push(mi))
+    self.resolve_file(mi, true)
+    self.stack.truncate(0)
     if self.errors > 0 { return false }
-    mut self.merge()
+    self.merge()
     return true
 }
 
@@ -164,7 +164,7 @@ Loader.resolve_root(mut self, root_path: string, in_package: bool, pkg: usize): 
 
 /* Node `id` of module `mi`'s tree, and child `k` of node `id`. */
 Loader.node(self, mi: usize, id: u32): Node {
-    return self.mods.get(mi).parser.node(id)
+    return *self.mods.get(mi).parser.node(id)
 }
 
 Loader.kid(self, mi: usize, id: u32, k: u32): u32 {
@@ -178,7 +178,7 @@ Loader.top(self, mi: usize): u32 {
 
 // --- diagnostics --------------------------------------------------------------
 
-Loader.err(mut self, mi: usize, n: Node, parts: []string) {
+Loader.err(self, mi: usize, n: Node, parts: []string) {
     fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.mods.get(mi).path, int(n.line), int(n.col))
     for part: string in parts { fmt.printf(sys.stderr, "%s", part) }
     fmt.printf(sys.stderr, "\n")
@@ -191,8 +191,8 @@ Loader.err(mut self, mi: usize, n: Node, parts: []string) {
  * its index, or false after reporting why not. The file's own errors are
  * reported as `ace --ast` reports them.
  */
-Loader.load(mut self, shown: string, canon: string): (usize, bool) {
-    src: mut []u8, rerr: Error = file.read(shown)
+Loader.load(self, shown: string, canon: string): (usize, bool) {
+    src: []u8, rerr: Error = file.read(shown)
     if rerr != null {
         fmt.printf(sys.stderr, "ace: cannot open '%s'\n", shown)
         self.errors += 1
@@ -205,8 +205,8 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
     failed: bool = lex_errors > 0
     self.errors += lex_errors
     if !failed {
-        p.file = self.roots.show(mut self.pool, shown)
-        f = mut p.parse(self.target)
+        p.file = self.roots.show(&self.pool, shown)
+        f = p.parse(self.target)
         errors: []parser.SyntaxError, stopped: bool = p.errors()
         for e: parser.SyntaxError in errors {
             fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", shown, int(e.line), int(e.col), e.message)
@@ -216,16 +216,16 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
         failed = errors.len > 0
     }
     if failed {
-        mut p.wipe()
-        mem.release[u8](mut src)
+        p.wipe()
+        mem.release[u8](&src)
         return 0, false
     }
     prefix: string = ""
-    if self.mods.len > 0 { prefix = mut self.assign_prefix(canon) }
-    display: string, root: string = mut self.display(canon)
+    if self.mods.len > 0 { prefix = self.assign_prefix(canon) }
+    display: string, root: string = self.display(canon)
     m: Module = Module { canon = canon, prefix = prefix, display = display, root = root, path = shown, src = src, parser = p, file = f, members = array.Array[Member] {}, binds = array.Array[Binding] {}, sels = array.Array[Select] {} }
-    if self.mods.len > 0 { mut self.collect_members(mut m) }
-    fail(mut self.mods.push(m))
+    if self.mods.len > 0 { self.collect_members(&m) }
+    fail(self.mods.push(m))
     return self.mods.len - 1, true
 }
 
@@ -236,7 +236,7 @@ Loader.load(mut self, shown: string, canon: string): (usize, bool) {
  * that it imports, so an implementation file reads as the module users import.
  * The root module has neither.
  */
-Loader.display(mut self, canon: string): (string, string) {
+Loader.display(self, canon: string): (string, string) {
     if self.mods.len == 0 { return "", "" }
     s: usize = canon.len
     for s > 0 && canon[s - 1] != '/' { s -= 1 }
@@ -260,7 +260,7 @@ Loader.display(mut self, canon: string): (string, string) {
  * taken. `$` never occurs in source identifiers, so a prefixed name cannot
  * collide with a root declaration.
  */
-Loader.assign_prefix(mut self, canon: string): string {
+Loader.assign_prefix(self, canon: string): string {
     s: usize = canon.len
     for s > 0 && canon[s - 1] != '/' { s -= 1 }
     name: string = canon[s..]
@@ -274,14 +274,14 @@ Loader.assign_prefix(mut self, canon: string): string {
     n: int = 0
     for {
         n += 1
-        buf: fmt.Buffer = fmt.Buffer.init(mut storage[0..512])
-        if n == 1 { mut buf.printf("%s$", name) } else { mut buf.printf("%s%d$", name, n) }
+        buf: fmt.Buffer = fmt.Buffer.init(storage[0..512])
+        if n == 1 { buf.printf("%s$", name) } else { buf.printf("%s%d$", name, n) }
         candidate: string = buf.text()
         used: bool = false
         for x: string in self.prefixes.view() { if mem.equal(x, candidate) { used = true } }
         if used { continue }
-        out: string = mut self.pool.copy(candidate)
-        fail(mut self.prefixes.push(out))
+        out: string = self.pool.copy(candidate)
+        fail(self.prefixes.push(out))
         return out
     }
     return ""
@@ -294,20 +294,20 @@ Loader.assign_prefix(mut self, canon: string): string {
  * unless an explicit link name set one; error domains keep their source
  * spelling there for Error.name.
  */
-Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
+Loader.rename_decls(self, mi: usize, rs: *map.Map[string, string]) {
     m: Module = self.mods.get(mi)
     count: u32 = m.parser.node(m.file).nkids
     for k: u32 in 0..count {
         id: u32 = m.parser.kid(m.file, k)
-        n: Node = m.parser.node(id)
+        n: Node = *(m.parser.node(id))
         if n.kind == Kind.extern {
             for j: u32 in 0..n.nkids {
                 fid: u32 = m.parser.kid(id, j)
-                f: Node = m.parser.node(fid)
-                to: string = mut self.pool.join([m.prefix, f.text])
-                fail(mut rs.set(f.text, to))
-                if f.cname.len == 0 { mut m.parser.node(fid).cname = f.text } // an explicit link name wins
-                mut m.parser.node(fid).text = to
+                f: Node = *(m.parser.node(fid))
+                to: string = self.pool.join([m.prefix, f.text])
+                fail(rs.set(f.text, to))
+                if f.cname.len == 0 { m.parser.node(fid).cname = f.text } // an explicit link name wins
+                m.parser.node(fid).text = to
             }
             continue
         }
@@ -316,12 +316,12 @@ Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
         nid: u32 = id
         if n.kind == Kind.var { nid = m.parser.kid(id, 0) }
         original: string = m.parser.node(nid).text
-        if n.kind == Kind.error && n.cname.len == 0 { mut m.parser.node(id).cname = original }
-        if (n.flags & parser.F_EXPO) != 0 && n.cname.len == 0 { mut m.parser.node(id).cname = original } // `extern "c"` keeps its C name
-        if nid != id { mut m.parser.node(nid).cname = m.parser.node(id).cname } // an exported global's binder carries it too
-        to: string = mut self.pool.join([m.prefix, original])
-        fail(mut rs.set(original, to))
-        mut m.parser.node(nid).text = to
+        if n.kind == Kind.error && n.cname.len == 0 { m.parser.node(id).cname = original }
+        if (n.flags & parser.F_EXPO) != 0 && n.cname.len == 0 { m.parser.node(id).cname = original } // `extern "c"` keeps its C name
+        if nid != id { m.parser.node(nid).cname = m.parser.node(id).cname } // an exported global's binder carries it too
+        to: string = self.pool.join([m.prefix, original])
+        fail(rs.set(original, to))
+        m.parser.node(nid).text = to
     }
 }
 
@@ -331,7 +331,7 @@ Loader.rename_decls(mut self, mi: usize, mut rs: map.Map[string, string]) {
  * for the module's own calls, so no declaration of an imported module may
  * take it. The root is not checked here: sema rejects its names.
  */
-Loader.reserved(mut self, m: Module, n: Node, name: string) {
+Loader.reserved(self, m: Module, n: Node, name: string) {
     if self.mods.len == 0 { return }
     if mem.equal(name, "panic") || mem.equal(name, "assert") {
         fmt.printf(sys.stderr, "%s:%d:%d: error: '%s' is a reserved builtin name \u{2014} no declaration may take it\n", m.path, int(n.line), int(n.col), name)
@@ -339,50 +339,50 @@ Loader.reserved(mut self, m: Module, n: Node, name: string) {
     }
 }
 
-add_member(mut members: array.Array[Member], name: string, is_type: bool, exported: bool) {
+add_member(members: *array.Array[Member], name: string, is_type: bool, exported: bool) {
     for i: usize in 0..members.len {
         x: Member = members.get(i)
         if x.is_type == is_type && mem.equal(x.name, name) {
             if exported && !x.exported {
-                (mut members.view())[i].exported = true
+                (members.view())[i].exported = true
             }
             return
         }
     }
-    fail(mut members.push(Member { name = name, is_type = is_type, exported = exported }))
+    fail(members.push(Member { name = name, is_type = is_type, exported = exported }))
 }
 
 /* The module's member table: original names and pub-ness. Methods and
  * associated functions bind a qualified name, not a member; C bindings are
  * module-private.
  */
-Loader.collect_members(mut self, mut m: Module) {
-    f: Node = m.parser.node(m.file)
+Loader.collect_members(self, m: *Module) {
+    f: Node = *(m.parser.node(m.file))
     for k: u32 in 0..f.nkids {
         id: u32 = m.parser.kid(m.file, k)
-        n: Node = m.parser.node(id)
+        n: Node = *(m.parser.node(id))
         exported: bool = (n.flags & parser.F_PUB) != 0
         switch n.kind {
             Kind.func {
                 if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 {
-                    mut self.reserved(m, n, n.text)
-                    add_member(mut m.members, n.text, false, exported)
+                    self.reserved(*m, n, n.text)
+                    add_member(&m.members, n.text, false, exported)
                 }
             }
             Kind.var {
-                name: Node = m.parser.node(m.parser.kid(id, 0))
-                mut self.reserved(m, n, name.text)
-                add_member(mut m.members, name.text, false, exported)
+                name: Node = *(m.parser.node(m.parser.kid(id, 0)))
+                self.reserved(*m, n, name.text)
+                add_member(&m.members, name.text, false, exported)
             }
             Kind.struct, Kind.bits, Kind.contract, Kind.enum, Kind.alias, Kind.distinct, Kind.error, Kind.union {
-                mut self.reserved(m, n, n.text)
-                add_member(mut m.members, n.text, true, exported)
+                self.reserved(*m, n, n.text)
+                add_member(&m.members, n.text, true, exported)
             }
             Kind.extern {
                 for j: u32 in 0..n.nkids {
-                    c: Node = m.parser.node(m.parser.kid(id, j))
-                    mut self.reserved(m, c, c.text)
-                    add_member(mut m.members, c.text, false, false)
+                    c: Node = *(m.parser.node(m.parser.kid(id, j)))
+                    self.reserved(*m, c, c.text)
+                    add_member(&m.members, c.text, false, false)
                 }
             }
             default {}
@@ -412,8 +412,8 @@ Loader.is_std_internal(self, canon: string): bool {
 }
 
 /* "std/..." for a path under std/, as C names it in diagnostics. */
-Loader.std_display(mut self, canon: string): string {
-    return mut self.pool.join(["std", canon[self.std_root.len..]])
+Loader.std_display(self, canon: string): string {
+    return self.pool.join(["std", canon[self.std_root.len..]])
 }
 
 /* The directory of the nearest directory module containing `canon`. A
@@ -421,7 +421,7 @@ Loader.std_display(mut self, canon: string): string {
  * at the deepest ancestor directory with a mod.ace. Inside std it stops below
  * the std root, which is not itself a module.
  */
-Loader.module_root(mut self, canon: string): (string, bool) {
+Loader.module_root(self, canon: string): (string, bool) {
     if self.is_std_internal(canon) { return "", false }
     floor: usize = 0
     if self.is_std_source(canon) { floor = self.std_root.len }
@@ -431,7 +431,7 @@ Loader.module_root(mut self, canon: string): (string, bool) {
         if n <= floor + 1 { return "", false }
         n -= 1
         root: string = canon[..n]
-        c: string, exists: bool = path.canonical(mut self.pool, mut self.pool.join([root, "/mod.ace"]))
+        c: string, exists: bool = path.canonical(&self.pool, self.pool.join([root, "/mod.ace"]))
         if exists { return root, true }
     }
 }
@@ -526,7 +526,7 @@ atomic_builtin(name: string): u64 {
  * `id` implements, or 0.
  */
 builtin(m: string, p: parser.Parser, id: u32): u64 {
-    n: Node = p.node(id)
+    n: Node = *(p.node(id))
     name: string = n.text
     exported: bool = (n.flags & parser.F_PUB) != 0
     if mem.equal(m, "mem") {
@@ -546,7 +546,7 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
     }
     if mem.equal(m, "fmt") {
         if !exported || !mem.equal(name, "printf") { return 0 }
-        if (n.flags & parser.F_METHOD) != 0 { return BI_FMT_PRINTF_BUF } // Buffer.printf(mut self, format)
+        if (n.flags & parser.F_METHOD) != 0 { return BI_FMT_PRINTF_BUF } // Buffer.printf(self, format)
         if n.nkids == 2 { return BI_FMT_PRINTF_FD }                     // (fd, format)
         return BI_FMT_PRINTF                                            // (format)
     }
@@ -556,7 +556,7 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
         if !exported || !mem.equal(name, "format") || n.nkids != 2 { return 0 }
         t: u32 = p.node(p.kid(id, 1)).a
         if t == 0 { return 0 }
-        x: Node = p.node(t)
+        x: Node = *(p.node(t))
         if x.kind == Kind.named && x.a == 0 && mem.equal(x.text, "string") { return BI_STR_FORMAT }
         return 0
     }
@@ -596,7 +596,7 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
 /* Marks the compiler-backed functions of module `mi` when it is one of the
  * std modules that declare them, and records std/@/formatting's prefix.
  */
-Loader.mark_intrinsics(mut self, mi: usize) {
+Loader.mark_intrinsics(self, mi: usize) {
     canon: string = self.mods.get(mi).canon
     if self.is_std_named(canon, "formatting", true) {
         self.formatting = self.mods.get(mi).prefix
@@ -609,14 +609,14 @@ Loader.mark_intrinsics(mut self, mi: usize) {
     if self.is_std_named(canon, "byte_load", true) { m = "@byte_load" }
     if m.len == 0 { return }
     mod: Module = self.mods.get(mi)
-    f: Node = mod.parser.node(mod.file)
+    f: Node = *(mod.parser.node(mod.file))
     for k: u32 in 0..f.nkids {
         id: u32 = mod.parser.kid(mod.file, k)
-        n: Node = mod.parser.node(id)
+        n: Node = *(mod.parser.node(id))
         if n.kind != Kind.func { continue }
         v: u64 = builtin(m, mod.parser, id)
         if v == 0 { continue }
-        mut mod.parser.node(id).ival = v
+        mod.parser.node(id).ival = v
     }
 }
 
@@ -625,26 +625,26 @@ Loader.mark_intrinsics(mut self, mi: usize) {
 /* `<root>/<leaf>.ace` or `<root>/<leaf>/mod.ace`; an error when both exist or
  * neither does. `kind` names what is being resolved, for diagnostics.
  */
-Loader.resolve_leaf(mut self, mi: usize, imp: Node, root: string, kind: string, leaf: string): (string, bool) {
-    flat: string = mut self.pool.join([root, "/", leaf, ".ace"])
-    directory: string = mut self.pool.join([root, "/", leaf, "/mod.ace"])
-    flat_canon: string, has_flat: bool = path.canonical(mut self.pool, flat)
-    dir_canon: string, has_dir: bool = path.canonical(mut self.pool, directory)
+Loader.resolve_leaf(self, mi: usize, imp: Node, root: string, kind: string, leaf: string): (string, bool) {
+    flat: string = self.pool.join([root, "/", leaf, ".ace"])
+    directory: string = self.pool.join([root, "/", leaf, "/mod.ace"])
+    flat_canon: string, has_flat: bool = path.canonical(&self.pool, flat)
+    dir_canon: string, has_dir: bool = path.canonical(&self.pool, directory)
     if has_flat && has_dir {
-        mut self.err(mi, imp, [kind, " '", leaf, "' is ambiguous (found ", flat, " and ", directory, ")"])
+        self.err(mi, imp, [kind, " '", leaf, "' is ambiguous (found ", flat, " and ", directory, ")"])
         return "", false
     }
     if has_dir { return dir_canon, true }
     if has_flat { return flat_canon, true }
-    mut self.err(mi, imp, [kind, " '", leaf, "' not found (tried ", flat, " and ", directory, ")"])
+    self.err(mi, imp, [kind, " '", leaf, "' not found (tried ", flat, " and ", directory, ")"])
     return "", false
 }
 
 /* `segs` joined with '/'. */
-Loader.joined(mut self, segs: []string): string {
+Loader.joined(self, segs: []string): string {
     out: string = ""
     for i: usize in 0..segs.len {
-        if i == 0 { out = segs[i] } else { out = mut self.pool.join([out, "/", segs[i]]) }
+        if i == 0 { out = segs[i] } else { out = self.pool.join([out, "/", segs[i]]) }
     }
     return out
 }
@@ -654,10 +654,10 @@ Loader.joined(mut self, segs: []string): string {
  * enclosing module. A non-leaf "." or ".." is plain navigation from a quoted
  * path's own prefix. The leaf resolves as a single name does.
  */
-Loader.resolve_module_path(mut self, mi: usize, imp: Node, root: string, kind: string, segs: []string): (string, bool) {
+Loader.resolve_module_path(self, mi: usize, imp: Node, root: string, kind: string, segs: []string): (string, bool) {
     for seg: string in segs {
         if seg.len >= 400 {
-            mut self.err(mi, imp, ["module path segment '", seg, "' is too long"])
+            self.err(mi, imp, ["module path segment '", seg, "' is too long"])
             return "", false
         }
     }
@@ -666,34 +666,34 @@ Loader.resolve_module_path(mut self, mi: usize, imp: Node, root: string, kind: s
         seg: string = segs[i]
         if mem.equal(seg, ".") { continue }
         if !mem.equal(seg, "..") {
-            probe: string = mut self.pool.join([cur, "/", seg, "/mod.ace"])
-            c: string, exists: bool = path.canonical(mut self.pool, probe)
+            probe: string = self.pool.join([cur, "/", seg, "/mod.ace"])
+            c: string, exists: bool = path.canonical(&self.pool, probe)
             if !exists {
-                mut self.err(mi, imp, ["'", seg, "' has no mod.ace \u{2014} '", mut self.joined(segs), "' is not a nested module"])
+                self.err(mi, imp, ["'", seg, "' has no mod.ace \u{2014} '", self.joined(segs), "' is not a nested module"])
                 return "", false
             }
         }
-        cur = mut self.pool.join([cur, "/", seg])
+        cur = self.pool.join([cur, "/", seg])
     }
-    return mut self.resolve_leaf(mi, imp, cur, kind, segs[segs.len - 1])
+    return self.resolve_leaf(mi, imp, cur, kind, segs[segs.len - 1])
 }
 
 /* The target path an import declaration names: a package dependency of the
  * importer's package first, then std/. With it, whether a package owns the
  * target (a dependency, or the importer's own for a relative path) and which.
  */
-Loader.import_target(mut self, mi: usize, imp: Node): (string, bool, bool, usize) {
+Loader.import_target(self, mi: usize, imp: Node): (string, bool, bool, usize) {
     in_package: bool = self.mods.get(mi).in_package
     pkg: usize = self.mods.get(mi).package
     if imp.a != 0 {
         p: Node = self.node(mi, imp.a)
         if p.op == Token.at { // @name: compiler-reserved std implementation, never package-owned
-            return mut self.pool.join([self.std_dir, "/@/", p.text, ".ace"]), true, false, 0
+            return self.pool.join([self.std_dir, "/@/", p.text, ".ace"]), true, false, 0
         }
-        target: string, ok: bool = mut self.relative_target(mi, imp, p.text)
+        target: string, ok: bool = self.relative_target(mi, imp, p.text)
         if !ok { return "", false, false, 0 }
         if str.has(target, ".test.ace", true) {
-            mut self.err(mi, imp, ["test file '", p.text, "' cannot be imported; ace test builds it"])
+            self.err(mi, imp, ["test file '", p.text, "' cannot be imported; ace test builds it"])
             return "", false, false, 0
         }
         // A package's relative imports stay in its own directory and out of
@@ -701,13 +701,13 @@ Loader.import_target(mut self, mi: usize, imp: Node): (string, bool, bool, usize
         // dependency's internal files.
         if in_package {
             own: string = self.graph.pkgs.get(pkg).dir
-            tc: string, found: bool = path.canonical(mut self.pool, target)
+            tc: string, found: bool = path.canonical(&self.pool, target)
             if found && !mem.equal(tc, own) && !path.beneath(tc, own) {
-                mut self.err(mi, imp, ["relative import '", p.text, "' escapes its package directory '", own, "'"])
+                self.err(mi, imp, ["relative import '", p.text, "' escapes its package directory '", own, "'"])
                 return "", false, false, 0
             }
             if found && !package.contains(own, tc) {
-                mut self.err(mi, imp, ["relative import '", p.text, "' reaches into the reserved pkg/ directory of '", own, "'"])
+                self.err(mi, imp, ["relative import '", p.text, "' reaches into the reserved pkg/ directory of '", own, "'"])
                 return "", false, false, 0
             }
         }
@@ -719,7 +719,7 @@ Loader.import_target(mut self, mi: usize, imp: Node): (string, bool, bool, usize
     s: u32 = imp.c
     for s != 0 {
         if n == 64 {
-            mut self.err(mi, imp, ["module path has too many segments"])
+            self.err(mi, imp, ["module path has too many segments"])
             return "", false, false, 0
         }
         seg: Node = self.node(mi, s)
@@ -732,29 +732,29 @@ Loader.import_target(mut self, mi: usize, imp: Node): (string, bool, bool, usize
             if mem.equal(segs[0], d.name) {
                 dp: package.Package = self.graph.pkgs.get(d.package)
                 if n == 1 { return dp.root_file, true, true, d.package }
-                target: string, ok: bool = mut self.resolve_module_path(mi, imp, dp.dir, "package module", segs[1..n])
+                target: string, ok: bool = self.resolve_module_path(mi, imp, dp.dir, "package module", segs[1..n])
                 return target, ok, true, d.package
             }
         }
     }
-    target: string, ok: bool = mut self.resolve_module_path(mi, imp, self.std_dir, "standard library module", segs[0..n])
+    target: string, ok: bool = self.resolve_module_path(mi, imp, self.std_dir, "standard library module", segs[0..n])
     return target, ok, false, 0
 }
 
 /* The file a quoted import path `raw` names, from the importer's directory. */
-Loader.relative_target(mut self, mi: usize, imp: Node, raw: string): (string, bool) {
+Loader.relative_target(self, mi: usize, imp: Node, raw: string): (string, bool) {
     if raw.len >= path.MAX {
-        mut self.err(mi, imp, ["module path is too long"])
+        self.err(mi, imp, ["module path is too long"])
         return "", false
     }
     if raw.len > 0 && raw[0] == '/' {
-        mut self.err(mi, imp, ["module path '", raw, "' must be relative"])
+        self.err(mi, imp, ["module path '", raw, "' must be relative"])
         return "", false
     }
     dir: string = path.dir(self.mods.get(mi).path)
     if raw.len >= 5 && str.has(raw, ".ace", true) {
         if mem.equal(dir, ".") { return raw, true }
-        return mut self.pool.join([dir, "/", raw]), true
+        return self.pool.join([dir, "/", raw]), true
     }
     // No .ace suffix: a nested-module path from the importer's directory.
     segs: [64]string = blank([64]string)
@@ -765,11 +765,11 @@ Loader.relative_target(mut self, mi: usize, imp: Node, raw: string): (string, bo
         seg: string = rest
         if slash { seg = rest[..at] }
         if n == 64 {
-            mut self.err(mi, imp, ["module path '", raw, "' has too many segments"])
+            self.err(mi, imp, ["module path '", raw, "' has too many segments"])
             return "", false
         }
         if seg.len == 0 {
-            mut self.err(mi, imp, ["module path '", raw, "' has an empty segment"])
+            self.err(mi, imp, ["module path '", raw, "' has an empty segment"])
             return "", false
         }
         segs[n] = seg
@@ -777,7 +777,7 @@ Loader.relative_target(mut self, mi: usize, imp: Node, raw: string): (string, bo
         if !slash { break }
         rest = rest[at + 1..]
     }
-    return mut self.resolve_module_path(mi, imp, dir, "module", segs[0..n])
+    return self.resolve_module_path(mi, imp, dir, "module", segs[0..n])
 }
 
 // --- loading ------------------------------------------------------------------
@@ -785,16 +785,16 @@ Loader.relative_target(mut self, mi: usize, imp: Node, raw: string): (string, bo
 /* The cycle a module closing on itself makes, in import order, without the
  * modules above it that merely led there.
  */
-Loader.report_cycle(mut self, mi: usize, imp: Node, canon: string) {
+Loader.report_cycle(self, mi: usize, imp: Node, canon: string) {
     chain: string = canon
     at: usize = 0
     for i: usize in 0..self.stack.len {
         if mem.equal(self.mods.get(self.stack.get(i)).canon, canon) { at = i }
     }
     for i: usize in at + 1..self.stack.len {
-        chain = mut self.pool.join([chain, " -> ", self.mods.get(self.stack.get(i)).canon])
+        chain = self.pool.join([chain, " -> ", self.mods.get(self.stack.get(i)).canon])
     }
-    mut self.err(mi, imp, ["import cycle: ", chain, " -> ", canon])
+    self.err(mi, imp, ["import cycle: ", chain, " -> ", canon])
 }
 
 /* Whether the import names a compiler-reserved module (`@name`). */
@@ -804,56 +804,56 @@ Loader.is_internal_path(self, mi: usize, imp: Node): bool {
 }
 
 /* The module an import declaration names, loading it once. */
-Loader.ensure(mut self, mi: usize, imp: Node): (usize, bool) {
-    target: string, ok: bool, in_package: bool, pkg: usize = mut self.import_target(mi, imp)
+Loader.ensure(self, mi: usize, imp: Node): (usize, bool) {
+    target: string, ok: bool, in_package: bool, pkg: usize = self.import_target(mi, imp)
     if !ok { return 0, false }
-    canon: string, found: bool = path.canonical(mut self.pool, target)
+    canon: string, found: bool = path.canonical(&self.pool, target)
     if !found {
         shown: string = imp.text
         if imp.a != 0 {
             p: Node = self.node(mi, imp.a)
             shown = p.text
         }
-        mut self.err(mi, imp, ["cannot load module '", shown, "' from ", self.mods.get(mi).path, ": no such file"])
+        self.err(mi, imp, ["cannot load module '", shown, "' from ", self.mods.get(mi).path, ": no such file"])
         return 0, false
     }
     importer: string = self.mods.get(mi).canon
-    root: string, in_module: bool = mut self.module_root(canon)
+    root: string, in_module: bool = self.module_root(canon)
     if in_module {
-        entry: string = mut self.pool.join([root, "/mod.ace"])
+        entry: string = self.pool.join([root, "/mod.ace"])
         same: bool = mem.equal(importer, entry) || path.beneath(importer, root)
         if !mem.equal(canon, entry) && !same {
-            mut self.err(mi, imp, ["implementation file '", self.roots.show(mut self.pool, canon), "' is private to directory module '", self.roots.show(mut self.pool, entry), "'"])
+            self.err(mi, imp, ["implementation file '", self.roots.show(&self.pool, canon), "' is private to directory module '", self.roots.show(&self.pool, entry), "'"])
             return 0, false
         }
     }
     if self.is_std_internal(canon) && !self.is_std_source(importer) {
-        mut self.err(mi, imp, ["compiler-reserved standard-library implementation '", mut self.std_display(canon), "' may be imported only by standard-library sources"])
+        self.err(mi, imp, ["compiler-reserved standard-library implementation '", self.std_display(canon), "' may be imported only by standard-library sources"])
         return 0, false
     }
     if self.is_std_internal(canon) && (imp.a == 0 || !self.is_internal_path(mi, imp)) {
-        mut self.err(mi, imp, ["compiler-reserved standard-library implementation must use @name import syntax"])
+        self.err(mi, imp, ["compiler-reserved standard-library implementation must use @name import syntax"])
         return 0, false
     }
     for i: usize in 0..self.stack.len {
         if mem.equal(self.mods.get(self.stack.get(i)).canon, canon) {
-            mut self.report_cycle(mi, imp, canon)
+            self.report_cycle(mi, imp, canon)
             return 0, false
         }
     }
     for i: usize in 0..self.mods.len {
         if mem.equal(self.mods.get(i).canon, canon) { return i, true } // loaded once, aliased freely
     }
-    ti: usize, loaded: bool = mut self.load(canon, canon)
+    ti: usize, loaded: bool = self.load(canon, canon)
     if !loaded { return 0, false }
-    mods: mut []Module = mut self.mods.view()
+    mods: []Module = self.mods.view()
     mods[ti].in_package = in_package
     mods[ti].package = pkg
-    mut self.mark_intrinsics(ti)
-    fail(mut self.stack.push(ti))
-    mut self.resolve_file(ti, false)
-    mut self.stack.truncate(self.stack.len - 1)
-    fail(mut self.order.push(ti)) // completed: its own dependencies are already in order
+    self.mark_intrinsics(ti)
+    fail(self.stack.push(ti))
+    self.resolve_file(ti, false)
+    self.stack.truncate(self.stack.len - 1)
+    fail(self.order.push(ti)) // completed: its own dependencies are already in order
     return ti, true
 }
 
@@ -866,11 +866,11 @@ bound(binds: array.Array[Binding], sels: array.Array[Select], name: string): boo
     return false
 }
 
-Loader.resolve_file(mut self, mi: usize, is_root: bool) {
+Loader.resolve_file(self, mi: usize, is_root: bool) {
     binds: array.Array[Binding] = array.Array[Binding] {}
     sels: array.Array[Select] = array.Array[Select] {}
-    mut self.resolve_imports(mi, is_root, mut binds, mut sels)
-    mods: mut []Module = mut self.mods.view()
+    self.resolve_imports(mi, is_root, &binds, &sels)
+    mods: []Module = self.mods.view()
     mods[mi].binds = binds
     mods[mi].sels = sels
 }
@@ -898,7 +898,7 @@ Loader.declares(self, mi: usize, id: u32, n: Node, name: string): bool {
     return mem.equal(n.text, name)
 }
 
-Loader.resolve_imports(mut self, mi: usize, is_root: bool, mut binds: array.Array[Binding], mut sels: array.Array[Select]) {
+Loader.resolve_imports(self, mi: usize, is_root: bool, binds: *array.Array[Binding], sels: *array.Array[Select]) {
     top: u32 = self.top(mi)
     nkids: u32 = self.node(mi, top).nkids
     // Imports precede declarations (parser), so the first other node ends them.
@@ -906,44 +906,44 @@ Loader.resolve_imports(mut self, mi: usize, is_root: bool, mut binds: array.Arra
         id: u32 = self.kid(mi, top, k)
         imp: Node = self.node(mi, id)
         if imp.kind != Kind.import { break }
-        ti: usize, ok: bool = mut self.ensure(mi, imp)
+        ti: usize, ok: bool = self.ensure(mi, imp)
         if !ok { continue }
         if (imp.flags & parser.F_SELECT) != 0 {
-            mut self.select_members(mi, id, imp, ti, binds, mut sels)
+            self.select_members(mi, id, imp, ti, *binds, sels)
         } else {
-            mut self.bind(mi, imp, ti, mut binds, sels)
+            self.bind(mi, imp, ti, binds, *sels)
         }
     }
     if self.errors > 0 { return }
-    mut self.check_select_collisions(mi, binds, sels)
+    self.check_select_collisions(mi, *binds, *sels)
     if self.errors > 0 { return }
     renames: map.Map[string, string] = map.Map[string, string] {}
-    defer mut renames.wipe()
+    defer renames.wipe()
     if !is_root {
-        mut self.check_binding_collisions(mi, binds)
+        self.check_binding_collisions(mi, *binds)
         if self.errors > 0 { return }
-        mut self.rename_decls(mi, mut renames)
+        self.rename_decls(mi, &renames)
     }
     // One walk lowers every reference to a selected name, a `binding.member`,
     // and, in an imported file, the file's own declarations.
-    mut self.lower(mi, is_root, binds, sels, renames)
+    self.lower(mi, is_root, *binds, *sels, renames)
 }
 
 /* A selected name may not collide with another import or a declaration. */
-Loader.check_select_collisions(mut self, mi: usize, binds: array.Array[Binding], sels: array.Array[Select]) {
+Loader.check_select_collisions(self, mi: usize, binds: array.Array[Binding], sels: array.Array[Select]) {
     top: u32 = self.top(mi)
     nkids: u32 = self.node(mi, top).nkids
     for s: Select in sels.view() {
         for b: Binding in binds.view() {
             if mem.equal(b.name, s.name) {
-                mut self.err_at(mi, s.line, s.col, ["import binding '", s.name, "' collides with another import"])
+                self.err_at(mi, s.line, s.col, ["import binding '", s.name, "' collides with another import"])
             }
         }
         for k: u32 in 0..nkids {
             id: u32 = self.kid(mi, top, k)
             n: Node = self.node(mi, id)
             if binds_name(n.kind, n.flags) && self.declares(mi, id, n, s.name) {
-                mut self.err_at(mi, s.line, s.col, ["imported name '", s.name, "' collides with a declaration"])
+                self.err_at(mi, s.line, s.col, ["imported name '", s.name, "' collides with a declaration"])
             }
         }
     }
@@ -952,7 +952,7 @@ Loader.check_select_collisions(mut self, mi: usize, binds: array.Array[Binding],
 /* A binding that collides with one of the module's own declarations would
  * silently lose the import once the module's bindings are dropped.
  */
-Loader.check_binding_collisions(mut self, mi: usize, binds: array.Array[Binding]) {
+Loader.check_binding_collisions(self, mi: usize, binds: array.Array[Binding]) {
     top: u32 = self.top(mi)
     nkids: u32 = self.node(mi, top).nkids
     for b: Binding in binds.view() {
@@ -961,50 +961,50 @@ Loader.check_binding_collisions(mut self, mi: usize, binds: array.Array[Binding]
             n: Node = self.node(mi, id)
             if n.kind == Kind.import || !binds_name(n.kind, n.flags) { continue }
             if self.declares(mi, id, n, b.name) {
-                mut self.err_at(mi, b.line, b.col, ["import binding '", b.name, "' collides with a declaration in this module"])
+                self.err_at(mi, b.line, b.col, ["import binding '", b.name, "' collides with a declaration in this module"])
             }
         }
     }
 }
 
-Loader.err_at(mut self, mi: usize, line: u32, col: u32, parts: []string) {
+Loader.err_at(self, mi: usize, line: u32, col: u32, parts: []string) {
     at: Node = blank(Node)
     at.line = line
     at.col = col
-    mut self.err(mi, at, parts)
+    self.err(mi, at, parts)
 }
 
-Loader.bind(mut self, mi: usize, imp: Node, target: usize, mut binds: array.Array[Binding], sels: array.Array[Select]) {
-    if bound(binds, sels, imp.text) {
-        mut self.err(mi, imp, ["duplicate import binding '", imp.text, "'"])
+Loader.bind(self, mi: usize, imp: Node, target: usize, binds: *array.Array[Binding], sels: array.Array[Select]) {
+    if bound(*binds, sels, imp.text) {
+        self.err(mi, imp, ["duplicate import binding '", imp.text, "'"])
         return
     }
-    fail(mut binds.push(Binding { name = imp.text, module = target, line = imp.line, col = imp.col }))
+    fail(binds.push(Binding { name = imp.text, module = target, line = imp.line, col = imp.col }))
 }
 
 /* `import a, b from module`: each name must be a public member, and may be
  * bound only once.
  */
-Loader.select_members(mut self, mi: usize, id: u32, imp: Node, target: usize, binds: array.Array[Binding], mut sels: array.Array[Select]) {
+Loader.select_members(self, mi: usize, id: u32, imp: Node, target: usize, binds: array.Array[Binding], sels: *array.Array[Select]) {
     for i: u32 in 0..imp.nkids {
         name: Node = self.node(mi, self.kid(mi, id, i))
         vm: Member, has_value: bool = self.member(target, name.text, false)
         tm: Member, has_type: bool = self.member(target, name.text, true)
         if !has_value && !has_type {
-            mut self.err(mi, name, ["module has no public member '", name.text, "'"])
+            self.err(mi, name, ["module has no public member '", name.text, "'"])
             continue
         }
         x: Member = vm
         if !has_value { x = tm } // sema rejects a module declaring both
         if !x.exported {
-            mut self.err(mi, name, ["member '", name.text, "' is not public"])
+            self.err(mi, name, ["member '", name.text, "' is not public"])
             continue
         }
-        if bound(binds, sels, name.text) {
-            mut self.err(mi, name, ["duplicate import binding '", name.text, "'"])
+        if bound(binds, *sels, name.text) {
+            self.err(mi, name, ["duplicate import binding '", name.text, "'"])
             continue
         }
-        fail(mut sels.push(Select { name = name.text, identity = mut self.pool.join([self.mods.get(target).prefix, name.text]), module = target, is_type = !has_value, line = name.line, col = name.col }))
+        fail(sels.push(Select { name = name.text, identity = self.pool.join([self.mods.get(target).prefix, name.text]), module = target, is_type = !has_value, line = name.line, col = name.col }))
     }
 }
 
@@ -1065,21 +1065,21 @@ RefLower.shadow(self, name: string): Shadow {
 }
 
 /* Counts a local of `name` in or out of its name's `Shadow`. */
-RefLower.count(mut self, name: string, is_type: bool, by: int) {
+RefLower.count(self, name: string, is_type: bool, by: int) {
     sh: Shadow = self.shadow(name)
     if is_type { sh.types += by } else { sh.values += by }
-    fail(mut self.shadows.set(name, sh))
+    fail(self.shadows.set(name, sh))
 }
 
-RefLower.push(mut self) {
+RefLower.push(self) {
     self.depth += 1
 }
 
-RefLower.pop(mut self) {
+RefLower.pop(self) {
     for self.locals.len > 0 && self.locals.get(self.locals.len - 1).depth == self.depth {
         x: LocalName = self.locals.get(self.locals.len - 1)
-        if x.counted { mut self.count(x.name, x.is_type, -1) }
-        mut self.locals.truncate(self.locals.len - 1)
+        if x.counted { self.count(x.name, x.is_type, -1) }
+        self.locals.truncate(self.locals.len - 1)
     }
     self.depth -= 1
 }
@@ -1110,22 +1110,22 @@ RefLower.hides_binding(self, name: string): bool {
 }
 
 /* Renames node `n` to `name`. */
-RefLower.rename(mut self, n: u32, name: string) {
-    mut self.p.node(n).text = name
+RefLower.rename(self, n: u32, name: string) {
+    self.p.node(n).text = name
 }
 
 /* A local or type parameter may shadow a selected name of its own namespace,
  * never one of the other: a type and a value never share a name (Names &
  * Scoping #2). Sema cannot see this clash once the selection is renamed.
  */
-Loader.bind_local(mut self, mi: usize, mut c: RefLower, at: u32, is_type: bool) {
-    x: Node = c.p.node(at)
+Loader.bind_local(self, mi: usize, c: *RefLower, at: u32, is_type: bool) {
+    x: Node = *(c.p.node(at))
     s: Select, found: bool = find_select(c.sels, x.text, false)
     if found && s.is_type != is_type {
         if is_type {
-            mut self.err(mi, x, ["'", x.text, "' names a value; a type may not share its name"])
+            self.err(mi, x, ["'", x.text, "' names a value; a type may not share its name"])
         } else {
-            mut self.err(mi, x, ["'", x.text, "' names a type; a value may not share its name"])
+            self.err(mi, x, ["'", x.text, "' names a type; a value may not share its name"])
         }
     }
     counted: bool = found || (c.own && c.renames.has(x.text))
@@ -1134,48 +1134,48 @@ Loader.bind_local(mut self, mi: usize, mut c: RefLower, at: u32, is_type: bool) 
             if mem.equal(x.text, b.name) { counted = true }
         }
     }
-    if counted { mut c.count(x.text, is_type, 1) }
-    fail(mut c.locals.push(LocalName { name = x.text, depth = c.depth, is_type = is_type, counted = counted }))
+    if counted { c.count(x.text, is_type, 1) }
+    fail(c.locals.push(LocalName { name = x.text, depth = c.depth, is_type = is_type, counted = counted }))
 }
 
 /* A fresh identifier node `name` at `from`'s position. */
-ident_at(mut p: parser.Parser, from: Node, name: string): u32 {
+ident_at(p: *parser.Parser, from: Node, name: string): u32 {
     x: Node = blank(Node)
     x.kind = Kind.ident
     x.flags = parser.F_TEXT
     x.line = from.line
     x.col = from.col
     x.text = name
-    return mut p.add(x)
+    return p.add(x)
 }
 
 /* `math.Vec[int]` in type position: collapse the qualifier chain to the
  * prefixed type name, keeping generic arguments.
  */
-Loader.lower_named(mut self, mi: usize, mut c: RefLower, t: u32) {
-    x: Node = c.p.node(t)
+Loader.lower_named(self, mi: usize, c: *RefLower, t: u32) {
+    x: Node = *(c.p.node(t))
     if x.a == 0 { return }
-    base: Node = c.p.node(x.a) // the qualifier ident (kept as `named` by the parser)
+    base: Node = *(c.p.node(x.a)) // the qualifier ident (kept as `named` by the parser)
     if base.a != 0 {
-        mut self.err(mi, x, ["qualified type paths deeper than 'module.Type' are not supported"])
+        self.err(mi, x, ["qualified type paths deeper than 'module.Type' are not supported"])
         return
     }
     for b: Binding in c.binds {
         if !mem.equal(base.text, b.name) { continue }
         m: Member, found: bool = self.member(b.module, x.text, true)
         if !found {
-            mut self.err(mi, x, ["module '", b.name, "' has no type '", x.text, "'"])
+            self.err(mi, x, ["module '", b.name, "' has no type '", x.text, "'"])
         } else if !m.exported {
-            mut self.err(mi, x, ["type '", x.text, "' of module '", b.name, "' is not public"])
+            self.err(mi, x, ["type '", x.text, "' of module '", b.name, "' is not public"])
         } else {
-            mut c.p.node(t).text = mut self.pool.join([self.mods.get(b.module).prefix, x.text])
-            mut c.p.node(t).a = 0
-            mut c.p.node(t).line = base.line
-            mut c.p.node(t).col = base.col
+            c.p.node(t).text = self.pool.join([self.mods.get(b.module).prefix, x.text])
+            c.p.node(t).a = 0
+            c.p.node(t).line = base.line
+            c.p.node(t).col = base.col
         }
         return
     }
-    mut self.err(mi, x, ["unknown module '", base.text, "' in qualified type"])
+    self.err(mi, x, ["unknown module '", base.text, "' in qualified type"])
 }
 
 /* `binding.member` in expression position: a value member (function, overload
@@ -1183,19 +1183,19 @@ Loader.lower_named(mut self, mi: usize, mut c: RefLower, t: u32) {
  * enum-constant form `binding.Type.member` turns the inner `binding.Type` into
  * the prefixed type ident and keeps the outer access for the checker.
  */
-Loader.lower_field(mut self, mi: usize, mut c: RefLower, e: u32) {
-    x: Node = c.p.node(e)
-    a: Node = c.p.node(x.a)
+Loader.lower_field(self, mi: usize, c: *RefLower, e: u32) {
+    x: Node = *(c.p.node(e))
+    a: Node = *(c.p.node(x.a))
     if a.kind == Kind.selector && a.a != 0 && c.p.node(a.a).kind == Kind.ident {
         for b: Binding in c.binds {
             if !mem.equal(c.p.node(a.a).text, b.name) { continue }
             m: Member, found: bool = self.member(b.module, a.text, true)
             if !found {
-                mut self.err(mi, a, ["module '", b.name, "' has no type '", a.text, "'"])
+                self.err(mi, a, ["module '", b.name, "' has no type '", a.text, "'"])
             } else if !m.exported {
-                mut self.err(mi, a, ["type '", a.text, "' of module '", b.name, "' is not public"])
+                self.err(mi, a, ["type '", a.text, "' of module '", b.name, "' is not public"])
             } else {
-                mut c.p.node(e).a = ident_at(mut c.p, a, mut self.pool.join([self.mods.get(b.module).prefix, a.text]))
+                c.p.node(e).a = ident_at(&c.p, a, self.pool.join([self.mods.get(b.module).prefix, a.text]))
             }
             return
         }
@@ -1207,34 +1207,34 @@ Loader.lower_field(mut self, mi: usize, mut c: RefLower, e: u32) {
         m: Member, found: bool = self.member(b.module, x.text, false)
         if !found { m, found = self.member(b.module, x.text, true) }
         if !found {
-            mut self.err(mi, x, ["module '", b.name, "' has no member '", x.text, "'"])
+            self.err(mi, x, ["module '", b.name, "' has no member '", x.text, "'"])
         } else if !m.exported {
-            mut self.err(mi, x, ["member '", x.text, "' of module '", b.name, "' is not public"])
+            self.err(mi, x, ["member '", x.text, "' of module '", b.name, "' is not public"])
         } else {
             y: Node = blank(Node)
             y.kind = Kind.ident
             y.flags = parser.F_TEXT
             y.line = x.line
             y.col = x.col
-            y.text = mut self.pool.join([self.mods.get(b.module).prefix, x.text])
-            mut c.p.update(e, y)
+            y.text = self.pool.join([self.mods.get(b.module).prefix, x.text])
+            c.p.update(e, y)
         }
         return
     }
 }
 
-Loader.lower_type(mut self, mi: usize, mut c: RefLower, t: u32) {
+Loader.lower_type(self, mi: usize, c: *RefLower, t: u32) {
     if t == 0 { return }
-    if c.p.node(t).kind == Kind.named && c.p.node(t).a != 0 { mut self.lower_named(mi, mut c, t) } // `math.Vec`
-    x: Node = c.p.node(t)
+    if c.p.node(t).kind == Kind.named && c.p.node(t).a != 0 { self.lower_named(mi, c, t) } // `math.Vec`
+    x: Node = *(c.p.node(t))
     if x.kind == Kind.named && x.a == 0 {
         to: string, found: bool = c.lowered_name(x.text, true)
-        if found { mut c.rename(t, to) }
+        if found { c.rename(t, to) }
     }
-    mut self.lower_type(mi, mut c, x.a)
-    if x.kind == Kind.staticmap_t { mut self.lower_type(mi, mut c, x.b) }
-    if x.kind == Kind.array_t { mut self.lower_node(mi, mut c, x.b) } // length: an expression, not a type
-    for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.kid(t, k)) }
+    self.lower_type(mi, c, x.a)
+    if x.kind == Kind.staticmap_t { self.lower_type(mi, c, x.b) }
+    if x.kind == Kind.array_t { self.lower_node(mi, c, x.b) } // length: an expression, not a type
+    for k: u32 in 0..x.nkids { self.lower_type(mi, c, c.p.kid(t, k)) }
 }
 
 /* `binding.member`, or the enum-constant form `binding.Type.member`: a module
@@ -1242,12 +1242,12 @@ Loader.lower_type(mut self, mi: usize, mut c: RefLower, t: u32) {
  * position (`binding.T{...}`, a sizeof operand) names a type, which no value
  * local shadows.
  */
-Loader.lower_qualified(mut self, mi: usize, mut c: RefLower, n: u32, type_position: bool) {
-    x: Node = c.p.node(n)
+Loader.lower_qualified(self, mi: usize, c: *RefLower, n: u32, type_position: bool) {
+    x: Node = *(c.p.node(n))
     base: u32 = x.a
     if x.a != 0 && c.p.node(x.a).kind == Kind.selector { base = c.p.node(x.a).a }
     if base != 0 && c.p.node(base).kind == Kind.ident && (type_position || !c.hides_binding(c.p.node(base).text)) {
-        mut self.lower_field(mi, mut c, n)
+        self.lower_field(mi, c, n)
         if c.p.node(n).kind != Kind.selector { return } // now the member's private name
     } else if base == x.a && base != 0 && c.p.node(base).kind == Kind.ident {
         // a local hides the binding; flag it so a member error can say so
@@ -1256,87 +1256,87 @@ Loader.lower_qualified(mut self, mi: usize, mut c: RefLower, n: u32, type_positi
             _, value: bool = self.member(b.module, x.text, false)
             _, is_type: bool = self.member(b.module, x.text, true)
             if value || is_type {
-                mut c.p.node(n).flags |= parser.F_SHADOWED
+                c.p.node(n).flags |= parser.F_SHADOWED
             }
         }
     }
-    mut self.lower_node(mi, mut c, c.p.node(n).a) // field spelling is member-local
+    self.lower_node(mi, c, c.p.node(n).a) // field spelling is member-local
 }
 
 /* A type named as an expression operand: `sizeof(pkg.T)`, `typeid(tcp.Err)`. */
-Loader.lower_type_ref(mut self, mi: usize, mut c: RefLower, n: u32) {
+Loader.lower_type_ref(self, mi: usize, c: *RefLower, n: u32) {
     if n == 0 { return }
-    x: Node = c.p.node(n)
+    x: Node = *(c.p.node(n))
     if x.kind == Kind.named {
-        mut self.lower_type(mi, mut c, n)
+        self.lower_type(mi, c, n)
         return
     }
     if x.kind == Kind.slice_t || x.kind == Kind.array_t || x.kind == Kind.ptr || x.kind == Kind.const_t || x.kind == Kind.tuple_t || x.kind == Kind.func_t || x.kind == Kind.staticmap_t { // inline operand, e.g. alignof([]pkg.T)
-        mut self.lower_type_ref(mi, mut c, x.a)
-        if x.kind == Kind.array_t { mut self.lower_node(mi, mut c, x.b) } // length expression
-        if x.kind == Kind.staticmap_t { mut self.lower_type_ref(mi, mut c, x.b) }
-        for k: u32 in 0..x.nkids { mut self.lower_type_ref(mi, mut c, c.p.kid(n, k)) }
+        self.lower_type_ref(mi, c, x.a)
+        if x.kind == Kind.array_t { self.lower_node(mi, c, x.b) } // length expression
+        if x.kind == Kind.staticmap_t { self.lower_type_ref(mi, c, x.b) }
+        for k: u32 in 0..x.nkids { self.lower_type_ref(mi, c, c.p.kid(n, k)) }
         return
     }
     name: u32 = n
     if x.kind == Kind.index { name = x.a }
     if name != 0 {
-        y: Node = c.p.node(name)
+        y: Node = *(c.p.node(name))
         if y.kind == Kind.selector {
-            mut self.lower_qualified(mi, mut c, name, true) // e.g. typeid(tcp.Err)
+            self.lower_qualified(mi, c, name, true) // e.g. typeid(tcp.Err)
         } else if y.kind == Kind.ident {
             to: string, found: bool = c.lowered_name(y.text, true)
-            if found { mut c.rename(name, to) }
+            if found { c.rename(name, to) }
         }
     }
     if x.kind == Kind.index {
-        mut self.lower_type_ref(mi, mut c, x.b)
-        for k: u32 in 0..x.nkids { mut self.lower_type_ref(mi, mut c, c.p.kid(n, k)) }
+        self.lower_type_ref(mi, c, x.b)
+        for k: u32 in 0..x.nkids { self.lower_type_ref(mi, c, c.p.kid(n, k)) }
     }
 }
 
-Loader.lower_block(mut self, mi: usize, mut c: RefLower, b: u32) {
-    mut c.push()
-    for k: u32 in 0..c.p.node(b).nkids { mut self.lower_node(mi, mut c, c.p.kid(b, k)) }
-    mut c.pop()
+Loader.lower_block(self, mi: usize, c: *RefLower, b: u32) {
+    c.push()
+    for k: u32 in 0..c.p.node(b).nkids { self.lower_node(mi, c, c.p.kid(b, k)) }
+    c.pop()
 }
 
-Loader.lower_func(mut self, mi: usize, mut c: RefLower, f: u32) {
-    x: Node = c.p.node(f)
-    mut c.push()
+Loader.lower_func(self, mi: usize, c: *RefLower, f: u32) {
+    x: Node = *(c.p.node(f))
+    c.push()
     if x.c != 0 {
-        for k: u32 in 0..c.p.node(x.c).nkids { mut self.bind_local(mi, mut c, c.p.kid(x.c, k), true) }
+        for k: u32 in 0..c.p.node(x.c).nkids { self.bind_local(mi, c, c.p.kid(x.c, k), true) }
     }
-    if x.d != 0 { mut self.lower_type(mi, mut c, x.d) }
-    for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(f, k)).a) }
-    mut self.lower_type(mi, mut c, x.a)
-    mut c.push()
-    for k: u32 in 0..x.nkids { mut self.bind_local(mi, mut c, c.p.kid(f, k), false) }
-    if x.b != 0 { mut self.lower_block(mi, mut c, x.b) }
-    mut c.pop()
-    mut c.pop()
+    if x.d != 0 { self.lower_type(mi, c, x.d) }
+    for k: u32 in 0..x.nkids { self.lower_type(mi, c, c.p.node(c.p.kid(f, k)).a) }
+    self.lower_type(mi, c, x.a)
+    c.push()
+    for k: u32 in 0..x.nkids { self.bind_local(mi, c, c.p.kid(f, k), false) }
+    if x.b != 0 { self.lower_block(mi, c, x.b) }
+    c.pop()
+    c.pop()
 }
 
-Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
+Loader.lower_node(self, mi: usize, c: *RefLower, n: u32) {
     if n == 0 { return }
-    x: Node = c.p.node(n)
+    x: Node = *(c.p.node(n))
     switch x.kind {
         Kind.import { return }
         Kind.ident {
             to: string, found: bool = c.lowered_name(x.text, false)
-            if found { mut c.rename(n, to) }
+            if found { c.rename(n, to) }
             return
         }
         Kind.named {
-            mut self.lower_type(mi, mut c, n)
+            self.lower_type(mi, c, n)
             return
         }
         Kind.func {
-            mut self.lower_func(mi, mut c, n)
+            self.lower_func(mi, c, n)
             return
         }
         Kind.block {
-            mut self.lower_block(mi, mut c, n)
+            self.lower_block(mi, c, n)
             return
         }
         Kind.var {
@@ -1344,120 +1344,120 @@ Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
             // included; a bare name of a multi-name `=` reassigns what it names.
             for k: u32 in 0..x.nkids {
                 binder: u32 = c.p.kid(n, k)
-                if c.p.node(binder).kind != Kind.param { mut self.lower_node(mi, mut c, binder) }
+                if c.p.node(binder).kind != Kind.param { self.lower_node(mi, c, binder) }
             }
             for k: u32 in 0..x.nkids {
                 binder: u32 = c.p.kid(n, k)
                 if c.p.node(binder).kind != Kind.param { continue }
-                mut self.lower_type(mi, mut c, c.p.node(binder).a)
-                mut self.bind_local(mi, mut c, binder, false)
+                self.lower_type(mi, c, c.p.node(binder).a)
+                self.bind_local(mi, c, binder, false)
             }
-            mut self.lower_node(mi, mut c, x.b)
+            self.lower_node(mi, c, x.b)
             return
         }
         Kind.for {
             if (x.flags & parser.F_FORGEN) != 0 {
                 // General head: one select scope covers init, cond, post, and
                 // body; a head declaration binds through its `var` statement.
-                mut c.push()
-                mut self.lower_node(mi, mut c, x.a)
-                mut self.lower_node(mi, mut c, x.b)
-                mut self.lower_node(mi, mut c, x.c)
-                mut self.lower_node(mi, mut c, x.d)
-                mut c.pop()
+                c.push()
+                self.lower_node(mi, c, x.a)
+                self.lower_node(mi, c, x.b)
+                self.lower_node(mi, c, x.c)
+                self.lower_node(mi, c, x.d)
+                c.pop()
                 return
             }
-            for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(n, k)).a) }
-            mut self.lower_node(mi, mut c, x.b)
-            mut c.push()
-            for k: u32 in 0..x.nkids { mut self.bind_local(mi, mut c, c.p.kid(n, k), false) }
-            mut self.lower_node(mi, mut c, x.c)
-            mut c.pop()
+            for k: u32 in 0..x.nkids { self.lower_type(mi, c, c.p.node(c.p.kid(n, k)).a) }
+            self.lower_node(mi, c, x.b)
+            c.push()
+            for k: u32 in 0..x.nkids { self.bind_local(mi, c, c.p.kid(n, k), false) }
+            self.lower_node(mi, c, x.c)
+            c.pop()
             return
         }
         Kind.struct, Kind.bits, Kind.contract, Kind.alias, Kind.union {
-            mut c.push()
+            c.push()
             if x.c != 0 {
-                for k: u32 in 0..c.p.node(x.c).nkids { mut self.bind_local(mi, mut c, c.p.kid(x.c, k), true) }
+                for k: u32 in 0..c.p.node(x.c).nkids { self.bind_local(mi, c, c.p.kid(x.c, k), true) }
             }
             if x.kind == Kind.alias || x.kind == Kind.bits {
-                mut self.lower_type(mi, mut c, x.a)
+                self.lower_type(mi, c, x.a)
             } else if x.kind == Kind.union {
-                for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(n, k)).a) } // variant payload types
+                for k: u32 in 0..x.nkids { self.lower_type(mi, c, c.p.node(c.p.kid(n, k)).a) } // variant payload types
             } else {
                 for k: u32 in 0..x.nkids {
                     member: u32 = c.p.kid(n, k)
-                    m: Node = c.p.node(member)
-                    for j: u32 in 0..m.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(member, j)).a) }
-                    mut self.lower_type(mi, mut c, m.a)
+                    m: Node = *(c.p.node(member))
+                    for j: u32 in 0..m.nkids { self.lower_type(mi, c, c.p.node(c.p.kid(member, j)).a) }
+                    self.lower_type(mi, c, m.a)
                     if x.kind == Kind.struct {
-                        mut self.lower_node(mi, mut c, m.b) // field @align expression
-                        mut self.lower_node(mi, mut c, m.c) // field default
+                        self.lower_node(mi, c, m.b) // field @align expression
+                        self.lower_node(mi, c, m.c) // field default
                     }
                 }
             }
-            if x.kind == Kind.struct { mut self.lower_node(mi, mut c, x.b) } // struct @align expression
-            mut c.pop()
+            if x.kind == Kind.struct { self.lower_node(mi, c, x.b) } // struct @align expression
+            c.pop()
             return
         }
         Kind.distinct {
-            mut self.lower_type(mi, mut c, x.a)
+            self.lower_type(mi, c, x.a)
             return
         }
         Kind.error { return }
         Kind.enum {
-            mut self.lower_type(mi, mut c, x.a)
-            for k: u32 in 0..x.nkids { mut self.lower_node(mi, mut c, c.p.node(c.p.kid(n, k)).a) }
+            self.lower_type(mi, c, x.a)
+            for k: u32 in 0..x.nkids { self.lower_node(mi, c, c.p.node(c.p.kid(n, k)).a) }
             return // member names themselves are declarations, not references
         }
         Kind.signing {
-            mut c.push()
+            c.push()
             if x.c != 0 {
-                for k: u32 in 0..c.p.node(x.c).nkids { mut self.bind_local(mi, mut c, c.p.kid(x.c, k), true) }
+                for k: u32 in 0..c.p.node(x.c).nkids { self.bind_local(mi, c, c.p.kid(x.c, k), true) }
             }
-            mut self.lower_type(mi, mut c, x.a)
-            for k: u32 in 0..x.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(n, k)).a) }
-            mut c.pop()
+            self.lower_type(mi, c, x.a)
+            for k: u32 in 0..x.nkids { self.lower_type(mi, c, c.p.node(c.p.kid(n, k)).a) }
+            c.pop()
             return
         }
         Kind.extern {
             for k: u32 in 0..x.nkids {
                 f: u32 = c.p.kid(n, k)
-                fnode: Node = c.p.node(f)
-                for j: u32 in 0..fnode.nkids { mut self.lower_type(mi, mut c, c.p.node(c.p.kid(f, j)).a) }
-                mut self.lower_type(mi, mut c, fnode.a)
+                fnode: Node = *(c.p.node(f))
+                for j: u32 in 0..fnode.nkids { self.lower_type(mi, c, c.p.node(c.p.kid(f, j)).a) }
+                self.lower_type(mi, c, fnode.a)
             }
             return
         }
         Kind.selector {
-            mut self.lower_qualified(mi, mut c, n, false)
+            self.lower_qualified(mi, c, n, false)
             return
         }
         Kind.case {
             // A variant pattern's payload binder is a local of its case block.
-            mut c.push()
+            c.push()
             for k: u32 in 0..x.nkids {
                 pat: u32 = c.p.kid(n, k)
-                pn: Node = c.p.node(pat)
+                pn: Node = *(c.p.node(pat))
                 if pn.kind != Kind.varpat {
-                    mut self.lower_node(mi, mut c, pat)
+                    self.lower_node(mi, c, pat)
                     continue
                 }
-                mut self.lower_node(mi, mut c, pn.a)
-                mut self.lower_type(mi, mut c, c.p.node(pn.b).a)
-                mut self.bind_local(mi, mut c, pn.b, false)
+                self.lower_node(mi, c, pn.a)
+                self.lower_type(mi, c, c.p.node(pn.b).a)
+                self.bind_local(mi, c, pn.b, false)
             }
-            mut self.lower_node(mi, mut c, x.b)
-            mut c.pop()
+            self.lower_node(mi, c, x.b)
+            c.pop()
             return
         }
         Kind.fieldinit {
-            mut self.lower_node(mi, mut c, x.a) // initializer name is struct-local
+            self.lower_node(mi, c, x.a) // initializer name is struct-local
             return
         }
         Kind.structlit {
-            mut self.lower_type_ref(mi, mut c, x.a)
-            for k: u32 in 0..x.nkids { mut self.lower_node(mi, mut c, c.p.kid(n, k)) }
+            self.lower_type_ref(mi, c, x.a)
+            for k: u32 in 0..x.nkids { self.lower_node(mi, c, c.p.kid(n, k)) }
             return
         }
         Kind.call {
@@ -1466,7 +1466,7 @@ Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
                 renamed: bool = false
                 if type_operand(callee) { _, renamed = c.lowered_name(callee, false) }
                 if type_operand(callee) && !c.local_name(callee, false) && !renamed {
-                    if x.nkids > 0 { mut self.lower_type_ref(mi, mut c, c.p.kid(n, 0)) }
+                    if x.nkids > 0 { self.lower_type_ref(mi, c, c.p.kid(n, 0)) }
                     return
                 }
             }
@@ -1474,19 +1474,19 @@ Loader.lower_node(mut self, mi: usize, mut c: RefLower, n: u32) {
         Kind.asm {
             for k: u32 in 0..x.nkids {
                 b: u32 = c.p.kid(n, k)
-                bn: Node = c.p.node(b)
+                bn: Node = *(c.p.node(b))
                 if mem.equal(bn.text, "clobbers") { continue }
-                for j: u32 = 1; j < bn.nkids; j += 2 { mut self.lower_node(mi, mut c, c.p.kid(b, j)) }
+                for j: u32 = 1; j < bn.nkids; j += 2 { self.lower_node(mi, c, c.p.kid(b, j)) }
             }
             return
         }
         default {}
     }
-    mut self.lower_node(mi, mut c, x.a)
-    mut self.lower_node(mi, mut c, x.b)
-    mut self.lower_node(mi, mut c, x.c)
-    mut self.lower_node(mi, mut c, x.d)
-    for k: u32 in 0..x.nkids { mut self.lower_node(mi, mut c, c.p.kid(n, k)) }
+    self.lower_node(mi, c, x.a)
+    self.lower_node(mi, c, x.b)
+    self.lower_node(mi, c, x.c)
+    self.lower_node(mi, c, x.d)
+    for k: u32 in 0..x.nkids { self.lower_node(mi, c, c.p.kid(n, k)) }
 }
 
 /* The builtins whose operand is a type. */
@@ -1495,24 +1495,24 @@ type_operand(name: string): bool {
 }
 
 /* Lowers every reference in module `mi`'s declarations. */
-Loader.lower(mut self, mi: usize, is_root: bool, binds: array.Array[Binding], sels: array.Array[Select], renames: map.Map[string, string]) {
+Loader.lower(self, mi: usize, is_root: bool, binds: array.Array[Binding], sels: array.Array[Select], renames: map.Map[string, string]) {
     m: Module = self.mods.get(mi)
     top: u32 = m.file
     count: u32 = m.parser.node(top).nkids
     c: RefLower = RefLower { p = m.parser, binds = binds.view(), sels = sels.view(), renames = renames, own = !is_root, locals = array.Array[LocalName] {}, shadows = map.Map[string, Shadow] {}, depth = 0 }
-    defer mut c.locals.wipe()
-    defer mut c.shadows.wipe()
+    defer c.locals.wipe()
+    defer c.shadows.wipe()
     for k: u32 in 0..count {
         id: u32 = c.p.kid(top, k)
         if c.p.node(id).kind == Kind.import { continue }
-        mut c.locals.clear()
-        mut c.shadows.clear()
+        c.locals.clear()
+        c.shadows.clear()
         c.depth = 0
-        mut self.lower_node(mi, mut c, id)
+        self.lower_node(mi, &c, id)
     }
     m = self.mods.get(mi)
     m.parser = c.p // nodes added while lowering
-    mut self.mods.set(mi, m)
+    self.mods.set(mi, m)
 }
 
 // --- merge --------------------------------------------------------------------
@@ -1522,34 +1522,34 @@ Loader.lower(mut self, mi: usize, is_root: bool, binds: array.Array[Binding], se
  * selective imports were lowered, and every imported file's import nodes are
  * dropped, their bindings having been lowered to private identities.
  */
-Loader.merge(mut self) {
+Loader.merge(self) {
     root: Module = self.mods.get(0)
     ids: array.Array[u32] = array.Array[u32] {}
-    defer mut ids.wipe()
+    defer ids.wipe()
     count: u32 = root.parser.node(root.file).nkids
     for k: u32 in 0..count {
         id: u32 = root.parser.kid(root.file, k)
-        n: Node = root.parser.node(id)
-        if n.kind == Kind.import && (n.flags & parser.F_SELECT) == 0 { fail(mut ids.push(id)) }
+        n: Node = *(root.parser.node(id))
+        if n.kind == Kind.import && (n.flags & parser.F_SELECT) == 0 { fail(ids.push(id)) }
     }
     for i: usize in 0..self.order.len {
         mi: usize = self.order.get(i)
-        off: u32 = mut root.parser.adopt(self.mods.view()[mi].parser)
+        off: u32 = root.parser.adopt(self.mods.view()[mi].parser)
         adopted: Module = self.mods.get(mi)
         adopted.first = off + 1
-        mut self.mods.set(mi, adopted)
+        self.mods.set(mi, adopted)
         top: u32 = self.mods.view()[mi].file
         for k: u32 in 0..self.node(mi, top).nkids {
             id: u32 = self.kid(mi, top, k)
-            if self.node(mi, id).kind != Kind.import { fail(mut ids.push(id + off)) }
+            if self.node(mi, id).kind != Kind.import { fail(ids.push(id + off)) }
         }
     }
     for k: u32 in 0..count {
         id: u32 = root.parser.kid(root.file, k)
-        if root.parser.node(id).kind != Kind.import { fail(mut ids.push(id)) }
+        if root.parser.node(id).kind != Kind.import { fail(ids.push(id)) }
     }
-    mut root.parser.relink(root.file, ids.view())
-    mut self.mods.set(0, root)
+    root.parser.relink(root.file, ids.view())
+    self.mods.set(0, root)
 }
 
 /* The module whose file holds node `id` of the merged tree. Merge splices the
@@ -1596,7 +1596,7 @@ pub Loader.decl_visible(self, decl: usize, is_pub: bool, use: usize): bool {
 /* `name` as written: a module-private identity `m$f` or `m$Owner$f` reads
  * `m.f` or `m.Owner.f`, with the module's display name; other text is as is.
  */
-pub Loader.shown(self, mut pool: path.Pool, name: string): string {
+pub Loader.shown(self, pool: *path.Pool, name: string): string {
     sep: usize, found: bool = str.find(name, '$')
     if !found { return name }
     display: string = ""
@@ -1610,59 +1610,59 @@ pub Loader.shown(self, mut pool: path.Pool, name: string): string {
     }
     if !known { return name }
     parts: array.Array[string] = array.Array[string] {}
-    defer mut parts.wipe()
-    fail(mut parts.push(display))
+    defer parts.wipe()
+    fail(parts.push(display))
     from: usize = sep + 1
     for i: usize in sep + 1..name.len {
         if name[i] != '$' { continue }
-        fail(mut parts.push("."))
-        fail(mut parts.push(name[from..i]))
+        fail(parts.push("."))
+        fail(parts.push(name[from..i]))
         from = i + 1
     }
-    fail(mut parts.push("."))
-    fail(mut parts.push(name[from..]))
-    return mut pool.join(parts.view())
+    fail(parts.push("."))
+    fail(parts.push(name[from..]))
+    return pool.join(parts.view())
 }
 
 // --- dump ---------------------------------------------------------------------
 
 /* Prints the merged tree as `ace --resolved` does. */
-pub Loader.dump_resolved(self, mut out: Out) {
+pub Loader.dump_resolved(self, out: *Out) {
     root: Module = self.mods.get(0)
-    root.parser.dump_resolved(mut out, root.file)
+    root.parser.dump_resolved(out, root.file)
     for i: usize in 1..self.mods.len {
         m: Module = self.mods.get(i)
         root: string = m.root
         if root.len == 0 { root = "-" }
-        mut out.printf("module %s display=%s root=%s\n", m.prefix, m.display, root)
+        out.printf("module %s display=%s root=%s\n", m.prefix, m.display, root)
     }
 }
 
 /* Prints each loaded module, dependencies first and the root last, with its
  * members and import bindings.
  */
-pub Loader.dump(self, mut out: Out) {
-    for i: usize in 0..self.order.len { self.dump_module(mut out, self.order.get(i)) }
-    self.dump_module(mut out, 0)
-    mut out.printf("source bytes: %u\ntokens: %u\n", uint(self.bytes), uint(self.tokens))
+pub Loader.dump(self, out: *Out) {
+    for i: usize in 0..self.order.len { self.dump_module(out, self.order.get(i)) }
+    self.dump_module(out, 0)
+    out.printf("source bytes: %u\ntokens: %u\n", uint(self.bytes), uint(self.tokens))
 }
 
-Loader.dump_module(self, mut out: Out, mi: usize) {
+Loader.dump_module(self, out: *Out, mi: usize) {
     m: Module = self.mods.get(mi)
-    mut out.printf("module %s\n", m.canon)
+    out.printf("module %s\n", m.canon)
     for x: Member in m.members.view() {
         kind: string = "value"
         if x.is_type { kind = "type" }
         vis: string = "private"
         if x.exported { vis = "pub" }
-        mut out.printf("  %s %s %s\n", vis, kind, x.name)
+        out.printf("  %s %s %s\n", vis, kind, x.name)
     }
     for b: Binding in m.binds.view() {
-        mut out.printf("  bind %s %s\n", b.name, self.mods.get(b.module).canon)
+        out.printf("  bind %s %s\n", b.name, self.mods.get(b.module).canon)
     }
     for s: Select in m.sels.view() {
         kind: string = "value"
         if s.is_type { kind = "type" }
-        mut out.printf("  select %s %s %s\n", kind, s.name, self.mods.get(s.module).canon)
+        out.printf("  select %s %s %s\n", kind, s.name, self.mods.get(s.module).canon)
     }
 }

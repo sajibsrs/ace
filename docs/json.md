@@ -47,7 +47,7 @@ rather than merged.
 
 A `Json` holds two independent things: `root`, the tree `parse` produced,
 which is input read by path; and the text its write calls produce, which is
-output that `format` returns. `mut doc.wipe()` releases both, so `defer` it
+output that `format` returns. `doc.wipe()` releases both, so `defer` it
 right after `new`.
 
 ### Reading
@@ -58,8 +58,8 @@ import json
 
 main(): int {
     doc: json.Json = json.Json.new()
-    defer mut doc.wipe()
-    err: Error = mut doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    defer doc.wipe()
+    err: Error = doc.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
     if err != null { return 1 }
 
     fmt.println(doc.string("/name"))  // ace
@@ -68,16 +68,16 @@ main(): int {
 }
 ```
 
-`json.Json.new(): Json` makes an empty `Json`, and `mut doc.parse(text:
+`json.Json.new(): Json` makes an empty `Json`, and `doc.parse(text:
 string): Error` parses `text` as one value into `doc.root`. On failure `root`
-is `Value.none` and the error is a `json.ParseErr`; `mut doc.parse(text, mut
-diag)` also explains it, as for `Parser.parse`. Each `parse` reuses the
+is `Value.none` and the error is a `json.ParseErr`; `doc.parse(text,
+&diag)` also explains it, as for `Parser.parse`. Each `parse` reuses the
 storage of the one before, so the previous `root` and every string read from
 it are invalid afterwards. Parse many documents with one `Json`:
 
 ```ace
 for i: usize in 0 .. texts.len {
-    err: Error = mut doc.parse(texts[i])
+    err: Error = doc.parse(texts[i])
     if err != null { continue }
 
     fmt.println(doc.string("/id"))
@@ -111,11 +111,11 @@ import json
 
 main(): int {
     doc: json.Json = json.Json.new()
-    defer mut doc.wipe()
-    mut doc.object()
-    mut doc.field("name", "ace")
-    mut doc.field("version", 1)
-    mut doc.end()
+    defer doc.wipe()
+    doc.object()
+    doc.field("name", "ace")
+    doc.field("version", 1)
+    doc.end()
     text: string, err: Error = doc.format()
     if err != null { return 1 }
 
@@ -131,20 +131,20 @@ first `json.FormatErr`. `format` returns only what the write calls wrote,
 never `root` on its own, so writing a parsed tree back is explicit:
 
 ```ace
-mut doc.value(doc.root)
+doc.value(doc.root)
 text: string, err: Error = doc.format()
 ```
 
 The text is borrowed from the `Json` and valid until `reset` or `wipe`.
-`mut doc.reset()` discards the written text to start the next one and leaves
+`doc.reset()` discards the written text to start the next one and leaves
 `root` unchanged. Each forwarded call costs one extra call: writing a
 12-record, 648-byte document takes about 3.5% longer than the same calls on a
 `Formatter`.
 
 ## Parsing
 
-`json.Parser.new(): Parser` makes a parser and `mut parser.wipe()`
-releases it. `mut parser.parse(text: string): (Value, Error)` parses `text` as
+`json.Parser.new(): Parser` makes a parser and `parser.wipe()`
+releases it. `parser.parse(text: string): (Value, Error)` parses `text` as
 exactly one value. Surrounding space, tab, line feed, and carriage return are
 skipped. On error it returns `Value.none` and an error from the `json.ParseErr`
 domain:
@@ -160,7 +160,7 @@ domain:
 | `empty_input` | no value at all |
 | `allocation` | an allocation failed |
 
-`mut parser.parse(text, mut diag: fmt.Buffer)` also appends the failure's
+`parser.parse(text, diag: *fmt.Buffer)` also appends the failure's
 context to `diag` (see [error context](std/fmt.md)), innermost first: what was
 expected at which line:column (an unterminated string at its opening quote),
 then one line per enclosing array element or object member:
@@ -191,8 +191,8 @@ import json
 
 main(): int {
     parser: json.Parser = json.Parser.new()
-    defer mut parser.wipe()
-    root: json.Value, err: Error = mut parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
+    defer parser.wipe()
+    root: json.Value, err: Error = parser.parse("{\"name\": \"ace\", \"tags\": [1, 2]}")
 
     if err != null {
         fmt.printf("parse failed: %d\n", int(err.code))
@@ -212,7 +212,7 @@ main(): int {
 Read a value with `switch`; each payload binder is an independent copy, so
 matching does not need write access to the value.
 
-To parse many documents in turn, call `mut parser.reset()` between them. It
+To parse many documents in turn, call `parser.reset()` between them. It
 drops every tree the parser produced but keeps its storage, so the next parses
 reuse it instead of allocating: about 24% faster than a fresh parser per
 document on 139-byte documents. Without `reset`, trees accumulate until
@@ -221,7 +221,7 @@ document on 139-byte documents. Without `reset`, trees accumulate until
 ## Writing
 
 `json.Formatter.new(): Formatter` makes a formatter and
-`mut formatter.wipe()` releases it. A formatter writes compact
+`formatter.wipe()` releases it. A formatter writes compact
 JSON one call at a time into a buffer it owns and grows. It needs no `Value`
 tree, so records are written straight from runtime data of any shape or size,
 and the compiler picks each `value` and `field` overload from the argument's
@@ -236,12 +236,12 @@ Reading: struct {
     ok: bool,
 }
 
-write_reading(mut f: json.Formatter, r: Reading) {
-    mut f.object()
-    mut f.field("sensor", r.sensor)
-    mut f.field("celsius", r.celsius)
-    mut f.field("ok", r.ok)
-    mut f.end()
+write_reading(f: *json.Formatter, r: Reading) {
+    f.object()
+    f.field("sensor", r.sensor)
+    f.field("celsius", r.celsius)
+    f.field("ok", r.ok)
+    f.end()
 }
 
 main(): int {
@@ -249,13 +249,13 @@ main(): int {
     readings[0] = Reading{sensor = "north", celsius = 21.5, ok = true}
     readings[1] = Reading{sensor = "south", celsius = 19.0, ok = false}
     f: json.Formatter = json.Formatter.new()
-    defer mut f.wipe()
-    mut f.array()
+    defer f.wipe()
+    f.array()
 
     for i: usize in 0 .. readings.len {
-        write_reading(mut f, readings[i])
+        write_reading(&f, readings[i])
     }
-    mut f.end()
+    f.end()
     text: string, err: Error = f.finish()
 
     if err != null {
@@ -292,7 +292,7 @@ spelling (`0.5`, `1e21`).
 The first failure is kept and every later call does nothing, so a sequence of
 writes needs one check at `finish`. The text `finish` returns is borrowed from
 the formatter and is valid until `reset` or `wipe`. A formatter holds
-one document at a time: call `mut formatter.reset()` before starting the next,
+one document at a time: call `formatter.reset()` before starting the next,
 which keeps the buffer and so avoids an allocation per document (about 8%
 faster than a fresh formatter per document on 139-byte documents). Starting a
 second document without `reset` is a `structure` error. Errors come from the

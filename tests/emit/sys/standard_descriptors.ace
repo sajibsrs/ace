@@ -37,7 +37,7 @@ read_payload(path: string, want: string): int {
 
     if err != null { return 1 }
     storage: [8]u8 = [0 : 8]
-    buf: mut []u8 = mut storage[0..8]
+    buf: []u8 = storage[0..8]
     n: int, rerr: Error = sys.read(fd, buf)
 
     if rerr != null || n != int(want.len) { return 2 }
@@ -67,7 +67,7 @@ main(): int {
 
     if sys.close(source) != null { return 22 }
     storage: [8]u8 = [0 : 8]
-    buf: mut []u8 = mut storage[0..8]
+    buf: []u8 = storage[0..8]
     n: int, rerr: Error = sys.read(sys.stdin, buf)
 
     if rerr != null || n != 2 || !mem.equal(buf[0..2], "in") { return 23 }

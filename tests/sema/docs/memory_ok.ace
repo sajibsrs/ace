@@ -21,9 +21,9 @@ ViewP: struct { x: i32 }
 
 write_through_view() {
     a: array.Array[ViewP] = array.Array[ViewP] {}
-    defer mut a.wipe()
-    _ = mut a.push(ViewP { x = 1 })
-    mut a.view()[0].x = 5 // marks view(), writes element 0 in place
+    defer a.wipe()
+    _ = a.push(ViewP { x = 1 })
+    a.view()[0].x = 5 // marks view(), writes element 0 in place
 }
 
 main(): int {
@@ -37,23 +37,23 @@ main(): int {
     if packet_type != 3 { return 4 }
     values: [4]u8 = [10, 20, 30, 40]
     count: usize = values.len
-    pointer: mut *u8 = mut &values[0]
+    pointer: *u8 = &values[0]
     address: usize = usize(pointer)
-    restored: mut *u8 = mut *u8(address)
-    constructed: mut []u8 = mut []u8(restored, count)
+    restored: *u8 = *u8(address)
+    constructed: []u8 = []u8(restored, count)
 
     if count != 4 || constructed.len != 4 { return 1 }
 
-    storage: mut []u8 = mem.alloc(16, 8)
+    storage: []u8 = mem.alloc(16, 8)
 
     if storage != null {
         bytes: usize = storage.len
 
         if bytes != 16 {
-            mem.release(mut storage)
+            mem.release(&storage)
             return 2
         }
-        mem.release(mut storage)
+        mem.release(&storage)
 
         if storage != null { return 3 }
     }
@@ -61,7 +61,7 @@ main(): int {
     source_array: [3]u8 = [10, 20, 30]
     target_array: [4]u8 = [0, 0, 0, 99]
     source: []u8 = source_array[0..3]
-    target: mut []u8 = mut target_array[0..3]
+    target: []u8 = target_array[0..3]
     mem.copy(target, source)
 
     if mem.compare(target, source) != 0 { return 4 }
@@ -70,23 +70,23 @@ main(): int {
     mem.zero(target)
 
     overlap_src: []u8 = target_array[0..2]
-    overlap_dst: mut []u8 = mut target_array[1..3]
+    overlap_dst: []u8 = target_array[1..3]
     mem.move(overlap_dst, overlap_src)
 
-    numbers: mut []usize = mem.alloc[usize](4)
+    numbers: []usize = mem.alloc[usize](4)
 
     if numbers != null {
         if numbers.len != 4 {
-            mem.release[usize](mut numbers)
+            mem.release[usize](&numbers)
             return 5
         }
         numbers[0] = 42
 
         if numbers[0] != 42 {
-            mem.release[usize](mut numbers)
+            mem.release[usize](&numbers)
             return 6
         }
-        mem.release[usize](mut numbers)
+        mem.release[usize](&numbers)
 
         if numbers != null { return 7 }
     }

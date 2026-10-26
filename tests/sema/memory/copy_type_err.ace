@@ -7,6 +7,6 @@ main(): int {
     b: [1]u8 = [2]
     dst: []i32 = a[0..1]
     src: []u8 = b[0..1]
-    copy(mut dst, src)
+    copy(dst, src)
     return 0
 }

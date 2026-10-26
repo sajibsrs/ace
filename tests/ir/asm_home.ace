@@ -5,20 +5,20 @@
 
 sign(x: i64): i64 {
     k: i64 = x
-    p: mut *i64 = mut &k // address-taken in every mode: k lives in its home
-    bump(mut k)
+    p: *i64 = &k // address-taken in every mode: k lives in its home
+    bump(&k)
     asm "nop" { in: x9 = k }
     if k == 1 { return 0 }
     return 1
 }
 
-bump(mut n: i64) {
-    n += 1
+bump(n: *i64) {
+    *n += 1
 }
 
 main(): int {
     n: i64 = 97
-    bump(mut n)
+    bump(&n)
     if sign(4) != 1 || n != 98 { return 1 }
     return 0
 }

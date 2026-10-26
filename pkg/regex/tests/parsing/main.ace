@@ -7,7 +7,7 @@ import regex
  */
 tree(pattern: string, want: string): int {
     s: regex.Syntax, err: Error = regex.Syntax.parse(pattern)
-    defer mut s.wipe()
+    defer s.wipe()
     if err != null {
         fmt.print("parse failed: ")
         fmt.print(pattern)
@@ -17,7 +17,7 @@ tree(pattern: string, want: string): int {
     }
 
     buffer: [512]u8
-    n: usize, ok: bool = s.format(mut buffer[0..512])
+    n: usize, ok: bool = s.format(buffer[0..512])
     if !ok || !mem.equal(buffer[0..n], want) {
         fmt.print(pattern)
         fmt.print(": got ")
@@ -35,12 +35,12 @@ tree(pattern: string, want: string): int {
  */
 fails(pattern: string, want: Error, offset: usize): int {
     storage: [256]u8
-    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, mut diag)
-    defer mut s.wipe()
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, &diag)
+    defer s.wipe()
     head_storage: [64]u8
-    head: fmt.Buffer = fmt.Buffer.init(mut head_storage[..])
-    mut head.printf("%s at 1:%d\n", want.message, int(offset + 1))
+    head: fmt.Buffer = fmt.Buffer.init(head_storage[..])
+    head.printf("%s at 1:%d\n", want.message, int(offset + 1))
     text: string = diag.text()
 
     if err != want || text.len < head.text().len || !mem.equal(text[0..head.text().len], head.text()) {
@@ -60,9 +60,9 @@ fails(pattern: string, want: Error, offset: usize): int {
 /* Expects `pattern` to fail with exactly the context `want`. */
 explains(pattern: string, want: string): int {
     storage: [256]u8
-    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, mut diag)
-    defer mut s.wipe()
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, &diag)
+    defer s.wipe()
 
     if err == null || !mem.equal(diag.text(), want) {
         fmt.print(pattern)
@@ -159,7 +159,7 @@ errors(): int {
 /* 512 nested groups parse; the 513th is rejected at its own `(`. */
 depth(): int {
     storage: [1026]u8
-    text: mut []u8 = mut storage[0..1026]
+    text: []u8 = storage[0..1026]
 
     for i: usize in 0 .. 512 {
         text[i] = '('
@@ -167,14 +167,14 @@ depth(): int {
     }
     bad: int = 0
     s: regex.Syntax, err: Error = regex.Syntax.parse(string(text[0..1024]))
-    mut s.wipe()
+    s.wipe()
 
     if err != null {
         fmt.println("512 nested groups should parse")
         bad += 1
     }
     deep_storage: [513]u8
-    deep: mut []u8 = mut deep_storage[0..513]
+    deep: []u8 = deep_storage[0..513]
 
     for i: usize in 0 .. 513 { deep[i] = '(' }
     bad += fails(string(deep[0..513]), regex.ParseErr.depth, 512)

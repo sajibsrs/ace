@@ -2,11 +2,12 @@
  * operation over values from outside the loop, inner loops first so it can
  * leave the enclosing one too, and a load from a stack object when nothing in
  * the loop stores, calls, or is atomic or asm. A division stays, as it may
- * trap, and so does a load in a loop that calls. */
+ * trap, and so does a load in a loop that calls. `grow` runs through a
+ * function value so that `p`'s address escapes and `p` stays a stack object. */
 
 Pair: struct { a: i64, b: i64 }
 
-grow(p: mut *Pair) { p.a += 1 }
+grow(p: *Pair) { p.a += 1 }
 
 SEEN: i64 = 0
 
@@ -29,7 +30,8 @@ grid(a: i64, b: i64, n: i64): i64 {
 
 sum(n: i64): i64 {
     p: Pair = Pair{a = 2, b = 5}
-    grow(mut &p)
+    bump: (*Pair): void = grow
+    bump(&p)
     total: i64 = 0
     i: i64 = 0
     for i < n {
@@ -41,7 +43,8 @@ sum(n: i64): i64 {
 
 watch(n: i64): i64 {
     p: Pair = Pair{a = 2, b = 5}
-    grow(mut &p)
+    bump: (*Pair): void = grow
+    bump(&p)
     total: i64 = 0
     i: i64 = 0
     for i < n {

@@ -42,7 +42,7 @@ main(): int {
     started = now()
 
     for i: usize in 0 .. iterations {
-        mem.copy(mut copy_small[..], small_a[..])
+        mem.copy(copy_small[..], small_a[..])
         checksum += usize(copy_small[i % 64])
     }
     report("copy-64", now() - started, iterations, checksum)
@@ -50,7 +50,7 @@ main(): int {
     started = now()
 
     for i: usize in 0 .. iterations / 16 {
-        mem.copy(mut copy_large[..], large_a[..])
+        mem.copy(copy_large[..], large_a[..])
         checksum += usize(copy_large[i % 4096])
     }
     report("copy-4096", now() - started, iterations / 16, checksum)
@@ -152,7 +152,7 @@ main(): int {
         6.02214076e23,
     ]
     out: [64]u8 = [0 : 64]
-    view: mut []u8 = mut out[..]
+    view: []u8 = out[..]
     checksum = 0
     started = now()
 

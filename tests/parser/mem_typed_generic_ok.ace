@@ -12,7 +12,7 @@ make(count: usize): []usize {
     if values == null {
         return null
     }
-    mem.release[usize](mut values)
+    mem.release[usize](&values)
     return values
 }
 
@@ -22,8 +22,8 @@ main(): int {
     c: []usize = mem.realloc[usize](a.len, 4)
     d: []Pair[Pair[i32]] = mem.realloc[Pair[Pair[i32]]](b, 4)
     e: bool = mem.alloc[usize](0) == null
-    mem.release[Item](mut a)
-    mem.release[Pair[i32]](mut b)
-    mem.release[Pair[Pair[i32]]](mut d)
+    mem.release[Item](&a)
+    mem.release[Pair[i32]](&b)
+    mem.release[Pair[Pair[i32]]](&d)
     return make(2).len
 }

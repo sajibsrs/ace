@@ -46,7 +46,7 @@ main(): int {
         hangup = false,
     }
     storage: [4]poll.Event = [zero : 4]
-    events: mut []poll.Event = mut storage[0..4]
+    events: []poll.Event = storage[0..4]
     count: usize, wait_err: Error = poll.wait(q, events, u64(0))
 
     if wait_err != null || count == 0 {
@@ -99,7 +99,7 @@ main(): int {
         return 8
     }
 
-    byte_view: mut []u8 = mut byte[0..1]
+    byte_view: []u8 = byte[0..1]
     received: int, read_err: Error = sys.read(read_fd, byte_view)
 
     if read_err != null || received != 1 {
@@ -151,7 +151,7 @@ main(): int {
         return 14
     }
 
-    empty: mut []poll.Event = null
+    empty: []poll.Event = null
     count, wait_err = poll.wait(q, empty, u64(0))
 
     if count != 0 || wait_err != poll.WaitErr.invalid ||

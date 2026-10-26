@@ -8,19 +8,19 @@ import thread
 
 Shared: struct { guard: thread.Mutex, count: u64 }
 
-extern "c" work(argument: mut *u8): mut *u8 {
-    shared: mut *Shared = mut *Shared(argument)
+extern "c" work(argument: *u8): *u8 {
+    shared: *Shared = *Shared(argument)
     for step: int in 0 .. 100000 {
-        mut shared.guard.lock()
+        shared.guard.lock()
         shared.count += 1
-        mut shared.guard.unlock()
+        shared.guard.unlock()
     }
     return null
 }
 
 main(): int {
     shared: Shared = blank(Shared)
-    argument: mut *u8 = mut *u8(mut &shared)
+    argument: *u8 = *u8(&shared)
     threads: [4]thread.Thread = [thread.Thread(0) : 4]
     for i: int in 0 .. 4 {
         t: thread.Thread, err: Error = thread.create(work, argument)
@@ -28,7 +28,7 @@ main(): int {
         threads[i] = t
     }
     for i: int in 0 .. 4 {
-        result: mut *u8, err: Error = thread.join(threads[i])
+        result: *u8, err: Error = thread.join(threads[i])
         if err != null { return 2 }
     }
     if shared.count != 400000 { return 3 }

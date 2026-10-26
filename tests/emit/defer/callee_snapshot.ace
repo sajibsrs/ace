@@ -3,7 +3,7 @@
  * the callee at the defer statement, like a read-only argument. Reassigning
  * the variable afterwards cannot change which function the exit-time call
  * dispatches to. The callee position is always read-only-captured: there is
- * no `mut` tier for the callee itself (`defer mut f()` marks nothing on an
+ * no address tier for the callee itself (`defer f()` marks nothing on an
  * indirect call).
  */
 

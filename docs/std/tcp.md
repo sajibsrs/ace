@@ -15,17 +15,17 @@ import net/tcp
 serve_one(): int {
     address: net.Addr4 = net.Addr4 {ip = [127, 0, 0, 1], port = u16(8080)}
     listener: tcp.Listener, err: Error = tcp.listen(address, usize(128))
-    defer tcp.close(mut listener)
+    defer tcp.close(&listener)
     if err != null {
         return 1
     }
     connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
-    defer tcp.close(mut connection)
+    defer tcp.close(&connection)
     if accept_err != null {
         return 2
     }
     storage: [4]u8 = [0 : 4]
-    request: mut []u8 = mut storage[0..]
+    request: []u8 = storage[0..]
     count: usize, receive_err: Error = tcp.receive_all(connection, request)
     if receive_err == null && count == 4 {
         count, receive_err = tcp.send_all(connection, "pong")
@@ -57,7 +57,7 @@ Use `net.receive` or `net.send` when exactly one kernel attempt is required.
 
 Each handle carries an `active` flag, set only by a successful constructor or
 accept, so canonical zero (`tcp.Listener {}`, `tcp.Conn {}`) is the empty
-handle even though fd 0 is valid. `close(mut value)` on an inactive handle is a
+handle even though fd 0 is valid. `close(&value)` on an inactive handle is a
 silent no-op returning null; this is what lets `defer tcp.close(...)` sit
 directly after the constructor, before its error check. On an active handle it
 attempts `sys.close` and then zeros the complete caller value even if closing
@@ -72,13 +72,13 @@ identity, buffers, capacity, and logical receive occupancy with the caller:
 connection: tcp.Conn, err: Error = tcp.connect_nonblock(address)
 if err == null && tcp.interest(connection) == tcp.Interest.write {
     // After poll reports writable:
-    event: tcp.Event = tcp.progress_connect(mut connection)
+    event: tcp.Event = tcp.progress_connect(&connection)
     switch event {
         tcp.Event.connected {
             // interest(connection) is now read.
         }
         tcp.Event.failed(connect_err: Error) {
-            tcp.close(mut connection)
+            tcp.close(&connection)
         }
         default {}
     }

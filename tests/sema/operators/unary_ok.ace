@@ -3,9 +3,9 @@
 main(): int {
     left: int = 6
     right: int = 7
-    left_pointer: mut *int = mut &left
+    left_pointer: *int = &left
     right_pointer: *int = &right
-    outer: *mut *int = &left_pointer
+    outer: **int = &left_pointer
 
     **outer += 1
     alias: *int = &*left_pointer

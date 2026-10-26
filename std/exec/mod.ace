@@ -66,10 +66,10 @@ pub spawn(argv: []string, options: SpawnOptions): (sys.Process, Error) {
     size += options.dir.len + 1
     for i: usize in 0 .. envc { size += sys.env(i).len + 1 }
 
-    bytes: mut []u8 = mem.alloc[u8](size)
-    defer mem.release[u8](mut bytes)
-    pointers: mut []*u8 = mem.alloc[*u8](argv.len + envc + 2)
-    defer mem.release[*u8](mut pointers)
+    bytes: []u8 = mem.alloc[u8](size)
+    defer mem.release[u8](&bytes)
+    pointers: []*u8 = mem.alloc[*u8](argv.len + envc + 2)
+    defer mem.release[*u8](&pointers)
     if bytes == null || pointers == null { return sys.Process(-1), SpawnErr.memory }
 
     at: usize = 0

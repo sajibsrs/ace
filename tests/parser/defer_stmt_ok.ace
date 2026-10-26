@@ -1,5 +1,5 @@
 /* `defer` parses as a statement whose operand is a call expression, exactly
- * like an ordinary call statement (including the receiver-marked `mut` form).
+ * like an ordinary call statement (including a method call).
  * Parse-only fixture: no semantic checks run here. */
 
 run(): int {
@@ -8,14 +8,14 @@ run(): int {
 
 Counter: struct { value: int }
 
-Counter.add(mut self, amount: int) {
+Counter.add(self, amount: int) {
     self.value = self.value + amount
 }
 
 main(): int {
     defer run()
     counter: Counter = Counter { value = 1 }
-    defer mut counter.add(2)
+    defer counter.add(2)
     defer run()
     if true {
         run()

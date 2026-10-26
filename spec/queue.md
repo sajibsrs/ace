@@ -5,6 +5,37 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
 
 ### Active
 
+- Writable by default, no undefined behavior (Philosophy #3, #9–#11).
+  Decided (the `mut` removal is implemented; #158 tracks its open problems):
+  - `string` stays the same type as `[]u8`/`[]char`; literals stay in
+    read-only memory and writing one faults. Precedent: C string literals in
+    `__TEXT`/`.rodata`.
+  - Globals, Ace and C (`extern`), are writable by default; `const` opts into
+    read-only placement (not yet enforced on `extern` globals).
+  - Defined failures: integer overflow follows one fixed rule; oversized
+    shifts are defined; bounds, null dereference, and division by zero trap;
+    reading uninitialized storage stays a compile error. Precedent: Go (bounds,
+    nil, divide traps; wrapping overflow; defined shifts).
+  - Use after free through another alias: debug builds detect it (quarantine,
+    guard pages) and trap, like `noalias` debug checks; release has machine
+    semantics. Precedent: Zig's debug allocator, Vale.
+  - Data races (Memory, concurrency) and a C `longjmp` across an Ace frame
+    (C Interop #7) are restated under machine semantics; "undefined
+    behavior" and "unspecified" leave the spec.
+  Open:
+  - [open] Spelling of the by-value receiver (e.g. `val self`).
+  - [open] The overflow rule: wrap in every build, or trap in every build.
+  - [open] The oversized-shift rule: mask the count (arm64 hardware), or
+    yield zero / sign fill.
+  - [open] Bounds, null, and divide traps: in release too (Go), or debug only
+    with machine semantics in release (today's Safety #3, #6).
+  - [open] `noalias` restated: "no other parameter, global, or pointer reaches
+    the same bytes during the call", and which arguments the debug check now
+    pairs, since every slice may write.
+  - [open] Whether `const` globals remain distinct types (a read-only `*T`
+    from `&CONST`) or only a placement, so a write through a pointer to one
+    faults at run time.
+
 ### Trigger-gated
 
 - The Ace fixture runner (#147) replacing `tests/run.sh`, with child-output

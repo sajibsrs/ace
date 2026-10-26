@@ -14,7 +14,7 @@ continuation bytes are invalid.
   starting at byte `at` and returns the code point, its width (1–4), and
   `true`. Invalid input returns `(0, 1, false)`, so a loop that adds the width
   always advances past a bad byte. `at >= text.len` returns `(0, 0, false)`.
-- `encode(value: u32, destination: mut []char): (usize, bool)` writes the
+- `encode(value: u32, destination: []char): (usize, bool)` writes the
   complete encoding and returns its width and `true`. An invalid code point
   or a destination that is too short returns `(0, false)` and writes nothing.
 - `width(value: u32): usize` returns the encoded width, or 0 for an invalid

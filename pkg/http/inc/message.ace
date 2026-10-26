@@ -97,7 +97,7 @@ pub status(code: u16): string {
  * success; on `FormatErr`, `output` is unchanged. Output must not overlap
  * the request's method, target, headers, or body.
  */
-pub Request.format(self, output: mut []u8): (usize, Error) {
+pub Request.format(self, output: []u8): (usize, Error) {
     if self.method.len == 0 { return 0, FormatErr.method }
     for i: usize in 0 .. self.method.len {
         if !tchar(self.method[i]) { return 0, FormatErr.method }
@@ -156,7 +156,7 @@ pub Request.format(self, output: mut []u8): (usize, Error) {
 /* Formats this response into caller-owned storage. Returns the byte count on
  * success; on `FormatErr`, `output` is unchanged.
  */
-pub Response.format(self, output: mut []u8): (usize, Error) {
+pub Response.format(self, output: []u8): (usize, Error) {
     if self.version_minor > 1 { return 0, FormatErr.version }
     if self.status < 100 || self.status > 999 { return 0, FormatErr.status }
     reason: string = self.reason

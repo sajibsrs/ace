@@ -35,24 +35,24 @@ pub Json.new(): Json {
  * invalid afterwards. On failure `root` is `Value.none` and the error is a
  * `ParseErr`; the storage stays owned until `wipe`.
  */
-pub Json.parse(mut self, text: string): Error {
-    mut self.parser.reset()
-    root: Value, err: Error = mut self.parser.parse(text)
+pub Json.parse(self, text: string): Error {
+    self.parser.reset()
+    root: Value, err: Error = self.parser.parse(text)
     self.root = root
     return err
 }
 
 /* `parse`, appending the failure's context to `diag` as `Parser.parse` does. */
-pub Json.parse(mut self, text: string, mut diag: fmt.Buffer): Error {
-    mut self.parser.reset()
-    root: Value, err: Error = mut self.parser.parse(text, mut diag)
+pub Json.parse(self, text: string, diag: *fmt.Buffer): Error {
+    self.parser.reset()
+    root: Value, err: Error = self.parser.parse(text, diag)
     self.root = root
     return err
 }
 
-pub Json.wipe(mut self) {
-    mut self.parser.wipe()
-    mut self.formatter.wipe()
+pub Json.wipe(self) {
+    self.parser.wipe()
+    self.formatter.wipe()
     self.root = Value.none
 }
 
@@ -68,84 +68,84 @@ pub Json.format(self): (string, Error) {
 /* Discards the written text and its error, keeping the buffer; `root` is
  * unchanged.
  */
-pub Json.reset(mut self) {
-    mut self.formatter.reset()
+pub Json.reset(self) {
+    self.formatter.reset()
 }
 
-pub Json.object(mut self) {
-    mut self.formatter.object()
+pub Json.object(self) {
+    self.formatter.object()
 }
 
-pub Json.array(mut self) {
-    mut self.formatter.array()
+pub Json.array(self) {
+    self.formatter.array()
 }
 
-pub Json.end(mut self) {
-    mut self.formatter.end()
+pub Json.end(self) {
+    self.formatter.end()
 }
 
-pub Json.key(mut self, name: string) {
-    mut self.formatter.key(name)
+pub Json.key(self, name: string) {
+    self.formatter.key(name)
 }
 
-pub Json.none(mut self) {
-    mut self.formatter.none()
+pub Json.none(self) {
+    self.formatter.none()
 }
 
-pub Json.value(mut self, flag: bool) {
-    mut self.formatter.value(flag)
+pub Json.value(self, flag: bool) {
+    self.formatter.value(flag)
 }
 
-pub Json.value(mut self, number: int) {
-    mut self.formatter.value(number)
+pub Json.value(self, number: int) {
+    self.formatter.value(number)
 }
 
-pub Json.value(mut self, number: uint) {
-    mut self.formatter.value(number)
+pub Json.value(self, number: uint) {
+    self.formatter.value(number)
 }
 
-pub Json.value(mut self, number: usize) {
-    mut self.formatter.value(number)
+pub Json.value(self, number: usize) {
+    self.formatter.value(number)
 }
 
-pub Json.value(mut self, number: f64) {
-    mut self.formatter.value(number)
+pub Json.value(self, number: f64) {
+    self.formatter.value(number)
 }
 
-pub Json.value(mut self, text: string) {
-    mut self.formatter.value(text)
+pub Json.value(self, text: string) {
+    self.formatter.value(text)
 }
 
-pub Json.value(mut self, tree: Value) {
-    mut self.formatter.value(tree)
+pub Json.value(self, tree: Value) {
+    self.formatter.value(tree)
 }
 
-pub Json.field(mut self, name: string, flag: bool) {
-    mut self.formatter.field(name, flag)
+pub Json.field(self, name: string, flag: bool) {
+    self.formatter.field(name, flag)
 }
 
-pub Json.field(mut self, name: string, number: int) {
-    mut self.formatter.field(name, number)
+pub Json.field(self, name: string, number: int) {
+    self.formatter.field(name, number)
 }
 
-pub Json.field(mut self, name: string, number: uint) {
-    mut self.formatter.field(name, number)
+pub Json.field(self, name: string, number: uint) {
+    self.formatter.field(name, number)
 }
 
-pub Json.field(mut self, name: string, number: usize) {
-    mut self.formatter.field(name, number)
+pub Json.field(self, name: string, number: usize) {
+    self.formatter.field(name, number)
 }
 
-pub Json.field(mut self, name: string, number: f64) {
-    mut self.formatter.field(name, number)
+pub Json.field(self, name: string, number: f64) {
+    self.formatter.field(name, number)
 }
 
-pub Json.field(mut self, name: string, text: string) {
-    mut self.formatter.field(name, text)
+pub Json.field(self, name: string, text: string) {
+    self.formatter.field(name, text)
 }
 
-pub Json.field(mut self, name: string, tree: Value) {
-    mut self.formatter.field(name, tree)
+pub Json.field(self, name: string, tree: Value) {
+    self.formatter.field(name, tree)
 }
 
 /* The value at JSON Pointer `path`, or `Value.none` and false when absent. */

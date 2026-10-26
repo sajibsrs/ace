@@ -7,7 +7,7 @@
 SCALE: const f64 = -2.5
 
 extern "c" {
-    snprintf(buf: mut *u8, n: usize, format: *u8, ...): i32
+    snprintf(buf: *u8, n: usize, format: *u8, ...): i32
 }
 
 mix(a: f64, b: f32, n: i32): f64 {
@@ -20,7 +20,7 @@ narrow(x: f32): u8 {
     return u8(x)
 }
 
-show(x: f32, buf: mut *u8, format: *u8): i32 {
+show(x: f32, buf: *u8, format: *u8): i32 {
     return snprintf(buf, 8, format, x)
 }
 

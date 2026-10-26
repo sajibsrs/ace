@@ -1,4 +1,0 @@
-/* A contract method dispatches through a vtable; it cannot take mut. */
-
-// error: contract method parameter cannot be mut
-C: contract { put(self, mut x: i32) }

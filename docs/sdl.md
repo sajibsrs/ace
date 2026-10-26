@@ -35,11 +35,11 @@ if !sdl.init(sdl.InitFlags { video = 1 }) { return 1 }
 defer sdl.quit()
 
 window: sdl.Window = sdl.Window.new("Ace + SDL3", 640, 480, sdl.WindowFlags { resizable = 1 })
-defer mut window.wipe()
+defer window.wipe()
 if !window.ok() { return 1 }   // sdl.error() says why
 
 renderer: sdl.Renderer = sdl.Renderer.new(window)
-defer mut renderer.wipe()
+defer renderer.wipe()
 if !renderer.ok() { return 1 }
 
 renderer.color(sdl.Color.hex(0x204080))
@@ -117,15 +117,15 @@ fill geometry with a fragment shader of your own:
 
 ```ace
 renderer: sdl.Renderer = sdl.Renderer.new(window, sdl.GPU_DRIVER)
-defer mut renderer.wipe()
+defer renderer.wipe()
 if !renderer.ok() { return 1 }
 
 program: sdl.Shader = sdl.Shader.new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
-defer mut program.wipe()
+defer program.wipe()
 if !program.ok() { return 1 }
 
 state: sdl.RenderState = sdl.RenderState.new(renderer, program)
-defer mut state.wipe()
+defer state.wipe()
 if !state.ok() { return 1 }
 
 state.uniforms(0, scene[..])
@@ -162,7 +162,7 @@ them.
 
 ```ace
 event: sdl.Event
-for mut event.poll() {
+for event.poll() {
     if event.type == sdl.EventType.quit || event.type == sdl.EventType.window_close_requested {
         running = false
     } else if event.type == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {

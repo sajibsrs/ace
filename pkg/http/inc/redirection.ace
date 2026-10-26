@@ -19,7 +19,7 @@ pub RedirectPolicy: struct {
     pub limit: usize = 0,
 }
 
-pub resolve(current: string, location: string, destination: mut []u8): (usize, bool) {
+pub resolve(current: string, location: string, destination: []u8): (usize, bool) {
     if location.len == 0 { return 0, false }
     for i: usize in 0 .. location.len {
         if ascii.control(location[i]) || location[i] == 35 { return 0, false }
@@ -63,7 +63,7 @@ pub resolve(current: string, location: string, destination: mut []u8): (usize, b
             if at == destination.len { return 0, false }
             destination[at] = 58
             at += 1
-            port_count: usize, port_ok: bool = str.format(mut destination[at..], uint(base.port))
+            port_count: usize, port_ok: bool = str.format(destination[at..], uint(base.port))
             if !port_ok { return 0, false }
 
             at += port_count

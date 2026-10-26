@@ -2,8 +2,8 @@
 
 // expect-exit: 42
 
-bump(mut x: i32, by: i32) {
-    x += by
+bump(x: *i32, by: i32) {
+    *x += by
 }
 
 pair(): (i32, i32) {
@@ -12,7 +12,7 @@ pair(): (i32, i32) {
 
 main(): int {
     x: i32 = 40
-    bump(mut x, 2)
+    bump(&x, 2)
     a: i32, b: i32 = pair()
     return int(x + a - b - 4)
 }

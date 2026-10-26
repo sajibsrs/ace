@@ -43,7 +43,7 @@ main(): int {
   `ENAMETOOLONG` through the normal error path, exactly as the kernel would
   reject them. A path holding a NUL byte fails with `EINVAL` rather than
   opening the shorter path C would read.
-- `read(fd: Fd, buf: mut []u8): (int, Error)` fills the caller's buffer and
+- `read(fd: Fd, buf: []u8): (int, Error)` fills the caller's buffer and
   returns the byte count; `0` with a null error is end of file.
 - `write(fd: Fd, data: []u8): (int, Error)` accepts `string`/`[]char` by shared
   identity and returns the byte count as the operating system reported it — partial writes
@@ -51,7 +51,7 @@ main(): int {
 - `close(fd: Fd): Error`.
 - `ioctl(fd: Fd, request: uint): Error` issues a descriptor-control
   request with no additional argument. The overload
-  `ioctl(fd: Fd, request: uint, data: mut []u8): Error` passes caller-owned,
+  `ioctl(fd: Fd, request: uint, data: []u8): Error` passes caller-owned,
   nonempty byte storage as the request argument. It performs no allocation,
   typed reinterpretation, request-size inference, or retry. These are raw
   target operations rather than an OS-independent device-control abstraction.
@@ -61,10 +61,10 @@ main(): int {
   exactly when both `device` and `inode` match, so a hard link compares equal
   to its original. `lstat(path: string): (FileInfo, Error)` is the same query
   without following a final symlink.
-- `canonical(path: string, buf: mut []u8): (usize, Error)` writes the absolute
+- `canonical(path: string, buf: []u8): (usize, Error)` writes the absolute
   path of an existing file, symlinks and `.`/`..` resolved, into `buf` (no NUL)
   and returns its length; `CanonicalErr.capacity` when `buf` is too small.
-  `executable(buf: mut []u8): (usize, Error)` writes the running executable's
+  `executable(buf: []u8): (usize, Error)` writes the running executable's
   canonical path the same way.
 - `mkdir(path: string): Error` is the portable creation form. It requests all
   ordinary permissions (`0777` on POSIX), after which the process umask chooses
@@ -82,7 +82,7 @@ main(): int {
   [signal handler](signal.md) can restore the value it found. With the two
   overloads a bare integer constant selects as `int`, so write a typed value:
   `sys.errno(saved)` or `sys.errno(i32(0))`.
-- `random(storage: mut []u8): Error` fills caller-owned storage with
+- `random(storage: []u8): Error` fills caller-owned storage with
   cryptographically secure OS entropy and allocates nothing. Empty storage
   succeeds. `getentropy` requests are chunked to at most 256 bytes, retries
   `EINTR`, and returns other failures through `RandomErr`.
@@ -95,12 +95,12 @@ if err != null {
     return 1
 }
 name_storage: [256]u8
-name: mut []u8 = mut name_storage[0..256]
+name: []u8 = name_storage[0..256]
 done: bool = false
 for !done {
-    count: usize, file_type: sys.FileType, at_end: bool, read_err: Error = sys.readdir(mut dir, name)
+    count: usize, file_type: sys.FileType, at_end: bool, read_err: Error = sys.readdir(&dir, name)
     if read_err != null {
-        sys.closedir(mut dir)
+        sys.closedir(&dir)
         return 2
     }
     done = at_end
@@ -108,7 +108,7 @@ for !done {
         // The entry name is name[0..count]; no NUL byte is appended.
     }
 }
-if sys.closedir(mut dir) != null {
+if sys.closedir(&dir) != null {
     return 3
 }
 return 0
@@ -120,10 +120,9 @@ type may be `unknown`; use `stat` when classification is required. If the name
 buffer is too small, `ReaddirErr` reports `ERANGE`, leaves the entry pending,
 and writes no truncated name. Enumeration retains operating-system order.
 
-The call-site mark in `readdir(mut dir, name)` permits updating the caller's
-iteration state. It is independent of the type-position `mut` in
-`name: mut []u8`, which permits writing the supplied bytes. Likewise,
-`closedir(mut dir)` closes the descriptor and replaces that caller's complete
+`readdir(&dir, name)` updates the caller's iteration state through the
+pointer and writes the entry's bytes into `name`. Likewise,
+`closedir(&dir)` closes the descriptor and replaces that caller's complete
 `Dir` value with canonical zero. Copying a `Dir` creates an unmanaged alias;
 closing one copy does not find or invalidate the others.
 
@@ -270,7 +269,7 @@ Why the rules in `spec/std/sys.md` are shaped as they are.
   manual parsing baseline sufficient for BPF.
 - Stdlib: `sys` and `time` #10: caller-owned batching gives one-entry iteration
   without libc allocation, truncation, or an OS-specific record surface;
-  explicit `mut` makes cursor and invalidation changes visible; the deliberately
+  the `&dir` argument makes cursor and invalidation changes visible; the deliberately
   small metadata value avoids freezing incidental Darwin ABI while leaving
   richer queries additive.
 - Stdlib: `sys` and `time` #10: the networking proofs require a real concurrent

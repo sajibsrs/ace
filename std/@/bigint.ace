@@ -25,14 +25,14 @@ pub from_u64(value: u64): Big {
     return out
 }
 
-normalize(mut value: Big) {
+normalize(value: *Big) {
     for value.used > 0 {
         if value.limbs[value.used - 1] != 0 { break }
         value.used -= 1
     }
 }
 
-pub multiply_small(mut value: Big, factor: u32) {
+pub multiply_small(value: *Big, factor: u32) {
     if factor == 0 {
         value.used = 0
         return
@@ -51,7 +51,7 @@ pub multiply_small(mut value: Big, factor: u32) {
     }
 }
 
-pub add_small(mut value: Big, addend: u32) {
+pub add_small(value: *Big, addend: u32) {
     if addend == 0 { return }
     carry: u64 = u64(addend)
     at: int = 0
@@ -72,11 +72,11 @@ pub add_small(mut value: Big, addend: u32) {
     }
 }
 
-pub multiply_power5(mut value: Big, power: int) {
-    for 0 .. power { multiply_small(mut value, 5) }
+pub multiply_power5(value: *Big, power: int) {
+    for 0 .. power { multiply_small(value, 5) }
 }
 
-pub shift_left(mut value: Big, count: int) {
+pub shift_left(value: *Big, count: int) {
     if value.used == 0 || count == 0 { return }
     words: int = count / 32
     bits: int = count % 32
@@ -121,7 +121,7 @@ pub compare(a: Big, b: Big): int {
     return 0
 }
 
-divide_small(mut value: Big, divisor: u32): u32 {
+divide_small(value: *Big, divisor: u32): u32 {
     remainder: u64 = 0
 
     for i: int in 0 .. value.used {
@@ -130,11 +130,11 @@ divide_small(mut value: Big, divisor: u32): u32 {
         value.limbs[at] = u32(whole / u64(divisor))
         remainder = whole % u64(divisor)
     }
-    normalize(mut value)
+    normalize(value)
     return u32(remainder)
 }
 
-pub decimal(value: Big, out: mut []u8): int {
+pub decimal(value: Big, out: []u8): int {
     if value.used == 0 {
         out[0] = u8(48)
         return 1
@@ -143,7 +143,7 @@ pub decimal(value: Big, out: mut []u8): int {
     count: int = 0
 
     for work.used != 0 {
-        digit: u32 = divide_small(mut work, 10)
+        digit: u32 = divide_small(&work, 10)
         out[count] = u8(48 + digit)
         count += 1
     }

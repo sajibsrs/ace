@@ -1,4 +1,4 @@
-/* Uninitialized slice fixture. */
+/* Slicing a local initializes the elements the slice covers. */
 
 Span: struct { start: usize, end: usize }
 

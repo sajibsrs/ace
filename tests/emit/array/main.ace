@@ -2,7 +2,7 @@
  * initial capacity, pop returns the last element and an empty-array error,
  * resize zero-fills growth (fresh or regrown) and drops a shrunk tail,
  * reserve, truncate, and clear keep storage, and views and element access
- * follow len; a mut receiver's view writes elements in place.
+ * follow len; a receiver's view writes elements in place.
  */
 
 // expect-exit: 0
@@ -25,13 +25,13 @@ main(): int {
     a: array.Array[int] = array.Array[int] {}
     r += check(a.len == 0, 1)
     r += check(a.view().len == 0, 2)
-    err = mut a.push(10)
+    err = a.push(10)
     r += check(err == null, 3)
     r += check(a.len == 1 && a.get(0) == 10, 4)
 
     // growth well past the first allocation keeps every element
     for i: int in 1..100 {
-        err = mut a.push(10 + i)
+        err = a.push(10 + i)
         if err != null { return 5 }
     }
     r += check(a.len == 100, 6)
@@ -42,84 +42,84 @@ main(): int {
     r += check(ok, 7)
 
     // set and view
-    mut a.set(3, -1)
+    a.set(3, -1)
     r += check(a.get(3) == -1 && a.view()[3] == -1 && a.view().len == 100, 8)
 
     // pop returns the last element and shrinks len only
     last: int
-    last, err = mut a.pop()
+    last, err = a.pop()
     r += check(err == null && last == 109 && a.len == 99, 9)
 
     // truncate keeps storage and every element below count
-    mut a.truncate(50)
+    a.truncate(50)
     r += check(a.len == 50 && a.get(3) == -1 && a.get(49) == 10 + 49, 10)
-    mut a.truncate(50)
+    a.truncate(50)
     r += check(a.len == 50, 11)
-    mut a.truncate(0)
+    a.truncate(0)
     r += check(a.len == 0, 12)
 
     // clear keeps storage; reserve never shrinks and grants capacity
-    mut a.clear()
+    a.clear()
     r += check(a.len == 0 && a.view().len == 0, 13)
-    err = mut a.reserve(1000)
+    err = a.reserve(1000)
     r += check(err == null && a.len == 0, 14)
-    err = mut a.reserve(1)
+    err = a.reserve(1)
     r += check(err == null, 15)
 
     // pop on empty reports the domain error and the blank element
     gone: int
-    gone, err = mut a.pop()
+    gone, err = a.pop()
     r += check(err == array.ArrayErr.empty && gone == 0 && a.len == 0, 16)
 
-    mut a.wipe()
+    a.wipe()
     r += check(a.len == 0, 17)
 
     // Array[T].new: preallocated capacity, and zero capacity allocates nothing
     b: array.Array[u8], berr: Error = array.Array[u8].new(16)
     r += check(berr == null && b.len == 0, 18)
-    err = mut b.push(7)
+    err = b.push(7)
     r += check(err == null && b.get(0) == 7, 19)
-    mut b.wipe()
+    b.wipe()
     c: array.Array[u8], cerr: Error = array.Array[u8].new(0)
     r += check(cerr == null, 20)
-    mut c.wipe()
+    c.wipe()
 
     // aggregate elements
     q: array.Array[Point] = array.Array[Point] {}
-    err = mut q.push(Point {
+    err = q.push(Point {
         x = 1,
         y = 2,
     })
     r += check(err == null, 21)
     r += check(q.get(0).y == 2 && q.view().len == 1, 22)
 
-    // a mut receiver's view writes elements in place
-    live: mut []Point = mut q.view()
+    // a receiver's view writes elements in place
+    live: []Point = q.view()
     live[0].x = 7
     r += check(q.get(0).x == 7 && q.get(0).y == 2, 23)
-    mut q.wipe()
+    q.wipe()
 
     // resize: a fresh array zero-fills, shrinking keeps storage, regrowth
     // zero-fills the stale tail, and growth past capacity zero-fills too
     z: array.Array[Point] = array.Array[Point] {}
-    err = mut z.resize(4)
+    err = z.resize(4)
     r += check(err == null && z.len == 4 && z.get(3).x == 0 && z.get(3).y == 0, 24)
-    mut z.set(3, Point { x = 5, y = 6 })
-    mut z.resize(2)
+    z.set(3, Point { x = 5, y = 6 })
+    z.resize(2)
     r += check(z.len == 2, 25)
-    err = mut z.resize(4)
+    err = z.resize(4)
     r += check(err == null && z.get(3).x == 0 && z.get(3).y == 0, 26)
-    err = mut z.resize(100)
+    err = z.resize(100)
     r += check(err == null && z.len == 100 && z.get(99).y == 0, 27)
-    mut z.wipe()
+    z.wipe()
 
     // filled: a non-blank value is written, a blank one comes zeroed, zero allocates nothing
     f: array.Array[int], ferr: Error = array.Array[int].filled(5, -1)
     r += check(ferr == null && f.len == 5 && f.get(0) == -1 && f.get(4) == -1, 28)
-    mut f.wipe()
+    f.wipe()
     g: array.Array[bool], gerr: Error = array.Array[bool].filled(3, false)
     r += check(gerr == null && g.len == 3 && !g.get(2), 29)
-    mut g.wipe()
+    g.wipe()
     e: array.Array[int], eerr: Error = array.Array[int].filled(0, 7)
     r += check(eerr == null && e.len == 0, 30)
     return r

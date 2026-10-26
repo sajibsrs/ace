@@ -1,0 +1,5 @@
+/* .len stays a read-only property when reached through a pointer. */
+
+shrink(text: *[]u8) {
+    text.len = 0
+}

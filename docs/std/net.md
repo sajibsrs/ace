@@ -60,13 +60,13 @@ allocate, buffer, retry, close, or replace a socket on failure:
 - `local(socket): (Addr4, Error)` queries the socket's current local
   endpoint without changing it. This exposes the assigned port after binding
   port zero; failure returns canonical-zero `Addr4` with `LocalErr`.
-- `receive(socket, buffer: mut []u8): (int, Error)` performs one receive.
+- `receive(socket, buffer: []u8): (int, Error)` performs one receive.
   Partial counts are returned as-is; zero with null error is orderly peer
   shutdown.
 - `send(socket, data: []u8)` performs one send and accepts `string`/`[]char`
   values by shared identity. It returns partial counts as-is. A closed peer becomes an ordinary send error
   rather than terminating the process with `SIGPIPE`.
-- `resolve4(host, port, addresses: mut []Addr4): (usize, Error)` performs one blocking
+- `resolve4(host, port, addresses: []Addr4): (usize, Error)` performs one blocking
   hostname lookup and writes IPv4 TCP endpoints into caller-owned storage in
   resolver order. The returned count is the number written; each address uses
   the supplied host-order port. Empty storage, invalid hostname bytes, lookup
@@ -74,7 +74,7 @@ allocate, buffer, retry, close, or replace a socket on failure:
 
 ```ace
 storage: [8]net.Addr4
-addresses: mut []net.Addr4 = mut storage[0..8]
+addresses: []net.Addr4 = storage[0..8]
 count: usize, err: Error = net.resolve4("example.com", u16(80), addresses)
 if err == null && count != 0 {
     sock: net.Socket, socket_err: Error = net.socket(net.SocketType.tcp)

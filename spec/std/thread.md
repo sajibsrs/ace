@@ -8,14 +8,14 @@
     (C Interop #4). The module allocates nothing.
     - `Thread: distinct usize` is a joinable thread handle; its canonical zero
       names no thread.
-    - `create(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8):
+    - `create(entry: extern "c" (*u8): *u8, argument: *u8):
       (Thread, Error)` starts a thread running `entry(argument)` with the
       platform's default attributes (on Darwin a 512 KiB stack). The entry is
       an `extern "c"` definition (C Interop #5) handed to the OS as is; there
       is no wrapper, captured context, or Ace function-value form. Failure
       returns `Thread(0)` with `CreateErr` carrying the code `pthread_create`
       returns.
-    - `join(thread: Thread): (mut *u8, Error)` blocks until the thread's entry
+    - `join(thread: Thread): (*u8, Error)` blocks until the thread's entry
       returns, then releases the thread and returns the entry's result.
       Failure returns `null` with `JoinErr` carrying the code `pthread_join`
       returns; `Thread(0)` fails with `JoinErr.not_found` without calling it.
@@ -27,17 +27,17 @@
       and a `fail` or debug trap in any thread aborts the process.
     - `Mutex: struct` is a mutual-exclusion lock over one private `u32`
       (Darwin `os_unfair_lock`); canonical zero is unlocked, so it needs no
-      constructor and has no `wipe`. `lock(mut self)` blocks until this thread
-      holds it; `unlock(mut self)` releases it. Neither fails. The locking
+      constructor and has no `wipe`. `lock(self)` blocks until this thread
+      holds it; `unlock(self)` releases it. Neither fails. The locking
       thread unlocks it and it is not recursive; Darwin aborts the process
       otherwise.
     - `Condition: struct` is a sequence counter over one private `u32`;
-      canonical zero has no waiters. `wait(mut self, mutex: mut *Mutex)`, with
+      canonical zero has no waiters. `wait(self, mutex: *Mutex)`, with
       `mutex` held, reads the counter, unlocks, sleeps until the counter
       changes (Darwin `os_sync_wait_on_address`), and locks again; the read
       before the unlock means a wake after it is never lost. A wait may also
       return without a wake, so callers recheck their condition in a loop.
-      `wake_one(mut self)` and `wake_all(mut self)` advance the counter and
+      `wake_one(self)` and `wake_all(self)` advance the counter and
       wake one or every sleeper; they need no mutex held.
     - Copying a `Mutex` or `Condition` while it is locked, contended, or
       waited on is programmer error. Neither is usable from a signal handler.

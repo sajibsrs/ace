@@ -23,7 +23,7 @@ main(): int {
 
     if err != null { return 1 }
     storage: [1]Addr4 = [address]
-    addresses: mut []Addr4 = mut storage[0..1]
+    addresses: []Addr4 = storage[0..1]
     count: usize, resolve_err: Error = resolve4("localhost", u16(80), addresses)
 
     if count == 0 && resolve_err != null && resolve_err.domain != typeid(ResolveErr) { return 2 }

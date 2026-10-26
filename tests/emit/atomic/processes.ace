@@ -19,7 +19,7 @@ shared_anon(): i32 { return 0x1001 }
 @when(_PLATFORM_ == "linux-x64")
 shared_anon(): i32 { return 0x21 }
 
-work(gate: mut *u32, added: mut *u64, claimed: mut *u64): int {
+work(gate: *u32, added: *u64, claimed: *u64): int {
     for atomic.load_acquire(gate) == 0 {}
     for step: int in 0 .. 200000 {
         atomic.add_relaxed(added, u64(1))
@@ -37,9 +37,9 @@ work(gate: mut *u32, added: mut *u64, claimed: mut *u64): int {
 main(): int {
     page: usize = mmap(usize(0), usize(4096), 3, shared_anon(), -1, i64(0))
     if page == usize(0xFFFFFFFFFFFFFFFF) { return 1 }
-    added: mut *u64 = mut *u64(page)
-    claimed: mut *u64 = mut *u64(page + usize(64))
-    gate: mut *u32 = mut *u32(page + usize(128)) // released once every worker exists
+    added: *u64 = *u64(page)
+    claimed: *u64 = *u64(page + usize(64))
+    gate: *u32 = *u32(page + usize(128)) // released once every worker exists
 
     children: [4]sys.Process = [sys.Process(0) : 4]
     for worker: int in 0 .. 4 {

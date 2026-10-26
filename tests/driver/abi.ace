@@ -25,7 +25,7 @@ extern "c" {
     c_scalars(a: i8, b: i16, c: i32, d: i64, e: u8, f: u16, g: u32, h: u64, i: usize): i64
     c_floats(a: f32, b: f64): f64
     c_f32(value: f32): f32
-    c_bump(value: mut *i32)
+    c_bump(value: *i32)
     c_code(value: Code): Code
     c_wire(value: Wire): Wire
     c_mixed(value: Mixed): Mixed
@@ -47,23 +47,23 @@ extern "c" {
     c_varargs(fixed: i32, ...): i32
     c_not(value: bool): bool
     c_key(value: Key): Key
-    c_flag(out: mut *bool)
+    c_flag(out: *bool)
     c_bool_varargs(fixed: i32, ...): i32
     c_hook_value(hook: Hook): i32
     c_hook_pointer(hook: *Hook): i32
     c_get_hook(): Hook
-    c_set_callback(out: mut *extern "c" (i32): i32)
+    c_set_callback(out: *extern "c" (i32): i32)
     c_run_ace(): i32
     c_exported_globals(): i32
     c_linked(): i32
-    mut ace_counter: i32 = 7
+    ace_counter: i32 = 7
     ace_version: u32 = 3
-    mut ace_table: [3]i32 = [5 : 3]
-    c_call_thread_entry(entry: extern "c" (mut *u8): mut *u8, argument: mut *u8): mut *u8
-    c_get_thread_entry(): extern "c" (mut *u8): mut *u8
+    ace_table: [3]i32 = [5 : 3]
+    c_call_thread_entry(entry: extern "c" (*u8): *u8, argument: *u8): *u8
+    c_get_thread_entry(): extern "c" (*u8): *u8
 }
 
-extern "c" ace_thread_entry(argument: mut *u8): mut *u8 {
+extern "c" ace_thread_entry(argument: *u8): *u8 {
     return argument
 }
 
@@ -91,7 +91,7 @@ extern "c" ace_f32(value: f32): f32 {
     return value + 0.75
 }
 
-extern "c" ace_bump(value: mut *i32) {
+extern "c" ace_bump(value: *i32) {
     *value = *value + 7
 }
 
@@ -200,7 +200,7 @@ extern "c" ace_fp_align(a: f64, b: f64, c: f64, d: f64, e: f64, f: f64, g: f64, 
     return a + b + c + d + e + f + g + h + f64(narrow) + wide
 }
 
-extern "c" mut ace_ticks: i64 = -5
+extern "c" ace_ticks: i64 = -5
 
 pub extern "c" ace_scale: f64 = 2.5
 
@@ -209,7 +209,7 @@ extern "c" triple(value: i32): i32 as "ace_linked_triple" {
     return value * 3
 }
 
-extern "c" mut total: i32 as "ace_linked_total" = 4
+extern "c" total: i32 as "ace_linked_total" = 4
 
 main(): int {
     if c_scalars(-1, 2, 3, 4, 5, 6, 7, 8, 9) != 43 { return 1 }
@@ -218,7 +218,7 @@ main(): int {
 
     if c_f32(1.25) != 1.75 { return 14 }
     x: i32 = 10
-    c_bump(mut &x)
+    c_bump(&x)
 
     if x != 17 || c_code(Code(41)) != Code(42) ||
        c_wire(Wire.request) != Wire.response {
@@ -340,7 +340,7 @@ main(): int {
     key: Key = c_key(Key { code = 4, down = true, repeat = false })
     if key.code != 5 || key.down || !key.repeat { return 71 }
     flag: bool = false
-    c_flag(mut &flag)
+    c_flag(&flag)
     if !flag { return 72 }
     if c_bool_varargs(3, true, false) != 0 { return 73 }
     hook: Hook = Hook { call = ace_twice, base = 21 }
@@ -349,7 +349,7 @@ main(): int {
     got_call: extern "c" (i32): i32 = got.call
     if got_call(got.base) != 42 { return 75 }
     slot: extern "c" (i32): i32 = null
-    c_set_callback(mut &slot)
+    c_set_callback(&slot)
     if slot(9) != 10 { return 76 }
     from_c: i32 = c_run_ace()
     exported: i32 = c_exported_globals()
@@ -360,8 +360,8 @@ main(): int {
 
     if from_c != 0 { return int(20 + from_c) }
     callback_value: u8 = 31
-    callback_pointer: mut *u8 = mut &callback_value
-    callback: extern "c" (mut *u8): mut *u8 = c_get_thread_entry()
+    callback_pointer: *u8 = &callback_value
+    callback: extern "c" (*u8): *u8 = c_get_thread_entry()
     if callback(callback_pointer) != callback_pointer { return 50 }
     if c_call_thread_entry(ace_thread_entry, callback_pointer) !=
        callback_pointer {

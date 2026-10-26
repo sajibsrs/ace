@@ -12,30 +12,30 @@ main(): int {
     if numbers == null { return 1 }
 
     if numbers.len != 4 {
-        release[usize](mut numbers)
+        release[usize](&numbers)
         return 2
     }
 
     grown: []usize = realloc[usize](numbers, 8)
 
     if grown == null || grown.len != 8 { return 3 }
-    release[usize](mut grown)
+    release[usize](&grown)
 
-    items: mut []Item = alloc[Item](2)
+    items: []Item = alloc[Item](2)
 
     if items == null { return 4 }
-    writable_items: mut []Item = items[0..2]
+    writable_items: []Item = items[0..2]
     writable_items[0] = Item { tag = 7 }
 
     if items[0].tag != 7 {
-        release[Item](mut items)
+        release[Item](&items)
         return 5
     }
-    release[Item](mut items)
+    release[Item](&items)
 
     raw: []u8 = alloc(8, 8)
 
     if raw == null { return 6 }
-    release(mut raw)
+    release(&raw)
     return 0
 }

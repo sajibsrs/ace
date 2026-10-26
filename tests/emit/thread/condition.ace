@@ -13,48 +13,48 @@ Channel: struct { guard: thread.Mutex, changed: thread.Condition, full: bool, va
 
 Gate: struct { guard: thread.Mutex, opened: thread.Condition, open: bool, waiting: u64 }
 
-extern "c" produce(argument: mut *u8): mut *u8 {
-    channel: mut *Channel = mut *Channel(argument)
+extern "c" produce(argument: *u8): *u8 {
+    channel: *Channel = *Channel(argument)
     for value: u64 in 1 .. COUNT + 1 {
-        mut channel.guard.lock()
-        for channel.full { mut channel.changed.wait(mut &channel.guard) }
+        channel.guard.lock()
+        for channel.full { channel.changed.wait(&channel.guard) }
         channel.value = value
         channel.full = true
-        mut channel.changed.wake_one()
-        mut channel.guard.unlock()
+        channel.changed.wake_one()
+        channel.guard.unlock()
     }
     return null
 }
 
-extern "c" pass(argument: mut *u8): mut *u8 {
-    gate: mut *Gate = mut *Gate(argument)
-    mut gate.guard.lock()
+extern "c" pass(argument: *u8): *u8 {
+    gate: *Gate = *Gate(argument)
+    gate.guard.lock()
     gate.waiting += 1
-    for !gate.open { mut gate.opened.wait(mut &gate.guard) }
-    mut gate.guard.unlock()
+    for !gate.open { gate.opened.wait(&gate.guard) }
+    gate.guard.unlock()
     return null
 }
 
 main(): int {
     channel: Channel = blank(Channel)
-    argument: mut *u8 = mut *u8(mut &channel)
+    argument: *u8 = *u8(&channel)
     producer: thread.Thread, err: Error = thread.create(produce, argument)
     if err != null { return 1 }
     sum: u64 = 0
     for received: u64 in 0 .. COUNT {
-        mut channel.guard.lock()
-        for !channel.full { mut channel.changed.wait(mut &channel.guard) }
+        channel.guard.lock()
+        for !channel.full { channel.changed.wait(&channel.guard) }
         sum += channel.value
         channel.full = false
-        mut channel.changed.wake_one()
-        mut channel.guard.unlock()
+        channel.changed.wake_one()
+        channel.guard.unlock()
     }
-    result: mut *u8, jerr: Error = thread.join(producer)
+    result: *u8, jerr: Error = thread.join(producer)
     if jerr != null { return 2 }
     if sum != COUNT * (COUNT + 1) / 2 { return 3 }
 
     gate: Gate = blank(Gate)
-    gate_argument: mut *u8 = mut *u8(mut &gate)
+    gate_argument: *u8 = *u8(&gate)
     threads: [3]thread.Thread = [thread.Thread(0) : 3]
     for i: int in 0 .. 3 {
         t: thread.Thread, cerr: Error = thread.create(pass, gate_argument)
@@ -63,16 +63,16 @@ main(): int {
     }
     ready: bool = false
     for !ready { // open only once all three wait, so one wake must reach them all
-        mut gate.guard.lock()
+        gate.guard.lock()
         ready = gate.waiting == 3
-        mut gate.guard.unlock()
+        gate.guard.unlock()
     }
-    mut gate.guard.lock()
+    gate.guard.lock()
     gate.open = true
-    mut gate.opened.wake_all()
-    mut gate.guard.unlock()
+    gate.opened.wake_all()
+    gate.guard.unlock()
     for i: int in 0 .. 3 {
-        done: mut *u8, perr: Error = thread.join(threads[i])
+        done: *u8, perr: Error = thread.join(threads[i])
         if perr != null { return 5 }
     }
     return 42

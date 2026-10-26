@@ -83,7 +83,7 @@ import alloc, release from mem
 
 main(): int {
     data: []u8 = alloc(64, 8)
-    release(mut data)
+    release(&data)
 
     numbers: []usize = alloc[usize](4)
     if numbers == null {
@@ -91,25 +91,25 @@ main(): int {
     }
 
     numbers[0] = 42
-    release[usize](mut numbers)
+    release[usize](&numbers)
     return 0
 }
 ```
 
-- `alloc(size: int, align: int): mut []u8` — writable raw bytes with an explicit size and
+- `alloc(size: int, align: int): []u8` — writable raw bytes with an explicit size and
   power-of-two alignment.
-- `alloc[T](count: usize): mut []T` — writable typed storage: `count * sizeof(T)` bytes, alignment
+- `alloc[T](count: usize): []T` — writable typed storage: `count * sizeof(T)` bytes, alignment
   taken from `T`, element length `count`, uninitialized storage, null on
   overflow/zero-size/failure.
-- `zalloc[T](count: usize): mut []T` — `alloc[T]` with every byte zero, lowered to the
+- `zalloc[T](count: usize): []T` — `alloc[T]` with every byte zero, lowered to the
   platform's zero-filling allocator.
-- `realloc(data: []u8, new_size: int): mut []u8` — raw growth; failure leaves the
+- `realloc(data: []u8, new_size: int): []u8` — raw growth; failure leaves the
   original live.
-- `realloc[T](data: []T, new_count: usize): mut []T` — typed growth with the same
+- `realloc[T](data: []T, new_count: usize): []T` — typed growth with the same
   failure contract; the result is the only authoritative slice.
-- `release(mut data: []u8)` and `release[T](mut data: []T)` — free the complete
+- `release(data: *[]u8)` and `release[T](data: *[]T)` — free the complete
   authoritative allocation and null only the passed variable; null is a no-op.
-- `copy[T](noalias dst: mut []T, src: []T)` and `move[T](dst: mut []T, src: []T)` —
+- `copy[T](noalias dst: []T, src: []T)` and `move[T](dst: []T, src: []T)` —
   the byte forms' rules over equal element counts, copying `len * sizeof(T)` bytes.
 - `equal(a, b): bool` — exact, allocation-free content equality for every
   pairing of `[N]u8`, `[]u8`, and `string`; sequential `==`/`!=` is unavailable.

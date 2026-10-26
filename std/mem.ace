@@ -5,16 +5,16 @@
  * platform allocator; the fallback bodies are never emitted.
  */
 
-pub alloc(size: int, align: int): mut []u8 {
+pub alloc(size: int, align: int): []u8 {
     return null
 }
 
-pub realloc(data: []u8, new_size: int): mut []u8 {
+pub realloc(data: []u8, new_size: int): []u8 {
     return null
 }
 
-pub release(mut data: []u8) {
-    data = null
+pub release(data: *[]u8) {
+    *data = null
 }
 
 /* Typed allocation over the same fixed allocator: the element type is stated
@@ -23,7 +23,7 @@ pub release(mut data: []u8) {
  * the raw forms above.
  */
 
-pub alloc[T](count: usize): mut []T {
+pub alloc[T](count: usize): []T {
     return null
 }
 
@@ -32,15 +32,15 @@ pub alloc[T](count: usize): mut []T {
  * platform's zero-filling allocator.
  */
 
-pub zalloc[T](count: usize): mut []T {
+pub zalloc[T](count: usize): []T {
     return null
 }
 
-pub realloc[T](data: []T, new_count: usize): mut []T {
+pub realloc[T](data: []T, new_count: usize): []T {
     return null
 }
 
-pub release[T](mut data: []T) {
+pub release[T](data: *[]T) {
     data = null
 }
 
@@ -55,26 +55,24 @@ pub usable(data: []u8): usize {
     return 0
 }
 
-/* Byte operations use complete slice views as their ranges. Write destinations
- * carry type-position `mut` (Mutability #10): their argument must be a
- * `mut []u8` view. The bootstrap compiler emits them natively as calls to
+/* Byte operations use complete slice views as their ranges. The bootstrap compiler emits them natively as calls to
  * wide per-object routines; no platform memory routine is called.
  */
 
-pub copy(noalias dst: mut []u8, src: []u8) {}
+pub copy(noalias dst: []u8, src: []u8) {}
 
-pub move(dst: mut []u8, src: []u8) {}
+pub move(dst: []u8, src: []u8) {}
 
 /* Typed forms of `copy` and `move`: equal element counts, copying
  * `len * sizeof(T)` bytes under the same rules as the byte forms.
  */
-pub copy[T](noalias dst: mut []T, src: []T) {}
+pub copy[T](noalias dst: []T, src: []T) {}
 
-pub move[T](dst: mut []T, src: []T) {}
+pub move[T](dst: []T, src: []T) {}
 
-pub fill(data: mut []u8, value: u8) {}
+pub fill(data: []u8, value: u8) {}
 
-pub zero(data: mut []u8) {}
+pub zero(data: []u8) {}
 
 pub compare(a: []u8, b: []u8): int {
     return 0
@@ -94,19 +92,19 @@ pub equal(a: []u8, b: []u8): bool {
  * live, so check the flag before replacing the caller's slice.
  */
 @cold
-pub grow[T](slice: mut []T, needed: usize): (mut []T, bool) {
+pub grow[T](slice: []T, needed: usize): ([]T, bool) {
     if slice.len >= needed { return slice, true }
     capacity: usize = slice.len * 2
     if capacity < slice.len { return slice, false }
     if capacity < needed { capacity = needed }
     if capacity == 0 { capacity = 1 }
     if slice == null {
-        fresh: mut []T = alloc[T](capacity)
+        fresh: []T = alloc[T](capacity)
         if fresh == null { return slice, false }
 
         return fresh, true
     }
-    bigger: mut []T = realloc[T](slice, capacity)
+    bigger: []T = realloc[T](slice, capacity)
     if bigger == null { return slice, false }
 
     return bigger, true

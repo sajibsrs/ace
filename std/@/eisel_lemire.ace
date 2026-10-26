@@ -43,7 +43,7 @@ integer_bits(value: u64, fraction_bits: int, bias: int): u64 {
 /* Clinger's fast path: an exact coefficient scaled by an exact power of ten
  * rounds once, correctly, in the default round-to-nearest environment.
  */
-pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
+pub exact64(coefficient: u64, exponent10: int, raw: *u64): bool {
     if coefficient > (u64(1) << 53) || exponent10 < -22 || exponent10 > 22 { return false }
     value: f64 = f64(coefficient)
 
@@ -52,11 +52,11 @@ pub exact64(coefficient: u64, exponent10: int, mut raw: u64): bool {
     } else {
         value = value * EXACT_POWERS64[exponent10]
     }
-    raw = bitcast(u64, value)
+    *raw = bitcast(u64, value)
     return true
 }
 
-pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
+pub exact32(coefficient: u64, exponent10: int, raw: *u64): bool {
     if coefficient > (u64(1) << 24) || exponent10 < -10 || exponent10 > 10 { return false }
     value: f32 = f32(coefficient)
 
@@ -65,11 +65,11 @@ pub exact32(coefficient: u64, exponent10: int, mut raw: u64): bool {
     } else {
         value = value * EXACT_POWERS32[exponent10]
     }
-    raw = u64(bitcast(u32, value))
+    *raw = u64(bitcast(u32, value))
     return true
 }
 
-pub small_integer(coefficient: u64, exponent10: int, fraction_bits: int, bias: int, mut raw: u64): bool {
+pub small_integer(coefficient: u64, exponent10: int, fraction_bits: int, bias: int, raw: *u64): bool {
     // Past 10^19 any nonzero value overflows; binary64/binary32 handle zero.
     if exponent10 > 19 { return false }
     value: u64 = coefficient
@@ -89,20 +89,20 @@ pub small_integer(coefficient: u64, exponent10: int, fraction_bits: int, bias: i
     }
 
     if value == 0 {
-        raw = 0
+        *raw = 0
         return true
     }
-    raw = integer_bits(value, fraction_bits, bias)
+    *raw = integer_bits(value, fraction_bits, bias)
     return true
 }
 
-pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
+pub binary64(coefficient: u64, exponent10: int, raw: *u64): bool {
     if coefficient == 0 || exponent10 < -342 {
-        raw = 0
+        *raw = 0
         return true
     }
     if exponent10 > 308 {
-        raw = u64(2047) << 52
+        *raw = u64(2047) << 52
         return true
     }
     zeros: int = int(bits.clz(coefficient))
@@ -150,7 +150,7 @@ pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
         distance: int = 0 - power2 + 1
 
         if distance >= 64 {
-            raw = 0
+            *raw = 0
             return true
         }
         mantissa = mantissa >> u64(distance)
@@ -162,7 +162,7 @@ pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
         } else {
             power2 = 1
         }
-        raw = (u64(power2) << 52) | mantissa
+        *raw = (u64(power2) << 52) | mantissa
         return true
     }
 
@@ -184,17 +184,17 @@ pub binary64(coefficient: u64, exponent10: int, mut raw: u64): bool {
         power2 = 2047
         mantissa = 0
     }
-    raw = (u64(power2) << 52) | mantissa
+    *raw = (u64(power2) << 52) | mantissa
     return true
 }
 
-pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
+pub binary32(coefficient: u64, exponent10: int, raw: *u64): bool {
     if coefficient == 0 || exponent10 < -64 {
-        raw = 0
+        *raw = 0
         return true
     }
     if exponent10 > 38 {
-        raw = u64(255) << 23
+        *raw = u64(255) << 23
         return true
     }
     zeros: int = int(bits.clz(coefficient))
@@ -242,7 +242,7 @@ pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
         distance: int = 0 - power2 + 1
 
         if distance >= 64 {
-            raw = 0
+            *raw = 0
             return true
         }
         mantissa = mantissa >> u64(distance)
@@ -254,7 +254,7 @@ pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
         } else {
             power2 = 1
         }
-        raw = (u64(power2) << 23) | mantissa
+        *raw = (u64(power2) << 23) | mantissa
         return true
     }
 
@@ -276,6 +276,6 @@ pub binary32(coefficient: u64, exponent10: int, mut raw: u64): bool {
         power2 = 255
         mantissa = 0
     }
-    raw = (u64(power2) << 23) | mantissa
+    *raw = (u64(power2) << 23) | mantissa
     return true
 }

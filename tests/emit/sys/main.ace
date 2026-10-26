@@ -34,7 +34,7 @@ check_roundtrip(): int {
 
     if rerr != null { return 4 }
     buf: [64]u8
-    view: mut []u8 = mut buf[0..64]
+    view: []u8 = buf[0..64]
     got: int, rerr2: Error = sys.read(rfd, view)
 
     if rerr2 != null || got != 9 { return 5 }

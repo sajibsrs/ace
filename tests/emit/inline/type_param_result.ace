@@ -35,12 +35,12 @@ main(): int {
     fmt.printf("%d | ", int(v.a0 + v.b9))
     items: array.Array[Pt] = array.Array[Pt] {}
     for i: int in 0 .. 3 {
-        err: Error = mut items.push(Pt { x = i, y = i * 2 })
+        err: Error = items.push(Pt { x = i, y = i * 2 })
         if err != null { return 1 }
     }
     q: Pt = items.get(2)
     fmt.printf("%d | ", q.x + q.y + items.get(1).x + items.get(1).y)
     fmt.printf("%d\n", twice[int](true, 14, 5))
-    mut items.wipe()
+    items.wipe()
     return 0
 }

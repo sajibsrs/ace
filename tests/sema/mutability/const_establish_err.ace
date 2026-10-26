@@ -1,8 +1,0 @@
-/* err: const storage cannot establish a writable view (Mutability #11). */
-
-GREETING: const string = "hello"
-
-main(): int {
-    v: mut string = mut GREETING[0..]
-    return 0
-}

@@ -68,7 +68,7 @@ A single assignment also evaluates its right side first, then its target, so
 a call that grows the slice being assigned into writes to the new storage:
 
 ```ace
-s.xs[0] = mut s.add() // add may move s.xs; the store goes to where it is now
+s.xs[0] = s.add() // add may move s.xs; the store goes to where it is now
 ```
 
 All-typed and all-bare lists remain valid. A typed name that already exists is
@@ -115,14 +115,11 @@ raw: f64 = f64(distance)
 
 ## Pointers
 
-`*T` is a read-only pointer and may be null. `mut *T` grants writes through that
-pointer level. Address-of requires an lvalue: `&value` produces `*T`, while
-`mut &value` produces `mut *T` and is rejected for const or otherwise
-read-only storage. Both forms emit the same machine address; `mut` is a
-compile-time permission. `*pointer` explicitly dereferences, while field
-access and method calls automatically dereference pointers: `pointer.m()` is
-`(*pointer).m()`, so a mutating method needs a `mut *T` and the usual `mut`
-receiver mark (`mut pointer.bump()`).
+`*T` is a pointer and may be null; writes through it reach its pointee.
+Address-of requires an lvalue: `&value` produces `*T`, and is rejected on a
+local `const`. `*pointer` explicitly dereferences, while field access and
+method calls automatically dereference pointers: `pointer.m()` is
+`(*pointer).m()`.
 
 ```ace
 Point: struct { x: int, y: int }
@@ -138,45 +135,40 @@ main(): int {
 }
 ```
 
-Parameter mutation and pointee mutation are independent. A `mut` parameter
-may replace the value stored in the caller; a `mut *T` may write its pointee:
+A parameter binding is never assignable. A `*T` parameter writes its pointee;
+replacing the caller's pointer takes one more level:
 
 ```ace
-set_x(point: mut *Point, value: int) {
-    point.x = value       // pointee writable; parameter itself read-only
+set_x(point: *Point, value: int) {
+    point.x = value       // writes the caller's Point
 }
 
-retarget(mut point: *Point, replacement: *Point) {
-    point = replacement   // caller's pointer writable; pointee read-only
+retarget(point: **Point, replacement: *Point) {
+    *point = replacement  // replaces the caller's pointer
 }
 
 main(): int {
     first: Point = Point{ x = 13, y = 29 }
     second: Point = Point{ x = 42, y = 50 }
 
-    writable: mut *Point = mut &first
+    writable: *Point = &first
     set_x(writable, 21)
 
     current: *Point = &first
-    retarget(mut current, &second)
+    retarget(&current, &second)
     return current.x
 }
 ```
 
-`mut point: mut *Point` combines both permissions. Multiple pointer levels
-retain them independently: `mut **T` may replace the stored inner pointer,
-`*mut *T` may read that inner pointer and write `T`, and `mut *mut *T` permits
-both. Only the level performing a write needs `mut`.
-
 Pointer arithmetic is typed and deliberately narrow. For `pointer: *T` or
-`mut *T` and `offset: usize`, `pointer + offset` and `pointer - offset` advance
+`*T` and `offset: usize`, `pointer + offset` and `pointer - offset` advance
 or retreat by `offset * sizeof(T)` bytes and preserve the pointer's exact
 permission. Nonnegative integer literals materialize as `usize`; other integer
 types require an explicit conversion. An assignable pointer binding also
 supports `+=` and `-=`.
 
 ```ace
-second: mut *Point = mut &points[0] + 1
+second: *Point = &points[0] + 1
 second.x = 42
 second -= 1
 ```
@@ -276,20 +268,15 @@ measured at about 2% of a check-only run on a 20,000-function file;
 resolution itself happens once per declaration, only in a different order,
 and every body is checked once.
 
-## Writable views
+## Views
 
-Type-position `mut` marks writable content: `mut *T` grants writes through the
-pointer, `mut []T` grants writes to the slice's elements, and `mut string` is
-the text-intent spelling of `mut []char`/`mut []u8`. Each `mut` marks writable
-content at exactly one view level. It is independent of the `mut name: T`
-parameter mark, which grants replacing the caller's stored value, and the two
-compose per level (`mut data: mut []u8`, `mut point: mut *Point`).
-
-A writable view exists only where `mut` is written at establishment;
-afterwards the permission travels in the type:
+Views carry no permission: `*T`, `[]T`, and `string` write through to their
+backing storage wherever it is writable. Write protection comes only from
+read-only placement: string literals and `const` globals live in read-only
+memory, and a write through a view of them faults at run time.
 
 ```ace
-fill(data: mut []u8, value: u8) {
+fill(data: []u8, value: u8) {
     for i: usize in 0 .. data.len {
         data[i] = value
     }
@@ -297,54 +284,27 @@ fill(data: mut []u8, value: u8) {
 
 main(): int {
     buffer: [4]u8 = [0, 0, 0, 0]
-    fill(mut buffer[0..4], 7) // establishment at the call site
+    fill(buffer[0..4], 7)
 
-    w: mut []u8 = mut buffer[0..4]
+    w: []u8 = buffer[0..4]
     w[0] = 42
-    plain: []u8 = w // permission shrink is implicit
 
     letters: [3]u8 = [u8('a'), u8('c'), u8('e')]
-    view: mut string = mut letters[0..]
+    view: string = letters[0..]
 
-    return int(plain[1]) + int(view.len) - 3
+    return int(w[1]) + int(view.len) - 3
 }
 ```
 
-`mut buffer[0..4]` is an establishment expression: it yields a `mut []u8` over
-the array's owned writable element storage. Re-slicing an already-writable view
-propagates permission without restating `mut` (`w[2..4]` is again `mut []u8`).
-Applying the establishment form to a plain slice or plain string is always an
-error, even when its descriptor variable is locally rebindable: descriptor
-replacement cannot manufacture content permission. Once permission shrinks to
-a plain view, it cannot grow again for that binding.
+Creating a view of a local initializes what it certainly covers (see
+[Definite initialization](#definite-initialization)). A local `const` gives no
+view: `&c`, `c[lo..hi]` of an array, and `c.method()` are rejected.
 
-Plain forms are read-only content regardless of backing storage. Writing
-`v[i] = x` requires the slice's own type to be `mut []T`; a `[]T` parameter
-cannot write its elements even when the caller passed writable storage.
-Permission shrink is implicit and widening never happens: a `mut []T` assigns,
-passes, and returns wherever `[]T` is required, while the reverse is rejected.
-The mut-qualified forms are distinct types everywhere a type can appear —
-overload sets, struct fields, unions, and generic instantiations — so
-`f(s: []u8)` and `f(s: mut []u8)` are different overloads. Exact matches win
-first; when no exact candidate fits, the call may still resolve through the
-implicit shrink.
-
-`mut string` participates in the same rules because it is the same type as
-`mut []char` and `mut []u8`. `.len`, explicit byte-content
-comparison, and `null` behave exactly as for `string`; it originates from proven writable
-bytes, such as `mut array[0..]`, and re-slicing preserves it. Indexed
-byte writes exist only through a `mut string`: `s[i] = c` assigns exactly one
-byte (`u8` or `char`) and follows the slice-write bounds contract — a
-compile-time error when constants prove the index out of range, a debug-build
-diagnostic otherwise, and release assumes it. Plain `string` indexing stays a
-value read.
-
-`string`, `[]char`, and `[]u8` are three spellings of one type, not types joined
-by implicit conversions. Their writable spellings likewise share identity and
-permission. Use the spelling that states the value's intent. Strings iterate bytes as usual, and
-`for b: u8 in mut text` runs the ordinary alias loop when `text` is a
-`mut string`; a plain string is rejected by the same rule as any read-only
-view.
+`string` is the same type as `[]char` and `[]u8`. Indexed byte writes
+`s[i] = c` assign exactly one byte (`u8` or `char`) and follow the slice-write
+bounds contract — a compile-time error when constants prove the index out of
+range, a debug-build diagnostic otherwise, and release assumes it. Use the
+spelling that states the value's intent.
 
 ## Scalar-backed bit fields
 
@@ -368,7 +328,7 @@ start from all-bits-zero, so named fields may be omitted and anonymous ranges
 remain zero.
 
 Named fields can be read and assigned but have no address: they cannot be used
-with address-of, a `mut` argument, `offsetof`, or individual volatile access.
+with address-of, as a receiver, `offsetof`, or individual volatile access.
 Assignment preserves every other backing bit. Constant out-of-range writes are
 compile errors; dynamic writes abort in debug builds and retain the low field
 bits in release builds. Whole values copy normally, compare with `==`/`!=` only
@@ -434,23 +394,21 @@ After a branch, an initialization fact survives only if every continuing path
 establishes it. A loop alone cannot establish initialization after the loop,
 because it may execute zero times.
 
-A view of a local is checked once, where it is created. A read-only view
-(`&path`, `array[lo..hi]`) reads what it may reach: a constant path exactly,
-and the whole array for a dynamic index or any array slice. A writable view
-(`mut &path`, `mut array[lo..hi]`) reads nothing and initializes a constant
-path, or the whole array when the slice spans every element; you promise the
-storage is written before it is read. A buffer filled by dynamic index is
-therefore filled through one full-range writable view:
+A view of a local is checked once, where it is created. Creating a view
+(`&path`, `array[lo..hi]`, a method call on it) reads nothing and initializes
+a constant path, or the whole array when the slice spans every element; you
+promise the storage is written before it is read. A buffer filled by dynamic
+index is therefore filled through one full-range view:
 
 ```ace
-fill_prefix(bytes: mut []u8): usize {
+fill_prefix(bytes: []u8): usize {
     bytes[0] = u8(97)
     return 1
 }
 
 main(): int {
     storage: [16]u8
-    bytes: mut []u8 = mut storage[0..16] // storage is now initialized
+    bytes: []u8 = storage[0..16] // storage is now initialized
     count: usize = fill_prefix(bytes)
     return int(string(bytes[0..count]).len)
 }
@@ -524,9 +482,7 @@ stack storage of the enclosing function, built exactly as a named
 `tmp: [N]T = [...]` would be, and the view is valid while that function runs.
 An empty literal is the null view. A cast supplies the context too: `[]int([])`
 is a typed empty view and `[2]int([x, y])` an array where no target type is
-expected. The view is plain: a `mut []T` context or `for … in mut`
-rejects a literal, since nothing could read what is written through it. A
-keyed literal needs its `[E]T`. Overload selection gives a literal the candidate
+expected. A keyed literal needs its `[E]T`. Overload selection gives a literal the candidate
 element type its elements share (`int` for integers, `f64` for floats, `u8`
 for characters, a typed element's own type), so `pick([1, 2])` chooses
 `pick(xs: []int)` over `pick(xs: []string)`. It matches both `[]E` and an
@@ -552,9 +508,7 @@ struct can still declare an ordinary field named `len`.
 
 Slicing is uniform across arrays, slices, and strings with half-open
 `[lo, hi)` bounds and the defaults `0` and `source.len`: slicing an array or
-slice yields `[]T`, and slicing a string yields a `string`; the result carries
-the source's permission, so a writable source stays writable and slicing never
-widens permission ([Writable views](#writable-views)). The result length is
+slice yields `[]T`, and slicing a string yields a `string`; slicing adds no permission layer ([Views](#views)). The result length is
 `hi - lo` and the result pointer is the source pointer advanced by
 `lo * sizeof(T)`; slicing a slice re-bases inside that slice's own window.
 Empty results keep their computed pointer and are never canonicalized to
@@ -610,8 +564,7 @@ field. An array stores `N` contiguous elements in index order with no metadata
 and no inter-element padding, so `sizeof([N]T)` = `N * sizeof(T)` and array
 alignment is the element's alignment. A string uses the identical two-word
 descriptor over bytes (pointer, byte count; `sizeof(string)` = 16) and is
-never NUL-terminated. Plain strings are read-only content; the writable
-`mut string` form is described under [Writable views](#writable-views).
+never NUL-terminated; see [Views](#views).
 
 Sequential values — arrays, slices, and strings — do not use `==` or `!=`.
 Compare byte content explicitly with `mem.equal`, which accepts every pairing
@@ -642,8 +595,7 @@ loop. Compare lengths alone with `a.len == b.len`. `mem.compare` remains the
 lexicographic operation for byte slices.
 
 Arrays and slices do not convert implicitly in either direction. The explicit
-bridges are slicing (`arr[lo..hi]`, array to slice; `mut arr[lo..hi]`, array to
-writable view) and `mem.copy` into an established writable view of the array.
+bridges are slicing (`arr[lo..hi]`, array to slice) and `mem.copy` into a view of the array.
 `string`, `[]char`, and `[]u8` need no bridge because they share identity. A
 fixed byte array reaches that view type only through slicing first.
 
@@ -821,8 +773,7 @@ count: usize = members(State).len
 ```
 
 It is a value: it can be copied, indexed, sliced to a read-only `[]E`, and
-used for an array length (`[members(State).len]u32`), but not assigned or
-viewed `mut`. A generic may call it on its type parameter, which must then be
+used for an array length (`[members(State).len]u32`), but not assigned. A generic may call it on its type parameter, which must then be
 an enum. The array is static data, emitted only for an enum that uses it. There
 is no general reflection: `.name` and `members` are the only such questions.
 
@@ -966,15 +917,15 @@ main(): int {
 ```
 
 Methods are owned by their struct. A method names its receiver as its first
-parameter, `self`, which takes no type: it is the owner. `self` is read-only;
-a mutating method takes `mut self` and is called with visible `mut`:
+parameter, `self`, which takes no type: it is the owner. The receiver is passed
+by address, so a method may write the caller's value:
 
 ```ace
-Number.set(mut self, value: int) {
+Number.set(self, value: int) {
     self.value = value
 }
 
-mut number.set(21)
+number.set(21)
 ```
 
 A function declared on a type without `self` is an associated function, for
@@ -991,7 +942,7 @@ number: Number = Number.zero()
 
 `self` is what tells the two kinds apart, so a method and an associated
 function may not share a name on the same type. A contract method names its
-receiver the same way: `get(self): int`, `set(mut self, value: int)`.
+receiver the same way: `get(self): int`, `set(self, value: int)`.
 
 Inside a generic, a type parameter reaches its bound type's associated
 functions the same way, checked in each instantiation: `x: T = T.zero()`
@@ -1021,14 +972,9 @@ the generated const vtable; concrete method overloads remain compile-time direct
 calls. Methods are called only on a value (`x.m(...)`); `Type.m(x, ...)` is an
 error and a bare `Type.method` is not a function value.
 
-A contract method's own parameters may not be `mut` — dispatch has no way to
-validate mut agreement against the implementing method (the receiver's own
-`mut self` is unaffected).
-
 Signings and methods are private by default. Put visibility first:
-`pub Number signs Value` and `pub Number.set(mut self, value: int)`. A contract
-over const backing storage may be read, but mutating dispatch through it is a
-compile error.
+`pub Number signs Value` and `pub Number.set(self, value: int)`. A contract
+over a local `const` is rejected, since `Shape(&c)` takes its address.
 
 ### Explicit embedding
 
@@ -1080,7 +1026,7 @@ Why the rules in `spec/syntax.md`, `spec/types.md` are shaped as they are.
   whose only use is `name[..]`. Ace never allocates implicitly, so the storage
   is static data when constant (Rust's promotion to `'static`, Zig's comptime
   data) and stack storage otherwise (C99 compound literals); Go's heap escape
-  is unavailable. A literal-backed view stays plain, as string literals do.
+  is unavailable. A constant literal's view points at read-only data, as a string literal's does.
 - Type System #13, Syntax & Parsing #16: a table parallel to an enum (display
   names, precedence, dispatch) stays in step by construction, where a
   positional `[N]T` shifts silently when a member is added. Indexing by `E`

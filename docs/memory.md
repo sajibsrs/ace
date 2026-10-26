@@ -16,7 +16,7 @@ bytes. Raw allocation can therefore use the compiler's target-native layout
 instead of repeating it manually:
 
 ```ace
-storage: mut []u8 = mem.alloc(int(sizeof(Point)), int(alignof(Point)))
+storage: []u8 = mem.alloc(int(sizeof(Point)), int(alignof(Point)))
 ```
 
 Both operands use the full type grammar, so inline sequence types need no named
@@ -91,7 +91,7 @@ Event: struct {
 }
 
 event: Event
-if poll(mut &event) && event.kind == KEY_DOWN {
+if poll(&event) && event.kind == KEY_DOWN {
     handle(event.key.code)
 }
 ```
@@ -206,7 +206,7 @@ exactly two words: a data pointer at offset 0 and a count at offset 8, so
 word and no hidden field. An array `[N]T` is `N` contiguous elements in index
 order with no metadata and no inter-element padding: `sizeof([N]T)` is
 `N * sizeof(T)` with the element's alignment. Strings are never NUL-terminated,
-and a string is a read-only view — its bytes cannot be written through it.
+and a string literal's bytes sit in read-only memory.
 
 ## Thread-local variables
 
@@ -242,7 +242,7 @@ thread-local. Another target rejects the declaration.
 ## Pointer and slice construction
 
 `usize(pointer)` extracts the exact machine address from any data pointer.
-`*T(address)` and `mut *T(address)` convert an exact `usize` address back to the
+`*T(address)` and `*T(address)` convert an exact `usize` address back to the
 written pointer type; the writable form is an explicit assertion of write
 authority. Debug output diagnoses dynamic nonzero misalignment, while a
 locally known misaligned address is always a compile error.
@@ -252,7 +252,7 @@ as a different plain-bits type:
 
 ```ace
 event: Event
-key: mut *KeyboardEvent = mut *KeyboardEvent(mut &event)
+key: *KeyboardEvent = *KeyboardEvent(&event)
 bits: u32 = *(*u32(&value))                // value: f32
 ```
 
@@ -264,7 +264,7 @@ An existing extent can be made into a slice without allocation:
 
 ```ace
 plain: []Packet = []Packet(pointer, count)
-writable: mut []Packet = mut []Packet(writable_pointer, count)
+writable: []Packet = []Packet(writable_pointer, count)
 ```
 
 The pointer element type must match exactly and `count` is exactly `usize`.
@@ -284,9 +284,9 @@ possibly-empty-slice-to-pointer conversion is provided.
 The `mem` standard-library module exports:
 
 ```ace
-mem.alloc(size: int, align: int): mut []u8
-mem.realloc(data: []u8, new_size: int): mut []u8
-mem.release(mut data: []u8)
+mem.alloc(size: int, align: int): []u8
+mem.realloc(data: []u8, new_size: int): []u8
+mem.release(data: *[]u8)
 ```
 
 > Allocation returns a writable slice descriptor, not a bare pointer. The
@@ -310,11 +310,11 @@ After a successful non-null check, `data.len` is exactly the requested byte size
 ```ace
 import mem
 
-data: mut []u8 = mem.alloc(16, 8)
+data: []u8 = mem.alloc(16, 8)
 if data != null {
     bytes: usize = data.len
     data[0] = 42
-    mem.release(mut data)
+    mem.release(&data)
 }
 ```
 
@@ -325,26 +325,26 @@ Null means the request failed and the original allocation remains live and
 unchanged. On success, only the returned slice is authoritative, and `.len` of
 that slice is the new requested byte size.
 
-`mem.release` requires a mutable slice binding; its content type may be `[]u8`
-or `mut []u8`. Passing null is a no-op. Otherwise it frees the storage and
-writes canonical null—zero pointer and zero length—back to that lvalue. The
-call-site `mut` mark makes the descriptor mutation visible:
+`mem.release` takes the address of the caller's slice variable. Passing null
+is a no-op. Otherwise it frees the storage and writes canonical null—zero
+pointer and zero length—back to that variable. The `&` makes the descriptor
+mutation visible:
 
 ```ace
-mem.release(mut data)
+mem.release(&data)
 ```
 
 `mem.usable(data: []u8): usize` reports the usable size of the live
 allocation whose base pointer `data` holds. It is at least the requested
 length and allocator-defined beyond it, so it exposes allocator overhead. Null
 slices, pointers the allocator does not own, and interior pointers report 0.
-The argument is read-only and takes no call-site `mut`.
+It writes nothing.
 
 ```ace
-data: mut []u8 = mem.alloc(100, 16)
+data: []u8 = mem.alloc(100, 16)
 if data != null {
     usable: usize = mem.usable(data) // >= 100
-    mem.release(mut data)
+    mem.release(&data)
 }
 ```
 
@@ -354,15 +354,15 @@ The same module exports explicitly instantiated generic overloads that return
 typed slices, so values no longer need manual byte packing:
 
 ```ace
-mem.alloc[T](count: usize): mut []T
-mem.zalloc[T](count: usize): mut []T
-mem.realloc[T](data: []T, new_count: usize): mut []T
-mem.release[T](mut data: []T)
+mem.alloc[T](count: usize): []T
+mem.zalloc[T](count: usize): []T
+mem.realloc[T](data: []T, new_count: usize): []T
+mem.release[T](data: *[]T)
 ```
 
 The type argument is always spelled out — generic instantiation stays
-explicit — and deallocation reads `mem.release[T](mut data)`, not
-`mem.release(mut data)`:
+explicit — and deallocation reads `mem.release[T](&data)`, not
+`mem.release(&data)`:
 
 ```ace
 import mem
@@ -370,7 +370,7 @@ import mem
 COUNT: const usize = 20
 
 fibonacci(count: usize): []usize {
-    values: mut []usize = mem.alloc[usize](count)
+    values: []usize = mem.alloc[usize](count)
 
     if values == null {
         return null
@@ -392,7 +392,7 @@ main(): int {
         return 1
     }
 
-    mem.release[usize](mut numbers)
+    mem.release[usize](&numbers)
     return 0
 }
 ```
@@ -417,13 +417,13 @@ programmer error.
 every type, so a container needs no initialization loop:
 
 ```ace
-slots: mut []Slot = mem.zalloc[Slot](1024) // every Slot is all zero
-defer mem.release[Slot](mut slots)
+slots: []Slot = mem.zalloc[Slot](1024) // every Slot is all zero
+defer mem.release[Slot](&slots)
 ```
 
 A multiplication overflow, an unsupported type alignment, a zero byte-size
 request (`sizeof(T) == 0` or `count == 0`), or allocation failure returns the
-canonical null `mut []T`; nothing aborts. It has the same representation as a
+canonical null `[]T`; nothing aborts. It has the same representation as a
 plain null slice and may shrink implicitly. An overflowing count is rejected
 before the platform allocator is called.
 
@@ -435,7 +435,7 @@ size, or failure it returns null while the original allocation remains live
 and unchanged. Newly added elements are not initialized and removed elements
 are not destroyed.
 
-`mem.release[T](mut data)` releases the complete authoritative typed
+`mem.release[T](&data)` releases the complete authoritative typed
 allocation. The `[T]` instantiation must match the argument's `[]T` element
 type exactly; its content permission may be plain or writable. A null typed
 slice is a no-op; otherwise the passed caller variable is set to canonical
@@ -447,28 +447,19 @@ Typed slices alias exactly like raw ones: copying copies the descriptor, a
 that must not be used or released.
 
 The raw byte forms and the typed overloads are one overload set per name:
-`mem.alloc(16, 8)` returns `mut []u8`, and there is no implicit
+`mem.alloc(16, 8)` returns `[]u8`, and there is no implicit
 conversion between `[]u8` and `[]T` — reinterpretation is deliberately not
 part of this surface.
 
-Allocation and successful reallocation are writability origins: their fresh
-storage is returned as `mut []T` and can be written directly. Reallocation and
-release still accept plain `[]T` content permission because they consume the
-authoritative descriptor rather than writing elements. Release's call-site
-`mut` is the independent permission to replace the caller's descriptor with
-null, so a handle deliberately shrunk to `[]T` remains releasable.
-
 ## Byte operations
 
-The same module exports allocation-free operations over byte-slice views.
-Write destinations carry type-position `mut` — their argument must be a
-`mut []u8` writable view, with no call-site mark:
+The same module exports allocation-free operations over byte-slice views:
 
 ```ace
-mem.copy(noalias dst: mut []u8, src: []u8)
-mem.move(dst: mut []u8, src: []u8)
-mem.fill(data: mut []u8, value: u8)
-mem.zero(data: mut []u8)
+mem.copy(noalias dst: []u8, src: []u8)
+mem.move(dst: []u8, src: []u8)
+mem.fill(data: []u8, value: u8)
+mem.zero(data: []u8)
 mem.compare(a: []u8, b: []u8): int
 mem.equal(a, b): bool
 ```
@@ -479,8 +470,8 @@ counts, and copy `len * sizeof(T)` bytes through the same routines and debug
 checks:
 
 ```ace
-mem.copy[T](noalias dst: mut []T, src: []T)
-mem.move[T](dst: mut []T, src: []T)
+mem.copy[T](noalias dst: []T, src: []T)
+mem.move[T](dst: []T, src: []T)
 ```
 
 Like `release[T]`, they state `T` explicitly; `mem.copy(a, b)` on `[]u32`
@@ -488,8 +479,7 @@ views is a type error, since `[]u32` does not convert to `[]u8`. They do not res
 `equal` accepts every pair of `[N]u8`, `[]u8`, and `string` values, compares
 length and exact bytes, and allocates nothing. It is the explicit content test;
 sequential values do not support `==` or `!=` against one another.
-Slice larger storage to the exact destination range before calling, and
-establish the writable view where `mut` is written:
+Slice larger storage to the exact destination range before calling:
 
 ```ace
 import mem
@@ -497,7 +487,7 @@ import mem
 source_array: [3]u8 = [10, 20, 30]
 target_array: [8]u8 = [0, 0, 0, 0, 0, 0, 0, 0]
 source: []u8 = source_array[0..3]
-target: mut []u8 = mut target_array[0..3]
+target: []u8 = target_array[0..3]
 mem.copy(target, source)
 ```
 
@@ -548,7 +538,7 @@ import alloc, release from mem
 a: []u8 = alloc(100, 8)
 if a != null {
     b: []u8 = a
-    release(mut a)
+    release(&a)
     // a is null; b is dangling and must not be used or released.
 }
 ```
@@ -562,7 +552,7 @@ allocation and copy.
 
 A local array, a plain parameter, and a `[]T` array literal with runtime
 elements live in the function's frame. Returning a view of one, or storing it
-in a module variable or `mut` parameter, is a compile error:
+in a module variable, is a compile error:
 
 ```ace
 leak(x: int): []int {
@@ -586,22 +576,20 @@ that produced it, so an element of a returned view is a place:
 ```ace
 P: struct { f: int }
 g: [4]P
-ms(): mut []P { return mut g[0..4] }
+ms(): []P { return g[0..4] }
 
 main(): int {
     ms()[0].f = 1          // writes g[0]
-    q: mut *P = mut &ms()[1]
+    q: *P = &ms()[1]
     q.f = 2
     return 0
 }
 ```
 
-A plain `[]T` result is read-only, as every plain view is; an element of a
-returned `[N]T` array is a temporary and is not assignable.
+An element of a returned `[N]T` array is a temporary and is not assignable.
 
-A leading `mut` marks the last call in its chain, so an element reached through
-a mutating method's view is written in one statement. The right side runs
-first, so growing the array there leaves no stale target:
+An element reached through a method's view is written in one statement. The
+right side runs first, so growing the array there leaves no stale target:
 
 ```ace
 import array
@@ -610,16 +598,14 @@ P: struct { x: i32 }
 
 main(): int {
     a: array.Array[P] = array.Array[P] {}
-    defer mut a.wipe()
-    _ = mut a.push(P { x = 1 })
-    mut a.view()[0].x = 5  // marks view(), writes element 0 in place
+    defer a.wipe()
+    _ = a.push(P { x = 1 })
+    a.view()[0].x = 5  // writes element 0 in place
     return 0
 }
 ```
 
-A method may pair a read-only accessor with a `mut self` overload returning
-`mut *T`, as `Array.view` pairs `[]T` with `mut []T`; `mut s.at(i).f = v` then
-writes in place. Such a pointer dangles once the storage grows, so use it
+A method returning `*T` writes in place the same way: `s.at(i).f = v`. Such a pointer dangles once the storage grows, so use it
 within one statement rather than holding it across calls that may add elements.
 
 ## Current diagnostics
@@ -686,28 +672,29 @@ Why the rules in `spec/memory.md` are shaped as they are.
   (`-Wreturn-local-addr`) warn. Go instead moves escaping storage to the heap,
   which would make allocation implicit (Memory #5); Rust proves every path with
   lifetimes. Following a view through variables or calls needs that alias and
-  lifetime analysis, which Ace leaves out (Memory #12). A plain parameter counts
-  as frame storage because it may be a copy (Values & Passing #2).
+  lifetime analysis, which Ace leaves out (Memory #12). A plain scalar parameter
+  counts as frame storage because it is a copy (Values & Passing #2).
 - Zero-filled typed allocation (Memory #24): the zero representation is
   universal, so the only cost of offering it is one name, while a hand-written
   clear loop was measured 1.5x to 3x slower to initialize tables of 2^14 to 2^22
   24-byte slots.
-- Initialization through views (Values & Passing #8): a writable view hands
-  storage to be filled without a zero fill, and tracking array slices whole
+- Initialization through views (Values & Passing #8): a view hands storage
+  to be filled without a zero fill, and tracking array slices whole
   keeps branch joins constant-cost.
 - Constant initializers (Values & Passing #12): an initialized constant remains
   a constant across an explicit module boundary, allowing an OS-neutral facade
   to re-export target-selected values without duplicating their machine values.
-- Elements of returned views (Mutability #9): write permission comes from the
-  view's type, never from where the descriptor is held, so requiring a local
-  binding first added nothing but position dependence. Go draws the same line:
+- Elements of returned views (Mutability #9): a view's elements live where it
+  points, never where the descriptor is held, so requiring a local binding
+  first would add nothing but position dependence. Go draws the same line:
   `f()[i] = v` is legal for a slice and illegal for an array.
-- Leading `mut` scope (Mutability #6): the mark belongs on the call that
-  mutates, and selectors after it only address a place in the result, so it
-  reaches the last call of the chain. Without this, writing one field took a
-  copy and write-back, as Go's map elements do (`m[k].x = v` is rejected
-  there); C (`vec_at(&v, i)->x = v`), Zig (`list.items[i].x = v`), and Rust
-  (`v[i].x = v` via `IndexMut`) write in place.
+- Mutability (Philosophy #3, #10): every place is writable, and write
+  protection comes only from read-only placement (`const` globals and
+  literals in read-only memory, enforced by the MMU), as in Go, Odin, and C
+  without `const`. A type-level permission layer (`mut` views, call-site
+  marks) doubled every view type and API signature, and still could not
+  protect memory reached through a pointer; the platform already does that
+  at no cost.
 - Thread-local variables (Values & Passing #13): per-thread state otherwise
   needs a context pointer through every call or a `pthread_key` created at
   runtime, and Ace has no module-init hook to create one. C11 `_Thread_local`

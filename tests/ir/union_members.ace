@@ -63,7 +63,7 @@ pick(s: Slot): int {
     return s.tag + area(s.shape)
 }
 
-set(mut s: Slot, n: int) {
+set(s: *Slot, n: int) {
     s.shape = make(n)
     s.tag = n
 }
@@ -99,7 +99,7 @@ main(): int {
     if wide(Wide.pair([1, 2, 3])) != 6 { return 4 }
     s: Slot = slot(2)
     if pick(s) != 9 || pick(slot(1)) != 4 || pick(slot(0)) != 0 { return 5 }
-    set(mut s, 1)
+    set(&s, 1)
     if pick(s) != 4 { return 6 }
     s.shape = Shape.id(8)
     if area(s.shape) != -1 { return 7 }

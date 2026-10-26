@@ -56,7 +56,7 @@ Tree: struct {
     nodes: array.Array[Node],
     kids: array.Array[u32],
     funcs: array.Array[u32],
-    pool: mut []u8,
+    pool: []u8,
     used: usize,
     seed: u64,
 }
@@ -78,7 +78,7 @@ Tree.kid(self, id: u32, i: u32): u32 {
     return self.kids.get(usize(self.node(id).kids + i))
 }
 
-Tree.next(mut self, n: u64): u64 {
+Tree.next(self, n: u64): u64 {
     x: u64 = self.seed
     x ^= x << 13
     x ^= x >> 7
@@ -87,13 +87,13 @@ Tree.next(mut self, n: u64): u64 {
     return (x >> 11) % n
 }
 
-Tree.add(mut self, n: Node): u32 {
-    _ = mut self.nodes.push(n)
+Tree.add(self, n: Node): u32 {
+    _ = self.nodes.push(n)
     return u32(self.nodes.len - 1)
 }
 
 /* `f` followed by the decimal digits of `i`, stored in the name pool. */
-Tree.func_name(mut self, i: u32): string {
+Tree.func_name(self, i: u32): string {
     start: usize = self.used
     self.pool[self.used] = 'f'
     self.used += 1
@@ -114,61 +114,61 @@ Tree.func_name(mut self, i: u32): string {
     return self.pool[start..self.used]
 }
 
-Tree.expr(mut self, depth: u32, locals: u32, f: u32): u32 {
-    pick: u64 = mut self.next(10)
+Tree.expr(self, depth: u32, locals: u32, f: u32): u32 {
+    pick: u64 = self.next(10)
     if depth >= MAX_DEPTH || pick < 3 {
-        return mut self.add(Node { kind = Kind.lit, text = "", ival = mut self.next(1000) })
+        return self.add(Node { kind = Kind.lit, text = "", ival = self.next(1000) })
     }
     if pick < 6 {
-        return mut self.add(Node { kind = Kind.name, text = NAMES[usize(mut self.next(u64(locals)))] })
+        return self.add(Node { kind = Kind.name, text = NAMES[usize(self.next(u64(locals)))] })
     }
     if pick < 8 {
-        a: u32 = mut self.expr(depth + 1, locals, f)
-        b: u32 = mut self.expr(depth + 1, locals, f)
+        a: u32 = self.expr(depth + 1, locals, f)
+        b: u32 = self.expr(depth + 1, locals, f)
         k: Kind = Kind.add
         if pick == 7 { k = Kind.less }
-        return mut self.add(Node { kind = k, text = "", a = a, b = b })
+        return self.add(Node { kind = k, text = "", a = a, b = b })
     }
-    callee: u32 = u32(mut self.next(u64(f + 1)))
-    x: u32 = mut self.expr(depth + 1, locals, f)
-    y: u32 = mut self.expr(depth + 1, locals, f)
+    callee: u32 = u32(self.next(u64(f + 1)))
+    x: u32 = self.expr(depth + 1, locals, f)
+    y: u32 = self.expr(depth + 1, locals, f)
     start: u32 = u32(self.kids.len)
-    _ = mut self.kids.push(x)
-    _ = mut self.kids.push(y)
-    return mut self.add(Node { kind = Kind.call, text = self.node(self.funcs.get(usize(callee))).text, kids = start, nkids = 2 })
+    _ = self.kids.push(x)
+    _ = self.kids.push(y)
+    return self.add(Node { kind = Kind.call, text = self.node(self.funcs.get(usize(callee))).text, kids = start, nkids = 2 })
 }
 
-Tree.block(mut self, depth: u32, locals: u32, f: u32): u32 {
-    count: u32 = u32(2 + mut self.next(4))
+Tree.block(self, depth: u32, locals: u32, f: u32): u32 {
+    count: u32 = u32(2 + self.next(4))
     ids: [8]u32 = blank([8]u32)
     scope: u32 = locals
     for i: u32 in 0..count {
-        pick: u64 = mut self.next(10)
+        pick: u64 = self.next(10)
         if pick < 5 && scope < 12 {
-            init: u32 = mut self.expr(0, scope, f)
-            ids[i] = mut self.add(Node { kind = Kind.let, text = NAMES[usize(scope)], a = init })
+            init: u32 = self.expr(0, scope, f)
+            ids[i] = self.add(Node { kind = Kind.let, text = NAMES[usize(scope)], a = init })
             scope += 1
         } else if pick < 8 && depth < 2 {
-            test: u32 = mut self.expr(0, scope, f)
-            body: u32 = mut self.block(depth + 1, scope, f)
-            ids[i] = mut self.add(Node { kind = Kind.cond, text = "", a = test, b = body })
+            test: u32 = self.expr(0, scope, f)
+            body: u32 = self.block(depth + 1, scope, f)
+            ids[i] = self.add(Node { kind = Kind.cond, text = "", a = test, b = body })
         } else {
-            ids[i] = mut self.add(Node { kind = Kind.ret, text = "", a = mut self.expr(0, scope, f) })
+            ids[i] = self.add(Node { kind = Kind.ret, text = "", a = self.expr(0, scope, f) })
         }
     }
     start: u32 = u32(self.kids.len)
-    for i: u32 in 0..count { _ = mut self.kids.push(ids[i]) }
-    return mut self.add(Node { kind = Kind.block, text = "", kids = start, nkids = count })
+    for i: u32 in 0..count { _ = self.kids.push(ids[i]) }
+    return self.add(Node { kind = Kind.block, text = "", kids = start, nkids = count })
 }
 
 /* FUNCS functions of two parameters, each calling only earlier ones. */
-Tree.build(mut self) {
-    _ = mut self.add(Node { kind = Kind.none, text = "" })
+Tree.build(self) {
+    _ = self.add(Node { kind = Kind.none, text = "" })
     for f: u32 in 0..FUNCS {
-        id: u32 = mut self.add(Node { kind = Kind.func, text = mut self.func_name(f), nkids = 2 })
-        _ = mut self.funcs.push(id)
-        body: u32 = mut self.block(0, 2, f)
-        mut self.nodes.view()[usize(id)].a = body
+        id: u32 = self.add(Node { kind = Kind.func, text = self.func_name(f), nkids = 2 })
+        _ = self.funcs.push(id)
+        body: u32 = self.block(0, 2, f)
+        self.nodes.view()[usize(id)].a = body
     }
 }
 
@@ -203,7 +203,7 @@ Checker.sym(self, id: u32): Sym {
     return self.syms.get(usize(id))
 }
 
-Checker.expr(mut self, id: u32): u32 {
+Checker.expr(self, id: u32): u32 {
     n: Node = self.tree.node(id)
     t: u32 = T_BAD
     switch n.kind {
@@ -216,8 +216,8 @@ Checker.expr(mut self, id: u32): u32 {
             }
         }
         Kind.add, Kind.less {
-            x: u32 = mut self.expr(n.a)
-            y: u32 = mut self.expr(n.b)
+            x: u32 = self.expr(n.a)
+            y: u32 = self.expr(n.b)
             if x != y { self.errors += 1 }
             t = T_INT
             if n.kind == Kind.less { t = T_BOOL }
@@ -226,60 +226,60 @@ Checker.expr(mut self, id: u32): u32 {
             s: u32, ok: bool = self.globals.get(n.text)
             if !ok || self.sym(s).nparams != n.nkids { self.errors += 1 }
             for i: u32 in 0..n.nkids {
-                if mut self.expr(self.tree.kid(id, i)) != T_INT { self.errors += 1 }
+                if self.expr(self.tree.kid(id, i)) != T_INT { self.errors += 1 }
             }
             if ok { t = self.sym(s).ty }
         }
         default {}
     }
-    mut self.nty.set(usize(id), t)
+    self.nty.set(usize(id), t)
     return t
 }
 
-Checker.block(mut self, id: u32) {
+Checker.block(self, id: u32) {
     mark: usize = self.locals.len
     n: Node = self.tree.node(id)
     for i: u32 in 0..n.nkids {
         s: u32 = self.tree.kid(id, i)
         x: Node = self.tree.node(s)
         switch x.kind {
-            Kind.let { _ = mut self.locals.push(Local { name = x.text, ty = mut self.expr(x.a) }) }
+            Kind.let { _ = self.locals.push(Local { name = x.text, ty = self.expr(x.a) }) }
             Kind.cond {
-                if mut self.expr(x.a) != T_BOOL { self.errors += 1 }
-                mut self.block(x.b)
+                if self.expr(x.a) != T_BOOL { self.errors += 1 }
+                self.block(x.b)
             }
             Kind.ret {
-                if mut self.expr(x.a) != T_INT { self.errors += 1 }
+                if self.expr(x.a) != T_INT { self.errors += 1 }
             }
             default {}
         }
     }
-    mut self.locals.truncate(mark)
+    self.locals.truncate(mark)
 }
 
-Checker.check(mut self) {
+Checker.check(self) {
     for f: u32 in self.tree.funcs.view() {
         n: Node = self.tree.node(f)
-        _ = mut self.locals.push(Local { name = NAMES[0], ty = T_INT })
-        _ = mut self.locals.push(Local { name = NAMES[1], ty = T_INT })
-        mut self.block(n.a)
-        mut self.locals.clear()
+        _ = self.locals.push(Local { name = NAMES[0], ty = T_INT })
+        _ = self.locals.push(Local { name = NAMES[1], ty = T_INT })
+        self.block(n.a)
+        self.locals.clear()
     }
 }
 
-Tree.wipe(mut self) {
-    mut self.nodes.wipe()
-    mut self.kids.wipe()
-    mut self.funcs.wipe()
-    mem.release[u8](mut self.pool)
+Tree.wipe(self) {
+    self.nodes.wipe()
+    self.kids.wipe()
+    self.funcs.wipe()
+    mem.release[u8](&self.pool)
 }
 
 /* Releases the checker's own tables; its tree is the caller's. */
-Checker.wipe(mut self) {
-    mut self.syms.wipe()
-    mut self.globals.wipe()
-    mut self.locals.wipe()
-    mut self.nty.wipe()
+Checker.wipe(self) {
+    self.syms.wipe()
+    self.globals.wipe()
+    self.locals.wipe()
+    self.nty.wipe()
 }
 
 report(name: string, elapsed: u64, operations: usize, checksum: usize) {
@@ -288,16 +288,16 @@ report(name: string, elapsed: u64, operations: usize, checksum: usize) {
 
 main(): int {
     tree: Tree = Tree { nodes = array.Array[Node] {}, kids = array.Array[u32] {}, funcs = array.Array[u32] {}, pool = mem.alloc[u8](usize(FUNCS) * 8), used = 0, seed = 42 }
-    defer mut tree.wipe()
-    mut tree.build()
+    defer tree.wipe()
+    tree.build()
     c: Checker = Checker { tree = tree, syms = array.Array[Sym] {}, globals = map.Map[string, u32] {}, locals = array.Array[Local] {}, nty = array.Array[u32] {}, errors = 0 }
-    defer mut c.wipe()
-    _ = mut c.syms.push(Sym { name = "" })
+    defer c.wipe()
+    _ = c.syms.push(Sym { name = "" })
     for f: u32 in tree.funcs.view() {
-        _ = mut c.syms.push(Sym { name = tree.node(f).text, ty = T_INT, decl = f, nparams = 2 })
-        _ = mut c.globals.set(tree.node(f).text, u32(c.syms.len - 1))
+        _ = c.syms.push(Sym { name = tree.node(f).text, ty = T_INT, decl = f, nparams = 2 })
+        _ = c.globals.set(tree.node(f).text, u32(c.syms.len - 1))
     }
-    for i: usize in 0..tree.nodes.len { _ = mut c.nty.push(0) }
+    for i: usize in 0..tree.nodes.len { _ = c.nty.push(0) }
     nodes: usize = tree.nodes.len
 
     started: u64 = time.awake()
@@ -310,7 +310,7 @@ main(): int {
     started = time.awake()
     for r: usize in 0..ROUNDS {
         c.errors = 0
-        mut c.check()
+        c.check()
     }
     typed: usize = 0
     for t: u32 in c.nty.view() { typed += usize(t) }

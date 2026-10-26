@@ -73,30 +73,30 @@ pub Ra: struct {
     pub nslots: int = 0,
 }
 
-pub Ra.wipe(mut self) {
-    mut self.order.wipe()
-    mut self.lix.wipe()
-    mut self.layout.wipe()
-    mut self.eix.wipe()
-    mut self.cold.wipe()
-    mut self.bfirst.wipe()
-    mut self.blast.wipe()
-    mut self.idx.wipe()
-    mut self.nuse.wipe()
-    mut self.fused.wipe()
-    mut self.start.wipe()
-    mut self.end.wipe()
-    mut self.ufirst.wipe()
-    mut self.uses.wipe()
-    mut self.hint.wipe()
-    mut self.phi_of.wipe()
-    mut self.with.wipe()
-    mut self.calls.wipe()
-    mut self.rtcalls.wipe()
-    mut self.asm_pos.wipe()
-    mut self.asm_mask.wipe()
-    mut self.reg.wipe()
-    mut self.slot.wipe()
+pub Ra.wipe(self) {
+    self.order.wipe()
+    self.lix.wipe()
+    self.layout.wipe()
+    self.eix.wipe()
+    self.cold.wipe()
+    self.bfirst.wipe()
+    self.blast.wipe()
+    self.idx.wipe()
+    self.nuse.wipe()
+    self.fused.wipe()
+    self.start.wipe()
+    self.end.wipe()
+    self.ufirst.wipe()
+    self.uses.wipe()
+    self.hint.wipe()
+    self.phi_of.wipe()
+    self.with.wipe()
+    self.calls.wipe()
+    self.rtcalls.wipe()
+    self.asm_pos.wipe()
+    self.asm_mask.wipe()
+    self.reg.wipe()
+    self.slot.wipe()
 }
 
 pub remat(op: u8): bool {
@@ -109,29 +109,29 @@ succ(b: IrBlock, k: int): int {
 }
 
 /* Splits each edge from a two-way branch into a block with phis. */
-pub split_critical_edges(mut fn: Func) {
+pub split_critical_edges(fn: *Func) {
     n: int = int(fn.blocks.len)
     for b: int in 0..n {
         for k: int in 0..2 {
-            bb: IrBlock = fn.block(b)
+            bb: IrBlock = *(fn.block(b))
             s: int = succ(bb, k)
             if s < 0 || succ(bb, 1 - k) < 0 { continue }
-            sb: IrBlock = fn.block(s)
+            sb: IrBlock = *(fn.block(s))
             if sb.preds.len < 2 || fn.at(sb.ins.get(0)).op != ir.IR_PHI { continue }
             at: u32 = fn.at(bb.ins.get(bb.ins.len - 1)).at
-            mid: int = mut fn.new_block()
-            j: int = mut fn.new_ins(mid, ir.IR_JMP, ir.IT_VOID)
-            jx: mut *IrIns = mut fn.at(j)
+            mid: int = fn.new_block()
+            j: int = fn.new_ins(mid, ir.IR_JMP, ir.IT_VOID)
+            jx: *IrIns = fn.at(j)
             jx.at = at
-            mb: mut *IrBlock = mut fn.block(mid)
+            mb: *IrBlock = fn.block(mid)
             mb.succ0 = s
-            fail(mut mb.preds.push(b))
-            from: mut *IrBlock = mut fn.block(b)
+            fail(mb.preds.push(b))
+            from: *IrBlock = fn.block(b)
             if k == 0 { from.succ0 = mid } else { from.succ1 = mid }
-            to: mut *IrBlock = mut fn.block(s)
+            to: *IrBlock = fn.block(s)
             for p: usize in 0..to.preds.len { // one edge: the first entry still from b
                 if to.preds.get(p) == b {
-                    mut to.preds.set(p, mid)
+                    to.preds.set(p, mid)
                     break
                 }
             }
@@ -145,33 +145,33 @@ pub split_critical_edges(mut fn: Func) {
  * conditional branch. Then a @cold call's arm moves last. Only layout and eix
  * change; analysis keeps every position.
  */
-emission_order(mut a: Ra, fn: Func) {
+emission_order(a: *Ra, fn: Func) {
     n: int = int(fn.blocks.len)
     err: Error = null
     a.layout, err = array.Array[int].filled(usize(n), 0)
     fail(err)
     a.eix, err = array.Array[int].filled(usize(n), 0)
     fail(err)
-    for i: int in 0..n { mut a.layout.set(usize(i), a.order.get(i)) }
+    for i: int in 0..n { a.layout.set(usize(i), a.order.get(i)) }
     pos: array.Array[int], pos_err: Error = array.Array[int].filled(usize(n), 0)
     fail(pos_err)
-    defer mut pos.wipe()
+    defer pos.wipe()
     after: array.Array[int], after_err: Error = array.Array[int].filled(usize(n), -1) // latch -> its deferred header, or -1
     fail(after_err)
-    defer mut after.wipe()
+    defer after.wipe()
     deferred: array.Array[bool], deferred_err: Error = array.Array[bool].filled(usize(n), false)
     fail(deferred_err)
-    defer mut deferred.wipe()
+    defer deferred.wipe()
     inl: array.Array[bool], inl_err: Error = array.Array[bool].filled(usize(n), false)
     fail(inl_err)
-    defer mut inl.wipe()
+    defer inl.wipe()
     stack: array.Array[int] = array.Array[int] {}
-    defer mut stack.wipe()
+    defer stack.wipe()
     moved: int = 0
-    for i: int in 0..n { mut pos.set(usize(a.layout.get(i)), i) }
+    for i: int in 0..n { pos.set(usize(a.layout.get(i)), i) }
     for i: int in 1..n { // the entry stays first
         h: int = a.layout.get(i)
-        hb: IrBlock = fn.block(h)
+        hb: IrBlock = *(fn.block(h))
         if hb.succ1 < 0 { continue }
         latch: int = -1
         back: int = 0
@@ -182,40 +182,40 @@ emission_order(mut a: Ra, fn: Func) {
             }
         }
         if back != 1 { continue }
-        lb: IrBlock = fn.block(latch)
+        lb: IrBlock = *(fn.block(latch))
         if lb.succ1 >= 0 || lb.succ0 != h || after.get(latch) >= 0 { continue }
-        for b: usize in 0..usize(n) { mut inl.set(b, false) } // the natural loop: what reaches the latch without passing h
-        mut inl.set(usize(h), true)
-        mut inl.set(usize(latch), true)
-        fail(mut stack.push(latch))
+        for b: usize in 0..usize(n) { inl.set(b, false) } // the natural loop: what reaches the latch without passing h
+        inl.set(usize(h), true)
+        inl.set(usize(latch), true)
+        fail(stack.push(latch))
         for stack.len > 0 {
-            t: int, _ = mut stack.pop()
+            t: int, _ = stack.pop()
             for q: int in fn.block(t).preds.view() {
                 if !inl.get(q) {
-                    mut inl.set(usize(q), true)
-                    fail(mut stack.push(q))
+                    inl.set(usize(q), true)
+                    fail(stack.push(q))
                 }
             }
         }
         s0: int = hb.succ0
         s1: int = hb.succ1
         if (inl.get(s0) && s0 != h) == (inl.get(s1) && s1 != h) { continue }
-        mut after.set(usize(latch), h)
-        mut deferred.set(usize(h), true)
+        after.set(usize(latch), h)
+        deferred.set(usize(h), true)
         moved += 1
     }
     if moved > 0 {
         old: array.Array[int], old_err: Error = array.Array[int].filled(usize(n), 0)
         fail(old_err)
-        defer mut old.wipe()
-        for i: int in 0..n { mut old.set(usize(i), a.layout.get(i)) }
+        defer old.wipe()
+        for i: int in 0..n { old.set(usize(i), a.layout.get(i)) }
         k: usize = 0
         for b: int in old.view() {
             if deferred.get(b) { continue }
-            mut a.layout.set(k, b)
+            a.layout.set(k, b)
             k += 1
             if after.get(b) >= 0 {
-                mut a.layout.set(k, after.get(b))
+                a.layout.set(k, after.get(b))
                 k += 1
             }
         }
@@ -229,7 +229,7 @@ emission_order(mut a: Ra, fn: Func) {
     ncold: int = 0
     for i: int in 1..n { // the entry stays first
         b: int = a.layout.get(i)
-        bb: IrBlock = fn.block(b)
+        bb: IrBlock = *(fn.block(b))
         c: bool = bb.preds.len > 0
         for q: int in bb.preds.view() {
             if !c { break }
@@ -237,76 +237,76 @@ emission_order(mut a: Ra, fn: Func) {
         }
         if !c && bb.preds.len == 1 && fn.block(bb.preds.get(0)).succ1 >= 0 {
             for v: int in bb.ins.view() {
-                x: IrIns = fn.at(v)
+                x: IrIns = *(fn.at(v))
                 if x.op == ir.IR_CALL && (x.flags & ir.IRF_COLD) != 0 {
                     c = true
                     break
                 }
             }
         }
-        mut a.cold.set(usize(b), c)
+        a.cold.set(usize(b), c)
         if c { ncold += 1 }
     }
     if ncold > 0 {
         old: array.Array[int], old_err: Error = array.Array[int].filled(usize(n), 0)
         fail(old_err)
-        defer mut old.wipe()
-        for i: int in 0..n { mut old.set(usize(i), a.layout.get(i)) }
+        defer old.wipe()
+        for i: int in 0..n { old.set(usize(i), a.layout.get(i)) }
         k: usize = 0
         for b: int in old.view() {
             if !a.cold.get(b) {
-                mut a.layout.set(k, b)
+                a.layout.set(k, b)
                 k += 1
             }
         }
         for b: int in old.view() {
             if a.cold.get(b) {
-                mut a.layout.set(k, b)
+                a.layout.set(k, b)
                 k += 1
             }
         }
     }
-    for i: int in 0..n { mut a.eix.set(usize(a.layout.get(i)), i) }
+    for i: int in 0..n { a.eix.set(usize(a.layout.get(i)), i) }
 }
 
 /* Reverse postorder, visiting the second successor first so that the first
  * (a branch's true side, a loop's body) follows its block; then the emission
  * order. Sets order, lix, bfirst, blast, idx, layout, eix, and cold.
  */
-pub layout(mut a: Ra, fn: Func) {
+pub layout(a: *Ra, fn: Func) {
     n: int = int(fn.blocks.len)
     npost: int = 0
     stack: array.Array[int] = array.Array[int] {}
-    defer mut stack.wipe()
+    defer stack.wipe()
     seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(usize(n), false)
     fail(seen_err)
-    defer mut seen.wipe()
+    defer seen.wipe()
     err: Error = null
     a.order, err = array.Array[int].filled(usize(n), 0)
     fail(err)
     a.lix, err = array.Array[int].filled(usize(n), 0)
     fail(err)
-    fail(mut stack.push(0))
-    fail(mut stack.push(0))
-    mut seen.set(0, true)
+    fail(stack.push(0))
+    fail(stack.push(0))
+    seen.set(0, true)
     for stack.len > 0 {
         sp: usize = stack.len
         b: int = stack.get(sp - 2)
         k: int = stack.get(sp - 1)
         if k < 2 {
-            mut stack.set(sp - 1, k + 1)
-            s: int = succ(fn.block(b), 1 - k)
+            stack.set(sp - 1, k + 1)
+            s: int = succ(*(fn.block(b)), 1 - k)
             if s >= 0 && !seen.get(s) {
-                mut seen.set(usize(s), true)
-                fail(mut stack.push(s))
-                fail(mut stack.push(0))
+                seen.set(usize(s), true)
+                fail(stack.push(s))
+                fail(stack.push(0))
             }
             continue
         }
-        mut a.order.set(usize(n - 1 - npost), b)
+        a.order.set(usize(n - 1 - npost), b)
         npost += 1
-        _, _ = mut stack.pop()
-        _, _ = mut stack.pop()
+        _, _ = stack.pop()
+        _, _ = stack.pop()
     }
     a.bfirst, err = array.Array[int].filled(usize(n), 0)
     fail(err)
@@ -317,19 +317,19 @@ pub layout(mut a: Ra, fn: Func) {
     k: int = 0
     for i: int in 0..n {
         b: int = a.order.get(i)
-        mut a.lix.set(usize(b), i)
-        mut a.bfirst.set(usize(b), k)
+        a.lix.set(usize(b), i)
+        a.bfirst.set(usize(b), k)
         for v: int in fn.block(b).ins.view() {
-            mut a.idx.set(usize(v), k)
+            a.idx.set(usize(v), k)
             k += 1
         }
-        mut a.blast.set(usize(b), k - 1)
+        a.blast.set(usize(b), k - 1)
     }
-    emission_order(mut a, fn)
+    emission_order(a, fn)
 }
 
 /* Sets nuse; fused all clear. */
-pub count_uses(mut a: Ra, fn: Func) {
+pub count_uses(a: *Ra, fn: Func) {
     err: Error = null
     a.nuse, err = array.Array[int].filled(fn.ins.len, 0)
     fail(err)
@@ -339,7 +339,7 @@ pub count_uses(mut a: Ra, fn: Func) {
         for u: int in bb.ins.view() {
             for k: u32 in 0..fn.at(u).nargs {
                 v: usize = usize(fn.arg(u, k))
-                mut a.nuse.set(v, a.nuse.get(v) + 1)
+                a.nuse.set(v, a.nuse.get(v) + 1)
             }
         }
     }
@@ -349,7 +349,7 @@ pub count_uses(mut a: Ra, fn: Func) {
  * walking up from each use to the definition; returns the furthest position,
  * in layout order, where v is used or live out of a block.
  */
-live_in(a: Ra, fn: Func, v: int, mut stamp: array.Array[int], mut stack: array.Array[int], tag: int): int {
+live_in(a: Ra, fn: Func, v: int, stamp: *array.Array[int], stack: *array.Array[int], tag: int): int {
     d: int = fn.at(v).block
     e: int = a.start.get(v)
     for i: int in a.ufirst.get(v)..a.ufirst.get(v + 1) {
@@ -357,16 +357,16 @@ live_in(a: Ra, fn: Func, v: int, mut stamp: array.Array[int], mut stack: array.A
         if u.pos > e { e = u.pos }
         b: int = u.block
         if b == d || stamp.get(b) == tag { continue }
-        mut stamp.set(usize(b), tag)
-        fail(mut stack.push(b))
+        stamp.set(usize(b), tag)
+        fail(stack.push(b))
         for stack.len > 0 { // live in at b: live out of each predecessor
-            t: int, _ = mut stack.pop()
+            t: int, _ = stack.pop()
             for q: int in fn.block(t).preds.view() {
                 last: int = 2 * a.blast.get(q) + 1
                 if last > e { e = last }
                 if q != d && stamp.get(q) != tag {
-                    mut stamp.set(usize(q), tag)
-                    fail(mut stack.push(q))
+                    stamp.set(usize(q), tag)
+                    fail(stack.push(q))
                 }
             }
         }
@@ -383,7 +383,7 @@ entry_value(op: u8): bool {
  * are used at its user. The end of each value's interval is the furthest
  * position, in layout order, where it is used or live out of a block.
  */
-pub liveness(mut a: Ra, fn: Func) {
+pub liveness(a: *Ra, fn: Func) {
     nv: int = int(fn.ins.len)
     err: Error = null
     a.start, err = array.Array[int].filled(usize(nv), 0)
@@ -392,7 +392,7 @@ pub liveness(mut a: Ra, fn: Func) {
     fail(err)
     for b: int in 0..int(fn.blocks.len) {
         for v: int in fn.block(b).ins.view() {
-            x: IrIns = fn.at(v)
+            x: IrIns = *(fn.at(v))
             // a proj's value arrives at its call; a parameter or result address, at entry
             st: int = 2 * a.idx.get(v) + 1
             if x.op == ir.IR_PHI {
@@ -402,17 +402,17 @@ pub liveness(mut a: Ra, fn: Func) {
             } else if entry_value(x.op) {
                 st = 1
             }
-            mut a.start.set(usize(v), st)
-            mut a.end.set(usize(v), st)
+            a.start.set(usize(v), st)
+            a.end.set(usize(v), st)
         }
     }
     uses: array.Array[RaUse] = array.Array[RaUse] {}
-    defer mut uses.wipe()
-    fail(mut uses.reserve(fn.args.len)) // about one use per operand
+    defer uses.wipe()
+    fail(uses.reserve(fn.args.len)) // about one use per operand
     for b: int in 0..int(fn.blocks.len) {
-        bb: IrBlock = fn.block(b)
+        bb: IrBlock = *(fn.block(b))
         for u: int in bb.ins.view() {
-            x: IrIns = fn.at(u)
+            x: IrIns = *(fn.at(u))
             if a.fused.get(u) { continue }
             for k: u32 in 0..x.nargs {
                 v: int = fn.arg(u, k)
@@ -429,34 +429,34 @@ pub liveness(mut a: Ra, fn: Func) {
                     w: int = v
                     if vf { w = fn.arg(v, s) }
                     if remat(fn.at(w).op) { continue }
-                    fail(mut uses.push(RaUse { v = w, block = ub, pos = pos }))
+                    fail(uses.push(RaUse { v = w, block = ub, pos = pos }))
                 }
             }
         }
     }
     first: array.Array[int], first_err: Error = array.Array[int].filled(usize(nv + 1), 0) // uses by value (counting sort)
     fail(first_err)
-    for u: RaUse in uses.view() { mut first.set(usize(u.v + 1), first.get(u.v + 1) + 1) }
-    for v: usize in 0..usize(nv) { mut first.set(v + 1, first.get(v + 1) + first.get(v)) }
+    for u: RaUse in uses.view() { first.set(usize(u.v + 1), first.get(u.v + 1) + 1) }
+    for v: usize in 0..usize(nv) { first.set(v + 1, first.get(v + 1) + first.get(v)) }
     by: array.Array[RaUse] = array.Array[RaUse] {}
-    fail(mut by.resize(uses.len))
+    fail(by.resize(uses.len))
     fill: array.Array[int], fill_err: Error = array.Array[int].filled(usize(nv), 0)
     fail(fill_err)
-    defer mut fill.wipe()
+    defer fill.wipe()
     for u: RaUse in uses.view() {
         at: usize = usize(first.get(u.v) + fill.get(u.v))
-        mut by.set(at, u)
-        mut fill.set(usize(u.v), fill.get(u.v) + 1)
+        by.set(at, u)
+        fill.set(usize(u.v), fill.get(u.v) + 1)
     }
     a.ufirst = first
     a.uses = by
     stamp: array.Array[int], stamp_err: Error = array.Array[int].filled(fn.blocks.len, 0)
     fail(stamp_err)
-    defer mut stamp.wipe()
+    defer stamp.wipe()
     stack: array.Array[int] = array.Array[int] {}
-    defer mut stack.wipe()
-    fail(mut stack.reserve(fn.blocks.len))
-    for v: int in 0..nv { mut a.end.set(usize(v), live_in(a, fn, v, mut stamp, mut stack, v + 1)) }
+    defer stack.wipe()
+    fail(stack.reserve(fn.blocks.len))
+    for v: int in 0..nv { a.end.set(usize(v), live_in(*a, fn, v, &stamp, &stack, v + 1)) }
 }
 
 /* Whether v's interval contains one of the call positions `at` it must survive. */
@@ -472,14 +472,14 @@ pub crosses(a: Ra, v: int, at: array.Array[int]): bool {
 }
 
 pub allocatable(a: Ra, fn: Func, v: int): bool {
-    x: IrIns = fn.at(v)
+    x: IrIns = *(fn.at(v))
     return x.ty != ir.IT_VOID && !remat(x.op) && !a.fused.get(v) && a.nuse.get(v) > 0
 }
 
 /* Sets phi_of, calls, rtcalls, and the asm and thread-local positions; hint
  * all -1.
  */
-pub positions(mut a: Ra, fn: Func, s: sema.Sema) {
+pub positions(a: *Ra, fn: Func, s: sema.Sema) {
     nv: int = int(fn.ins.len)
     err: Error = null
     a.hint, err = array.Array[int].filled(usize(nv), -1)
@@ -488,24 +488,24 @@ pub positions(mut a: Ra, fn: Func, s: sema.Sema) {
     fail(err)
     for b: int in a.order.view() {
         for u: int in fn.block(b).ins.view() {
-            x: IrIns = fn.at(u)
+            x: IrIns = *(fn.at(u))
             if x.op == ir.IR_PHI {
                 for k: u32 in 0..x.nargs {
                     v: usize = usize(fn.arg(u, k))
-                    if a.phi_of.get(v) < 0 { mut a.phi_of.set(v, u) }
+                    if a.phi_of.get(v) < 0 { a.phi_of.set(v, u) }
                 }
             } else if x.op == ir.IR_RTCALL {
-                fail(mut a.rtcalls.push(2 * a.idx.get(u)))
+                fail(a.rtcalls.push(2 * a.idx.get(u)))
             } else if x.op == ir.IR_GLOBAL && x.sym != 0 && s.sym(x.sym).is_thread {
-                fail(mut a.asm_pos.push(2 * a.idx.get(u)))
-                fail(mut a.asm_mask.push(a.thread_reserved))
+                fail(a.asm_pos.push(2 * a.idx.get(u)))
+                fail(a.asm_mask.push(a.thread_reserved))
             } else if x.op == ir.IR_ASM {
                 reserved: u32 = fn.asms.get(x.asm).reserved
-                fail(mut a.asm_pos.push(2 * a.idx.get(u)))
-                fail(mut a.asm_mask.push(reserved))
+                fail(a.asm_pos.push(2 * a.idx.get(u)))
+                fail(a.asm_mask.push(reserved))
                 a.asm_all |= reserved
             } else if x.op == ir.IR_CALL || x.op == ir.IR_CALLI {
-                fail(mut a.calls.push(2 * a.idx.get(u)))
+                fail(a.calls.push(2 * a.idx.get(u)))
             }
         }
     }
@@ -525,33 +525,33 @@ pub positions(mut a: Ra, fn: Func, s: sema.Sema) {
  * operand's location when its interval lies within the operand's, which only
  * the operand's definition writes then. Sets with.
  */
-pub coalesce(mut a: Ra, fn: Func, t: RaTarget) {
+pub coalesce(a: *Ra, fn: Func, t: RaTarget) {
     nv: int = int(fn.ins.len)
     err: Error = null
     a.with, err = array.Array[int].filled(usize(nv), -1)
     fail(err)
     leads: array.Array[bool], leads_err: Error = array.Array[bool].filled(usize(nv), false)
     fail(leads_err)
-    defer mut leads.wipe()
+    defer leads.wipe()
     stamp: array.Array[int], stamp_err: Error = array.Array[int].filled(fn.blocks.len, 0)
     fail(stamp_err)
-    defer mut stamp.wipe()
+    defer stamp.wipe()
     stack: array.Array[int] = array.Array[int] {}
-    defer mut stack.wipe()
+    defer stack.wipe()
     tag: int = 0
     for b: int in 0..int(fn.blocks.len) {
-        bb: IrBlock = fn.block(b)
+        bb: IrBlock = *(fn.block(b))
         for p: int in bb.ins.view() {
             if fn.at(p).op != ir.IR_PHI { break }
-            if !allocatable(a, fn, p) || a.with.get(p) >= 0 { continue }
+            if !allocatable(*a, fn, p) || a.with.get(p) >= 0 { continue }
             for k: u32 in 0..fn.at(p).nargs {
                 v: int = fn.arg(p, k)
-                if !allocatable(a, fn, v) || a.with.get(v) >= 0 || leads.get(v) ||
+                if !allocatable(*a, fn, v) || a.with.get(v) >= 0 || leads.get(v) ||
                     a.start.get(v) <= a.start.get(p) || a.start.get(v) > a.end.get(p) { continue } // disjoint: a hint suffices
                 bv: int = fn.at(v).block
                 live: bool = false
                 tag += 1
-                _ = live_in(a, fn, v, mut stamp, mut stack, tag)
+                _ = live_in(*a, fn, v, &stamp, &stack, tag)
                 if stamp.get(b) == tag { continue }
                 if fn.at(v).op == ir.IR_PHI { // read by a sibling phi's move into bv
                     for w: int in fn.block(bv).ins.view() {
@@ -566,41 +566,41 @@ pub coalesce(mut a: Ra, fn: Func, t: RaTarget) {
                     }
                 }
                 tag += 1
-                _ = live_in(a, fn, p, mut stamp, mut stack, tag)
+                _ = live_in(*a, fn, p, &stamp, &stack, tag)
                 for j: int in a.ufirst.get(p)..a.ufirst.get(p + 1) {
                     if live { break }
                     u: RaUse = a.uses.get(j)
                     live = u.block == bv && u.pos > a.start.get(v)
                 }
-                vb: IrBlock = fn.block(bv)
+                vb: IrBlock = *(fn.block(bv))
                 for s: int in 0..2 {
                     if live { break }
                     sc: int = succ(vb, s)
                     live = sc >= 0 && stamp.get(sc) == tag
                 }
                 if live { continue }
-                mut a.with.set(usize(v), p)
-                mut leads.set(usize(p), true)
-                if a.end.get(v) > a.end.get(p) { mut a.end.set(usize(p), a.end.get(v)) }
+                a.with.set(usize(v), p)
+                leads.set(usize(p), true)
+                if a.end.get(v) > a.end.get(p) { a.end.set(usize(p), a.end.get(v)) }
                 break
             }
         }
     }
     partner: array.Array[int], partner_err: Error = array.Array[int].filled(usize(nv), 0) // a phi -> the one value computed into it + 1
     fail(partner_err)
-    defer mut partner.wipe()
+    defer partner.wipe()
     for v: int in 0..nv {
-        if a.with.get(v) >= 0 { mut partner.set(usize(a.with.get(v)), v + 1) }
+        if a.with.get(v) >= 0 { partner.set(usize(a.with.get(v)), v + 1) }
     }
     for v: int in 0..nv {
-        x: IrIns = fn.at(v)
-        if x.op != ir.IR_CAST || x.block < 0 || !allocatable(a, fn, v) || a.with.get(v) >= 0 { continue }
+        x: IrIns = *(fn.at(v))
+        if x.op != ir.IR_CAST || x.block < 0 || !allocatable(*a, fn, v) || a.with.get(v) >= 0 { continue }
         s: int = fn.arg(v, 0)
-        if !allocatable(a, fn, s) || a.with.get(s) >= 0 || a.end.get(v) > a.end.get(s) ||
+        if !allocatable(*a, fn, s) || a.with.get(s) >= 0 || a.end.get(v) > a.end.get(s) ||
             !t.cast_in_place(x.ty, fn.at(s).ty) { continue }
         w: int = partner.get(s) - 1
         if w < 0 || a.start.get(w) <= a.start.get(v) || a.start.get(w) > a.end.get(v) {
-            mut a.with.set(usize(v), s)
+            a.with.set(usize(v), s)
         }
     }
 }
@@ -610,9 +610,9 @@ SlotUse: struct {
     slot: int,
 }
 
-heap_push(mut h: array.Array[SlotUse], x: SlotUse) {
-    fail(mut h.push(x))
-    v: mut []SlotUse = mut h.view()
+heap_push(h: *array.Array[SlotUse], x: SlotUse) {
+    fail(h.push(x))
+    v: []SlotUse = h.view()
     i: usize = v.len - 1
     for i > 0 && v[(i - 1) / 2].end > x.end {
         v[i] = v[(i - 1) / 2]
@@ -621,10 +621,10 @@ heap_push(mut h: array.Array[SlotUse], x: SlotUse) {
     v[i] = x
 }
 
-heap_pop(mut h: array.Array[SlotUse]): SlotUse {
+heap_pop(h: *array.Array[SlotUse]): SlotUse {
     top: SlotUse = h.get(0)
-    x: SlotUse, _ = mut h.pop()
-    v: mut []SlotUse = mut h.view()
+    x: SlotUse, _ = h.pop()
+    v: []SlotUse = h.view()
     n: usize = v.len
     i: usize = 0
     for {
@@ -678,7 +678,7 @@ free_in(list: []int, owner: [64]int, rt: bool, t: RaTarget, az: u32, check_rt: b
  * once their interval ends (a vector a pair of its own). Sets reg, slot, and
  * nslots.
  */
-pub allocate(mut a: Ra, fn: Func, t: RaTarget) {
+pub allocate(a: *Ra, fn: Func, t: RaTarget) {
     nv: int = int(fn.ins.len)
     err: Error = null
     a.reg, err = array.Array[int].filled(usize(nv), -1)
@@ -686,42 +686,42 @@ pub allocate(mut a: Ra, fn: Func, t: RaTarget) {
     a.slot, err = array.Array[int].filled(usize(nv), -1)
     fail(err)
     seq: array.Array[int] = array.Array[int] {} // allocated values in start order
-    defer mut seq.wipe()
+    defer seq.wipe()
     for pass: int in 0..2 { // the values arriving at entry first
         for b: int in a.order.view() {
             for v: int in fn.block(b).ins.view() {
-                if allocatable(a, fn, v) && a.with.get(v) < 0 && entry_value(fn.at(v).op) == (pass == 0) { fail(mut seq.push(v)) }
+                if allocatable(*a, fn, v) && a.with.get(v) < 0 && entry_value(fn.at(v).op) == (pass == 0) { fail(seq.push(v)) }
             }
         }
     }
     owner: [64]int = blank([64]int)
     for r: usize in 0..64 { owner[r] = -1 }
     active: array.Array[int] = array.Array[int] {}
-    defer mut active.wipe()
+    defer active.wipe()
     spilled: array.Array[bool], spilled_err: Error = array.Array[bool].filled(usize(nv), false)
     fail(spilled_err)
-    defer mut spilled.wipe()
+    defer spilled.wipe()
     for v: int in seq.view() {
         k: usize = 0
         for k < active.len { // expire
             w: int = active.get(k)
             if a.end.get(w) < a.start.get(v) {
                 owner[a.reg.get(w)] = -1
-                last: int, _ = mut active.pop()
-                if k < active.len { mut active.set(k, last) }
+                last: int, _ = active.pop()
+                if k < active.len { active.set(k, last) }
             } else {
                 k += 1
             }
         }
-        x: IrIns = fn.at(v)
-        cross: bool = crosses(a, v, a.calls)
+        x: IrIns = *(fn.at(v))
+        cross: bool = crosses(*a, v, a.calls)
         fp: bool = ir.type_float(x.ty) || ir.type_vector(x.ty)
         if cross && ir.type_vector(x.ty) && t.vec_cross_spills {
-            mut spilled.set(usize(v), true)
+            spilled.set(usize(v), true)
             continue
         }
-        rt: bool = crosses(a, v, a.rtcalls) // not in a register a byte routine disturbs
-        az: u32 = asm_reserved(a, v) // not in a register an asm statement reserves
+        rt: bool = crosses(*a, v, a.rtcalls) // not in a register a byte routine disturbs
+        az: u32 = asm_reserved(*a, v) // not in a register an asm statement reserves
         caller: []int = t.caller_int
         callee: []int = t.callee_int
         if fp {
@@ -772,45 +772,45 @@ pub allocate(mut a: Ra, fn: Func, t: RaTarget) {
             if far >= 0 && a.end.get(active.get(usize(far))) > a.end.get(v) {
                 w: int = active.get(far)
                 r = a.reg.get(w)
-                mut a.reg.set(usize(w), -1)
-                mut spilled.set(usize(w), true)
-                last: int, _ = mut active.pop()
-                if usize(far) < active.len { mut active.set(usize(far), last) }
+                a.reg.set(usize(w), -1)
+                spilled.set(usize(w), true)
+                last: int, _ = active.pop()
+                if usize(far) < active.len { active.set(usize(far), last) }
             } else {
-                mut spilled.set(usize(v), true)
+                spilled.set(usize(v), true)
                 continue
             }
         }
-        mut a.reg.set(usize(v), r)
+        a.reg.set(usize(v), r)
         owner[r] = v
-        fail(mut active.push(v))
+        fail(active.push(v))
     }
     heap: array.Array[SlotUse] = array.Array[SlotUse] {} // stack slots, reused once their interval ends
-    defer mut heap.wipe()
+    defer heap.wipe()
     free_slots: array.Array[int] = array.Array[int] {}
-    defer mut free_slots.wipe()
+    defer free_slots.wipe()
     for v: int in seq.view() {
         if !spilled.get(v) { continue }
         if ir.type_vector(fn.at(v).ty) { // a pair of its own
-            mut a.slot.set(usize(v), a.nslots)
+            a.slot.set(usize(v), a.nslots)
             a.nslots += 2
             continue
         }
-        for heap.len > 0 && heap.get(0).end < a.start.get(v) { fail(mut free_slots.push(heap_pop(mut heap).slot)) }
+        for heap.len > 0 && heap.get(0).end < a.start.get(v) { fail(free_slots.push(heap_pop(&heap).slot)) }
         s: int = a.nslots
         if free_slots.len > 0 {
-            s, _ = mut free_slots.pop()
+            s, _ = free_slots.pop()
         } else {
             a.nslots += 1
         }
-        mut a.slot.set(usize(v), s)
-        heap_push(mut heap, SlotUse { end = a.end.get(v), slot = s })
+        a.slot.set(usize(v), s)
+        heap_push(&heap, SlotUse { end = a.end.get(v), slot = s })
     }
     for v: int in 0..nv {
         w: int = a.with.get(v)
         if w >= 0 {
-            mut a.reg.set(usize(v), a.reg.get(w))
-            mut a.slot.set(usize(v), a.slot.get(w))
+            a.reg.set(usize(v), a.reg.get(w))
+            a.slot.set(usize(v), a.slot.get(w))
         }
     }
 }

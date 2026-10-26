@@ -39,9 +39,9 @@ NIL: const u32 = 0xFFFFFFFF
  * and `caps` holds one row of `slots` positions per instruction.
  */
 Queue: struct {
-    dense: mut []u32 = null,
-    sparse: mut []u32 = null,
-    caps: mut []usize = null,
+    dense: []u32 = null,
+    sparse: []u32 = null,
+    caps: []usize = null,
     count: usize,
 }
 
@@ -60,9 +60,9 @@ Frame: struct {
 pub Matcher: struct {
     current: Queue,
     next: Queue,
-    stack: mut []Frame = null,
-    work: mut []usize = null,
-    pub best: mut []usize = null,
+    stack: []Frame = null,
+    work: []usize = null,
+    pub best: []usize = null,
     slots: usize,
     first: Class,
     skip: bool,
@@ -79,16 +79,16 @@ Queue.new(size: usize, slots: usize): (Queue, bool) {
     }
 
     if q.dense == null || q.sparse == null || q.caps == null {
-        mut q.wipe()
+        q.wipe()
         return blank(Queue), false
     }
     return q, true
 }
 
-Queue.wipe(mut self) {
-    mem.release[u32](mut self.dense)
-    mem.release[u32](mut self.sparse)
-    mem.release[usize](mut self.caps)
+Queue.wipe(self) {
+    mem.release[u32](&self.dense)
+    mem.release[u32](&self.sparse)
+    mem.release[usize](&self.caps)
     self.count = 0
 }
 
@@ -98,7 +98,7 @@ inline Queue.has(self, pc: u32): bool {
     return usize(at) < self.count && self.dense[usize(at)] == pc
 }
 
-inline Queue.insert(mut self, pc: u32) {
+inline Queue.insert(self, pc: u32) {
     self.sparse[usize(pc)] = u32(self.count)
     self.dense[self.count] = pc
     self.count += 1
@@ -136,10 +136,10 @@ pub Matcher.new(code: Program): (Matcher, Error) {
     }
 
     if !ok || !next_ok || m.stack == null || m.work == null || m.best == null {
-        mut m.wipe()
+        m.wipe()
         return blank(Matcher), CompileErr.allocation
     }
-    mut m.scan_first(code)
+    m.scan_first(code)
     return m, null
 }
 
@@ -148,7 +148,7 @@ pub Matcher.new(code: Program): (Matcher, Error) {
  * through, so `first` may over-approximate; a reachable `match` (an empty
  * match) disables skipping. `single` marks a set of exactly one byte.
  */
-Matcher.scan_first(mut self, code: Program) {
+Matcher.scan_first(self, code: Program) {
     insts: []Inst = code.insts.view()
     classes: []Class = code.classes.view()
     self.current.count = 0
@@ -166,7 +166,7 @@ Matcher.scan_first(mut self, code: Program) {
 
         explore: {
             if self.current.has(pc) { break explore }
-            mut self.current.insert(pc)
+            self.current.insert(pc)
 
             switch insts[usize(pc)] {
                 Inst.byte(byte: u8) {
@@ -213,12 +213,12 @@ Matcher.scan_first(mut self, code: Program) {
     self.single = members == 1
 }
 
-pub Matcher.wipe(mut self) {
-    mut self.current.wipe()
-    mut self.next.wipe()
-    mem.release[Frame](mut self.stack)
-    mem.release[usize](mut self.work)
-    mem.release[usize](mut self.best)
+pub Matcher.wipe(self) {
+    self.current.wipe()
+    self.next.wipe()
+    mem.release[Frame](&self.stack)
+    mem.release[usize](&self.work)
+    mem.release[usize](&self.best)
     self.slots = 0
 }
 
@@ -230,7 +230,7 @@ pub Matcher.wipe(mut self) {
  * restoring `work` before a deferred sibling runs. A consuming instruction or
  * `match` takes a copy of `work` as its row.
  */
-Matcher.add_current(mut self, code: []Inst, start: u32, text: string, at: usize) {
+Matcher.add_current(self, code: []Inst, start: u32, text: string, at: usize) {
     top: usize = 1
     self.stack[0] = Frame {
         pc = start,
@@ -250,7 +250,7 @@ Matcher.add_current(mut self, code: []Inst, start: u32, text: string, at: usize)
 
         explore: {
             if self.current.has(pc) { break explore }
-            mut self.current.insert(pc)
+            self.current.insert(pc)
 
             switch code[usize(pc)] {
                 Inst.jmp(target: u32) {
@@ -313,7 +313,7 @@ Matcher.add_current(mut self, code: []Inst, start: u32, text: string, at: usize)
 }
 
 /* `add_current` into the next step's queue, `next`. */
-Matcher.add_next(mut self, code: []Inst, start: u32, text: string, at: usize) {
+Matcher.add_next(self, code: []Inst, start: u32, text: string, at: usize) {
     top: usize = 1
     self.stack[0] = Frame {
         pc = start,
@@ -333,7 +333,7 @@ Matcher.add_next(mut self, code: []Inst, start: u32, text: string, at: usize) {
 
         explore: {
             if self.next.has(pc) { break explore }
-            mut self.next.insert(pc)
+            self.next.insert(pc)
 
             switch code[usize(pc)] {
                 Inst.jmp(target: u32) {
@@ -400,7 +400,7 @@ Matcher.add_next(mut self, code: []Inst, start: u32, text: string, at: usize) {
  * at the first match any thread reaches, whose positions need not be
  * leftmost-first; that suffices when only existence matters.
  */
-pub Matcher.run(mut self, code: Program, text: string, from: usize, earliest: bool): bool {
+pub Matcher.run(self, code: Program, text: string, from: usize, earliest: bool): bool {
     if from > text.len { return false }
     insts: []Inst = code.insts.view()
     classes: []Class = code.classes.view()
@@ -421,7 +421,7 @@ pub Matcher.run(mut self, code: Program, text: string, from: usize, earliest: bo
                 }
             }
             for i: usize in 0 .. self.slots { self.work[i] = UNSET }
-            mut self.add_current(insts, 0, text, at)
+            self.add_current(insts, 0, text, at)
         }
 
         if self.current.count == 0 { break }
@@ -454,7 +454,7 @@ pub Matcher.run(mut self, code: Program, text: string, from: usize, earliest: bo
 
             if advance {
                 for s: usize in 0 .. self.slots { self.work[s] = self.current.caps[row + s] }
-                mut self.add_next(insts, pc + 1, text, at + 1)
+                self.add_next(insts, pc + 1, text, at + 1)
             }
         }
 

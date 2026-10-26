@@ -2,7 +2,7 @@
 
 Point: struct { x: int }
 
-change(point: mut *Point, replacement: mut *Point) {
+change(point: *Point, replacement: *Point) {
     point = replacement
 }
 

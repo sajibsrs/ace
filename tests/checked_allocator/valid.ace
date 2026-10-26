@@ -1,13 +1,13 @@
 import mem
 
 main(): int {
-    data: mut []u8 = mem.alloc(16, 8)
+    data: []u8 = mem.alloc(16, 8)
     if data == null { return 2 }
-    grown: mut []u8 = mem.realloc(data, 32)
+    grown: []u8 = mem.realloc(data, 32)
     if grown == null {
-        mem.release(mut data)
+        mem.release(&data)
         return 3
     }
-    mem.release(mut grown)
+    mem.release(&grown)
     return 0
 }

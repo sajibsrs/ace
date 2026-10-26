@@ -36,7 +36,7 @@ counts() {
     a, c, d = pair()
 }
 
-bits_address(mut f: Flags): *u8 {
+bits_address(f: *Flags): *u8 {
     return &f.low
 }
 
@@ -78,13 +78,13 @@ null_offset(): *u8 {
     return null + 1
 }
 
-offset_type(mut p: *u8) {
+offset_type(p: **u8) {
     n: i64 = 1
-    p += n
+    *p += n
 }
 
-offset_negative(mut p: *u8) {
-    p += -1
+offset_negative(p: **u8) {
+    *p += -1
 }
 
 range_mixed() {
@@ -128,10 +128,10 @@ untyped() {
     1 + 2
 }
 
-volatile_bits(mut f: Flags) {
+volatile_bits(f: *Flags) {
     volatile f.low = 1
 }
 
-volatile_point(mut p: Point) {
-    volatile p = Point { x = 1 }
+volatile_point(p: *Point) {
+    volatile *p = Point { x = 1 }
 }

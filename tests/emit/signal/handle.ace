@@ -14,13 +14,13 @@ second_inside: u32
 
 extern "c" on_first(s: signal.Signal) {
     if s != signal.SIGUSR1 { return }
-    atomic.add_relaxed(mut &first, u32(1))
+    atomic.add_relaxed(&first, u32(1))
     signal.raise(signal.SIGUSR2)
-    atomic.store_relaxed(mut &second_inside, atomic.load_relaxed(&second))
+    atomic.store_relaxed(&second_inside, atomic.load_relaxed(&second))
 }
 
 extern "c" on_second(s: signal.Signal) {
-    atomic.add_relaxed(mut &second, u32(1))
+    atomic.add_relaxed(&second, u32(1))
 }
 
 main(): int {
@@ -31,7 +31,7 @@ main(): int {
     if atomic.load_relaxed(&second_inside) != 1 { return 5 } // nested: ran inside
 
     options: signal.HandleOptions = blank(signal.HandleOptions)
-    mut options.mask.add(signal.SIGUSR2)
+    options.mask.add(signal.SIGUSR2)
     if signal.handle(signal.SIGUSR1, on_first, options) != null { return 6 }
     if signal.raise(signal.SIGUSR1) != null { return 7 }
     if atomic.load_relaxed(&first) != 2 || atomic.load_relaxed(&second) != 2 { return 8 }

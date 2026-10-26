@@ -25,24 +25,24 @@ client(port: u16): int {
     // Separate sends let receive_all prove retained progress.
     sent: usize, ioerr: Error = tcp.send_all(connection, "pi")
     if ioerr != null || sent != 2 {
-        tcp.close(mut connection)
+        tcp.close(&connection)
         return 2
     }
     sent, ioerr = tcp.send_all(connection, "ng")
     if ioerr != null || sent != 2 {
-        tcp.close(mut connection)
+        tcp.close(&connection)
         return 3
     }
 
     reply_storage: [4]u8 = [0 : 4]
-    reply: mut []u8 = mut reply_storage[0..]
+    reply: []u8 = reply_storage[0..]
     received: usize
     received, ioerr = tcp.receive_all(connection, reply)
     if ioerr != null || received != 4 || !mem.equal(reply_storage, "pong") {
-        tcp.close(mut connection)
+        tcp.close(&connection)
         return 4
     }
-    if tcp.close(mut connection) != null { return 5 }
+    if tcp.close(&connection) != null { return 5 }
     return 0
 }
 
@@ -52,10 +52,10 @@ eof_client(port: u16): int {
     sent: usize
     sent, err = tcp.send_all(connection, "ok")
     if err != null || sent != 2 {
-        tcp.close(mut connection)
+        tcp.close(&connection)
         return 2
     }
-    if tcp.close(mut connection) != null { return 3 }
+    if tcp.close(&connection) != null { return 3 }
     return 0
 }
 
@@ -101,12 +101,12 @@ main(): int {
     address: net.Addr4
     address, err = tcp.local(listener)
     if err != null || address.port == 0 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 21
     }
     process: sys.Process, fork_err: Error = sys.fork()
     if fork_err != null || process == -1 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 22
     }
     if process == 0 { sys.exit(client(address.port)) }
@@ -114,42 +114,42 @@ main(): int {
     connection: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
     err = accept_err
     if err != null || peer.ip[0] != 127 || peer.port == 0 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 23
     }
     request_storage: [4]u8 = [0 : 4]
-    request: mut []u8 = mut request_storage[0..]
+    request: []u8 = request_storage[0..]
     count, err = tcp.receive_all(connection, request)
     if err != null || count != 4 || !mem.equal(request_storage, "ping") {
-        tcp.close(mut connection)
-        tcp.close(mut listener)
+        tcp.close(&connection)
+        tcp.close(&listener)
         return 24
     }
     count, err = tcp.send_all(connection, "pong")
     if err != null || count != 4 {
-        tcp.close(mut connection)
-        tcp.close(mut listener)
+        tcp.close(&connection)
+        tcp.close(&listener)
         return 25
     }
-    if tcp.close(mut connection) != null {
-        tcp.close(mut listener)
+    if tcp.close(&connection) != null {
+        tcp.close(&listener)
         return 26
     }
     status: sys.ProcessStatus, wait_err: Error = sys.wait(process)
     if wait_err != null || !status.exited || status.code != 0 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 27
     }
 
     process, fork_err = sys.fork()
     if fork_err != null || process == -1 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 28
     }
     if process == 0 { sys.exit(eof_client(address.port)) }
     connection, peer, err = tcp.accept(listener)
     if err != null {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 29
     }
     request_storage = [0 : 4]
@@ -157,16 +157,16 @@ main(): int {
     if count != 2 || err != tcp.ReceiveAllErr.incomplete ||
        !mem.equal(err.message, "connection closed before the requested bytes were received") ||
        !mem.equal(request_storage[0..2], "ok") {
-        tcp.close(mut connection)
-        tcp.close(mut listener)
+        tcp.close(&connection)
+        tcp.close(&listener)
         return 30
     }
-    tcp.close(mut connection)
+    tcp.close(&connection)
     status, wait_err = sys.wait(process)
     if wait_err != null || !status.exited || status.code != 0 {
-        tcp.close(mut listener)
+        tcp.close(&listener)
         return 31
     }
-    if tcp.close(mut listener) != null { return 32 }
+    if tcp.close(&listener) != null { return 32 }
     return 0
 }

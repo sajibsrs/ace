@@ -6,7 +6,7 @@ first(spans: []Span): usize {
     return spans[0].start
 }
 
-fill(spans: mut []Span) {
+fill(spans: []Span) {
     for i: usize in usize(0) .. spans.len {
         spans[i] = Span {
             start = i,
@@ -15,7 +15,7 @@ fill(spans: mut []Span) {
     }
 }
 
-set(value: mut *usize) {
+set(value: *usize) {
     *value = 1
 }
 
@@ -23,25 +23,25 @@ peek(value: *usize): usize {
     return *value
 }
 
-render(spans: []Span, out: mut []u8): usize {
+render(spans: []Span, out: []u8): usize {
     out[0] = u8(48 + spans[0].start)
     return 1
 }
 
 main(): int {
     spans: [4]Span
-    fill(mut spans[0..4])
+    fill(spans[0..4])
     total: usize = spans[3].start + first(spans[0..1])
 
     span: Span
-    set(mut &span.start)
+    set(&span.start)
     total += peek(&span.start) + span.start
 
     buffer: [8]u8
-    text: string = string(buffer[0..render(spans[0..4], mut buffer[0..8])])
+    text: string = string(buffer[0..render(spans[0..4], buffer[0..8])])
 
     storage: [16]u8
-    bytes: mut []u8 = mut storage[0..16]
+    bytes: []u8 = storage[0..16]
     count: usize = 0
 
     for i: usize in usize(0) .. usize(3) {

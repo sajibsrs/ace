@@ -6,7 +6,7 @@ Timespec: struct {
 }
 
 extern "c" {
-    c_clock_gettime(clk_id: i32, time: mut *Timespec): i32 as "clock_gettime"
+    c_clock_gettime(clk_id: i32, time: *Timespec): i32 as "clock_gettime"
 }
 
 /* Monotonic time. Linux clock ids from <linux/time.h>: CLOCK_BOOTTIME keeps
@@ -20,7 +20,7 @@ CLOCK_BOOTTIME: const i32 = 7
 
 nanoseconds(clk_id: i32): u64 {
     time: Timespec = blank(Timespec)
-    c_clock_gettime(clk_id, mut &time)
+    c_clock_gettime(clk_id, &time)
     return u64(time.seconds) * 1000000000 + u64(time.nanoseconds)
 }
 

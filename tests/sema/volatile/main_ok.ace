@@ -16,7 +16,7 @@ main(): int {
     state: Backed = Backed.one
     volatile state = Backed.zero
 
-    p: mut *u32 = mut &device.control
+    p: *u32 = &device.control
     volatile *p = 11
     control: u32 = volatile *p
 

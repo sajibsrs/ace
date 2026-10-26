@@ -31,10 +31,10 @@ RequestProgress: type = parsing.RequestProgress
  * cap.
  */
 pub Context: struct {
-    input: mut []u8 = null,
-    headers: mut []Header = null,
-    body: mut []u8 = null,
-    output: mut []u8 = null,
+    input: []u8 = null,
+    headers: []Header = null,
+    body: []u8 = null,
+    output: []u8 = null,
     backlog: usize = 512,
 }
 
@@ -43,11 +43,11 @@ pub Context.new(): Context {
 }
 
 /* Releases buffer storage. Call once the context is no longer served. */
-pub Context.wipe(mut self) {
-    mem.release[u8](mut self.input)
-    mem.release[Header](mut self.headers)
-    mem.release[u8](mut self.body)
-    mem.release[u8](mut self.output)
+pub Context.wipe(self) {
+    mem.release[u8](&self.input)
+    mem.release[Header](&self.headers)
+    mem.release[u8](&self.body)
+    mem.release[u8](&self.output)
 }
 
 /* Reads exactly one complete request from `conn` into `context`, growing its
@@ -56,7 +56,7 @@ pub Context.wipe(mut self) {
  * failure, or parse failure — in every such case the caller responds to
  * nothing and just returns.
  */
-read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
+read_request(conn: tcp.Conn, context: *Context): (Request, bool) {
     parser: RequestParser = RequestParser {
         phase = RequestPhase.request,
         framing = RequestFraming.undecided,
@@ -67,7 +67,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
     for {
         if !parse_pending {
             if occupied == context.input.len {
-                grown: mut []u8, ok: bool = mem.grow[u8](context.input, context.input.len + 1)
+                grown: []u8, ok: bool = mem.grow[u8](context.input, context.input.len + 1)
                 if !ok { return blank(Request), false }
 
                 context.input = grown
@@ -81,7 +81,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                 }
             }
 
-            received: int, recv_err: Error = tcp.receive(conn, mut context.input[occupied..])
+            received: int, recv_err: Error = tcp.receive(conn, context.input[occupied..])
             if recv_err != null {
                 if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR { continue }
                 return blank(Request), false
@@ -92,10 +92,10 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
         }
         parse_pending = false
 
-        result: RequestResult = mut parser.parse(
+        result: RequestResult = parser.parse(
             context.input[..occupied],
-            mut context.headers[..],
-            mut context.body[..],
+            context.headers[..],
+            context.body[..],
             false,
         )
         switch result {
@@ -105,7 +105,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
             RequestResult.progress(value: RequestProgress) {}
             RequestResult.capacity(capacity_type: RequestCapacity) {
                 if capacity_type == RequestCapacity.headers {
-                    grown: mut []Header, ok: bool = mem.grow[Header](context.headers, context.headers.len + 1)
+                    grown: []Header, ok: bool = mem.grow[Header](context.headers, context.headers.len + 1)
                     if !ok { return blank(Request), false }
 
                     context.headers = grown
@@ -116,7 +116,7 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
                     } else if parser.framing == RequestFraming.chunked {
                         needed = parser.body_count + parser.chunk_remaining
                     }
-                    grown: mut []u8, ok: bool = mem.grow[u8](context.body, needed)
+                    grown: []u8, ok: bool = mem.grow[u8](context.body, needed)
                     if !ok { return blank(Request), false }
 
                     context.body = grown
@@ -136,13 +136,13 @@ read_request(conn: tcp.Conn, mut context: Context): (Request, bool) {
  * failure other than a capacity shortfall just skips the write; the caller
  * closes the connection regardless.
  */
-respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
+respond_close(conn: tcp.Conn, response: Response, context: *Context) {
     for i: usize in 0 .. response.headers.len {
         if ascii.equal(response.headers[i].name, "connection", false) { return }
     }
     needed: usize = response.headers.len + 1
     if needed > context.headers.len {
-        grown: mut []Header, ok: bool = mem.grow[Header](context.headers, needed)
+        grown: []Header, ok: bool = mem.grow[Header](context.headers, needed)
         if !ok { return }
 
         context.headers = grown
@@ -159,13 +159,13 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
         headers = context.headers[..needed],
         body = response.body,
     }
-    count: usize, format_err: Error = outgoing.format(mut context.output[..])
+    count: usize, format_err: Error = outgoing.format(context.output[..])
     for format_err == FormatErr.capacity {
-        grown: mut []u8, ok: bool = mem.grow[u8](context.output, context.output.len + 1)
+        grown: []u8, ok: bool = mem.grow[u8](context.output, context.output.len + 1)
         if !ok { return }
 
         context.output = grown
-        count, format_err = outgoing.format(mut context.output[..])
+        count, format_err = outgoing.format(context.output[..])
     }
     if format_err == null { tcp.send_all(conn, context.output[..count]) }
 }
@@ -173,15 +173,15 @@ respond_close(conn: tcp.Conn, response: Response, mut context: Context) {
 /* Accepts one connection from `listener`, reads exactly one request from it,
  * writes `router`'s response, and closes it. An accept failure just returns.
  */
-serve_one(listener: tcp.Listener, router: Router, mut context: Context) {
+serve_one(listener: tcp.Listener, router: Router, context: *Context) {
     conn: tcp.Conn, _, accept_err: Error = tcp.accept(listener)
-    defer tcp.close(mut conn)
+    defer tcp.close(&conn)
     if accept_err != null { return }
 
-    request: Request, ok: bool = read_request(conn, mut context)
+    request: Request, ok: bool = read_request(conn, context)
     if !ok { return }
 
-    respond_close(conn, router.dispatch(request), mut context)
+    respond_close(conn, router.dispatch(request), context)
 }
 
 /* Resolves and binds `endpoint` with the given listen backlog, ready for a
@@ -205,10 +205,10 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
  * created; a per-connection failure just drops that connection and the loop
  * continues.
  */
-pub serve(endpoint: string, mut context: Context, router: Router): Error {
+pub serve(endpoint: string, context: *Context, router: Router): Error {
     listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint, context.backlog)
-    defer tcp.close(mut listener)
+    defer tcp.close(&listener)
     if listen_err != null { return listen_err }
 
-    for { serve_one(listener, router, mut context) }
+    for { serve_one(listener, router, context) }
 }

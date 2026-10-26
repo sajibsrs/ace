@@ -40,18 +40,12 @@ grid(v: []u8): u8 {
     return 1
 }
 
-bump(mut v: i64): i64 {
-    return v
-}
-
 Calls: struct {
     count: i64 = one(1, 2),
     none: i64 = two("x"),
     nulls: i64 = amb(null),
     generic: i64 = gen(1),
     passed: i64 = two(two),
-    marked: i64 = one(mut VALUE),
-    missing: i64 = bump(1),
     letter: i64 = two('a'),
     array: i64 = grid([1, 2]),
     hidden: i64 = other.pick("a", "b"),

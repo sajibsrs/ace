@@ -26,7 +26,7 @@ Meters: distinct f64
 
 Shape: contract {
     area(self): f32
-    scale(mut self, k: f64)
+    scale(self, k: f64)
 }
 
 Circle signs Shape
@@ -35,7 +35,7 @@ Circle.area(self): f32 {
     return 0.0
 }
 
-pub Circle.scale(mut self, k: f64) {
+pub Circle.scale(self, k: f64) {
     self.r = self.r * f32(k)
 }
 
@@ -113,8 +113,8 @@ main(): int {
         7 { total <<= 1 }
         default { total >>= 1 }
     }
-    mut q.scale(2.0)
-    circle_scale(mut p, 0.5)
+    q.scale(2.0)
+    circle_scale(&p, 0.5)
     pp: *int = &one
     nptr: *Point = null
     v: int = *pp

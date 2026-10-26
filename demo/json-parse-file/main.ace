@@ -13,18 +13,18 @@ import mem
 PATH: string = "data.json"
 
 main(): int {
-    data: mut []u8, err: Error = file.read(PATH)
-    defer mem.release[u8](mut data)
+    data: []u8, err: Error = file.read(PATH)
+    defer mem.release[u8](&data)
     if err != null {
         fmt.printf("failed to read %s: %s\n", PATH, err.message)
         return 1
     }
 
     doc: json.Json = json.Json.new()
-    defer mut doc.wipe()
+    defer doc.wipe()
     storage: [256]u8
-    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-    perr: Error = mut doc.parse(data, mut diag)
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    perr: Error = doc.parse(data, &diag)
     if perr != null {
         fmt.printf("failed to parse %s: %s\n%s", PATH, perr.message, diag.text())
         return 1

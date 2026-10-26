@@ -12,7 +12,7 @@ SDL_Surface: struct {}
 extern "c" {
     set_hint(name: *u8, value: *u8): bool as "SDL_SetHint"
     read_pixels(renderer: *u8, rect: *u8): *SDL_Surface as "SDL_RenderReadPixels"
-    read_pixel(surface: *SDL_Surface, x: i32, y: i32, r: mut *u8, g: mut *u8, b: mut *u8, a: mut *u8): bool as "SDL_ReadSurfacePixel"
+    read_pixel(surface: *SDL_Surface, x: i32, y: i32, r: *u8, g: *u8, b: *u8, a: *u8): bool as "SDL_ReadSurfacePixel"
     destroy_surface(surface: *SDL_Surface) as "SDL_DestroySurface"
 }
 
@@ -24,7 +24,7 @@ red(surface: *SDL_Surface, x: i32, y: i32): int {
     g: u8 = 0
     b: u8 = 0
     a: u8 = 0
-    if !read_pixel(surface, x, y, mut &r, mut &g, mut &b, mut &a) { return -1 }
+    if !read_pixel(surface, x, y, &r, &g, &b, &a) { return -1 }
     return int(r)
 }
 
@@ -39,13 +39,13 @@ main(): int {
     if !sdl.init(sdl.InitFlags { video = 1 }) { return 2 }
     defer sdl.quit()
     window: sdl.Window = sdl.Window.new("geometry", SIZE, SIZE, sdl.WindowFlags {})
-    defer mut window.wipe()
+    defer window.wipe()
     if !window.ok() {
         fmt.print(sdl.error())
         return 3
     }
     renderer: sdl.Renderer = sdl.Renderer.new(window)
-    defer mut renderer.wipe()
+    defer renderer.wipe()
     if !renderer.ok() { return 4 }
 
     none: [1]i32 = [0]

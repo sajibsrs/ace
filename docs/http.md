@@ -34,7 +34,7 @@ empty or invalid ports, and other schemes return `UrlErr`. HTTP defaults to
 port 80 and HTTPS to port 443. Path/query
 bytes and percent escapes are unchanged.
 
-`get(url, mut context)` accepts only `http://`. `ClientContext` owns reusable
+`get(url, &context)` accepts only `http://`. `ClientContext` owns reusable
 HTTP workspace and policy, is created with `ClientContext.new`, and is
 released with `wipe`.
 
@@ -44,14 +44,14 @@ import http
 
 main(): int {
     context: http.ClientContext = http.ClientContext.new()
-    response: http.Response, err: Error = http.get("http://example.com/", mut context)
+    response: http.Response, err: Error = http.get("http://example.com/", &context)
     if err != null {
         fmt.printf("request failed: %d\n", int(err.code))
-        mut context.wipe()
+        context.wipe()
         return 1
     }
     fmt.printf("status %d, %d bytes\n", int(response.status), int(response.body.len))
-    mut context.wipe()
+    context.wipe()
     return 0
 }
 ```
@@ -92,8 +92,8 @@ such as `http.GET` and `http.PATCH`. Response statuses remain plain `u16`
 numbers. `status(code)` returns the conventional phrase for a known code and `""`
 for an unknown code; it does not restrict extension statuses in `100...999`.
 
-`mut parser.parse(input, headers, body, eof)` on `RequestParser` and
-`mut parser.parse(input, headers, body, eof, no_body)` on `ResponseParser`
+`parser.parse(input, headers, body, eof)` on `RequestParser` and
+`parser.parse(input, headers, body, eof, no_body)` on `ResponseParser`
 incrementally parse HTTP/1.0 or HTTP/1.1 messages. `input` is the complete
 occupied prefix of the same stable caller-owned receive storage on every call.
 Each call resumes from saved state and examines only newly available line bytes
@@ -123,7 +123,7 @@ ASCII case folding; values and payload bytes otherwise pass through unchanged.
 ## Simple HTTP client demo
 
 A runnable proof of concept lives at `demo/http-simple-client/main.ace`: it
-calls `get(url, mut context)` directly, printing the response status and
+calls `get(url, &context)` directly, printing the response status and
 body. Build and run it with:
 
 ```sh

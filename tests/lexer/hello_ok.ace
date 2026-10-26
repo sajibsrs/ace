@@ -19,7 +19,7 @@ greet(name: string): string {
     return "hello, " + name + "!\n"
 }
 
-sum(mut buf: []u8): int {
+sum(buf: *[]u8): int {
     total: int = 0
 
     for b: u8 in buf {
@@ -32,12 +32,12 @@ in_range(lo: int, x: int, hi: int): bool {
     return lo <= x <= hi
 }
 
-scale_it(p: mut *Point, k: f64) {
+scale_it(p: *Point, k: f64) {
     p.x = p.x * k
     p.y = p.y * k
 }
 
-raw_read(fd: int, mut buf: []u8): (int, Error) {
+raw_read(fd: int, buf: *[]u8): (int, Error) {
     ret: i64
 
     asm "svc #0" {

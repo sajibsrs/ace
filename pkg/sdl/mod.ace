@@ -259,10 +259,10 @@ extern "c" {
     c_create_renderer(window: *SDL_Window, name: *u8): *SDL_Renderer as "SDL_CreateRenderer"
     c_destroy_renderer(renderer: *SDL_Renderer) as "SDL_DestroyRenderer"
     c_set_render_draw_color_float(renderer: *SDL_Renderer, r: f32, g: f32, b: f32, a: f32): bool as "SDL_SetRenderDrawColorFloat"
-    c_get_render_draw_color_float(renderer: *SDL_Renderer, r: mut *f32, g: mut *f32, b: mut *f32, a: mut *f32): bool as "SDL_GetRenderDrawColorFloat"
+    c_get_render_draw_color_float(renderer: *SDL_Renderer, r: *f32, g: *f32, b: *f32, a: *f32): bool as "SDL_GetRenderDrawColorFloat"
     c_render_clear(renderer: *SDL_Renderer): bool as "SDL_RenderClear"
     c_render_present(renderer: *SDL_Renderer): bool as "SDL_RenderPresent"
-    c_get_current_render_output_size(renderer: *SDL_Renderer, w: mut *i32, h: mut *i32): bool as "SDL_GetCurrentRenderOutputSize"
+    c_get_current_render_output_size(renderer: *SDL_Renderer, w: *i32, h: *i32): bool as "SDL_GetCurrentRenderOutputSize"
     c_render_geometry(renderer: *SDL_Renderer, texture: *SDL_Texture, vertices: *Vertex, num_vertices: i32, indices: *i32, num_indices: i32): bool as "SDL_RenderGeometry"
     c_get_ticks(): u64 as "SDL_GetTicks"
     c_get_ticks_ns(): u64 as "SDL_GetTicksNS"
@@ -277,7 +277,7 @@ extern "c" {
     c_destroy_gpu_render_state(state: *SDL_GPURenderState) as "SDL_DestroyGPURenderState"
     c_set_gpu_render_state_fragment_uniforms(state: *SDL_GPURenderState, slot: u32, data: *f32, length: u32): bool as "SDL_SetGPURenderStateFragmentUniforms"
     c_set_gpu_render_state(renderer: *SDL_Renderer, state: *SDL_GPURenderState): bool as "SDL_SetGPURenderState"
-    c_poll_event(event: mut *Event): bool as "SDL_PollEvent"
+    c_poll_event(event: *Event): bool as "SDL_PollEvent"
     c_delay(ms: u32) as "SDL_Delay"
 }
 
@@ -301,7 +301,7 @@ pub error(): string {
 }
 
 // Fill this event with the next pending one; false when none is left.
-pub Event.poll(mut self): bool { return c_poll_event(mut &self) }
+pub Event.poll(self): bool { return c_poll_event(&self) }
 
 // The keyboard member, and whether type says it holds one; false for every
 // other kind, whose bytes the member would misread.
@@ -332,12 +332,12 @@ pub Color.hex(rgb: u32): Color {
 // A title longer than TEXT_MAX bytes or holding a NUL byte fails creation.
 pub Window.new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
     buf: [TEXT_MAX + 1]u8
-    if !str.cstring(title, mut buf[..]) { return Window { handle = null } }
+    if !str.cstring(title, buf[..]) { return Window { handle = null } }
     return Window { handle = c_create_window(&buf[0], w, h, u64(flags)) }
 }
 
 pub Window.ok(self): bool { return self.handle != null }
-pub Window.wipe(mut self) {
+pub Window.wipe(self) {
     c_destroy_window(self.handle)
     self.handle = null
 }
@@ -350,12 +350,12 @@ pub Renderer.new(window: Window): Renderer {
 // longer than TEXT_MAX bytes or holding a NUL byte fails creation.
 pub Renderer.new(window: Window, driver: string): Renderer {
     buf: [TEXT_MAX + 1]u8
-    if !str.cstring(driver, mut buf[..]) { return Renderer { handle = null } }
+    if !str.cstring(driver, buf[..]) { return Renderer { handle = null } }
     return Renderer { handle = c_create_renderer(window.handle, &buf[0]) }
 }
 
 pub Renderer.ok(self): bool { return self.handle != null }
-pub Renderer.wipe(mut self) {
+pub Renderer.wipe(self) {
     c_destroy_renderer(self.handle)
     self.handle = null
 }
@@ -366,7 +366,7 @@ pub Renderer.color(self, color: Color): bool {
 
 pub Renderer.color(self): (Color, bool) {
     c: Color
-    ok: bool = c_get_render_draw_color_float(self.handle, mut &c.r, mut &c.g, mut &c.b, mut &c.a)
+    ok: bool = c_get_render_draw_color_float(self.handle, &c.r, &c.g, &c.b, &c.a)
     return c, ok
 }
 
@@ -377,7 +377,7 @@ pub Renderer.present(self): bool { return c_render_present(self.handle) }
 pub Renderer.size(self): (i32, i32, bool) {
     w: i32 = 0
     h: i32 = 0
-    ok: bool = c_get_current_render_output_size(self.handle, mut &w, mut &h)
+    ok: bool = c_get_current_render_output_size(self.handle, &w, &h)
     return w, h, ok
 }
 
@@ -408,7 +408,7 @@ pub Renderer.scale(self, x: f32, y: f32): bool {
 // than TEXT_MAX bytes or holding a NUL byte draws nothing and returns false.
 pub Renderer.debug_text(self, x: f32, y: f32, text: string): bool {
     buf: [TEXT_MAX + 1]u8
-    if !str.cstring(text, mut buf[..]) { return false }
+    if !str.cstring(text, buf[..]) { return false }
     return c_render_debug_text(self.handle, x, y, &buf[0])
 }
 
@@ -437,7 +437,7 @@ pub Shader.new(renderer: Renderer, format: ShaderFormats, code: []u8, uniform_bu
 }
 
 pub Shader.ok(self): bool { return self.handle != null }
-pub Shader.wipe(mut self) {
+pub Shader.wipe(self) {
     if self.handle != null { c_release_gpu_shader(self.device, self.handle) }
     self.handle = null
 }
@@ -452,7 +452,7 @@ pub RenderState.new(renderer: Renderer, shader: Shader): RenderState {
 }
 
 pub RenderState.ok(self): bool { return self.handle != null }
-pub RenderState.wipe(mut self) {
+pub RenderState.wipe(self) {
     if self.handle != null { c_destroy_gpu_render_state(self.handle) }
     self.handle = null
 }

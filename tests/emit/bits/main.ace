@@ -18,12 +18,12 @@ roundtrip(value: Flags): Flags {
     return value
 }
 
-once(mut calls: int, value: u32): u32 {
-    calls += 1
+once(calls: *int, value: u32): u32 {
+    *calls += 1
     return value
 }
-index(mut calls: int): usize {
-    calls += 1
+index(calls: *int): usize {
+    *calls += 1
     return 0
 }
 
@@ -64,7 +64,7 @@ main(): int {
     volatile whole = flags
     if whole != flags { return 9 }
     calls: int = 0
-    array[index(mut calls)].count = once(mut calls, u32(9))
+    array[index(&calls)].count = once(&calls, u32(9))
     if calls != 2 || array[0].count != 9 { return 10 }
     return 0
 }

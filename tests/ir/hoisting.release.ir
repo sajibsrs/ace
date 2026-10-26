@@ -66,28 +66,26 @@ b0:
     %3 = const i64 5
     store [%0], %2
     store [%0 + 8], %3
-    %6 = const i64 1
-    %7 = load i64 [%0]
-    %8 = add i64 %7, %6
-    store [%0], %8
-    %10 = const i64 0
-    %11 = const i64 0
-    %12 = load i64 [%0]
-    %13 = load i64 [%0 + 8]
-    %14 = mul i64 %12, %13
+    %6 = global ptr grow
+    calli %6(%0)
+    %8 = const i64 0
+    %9 = const i64 0
+    %10 = load i64 [%0]
+    %11 = load i64 [%0 + 8]
+    %12 = mul i64 %10, %11
     jmp b1
 b1: ; preds b0, b2
-    %16 = phi i64 [%11, b0], [%22, b2]
-    %17 = phi i64 [%10, b0], [%20, b2]
-    %18 = lt bool %16, %1
-    br %18, b2, b3
+    %14 = phi i64 [%9, b0], [%20, b2]
+    %15 = phi i64 [%8, b0], [%18, b2]
+    %16 = lt bool %14, %1
+    br %16, b2, b3
 b2: ; preds b1
-    %20 = add i64 %17, %14
-    %21 = const i64 1
-    %22 = add i64 %16, %21
+    %18 = add i64 %15, %12
+    %19 = const i64 1
+    %20 = add i64 %14, %19
     jmp b1
 b3: ; preds b1
-    ret %17
+    ret %15
 }
 
 watch(i64): i64 {
@@ -98,27 +96,25 @@ b0:
     %3 = const i64 5
     store [%0], %2
     store [%0 + 8], %3
-    %6 = const i64 1
-    %7 = load i64 [%0]
-    %8 = add i64 %7, %6
-    store [%0], %8
-    %10 = const i64 0
-    %11 = const i64 0
+    %6 = global ptr grow
+    calli %6(%0)
+    %8 = const i64 0
+    %9 = const i64 0
     jmp b1
 b1: ; preds b0, b2
-    %13 = phi i64 [%11, b0], [%21, b2]
-    %14 = phi i64 [%10, b0], [%19, b2]
-    %15 = lt bool %13, %1
-    br %15, b2, b3
+    %11 = phi i64 [%9, b0], [%19, b2]
+    %12 = phi i64 [%8, b0], [%17, b2]
+    %13 = lt bool %11, %1
+    br %13, b2, b3
 b2: ; preds b1
-    call.cold note(%13)
-    %18 = load i64 [%0 + 8]
-    %19 = add i64 %14, %18
-    %20 = const i64 1
-    %21 = add i64 %13, %20
+    call.cold note(%11)
+    %16 = load i64 [%0 + 8]
+    %17 = add i64 %12, %16
+    %18 = const i64 1
+    %19 = add i64 %11, %18
     jmp b1
 b3: ; preds b1
-    ret %14
+    ret %12
 }
 
 main(): i64 {

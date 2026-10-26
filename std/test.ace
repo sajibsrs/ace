@@ -15,10 +15,10 @@ pub T: struct {
 }
 
 /* A named test function. */
-pub Case: type = (string, (mut t: T): void)
+pub Case: type = (string, (t: *T): void)
 
 /* Counts a check; on failure marks the test failed and prints its index. */
-begin(mut t: T, ok: bool): bool {
+begin(t: *T, ok: bool): bool {
     t.checks += 1
     if ok { return true }
 
@@ -29,8 +29,8 @@ begin(mut t: T, ok: bool): bool {
     return false
 }
 
-pub T.equal(mut self, got: int, want: int): bool {
-    if begin(mut self, got == want) { return true }
+pub T.equal(self, got: int, want: int): bool {
+    if begin(&self, got == want) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -38,8 +38,8 @@ pub T.equal(mut self, got: int, want: int): bool {
     return false
 }
 
-pub T.equal(mut self, got: uint, want: uint): bool {
-    if begin(mut self, got == want) { return true }
+pub T.equal(self, got: uint, want: uint): bool {
+    if begin(&self, got == want) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -47,8 +47,8 @@ pub T.equal(mut self, got: uint, want: uint): bool {
     return false
 }
 
-pub T.equal(mut self, got: usize, want: usize): bool {
-    if begin(mut self, got == want) { return true }
+pub T.equal(self, got: usize, want: usize): bool {
+    if begin(&self, got == want) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -56,8 +56,8 @@ pub T.equal(mut self, got: usize, want: usize): bool {
     return false
 }
 
-pub T.equal(mut self, got: bool, want: bool): bool {
-    if begin(mut self, got == want) { return true }
+pub T.equal(self, got: bool, want: bool): bool {
+    if begin(&self, got == want) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -65,8 +65,8 @@ pub T.equal(mut self, got: bool, want: bool): bool {
     return false
 }
 
-pub T.equal(mut self, got: string, want: string): bool {
-    if begin(mut self, mem.equal(got, want)) { return true }
+pub T.equal(self, got: string, want: string): bool {
+    if begin(&self, mem.equal(got, want)) { return true }
     fmt.print("got \"")
     fmt.print(got)
     fmt.print("\", want \"")
@@ -77,8 +77,8 @@ pub T.equal(mut self, got: string, want: string): bool {
 
 /* Compares enum values of type `E`, printing members by name; an open
  * enum's non-member prints as an empty name. */
-pub equal[E](mut t: T, got: E, want: E): bool {
-    if begin(mut t, got == want) { return true }
+pub equal[E](t: *T, got: E, want: E): bool {
+    if begin(t, got == want) { return true }
     fmt.print("got ")
     fmt.print(got.name)
     fmt.print(", want ")
@@ -87,8 +87,8 @@ pub equal[E](mut t: T, got: E, want: E): bool {
 }
 
 /* Fails the test unconditionally with `message`. */
-pub T.fail(mut self, message: string) {
-    begin(mut self, false)
+pub T.fail(self, message: string) {
+    begin(&self, false)
     fmt.println(message)
 }
 
@@ -100,9 +100,9 @@ pub run(table: []Case): int {
     failed: int = 0
 
     for i: usize = 0; i < table.len; i += 1 {
-        name: string, body: (mut t: T): void = table[i]
+        name: string, body: (t: *T): void = table[i]
         t: T = blank(T)
-        body(mut t)
+        body(&t)
         if t.failed {
             fmt.print("FAIL ")
             failed += 1

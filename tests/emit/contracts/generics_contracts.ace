@@ -6,7 +6,7 @@ Point: struct { x: i32 }
 
 Shape: contract {
     area(self): i32
-    scale(mut self, k: i32)
+    scale(self, k: i32)
 }
 
 Point signs Shape
@@ -15,7 +15,7 @@ Point.area(self): i32 {
     return self.x
 }
 
-Point.scale(mut self, k: i32) {
+Point.scale(self, k: i32) {
     self.x = self.x * k
 }
 
@@ -27,6 +27,6 @@ bigger[T](a: T, b: T): T {
 main(): int {
     p: Point = Point { x = 21 }
     shape: Shape = Shape(&p)
-    mut shape.scale(2)
+    shape.scale(2)
     return int(bigger[i32](shape.area(), 40))
 }

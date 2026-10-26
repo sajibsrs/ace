@@ -18,12 +18,12 @@ second(p: []Pair, i: usize): i64 {
     return p[i].b
 }
 
-bump(s: mut []u8, i: usize) {
+bump(s: []u8, i: usize) {
     s[i] += 1
     s[i + 1] = s[i]
 }
 
-first(s: mut []u8): *u8 {
+first(s: []u8): *u8 {
     return &s[0]
 }
 

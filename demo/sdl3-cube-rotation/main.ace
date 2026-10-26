@@ -55,11 +55,11 @@ main(): int {
     defer sdl.quit()
 
     window: sdl.Window = sdl.Window.new("Ace + SDL3 cube", 640, 640, sdl.WindowFlags { resizable = 1 })
-    defer mut window.wipe()
+    defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
     renderer: sdl.Renderer = sdl.Renderer.new(window)
-    defer mut renderer.wipe()
+    defer renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     vsync: bool = renderer.vsync(1)
 
@@ -87,7 +87,7 @@ main(): int {
     for running {
         work_start: u64 = sdl.ticks_ns()
         event: sdl.Event
-        for mut event.poll() {
+        for event.poll() {
             if event.type == sdl.EventType.quit || event.type == sdl.EventType.window_close_requested {
                 running = false
             } else if event.type == sdl.EventType.key_down && event.keyboard.key == sdl.Keycode.escape {
@@ -177,19 +177,19 @@ main(): int {
         // A line that does not fit is skipped, as the overlay is only
         // informational.
         line: [64]u8 = [0 : 64]
-        n: usize, fit: bool = str.format(mut line[..], "FPS %d", fps)
+        n: usize, fit: bool = str.format(line[..], "FPS %d", fps)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
+        n, fit = str.format(line[..], "frame %d.%02d ms", frame_us / 1000, frame_us % 1000 / 10)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "draw %d us (CPU)", draw_us)
+        n, fit = str.format(line[..], "draw %d us (CPU)", draw_us)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "faces %u, triangles %u", nv / 4, ni / 3)
+        n, fit = str.format(line[..], "faces %u, triangles %u", nv / 4, ni / 3)
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
-        n, fit = str.format(mut line[..], "output %d x %d", int(w), int(h))
+        n, fit = str.format(line[..], "output %d x %d", int(w), int(h))
         if fit { renderer.debug_text(6.0, y, string(line[..n])) }
         y += step
 

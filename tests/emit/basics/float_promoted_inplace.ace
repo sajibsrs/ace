@@ -122,14 +122,14 @@ leaf_dot(p: Vec3, q: Vec3): f64 {
     return acc
 }
 
-bump(mut x: f64, by: f64) {
-    x = x + by
+bump(x: *f64, by: f64) {
+    *x = *x + by
 }
 
 // an escaping local keeps its slot and the plain path
 escaped(): f64 {
     x: f64 = 1.0
-    bump(mut x, 0.5)
+    bump(&x, 0.5)
     for i: usize in 0 .. 4 {
         x = x * 2.0 + 0.25
         x += 1.0

@@ -181,9 +181,9 @@ main(): int {
 
 `fmt.Buffer` keeps output across calls, for code that writes many small
 pieces. `fmt.Buffer.init(fd, storage)` takes a descriptor and caller-owned
-storage, allocating nothing. `mut buffer.printf(format, ...)` is `printf` with
+storage, allocating nothing. `buffer.printf(format, ...)` is `printf` with
 the same checks and conversions, but its bytes go into the storage and reach
-the descriptor only when the storage fills or on `mut buffer.flush()`, so
+the descriptor only when the storage fills or on `buffer.flush()`, so
 thousands of calls cost a write per storage-full rather than one each:
 
 ```ace
@@ -192,9 +192,9 @@ import sys
 
 main(): int {
     storage: [4096]u8
-    out: fmt.Buffer = fmt.Buffer.init(sys.stdout, mut storage[..])
-    for i: int in 0 .. 3 { mut out.printf("line %d\n", i) }
-    return mut out.flush() - 21
+    out: fmt.Buffer = fmt.Buffer.init(sys.stdout, storage[..])
+    for i: int in 0 .. 3 { out.printf("line %d\n", i) }
+    return out.flush() - 21
 }
 ```
 
@@ -217,15 +217,15 @@ import fmt
 
 ParseErr: error
 
-parse(text: string, mut diag: fmt.Buffer): Error {
-    mut diag.printf("line %d: unexpected '}'\n", 12)
+parse(text: string, diag: *fmt.Buffer): Error {
+    diag.printf("line %d: unexpected '}'\n", 12)
     return ParseErr()
 }
 
-load(path: string, mut diag: fmt.Buffer): Error {
-    err: Error = parse("}", mut diag)
+load(path: string, diag: *fmt.Buffer): Error {
+    err: Error = parse("}", diag)
     if err != null {
-        mut diag.printf("load config %s\n", path)
+        diag.printf("load config %s\n", path)
         return err
     }
     return null
@@ -233,8 +233,8 @@ load(path: string, mut diag: fmt.Buffer): Error {
 
 main(): int {
     storage: [256]u8
-    diag: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-    if load("app.json", mut diag) != null { fmt.print(diag.text()) }
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    if load("app.json", &diag) != null { fmt.print(diag.text()) }
     return 0
 }
 ```
@@ -243,7 +243,7 @@ A caller that wants no context passes `fmt.Buffer.init(null)`.
 
 Code that continues past failures and handles each one programmatically, such
 as a lexer reporting every error in a file, takes a caller-owned
-`errors: mut array.Array[R]` instead, where `R` is its own record type holding
+`errors: *array.Array[R]` instead, where `R` is its own record type holding
 an `err: Error` plus whatever position or payload it reports, and pushes one
 record per failure. Std defines no shared failure record: each domain's record
 carries what that domain needs.

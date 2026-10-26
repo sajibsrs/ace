@@ -16,18 +16,18 @@ SENSORS: [4]string = ["north", "east", "south", "west"]
 
 main(): int {
     doc: json.Json = json.Json.new()
-    defer mut doc.wipe()
-    mut doc.array()
+    defer doc.wipe()
+    doc.array()
 
     for i: int in 0 .. 12 {
-        mut doc.object()
-        mut doc.field("sensor", SENSORS[i % 4])
-        mut doc.field("sample", i)
-        mut doc.field("celsius", 15.0 + 1.5 * f64(i))
-        mut doc.field("ok", i % 5 != 0)
-        mut doc.end()
+        doc.object()
+        doc.field("sensor", SENSORS[i % 4])
+        doc.field("sample", i)
+        doc.field("celsius", 15.0 + 1.5 * f64(i))
+        doc.field("ok", i % 5 != 0)
+        doc.end()
     }
-    mut doc.end()
+    doc.end()
     text: string, err: Error = doc.format()
     if err != null { return 1 }
 

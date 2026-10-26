@@ -13,43 +13,43 @@ LABEL: const string = "none"
 
 main(): int {
     buffer: [64]u8 = [0 : 64]
-    n: usize, ok: bool = str.format(mut buffer[..], "FPS %d, %s %u %x %X %b %o %c %.2f %f %% end", 60, "hi",
+    n: usize, ok: bool = str.format(buffer[..], "FPS %d, %s %u %x %X %b %o %c %.2f %f %% end", 60, "hi",
                                     uint(7), uint(255), uint(255), uint(5), uint(8), u8(65), 3.14159, f32(-0.5))
 
     if !ok { return 1 }
     fmt.printf("%s|%u|", string(buffer[..n]), n)
     count: usize = 12345
-    n, ok = str.format(mut buffer[..], "%u|", count)
+    n, ok = str.format(buffer[..], "%u|", count)
 
     if !ok { return 2 }
     fmt.print(string(buffer[..n]))
-    n, ok = str.format(mut buffer[..], LABEL)
+    n, ok = str.format(buffer[..], LABEL)
 
     if !ok || n != 4 { return 3 }
     fmt.print(string(buffer[..n]))
     fmt.print("|")
-    n, ok = str.format(mut buffer[..], "%u", uint(18446744073709551615))
+    n, ok = str.format(buffer[..], "%u", uint(18446744073709551615))
 
     if !ok { return 4 }
     fmt.print(string(buffer[..n]))
     // a piece that does not fit ends the call, whatever came before it
     small: [4]u8 = [0 : 4]
-    n, ok = str.format(mut small[..], "FPS %d", 60)
+    n, ok = str.format(small[..], "FPS %d", 60)
 
     if ok || n != 0 { return 5 }
-    n, ok = str.format(mut small[..], "%s", "")
+    n, ok = str.format(small[..], "%s", "")
 
     if !ok || n != 0 { return 6 }
     // the value overloads are unaffected
-    n, ok = str.format(mut buffer[..], 42)
+    n, ok = str.format(buffer[..], 42)
 
     if !ok || !mem.equal(buffer[..n], "42") { return 7 }
     // widths pad in place; a padded piece that does not fit ends the call
-    n, ok = str.format(mut buffer[..], "|%d.%02d|%4s|%03o|%07.1f|%5c", 7, 5, "ab", uint(8), -3.5, u8(45))
+    n, ok = str.format(buffer[..], "|%d.%02d|%4s|%03o|%07.1f|%5c", 7, 5, "ab", uint(8), -3.5, u8(45))
 
     if !ok { return 8 }
     fmt.print(string(buffer[..n]))
-    n, ok = str.format(mut small[..], "%5d", 1)
+    n, ok = str.format(small[..], "%5d", 1)
 
     if ok || n != 0 { return 9 }
     return 0

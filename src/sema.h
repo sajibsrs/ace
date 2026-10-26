@@ -35,7 +35,6 @@ typedef struct {
 struct SType {
     uint8_t     kind;
     uint8_t     prim;
-    uint8_t     is_mut;
     uint8_t     calc; // layout in progress (cycle guard)
     uint8_t     building; // aggregate fields are currently being constructed
     uint8_t     invalid_layout;
@@ -50,7 +49,6 @@ struct SType {
     SType*      key;     // SK_ARRAY: the dense enum of an enum-indexed [E]T, else NULL
     SField*     fields; int nfields; // struct/tuple fields or union variants
     SType**     params; int nparams; // function params
-    uint64_t    mut_params; // SK_FUNC: bit i set when parameter i is mut
     SType**     args; int nargs;     // nominal generic instantiation arguments
     SType*      ret;
     Node*       decl;
@@ -72,12 +70,11 @@ typedef struct Sym Sym;
 struct Sym {
     const char* name; uint32_t len;
     uint8_t     kind;
-    uint8_t     is_const, is_mut, is_pub, is_generic, is_extern;
+    uint8_t     is_const, is_byaddr, is_pub, is_generic, is_extern;
     uint8_t     is_param, is_const_backed, is_global;
     // top-level declarations are entered before any is resolved; a lookup
     // resolves one still DECL_ENTERED on demand (Compiler #5)
     uint8_t     decl_state, in_cycle;
-    uint8_t     is_literal_backed; // string binding initialized from a literal
     uint8_t     is_root; // top-level in the root file: unseen from imported files
     uint8_t     is_thread; // a threadlocal module variable: one copy per thread
     SType*      type;

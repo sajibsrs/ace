@@ -1,9 +1,0 @@
-/* err: alias spelling widens nothing (Mutability #9) — a plain []u8 is the
- * same plain type as string and cannot initialize its writable form. */
-
-main(): int {
-    storage: [4]u8
-    view: []u8 = storage[0..4]
-    text: mut string = view
-    return 0
-}

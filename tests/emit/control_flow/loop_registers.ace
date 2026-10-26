@@ -95,7 +95,7 @@ sequences(): int {
     bytes: int = 0
     for c: u8 in text { bytes += int(c) }
     if bytes != 265 { return 8 } // 'A' + 'c' + 'e'
-    for v: int in mut xs { v *= 2 }
+    for i: usize in 0 .. xs.len { xs[i] *= 2 }
     if xs[3] != 8 { return 9 }
     pairs: int = 0
     for i: usize, a: int in xs {

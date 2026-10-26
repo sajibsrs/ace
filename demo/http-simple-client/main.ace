@@ -13,9 +13,9 @@ main(): int {
     url: string = "http://example.com/"
 
     context: http.ClientContext = http.ClientContext.new()
-    defer mut context.wipe()
+    defer context.wipe()
 
-    response: http.Response, err: Error = http.get(url, mut context)
+    response: http.Response, err: Error = http.get(url, &context)
     if err != null {
         fmt.printf("failed to fetch %s: error %d\n", url, int(err.code))
         return 1

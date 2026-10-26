@@ -5,7 +5,7 @@ import regex
 /* Parses and compiles `pattern`, returning the program or printing why not. */
 compile(pattern: string): (regex.Program, Error) {
     s: regex.Syntax, err: Error = regex.Syntax.parse(pattern)
-    defer mut s.wipe()
+    defer s.wipe()
     if err != null { return blank(regex.Program), err }
 
     p: regex.Program, cerr: Error = regex.Program.compile(s)
@@ -15,7 +15,7 @@ compile(pattern: string): (regex.Program, Error) {
 /* Compares the program's dump with `want`, printing both on a mismatch. */
 program(pattern: string, want: string): int {
     p: regex.Program, err: Error = compile(pattern)
-    defer mut p.wipe()
+    defer p.wipe()
     if err != null {
         fmt.print(pattern)
         fmt.print(": ")
@@ -24,7 +24,7 @@ program(pattern: string, want: string): int {
     }
 
     buffer: [1024]u8
-    n: usize, ok: bool = p.format(mut buffer[0..1024])
+    n: usize, ok: bool = p.format(buffer[0..1024])
     if !ok || !mem.equal(buffer[0..n], want) {
         fmt.print(pattern)
         fmt.println(": got")
@@ -39,7 +39,7 @@ program(pattern: string, want: string): int {
 
 fails(pattern: string, want: Error): int {
     p: regex.Program, err: Error = compile(pattern)
-    defer mut p.wipe()
+    defer p.wipe()
     if err != want {
         fmt.print(pattern)
         fmt.print(": got ")
@@ -91,14 +91,14 @@ limits(): int {
     bad += fails("(?:a{1000}){66}", regex.CompileErr.too_large)
     bad += fails("((a{1000}){1000}){1000}", regex.CompileErr.too_large)
     p: regex.Program, err: Error = compile("(?:a{1000}){65}")
-    defer mut p.wipe()
+    defer p.wipe()
     if err != null || p.insts.len != 65003 {
         fmt.println("(?:a{1000}){65} should compile to 65003 instructions")
         bad += 1
     }
 
     q: regex.Program, qerr: Error = compile("(a)(b(c))")
-    defer mut q.wipe()
+    defer q.wipe()
     if qerr != null || q.slots != 8 {
         fmt.println("(a)(b(c)) should have 8 capture slots")
         bad += 1

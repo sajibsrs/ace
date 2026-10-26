@@ -1,3 +1,0 @@
-C: contract {
-    mut f(mut self)
-}

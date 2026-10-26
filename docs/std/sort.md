@@ -10,14 +10,14 @@ import sort
 
 main(): int {
     values: [5]int = [4, 1, 3, 5, 2]
-    sort.unstable[int](mut values[0..5])   /* 1 2 3 4 5 */
+    sort.unstable[int](values[0..5])   /* 1 2 3 4 5 */
     return 0
 }
 ```
 
-- `unstable[T](items: mut []T)` orders `items` ascending by `<`; `T` must
+- `unstable[T](items: []T)` orders `items` ascending by `<`; `T` must
   support it.
-- `unstable[T](items: mut []T, less: (T, T): bool)` orders by `less`, which
+- `unstable[T](items: []T, less: (T, T): bool)` orders by `less`, which
   returns true when its first argument must come before its second. `less` must
   be a strict weak ordering.
 - `sorted[T](items: []T): bool` and `sorted[T](items: []T, less): bool` report
@@ -26,7 +26,7 @@ main(): int {
 ```ace
 by_age(a: Person, b: Person): bool { return a.age < b.age }
 
-sort.unstable[Person](mut people[0..count], by_age)
+sort.unstable[Person](people[0..count], by_age)
 ```
 
 `unstable` may reorder equal elements. Equal integers or floats are

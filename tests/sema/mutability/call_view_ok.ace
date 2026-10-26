@@ -1,13 +1,13 @@
 // A call's view result indexes into a place (Memory #9).
 P: struct { f: int }
 g: [4]P
-ms(): mut []P { return mut g[0..4] }
-mp(): mut *P { return mut &g[0] }
+ms(): []P { return g[0..4] }
+mp(): *P { return &g[0] }
 
 main(): int {
     ms()[0].f = 1
     ms()[1] = P{ f = 2 }
-    q: mut *P = mut &ms()[2]
+    q: *P = &ms()[2]
     q.f = 3
     mp().f = 4
     return 0

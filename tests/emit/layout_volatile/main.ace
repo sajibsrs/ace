@@ -6,7 +6,7 @@ Registers: struct { prefix: u32, status: u8, control: u32 }
 address_calls: int
 value_calls: int
 
-address(pointer: mut *u8): mut *u8 {
+address(pointer: *u8): *u8 {
     address_calls += 1
     return pointer
 }
@@ -25,13 +25,13 @@ main(): int {
 
     if registers.control != 2 { return 4 }
 
-    volatile *(address(mut &registers.status)) = value()
+    volatile *(address(&registers.status)) = value()
     if address_calls != 1 || value_calls != 1 { return 5 }
     status: u8 = volatile registers.status
     if status != 0xa5 { return 1 }
     if registers.control != 2 { return 2 }
 
-    pointer: mut *u32 = mut &registers.control
+    pointer: *u32 = &registers.control
     volatile *pointer = 0x11223344
     if volatile *pointer != 0x11223344 { return 3 }
     return 0

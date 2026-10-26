@@ -4,8 +4,8 @@ Pair: struct { first: int, second: int }
 
 main(): int {
     values: [3]Pair
-    pointer: mut *Pair = mut &values[0]
-    writable: mut []Pair = mut []Pair(pointer, usize(3))
+    pointer: *Pair = &values[0]
+    writable: []Pair = []Pair(pointer, usize(3))
     writable[1].first = 40
     writable[1].second = 2
     plain: []Pair = []Pair(pointer, usize(3))

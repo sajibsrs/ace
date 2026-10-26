@@ -1,8 +1,8 @@
-/* A by-reference parameter's pointer (a method receiver, a mut parameter)
+/* A by-reference parameter's pointer (a method receiver, a pointer parameter)
  * lives in a register rather than a frame slot: in x19 up when it is live
  * across a call, in x14 down otherwise, shared with a local whose interval it
- * does not overlap. It still reaches another mut call, a deferred call, and a
- * parameter that arrives on the stack. */
+ * does not overlap. It still reaches another by-address call, a deferred call,
+ * and a parameter that arrives on the stack. */
 
 // expect-exit: 42
 
@@ -18,59 +18,59 @@ note(x: int) {
 }
 
 // the loop reads the receiver's fields straight through its register
-Counter.run(mut self, n: int) {
+Counter.run(self, n: int) {
     for i: int in 0 .. n {
         self.value = self.value + i
         self.steps = self.steps + 1
     }
 }
 
-Counter.add(mut self, amount: int): int {
+Counter.add(self, amount: int): int {
     self.value = self.value + amount
     return self.value
 }
 
-// the receiver is live across each call, and is passed on as mut
-Counter.relay(mut self, n: int): int {
+// the receiver is live across each call, and is passed on by address
+Counter.relay(self, n: int): int {
     for i: int in 0 .. n {
         note(self.value)
-        bump(mut self, 1)
-        mut self.add(i)
+        bump(&self, 1)
+        self.add(i)
     }
     return self.value
 }
 
-bump(mut c: Counter, by: int) {
+bump(c: *Counter, by: int) {
     c.steps = c.steps + by
 }
 
 // the pointer's last use precedes the local, which may take its register
-share(mut c: Counter, n: int): int {
+share(c: *Counter, n: int): int {
     c.value = c.value + n
     t: int = 0
     for i: int in 0 .. n { t = t + i * 2 }
     return t
 }
 
-// scalar mut parameters: the value is read and written through the pointer
-scale(mut x: int, mut f: f64, by: int) {
-    x = x * by
-    f = f * 2.0
+// scalar pointer parameters: the value is read and written through the pointer
+scale(x: *int, f: *f64, by: int) {
+    *x = *x * by
+    *f = *f * 2.0
 }
 
 // the ninth parameter arrives on the stack
-ninth(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, mut k: Counter): int {
+ninth(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, k: *Counter): int {
     k.value = k.value + a + b + c + d + e + f + g + h
     return k.value
 }
 
-// a deferred mut call captures the pointer at the defer statement
-finish(mut c: Counter, x: int) {
+// a deferred by-address call captures the pointer at the defer statement
+finish(c: *Counter, x: int) {
     c.steps = c.steps + x
 }
 
-deferred(mut c: Counter, n: int): int {
-    defer finish(mut c, share(mut c, n))
+deferred(c: *Counter, n: int): int {
+    defer finish(c, share(c, n))
     note(1)
     return c.value
 }
@@ -80,24 +80,24 @@ main(): int {
         value = 0,
         steps = 0,
     }
-    mut c.run(10)
+    c.run(10)
     if c.value != 45 || c.steps != 10 { return 1 }
     d: Counter = Counter {
         value = 1,
         steps = 0,
     }
-    if mut d.relay(4) != 7 || d.steps != 4 || seen != 1 + 1 + 2 + 4 { return 2 }
-    if share(mut d, 5) != 20 || d.value != 12 { return 3 }
+    if d.relay(4) != 7 || d.steps != 4 || seen != 1 + 1 + 2 + 4 { return 2 }
+    if share(&d, 5) != 20 || d.value != 12 { return 3 }
     x: int = 6
     f: f64 = 1.5
-    scale(mut x, mut f, 7)
+    scale(&x, &f, 7)
     if x != 42 || f != 3.0 { return 4 }
-    if ninth(1, 2, 3, 4, 5, 6, 7, 8, mut d) != 48 || d.value != 48 { return 5 }
+    if ninth(1, 2, 3, 4, 5, 6, 7, 8, &d) != 48 || d.value != 48 { return 5 }
     seen = 0
     e: Counter = Counter {
         value = 3,
         steps = 0,
     }
-    if deferred(mut e, 4) != 7 || e.value != 7 || e.steps != 12 || seen != 1 { return 6 }
+    if deferred(&e, 4) != 7 || e.value != 7 || e.steps != 12 || seen != 1 { return 6 }
     return x
 }

@@ -37,7 +37,7 @@ shared rules are in `spec/std/README.md`.
       fragments, bracketed IPv6 literals, embedded control/NUL bytes, empty or
       out-of-range ports, and every other scheme fail with `UrlErr`. Both
       schemes share this one parser even though the plaintext-only
-      `get(url, mut context)` rejects an `https://` URL before connecting —
+      `get(url, &context)` rejects an `https://` URL before connecting —
       it never silently falls back to plaintext — through its own
       scheme-forced `Url::parse(url, false)` overload call. Parsing
       allocates nothing, performs no DNS lookup, preserves path/query bytes
@@ -64,14 +64,14 @@ shared rules are in `spec/std/README.md`.
       unknown valid status. A non-null reason, including `""`, is emitted
       exactly after validation. Parsing preserves the received reason.
       Their
-      read-only `format(output: mut []u8): (usize, Error)` methods write one
+      read-only `format(output: []u8): (usize, Error)` methods write one
       complete message or leave insufficient output unchanged. Output must not
       overlap storage reachable through the message. Formatting preserves the
       supplied headers exactly and synthesizes neither `Host` nor framing
       fields; `FormatErr` distinguishes output capacity and invalid start-line
       or header fields. The incremental parser surface is
-      `RequestParser.parse(mut self, input, headers, body, eof): RequestResult` and
-      `ResponseParser.parse(mut self, input, headers, body, eof, no_body):
+      `RequestParser.parse(self, input, headers, body, eof): RequestResult` and
+      `ResponseParser.parse(self, input, headers, body, eof, no_body):
       ResponseResult`, with public phase, framing, capacity, and cumulative
       progress support types for each parser. Each call resumes from saved
       phase, line-scan, framing, header, and body progress; already-consumed
@@ -98,11 +98,11 @@ shared rules are in `spec/std/README.md`.
       lookup is allocation-free and does not classify a response as an error;
       `Response.reason` remains the phrase actually supplied on the wire.
     - Blocking TCP socket convenience is the exact overload set
-      `request(socket: net.Socket, request: Request, scratch: mut []u8): Error`,
-      `request(socket: net.Socket, input: mut []u8, headers: mut []Header, body:
-      mut []u8): (Request, Error)`, `response(socket: net.Socket, response:
-      Response, scratch: mut []u8): Error`, and `response(socket: net.Socket,
-      input: mut []u8, headers: mut []Header, body: mut []u8, no_body: bool):
+      `request(socket: net.Socket, request: Request, scratch: []u8): Error`,
+      `request(socket: net.Socket, input: []u8, headers: []Header, body:
+      []u8): (Request, Error)`, `response(socket: net.Socket, response:
+      Response, scratch: []u8): Error`, and `response(socket: net.Socket,
+      input: []u8, headers: []Header, body: []u8, no_body: bool):
       (Response, Error)`. The write forms format completely before performing
       all-byte sends; the read forms extend one stable occupied input prefix
       until the corresponding parser completes. They require blocking TCP
@@ -111,15 +111,15 @@ shared rules are in `spec/std/README.md`.
       semantics explicit. Connection creation, DNS, retry, TLS, reuse, and
       keep-alive policy remain with the client caller.
     - One-shot client ergonomics use one owning entry point.
-      `Storage: struct { addresses: mut []net.Addr4, output: mut []u8, target:
-      mut []u8, input: mut []u8, headers: mut []Header, body: mut []u8, url:
-      mut []u8 = null }`
+      `Storage: struct { addresses: []net.Addr4, output: []u8, target:
+      []u8, input: []u8, headers: []Header, body: []u8, url:
+      []u8 = null }`
       remains the internal neutral workspace for one HTTP exchange.
-      `ClientContext: struct { storage: mut []Storage, redirects: RedirectPolicy }`
+      `ClientContext: struct { storage: []Storage, redirects: RedirectPolicy }`
       owns and grows the plaintext workspace through `mem` and carries HTTP
       policy. `ClientContext.new` constructs it and `wipe` releases it. The
       exact public overload is
-      `get(url: string, mut context: ClientContext): (Response, Error)`, which
+      `get(url: string, context: *ClientContext): (Response, Error)`, which
       accepts only plaintext HTTP. Allocation failure is explicit.
       Returned views remain valid only until the corresponding context
       is next mutated or wiped. This operation
@@ -144,7 +144,7 @@ shared rules are in `spec/std/README.md`.
       failures remain `FormatErr`; lower-layer socket/TCP errors retain
       their original domains and codes.
     - Server convenience is exactly one blocking overload:
-      `serve(endpoint: string, mut context: Context, router: Router): Error`
+      `serve(endpoint: string, context: *Context, router: Router): Error`
       parses `endpoint` through `net.parse4`, binds a blocking listener, then
       loops forever, serially: accept one connection, read exactly one
       request into `context`'s buffers, dispatch it through `router`, format

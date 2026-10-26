@@ -23,18 +23,18 @@ main(): int {
     defer quit()
 
     window: Window = Window.new("Ace + SDL3", 640, 480, WindowFlags { resizable = 1 })
-    defer mut window.wipe()
+    defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
     renderer: Renderer = Renderer.new(window)
-    defer mut renderer.wipe()
+    defer renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
 
     shade: f32 = 0.0
     running: bool = true
     for running {
         event: Event
-        for mut event.poll() {
+        for event.poll() {
             if event.type == EventType.quit || event.type == EventType.window_close_requested {
                 running = false
             } else if event.type == EventType.key_down && event.keyboard.key == Keycode.escape {

@@ -10,8 +10,8 @@
     - `Signal: distinct i32` uses the target's numbering; `SIGHUP` through
       `SIGUSR2` are `const Signal` with the OS spellings and Darwin values.
     - `Set: struct` holds the target's `sigset_t` bits, signal n at bit n - 1,
-      with Ace bit operations; canonical zero is empty. `add(mut self, s)`,
-      `remove(mut self, s)`, and `has(self, s): bool` take a signal in the
+      with Ace bit operations; canonical zero is empty. `add(self, s)`,
+      `remove(self, s)`, and `has(self, s): bool` take a signal in the
       target's range; another value is programmer error.
     - `HandleOptions: struct { mask: Set, restart: bool }`; canonical zero
       blocks only the handled signal while its handler runs and sets no

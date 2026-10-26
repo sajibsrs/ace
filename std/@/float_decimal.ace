@@ -15,7 +15,7 @@ pub Decimal: struct {
     pub number_type: Type,
 }
 
-write_shortest(value: ryu.Floating, out: mut []u8): (int, i32) {
+write_shortest(value: ryu.Floating, out: []u8): (int, i32) {
     coefficient: u64 = value.coefficient
     reversed: [24]u8 = [0 : 24]
     count: int = 0
@@ -30,7 +30,7 @@ write_shortest(value: ryu.Floating, out: mut []u8): (int, i32) {
     return count, value.exponent + i32(count)
 }
 
-pub binary64(value: f64, out: mut []u8): Decimal {
+pub binary64(value: f64, out: []u8): Decimal {
     raw: u64 = bitcast(u64, value)
     negative: bool = raw >> 63 != 0
     exponent: u64 = (raw >> 52) & u64(0x7FF)
@@ -71,7 +71,7 @@ pub binary64(value: f64, out: mut []u8): Decimal {
     }
 }
 
-pub binary32(value: f32, out: mut []u8): Decimal {
+pub binary32(value: f32, out: []u8): Decimal {
     raw: u32 = bitcast(u32, value)
     negative: bool = raw >> 31 != 0
     exponent: u32 = (raw >> 23) & u32(0xFF)
@@ -115,16 +115,16 @@ pub binary32(value: f32, out: mut []u8): Decimal {
 /* The exact value mantissa * 2^exponent2 rounded, half to even, to places
  * fraction digits, or with significant to places significant digits.
  */
-rounded(mantissa: u64, exponent2: i32, places: int, significant: bool, negative: bool, out: mut []u8): Decimal {
+rounded(mantissa: u64, exponent2: i32, places: int, significant: bool, negative: bool, out: []u8): Decimal {
     exact_value: big.Big = big.from_u64(mantissa)
 
     if exponent2 >= 0 {
-        big.shift_left(mut exact_value, int(exponent2))
+        big.shift_left(&exact_value, int(exponent2))
     } else {
-        big.multiply_power5(mut exact_value, 0 - int(exponent2))
+        big.multiply_power5(&exact_value, 0 - int(exponent2))
     }
     exact: [800]u8
-    exact_view: mut []u8 = mut exact[0..800]
+    exact_view: []u8 = exact[0..800]
     exact_count: int = big.decimal(exact_value, exact_view)
     point: i32 = i32(exact_count)
 
@@ -222,7 +222,7 @@ rounded(mantissa: u64, exponent2: i32, places: int, significant: bool, negative:
     }
 }
 
-rounded64(value: f64, places: int, significant: bool, out: mut []u8): Decimal {
+rounded64(value: f64, places: int, significant: bool, out: []u8): Decimal {
     raw: u64 = bitcast(u64, value)
     negative: bool = raw >> 63 != 0
     exponent: u64 = (raw >> 52) & u64(0x7FF)
@@ -263,7 +263,7 @@ rounded64(value: f64, places: int, significant: bool, out: mut []u8): Decimal {
     return rounded(mantissa, exponent2, places, significant, negative, out)
 }
 
-rounded32(value: f32, places: int, significant: bool, out: mut []u8): Decimal {
+rounded32(value: f32, places: int, significant: bool, out: []u8): Decimal {
     raw: u32 = bitcast(u32, value)
     negative: bool = raw >> 31 != 0
     exponent: u32 = (raw >> 23) & u32(0xFF)
@@ -305,21 +305,21 @@ rounded32(value: f32, places: int, significant: bool, out: mut []u8): Decimal {
 }
 
 /* value rounded to precision fraction digits. */
-pub fixed64(value: f64, precision: usize, out: mut []u8): Decimal {
+pub fixed64(value: f64, precision: usize, out: []u8): Decimal {
     return rounded64(value, int(precision), false, out)
 }
 
-pub fixed32(value: f32, precision: usize, out: mut []u8): Decimal {
+pub fixed32(value: f32, precision: usize, out: []u8): Decimal {
     return rounded32(value, int(precision), false, out)
 }
 
 /* value rounded to count (at least one) significant digits; a carry out of
  * the leading digit leaves count + 1 digits, the last a zero.
  */
-pub significant64(value: f64, count: usize, out: mut []u8): Decimal {
+pub significant64(value: f64, count: usize, out: []u8): Decimal {
     return rounded64(value, int(count), true, out)
 }
 
-pub significant32(value: f32, count: usize, out: mut []u8): Decimal {
+pub significant32(value: f32, count: usize, out: []u8): Decimal {
     return rounded32(value, int(count), true, out)
 }

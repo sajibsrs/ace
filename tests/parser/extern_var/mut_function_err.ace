@@ -1,5 +1,0 @@
-/* mut marks an extern variable, never a function. */
-
-extern "c" {
-    mut getpid(): i32
-}

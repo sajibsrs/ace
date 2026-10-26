@@ -4,6 +4,6 @@
 import mem
 
 main(): int {
-    alloc: (usize): mut []usize = mem.alloc[usize]
+    alloc: (usize): []usize = mem.alloc[usize]
     return 0
 }

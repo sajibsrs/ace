@@ -38,7 +38,7 @@ main(): int {
         error = false, hangup = false,
     }
     storage: [16]poll.Event = [zero : 16]
-    events: mut []poll.Event = mut storage[0..16]
+    events: []poll.Event = storage[0..16]
     count: usize, wait_err: Error = poll.wait(q, events, poll.FOREVER)
 
     if wait_err == null {
@@ -66,7 +66,7 @@ The readiness surface is:
   again before relying on that registration.
 - `unwatch(q, fd): Error` removes an existing registration. Removing an
   unwatched descriptor is an error.
-- `wait(q, events: mut []Event, timeout_ns): (usize, Error)` writes a fully initialized
+- `wait(q, events: []Event, timeout_ns): (usize, Error)` writes a fully initialized
   prefix of caller-owned storage. The suffix remains unchanged. An empty slice
   is an error. The OS layer uses bounded stack storage, allocates nothing, and
   may return fewer events than the supplied capacity.

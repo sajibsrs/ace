@@ -13,25 +13,25 @@ import thread
 inherited: u32
 received: u32
 
-extern "c" waiter(argument: mut *u8): mut *u8 {
+extern "c" waiter(argument: *u8): *u8 {
     set: signal.Set = blank(signal.Set)
-    mut set.add(signal.SIGUSR1)
-    if signal.mask().has(signal.SIGUSR1) { atomic.store_relaxed(mut &inherited, u32(1)) }
+    set.add(signal.SIGUSR1)
+    if signal.mask().has(signal.SIGUSR1) { atomic.store_relaxed(&inherited, u32(1)) }
     s: signal.Signal, err: Error = signal.wait(set)
-    if err == null { atomic.store_relaxed(mut &received, u32(i32(s))) }
+    if err == null { atomic.store_relaxed(&received, u32(i32(s))) }
     return null
 }
 
 main(): int {
     set: signal.Set = blank(signal.Set)
-    mut set.add(signal.SIGUSR1)
-    mut set.add(signal.SIGUSR2)
+    set.add(signal.SIGUSR1)
+    set.add(signal.SIGUSR2)
     signal.block(set)
 
     t: thread.Thread, err: Error = thread.create(waiter, null)
     if err != null { return 1 }
     if signal.send(t, signal.SIGUSR1) != null { return 2 }
-    result: mut *u8, join_err: Error = thread.join(t)
+    result: *u8, join_err: Error = thread.join(t)
     if join_err != null { return 3 }
     if atomic.load_relaxed(&inherited) != 1 { return 4 }
     if atomic.load_relaxed(&received) != u32(i32(signal.SIGUSR1)) { return 5 }
@@ -40,7 +40,7 @@ main(): int {
     if fork_err != null { return 6 }
     if child == sys.Process(0) {
         only: signal.Set = blank(signal.Set)
-        mut only.add(signal.SIGUSR2)
+        only.add(signal.SIGUSR2)
         s: signal.Signal, wait_err: Error = signal.wait(only)
         if wait_err != null { sys.exit(1) }
         sys.exit(int(i32(s)))

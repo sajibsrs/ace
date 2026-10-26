@@ -47,9 +47,9 @@ b0:
     %0 = param ptr 0
     %1 = param ptr 1
     %2 = const i64 1
-    %3 = load i64 [%0]
+    %3 = load.chk i64 [%0]
     %4 = add.chk i64 %3, %2
-    store [%0], %4
+    store.chk [%0], %4
     %6 = const u64 1
     %7 = padd.chk ptr %1, %6 * 4
     %8 = load.chk i32 [%7]

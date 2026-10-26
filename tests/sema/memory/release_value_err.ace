@@ -4,6 +4,6 @@ import alloc, release from mem
 
 main(): int {
     data: []u8 = alloc(8, 8)
-    result: int = release(mut data)
+    result: int = release(&data)
     return result
 }

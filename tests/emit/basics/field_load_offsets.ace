@@ -1,6 +1,6 @@
 /* A scalar field read folds the field's byte offset into its load: fields at
    small, large, and unaligned offsets, in every scalar width, read through a
-   pointer, a mut parameter, a method receiver, and a nested chain. */
+   pointer, a pointer parameter, a method receiver, and a nested chain. */
 
 // expect-exit: 0
 
@@ -15,7 +15,7 @@ Wide.sum(self): i64 {
     return i64(self.small) + i64(self.inner.c) + i64(self.inner.s) + i64(self.tail)
 }
 
-bump(mut w: Wide) {
+bump(w: *Wide) {
     w.tail = w.tail + i32(w.inner.b)
 }
 
@@ -42,7 +42,7 @@ main(): int {
     if w.sum() != 7 + 4000000000 - 5 - 3 { return 1 }
     if read(&w) != -2 { return 2 }
     if w.inner.a != 200 || w.inner.f != 2.5 || w.inner.g != 0.25 { return 3 }
-    bump(mut w)
+    bump(&w)
     if w.tail != 59997 { return 4 }
 
     p: Packed = Packed {

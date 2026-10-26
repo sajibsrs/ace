@@ -14,19 +14,19 @@ import regex
 PATH: string = "../../spec/types.md"
 
 main(): int {
-    data: mut []u8, err: Error = file.read(PATH)
-    defer mem.release[u8](mut data)
+    data: []u8, err: Error = file.read(PATH)
+    defer mem.release[u8](&data)
     if err != null {
         fmt.printf("failed to read %s: %s\n", PATH, err.message)
         return 1
     }
 
     re: regex.Regex, rerr: Error = regex.Regex.compile("\nDecision: ([^\n]+)")
-    defer mut re.wipe()
+    defer re.wipe()
     if rerr != null { return 1 }
 
     text: string = string(data)
     at: usize = 0
-    for mut re.next(text, mut at) { fmt.println(re.group(1)) }
+    for re.next(text, &at) { fmt.println(re.group(1)) }
     return 0
 }

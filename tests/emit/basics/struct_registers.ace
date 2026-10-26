@@ -22,7 +22,7 @@ Frame: struct { pc: u32, slot: u32, value: usize }
 Narrow: struct { a: i8, b: u8, c: i16, d: i32 }
 Quad: struct { a: usize, b: usize, c: usize, d: usize }
 Vec4: struct { x: f64, y: f64, z: f64, w: f64 }
-Link: struct { next: mut *Pair, tag: usize }
+Link: struct { next: *Pair, tag: usize }
 
 G: Pair = Pair {
     a = 5,
@@ -41,7 +41,7 @@ check(p: Pair) {
     if p.a + p.b != 42 { G.a = 1000 }
 }
 
-touch(p: mut *Pair) {
+touch(p: *Pair) {
     p.a += 1
 }
 
@@ -118,7 +118,7 @@ narrow(): int {
 }
 
 // element loads at each field's own width, and whole stores back
-frames(stack: mut []Frame): int {
+frames(stack: []Frame): int {
     total: usize = 0
     top: usize = stack.len
     for top > 0 {
@@ -144,7 +144,7 @@ frames(stack: mut []Frame): int {
 
 // assignment from a pointer, a global, and another split local, and stores
 // through a pointer and into a global
-places(p: mut *Pair): int {
+places(p: *Pair): int {
     a: Pair = *p
     b: Pair = G
     c: Pair = a
@@ -244,12 +244,12 @@ pressure(): int {
 }
 
 // a deferred call reads a field at the defer statement
-deferred(out: mut *usize): int {
+deferred(out: *usize): int {
     p: Pair = Pair {
         a = 40,
         b = 2,
     }
-    defer touch(mut &G)
+    defer touch(&G)
     *out = p.a + p.b
     p.a = 0
     return 0
@@ -459,7 +459,7 @@ returns(): int {
 Outer: struct { tag: usize, p: Pair }
 
 // the regex matcher's push: fields stored straight into the element
-push(stack: mut []Frame, top: usize, pc: u32, value: usize) {
+push(stack: []Frame, top: usize, pc: u32, value: usize) {
     stack[top] = Frame {
         pc = pc,
         slot = pc + 1,
@@ -467,7 +467,7 @@ push(stack: mut []Frame, top: usize, pc: u32, value: usize) {
     }
 }
 
-set_pair(p: mut *Pair) {
+set_pair(p: *Pair) {
     *p = Pair {
         a = p.b,
         b = p.a,
@@ -477,8 +477,8 @@ set_pair(p: mut *Pair) {
 // literals stored into elements, through pointers, and into a field; each
 // value is read before any store
 literal_places(): int {
-    stack: mut []Frame = mem.alloc[Frame](2)
-    defer mem.release[Frame](mut stack)
+    stack: []Frame = mem.alloc[Frame](2)
+    defer mem.release[Frame](&stack)
     push(stack, 0, 5, 50)
     push(stack, 1, 6, 60)
     stack[1] = Frame {
@@ -492,7 +492,7 @@ literal_places(): int {
         a = 1,
         b = 2,
     }
-    set_pair(mut &p)
+    set_pair(&p)
     if p.a != 2 || p.b != 1 { return 1 }
     o: Outer = Outer {
         tag = 3,
@@ -506,16 +506,16 @@ literal_places(): int {
         b = o.tag * 2,
     }
     if o.p.a != 3 || o.p.b != 6 || o.tag != 3 { return 1 }
-    ms: mut []Mixed = mem.alloc[Mixed](1)
-    defer mem.release[Mixed](mut ms)
+    ms: []Mixed = mem.alloc[Mixed](1)
+    defer mem.release[Mixed](&ms)
     ms[0] = Mixed {
         n = 7,
         r = 2.5,
         w = -9,
     }
     if ms[0].n != 7 || ms[0].r != 2.5 || ms[0].w != -9 { return 1 }
-    ns: mut []Narrow = mem.alloc[Narrow](1)
-    defer mem.release[Narrow](mut ns)
+    ns: []Narrow = mem.alloc[Narrow](1)
+    defer mem.release[Narrow](&ns)
     ns[0] = Narrow {
         a = -1,
         b = 255,
@@ -532,7 +532,7 @@ escapes(): int {
         a = 1,
         b = 2,
     }
-    touch(mut &a)
+    touch(&a)
     b: Pair = Pair {
         a = 3,
         b = 4,
@@ -547,7 +547,7 @@ escapes(): int {
         b = 8,
     }
     l: Link = Link {
-        next = mut &e,
+        next = &e,
         tag = 1,
     }
     l.next.a += 1
@@ -562,8 +562,8 @@ escapes(): int {
 }
 
 main(): int {
-    stack: mut []Frame = mem.alloc[Frame](3)
-    defer mem.release[Frame](mut stack)
+    stack: []Frame = mem.alloc[Frame](3)
+    defer mem.release[Frame](&stack)
     stack[0] = Frame {
         pc = 1,
         slot = 0,
@@ -584,8 +584,8 @@ main(): int {
         b = 2,
     }
     out: usize = 0
-    bad: int = ints() + floats() + mixed() + narrow() + frames(stack) + places(mut &pair) +
-               crossed() + across() + pressure() + deferred(mut &out) + escapes() + calls() + returns() +
+    bad: int = ints() + floats() + mixed() + narrow() + frames(stack) + places(&pair) +
+               crossed() + across() + pressure() + deferred(&out) + escapes() + calls() + returns() +
                literal_places()
     if out != 42 || G.a >= 1000 || hfa_loop(4) != 24.0 { bad += 1 }
     return 42 - bad

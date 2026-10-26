@@ -16,7 +16,7 @@ import atomic
 count: u32
 
 bump(): u32 {
-    return atomic.add(mut &count, u32(1)) // the previous value
+    return atomic.add(&count, u32(1)) // the previous value
 }
 ```
 
@@ -38,7 +38,7 @@ written:
 | `cas(p, expected, desired)` | unsuffixed, `_acq_rel`, `_relaxed` |
 | `fence()` | unsuffixed, `_acquire`, `_release` |
 
-`load` takes `p: *T`; every operation that writes takes `p: mut *T`.
+`load` takes `p: *T`; every operation that writes takes `p: *T`.
 `exchange`, `add`, `sub`, `and`, `or`, and `xor` return the previous value.
 `add` and `sub` wrap modulo 2^width and never report overflow.
 
@@ -50,7 +50,7 @@ loop reads the observed value instead of loading again. Its `_acq_rel` form
 acquires on failure; `_relaxed` orders neither outcome:
 
 ```ace
-claim(flag: mut *u32): bool {
+claim(flag: *u32): bool {
     seen: u32 = 0
     won: bool = false
     seen, won = atomic.cas_acq_rel(flag, u32(0), u32(1))

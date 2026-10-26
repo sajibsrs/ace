@@ -12,7 +12,7 @@
     X(NL, "newline")                                                           \
     X(IDENT, "ident")                                                          \
     /* keywords (v1 inventory) */                                              \
-    X(IMPORT, "import") X(PUB, "pub") X(MUT, "mut")                            \
+    X(IMPORT, "import") X(PUB, "pub")                                          \
     X(CONST, "const")                                                          \
     X(NOALIAS, "noalias") X(IF, "if") X(ELSE, "else") X(FOR, "for")            \
     X(IN, "in") X(SWITCH, "switch") X(DEFAULT, "default") X(RETURN, "return") X(BREAK, "break")      \
@@ -159,7 +159,7 @@ void      ptrmap_free(PtrMap* m);
     X(N_BINARY, "binary") X(N_CMPCHAIN, "cmpchain") X(N_OPS, "ops")            \
     X(N_COND, "cond")                                                          \
     X(N_OP, "op") X(N_UNARY, "unary") X(N_CALL, "call")                        \
-    X(N_MUTARG, "mutarg") X(N_INDEX, "index") X(N_SLICE_E, "slice")            \
+    X(N_PLACEARG, "placearg") X(N_INDEX, "index") X(N_SLICE_E, "slice")        \
     X(N_FIELD_E, "selector") X(N_ARRAYLIT, "arraylit")                         \
     X(N_STRUCTLIT, "structlit") X(N_FIELDINIT, "fieldinit")                   \
     X(N_STATICMAPLIT, "staticmaplit") X(N_MAPENTRY, "mapentry")
@@ -173,7 +173,7 @@ typedef enum {
 const char* node_kind_name(NKind k);
 
 enum {
-    F_PUB = 1, F_EXPO = 2, F_MUT = 4, F_NOALIAS = 8, F_CONST = 16,
+    F_PUB = 1, F_EXPO = 2, F_BYADDR = 4, F_NOALIAS = 8, F_CONST = 16,
     F_DEFAULT = 32, F_VARARGS = 64, F_METHOD = 128, F_SELECT = 256,
     F_EMBED = 512, F_SPECIALIZED = 1024, F_FORGEN = 2048, F_MIXED = 4096,
     F_BOUNDS_PROVEN = 8192, F_INTRINSIC = 16384, F_PACKED = 32768,
@@ -205,9 +205,9 @@ enum {
     BI_MEM_ZERO = 8,
     BI_MEM_COMPARE = 9,
     BI_FMT_PRINTF = 10,
-    BI_MEM_ALLOC_T = 11,   // mem.alloc[T](count: usize): mut []T
-    BI_MEM_REALLOC_T = 12, // mem.realloc[T](data: []T, new_count: usize): mut []T
-    BI_MEM_RELEASE_T = 13, // mem.release[T](mut data: []T)
+    BI_MEM_ALLOC_T = 11,   // mem.alloc[T](count: usize): []T
+    BI_MEM_REALLOC_T = 12, // mem.realloc[T](data: []T, new_count: usize): []T
+    BI_MEM_RELEASE_T = 13, // mem.release[T](data: *[]T)
     BI_SYS_ARGC = 14,
     BI_SYS_ARG = 15,
     BI_SYS_ENVC = 16,
@@ -228,12 +228,12 @@ enum {
     BI_BITS_WRAP_ADD = 33,  // bits.wradd/wrsub/wrmul: unchecked fixed-width arithmetic
     BI_BITS_WRAP_SUB = 34,
     BI_BITS_WRAP_MUL = 35,
-    BI_MEM_ZALLOC_T = 36,   // mem.zalloc[T](count: usize): mut []T, zero-filled
+    BI_MEM_ZALLOC_T = 36,   // mem.zalloc[T](count: usize): []T, zero-filled
     BI_STR_FORMAT = 37,     // str.format(destination, "format", ...): checked like fmt.printf
     BI_FMT_PRINTF_FD = 38,  // fmt.printf(fd, "format", ...): fmt.printf to a descriptor
-    BI_MEM_COPY_T = 39,     // mem.copy[T](noalias dst: mut []T, src: []T)
-    BI_MEM_MOVE_T = 40,     // mem.move[T](dst: mut []T, src: []T)
-    BI_FMT_PRINTF_BUF = 41, // fmt.printf(mut buffer, "format", ...): fmt.printf into a fmt.Buffer
+    BI_MEM_COPY_T = 39,     // mem.copy[T](noalias dst: []T, src: []T)
+    BI_MEM_MOVE_T = 40,     // mem.move[T](dst: []T, src: []T)
+    BI_FMT_PRINTF_BUF = 41, // fmt.printf(buffer, "format", ...): fmt.printf into a fmt.Buffer
     BI_BITS_MUL_WIDE = 42,  // bits.mul_wide(a, b: u64): (u64, u64), the 128-bit product's high and low words
     BI_ATOMIC = 64,         // atomic.*: BI_ATOMIC + AK_* * 8 + AO_*, the operation and its ordering
 };

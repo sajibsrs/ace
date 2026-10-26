@@ -27,8 +27,6 @@
 static SType *T_ERR, *T_VOID, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
 static SType *T_ERROR;
 static SType* T_BYTE_SLICE;
-static SType* T_MUT_BYTE_SLICE; // mut []u8 — writable byte view (Mutability #9)
-static SType* T_MUT_STRING;     // mut string — writable bytes
 static SType* PRIMS[14];
 static uint32_t next_type_id = 1;
 
@@ -104,19 +102,19 @@ static const char* type_name(SType* t) {
         case P_U8: return "u8"; case P_U16: return "u16";
         case P_U32: return "u32"; case P_U64: return "u64";
         case P_F32: return "f32"; case P_F64: return "f64";
-        case P_STRING: return t->is_mut ? "mut string" : "string";
+        case P_STRING: return "string";
         case P_USIZE: return "usize";
         case P_TYPEID: return "typeid";
         }
         return "?";
     case SK_PTR: {
         char* out = bufs[bi = (bi + 1) & 15];
-        snprintf(out, sizeof bufs[0], "%s*%s", t->is_mut ? "mut " : "", t->base ? type_name(t->base) : "?");
+        snprintf(out, sizeof bufs[0], "*%s", t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_SLICE: {
         char* out = bufs[bi = (bi + 1) & 15];
-        snprintf(out, sizeof bufs[0], "%s[]%s", t->is_mut ? "mut " : "", t->base ? type_name(t->base) : "?");
+        snprintf(out, sizeof bufs[0], "[]%s", t->base ? type_name(t->base) : "?");
         return out;
     }
     case SK_ARRAY: {
@@ -141,18 +139,7 @@ static const char* type_name(SType* t) {
     case SK_FUNC: {
         char name[sizeof bufs[0]];
         snprintf(name, sizeof name, "%s(", t->is_c_abi ? "extern \"c\" " : "");
-        if (t->mut_params) { // a mut parameter is spelled in its named form
-            for (int i = 0; i < t->nparams; i++) {
-                size_t n = strlen(name);
-                if (n >= sizeof name) break;
-                snprintf(name + n, sizeof name - n, "%s%s%s", i ? ", " : "",
-                         (t->mut_params >> i) & 1 ? "mut _: " : "", type_name(t->params[i]));
-            }
-            size_t n = strlen(name);
-            if (n < sizeof name) snprintf(name + n, sizeof name - n, ")");
-        } else {
-            type_list_name(name, sizeof name, t->params, NULL, t->nparams);
-        }
+        type_list_name(name, sizeof name, t->params, NULL, t->nparams);
         size_t at = strlen(name);
         if (at < sizeof name)
             snprintf(name + at, sizeof name - at, ": %s",
@@ -435,14 +422,6 @@ static void ensure_memory_types(void) {
     T_BYTE_SLICE = st_new(SK_SLICE);
     T_BYTE_SLICE->base = st_prim(P_U8);
     layout(T_BYTE_SLICE);
-    T_MUT_BYTE_SLICE = st_new(SK_SLICE);
-    T_MUT_BYTE_SLICE->is_mut = 1;
-    T_MUT_BYTE_SLICE->base = st_prim(P_U8);
-    layout(T_MUT_BYTE_SLICE);
-    T_MUT_STRING = st_new(SK_PRIM);
-    T_MUT_STRING->prim = P_STRING;
-    T_MUT_STRING->is_mut = 1;
-    layout(T_MUT_STRING);
 }
 
 static Sym* sym_new(uint8_t kind, const char* name, uint32_t len) {
@@ -655,15 +634,15 @@ static int same_type(SType* a, SType* b) {
         SType* string = a->kind == SK_PRIM && a->prim == P_STRING ? a :
                         b->kind == SK_PRIM && b->prim == P_STRING ? b : NULL;
         SType* slice = a->kind == SK_SLICE ? a : b->kind == SK_SLICE ? b : NULL;
-        return string && slice && string->is_mut == slice->is_mut &&
+        return string && slice &&
                slice->base && slice->base->kind == SK_PRIM &&
                slice->base->prim == P_U8;
     }
     switch (a->kind) {
-    case SK_PRIM: return a->prim == b->prim && a->is_mut == b->is_mut;
-    case SK_PTR: return a->is_mut == b->is_mut && same_type(a->base, b->base);
+    case SK_PRIM: return a->prim == b->prim;
+    case SK_PTR: return same_type(a->base, b->base);
     case SK_SLICE:
-        return a->is_mut == b->is_mut && same_type(a->base, b->base);
+        return same_type(a->base, b->base);
     case SK_ARRAY:
         return a->count == b->count && a->key == b->key && same_type(a->base, b->base);
     case SK_STATICMAP:
@@ -673,7 +652,7 @@ static int same_type(SType* a, SType* b) {
         for (int i = 0; i < a->nfields; i++) if (!same_type(a->fields[i].t, b->fields[i].t)) return 0;
         return 1;
     case SK_FUNC:
-        if (a->is_c_abi != b->is_c_abi || a->nparams != b->nparams || a->mut_params != b->mut_params) return 0;
+        if (a->is_c_abi != b->is_c_abi || a->nparams != b->nparams) return 0;
         for (int i = 0; i < a->nparams; i++) if (!same_type(a->params[i], b->params[i])) return 0;
         return same_type(a->ret, b->ret);
     case SK_STRUCT: case SK_ENUM: case SK_BITS: case SK_CONTRACT: case SK_DISTINCT:
@@ -688,42 +667,10 @@ static int same_type(SType* a, SType* b) {
     }
 }
 
-/*
- * Implicit permission shrink (Mutability #9): a mut-qualified view converts
- * to its plain form at the same level — `mut string` -> `string`,
- * `mut []T` -> `[]T`, `mut *T` -> `*T` — never the widening direction.
- */
-static int shrink_ok(SType* f, SType* t) {
-    if (!f || !t) return 0;
-    if (!f->is_mut || t->is_mut) return 0;
-    if (f->kind != t->kind) {
-        SType* string = f->kind == SK_PRIM && f->prim == P_STRING ? f :
-                        t->kind == SK_PRIM && t->prim == P_STRING ? t : NULL;
-        SType* slice = f->kind == SK_SLICE ? f : t->kind == SK_SLICE ? t : NULL;
-        return string && slice && slice->base && slice->base->kind == SK_PRIM && slice->base->prim == P_U8;
-    }
-    switch (f->kind) {
-    case SK_PTR: case SK_SLICE:
-        return same_type(f->base, t->base);
-    case SK_PRIM: // only view prims carry is_mut (string)
-        return f->prim == t->prim;
-    default:
-        return 0;
-    }
-}
-
-/* Equality/identity admission modulo one implicit shrink (Mutability #9). */
-static int same_modulo_shrink(SType* a, SType* b) {
-    return same_type(a, b) || shrink_ok(a, b) || shrink_ok(b, a);
-}
-
-static int same_param_signature(SType* a, Node* ad, SType* b, Node* bd) {
+static int same_param_signature(SType* a, SType* b) {
     if (!a || !b || a->kind != SK_FUNC || b->kind != SK_FUNC || a->nparams != b->nparams) return 0;
     for (int i = 0; i < a->nparams; i++) {
         if (!same_type(a->params[i], b->params[i])) return 0;
-        int am = ad && i < ad->nkids && (ad->kids[i]->flags & F_MUT);
-        int bm = bd && i < bd->nkids && (bd->kids[i]->flags & F_MUT);
-        if (am != bm) return 0;
     }
     return 1;
 }
@@ -749,7 +696,6 @@ static int visible_count(Sym* head, Node* at) {
 static int castable(SType* f, SType* t) {
     if (f->kind == SK_ERR || t->kind == SK_ERR) return 1;
     if (same_type(f, t)) return 1;
-    if (shrink_ok(f, t)) return 1; // mut view casts to its plain form
     if (f->kind == SK_BITS) return same_type(f->base, t);
     if (t->kind == SK_BITS) return same_type(f, t->base);
     if (f == T_UT_INT) return is_num(t) || t->kind == SK_ENUM || (t->kind == SK_DISTINCT && castable(f, t->base));
@@ -867,6 +813,8 @@ static void check_index_bounds(Ck* k, Node* e, Node* base, SType* bt, int write)
 // --- forward decls -------------------------------------------------------------------
 
 static SType* expr_type(Ck* k, Node* e);
+static void reject_const_view(Ck* k, Node* at, Node* e);
+static SType* deref_sequence(Ck* k, Node** at);
 static uint32_t type_identity(SType* t);
 static int coerce(Ck* k, Node* e, SType* want);
 static SType* check_call(Ck* k, Node* call);
@@ -878,8 +826,6 @@ static void check_arraylit(Ck* k, Node* lit, SType* want);
 static int enum_member_value(SType* e, int64_t v);
 static SType* check_lvalue(Ck* k, Node* e, int write);
 static void check_func_body(Ck* k, Node* f);
-static void check_mut_args(Ck* k, Node* call, Node* fndecl, int self);
-static void check_value_mut_args(Ck* k, Node* call, SType* ft);
 static Node* static_string_expr(Ck* k, Node* e);
 
 /*
@@ -1344,7 +1290,7 @@ static SType* instantiate_generic_type(Ck* k, Node* decl, SType** args, int narg
 static SType* indexed_named_type(Ck* k, Node* ix);
 
 static int is_void_name(Node* t) {
-    return (t->kind == N_NAMED || t->kind == N_IDENT) && !t->a && !t->nkids && !(t->flags & F_MUT) &&
+    return (t->kind == N_NAMED || t->kind == N_IDENT) && !t->a && !t->nkids &&
            t->len == 4 && memcmp(t->str, "void", 4) == 0;
 }
 
@@ -1383,15 +1329,6 @@ static SType* build_return_type(Ck* k, Node* t) {
 }
 
 static SType* build_named(Ck* k, Node* t) {
-    if (t->flags & F_MUT) { // `mut string` — the only mut-qualified named type
-        if (t->a || t->nkids || !(t->len == 6 && memcmp(t->str, "string", 6) == 0)) {
-            ck_err(k, t,
-                   "'mut' marks writable views ('mut *T', 'mut []T', 'mut string'), not '%.*s'",
-                   (int)t->len, t->str);
-            return T_ERR;
-        }
-        return T_MUT_STRING;
-    }
     if (t->a) {
         ck_err(k, t, "module-qualified types need the stdlib (not yet linked)");
         return T_ERR;
@@ -1512,7 +1449,6 @@ static SType* build_type(Ck* k, Node* t) {
     }
     case N_PTR: {
         SType* p = st_new(SK_PTR);
-        p->is_mut = (t->flags & F_MUT) != 0;
         p->base = build_type(k, t->a);
         return p;
     }
@@ -1527,7 +1463,6 @@ static SType* build_type(Ck* k, Node* t) {
     }
     case N_SLICE_T: {
         SType* s = st_new(SK_SLICE);
-        s->is_mut = (t->flags & F_MUT) != 0; // mut []T — writable elements
         s->base = build_type(k, t->a);
         return s;
     }
@@ -1575,9 +1510,6 @@ static SType* build_type(Ck* k, Node* t) {
         SType* f = st_new(SK_FUNC);
         f->is_c_abi = (t->flags & F_CABI) != 0;
         f->nparams = t->nkids;
-        f->mut_params = t->ival;
-        if (f->is_c_abi && f->mut_params)
-            ck_err(k, t, "a C function-pointer type has no mut parameters; pass writable storage as 'mut *T'");
         f->params = (SType**)arena_alloc((size_t)(t->nkids ? t->nkids : 1) * sizeof(SType*));
         for (int i = 0; i < t->nkids; i++) f->params[i] = build_type(k, t->kids[i]);
         f->ret = build_return_type(k, t->a);
@@ -1636,7 +1568,6 @@ static SType* build_func_type(Ck* k, Node* f, SType** args, int nargs) {
     ft->nparams = f->nkids;
     ft->params = (SType**)arena_alloc((size_t)(f->nkids ? f->nkids : 1) * sizeof(SType*));
     for (int i = 0; i < f->nkids; i++) {
-        if ((f->kids[i]->flags & F_MUT) && i < 64) ft->mut_params |= (uint64_t)1 << i;
         ft->params[i] = build_type(k, f->kids[i]->a);
         if (ft->params[i] && ft->params[i]->kind == SK_ERROR_DOMAIN)
             ck_err(k, f->kids[i], "error-domain names are identities, not parameter types; use Error");
@@ -1716,7 +1647,7 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
 
 /*
  * A C global variable (C Interop #6): C's storage under an Ace name, typed at
- * struct-field position, read-only unless `mut`. It is a global that is never
+ * struct-field position. It is a global that is never
  * a constant, so nothing folds or caches its value.
  */
 /*
@@ -1750,13 +1681,13 @@ static const char* spec_tuple_name(SType** args, int nargs) {
     return b;
 }
 
-// Generics #10: a specialization's parameters, 'mut' positions, and return
-// must equal the substituted generic signature — checked at declaration
-// against the expected signature, never discovered at a call.
-static int spec_conforms(SType* sub, Node* gdecl, SType* ft, Node* fdecl) {
+// Generics #10: a specialization's parameters and return must equal the
+// substituted generic signature — checked at declaration against the expected
+// signature, never discovered at a call.
+static int spec_conforms(SType* sub, SType* ft) {
     if (!sub || sub->kind != SK_FUNC || !ft || ft->kind != SK_FUNC) return 0;
     if (sub->nparams != ft->nparams) return 0;
-    if (!same_param_signature(sub, gdecl, ft, fdecl)) return 0;
+    if (!same_param_signature(sub, ft)) return 0;
     if ((sub->ret == NULL) != (ft->ret == NULL)) return 0;
     return !sub->ret || same_type(sub->ret, ft->ret);
 }
@@ -1785,13 +1716,13 @@ static Sym* bind_specialization(Ck* k, Sym* s, Sym* head) {
         if (!old->is_generic || !old->decl->c || old->decl->c->nkids != nargs)
             continue;
         SType* sub = build_func_type(k, old->decl, targs, nargs);
-        if (!spec_conforms(sub, old->decl, ft, f)) continue;
+        if (!spec_conforms(sub, ft)) continue;
         nbind++;
         bind = old;
     }
     if (!bind) {
         ck_err(k, f,
-               "specialization '%.*s%s' does not conform to any generic overload of '%.*s' — parameters, 'mut' positions, and return type must equal the substituted generic signature with every type parameter supplied",
+               "specialization '%.*s%s' does not conform to any generic overload of '%.*s' — parameters and return type must equal the substituted generic signature with every type parameter supplied",
                (int)f->len, f->str, spec_tuple_name(targs, nargs),
                (int)f->len, f->str);
         return NULL;
@@ -2056,7 +1987,7 @@ static int atomic_signature(SType* ft, int kind, int order) {
     SType* r = ft->ret;
     if (kind == AK_FENCE) return ft->nparams == 0 && !r;
     SType* p = ft->nparams ? ft->params[0] : NULL;
-    if (!p || p->kind != SK_PTR || p->is_mut != (kind != AK_LOAD) || !p->base || p->base->kind != SK_PRIM ||
+    if (!p || p->kind != SK_PTR || !p->base || p->base->kind != SK_PRIM ||
         (p->base->prim != P_U32 && p->base->prim != P_U64 && p->base->prim != P_USIZE))
         return 0;
     int word = p->base->prim;
@@ -2136,12 +2067,6 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
                        "C-boundary return type %s is not C-ABI compatible",
                        type_name(ft->ret));
             for (int i = 0; i < ft->nparams; i++) {
-                if (f->kids[i]->flags & F_MUT) {
-                    ck_err(k, f->kids[i],
-                           "C-boundary parameter '%.*s' is 'mut' — mut parameters stay internal; pass a mut *T instead",
-                           (int)f->kids[i]->len, f->kids[i]->str);
-                    continue;
-                }
                 if (ft->params[i]->kind != SK_ERR &&
                     !is_c_abi_type(ft->params[i], CABI_DIRECT, stack, 0))
                     ck_err(k, f->kids[i]->a ? f->kids[i]->a : f->kids[i],
@@ -2155,7 +2080,7 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
     for (Sym* old = head; old != s; old = old->overload) {
         int old_nt = old->decl && old->decl->c ? old->decl->c->nkids : 0;
         int new_nt = f->c ? f->c->nkids : 0;
-        if (old_nt == new_nt && same_param_signature(old->type, old->decl, ft, f)) {
+        if (old_nt == new_nt && same_param_signature(old->type, ft)) {
             ck_err(k, f,
                    "duplicate overload '%.*s': parameter signatures must differ (return type is not considered)",
                    (int)f->len, f->str);
@@ -2319,11 +2244,6 @@ static int accepts_null(SType* t) {
  */
 static int coerce_slicelit(Ck* k, Node* e, SType* want) {
     e->ty = T_ERR;
-    if (want->is_mut) {
-        ck_err(k, e, "array literal cannot establish a writable view: %s needs storage that is written",
-               type_name(want));
-        return 0;
-    }
     if (e->nkids > 0 && e->kids[0]->kind == N_MAPENTRY) {
         ck_err(k, e, "keyed array literal needs an [E]T context, not %s", type_name(want));
         return 0;
@@ -2420,7 +2340,6 @@ static int coerce(Ck* k, Node* e, SType* want) {
     if (!t) t = expr_type(k, e);
     if (!t) t = T_VOID; // a call with no value
     if (same_type(t, want)) return 1;
-    if (shrink_ok(t, want)) return 1; // implicit permission shrink, never widening
     if (want->kind == SK_ERR || t->kind == SK_ERR) return 1;
     if (t == T_UT_NULL) {
         if (accepts_null(want)) { e->ty = want; return 1; }
@@ -2512,17 +2431,14 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         }
         if (write) {
             if (s->is_const) ck_err(k, e, "cannot assign to const '%.*s'", (int)e->len, e->str);
-            else if ((s->is_extern || (s->decl && (s->decl->flags & F_EXPO))) && !s->is_mut)
-                ck_err(k, e, "C global '%.*s' is read-only — mark its declaration 'mut'",
-                       (int)e->len, e->str);
-            else if (s->is_param && !s->is_mut)
-                ck_err(k, e, "parameter '%.*s' is read-only — mark it 'mut' in the signature",
+            else if (s->is_param && !s->is_byaddr)
+                ck_err(k, e, "parameter '%.*s' is read-only — copy it to a local, or take a pointer to write the caller's",
                        (int)e->len, e->str);
         }
         return s->type;
     }
     case N_FIELD_E: {
-        SType* direct = expr_type(k, e->a);
+        SType* direct = e->len == 3 && memcmp(e->str, "len", 3) == 0 ? deref_sequence(k, &e->a) : expr_type(k, e->a);
         if (direct && e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
             (direct->kind == SK_ARRAY || direct->kind == SK_SLICE ||
              (direct->kind == SK_PRIM && direct->prim == P_STRING))) {
@@ -2530,16 +2446,13 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
             return T_ERR;
         }
         // Reading a pointer value never needs write access to the storage that
-        // holds it. For auto-deref writes, only the innermost pointer edge used
-        // to reach the final object must be writable: `*mut *T` may write T,
-        // while `mut **T` may replace the inner pointer but not write T.
+        // holds it: a write through a pointer reaches the pointee directly.
         SType* b = expr_type(k, e->a);
         e->a->ty = b;
         SType* last_ptr = NULL;
         for (SType* q = b; q && q->kind == SK_PTR; q = q->base) last_ptr = q;
         if (write) {
             if (last_ptr) {
-                if (!last_ptr->is_mut) ck_err(k, e, "write through read-only pointer — use 'mut *T' and 'mut &value'");
             } else {
                 // An ordinary aggregate field is part of its base storage.
                 // Re-check that base as a write so const/read-only params fail.
@@ -2588,11 +2501,10 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
         return T_ERR;
     }
     case N_INDEX: {
-        // Slice element writes are content writes: permission comes from the
-        // view's type (`mut []T`), not from the descriptor axis holding it —
-        // an unmarked parameter of type `mut []T` still has writable bytes.
-        // Arrays are direct storage, so their element writes keep the
-        // ordinary descriptor check.
+        // Slice and string element writes reach the storage the view points
+        // at, so even a read-only parameter's elements are writable. Arrays
+        // are direct storage, so their element writes keep the ordinary
+        // descriptor check.
         // A view's elements live in the storage it points at, so any
         // expression of view type indexes into a place, a call result
         // included (Memory #9); a non-place array is a temporary.
@@ -2610,24 +2522,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
             ck_err(k, e, write ? "StaticMap entries are immutable" : "StaticMap lookup is not an assignable place");
             return T_ERR;
         }
-        if (write && peek->kind == SK_SLICE) {
-            if (!peek->is_mut)
-                ck_err(k, e,
-                       "cannot write through the read-only view %s — establish a writable one: 'mut %.*s[lo..hi]' or declare the view 'mut []T'",
-                       type_name(peek),
-                       e->a->kind == N_IDENT ? (int)e->a->len : 3,
-                       e->a->kind == N_IDENT ? e->a->str : "...");
-            b = peek;
-        } else if (write && peek->kind == SK_PRIM && peek->prim == P_STRING) {
-            // Sequences #11: indexed byte writes exist only through a
-            // 'mut string'. A plain string is a read-only view regardless of
-            // the descriptor axis — permission comes from the view's type,
-            // exactly as for slices.
-            if (!peek->is_mut)
-                ck_err(k, e,
-                       "cannot write through the read-only view string — establish a writable one: 'mut %.*s[lo..hi]' or declare the view 'mut string'",
-                       e->a->kind == N_IDENT ? (int)e->a->len : 3,
-                       e->a->kind == N_IDENT ? e->a->str : "...");
+        if (write && (peek->kind == SK_SLICE || (peek->kind == SK_PRIM && peek->prim == P_STRING))) {
             b = peek;
         } else if (write) {
             b = check_lvalue(k, e->a, 1);
@@ -2655,7 +2550,6 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
                 ck_err(k, e, "'*' dereferences pointers, not %s", type_name(p));
                 return T_ERR;
             }
-            if (write && !p->is_mut) ck_err(k, e, "write through read-only pointer — use 'mut *T' and 'mut &value'");
             return p->base;
         }
         break;
@@ -2666,7 +2560,7 @@ static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
     return T_ERR;
 }
 
-// An assignment target, address operand, or mut argument's type, recorded on
+// An assignment target, address operand, or mem.release place's type, recorded on
 // the node as an expression's is, for the backends.
 static SType* check_lvalue(Ck* k, Node* e, int write) {
     SType* t = check_lvalue_raw(k, e, write);
@@ -2727,8 +2621,7 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
     }
     for (int i = 0; i < got; i++) {
         Node* arg = call->kids[i];
-        int am = arg->kind == N_MUTARG;
-        Node* raw = am ? arg->a : arg;
+        Node* raw = arg;
         if (i < want) {
             coerce(k, raw, ft->params[i]);
         } else {
@@ -2743,43 +2636,8 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
                 ck_err(k, raw,
                        "variadic argument has type %s, which is not supported at the C boundary",
                        type_name(t));
-            if (am) ck_err(k, arg, "'mut' marks declared parameters, not variadics");
         }
     }
-}
-
-static void check_mut_arg(Ck* k, Node* call, int i, int pm);
-
-// `self` is 1 for a method call, whose declaration lists self first.
-static void check_mut_args(Ck* k, Node* call, Node* fndecl, int self) {
-    if (!fndecl) return;
-    for (int i = 0; i < call->nkids && i + self < fndecl->nkids; i++)
-        check_mut_arg(k, call, i, (fndecl->kids[i + self]->flags & F_MUT) != 0);
-}
-
-// Argument i against a parameter that is mut (pm) or read-only.
-static void check_mut_arg(Ck* k, Node* call, int i, int pm) {
-    int am = call->kids[i]->kind == N_MUTARG;
-    if (am && !pm) ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter %d is read-only", i + 1);
-    else if (pm && !am) ck_err(k, call->kids[i], "mut parameter needs 'mut' at the call site");
-    else if (am) { // mut passes the caller's address — the arg must have one
-        check_lvalue(k, call->kids[i]->a, 0);
-        Node* raw = call->kids[i]->a;
-        if (is_bits_field(raw, NULL, NULL)) ck_err(k, raw, "bit fields cannot supply mut arguments");
-        if (raw->kind == N_IDENT) {
-            Sym* s = lookup_val(k, raw->str, raw->len);
-            if (s && s->is_const_backed)
-                ck_err(k, raw, "const-backed contract cannot be passed to a mut parameter");
-        }
-    }
-}
-
-// A call through a function value: its type states which parameters are mut
-// (`(mut name: T): R`), checked as a direct call checks its declaration.
-// Contract methods have no mut parameters, so their mask is zero.
-static void check_value_mut_args(Ck* k, Node* call, SType* ft) {
-    for (int i = 0; i < call->nkids && i < ft->nparams; i++)
-        check_mut_arg(k, call, i, i < 64 && ((ft->mut_params >> i) & 1));
 }
 
 // --- expressions ----------------------------------------------------------------------
@@ -2853,15 +2711,14 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return tu;
     }
     case N_UNARY: {
-        if (e->op == T_AMP) { // &lvalue -> *T; mut &lvalue -> mut *T
-            int writable = (e->flags & F_MUT) != 0;
-            SType* t = check_lvalue(k, e->a, writable);
+        if (e->op == T_AMP) { // &lvalue -> *T
+            SType* t = check_lvalue(k, e->a, 0);
+            reject_const_view(k, e, e->a);
             if (is_bits_field(e->a, NULL, NULL)) {
                 ck_err(k, e, "bit fields are non-addressable");
                 return T_ERR;
             }
             SType* p = st_new(SK_PTR);
-            p->is_mut = writable;
             p->base = t;
             return p;
         }
@@ -3012,7 +2869,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 while (ua && ua->kind == SK_DISTINCT) ua = ua->base;
                 if (ua && ua->kind == SK_UNION) return st_prim(P_BOOL);
             }
-            if (same_modulo_shrink(a, b) &&
+            if (same_type(a, b) &&
                 (is_num(a) || is_bool(a) || (a->kind == SK_PTR && equality) ||
                  a->kind == SK_FUNC || a->kind == SK_ENUM ||
                  a->kind == SK_CONTRACT ||
@@ -3175,7 +3032,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 return T_ERR;
             }
         }
-        SType* b = expr_type(k, e->a);
+        SType* b = e->len == 3 && memcmp(e->str, "len", 3) == 0 ? deref_sequence(k, &e->a) : expr_type(k, e->a);
         if (b->kind == SK_ERR) return T_ERR;
         if (e->len == 3 && memcmp(e->str, "len", 3) == 0 &&
             (b->kind == SK_ARRAY || b->kind == SK_SLICE ||
@@ -3259,46 +3116,13 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return T_ERR;
     }
     case N_SLICE_E: {
-        int establish = (e->flags & F_MUT) != 0;
-        if (establish && e->a->kind == N_STR) {
-            // Mutability #11: a literal cannot establish a writable view;
-            // its bytes live in static read-only storage.
-            ck_err(k, e, "a string literal cannot establish 'mut string' — slice a writable string binding");
-            return T_ERR;
-        }
-        SType* b = establish ? check_lvalue(k, e->a, 0) : expr_type(k, e->a);
-        if (establish) e->a->ty = b; // annotate for the definite-init pass
+        SType* b = expr_type(k, e->a);
         if (b->kind == SK_ERR) return T_ERR;
         int is_string = b->kind == SK_PRIM && b->prim == P_STRING;
         int is_view = is_string || b->kind == SK_SLICE || b->kind == SK_ARRAY;
         if (!is_view) {
             ck_err(k, e, "can only slice arrays, slices, and strings, not %s", type_name(b));
             return T_ERR;
-        }
-        if (establish) {
-            // Mutability #11: the establishment marker may prove writable
-            // array elements, but it may never regrow a plain slice/string.
-            // An already-mut view needs no marker; re-slicing preserves it.
-            int content_writable = (is_string || b->kind == SK_SLICE) && b->is_mut;
-            if ((is_string || b->kind == SK_SLICE) && !content_writable) {
-                ck_err(k, e,
-                       "cannot establish writable content from plain %s — permission that has shrunk cannot grow again",
-                       type_name(b));
-                return T_ERR;
-            }
-            if (!content_writable) { // array: prove its inline element storage
-                Node* src = e->a;
-                Sym* vs = src->kind == N_IDENT ? node_sym(src) : NULL;
-                if (vs && vs->is_const)
-                    ck_err(k, e,
-                           "const '%.*s' cannot establish a writable view",
-                           (int)src->len, src->str);
-                else if (vs && vs->is_literal_backed)
-                    ck_err(k, e,
-                           "'%.*s' is literal-backed and cannot establish a writable view",
-                           (int)src->len, src->str);
-                else (void)check_lvalue(k, e->a, 1);
-            }
         }
         SType* lo = e->b ? expr_type(k, e->b) : NULL;
         SType* hi = e->c ? expr_type(k, e->c) : NULL;
@@ -3313,9 +3137,9 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             if (hi && !is_int(hi) && hi != T_UT_INT) ck_err(k, e->c, "slice bound must be an integer");
             check_slice_bounds(k, e, e->a, b);
         }
-        if (is_string) return b->is_mut || establish ? T_MUT_STRING : st_prim(P_STRING);
+        if (b->kind == SK_ARRAY) reject_const_view(k, e, e->a);
+        if (is_string) return st_prim(P_STRING);
         SType* s = st_new(SK_SLICE);
-        s->is_mut = b->kind == SK_ARRAY ? establish : (b->is_mut || establish);
         s->base = b->base;
         return s;
     }
@@ -3335,7 +3159,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         return T_ERR;
     case N_CALL:
         return check_call(k, e);
-    case N_MUTARG:
+    case N_PLACEARG:
         return expr_type(k, e->a);
     default:
         ck_err(k, e, "unsupported expression in checker");
@@ -3569,7 +3393,7 @@ static SType* overload_arraylit_cand(Ck* k, Node* lit, int* depth, int* rank) {
 /*
  * Whether array literal lit, with candidate cand, matches param exactly:
  * a []T level takes literals of any length, a [N]T level exactly N
- * elements, and the innermost element type matches or shrinks.
+ * elements, and the innermost element type matches.
  */
 static int arraylit_fits(Node* lit, SType* cand, SType* param) {
     if (!param || !param->base || (param->kind != SK_SLICE && param->kind != SK_ARRAY)) return 0;
@@ -3582,11 +3406,11 @@ static int arraylit_fits(Node* lit, SType* cand, SType* param) {
         if (!arraylit_fits(e, cand->base, param->base)) return 0;
     }
     if (n > 0 && (lit->a ? lit->a : lit->kids[0])->kind == N_ARRAYLIT) return 1;
-    return same_type(cand->base, param->base) || shrink_ok(cand->base, param->base);
+    return same_type(cand->base, param->base);
 }
 
 static SType* overload_arg_type(Ck* k, Node* arg) {
-    Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
+    Node* raw = arg->kind == N_PLACEARG ? arg->a : arg;
     int depth, rank;
     if (raw->kind == N_ARRAYLIT) return overload_arraylit_cand(k, raw, &depth, &rank);
     return overload_leaf_type(k, raw, &rank);
@@ -3632,7 +3456,7 @@ static SType* overload_leaf_type(Ck* k, Node* raw, int* rank) {
 static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, uint32_t len) {
     if (overload_count(head) < 2) return 0;
     for (int i = 0; i < call->nkids; i++) {
-        Node* raw = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
+        Node* raw = call->kids[i]->kind == N_PLACEARG ? call->kids[i]->a : call->kids[i];
         if (!overloaded_func_name(k, raw)) continue;
         ck_err(k, raw, "overloaded function '%.*s' needs an explicit function-value type: '%.*s' is overloaded",
                (int)raw->len, raw->str, (int)len, name);
@@ -3641,57 +3465,10 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
     return 0;
 }
 
-/*
- * Resolution found nothing. When exactly one candidate takes this many
- * arguments, a call-site `mut` that does not fit it (receiver or argument)
- * is the likely cause; name it rather than report a missing function.
- * `self` is 1 for a method call, whose declaration lists self first.
- */
-static int mut_mismatch_err(Ck* k, Node* call, Sym* head, int self) {
-    Node* callee = call->a;
-    Node* decl = NULL;
-    for (Sym* f = head; f; f = f->overload) {
-        if (!f->decl || f->decl->nkids != call->nkids + self) continue;
-        if (decl) return 0;
-        decl = f->decl;
-    }
-    if (!decl) return 0;
-    if (self) {
-        int rmut = (decl->flags & F_MUT) != 0;
-        int cmut = (call->flags & F_MUT) != 0;
-        if (rmut && !cmut) {
-            ck_err(k, call, "method '%.*s' takes 'mut self'; it needs 'mut' at the call: mut x.%.*s(...)",
-                   (int)callee->len, callee->str, (int)callee->len, callee->str);
-            return 1;
-        }
-        if (!rmut && cmut) {
-            ck_err(k, call, "'mut' marks mutating methods; '%.*s' is read-only",
-                   (int)callee->len, callee->str);
-            return 1;
-        }
-    }
-    for (int i = 0; i < call->nkids; i++) {
-        Node* p = decl->kids[i + self];
-        int am = call->kids[i]->kind == N_MUTARG;
-        int pm = (p->flags & F_MUT) != 0;
-        if (am && !pm) {
-            ck_err(k, call->kids[i], "'mut' marks mut parameters; parameter '%.*s' of '%.*s' is not one",
-                   (int)p->len, p->str, (int)callee->len, callee->str);
-            return 1;
-        }
-        if (pm && !am) {
-            ck_err(k, call->kids[i], "mut parameter '%.*s' of '%.*s' needs 'mut' at the call site",
-                   (int)p->len, p->str, (int)callee->len, callee->str);
-            return 1;
-        }
-    }
-    return 0;
-}
-
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
-    Node* raw = arg->kind == N_MUTARG ? arg->a : arg;
+    Node* raw = arg->kind == N_PLACEARG ? arg->a : arg;
     if (raw->kind == N_ARRAYLIT) {
-        if (!actual || (param && param->kind == SK_SLICE && param->is_mut)) return 0; // a plain []T views it
+        if (!actual) return 0;
         return arraylit_fits(raw, actual, param);
     }
     if (raw->kind == N_STRUCTLIT && !raw->a) return param && (param->kind == SK_STRUCT || param->kind == SK_BITS);
@@ -3699,36 +3476,16 @@ static int exact_arg_type(Node* arg, SType* actual, SType* param) {
     return same_type(actual, param);
 }
 
-static int call_exact_ft(Node* call, Node* decl, SType* ft, SType** actual) {
+static int call_exact_ft(Node* call, SType* ft, SType** actual) {
     if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams) return 0;
     for (int i = 0; i < call->nkids; i++) {
-        int am = call->kids[i]->kind == N_MUTARG;
-        int pm = decl && i < decl->nkids && (decl->kids[i]->flags & F_MUT) != 0;
-        if (am != pm || !exact_arg_type(call->kids[i], actual[i], ft->params[i])) return 0;
-    }
-    return 1;
-}
-
-/*
- * Shrink-compatible overload match: identical to the exact match except a
- * mut-qualified argument may bind to the plain parameter form (Mutability #9).
- * Used only when no overload matches exactly, so exact matches keep priority
- * and distinct mut/plain overloads stay unambiguous.
- */
-static int call_shrink_ft(Node* call, Node* decl, SType* ft, SType** actual) {
-    if (!ft || ft->kind != SK_FUNC || call->nkids != ft->nparams) return 0;
-    for (int i = 0; i < call->nkids; i++) {
-        int am = call->kids[i]->kind == N_MUTARG;
-        int pm = decl && i < decl->nkids && (decl->kids[i]->flags & F_MUT) != 0;
-        if (am != pm) return 0;
-        if (exact_arg_type(call->kids[i], actual[i], ft->params[i])) continue;
-        if (!shrink_ok(actual[i], ft->params[i])) return 0;
+        if (!exact_arg_type(call->kids[i], actual[i], ft->params[i])) return 0;
     }
     return 1;
 }
 
 static int call_exact_match(Node* call, Sym* s, SType** actual) {
-    return s && !s->is_generic && !s->is_extern && call_exact_ft(call, s->decl, s->type, actual);
+    return s && !s->is_generic && !s->is_extern && call_exact_ft(call, s->type, actual);
 }
 
 // Select a non-generic direct-call overload: a sole declaration retains Ace's
@@ -3753,17 +3510,6 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* am
         }
         found = s;
     }
-    if (!found) { // no exact match: one shrink-compatible overload may win
-        for (Sym* s = head; s; s = s->overload) {
-            if (s->is_generic || ov_hidden(s, at)) continue;
-            if (!call_shrink_ft(call, s->decl, s->type, actual)) continue;
-            if (found) {
-                *ambiguous = 1;
-                return NULL;
-            }
-            found = s;
-        }
-    }
     if (!found && nongeneric == 1) {
         for (Sym* s = head; s; s = s->overload) if (!s->is_generic && !ov_hidden(s, at)) found = s;
         // the sole visible overload keeps literal typing as if the hidden
@@ -3771,8 +3517,7 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* am
         // matches outright, name that cause instead
         int fits = (found->decl->flags & F_VARARGS) || found->type->nparams == call->nkids;
         for (Sym* s = head; at && !fits && s; s = s->overload)
-            if (ov_hidden(s, at) && !s->is_generic &&
-                (call_exact_match(call, s, actual) || call_shrink_ft(call, s->decl, s->type, actual)))
+            if (ov_hidden(s, at) && !s->is_generic && call_exact_match(call, s, actual))
                 return NULL;
     }
     return found;
@@ -3781,10 +3526,24 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* am
 static void finish_direct_call(Ck* k, Node* call, Sym* s) {
     int variadic = s->is_extern && s->decl && (s->decl->flags & F_VARARGS) != 0;
     check_args(k, call, s->type, variadic);
-    check_mut_args(k, call, s->decl, 0);
     call->sym = s;
     call->ty = s->type->ret;
     if (s->decl && (s->decl->flags & F_CONST)) call->flags |= F_CONST;
+}
+
+/* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
+ * method call on `c` (receivers are by address) are rejected. A path through
+ * a pointer reaches other storage and is not checked. */
+static void reject_const_view(Ck* k, Node* at, Node* e) {
+    while (e && (e->kind == N_FIELD_E || e->kind == N_INDEX)) {
+        SType* t = e->a ? e->a->ty : NULL;
+        if (t && t->kind == SK_PTR) return;
+        e = e->a;
+    }
+    if (!e || e->kind != N_IDENT) return;
+    Sym* s = lookup_val(k, e->str, e->len);
+    if (s && s->kind == SYM_VAR && s->is_const)
+        ck_err(k, at, "const '%.*s' cannot give a writable view", (int)e->len, e->str);
 }
 
 static int const_lvalue(Ck* k, Node* e) {
@@ -3856,7 +3615,7 @@ static uint32_t type_identity(SType* t) {
        the corresponding byte-slice representative before assigning an id. */
     if (t && t->kind == SK_PRIM && t->prim == P_STRING) {
         ensure_memory_types();
-        t = t->is_mut ? T_MUT_BYTE_SLICE : T_BYTE_SLICE;
+        t = T_BYTE_SLICE;
     }
     if (!t->type_id) t->type_id = next_type_id++;
     return t->type_id;
@@ -3907,6 +3666,56 @@ static void check_error_domain_decl(Ck* k, Node* n) {
     }
 }
 
+
+
+// A `*e` node over e, at e's position, as if the source had written it.
+static Node* deref_node(Node* e) {
+    Node* d = (Node*)arena_alloc(sizeof(Node));
+    *d = *e;
+    d->kind = N_UNARY; d->op = T_STAR; d->a = e; d->b = NULL; d->kids = NULL; d->nkids = 0; d->ty = NULL;
+    return d;
+}
+
+/*
+ * A sequence operand reached through pointers (`p.len`, `for x in p` with
+ * p: *[]T) auto-derefs as a field access does: each pointer edge becomes an
+ * explicit `*` node, so later passes see the sequence itself.
+ */
+static SType* deref_sequence(Ck* k, Node** at) {
+    SType* t = expr_type(k, *at);
+    SType* b = t;
+    while (b && b->kind == SK_PTR) b = b->base;
+    if (t == b || !b || !(b->kind == SK_ARRAY || b->kind == SK_SLICE || (b->kind == SK_PRIM && b->prim == P_STRING)))
+        return t;
+    while (t->kind == SK_PTR) {
+        *at = deref_node(*at);
+        t = expr_type(k, *at);
+    }
+    return t;
+}
+
+/*
+ * mem.release's argument names the allocation variable it frees and zeroes:
+ * `&data` or a `*[]T` value. Either becomes the internal place argument
+ * (N_PLACEARG over the lvalue), so a re-check of the same node accepts it.
+ */
+static Node* release_place(Ck* k, Node* call) {
+    Node* arg = call->kids[0];
+    if (arg->kind == N_PLACEARG) return arg;
+    if (arg->kind == N_UNARY && arg->op == T_AMP) {
+        arg->kind = N_PLACEARG;
+        return arg;
+    }
+    SType* t = expr_type(k, arg);
+    if (!t || t->kind != SK_PTR || !t->base || t->base->kind != SK_SLICE) return NULL;
+    Node* d = deref_node(arg);
+    Node* m = (Node*)arena_alloc(sizeof(Node));
+    *m = *d;
+    m->kind = N_PLACEARG; m->a = d;
+    call->kids[0] = m;
+    return m;
+}
+
 static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
     ensure_memory_types();
     Node* callee = call->a;
@@ -3922,10 +3731,6 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         for (int i = 0; i < 2; i++) {
             Node* arg = call->kids[i];
-            if (arg->kind == N_MUTARG) {
-                ck_err(k, arg, "'mut' marks mut parameters; mem.equal parameter %d is read-only", i + 1);
-                arg = arg->a;
-            }
             SType* t = expr_type(k, arg);
             if (t->kind != SK_ERR && !is_byte_sequence(t))
                 ck_err(k, arg,
@@ -3941,10 +3746,6 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
             return T_ERR;
         }
         Node* data = call->kids[0];
-        if (data->kind == N_MUTARG) {
-            ck_err(k, data, "'mut' marks mut parameters; mem.usable's argument is read-only");
-            data = data->a;
-        }
         coerce(k, data, T_BYTE_SLICE);
         return st_prim(P_USIZE);
     }
@@ -3956,13 +3757,9 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         for (int i = 0; i < 2; i++) {
             Node* arg = call->kids[i];
-            if (arg->kind == N_MUTARG) {
-                ck_err(k, arg, "'mut' marks mut parameters; mem.alloc arguments are read-only");
-                arg = arg->a;
-            }
             coerce(k, arg, st_prim(P_I64));
         }
-        return T_MUT_BYTE_SLICE;
+        return T_BYTE_SLICE;
     }
     if (intrinsic == BI_MEM_REALLOC) {
         if (call->nkids != 2) {
@@ -3971,27 +3768,19 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         Node* data = call->kids[0];
         Node* size = call->kids[1];
-        if (data->kind == N_MUTARG) {
-            ck_err(k, data, "'mut' marks mut parameters; mem.realloc arguments are read-only");
-            data = data->a;
-        }
-        if (size->kind == N_MUTARG) {
-            ck_err(k, size, "'mut' marks mut parameters; mem.realloc arguments are read-only");
-            size = size->a;
-        }
         coerce(k, data, T_BYTE_SLICE);
         coerce(k, size, st_prim(P_I64));
-        return T_MUT_BYTE_SLICE;
+        return T_BYTE_SLICE;
     }
 
     if (intrinsic == BI_MEM_RELEASE && call->nkids != 1) {
-        ck_err(k, call, "mem.release takes exactly one mut allocation slice");
+        ck_err(k, call, "mem.release takes exactly one allocation's address");
         return T_ERR;
     }
     if (intrinsic == BI_MEM_RELEASE) {
-        Node* arg = call->kids[0];
-        if (arg->kind != N_MUTARG) {
-            ck_err(k, arg, "mem.release needs 'mut' at the call site: release(mut data)");
+        Node* arg = release_place(k, call);
+        if (!arg) {
+            ck_err(k, call->kids[0], "mem.release takes the allocation variable's address: release(&data)");
             return T_ERR;
         }
         Node* raw = arg->a;
@@ -4000,12 +3789,12 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
         Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
         if (original && original->type) declared = original->type;
-        if (!same_type(declared, T_BYTE_SLICE) && !shrink_ok(declared, T_BYTE_SLICE)) {
+        if (!same_type(declared, T_BYTE_SLICE)) {
             if (declared->kind == SK_SLICE)
                 ck_err(k, raw,
-                       "mem.release requires a mutable []u8 allocation variable — a typed slice "
-                       "states its element type: mem.release[T](mut data)");
-            else ck_err(k, raw, "mem.release requires a mutable []u8 allocation variable");
+                       "mem.release requires a []u8 allocation variable — a typed slice "
+                       "states its element type: mem.release[T](&data)");
+            else ck_err(k, raw, "mem.release requires a []u8 allocation variable");
             return T_ERR;
         }
         return T_VOID;
@@ -4021,30 +3810,17 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         return T_ERR;
     }
 
-    int writes = intrinsic != BI_MEM_COMPARE;
     for (int i = 0; i < call->nkids; i++) {
         Node* arg = call->kids[i];
-        int is_dst = writes && i == 0;
-        // Content-write destinations carry type-position `mut` (Memory #15):
-        // the argument's type must be `mut []u8`; there is no call-site mark.
-        if (arg->kind == N_MUTARG) {
-            if (is_dst)
-                ck_err(k, arg,
-                       "mem.%s's destination is a writable view — pass 'mut []u8'; no call-site 'mut'",
-                       name);
-            else ck_err(k, arg, "'mut' marks mut parameters; mem.%s parameter %d is read-only", name, i + 1);
-            arg = arg->a;
-        }
-        SType* want_type = intrinsic == BI_MEM_FILL && i == 1 ? st_prim(P_U8)
-                         : (is_dst ? T_MUT_BYTE_SLICE : T_BYTE_SLICE);
+        SType* want_type = intrinsic == BI_MEM_FILL && i == 1 ? st_prim(P_U8) : T_BYTE_SLICE;
         coerce(k, arg, want_type);
     }
     return intrinsic == BI_MEM_COMPARE ? st_prim(P_I64) : T_VOID;
 }
 
 /*
- * Typed allocation intrinsics: mem.alloc[T](count): mut []T,
- * mem.realloc[T](data, new_count): mut []T, and mem.release[T](mut data).
+ * Typed allocation intrinsics: mem.alloc[T](count): []T,
+ * mem.realloc[T](data, new_count): []T, and mem.release[T](&data).
  * They ride the ordinary explicit generic-instantiation path, never stamp a
  * body, and are lowered directly by the emitter. The instantiation must name
  * exactly one element type whose layout the compiler can size.
@@ -4076,11 +3852,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
     SType* slice = st_new(SK_SLICE);
     slice->base = elem;
     layout(slice);
-    SType* mut_slice = st_new(SK_SLICE);
-    mut_slice->base = elem;
-    mut_slice->is_mut = 1;
-    layout(mut_slice);
-    callee->ty = intrinsic == BI_MEM_RELEASE_T ? slice : mut_slice;
+    callee->ty = slice;
     // The emitter derives sizeof(T)/alignof(T) from the result slice.
 
     if (intrinsic == BI_MEM_COPY_T || intrinsic == BI_MEM_MOVE_T) {
@@ -4090,15 +3862,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
         }
         for (int i = 0; i < 2; i++) {
             Node* arg = call->kids[i];
-            // As for the byte forms (Memory #15): type-position `mut` only.
-            if (arg->kind == N_MUTARG) {
-                if (i == 0)
-                    ck_err(k, arg, "%s's destination is a writable view — pass 'mut []%s'; no call-site 'mut'",
-                           what, type_name(elem));
-                else ck_err(k, arg, "'mut' marks mut parameters; %s parameter 2 is read-only", what);
-                arg = arg->a;
-            }
-            coerce(k, arg, i == 0 ? mut_slice : slice);
+            coerce(k, arg, slice);
         }
         return T_VOID;
     }
@@ -4109,12 +3873,8 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
             return T_ERR;
         }
         Node* count = call->kids[0];
-        if (count->kind == N_MUTARG) {
-            ck_err(k, count, "'mut' marks mut parameters; %s arguments are read-only", what);
-            count = count->a;
-        }
         coerce(k, count, st_prim(P_USIZE));
-        return mut_slice;
+        return slice;
     }
     if (intrinsic == BI_MEM_REALLOC_T) {
         if (call->nkids != 2) {
@@ -4123,26 +3883,18 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
         }
         Node* data = call->kids[0];
         Node* count = call->kids[1];
-        if (data->kind == N_MUTARG) {
-            ck_err(k, data, "'mut' marks mut parameters; %s data is read-only", what);
-            data = data->a;
-        }
-        if (count->kind == N_MUTARG) {
-            ck_err(k, count, "'mut' marks mut parameters; %s arguments are read-only", what);
-            count = count->a;
-        }
         coerce(k, data, slice);
         coerce(k, count, st_prim(P_USIZE));
-        return mut_slice;
+        return slice;
     }
 
     if (call->nkids != 1) {
-        ck_err(k, call, "%s takes exactly one mut typed allocation slice", what);
+        ck_err(k, call, "%s takes exactly one typed allocation's address", what);
         return T_ERR;
     }
-    Node* arg = call->kids[0];
-    if (arg->kind != N_MUTARG) {
-        ck_err(k, arg, "%s needs 'mut' at the call site: mem.release[T](mut data)", what);
+    Node* arg = release_place(k, call);
+    if (!arg) {
+        ck_err(k, call->kids[0], "%s takes the allocation variable's address: mem.release[T](&data)", what);
         return T_ERR;
     }
     Node* raw = arg->a;
@@ -4152,8 +3904,8 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
     Sym* current = raw->kind == N_IDENT ? node_sym(raw) : NULL;
     Sym* original = current && current->decl ? node_sym(current->decl) : NULL;
     if (original && original->type) declared = original->type;
-    if (!same_type(declared, slice) && !shrink_ok(declared, slice)) {
-        ck_err(k, raw, "%s requires a mutable []%s allocation variable — the "
+    if (!same_type(declared, slice)) {
+        ck_err(k, raw, "%s requires a []%s allocation variable — the "
                        "instantiation must match the slice's element type exactly",
                what, type_name(elem));
         return T_ERR;
@@ -4239,7 +3991,7 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
         if (!ut_fits(k, arg, want)) return 0;
         arg->ty = t = want;
     }
-    if (same_type(t, want) || shrink_ok(t, want)) { // mut string prints as string
+    if (same_type(t, want)) {
         *out = t;
         return 1;
     }
@@ -4281,13 +4033,6 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             return T_ERR;
         }
         Node* dest = call->kids[0];
-        if (dest->kind == N_MUTARG && fc->bi == BI_FMT_PRINTF_FD) {
-            ck_err(k, dest, "%s writes to the descriptor; it takes no 'mut'", who);
-            dest = dest->a;
-        } else if (dest->kind == N_MUTARG) {
-            ck_err(k, dest, "%s writes through the destination slice's own permission; it takes no 'mut'", who);
-            dest = dest->a;
-        }
         if (!coerce(k, dest, fn->type->params[0])) return T_ERR;
     }
     if (call->nkids < fi + 1) {
@@ -4295,16 +4040,12 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
         return T_ERR;
     }
     Node* format_arg = call->kids[fi];
-    if (format_arg->kind == N_MUTARG) {
-        ck_err(k, format_arg, "%s format is read-only", who);
-        format_arg = format_arg->a;
-    }
     if (!coerce(k, format_arg, st_prim(P_STRING))) return T_ERR;
     Node* format = static_string_expr(k, format_arg);
     if (!format) {
         ck_err(k, format_arg, "%s format must be a string literal or static-literal const global", who);
         for (int i = fi + 1; i < call->nkids; i++)
-            (void)expr_type(k, call->kids[i]->kind == N_MUTARG
+            (void)expr_type(k, call->kids[i]->kind == N_PLACEARG
                                ? call->kids[i]->a : call->kids[i]);
         return T_ERR;
     }
@@ -4469,10 +4210,6 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
         if (part->kind == PF_LITERAL_BYTE) { part->helper = byte_helper; continue; }
         if (part->arg >= call->nkids) continue;
         Node* arg = call->kids[part->arg];
-        if (arg->kind == N_MUTARG) {
-            ck_err(k, arg, "%s value arguments are read-only", who);
-            arg = arg->a;
-        }
         SType* actual = NULL;
         const char* expected = "value";
         int typed = printf_expected_type(k, arg, part->kind, &actual, &expected, who);
@@ -4504,7 +4241,7 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
         part->helper = printf_helper(k, formatting_prefix, rendering_len, who, generic, helper_arg, 1, call);
     }
     for (int i = fi + expected_count + 1; i < call->nkids; i++) {
-        Node* arg = call->kids[i]->kind == N_MUTARG ? call->kids[i]->a : call->kids[i];
+        Node* arg = call->kids[i]->kind == N_PLACEARG ? call->kids[i]->a : call->kids[i];
         if (!node_ty(arg)) (void)expr_type(k, arg);
     }
 
@@ -4523,11 +4260,8 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
                (int)callee->len, callee->str, type_name(b), (int)callee->len, callee->str);
         return T_ERR;
     }
-    if (head && head->decl && head->decl->ival == BI_FMT_PRINTF_BUF) { // mut buffer.printf("format", ...)
-        if (!(call->flags & F_MUT)) {
-            ck_err(k, call, "Buffer.printf appends to the buffer; it needs 'mut' at the call");
-            return T_ERR;
-        }
+    if (head && head->decl && head->decl->ival == BI_FMT_PRINTF_BUF) { // buffer.printf("format", ...)
+        call->flags |= F_BYADDR; // the receiver is passed by address
         check_lvalue(k, callee->a, 1);
         return check_format_call(k, call, head, &PRINTF_BUF_CALL);
     }
@@ -4539,18 +4273,11 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
             : f->type;
         if (!ft || (f->is_generic && !b->nargs) || ft->nparams != supplied ||
             !same_type(ft->params[0], b)) continue;
-        int rmut = (f->decl->flags & F_MUT) != 0;
-        int cmut = (call->flags & F_MUT) != 0;
-        if (rmut != cmut) continue;
         int exact = 1;
         for (int i = 1; i < ft->nparams; i++) {
             Node* arg = call->kids[i - 1];
             SType* at = overload_arg_type(k, arg);
-            int am = arg->kind == N_MUTARG;
-            int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-            if (am != pm) exact = 0;
-            else if (!exact_arg_type(arg, at, ft->params[i]) &&
-                     !shrink_ok(at, ft->params[i])) exact = 0;
+            if (!exact_arg_type(arg, at, ft->params[i])) exact = 0;
         }
         if (!exact && overload_count(head) > 1) continue;
         if (found) {
@@ -4580,18 +4307,11 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
                 if (!ft || (f->is_generic && !eb->nargs) ||
                     ft->nparams != call->nkids + 1 ||
                     !same_type(ft->params[0], eb)) continue;
-                int rmut = (f->decl->flags & F_MUT) != 0;
-                int cmut = (call->flags & F_MUT) != 0;
-                if (rmut != cmut) continue;
                 int exact = 1;
                 for (int i = 1; i < ft->nparams; i++) {
                     Node* arg = call->kids[i - 1];
                     SType* at = overload_arg_type(k, arg);
-                    int am = arg->kind == N_MUTARG;
-                    int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-                    if (am != pm) exact = 0;
-                    else if (!exact_arg_type(arg, at, ft->params[i]) &&
-                             !shrink_ok(at, ft->params[i]))
+                    if (!exact_arg_type(arg, at, ft->params[i]))
                         exact = 0;
                 }
                 if (!exact && overload_count(ehead) > 1) continue;
@@ -4623,14 +4343,14 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
     if (found) {
         SType* method_ft = found->is_generic ? instantiate_generic_func_args(k, found, b->args, b->nargs, call)
             : found->type;
-        int rmut = (found->decl->flags & F_MUT) != 0;
         Node* recv = callee->a;
-        if (rmut) check_lvalue(k, recv, 1);
-        else coerce(k, recv, b);
-        check_mut_args(k, call, found->decl, 1);
+        coerce(k, recv, b);
+        SType* rt = (SType*)recv->ty;
+        if (!rt || rt->kind != SK_PTR) reject_const_view(k, call, recv);
+        call->flags |= F_BYADDR; // the receiver is passed by address
         for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
-            coerce(k, arg->kind == N_MUTARG ? arg->a : arg, method_ft->params[i + 1]);
+            coerce(k, arg->kind == N_PLACEARG ? arg->a : arg, method_ft->params[i + 1]);
         }
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
@@ -4640,7 +4360,6 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
         return method_ft->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
-    if (mut_mismatch_err(k, call, head, 1)) return T_ERR;
     ck_err(k, call, "no method '%.*s' for %s", (int)callee->len, callee->str, type_name(b));
     return T_ERR;
 }
@@ -4649,7 +4368,7 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
  * A generic owner (Map[K, V].new(...)) needs each candidate's signature
  * rebuilt under the owner's actual type arguments before matching, exactly
  * like check_method_call's generic branch — mirrored here without the
- * receiver-shaped logic (rmut/cmut, embedding promotion) that doesn't apply
+ * receiver-shaped logic (embedding promotion) that doesn't apply
  * to a receiverless call.
  */
 static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* head) {
@@ -4662,10 +4381,7 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
         for (int i = 0; i < ft->nparams; i++) {
             Node* arg = call->kids[i];
             SType* at = overload_arg_type(k, arg);
-            int am = arg->kind == N_MUTARG;
-            int pm = (f->decl->kids[i]->flags & F_MUT) != 0;
-            if (am != pm) exact = 0;
-            else if (!exact_arg_type(arg, at, ft->params[i]) && !shrink_ok(at, ft->params[i])) exact = 0;
+            if (!exact_arg_type(arg, at, ft->params[i])) exact = 0;
         }
         if (!exact && overload_count(head) > 1) continue;
         if (found) {
@@ -4684,7 +4400,7 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
         if (found_ft->kind == SK_ERR) return T_ERR;
         for (int i = 0; i < call->nkids; i++) {
             Node* arg = call->kids[i];
-            coerce(k, arg->kind == N_MUTARG ? arg->a : arg, found_ft->params[i]);
+            coerce(k, arg->kind == N_PLACEARG ? arg->a : arg, found_ft->params[i]);
         }
         if (found->decl->path && call->path &&
             strcmp(found->decl->path, call->path) != 0 && !found->is_pub)
@@ -4695,7 +4411,6 @@ static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* hea
         return found_ft->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
-    if (mut_mismatch_err(k, call, head, 0)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
 }
@@ -4751,7 +4466,6 @@ static SType* check_assoc_call(Ck* k, Node* call, SType* owner) {
         return found->type->ret;
     }
     if (overloaded_arg_err(k, call, head, callee->str, callee->len)) return T_ERR;
-    if (mut_mismatch_err(k, call, head, 0)) return T_ERR;
     ck_err(k, call, "no associated function '%.*s' for %s", (int)callee->len, callee->str, type_name(owner));
     return T_ERR;
 }
@@ -4913,11 +4627,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
                        type_name(from), type_name(want));
                 return T_ERR;
             }
-            if (want->is_mut && !from->is_mut) {
-                ck_err(k, call, "pointer reinterpretation cannot widen %s to %s",
-                       type_name(from), type_name(want));
-                return T_ERR;
-            }
             if (want->base->align <= from->base->align) call->flags |= F_BOUNDS_PROVEN;
             callee->ty = want;
             return want;
@@ -4988,12 +4697,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 }
                 SType* from = expr_type(k, call->kids[0]);
                 if (want->kind == SK_ERR || from->kind == SK_ERR) return T_ERR;
-                // Preserve writable permission through an explicit legacy
-                // spelling cast between the shared byte-view aliases.
-                if (want->kind == SK_PRIM && want->prim == P_STRING &&
-                    from->kind == SK_SLICE && from->base == st_prim(P_U8) &&
-                    from->is_mut)
-                    want = T_MUT_STRING;
                 if (want->kind == SK_PRIM && want->prim == P_USIZE && from->kind == SK_PTR) {
                     /* exact address extraction, including null */
                 } else if (!castable(from, want)) {
@@ -5162,10 +4865,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
                     ck_err(k, call, "assert takes exactly one bool condition, got %d arguments", call->nkids);
                     return T_ERR;
                 }
-                if (call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call->kids[0], "'mut' marks mut parameters; assert's condition is read-only");
-                    return T_ERR;
-                }
                 if (!coerce(k, call->kids[0], st_prim(P_BOOL))) return T_ERR;
                 int known = 0;
                 if (bool_const(call->kids[0], &known) && !known) {
@@ -5198,10 +4897,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
             if (is_panic_name(callee->str, callee->len)) {
                 if (call->nkids != 1) {
                     ck_err(k, call, "panic takes exactly one string message, got %d arguments", call->nkids);
-                    return T_ERR;
-                }
-                if (call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call->kids[0], "'mut' marks mut parameters; panic's message is read-only");
                     return T_ERR;
                 }
                 if (!coerce(k, call->kids[0], st_prim(P_STRING))) return T_ERR;
@@ -5237,7 +4932,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if (it->decl && it->decl->ival == BI_FMT_PRINTF_FD) to_fd = it;
             }
             if (to_fd && call->nkids >= 1) {
-                Node* first = call->kids[0]->kind == N_MUTARG ? call->kids[0]->a : call->kids[0];
+                Node* first = call->kids[0]->kind == N_PLACEARG ? call->kids[0]->a : call->kids[0];
                 SType* ft = overload_arg_type(k, first);
                 if (ft && same_type(ft, to_fd->type->params[0]))
                     return check_format_call(k, call, to_fd, &PRINTF_FD_CALL);
@@ -5249,15 +4944,14 @@ static SType* check_call_raw(Ck* k, Node* call) {
             for (Sym* it = s; it; it = it->overload)
                 if (it->decl && it->decl->ival == BI_STR_FORMAT) { sf = it; break; }
             if (sf) {
-                Node* second = call->kids[1]->kind == N_MUTARG ? call->kids[1]->a : call->kids[1];
+                Node* second = call->kids[1]->kind == N_PLACEARG ? call->kids[1]->a : call->kids[1];
                 SType* st = overload_arg_type(k, second);
-                if (st && (same_type(st, st_prim(P_STRING)) || shrink_ok(st, st_prim(P_STRING))))
+                if (st && same_type(st, st_prim(P_STRING)))
                     return check_format_call(k, call, sf, &STR_FORMAT_CALL);
             }
         }
         if (s->kind == SYM_VAR && s->type && s->type->kind == SK_FUNC) {
             check_args(k, call, s->type, 0);
-            check_value_mut_args(k, call, s->type);
             callee->sym = s;
             callee->ty = s->type;
             call->sym = s; // indirect call through a function value
@@ -5308,10 +5002,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return T_ERR;
         }
         Node* arg = call->kids[0];
-        if (arg->kind == N_MUTARG) {
-            ck_err(k, arg, "'mut' marks mut parameters; a cast takes no call-site 'mut'");
-            return T_ERR;
-        }
         if (arg->kind == N_ARRAYLIT) {
             if (!coerce(k, arg, want)) return T_ERR;
         } else {
@@ -5340,7 +5030,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
             if (call->kids[0]->kind == N_NULL) {
                 pointer = st_new(SK_PTR);
                 pointer->base = want->base;
-                pointer->is_mut = want->is_mut;
                 call->kids[0]->ty = pointer;
             } else {
                 pointer = expr_type(k, call->kids[0]);
@@ -5348,11 +5037,10 @@ static SType* check_call_raw(Ck* k, Node* call) {
             SType* count = expr_type(k, call->kids[1]);
             if (pointer->kind == SK_ERR || count->kind == SK_ERR) return T_ERR;
             int exact_pointee = pointer->kind == SK_PTR && same_type(pointer->base, want->base);
-            int permission = exact_pointee && (!want->is_mut || pointer->is_mut);
-            if (!permission) {
+            if (!exact_pointee) {
                 ck_err(k, call->kids[0],
-                       "%s construction requires an exact %spointer to %s, got %s",
-                       type_name(want), want->is_mut ? "writable " : "",
+                       "%s construction requires an exact pointer to %s, got %s",
+                       type_name(want),
                        type_name(want->base), type_name(pointer));
                 return T_ERR;
             }
@@ -5384,10 +5072,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
             return T_ERR;
         }
         Node* arg = call->kids[0];
-        if (arg->kind == N_MUTARG) {
-            ck_err(k, arg, "'mut' marks mut parameters; a cast takes no call-site 'mut'");
-            return T_ERR;
-        }
         // An array literal takes the cast's view type as its context.
         if (arg->kind == N_ARRAYLIT) {
             if (!coerce(k, arg, want)) return T_ERR;
@@ -5396,12 +5080,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
         }
         SType* from = expr_type(k, arg);
         if (from->kind == SK_ERR) return T_ERR;
-        if (!same_type(from, want) && !shrink_ok(from, want)) {
+        if (!same_type(from, want)) {
             ck_err(k, call, "cannot cast %s to %s", type_name(from), type_name(want));
             return T_ERR;
         }
         callee->ty = want; // emitter: slice-type cast marker
-        return from->is_mut ? T_MUT_BYTE_SLICE : want;
+        return want;
     }
     // generic instantiation call: max[int](3, 9)
     if (callee->kind == N_INDEX && callee->a->kind == N_IDENT) {
@@ -5436,7 +5120,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if (!same) continue;
                 nspec++;
                 sole_spec = s;
-                if (!call_exact_ft(call, s->decl, s->type, actual)) continue;
+                if (!call_exact_ft(call, s->type, actual)) continue;
                 if (spec) {
                     ck_err(k, call,
                            "ambiguous call to specialized overload '%.*s'",
@@ -5461,7 +5145,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 eligible++;
                 sole = s;
                 SType* candidate = candidate_func_type(k, s->decl, targs, nargs);
-                if (!candidate || !call_exact_ft(call, s->decl, candidate, actual)) continue;
+                if (!candidate || !call_exact_ft(call, candidate, actual)) continue;
                 if (chosen) {
                     ck_err(k, call, "ambiguous call to generic overload '%.*s'",
                            (int)callee->a->len, callee->a->str);
@@ -5502,7 +5186,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
             SType* ft = instantiate_generic_func(k, chosen, callee);
             if (ft->kind == SK_ERR) return T_ERR;
             check_args(k, call, ft, 0);
-            check_mut_args(k, call, chosen->decl, 0);
             callee->sym = chosen; // the selected generic declaration
             callee->ty = ft;  // the stamped signature — args recovered via the
             return ft->ret;   // instantiation memo on s->decl's tparams node
@@ -5569,10 +5252,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
                     ck_err(k, call, "variant construction takes exactly one payload value");
                     return T_ERR;
                 }
-                if (call->kids[0]->kind == N_MUTARG) {
-                    ck_err(k, call->kids[0], "'mut' marks mut parameters; variant payloads are read-only");
-                    return T_ERR;
-                }
                 coerce_payload(k, call->kids[0], pt);
                 callee->ty = ub;
                 callee->ival = (uint64_t)vi; // emitter: variant index (the tag)
@@ -5616,11 +5295,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                            (int)callee->len, callee->str, type_name(ft));
                     return T_ERR;
                 }
-                if (call->flags & F_MUT)
-                    ck_err(k, call, "'mut' marks mutating methods; field '%.*s' holds a function value",
-                           (int)callee->len, callee->str);
                 check_args(k, call, ft, 0);
-                check_value_mut_args(k, call, ft);
                 call->flags |= F_FIELDCALL; // emitter: indirect call, no receiver
                 return ft->ret;
             }
@@ -5636,25 +5311,9 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 ck_err(k, call, "contract %s has no method '%.*s'", type_name(b), (int)callee->len, callee->str);
                 return T_ERR;
             }
-            int mmut = (m->flags & F_MUT) != 0;
-            int cmut = (call->flags & F_MUT) != 0;
-            if (mmut && !cmut)
-                ck_err(k, call, "mutating method needs 'mut' at the call: mut x.%.*s(...)",
-                       (int)callee->len, callee->str);
-            if (!mmut && cmut)
-                ck_err(k, call, "'mut' marks mutating methods; '%.*s' is read-only",
-                       (int)callee->len, callee->str);
-            if (mmut) {
-                check_lvalue(k, callee->a, 1);
-                if (callee->a->kind == N_IDENT) {
-                    Sym* iv = lookup_val(k, callee->a->str, callee->a->len);
-                    if (iv && iv->is_const_backed)
-                        ck_err(k, call, "cannot call a mutating contract method on const backing storage");
-                }
-            }
+            call->flags |= F_BYADDR; // the receiver is passed by address
             SType* ft = contract_method_type(k, b, m);
             check_args(k, call, ft, 0);
-            check_value_mut_args(k, call, ft);
             return ft->ret;
         }
         if (b->kind != SK_STRUCT) {
@@ -5942,7 +5601,7 @@ static Sym* path_root(Node* e) {
 
 // Storage that ends when the function returns: a local or by-value parameter.
 static int dies_on_return(Sym* s) {
-    return s && s->kind == SYM_VAR && !s->is_global && !(s->is_param && s->is_mut);
+    return s && s->kind == SYM_VAR && !s->is_global && !(s->is_param && s->is_byaddr);
 }
 
 /*
@@ -6005,10 +5664,10 @@ static void check_return_escape(Ck* k, Node* value) {
     if (v) ck_err(k, v, "returned value views storage of this function, which ends when it returns");
 }
 
-// A store into storage that outlives the function: a module variable or a mut parameter.
+// A store into storage that outlives the function: a module variable or the receiver.
 static void check_store_escape(Ck* k, Node* target, Node* value) {
     Sym* r = path_root(target);
-    if (!r || r->kind != SYM_VAR || !(r->is_global || (r->is_param && r->is_mut))) return;
+    if (!r || r->kind != SYM_VAR || !(r->is_global || (r->is_param && r->is_byaddr))) return;
     Node* v = local_view(value);
     if (v) ck_err(k, v, "stored value views storage of this function, which ends when it returns");
 }
@@ -6113,22 +5772,6 @@ static void check_stmt(Ck* k, Node* s) {
             Sym* v = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
             if (v) {
                 if (wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST)) v->is_const_backed = 1;
-                // Literal provenance for string bindings: a literal, another
-                // literal-backed binding, or a slice of one. The writable-view
-                // establishment reads this flag (Mutability #11).
-                if (wants[0]->kind == SK_PRIM && wants[0]->prim == P_STRING && !wants[0]->is_mut) {
-                    if (init->kind == N_STR) v->is_literal_backed = 1;
-                    else if (init->kind == N_IDENT) {
-                        Sym* src = node_sym(init);
-                        if (src && src->is_literal_backed) v->is_literal_backed = 1;
-                    } else if (init->kind == N_SLICE_E && init->a) {
-                        if (init->a->kind == N_STR ||
-                            (init->a->kind == N_IDENT &&
-                             node_sym(init->a) &&
-                             node_sym(init->a)->is_literal_backed))
-                            v->is_literal_backed = 1;
-                    }
-                }
             }
             return;
         }
@@ -6331,10 +5974,7 @@ static void check_stmt(Ck* k, Node* s) {
             // The value binder's type is the literal's context: an anonymous
             // [N]E viewed as []E, as for a plain []E argument (Syntax #8).
             SType* elem = binds[s->nkids == 2 ? 1 : 0];
-            if (s->flags & F_MUT) {
-                ck_err(k, s->b, "array literal cannot establish a writable view for mut iteration");
-                it = T_ERR;
-            } else if (!elem || elem->kind == SK_ERR) {
+            if (!elem || elem->kind == SK_ERR) {
                 it = T_ERR;
             } else {
                 SType* want = st_new(SK_SLICE);
@@ -6342,7 +5982,7 @@ static void check_stmt(Ck* k, Node* s) {
                 it = coerce(k, s->b, want) ? want : T_ERR;
             }
         } else {
-            it = expr_type(k, s->b);
+            it = deref_sequence(k, &s->b);
         }
         if (it->kind != SK_ERR) {
             if (s->b->kind == N_RANGE) {
@@ -6362,26 +6002,6 @@ static void check_stmt(Ck* k, Node* s) {
                            type_name(binds[value]), type_name(elem));
             } else {
                 ck_err(k, s->b, "for-in iterates slices, arrays, strings, or ranges — not %s", type_name(it));
-            }
-        }
-        if ((s->flags & F_MUT) && it->kind != SK_ERR) {
-            // `in mut iterable` applies the call-site `mut` discipline to
-            // iteration: binders alias writable element storage. A mut-qualified
-            // slice or string carries content writability in its type, so its
-            // storage needs no separate check; strings participate with no
-            // special-casing (Iterations #16). Ranges have no elements.
-            if (s->b->kind == N_RANGE) {
-                ck_err(k, s->b, "mut iteration requires writable array, slice, or string storage, not a range");
-            } else {
-                int content_writable = (it->kind == SK_SLICE ||
-                                        (it->kind == SK_PRIM && it->prim == P_STRING)) &&
-                                       it->is_mut;
-                SType* wt = content_writable ? it : check_lvalue(k, s->b, 1);
-                if (!content_writable && wt->kind != SK_ERR &&
-                    wt->kind != SK_SLICE && wt->kind != SK_ARRAY)
-                    ck_err(k, s->b,
-                           "mut iteration requires writable array, slice, or string storage, not %s",
-                           type_name(wt));
             }
         }
         scope_push(k);
@@ -7126,13 +6746,9 @@ static void init_mark_path(InitCk* k, Node* e) {
     }
 }
 
-// A view of a local array is tracked whole: a read-only view reads the whole
-// array; a mut view initializes it only when it covers every element.
+// A view of a local array is tracked whole: it reads nothing and initializes
+// the array only when it covers every element.
 static void init_array_view(InitCk* k, Node* e) {
-    if (!(e->flags & F_MUT)) {
-        (void)init_require_path(k, e->a);
-        return;
-    }
     SType* bt = init_shape(node_ty(e->a));
     uint64_t lo = 0, hi = bt->count;
     if (e->b && !init_const_index(e->b, &lo)) return;
@@ -7213,8 +6829,7 @@ static void init_expr(InitCk* k, Node* e) {
     case N_UNARY:
         if (e->op == T_AMP) {
             init_addr_parts(k, e->a);
-            if (e->flags & F_MUT) init_mark_path(k, e->a);
-            else (void)init_require_path(k, e->a);
+            init_mark_path(k, e->a);
         } else {
             init_expr(k, e->a);
         }
@@ -7246,7 +6861,7 @@ static void init_expr(InitCk* k, Node* e) {
     case N_STRUCTLIT:
         for (int i = 0; i < e->nkids; i++) init_expr(k, e->kids[i]->a);
         return;
-    case N_MUTARG:
+    case N_PLACEARG:
         init_expr(k, e->a); return;
     case N_CALL:
         if (e->a && e->a->kind == N_IDENT) {
@@ -7255,8 +6870,8 @@ static void init_expr(InitCk* k, Node* e) {
         } else if (e->a && e->a->kind == N_FIELD_E) {
             Node* recv = e->a->a;
             SType* rt = init_shape(node_ty(recv));
-            if ((e->flags & F_MUT) && !(rt && rt->kind == SK_PTR)) {
-                // A mut receiver is passed by address, as `mut &recv` is.
+            if ((e->flags & F_BYADDR) && !(rt && rt->kind == SK_PTR)) {
+                // A receiver is passed by address, as `&recv` is.
                 init_addr_parts(k, recv);
                 init_mark_path(k, recv);
             } else {
@@ -7532,9 +7147,9 @@ static void check_func_body(Ck* k, Node* f) {
         Sym* s = declare_val(k, pa, SYM_VAR, pa->str, pa->len);
         if (s) {
             s->type = build_type(k, pa->a);
-            s->is_mut = (pa->flags & F_MUT) != 0;
+            s->is_byaddr = (pa->flags & F_BYADDR) != 0;
             s->is_param = 1;
-            if (s->type && s->type->kind == SK_CONTRACT && !s->is_mut)
+            if (s->type && s->type->kind == SK_CONTRACT && !s->is_byaddr)
                 s->is_const_backed = 1; // a read-only contract param may wrap const
             s->decl = pa;
             pa->sym = s;
@@ -7981,8 +7596,6 @@ static void check_signing(Ck* k, Node* signing) {
                     : fn->type;
                 if (!ft || ft->nparams != m->nkids + 1 ||
                     !same_type(ft->params[0], conc)) continue;
-                int mut = fn->decl && (fn->decl->flags & F_MUT);
-                if (mut != ((m->flags & F_MUT) != 0)) continue;
                 int exact = 1;
                 for (int p = 0; p < m->nkids; p++)
                     if (!same_type(ft->params[p + 1], mft->params[p]))
@@ -8018,8 +7631,6 @@ static void check_signing(Ck* k, Node* signing) {
                         SType* ft = fn->type;
                         if (!ft || ft->nparams != m->nkids + 1 ||
                             !same_type(ft->params[0], eb)) continue;
-                        int mut = fn->decl && (fn->decl->flags & F_MUT);
-                        if (mut != ((m->flags & F_MUT) != 0)) continue;
                         int exact = same_type(ft->ret, mft->ret);
                         for (int p = 0; p < m->nkids; p++)
                             if (!same_type(ft->params[p + 1], mft->params[p])) exact = 0;
@@ -8296,9 +7907,6 @@ static void resolve_global(Ck* k, Sym* s, Node* n) {
         else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY) check_arraylit(k, n->b, t);
         else coerce(k, n->b, t);
         if (t->kind == SK_CONTRACT && (n->b->flags & F_CONST)) s->is_const_backed = 1;
-        if (t->kind == SK_PRIM && t->prim == P_STRING &&
-            !t->is_mut && n->b->kind == N_STR)
-            s->is_literal_backed = 1;
     } else if (t->kind == SK_STATICMAP) {
         if (n->flags & F_CONST) ck_err(k, n, "const is not permitted on a StaticMap declaration");
         ck_err(k, n, "StaticMap declaration requires a brace initializer");
@@ -8362,15 +7970,10 @@ static void resolve_top(Ck* k, Sym* s) {
         check_enum_decl(&top, n, t);
         break;
     case N_CONTRACT:
-        // A contract method dispatches through a vtable slot; contract
-        // conformance does not compare mut positions, so a contract method
-        // takes no mut parameter.
+        // A contract method dispatches through a vtable slot.
         for (int mi = 0; mi < n->nkids; mi++) {
             Node* m = n->kids[mi];
             check_param_count(&top, m, m->nkids + 1, 1); // the receiver the slot passes
-            for (int pi = 0; pi < m->nkids; pi++)
-                if (m->kids[pi]->flags & F_MUT)
-                    ck_err(&top, m->kids[pi], "contract method parameter cannot be mut");
         }
         break;
     case N_ALIAS: {
@@ -8435,7 +8038,6 @@ static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
                 }
                 Sym* s = declare_val(k, f, SYM_VAR, f->str, f->len);
                 if (!s) continue;
-                s->is_mut = (f->flags & F_MUT) != 0;
                 s->is_global = 1;
                 s->is_extern = 1;
                 s->decl = f;
@@ -8454,7 +8056,6 @@ static void enter_top_level(Ck* k, Node* file, Scope* fs, Scope* is) {
             if (!s) break;
             s->is_const = (n->flags & F_CONST) != 0;
             s->is_pub = (n->flags & F_PUB) != 0;
-            s->is_mut = (n->flags & F_MUT) != 0;
             s->is_thread = (n->flags & F_THREADLOCAL) != 0;
             s->is_global = 1;
             s->decl = binder;
@@ -8539,7 +8140,7 @@ static void sema_enter(Ck* k, Node* file, Diag* d) {
             PRIMS[i]->prim = (uint8_t)i;
             layout(PRIMS[i]);
         }
-        ensure_memory_types(); // mut-view singletons exist from the first build
+        ensure_memory_types(); // byte-view singletons exist from the first build
     }
     install_predeclared_error_types(&file_scope);
     // import_scope: root's own aliased imports; see is_root_node
@@ -8563,7 +8164,7 @@ static const char* g_dump_root; // the file --symbols shows visibility from
  * file cannot see it and its signature, when not generic. */
 static void dump_flags(Sym* s, int hidden, const char* sig) {
     if (s->is_const) fputs(" const", stdout);
-    if (s->is_mut) fputs(" mut", stdout);
+    if (s->is_byaddr) fputs(" byaddr", stdout);
     if (s->is_pub) fputs(" pub", stdout);
     if (s->is_generic) fputs(" generic", stdout);
     if (s->is_extern) fputs(" extern", stdout);

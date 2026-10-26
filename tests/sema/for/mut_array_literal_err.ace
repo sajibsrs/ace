@@ -1,8 +1,0 @@
-/* `in mut` over an array literal: a literal is a value, not writable
- * storage. */
-
-main(): int {
-    for v: i32 in mut [1, 2, 3] {
-    }
-    return 0
-}

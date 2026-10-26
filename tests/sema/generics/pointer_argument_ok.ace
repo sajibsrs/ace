@@ -8,10 +8,10 @@ same[T](value: T): T {
 }
 
 main(): int {
-    slots: mut []*u8 = mem.alloc[*u8](2)
-    defer mem.release[*u8](mut slots)
-    deep: mut []**u8 = mem.alloc[**u8](1)
-    defer mem.release[**u8](mut deep)
+    slots: []*u8 = mem.alloc[*u8](2)
+    defer mem.release[*u8](&slots)
+    deep: []**u8 = mem.alloc[**u8](1)
+    defer mem.release[**u8](&deep)
     byte: u8 = 7
     at: *u8 = same[*u8](&byte)
     return int(*at) - 7

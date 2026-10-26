@@ -68,8 +68,8 @@ pub target(): regalloc.RaTarget {
 /* Allocates `a` and returns the callee-saved registers the function must
  * save, ascending (the caller's to wipe).
  */
-pub allocate(mut a: Ra, fn: Func): array.Array[int] {
-    regalloc.allocate(mut a, fn, target())
+pub allocate(a: *Ra, fn: Func): array.Array[int] {
+    regalloc.allocate(a, fn, target())
     used: u64 = 0
     for r: int in a.reg.view() {
         if r >= 0 { used |= u64(1) << u64(r) }
@@ -77,7 +77,7 @@ pub allocate(mut a: Ra, fn: Func): array.Array[int] {
     used |= u64(a.asm_all) // a reserved x19-x28 is the caller's, whatever asm does to it
     cs: array.Array[int] = array.Array[int] {}
     for r: int in 0..64 {
-        if callee_saved(r) && ((used >> u64(r)) & 1) != 0 { fail(mut cs.push(r)) }
+        if callee_saved(r) && ((used >> u64(r)) & 1) != 0 { fail(cs.push(r)) }
     }
     return cs
 }
@@ -131,14 +131,14 @@ Cc: struct {
 /* An aggregate on the stack, its leaves at their natural size: an HFA at its
  * own alignment, any other at least 8-aligned (Apple arm64).
  */
-agg_stack(s: sema.Sema, mut c: Cc, lv: ir.Leaves, n: int, agg: u32, hfa: bool, mut out: array.Array[Loc], base: int) {
+agg_stack(s: sema.Sema, c: *Cc, lv: ir.Leaves, n: int, agg: u32, hfa: bool, out: *array.Array[Loc], base: int) {
     al: u32 = s.ty(agg).align
     a: u32 = 1
     if al > 16 { a = 16 } else if al < 8 && !hfa { a = 8 } else if al != 0 { a = al }
     c.soff = align_to(c.soff, a)
     for k: int in 0..n {
         l: ir.IrLeaf = lv.v[k]
-        mut out.set(usize(base + k), Loc { kind = L_STACK, size = u8(ir.type_bits(l.ty) / 8), soff = c.soff + l.off })
+        out.set(usize(base + k), Loc { kind = L_STACK, size = u8(ir.type_bits(l.ty) / 8), soff = c.soff + l.off })
     }
     c.soff += align_to(s.ty(agg).size, 8)
 }
@@ -146,7 +146,7 @@ agg_stack(s: sema.Sema, mut c: Cc, lv: ir.Leaves, n: int, agg: u32, hfa: bool, m
 /* Memory for an aggregate that travels by address: the caller's copy, or the
  * callee's saved address.
  */
-addr_mem(s: sema.Sema, mut c: Cc, agg: u32): u32 {
+addr_mem(s: sema.Sema, c: *Cc, agg: u32): u32 {
     a: u32 = 8
     if c.caller && s.ty(agg).align > 8 { a = 16 }
     c.area = align_to(c.area, a)
@@ -168,7 +168,7 @@ word_end(l: ir.IrLeaf): u32 {
  * at its start is that leaf's register, else the leaves of the words they
  * span share those registers through memory.
  */
-agg_words(mut c: Cc, lv: ir.Leaves, n: int, first: int, mut out: array.Array[Loc], base: int) {
+agg_words(c: *Cc, lv: ir.Leaves, n: int, first: int, out: *array.Array[Loc], base: int) {
     k: int = 0
     for k < n {
         w: u32 = lv.v[k].off / 8
@@ -180,13 +180,13 @@ agg_words(mut c: Cc, lv: ir.Leaves, n: int, first: int, mut out: array.Array[Loc
         }
         reg: int = first + int(w)
         if e == k + 1 && lv.v[k].off % 8 == 0 && end == w + 1 {
-            mut out.set(usize(base + k), Loc { kind = L_REG, size = 8, head = true, reg = reg, word = true })
+            out.set(usize(base + k), Loc { kind = L_REG, size = 8, head = true, reg = reg, word = true })
         } else {
             c.area = align_to(c.area, 8)
             m: u32 = c.area
             c.area += 8 * (end - w)
             for j: int in k..e {
-                mut out.set(usize(base + j), Loc { kind = L_WORD, size = 8, head = j == k, reg = reg, off = lv.v[j].off - 8 * w, mem = m, nreg = u8(end - w), rsz = 8 })
+                out.set(usize(base + j), Loc { kind = L_WORD, size = 8, head = j == k, reg = reg, off = lv.v[j].off - 8 * w, mem = m, nreg = u8(end - w), rsz = 8 })
             }
         }
         k = e
@@ -198,8 +198,8 @@ agg_words(mut c: Cc, lv: ir.Leaves, n: int, first: int, mut out: array.Array[Loc
  * varargs_from on take 8-byte stack slots. Returns the stack bytes; c.area
  * ends past the memory the leaves need.
  */
-assign_leaves(s: sema.Sema, mut c: Cc, t: []u8, parts: []IrPart, has_parts: bool, varargs_from: int, mut out: array.Array[Loc]): u32 {
-    fail(mut out.resize(out.len + t.len))
+assign_leaves(s: sema.Sema, c: *Cc, t: []u8, parts: []IrPart, has_parts: bool, varargs_from: int, out: *array.Array[Loc]): u32 {
+    fail(out.resize(out.len + t.len))
     np: int = int(t.len)
     if has_parts { np = int(parts.len) }
     for p: int in 0..np {
@@ -213,31 +213,31 @@ assign_leaves(s: sema.Sema, mut c: Cc, t: []u8, parts: []IrPart, has_parts: bool
             if varargs_from >= 0 && pt.first >= varargs_from {
                 w = 8
             } else if fp && c.vn < 8 {
-                mut out.set(usize(o), Loc { kind = L_REG, size = 8, head = true, reg = V + c.vn })
+                out.set(usize(o), Loc { kind = L_REG, size = 8, head = true, reg = V + c.vn })
                 c.vn += 1
                 continue
             } else if !fp && c.xn < 8 {
-                mut out.set(usize(o), Loc { kind = L_REG, size = 8, head = true, reg = c.xn })
+                out.set(usize(o), Loc { kind = L_REG, size = 8, head = true, reg = c.xn })
                 c.xn += 1
                 continue
             }
             if w < 4 { w = 4 }
             c.soff = align_to(c.soff, w)
-            mut out.set(usize(o), Loc { kind = L_STACK, size = u8(w), head = true, soff = c.soff })
+            out.set(usize(o), Loc { kind = L_STACK, size = u8(w), head = true, soff = c.soff })
             c.soff += w
             continue
         }
         lv: ir.Leaves = blank(ir.Leaves)
-        _, _ = ir.leaves(s, pt.agg, mut lv)
+        _, _ = ir.leaves(s, pt.agg, &lv)
         size: u32 = s.ty(pt.agg).size
         h: int, bt: u8 = ir.hfa(s, pt.agg)
         if h > 0 {
             if c.vn + h > 8 {
-                agg_stack(s, mut c, lv, pt.n, pt.agg, true, mut out, o)
+                agg_stack(s, c, lv, pt.n, pt.agg, true, out, o)
                 c.vn = 8
             } else if pt.n == h && t[o] == bt { // its leaves are its elements
                 for k: int in 0..pt.n {
-                    mut out.set(usize(o + k), Loc { kind = L_REG, size = 8, head = true, reg = V + c.vn })
+                    out.set(usize(o + k), Loc { kind = L_REG, size = 8, head = true, reg = V + c.vn })
                     c.vn += 1
                 }
             } else { // an overlay's words, through memory into its elements' registers
@@ -245,12 +245,12 @@ assign_leaves(s: sema.Sema, mut c: Cc, t: []u8, parts: []IrPart, has_parts: bool
                 m: u32 = c.area
                 c.area += align_to(size, 8)
                 for k: int in 0..pt.n {
-                    mut out.set(usize(o + k), Loc { kind = L_WORD, size = 8, head = k == 0, reg = V + c.vn, off = lv.v[k].off, mem = m, nreg = u8(h), rsz = u8(ir.type_bits(bt) / 8) })
+                    out.set(usize(o + k), Loc { kind = L_WORD, size = 8, head = k == 0, reg = V + c.vn, off = lv.v[k].off, mem = m, nreg = u8(h), rsz = u8(ir.type_bits(bt) / 8) })
                 }
                 c.vn += h
             }
         } else if size > 16 {
-            m: u32 = addr_mem(s, mut c, pt.agg)
+            m: u32 = addr_mem(s, c, pt.agg)
             reg: int = -1
             so: u32 = 0
             if c.xn < 8 {
@@ -262,13 +262,13 @@ assign_leaves(s: sema.Sema, mut c: Cc, t: []u8, parts: []IrPart, has_parts: bool
                 c.soff += 8
             }
             for k: int in 0..pt.n {
-                mut out.set(usize(o + k), Loc { kind = L_ADDR, size = 8, head = k == 0, reg = reg, soff = so, off = lv.v[k].off, mem = m })
+                out.set(usize(o + k), Loc { kind = L_ADDR, size = 8, head = k == 0, reg = reg, soff = so, off = lv.v[k].off, mem = m })
             }
         } else if c.xn + int((size + 7) / 8) > 8 {
-            agg_stack(s, mut c, lv, pt.n, pt.agg, false, mut out, o)
+            agg_stack(s, c, lv, pt.n, pt.agg, false, out, o)
             c.xn = 8
         } else {
-            agg_words(mut c, lv, pt.n, c.xn, mut out, o)
+            agg_words(c, lv, pt.n, c.xn, out, o)
             c.xn += int((size + 7) / 8)
         }
     }
@@ -279,27 +279,27 @@ assign_leaves(s: sema.Sema, mut c: Cc, t: []u8, parts: []IrPart, has_parts: bool
  * argument would travel from the first registers, except that one over 16
  * bytes (not an HFA) is stored through the address in x8.
  */
-assign_result(s: sema.Sema, mut c: Cc, t: []u8, agg: u32, mut out: array.Array[Loc]) {
+assign_result(s: sema.Sema, c: *Cc, t: []u8, agg: u32, out: *array.Array[Loc]) {
     if t.len == 0 { return }
     if agg == 0 {
         reg: int = 0
         if ir.type_float(t[0]) { reg = V }
-        fail(mut out.push(Loc { kind = L_REG, size = 8, head = true, reg = reg }))
+        fail(out.push(Loc { kind = L_REG, size = 8, head = true, reg = reg }))
         return
     }
     h: int, _ = ir.hfa(s, agg)
     if h == 0 && s.ty(agg).size > 16 {
         lv: ir.Leaves = blank(ir.Leaves)
-        _, _ = ir.leaves(s, agg, mut lv)
-        m: u32 = addr_mem(s, mut c, agg)
+        _, _ = ir.leaves(s, agg, &lv)
+        m: u32 = addr_mem(s, c, agg)
         for k: usize in 0..t.len {
-            fail(mut out.push(Loc { kind = L_ADDR, size = 8, head = k == 0, reg = 8, off = lv.v[k].off, mem = m }))
+            fail(out.push(Loc { kind = L_ADDR, size = 8, head = k == 0, reg = 8, off = lv.v[k].off, mem = m }))
         }
         return
     }
     r: Cc = Cc { area = c.area, caller = c.caller }
     one: [1]IrPart = [IrPart { agg = agg, first = 0, n = int(t.len) }]
-    _ = assign_leaves(s, mut r, t, one[..], true, -1, mut out)
+    _ = assign_leaves(s, &r, t, one[..], true, -1, out)
     c.area = r.area
 }
 
@@ -317,8 +317,8 @@ pub entry(s: sema.Sema, fn: Func): (array.Array[Loc], array.Array[Loc], u32) {
         parts = fn.parts.view()[usize(sg.parts)..usize(sg.parts + sg.nparts)]
         agg = sg.ret.agg
     }
-    _ = assign_leaves(s, mut c, fn.params.view(), parts, fn.sig >= 0, -1, mut pin)
-    assign_result(s, mut c, fn.rets.view(), agg, mut rin)
+    _ = assign_leaves(s, &c, fn.params.view(), parts, fn.sig >= 0, -1, &pin)
+    assign_result(s, &c, fn.rets.view(), agg, &rin)
     return pin, rin, c.area
 }
 
@@ -334,21 +334,21 @@ pub Plan: struct {
     pub bytes: u32 = 0,
 }
 
-pub Plan.wipe(mut self) {
-    mut self.arg.wipe()
-    mut self.res.wipe()
+pub Plan.wipe(self) {
+    self.arg.wipe()
+    self.res.wipe()
 }
 
 /* Plans call `u`; the result owns its location arrays. */
 pub plan_call(s: sema.Sema, fn: Func, u: int): Plan {
-    x: IrIns = fn.at(u)
+    x: IrIns = *(fn.at(u))
     p: Plan = Plan { arg = array.Array[Loc] {}, res = array.Array[Loc] {} }
     if x.op == ir.IR_CALLI { p.k0 = 1 }
     p.n = int(x.nargs) - p.k0
     if (x.flags & ir.IRF_SRET) != 0 { p.n -= 1 } // a result memory's address travels in x8
     t: array.Array[u8] = array.Array[u8] {}
-    defer mut t.wipe()
-    for k: int in 0..p.n { fail(mut t.push(fn.at(fn.arg(u, u32(p.k0 + k))).ty)) }
+    defer t.wipe()
+    for k: int in 0..p.n { fail(t.push(fn.at(fn.arg(u, u32(p.k0 + k))).ty)) }
     parts: []IrPart = fn.parts.view()[0..0]
     agg: u32 = 0
     if x.sig >= 0 {
@@ -359,20 +359,20 @@ pub plan_call(s: sema.Sema, fn: Func, u: int): Plan {
     c: Cc = Cc { caller = true }
     va: int = -1
     if (x.flags & ir.IRF_VARARGS) != 0 { va = int(x.aux) }
-    base: u32 = align_to(assign_leaves(s, mut c, t.view(), parts, x.sig >= 0, va, mut p.arg), 16)
+    base: u32 = align_to(assign_leaves(s, &c, t.view(), parts, x.sig >= 0, va, &p.arg), 16)
     rt: array.Array[u8] = array.Array[u8] {}
-    defer mut rt.wipe()
+    defer rt.wipe()
     if agg != 0 {
         lv: ir.Leaves = blank(ir.Leaves)
-        nres: int, _ = ir.leaves(s, agg, mut lv)
-        for k: int in 0..nres { fail(mut rt.push(lv.v[k].ty)) }
+        nres: int, _ = ir.leaves(s, agg, &lv)
+        for k: int in 0..nres { fail(rt.push(lv.v[k].ty)) }
     } else if x.ty != ir.IT_VOID {
-        fail(mut rt.push(x.ty))
+        fail(rt.push(x.ty))
     }
-    assign_result(s, mut c, rt.view(), agg, mut p.res)
-    av: mut []Loc = mut p.arg.view()
+    assign_result(s, &c, rt.view(), agg, &p.res)
+    av: []Loc = p.arg.view()
     for k: usize in 0..av.len { av[k].mem += base } // the memory follows the stack arguments
-    rv: mut []Loc = mut p.res.view()
+    rv: []Loc = p.res.view()
     for k: usize in 0..rv.len { rv[k].mem += base }
     p.bytes = align_to(base + c.area, 16)
     return p
@@ -385,7 +385,7 @@ is_call(op: u8): bool { return op == ir.IR_CALL || op == ir.IR_CALLI }
 is_compare(op: u8): bool { return op >= ir.IR_EQ && op <= ir.IR_GE }
 
 access_bytes(fn: Func, u: int): int {
-    x: IrIns = fn.at(u)
+    x: IrIns = *(fn.at(u))
     t: u8 = x.ty
     if x.op != ir.IR_LOAD { t = fn.at(fn.arg(u, 1)).ty }
     return ir.type_bits(t) / 8
@@ -396,7 +396,7 @@ access_bytes(fn: Func, u: int): int {
  */
 got_data(s: sema.Sema, x: IrIns): bool {
     if x.sym == 0 { return false }
-    y: sema.Sym = s.sym(x.sym)
+    y: sema.Sym = *(s.sym(x.sym))
     return y.kind == sema.SymKind.var && y.is_extern
 }
 
@@ -405,7 +405,7 @@ got_data(s: sema.Sema, x: IrIns): bool {
  */
 thread_data(s: sema.Sema, x: IrIns): bool {
     if x.sym == 0 { return false }
-    y: sema.Sym = s.sym(x.sym)
+    y: sema.Sym = *(s.sym(x.sym))
     return y.kind == sema.SymKind.var && y.is_thread
 }
 
@@ -414,14 +414,14 @@ thread_data(s: sema.Sema, x: IrIns): bool {
  * or a register index scaled by the access size).
  */
 fold_address(s: sema.Sema, fn: Func, a: Ra, u: int): bool {
-    x: IrIns = fn.at(u)
+    x: IrIns = *(fn.at(u))
     p: int = fn.arg(u, 0)
-    px: IrIns = fn.at(p)
+    px: IrIns = *(fn.at(p))
     if a.nuse.get(p) != 1 || px.block != x.block || (x.flags & ir.IRF_CHECKED) != 0 { return false }
     if px.op == ir.IR_GLOBAL { return x.aux == 0 && !got_data(s, px) && !thread_data(s, px) }
     if (px.op != ir.IR_PADD && px.op != ir.IR_PSUB) || (px.flags & ir.IRF_CHECKED) != 0 { return false }
     n: int = fn.arg(p, 1)
-    nx: IrIns = fn.at(n)
+    nx: IrIns = *(fn.at(n))
     if nx.op == ir.IR_CONST { // the scaled offset fits an i32
         return nx.imm == 0 || px.imm == 0 || nx.imm <= u64(0x7fffffff) / px.imm
     }
@@ -434,33 +434,33 @@ fold_address(s: sema.Sema, fn: Func, a: Ra, u: int): bool {
  * subtract fuses; returns madd, by value: an ADD or SUB fused with a MUL
  * operand, 1 + its index (the caller's to wipe).
  */
-pub fuse(s: sema.Sema, fn: Func, mut a: Ra): array.Array[u8] {
+pub fuse(s: sema.Sema, fn: Func, a: *Ra): array.Array[u8] {
     madd: array.Array[u8], madd_err: Error = array.Array[u8].filled(fn.ins.len, 0)
     fail(madd_err)
     for b: int in 0..int(fn.blocks.len) {
         for u: int in fn.block(b).ins.view() {
-            x: IrIns = fn.at(u)
+            x: IrIns = *(fn.at(u))
             if x.op == ir.IR_BR || x.op == ir.IR_CHECK {
                 c: int = fn.arg(u, 0)
-                cx: IrIns = fn.at(c)
-                if is_compare(cx.op) && a.nuse.get(c) == 1 && cx.block == b { mut a.fused.set(usize(c), true) }
+                cx: IrIns = *(fn.at(c))
+                if is_compare(cx.op) && a.nuse.get(c) == 1 && cx.block == b { a.fused.set(usize(c), true) }
             } else if x.op == ir.IR_LOAD || x.op == ir.IR_STORE {
-                if fold_address(s, fn, a, u) { mut a.fused.set(usize(fn.arg(u, 0)), true) }
+                if fold_address(s, fn, *a, u) { a.fused.set(usize(fn.arg(u, 0)), true) }
             } else if (x.op == ir.IR_ADD || x.op == ir.IR_SUB) && (x.flags & ir.IRF_CHECKED) == 0 &&
                 !ir.type_float(x.ty) && !is_vec(x.ty) { // a float multiply-add is never contracted
                 k: u32 = 0
                 if x.op == ir.IR_SUB { k = 1 }
                 for k < 2 { // multiply-add, multiply-subtract
                     m: int = fn.arg(u, k)
-                    mx: IrIns = fn.at(m)
+                    mx: IrIns = *(fn.at(m))
                     // a constant addend would need a register: mul + add #imm is no longer
                     if mx.op != ir.IR_MUL || (mx.flags & ir.IRF_CHECKED) != 0 || a.nuse.get(m) != 1 || mx.block != b ||
                         fn.at(fn.arg(u, 1 - k)).op == ir.IR_CONST {
                         k += 1
                         continue
                     }
-                    mut a.fused.set(usize(m), true)
-                    mut madd.set(usize(u), u8(1 + k))
+                    a.fused.set(usize(m), true)
+                    madd.set(usize(u), u8(1 + k))
                     break
                 }
             }
@@ -473,39 +473,39 @@ pub fuse(s: sema.Sema, fn: Func, mut a: Ra): array.Array[u8] {
  * a call's argument goes or its result arrives, and a returned value leaves.
  * Returns the outgoing bytes the calls need at [sp].
  */
-pub hints(s: sema.Sema, fn: Func, mut a: Ra, pin: array.Array[Loc], rin: array.Array[Loc]): (u32, int) {
+pub hints(s: sema.Sema, fn: Func, a: *Ra, pin: array.Array[Loc], rin: array.Array[Loc]): (u32, int) {
     out: u32 = 0
     nthread: int = 0
     for b: int in a.order.view() {
-        bb: IrBlock = fn.block(b)
+        bb: IrBlock = *(fn.block(b))
         for j: usize in 0..bb.ins.len {
             u: int = bb.ins.get(j)
-            x: IrIns = fn.at(u)
+            x: IrIns = *(fn.at(u))
             if x.op == ir.IR_PARAM {
                 l: Loc = pin.get(usize(x.imm))
-                if l.kind == L_REG { mut a.hint.set(usize(u), l.reg) }
+                if l.kind == L_REG { a.hint.set(usize(u), l.reg) }
             } else if x.op == ir.IR_RESULT {
-                mut a.hint.set(usize(u), 8)
+                a.hint.set(usize(u), 8)
             } else if x.op == ir.IR_GLOBAL && thread_data(s, x) {
-                mut a.hint.set(usize(u), 0)
+                a.hint.set(usize(u), 0)
                 nthread += 1
             } else if is_call(x.op) {
                 if (x.flags & ir.IRF_SRET) != 0 {
                     r: usize = usize(fn.arg(u, x.nargs - 1))
-                    if a.hint.get(r) < 0 { mut a.hint.set(r, 8) }
+                    if a.hint.get(r) < 0 { a.hint.set(r, 8) }
                 }
                 p: Plan = plan_call(s, fn, u)
-                defer mut p.wipe()
+                defer p.wipe()
                 for k: int in 0..p.n {
                     l: Loc = p.arg.get(k)
                     v: usize = usize(fn.arg(u, u32(p.k0 + k)))
-                    if l.kind == L_REG && a.hint.get(v) < 0 { mut a.hint.set(v, l.reg) }
+                    if l.kind == L_REG && a.hint.get(v) < 0 { a.hint.set(v, l.reg) }
                 }
-                if p.res.len > 0 && p.res.get(0).kind == L_REG { mut a.hint.set(usize(u), p.res.get(0).reg) }
+                if p.res.len > 0 && p.res.get(0).kind == L_REG { a.hint.set(usize(u), p.res.get(0).reg) }
                 i: usize = j + 1
                 for i < bb.ins.len && fn.at(bb.ins.get(i)).op == ir.IR_PROJ {
                     r: Loc = p.res.get(usize(fn.at(bb.ins.get(i)).imm))
-                    if r.kind == L_REG { mut a.hint.set(usize(bb.ins.get(i)), r.reg) }
+                    if r.kind == L_REG { a.hint.set(usize(bb.ins.get(i)), r.reg) }
                     i += 1
                 }
                 if p.bytes > out { out = p.bytes }
@@ -513,7 +513,7 @@ pub hints(s: sema.Sema, fn: Func, mut a: Ra, pin: array.Array[Loc], rin: array.A
                 for k: u32 in 0..x.nargs {
                     l: Loc = rin.get(usize(k))
                     v: usize = usize(fn.arg(u, k))
-                    if l.kind == L_REG && a.hint.get(v) < 0 { mut a.hint.set(v, l.reg) }
+                    if l.kind == L_REG && a.hint.get(v) < 0 { a.hint.set(v, l.reg) }
                 }
             }
         }
@@ -704,7 +704,7 @@ Move: struct {
 
 A64: struct {
     s: *sema.Sema,
-    o: mut *macho.Obj,
+    o: *macho.Obj,
     fn: *Func,
     far: bool = false,
     ra: Ra,                            // layout, liveness, and allocation
@@ -730,7 +730,7 @@ A64: struct {
     stub_at: array.Array[u32],         // each stub's text offset
 }
 
-A64.x(self, v: int): IrIns { return self.fn.at(v) }
+A64.x(self, v: int): IrIns { return *self.fn.at(v) }
 A64.arg(self, v: int, k: u32): int { return self.fn.arg(v, k) }
 is64(t: u8): bool { return ir.type_bits(t) == 64 }
 sfb(t: u8): u32 {
@@ -755,30 +755,30 @@ sel(c: bool, a: u32, b: u32): u32 {
 
 // --- encoding ---------------------------------------------------------------
 
-A64.put(mut self, w: u32) { mut self.o.put32(w) }
+A64.put(self, w: u32) { self.o.put32(w) }
 A64.here(self): u32 { return self.o.here() }
 
 /* mov vd.16b, vn.16b: a whole vector */
-A64.mov_q(mut self, rd: int, rn: int) {
-    if rd != rn { mut self.put(0x4EA01C00 | (R(rn) << 16) | (R(rn) << 5) | R(rd)) }
+A64.mov_q(self, rd: int, rn: int) {
+    if rd != rn { self.put(0x4EA01C00 | (R(rn) << 16) | (R(rn) << 5) | R(rd)) }
 }
 
 /* rd = rn in either class; across classes, the bits (fmov d, x / x, d) */
-A64.mov_reg(mut self, rd: int, rn: int) {
+A64.mov_reg(self, rd: int, rn: int) {
     if rd == rn { return }
     if fp_reg(rd) && fp_reg(rn) {
-        mut self.put(0x1E604000 | (R(rn) << 5) | R(rd))
+        self.put(0x1E604000 | (R(rn) << 5) | R(rd))
     } else if fp_reg(rd) {
-        mut self.put(0x9E670000 | (R(rn) << 5) | R(rd))
+        self.put(0x9E670000 | (R(rn) << 5) | R(rd))
     } else if fp_reg(rn) {
-        mut self.put(0x9E660000 | (R(rn) << 5) | R(rd))
+        self.put(0x9E660000 | (R(rn) << 5) | R(rd))
     } else {
-        mut self.put(0xAA0003E0 | (u32(rn) << 16) | u32(rd))
+        self.put(0xAA0003E0 | (u32(rn) << 16) | u32(rd))
     }
 }
 
 /* rd = v; a 32-bit form sets only what a narrow value's register form needs */
-A64.mov_imm(mut self, rd: int, value: u64, sf: bool) {
+A64.mov_imm(self, rd: int, value: u64, sf: bool) {
     n: int = 2
     s: u32 = 0
     v: u64 = value
@@ -800,7 +800,7 @@ A64.mov_imm(mut self, rd: int, value: u64, sf: bool) {
     if n - most > 1 { // several moves: a bitmask is one
         f: u32 = logical_imm_field(v, sf)
         if f != 0 {
-            mut self.put(s | 0x32000000 | (f << 10) | (31 << 5) | u32(rd)) // orr rd, zr, #v
+            self.put(s | 0x32000000 | (f << 10) | (31 << 5) | u32(rd)) // orr rd, zr, #v
             return
         }
     }
@@ -815,30 +815,30 @@ A64.mov_imm(mut self, rd: int, value: u64, sf: bool) {
         if first {
             imm: u64 = c
             if inv { imm = ~c & 0xFFFF }
-            mut self.put(s | sel(inv, 0x12800000, 0x52800000) | hw | (u32(imm) << 5) | u32(rd))
+            self.put(s | sel(inv, 0x12800000, 0x52800000) | hw | (u32(imm) << 5) | u32(rd))
         } else {
-            mut self.put(s | 0x72800000 | hw | (u32(c) << 5) | u32(rd)) // movk
+            self.put(s | 0x72800000 | hw | (u32(c) << 5) | u32(rd)) // movk
         }
         first = false
     }
-    if first { mut self.put(s | sel(inv, 0x12800000, 0x52800000) | u32(rd)) } // movz #0 / movn #0
+    if first { self.put(s | sel(inv, 0x12800000, 0x52800000) | u32(rd)) } // movz #0 / movn #0
 }
 
-A64.sp_adjust(mut self, base: u32, f: u32) { // add/sub sp, sp, #f
-    if (f >> 12) != 0 { mut self.put(base | 0x400000 | ((f >> 12) << 10)) }
-    if (f & 0xFFF) != 0 { mut self.put(base | ((f & 0xFFF) << 10)) }
+A64.sp_adjust(self, base: u32, f: u32) { // add/sub sp, sp, #f
+    if (f >> 12) != 0 { self.put(base | 0x400000 | ((f >> 12) << 10)) }
+    if (f & 0xFFF) != 0 { self.put(base | ((f & 0xFFF) << 10)) }
 }
 
 /* rd = rn + imm (either may be sp), imm below 2^24 */
-A64.add_imm(mut self, rd: int, rn0: int, imm: u32) {
+A64.add_imm(self, rd: int, rn0: int, imm: u32) {
     rn: int = rn0
     lo: u32 = imm & 0xFFF
     hi: u32 = imm >> 12
     if hi != 0 {
-        mut self.put(0x91400000 | (hi << 10) | (u32(rn) << 5) | u32(rd))
+        self.put(0x91400000 | (hi << 10) | (u32(rn) << 5) | u32(rd))
         rn = rd
     }
-    if lo != 0 || hi == 0 { mut self.put(0x91000000 | (lo << 10) | (u32(rn) << 5) | u32(rd)) }
+    if lo != 0 || hi == 0 { self.put(0x91000000 | (lo << 10) | (u32(rn) << 5) | u32(rd)) }
 }
 
 A64.slot_off(self, s: int): u32 { return self.slot_base + 8 * u32(s) }
@@ -846,60 +846,60 @@ A64.slot_off(self, s: int): u32 { return self.slot_base + 8 * u32(s) }
 /* A slot holds 8 bytes of either class: ldr/str x, or d for a v register; a
  * far slot loads through rt, or x15 for a v register.
  */
-A64.ld_slot(mut self, rt: int, s: int) {
+A64.ld_slot(self, rt: int, s: int) {
     off: u32 = self.slot_off(s)
     op: u32 = sel(fp_reg(rt), 0xFD400000, 0xF9400000)
     if off / 8 <= 4095 {
-        mut self.put(op | ((off / 8) << 10) | (31 << 5) | R(rt))
+        self.put(op | ((off / 8) << 10) | (31 << 5) | R(rt))
         return
     }
     base: u32 = u32(rt)
     if fp_reg(rt) { base = u32(S2) }
-    mut self.put(0x914003E0 | ((off >> 12) << 10) | base) // add base, sp, #hi, lsl 12
-    mut self.put(op | (((off & 0xFFF) / 8) << 10) | (base << 5) | R(rt))
+    self.put(0x914003E0 | ((off >> 12) << 10) | base) // add base, sp, #hi, lsl 12
+    self.put(op | (((off & 0xFFF) / 8) << 10) | (base << 5) | R(rt))
 }
 
 /* A vector's pair of slots from s: ldr/str q, a far one through x15. */
-A64.ld_slotq(mut self, rt: int, s: int) { mut self.mem(0x3DC00000, 16, rt, 31, i64(self.slot_off(s))) }
-A64.st_slotq(mut self, rt: int, s: int) { mut self.mem(0x3D800000, 16, rt, 31, i64(self.slot_off(s))) }
+A64.ld_slotq(self, rt: int, s: int) { self.mem(0x3DC00000, 16, rt, 31, i64(self.slot_off(s))) }
+A64.st_slotq(self, rt: int, s: int) { self.mem(0x3D800000, 16, rt, 31, i64(self.slot_off(s))) }
 
-A64.st_slot(mut self, rt: int, s: int) { // a far slot is addressed through x15
+A64.st_slot(self, rt: int, s: int) { // a far slot is addressed through x15
     off: u32 = self.slot_off(s)
     op: u32 = sel(fp_reg(rt), 0xFD000000, 0xF9000000)
     if off / 8 <= 4095 {
-        mut self.put(op | ((off / 8) << 10) | (31 << 5) | R(rt))
+        self.put(op | ((off / 8) << 10) | (31 << 5) | R(rt))
         return
     }
-    mut self.put(0x914003E0 | ((off >> 12) << 10) | u32(S2))
-    mut self.put(op | (((off & 0xFFF) / 8) << 10) | (u32(S2) << 5) | R(rt))
+    self.put(0x914003E0 | ((off >> 12) << 10) | u32(S2))
+    self.put(op | (((off & 0xFFF) / 8) << 10) | (u32(S2) << 5) | R(rt))
 }
 
 /* vd = the float with bit pattern bits: fmov from zero or an 8-bit
  * immediate, else a literal load from the pool (in far code, the bits
  * through x15)
  */
-A64.fmov_const(mut self, rd: int, bits: u64, is64: bool) {
+A64.fmov_const(self, rd: int, bits: u64, is64: bool) {
     d: u32 = R(rd)
     if bits == 0 {
-        mut self.put(sel(is64, 0x9E6703E0, 0x1E2703E0) | d) // fmov d, xzr / s, wzr
+        self.put(sel(is64, 0x9E6703E0, 0x1E2703E0) | d) // fmov d, xzr / s, wzr
         return
     }
     imm8: int = fmov_imm8(bits, is64)
     if imm8 >= 0 {
-        mut self.put(sel(is64, 0x1E601000, 0x1E201000) | (u32(imm8) << 13) | d)
+        self.put(sel(is64, 0x1E601000, 0x1E201000) | (u32(imm8) << 13) | d)
         return
     }
     if self.far {
-        mut self.mov_imm(S2, bits, is64)
-        mut self.put(sel(is64, 0x9E670000, 0x1E270000) | (u32(S2) << 5) | d)
+        self.mov_imm(S2, bits, is64)
+        self.put(sel(is64, 0x9E670000, 0x1E270000) | (u32(S2) << 5) | d)
         return
     }
     k: usize = 0
     for k < self.pool.len && self.pool.get(k) != bits { k += 1 }
-    if k == self.pool.len { fail(mut self.pool.push(bits)) }
-    fail(mut self.psite.push(self.here()))
-    fail(mut self.psite.push(u32(k)))
-    mut self.put(sel(is64, 0x5C000000, 0x1C000000) | d) // ldr d / s, literal
+    if k == self.pool.len { fail(self.pool.push(bits)) }
+    fail(self.psite.push(self.here()))
+    fail(self.psite.push(u32(k)))
+    self.put(sel(is64, 0x5C000000, 0x1C000000) | d) // ldr d / s, literal
 }
 
 /* the 32-bit extension that wraps a narrow value in place */
@@ -910,17 +910,17 @@ ext_of(t: u8): u32 {
     return 0x53003C00 // uxth
 }
 
-A64.ext(mut self, t: u8, rd: int, rn: int) { mut self.put(ext_of(t) | (u32(rn) << 5) | u32(rd)) }
+A64.ext(self, t: u8, rd: int, rn: int) { self.put(ext_of(t) | (u32(rn) << 5) | u32(rd)) }
 
-A64.wrap(mut self, t: u8, rd: int) {
-    if narrow(t) { mut self.ext(t, rd, rd) }
+A64.wrap(self, t: u8, rd: int) {
+    if narrow(t) { self.ext(t, rd, rd) }
 }
 
 // --- branches ---------------------------------------------------------------
 
-A64.branch_add(mut self, w: u32, target: int, imm19: bool) {
-    fail(mut self.br.push(Branch { site = self.here(), w = w, target = target, imm19 = imm19 }))
-    mut self.put(w)
+A64.branch_add(self, w: u32, target: int, imm19: bool) {
+    fail(self.br.push(Branch { site = self.here(), w = w, target = target, imm19 = imm19 }))
+    self.put(w)
 }
 
 cond_word(c: Cond): u32 {
@@ -934,19 +934,19 @@ invert(c0: Cond): Cond {
     return c
 }
 
-A64.bl_to(mut self, name: string) {
+A64.bl_to(self, name: string) {
     site: u32 = self.here()
-    mut self.o.fixup(macho.FK_BRANCH, site, mut self.o.intern(name))
-    mut self.put(0x94000000)
+    self.o.fixup(macho.FK_BRANCH, site, self.o.intern(name))
+    self.put(0x94000000)
 }
 
-A64.bl_extern(mut self, name: string) {
+A64.bl_extern(self, name: string) {
     site: u32 = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, mut self.o.intern(name), true, 2, true, macho.RM_BRANCH26)
-    mut self.put(0x94000000)
+    self.o.reloc(macho.SEC_TEXT, site, self.o.intern(name), true, 2, true, macho.RM_BRANCH26)
+    self.put(0x94000000)
 }
 
-A64.fail_routine(mut self, target: int): string {
+A64.fail_routine(self, target: int): string {
     if target == FAIL {
         self.o.arithmetic_fail_used = true
         return "__ace$arithmetic_fail"
@@ -962,34 +962,34 @@ A64.fail_routine(mut self, target: int): string {
 /* Branch to block target when c holds. Far code (over 1 MiB) skips an
  * unconditional branch on the inverse instead.
  */
-A64.branch_if(mut self, c: Cond, target: int) {
+A64.branch_if(self, c: Cond, target: int) {
     named: bool = target < 0 && target > LFAIL
     routine: string = ""
-    if named { routine = mut self.fail_routine(target) }
+    if named { routine = self.fail_routine(target) }
     if !self.far {
-        mut self.branch_add(cond_word(c), target, true)
+        self.branch_add(cond_word(c), target, true)
         return
     }
-    mut self.put(cond_word(invert(c)) | (2 << 5)) // over the next instruction
-    if named { mut self.bl_to(routine) } else { mut self.branch_add(0x14000000, target, false) }
+    self.put(cond_word(invert(c)) | (2 << 5)) // over the next instruction
+    if named { self.bl_to(routine) } else { self.branch_add(0x14000000, target, false) }
 }
 
-A64.null_fail_if_zero(mut self, reg: int) {
-    mut self.branch_if(Cond { cbz = true, reg = reg, sf = true }, NFAIL)
+A64.null_fail_if_zero(self, reg: int) {
+    self.branch_if(Cond { cbz = true, reg = reg, sf = true }, NFAIL)
 }
 
-A64.fail_if(mut self, cond: u32) { mut self.branch_if(Cond { cond = cond }, FAIL) }
+A64.fail_if(self, cond: u32) { self.branch_if(Cond { cond = cond }, FAIL) }
 
-A64.fail_if_zero(mut self, reg: int, sf: bool, nz: bool) {
-    mut self.branch_if(Cond { cbz = true, reg = reg, sf = sf, nz = nz }, FAIL)
+A64.fail_if_zero(self, reg: int, sf: bool, nz: bool) {
+    self.branch_if(Cond { cbz = true, reg = reg, sf = sf, nz = nz }, FAIL)
 }
 
 /* cmp wd, wd, sxtb (etc.): a narrow result that its extension changes is out of range */
-A64.check_narrow(mut self, t: u8, rd: int) {
+A64.check_narrow(self, t: u8, rd: int) {
     opt: u32 = 1 // u16
     if t == ir.IT_I8 { opt = 4 } else if t == ir.IT_I16 { opt = 5 } else if t == ir.IT_U8 { opt = 0 }
-    mut self.put(0x6B20001F | (u32(rd) << 16) | (opt << 13) | (u32(rd) << 5))
-    mut self.fail_if(C_NE)
+    self.put(0x6B20001F | (u32(rd) << 16) | (opt << 13) | (u32(rd) << 5))
+    self.fail_if(C_NE)
 }
 
 // --- operands ---------------------------------------------------------------
@@ -997,18 +997,18 @@ A64.check_narrow(mut self, t: u8, rd: int) {
 /* The register holding v for reading; a constant or spilled value goes to
  * scratch, of v's class.
  */
-A64.opnd(mut self, v: int, scratch: int): int {
+A64.opnd(self, v: int, scratch: int): int {
     x: IrIns = self.x(v)
     if x.op == ir.IR_CONST {
-        if is_fp(x.ty) { mut self.fmov_const(scratch, x.imm, x.ty == ir.IT_F64) } else { mut self.mov_imm(scratch, x.imm, is64(x.ty)) }
+        if is_fp(x.ty) { self.fmov_const(scratch, x.imm, x.ty == ir.IT_F64) } else { self.mov_imm(scratch, x.imm, is64(x.ty)) }
         return scratch
     }
     if x.op == ir.IR_SLOT {
-        mut self.add_imm(scratch, 31, self.obj.get(v))
+        self.add_imm(scratch, 31, self.obj.get(v))
         return scratch
     }
     if self.ra.reg.get(v) >= 0 { return self.ra.reg.get(v) }
-    if self.vec_val(v) { mut self.ld_slotq(scratch, self.ra.slot.get(v)) } else { mut self.ld_slot(scratch, self.ra.slot.get(v)) }
+    if self.vec_val(v) { self.ld_slotq(scratch, self.ra.slot.get(v)) } else { self.ld_slot(scratch, self.ra.slot.get(v)) }
     return scratch
 }
 
@@ -1019,9 +1019,9 @@ A64.dst(self, v: int): int {
     return S0
 }
 
-A64.dst_done(mut self, v: int, r: int) {
+A64.dst_done(self, v: int, r: int) {
     if self.ra.reg.get(v) < 0 && self.ra.slot.get(v) >= 0 {
-        if self.vec_val(v) { mut self.st_slotq(r, self.ra.slot.get(v)) } else { mut self.st_slot(r, self.ra.slot.get(v)) }
+        if self.vec_val(v) { self.st_slotq(r, self.ra.slot.get(v)) } else { self.st_slot(r, self.ra.slot.get(v)) }
     }
 }
 
@@ -1032,17 +1032,17 @@ A64.loc(self, v: int): int { // a move location, or NOREG for an unused value
 }
 
 /* A constant into a v register is a float; into a slot, any constant is its bits. */
-A64.move1(mut self, m: Move) {
+A64.move1(self, m: Move) {
     if m.q {
         if m.dst < SLOT && m.src < SLOT {
-            mut self.mov_q(m.dst, m.src)
+            self.mov_q(m.dst, m.src)
         } else if m.dst < SLOT {
-            mut self.ld_slotq(m.dst, m.src - SLOT)
+            self.ld_slotq(m.dst, m.src - SLOT)
         } else if m.src < SLOT {
-            mut self.st_slotq(m.src, m.dst - SLOT)
+            self.st_slotq(m.src, m.dst - SLOT)
         } else {
-            mut self.ld_slotq(FS1, m.src - SLOT)
-            mut self.st_slotq(FS1, m.dst - SLOT)
+            self.ld_slotq(FS1, m.src - SLOT)
+            self.st_slotq(FS1, m.dst - SLOT)
         }
         return
     }
@@ -1050,22 +1050,22 @@ A64.move1(mut self, m: Move) {
         r: int = S1
         if m.dst < SLOT { r = m.dst }
         if m.is_const == 2 {
-            mut self.add_imm(r, 31, u32(m.imm))
+            self.add_imm(r, 31, u32(m.imm))
         } else if fp_reg(r) {
-            mut self.fmov_const(r, m.imm, m.sf)
+            self.fmov_const(r, m.imm, m.sf)
         } else {
-            mut self.mov_imm(r, m.imm, m.sf)
+            self.mov_imm(r, m.imm, m.sf)
         }
-        if m.dst >= SLOT { mut self.st_slot(S1, m.dst - SLOT) }
+        if m.dst >= SLOT { self.st_slot(S1, m.dst - SLOT) }
     } else if m.dst < SLOT && m.src < SLOT {
-        mut self.mov_reg(m.dst, m.src)
+        self.mov_reg(m.dst, m.src)
     } else if m.dst < SLOT {
-        mut self.ld_slot(m.dst, m.src - SLOT)
+        self.ld_slot(m.dst, m.src - SLOT)
     } else if m.src < SLOT {
-        mut self.st_slot(m.src, m.dst - SLOT)
+        self.st_slot(m.src, m.dst - SLOT)
     } else {
-        mut self.ld_slot(S1, m.src - SLOT)
-        mut self.st_slot(S1, m.dst - SLOT)
+        self.ld_slot(S1, m.src - SLOT)
+        self.st_slot(S1, m.dst - SLOT)
     }
 }
 
@@ -1075,8 +1075,8 @@ A64.move1(mut self, m: Move) {
  * 0 for every ordinary caller; asm's own moves pass its reserved set, and a
  * cycle whose park register it reserves swaps in place by three eors.
  */
-A64.parallel_move(mut self, mut m: array.Array[Move], avoid: u32) {
-    mv: mut []Move = mut m.view()
+A64.parallel_move(self, m: *array.Array[Move], avoid: u32) {
+    mv: []Move = m.view()
     n: usize = mv.len
     left: int = 0
     for i: usize in 0..n {
@@ -1095,7 +1095,7 @@ A64.parallel_move(mut self, mut m: array.Array[Move], avoid: u32) {
                 }
             }
             if blocked { continue }
-            mut self.move1(mv[i])
+            self.move1(mv[i])
             mv[i].dst = NOREG
             left -= 1
             progress = true
@@ -1114,9 +1114,9 @@ A64.parallel_move(mut self, mut m: array.Array[Move], avoid: u32) {
             if !fp && (avoid & (u32(1) << u32(park))) != 0 { // d = s, s = d; readers of either follow the swap
                 s: u32 = u32(mv[i].src)
                 rd: u32 = u32(d)
-                mut self.put(0xCA000000 | (s << 16) | (rd << 5) | rd)
-                mut self.put(0xCA000000 | (s << 16) | (rd << 5) | s)
-                mut self.put(0xCA000000 | (s << 16) | (rd << 5) | rd)
+                self.put(0xCA000000 | (s << 16) | (rd << 5) | rd)
+                self.put(0xCA000000 | (s << 16) | (rd << 5) | s)
+                self.put(0xCA000000 | (s << 16) | (rd << 5) | rd)
                 mv[i].dst = NOREG
                 left -= 1
                 for j: usize in 0..n {
@@ -1126,7 +1126,7 @@ A64.parallel_move(mut self, mut m: array.Array[Move], avoid: u32) {
                 }
                 break
             }
-            mut self.move1(Move { dst = park, src = d, q = q })
+            self.move1(Move { dst = park, src = d, q = q })
             for j: usize in 0..n {
                 if mv[j].dst != NOREG && mv[j].is_const == 0 && mv[j].src == d { mv[j].src = park }
             }
@@ -1150,12 +1150,12 @@ A64.move_of(self, dst_loc: int, v: int): Move {
 /* Saves (or restores) the callee-saved registers, after the frame record
  * (with it when record) at sp + off; a pair never mixes x and d registers.
  */
-A64.frame_pairs(mut self, off: u32, restore: bool, record: bool) {
+A64.frame_pairs(self, off: u32, restore: bool, record: bool) {
     pair: u32 = sel(restore, 0xA9400000, 0xA9000000)
     one: u32 = sel(restore, 0xF9400000, 0xF9000000)
     fpair: u32 = sel(restore, 0x6D400000, 0x6D000000)
     fone: u32 = sel(restore, 0xFD400000, 0xFD000000)
-    if record { mut self.put(pair | ((off / 8) << 15) | (30 << 10) | (31 << 5) | 29) }
+    if record { self.put(pair | ((off / 8) << 15) | (30 << 10) | (31 << 5) | 29) }
     n: usize = self.cs.len
     k: usize = 0
     for k < n {
@@ -1163,10 +1163,10 @@ A64.frame_pairs(mut self, off: u32, restore: bool, record: bool) {
         r: int = self.cs.get(k)
         fp: bool = fp_reg(r)
         if k + 1 < n && fp_reg(self.cs.get(k + 1)) == fp {
-            mut self.put(sel(fp, fpair, pair) | (o << 15) | (R(self.cs.get(k + 1)) << 10) | (31 << 5) | R(r))
+            self.put(sel(fp, fpair, pair) | (o << 15) | (R(self.cs.get(k + 1)) << 10) | (31 << 5) | R(r))
             k += 2
         } else {
-            mut self.put(sel(fp, fone, one) | (o << 10) | (31 << 5) | R(r))
+            self.put(sel(fp, fone, one) | (o << 10) | (31 << 5) | R(r))
             k += 1
         }
     }
@@ -1180,52 +1180,52 @@ A64.short_frame(self): bool { return self.out == 0 && self.frame <= 504 }
  */
 A64.far_out(self): bool { return self.out > 352 }
 
-A64.prologue(mut self) {
+A64.prologue(self) {
     if !self.has_frame { return }
     f: u32 = self.frame
     if self.short_frame() {
-        mut self.put(0xA9800000 | (((128 - f / 8) & 0x7F) << 15) | (30 << 10) | (31 << 5) | 29)
-        mut self.put(0x910003FD) // mov x29, sp
-        mut self.frame_pairs(0, false, false)
+        self.put(0xA9800000 | (((128 - f / 8) & 0x7F) << 15) | (30 << 10) | (31 << 5) | 29)
+        self.put(0x910003FD) // mov x29, sp
+        self.frame_pairs(0, false, false)
     } else if self.far_out() {
-        mut self.sp_adjust(0xD10003FF, f - self.out)
-        mut self.frame_pairs(0, false, true)
-        mut self.put(0x910003FD) // mov x29, sp
-        mut self.sp_adjust(0xD10003FF, self.out)
+        self.sp_adjust(0xD10003FF, f - self.out)
+        self.frame_pairs(0, false, true)
+        self.put(0x910003FD) // mov x29, sp
+        self.sp_adjust(0xD10003FF, self.out)
     } else {
-        mut self.sp_adjust(0xD10003FF, f)
-        mut self.frame_pairs(self.out, false, true)
-        mut self.add_imm(29, 31, self.out)
+        self.sp_adjust(0xD10003FF, f)
+        self.frame_pairs(self.out, false, true)
+        self.add_imm(29, 31, self.out)
     }
 }
 
 /* A frame's restores are emitted once; every later return branches to them. */
-A64.epilogue(mut self) {
+A64.epilogue(self) {
     if self.has_frame && self.epi != 0 {
         d: i64 = (i64(self.epi) - 1 - i64(self.here())) / 4
-        mut self.put(0x14000000 | (u32(d) & 0x3FFFFFF)) // b epi
+        self.put(0x14000000 | (u32(d) & 0x3FFFFFF)) // b epi
         return
     }
     if self.has_frame {
         self.epi = self.here() + 1
         f: u32 = self.frame
         if self.short_frame() {
-            mut self.frame_pairs(0, true, false)
-            mut self.put(0xA8C00000 | ((f / 8) << 15) | (30 << 10) | (31 << 5) | 29) // ldp x29, x30, [sp], #f
+            self.frame_pairs(0, true, false)
+            self.put(0xA8C00000 | ((f / 8) << 15) | (30 << 10) | (31 << 5) | 29) // ldp x29, x30, [sp], #f
         } else if self.far_out() {
-            mut self.sp_adjust(0x910003FF, self.out)
-            mut self.frame_pairs(0, true, true)
-            mut self.sp_adjust(0x910003FF, f - self.out)
+            self.sp_adjust(0x910003FF, self.out)
+            self.frame_pairs(0, true, true)
+            self.sp_adjust(0x910003FF, f - self.out)
         } else {
-            mut self.frame_pairs(self.out, true, true)
-            mut self.sp_adjust(0x910003FF, f)
+            self.frame_pairs(self.out, true, true)
+            self.sp_adjust(0x910003FF, f)
         }
     }
-    mut self.put(0xD65F03C0) // ret
+    self.put(0xD65F03C0) // ret
 }
 
 /* Lays out the stack objects above the spill slots; returns the frame size. */
-A64.place_objects(mut self): u32 {
+A64.place_objects(self): u32 {
     err: Error = null
     self.obj, err = array.Array[u32].filled(self.fn.ins.len, 0)
     fail(err)
@@ -1242,7 +1242,7 @@ A64.place_objects(mut self): u32 {
             al: u32 = 1
             if x.aux > 0 { al = u32(x.aux) }
             at = (at + al - 1) & ~(al - 1)
-            mut self.obj.set(usize(v), at)
+            self.obj.set(usize(v), at)
             if x.imm != 0 { at += u32(x.imm) } else { at += 1 }
             self.has_frame = true
         }
@@ -1290,7 +1290,7 @@ A64.arith_imm(self, c: int, t: u8): (int, u32) {
 /* Compare for v (EQ..GE); returns the condition that holds when v is true.
  * A branch (cbz_ok) tests equality with zero by cbz/cbnz instead.
  */
-A64.compare(mut self, v: int, cbz_ok: bool): Cond {
+A64.compare(self, v: int, cbz_ok: bool): Cond {
     x: IrIns = self.x(v)
     l: int = self.arg(v, 0)
     r: int = self.arg(v, 1)
@@ -1305,26 +1305,26 @@ A64.compare(mut self, v: int, cbz_ok: bool): Cond {
     }
     cond: u32 = cond_of(op, t)
     if is_fp(t) { // fcmp, against #0.0 when it is +0.0
-        rn: int = mut self.opnd(l, FS0)
+        rn: int = self.opnd(l, FS0)
         if self.is_const(r) && self.x(r).imm == 0 {
-            mut self.put(0x1E202008 | ftype(t) | (R(rn) << 5))
+            self.put(0x1E202008 | ftype(t) | (R(rn) << 5))
         } else {
-            rm: int = mut self.opnd(r, FS1)
-            mut self.put(0x1E202000 | ftype(t) | (R(rm) << 16) | (R(rn) << 5))
+            rm: int = self.opnd(r, FS1)
+            self.put(0x1E202000 | ftype(t) | (R(rm) << 16) | (R(rn) << 5))
         }
         return Cond { cond = cond }
     }
     if cbz_ok && self.is_const(r) && self.x(r).imm == 0 && (cond == C_EQ || cond == C_NE) {
-        reg: int = mut self.opnd(l, S0)
+        reg: int = self.opnd(l, S0)
         return Cond { cbz = true, reg = reg, sf = is64(t), nz = cond == C_NE }
     }
     form: int, imm: u32 = self.arith_imm(r, t)
-    rn: int = mut self.opnd(l, S0)
+    rn: int = self.opnd(l, S0)
     if form != 0 {
-        mut self.put(sf | sel(form > 0, 0x7100001F, 0x3100001F) | (imm << 10) | (u32(rn) << 5))
+        self.put(sf | sel(form > 0, 0x7100001F, 0x3100001F) | (imm << 10) | (u32(rn) << 5))
     } else {
-        rm: int = mut self.opnd(r, S1)
-        mut self.put(sf | 0x6B00001F | (u32(rm) << 16) | (u32(rn) << 5))
+        rm: int = self.opnd(r, S1)
+        self.put(sf | 0x6B00001F | (u32(rm) << 16) | (u32(rn) << 5))
     }
     return Cond { cond = cond }
 }
@@ -1332,7 +1332,7 @@ A64.compare(mut self, v: int, cbz_ok: bool): Cond {
 /* Constant division (after Granlund-Montgomery): rd = ra / c or ra % c
  * through x16 and x17; the caller has excluded a zero divisor and signed -1.
  */
-A64.const_divide(mut self, op: u8, rd: int, ra: int, c: u64, t: u8) {
+A64.const_divide(self, op: u8, rd: int, ra: int, c: u64, t: u8) {
     sf: bool = is64(t)
     w: int = 32
     if sf { w = 64 }
@@ -1352,55 +1352,55 @@ A64.const_divide(mut self, op: u8, rd: int, ra: int, c: u64, t: u8) {
     asr: u32 = sel(sf, 0x9340FC00, 0x13007C00)
     n: u32 = u32(ra)
     if d == 1 {
-        if op == ir.IR_DIV { mut self.mov_reg(rd, ra) } else { mut self.mov_imm(rd, 0, sf) }
+        if op == ir.IR_DIV { self.mov_reg(rd, ra) } else { self.mov_imm(rd, 0, sf) }
         return
     }
     if (d & (d - 1)) == 0 {
         k: u32 = u32(bits.ctz(d))
         if !sig {
             if op == ir.IR_DIV {
-                mut self.put(lsr | (k << 16) | (n << 5) | u32(rd))
+                self.put(lsr | (k << 16) | (n << 5) | u32(rd))
             } else {
-                mut self.put(sel(sf, 0x92400000, 0x12000000) | ((k - 1) << 10) | (n << 5) | u32(rd))
+                self.put(sel(sf, 0x92400000, 0x12000000) | ((k - 1) << 10) | (n << 5) | u32(rd))
             }
             return
         }
-        mut self.put(asr | (u32(w - 1) << 16) | (n << 5) | u32(S0)) // round toward zero:
-        mut self.put(s | 0x0B400000 | (u32(S0) << 16) | ((u32(w) - k) << 10) | (n << 5) | u32(S0)) // bias by d - 1
-        mut self.put(asr | (k << 16) | (u32(S0) << 5) | sel(sd < 0, u32(S0), qd))
-        if sd < 0 { mut self.put(s | 0x4B0003E0 | (u32(S0) << 16) | qd) } // neg
+        self.put(asr | (u32(w - 1) << 16) | (n << 5) | u32(S0)) // round toward zero:
+        self.put(s | 0x0B400000 | (u32(S0) << 16) | ((u32(w) - k) << 10) | (n << 5) | u32(S0)) // bias by d - 1
+        self.put(asr | (k << 16) | (u32(S0) << 5) | sel(sd < 0, u32(S0), qd))
+        if sd < 0 { self.put(s | 0x4B0003E0 | (u32(S0) << 16) | qd) } // neg
     } else if !sig {
         m: DivMagic = div_magic(d, w, false, false)
-        mut self.mov_imm(S1, m.magic, sf)
-        mut self.put(sel(sf, 0x9BC07C00, 0x9BA07C00) | (u32(S1) << 16) | (n << 5) | u32(S0)) // umulh / umull
+        self.mov_imm(S1, m.magic, sf)
+        self.put(sel(sf, 0x9BC07C00, 0x9BA07C00) | (u32(S1) << 16) | (n << 5) | u32(S0)) // umulh / umull
         if !m.add {
-            mut self.put(0xD340FC00 | (u32(sel(sf, 0, 32) + u32(m.shift)) << 16) | (u32(S0) << 5) | qd)
+            self.put(0xD340FC00 | (u32(sel(sf, 0, 32) + u32(m.shift)) << 16) | (u32(S0) << 5) | qd)
         } else {
-            if !sf { mut self.put(0xD340FC00 | (32 << 16) | (u32(S0) << 5) | u32(S0)) }
-            mut self.put(s | 0x4B000000 | (u32(S0) << 16) | (n << 5) | u32(S1)) // a - t
-            mut self.put(s | 0x0B400000 | (u32(S1) << 16) | (1 << 10) | (u32(S0) << 5) | u32(S0)) // t + ((a - t) >> 1)
-            mut self.put(lsr | (u32(m.shift) << 16) | (u32(S0) << 5) | qd)
+            if !sf { self.put(0xD340FC00 | (32 << 16) | (u32(S0) << 5) | u32(S0)) }
+            self.put(s | 0x4B000000 | (u32(S0) << 16) | (n << 5) | u32(S1)) // a - t
+            self.put(s | 0x0B400000 | (u32(S1) << 16) | (1 << 10) | (u32(S0) << 5) | u32(S0)) // t + ((a - t) >> 1)
+            self.put(lsr | (u32(m.shift) << 16) | (u32(S0) << 5) | qd)
         }
     } else {
         m: DivMagic = div_magic(d, w, true, sd < 0)
-        mut self.mov_imm(S1, m.magic, sf)
-        mut self.put(sel(sf, 0x9B407C00, 0x9B207C00) | (u32(S1) << 16) | (n << 5) | u32(S0)) // smulh / smull
+        self.mov_imm(S1, m.magic, sf)
+        self.put(sel(sf, 0x9B407C00, 0x9B207C00) | (u32(S1) << 16) | (n << 5) | u32(S0)) // smulh / smull
         if !m.add {
-            mut self.put(0x9340FC00 | ((sel(sf, 0, 32) + u32(m.shift)) << 16) | (u32(S0) << 5) | u32(S0))
+            self.put(0x9340FC00 | ((sel(sf, 0, 32) + u32(m.shift)) << 16) | (u32(S0) << 5) | u32(S0))
         } else {
-            if !sf { mut self.put(0x9340FC00 | (32 << 16) | (u32(S0) << 5) | u32(S0)) }
-            mut self.put(s | sel(m.neg, 0x4B000000, 0x0B000000) | (n << 16) | (u32(S0) << 5) | u32(S0)) // t -= a or t += a
-            mut self.put(asr | (u32(m.shift) << 16) | (u32(S0) << 5) | u32(S0))
+            if !sf { self.put(0x9340FC00 | (32 << 16) | (u32(S0) << 5) | u32(S0)) }
+            self.put(s | sel(m.neg, 0x4B000000, 0x0B000000) | (n << 16) | (u32(S0) << 5) | u32(S0)) // t -= a or t += a
+            self.put(asr | (u32(m.shift) << 16) | (u32(S0) << 5) | u32(S0))
         }
-        mut self.put(s | 0x0B400000 | (u32(S0) << 16) | (u32(w - 1) << 10) | (u32(S0) << 5) | qd) // q += q < 0
+        self.put(s | 0x0B400000 | (u32(S0) << 16) | (u32(w - 1) << 10) | (u32(S0) << 5) | qd) // q += q < 0
     }
     if op == ir.IR_REM { // r = a - q * c
-        mut self.mov_imm(S1, c & mask, sf)
-        mut self.put(s | 0x1B008000 | (u32(S1) << 16) | (n << 10) | (u32(S0) << 5) | u32(rd))
+        self.mov_imm(S1, c & mask, sf)
+        self.put(s | 0x1B008000 | (u32(S1) << 16) | (n << 10) | (u32(S0) << 5) | u32(rd))
     }
 }
 
-A64.add_sub(mut self, v: int) {
+A64.add_sub(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     sf: u32 = sfb(t)
@@ -1409,13 +1409,13 @@ A64.add_sub(mut self, v: int) {
     if self.madd.get(v) != 0 { // rd = other ± m0 * m1
         k: u32 = u32(self.madd.get(v) - 1)
         mv: int = self.arg(v, k)
-        rn: int = mut self.opnd(self.arg(mv, 0), S0)
-        rm: int = mut self.opnd(self.arg(mv, 1), S1)
-        ra: int = mut self.opnd(self.arg(v, 1 - k), S2)
+        rn: int = self.opnd(self.arg(mv, 0), S0)
+        rm: int = self.opnd(self.arg(mv, 1), S1)
+        ra: int = self.opnd(self.arg(v, 1 - k), S2)
         rd: int = self.dst(v)
-        mut self.put(sf | sel(sub, 0x1B008000, 0x1B000000) | (u32(rm) << 16) | (u32(ra) << 10) | (u32(rn) << 5) | u32(rd))
-        mut self.wrap(t, rd)
-        mut self.dst_done(v, rd)
+        self.put(sf | sel(sub, 0x1B008000, 0x1B000000) | (u32(rm) << 16) | (u32(ra) << 10) | (u32(rn) << 5) | u32(rd))
+        self.wrap(t, rd)
+        self.dst_done(v, rd)
         return
     }
     l: int = self.arg(v, 0)
@@ -1427,67 +1427,67 @@ A64.add_sub(mut self, v: int) {
     }
     form: int, imm: u32 = self.arith_imm(r, t)
     flags: bool = chk && !narrow(t) // adds/subs set the overflow flags
-    rn: int = mut self.opnd(l, S0)
+    rn: int = self.opnd(l, S0)
     if form != 0 {
         if form < 0 { sub = !sub }
         rd: int = self.dst(v)
-        mut self.put(sf | sel(sub, 0x51000000, 0x11000000) | sel(flags, 0x20000000, 0) | (imm << 10) | (u32(rn) << 5) | u32(rd))
+        self.put(sf | sel(sub, 0x51000000, 0x11000000) | sel(flags, 0x20000000, 0) | (imm << 10) | (u32(rn) << 5) | u32(rd))
         rn = rd
     } else {
-        rm: int = mut self.opnd(r, S1)
+        rm: int = self.opnd(r, S1)
         rd: int = self.dst(v)
-        mut self.put(sf | sel(sub, 0x4B000000, 0x0B000000) | sel(flags, 0x20000000, 0) | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
+        self.put(sf | sel(sub, 0x4B000000, 0x0B000000) | sel(flags, 0x20000000, 0) | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
         rn = rd
     }
     if chk && narrow(t) {
-        mut self.check_narrow(t, rn)
+        self.check_narrow(t, rn)
     } else if chk {
-        if ir.type_signed(t) { mut self.fail_if(C_VS) } else { mut self.fail_if(sel(sub, C_LO, C_HS)) }
+        if ir.type_signed(t) { self.fail_if(C_VS) } else { self.fail_if(sel(sub, C_LO, C_HS)) }
     } else {
-        mut self.wrap(t, rn)
+        self.wrap(t, rn)
     }
-    mut self.dst_done(v, rn)
+    self.dst_done(v, rn)
 }
 
-A64.mul(mut self, v: int) {
+A64.mul(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     sg: bool = ir.type_signed(t)
     chk: bool = (x.flags & ir.IRF_CHECKED) != 0
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
-    rm: int = mut self.opnd(self.arg(v, 1), S1)
+    rn: int = self.opnd(self.arg(v, 0), S0)
+    rm: int = self.opnd(self.arg(v, 1), S1)
     rd: int = self.dst(v)
     nm: u32 = (u32(rm) << 16) | (u32(rn) << 5)
     if !chk || narrow(t) {
-        mut self.put(sfb(t) | 0x1B007C00 | nm | u32(rd))
-        if chk { mut self.check_narrow(t, rd) } else { mut self.wrap(t, rd) }
+        self.put(sfb(t) | 0x1B007C00 | nm | u32(rd))
+        if chk { self.check_narrow(t, rd) } else { self.wrap(t, rd) }
     } else if !is64(t) { // the exact 64-bit product must be its 32-bit extension
-        mut self.put(sel(sg, 0x9B207C00, 0x9BA07C00) | nm | u32(rd)) // smull / umull
-        mut self.put(0xEB20001F | (u32(rd) << 16) | (sel(sg, 6, 2) << 13) | (u32(rd) << 5))
-        mut self.fail_if(C_NE)
+        self.put(sel(sg, 0x9B207C00, 0x9BA07C00) | nm | u32(rd)) // smull / umull
+        self.put(0xEB20001F | (u32(rd) << 16) | (sel(sg, 6, 2) << 13) | (u32(rd) << 5))
+        self.fail_if(C_NE)
     } else if sg { // the high half must be the low half's sign
-        mut self.put(0x9B407C00 | nm | u32(S2)) // smulh x15
-        mut self.put(0x9B007C00 | nm | u32(rd))
-        mut self.put(0xEB80001F | (u32(rd) << 16) | (63 << 10) | (u32(S2) << 5)) // cmp x15, rd, asr #63
-        mut self.fail_if(C_NE)
+        self.put(0x9B407C00 | nm | u32(S2)) // smulh x15
+        self.put(0x9B007C00 | nm | u32(rd))
+        self.put(0xEB80001F | (u32(rd) << 16) | (63 << 10) | (u32(S2) << 5)) // cmp x15, rd, asr #63
+        self.fail_if(C_NE)
     } else {
-        mut self.put(0x9BC07C00 | nm | u32(S2)) // umulh x15
-        mut self.put(0x9B007C00 | nm | u32(rd))
-        mut self.fail_if_zero(S2, true, true)
+        self.put(0x9BC07C00 | nm | u32(S2)) // umulh x15
+        self.put(0x9B007C00 | nm | u32(rd))
+        self.fail_if_zero(S2, true, true)
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
 /* umulh: the high 64 bits of the unsigned product. */
-A64.mul_high(mut self, v: int) {
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
-    rm: int = mut self.opnd(self.arg(v, 1), S1)
+A64.mul_high(self, v: int) {
+    rn: int = self.opnd(self.arg(v, 0), S0)
+    rm: int = self.opnd(self.arg(v, 1), S1)
     rd: int = self.dst(v)
-    mut self.put(0x9BC07C00 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
-    mut self.dst_done(v, rd)
+    self.put(0x9BC07C00 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
+    self.dst_done(v, rd)
 }
 
-A64.div_rem(mut self, v: int) {
+A64.div_rem(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     sf: u32 = sfb(t)
@@ -1498,75 +1498,75 @@ A64.div_rem(mut self, v: int) {
         sd: i64 = i64(c)
         if !is64(t) { sd = i64(i32(u32(c & 0xFFFFFFFF))) }
         if c != 0 && !(sg && sd == -1) {
-            rn: int = mut self.opnd(self.arg(v, 0), S2)
+            rn: int = self.opnd(self.arg(v, 0), S2)
             rd: int = self.dst(v)
-            mut self.const_divide(x.op, rd, rn, c, t)
-            mut self.dst_done(v, rd)
+            self.const_divide(x.op, rd, rn, c, t)
+            self.dst_done(v, rd)
             return
         }
     }
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
-    rm: int = mut self.opnd(self.arg(v, 1), S1)
+    rn: int = self.opnd(self.arg(v, 0), S0)
+    rm: int = self.opnd(self.arg(v, 1), S1)
     if chk {
-        mut self.fail_if_zero(rm, is64(t), false)
+        self.fail_if_zero(rm, is64(t), false)
         if sg && !narrow(t) { // MIN / -1: a - 1 overflows exactly when a is MIN
-            mut self.put(sf | 0x3100001F | (1 << 10) | (u32(rm) << 5)) // cmn rm, #1
-            mut self.put(sf | 0x7A400800 | (1 << 16) | (C_EQ << 12) | (u32(rn) << 5)) // ccmp rn, #1, #0, eq
-            mut self.fail_if(C_VS)
+            self.put(sf | 0x3100001F | (1 << 10) | (u32(rm) << 5)) // cmn rm, #1
+            self.put(sf | 0x7A400800 | (1 << 16) | (C_EQ << 12) | (u32(rn) << 5)) // ccmp rn, #1, #0, eq
+            self.fail_if(C_VS)
         }
     }
     div: u32 = sf | sel(sg, 0x1AC00C00, 0x1AC00800) | (u32(rm) << 16) | (u32(rn) << 5)
     rd: int = self.dst(v)
     if x.op == ir.IR_DIV {
-        mut self.put(div | u32(rd))
+        self.put(div | u32(rd))
         if sg && narrow(t) {
-            if chk { mut self.check_narrow(t, rd) } else { mut self.wrap(t, rd) } // MIN / -1 leaves the range
+            if chk { self.check_narrow(t, rd) } else { self.wrap(t, rd) } // MIN / -1 leaves the range
         }
     } else {
-        mut self.put(div | u32(S2))
-        if chk && sg && narrow(t) { mut self.check_narrow(t, S2) }
-        mut self.put(sf | 0x1B008000 | (u32(rm) << 16) | (u32(rn) << 10) | (u32(S2) << 5) | u32(rd)) // msub
+        self.put(div | u32(S2))
+        if chk && sg && narrow(t) { self.check_narrow(t, S2) }
+        self.put(sf | 0x1B008000 | (u32(rm) << 16) | (u32(rn) << 10) | (u32(S2) << 5) | u32(rd)) // msub
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
-A64.shift(mut self, v: int) {
+A64.shift(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     sf: bool = is64(t)
     sg: bool = ir.type_signed(t)
     nbits: int = ir.type_bits(t)
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
+    rn: int = self.opnd(self.arg(v, 0), S0)
     c: int = self.arg(v, 1)
     if self.is_const(c) && self.x(c).imm < u64(nbits) {
         k: u32 = u32(self.x(c).imm)
         w: u32 = sel(sf, 64, 32)
         rd: int = self.dst(v)
         if x.op == ir.IR_SHL { // ubfm rd, rn, #(-k mod w), #(w - 1 - k)
-            mut self.put(sel(sf, 0xD3400000, 0x53000000) | (((w - k) & (w - 1)) << 16) | ((w - 1 - k) << 10) | (u32(rn) << 5) | u32(rd))
+            self.put(sel(sf, 0xD3400000, 0x53000000) | (((w - k) & (w - 1)) << 16) | ((w - 1 - k) << 10) | (u32(rn) << 5) | u32(rd))
         } else if sg {
-            mut self.put(sel(sf, 0x9340FC00, 0x13007C00) | (k << 16) | (u32(rn) << 5) | u32(rd))
+            self.put(sel(sf, 0x9340FC00, 0x13007C00) | (k << 16) | (u32(rn) << 5) | u32(rd))
         } else {
-            mut self.put(sel(sf, 0xD340FC00, 0x53007C00) | (k << 16) | (u32(rn) << 5) | u32(rd))
+            self.put(sel(sf, 0xD340FC00, 0x53007C00) | (k << 16) | (u32(rn) << 5) | u32(rd))
         }
-        if x.op == ir.IR_SHL { mut self.wrap(t, rd) }
-        mut self.dst_done(v, rd)
+        if x.op == ir.IR_SHL { self.wrap(t, rd) }
+        self.dst_done(v, rd)
         return
     }
-    rm: int = mut self.opnd(c, S1)
+    rm: int = self.opnd(c, S1)
     if (x.flags & ir.IRF_CHECKED) != 0 { // a negative count is a large unsigned one
-        mut self.put(sfb(t) | 0x7100001F | (u32(nbits) << 10) | (u32(rm) << 5))
-        mut self.fail_if(C_HS)
+        self.put(sfb(t) | 0x7100001F | (u32(nbits) << 10) | (u32(rm) << 5))
+        self.fail_if(C_HS)
     }
     rd: int = self.dst(v)
     op: u32 = 0x1AC02400
     if x.op == ir.IR_SHL { op = 0x1AC02000 } else if sg { op = 0x1AC02800 }
-    mut self.put(sfb(t) | op | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
-    if x.op == ir.IR_SHL { mut self.wrap(t, rd) }
-    mut self.dst_done(v, rd)
+    self.put(sfb(t) | op | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
+    if x.op == ir.IR_SHL { self.wrap(t, rd) }
+    self.dst_done(v, rd)
 }
 
-A64.logic(mut self, v: int) {
+A64.logic(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     sf: u32 = sfb(t)
@@ -1588,84 +1588,84 @@ A64.logic(mut self, v: int) {
     }
     field: u32 = 0
     if self.is_const(r) { field = logical_imm_field(self.x(r).imm, is64(t)) }
-    rn: int = mut self.opnd(l, S0)
+    rn: int = self.opnd(l, S0)
     rd: int = 0
     if field != 0 {
         rd = self.dst(v)
-        mut self.put(sf | imm_op | (field << 10) | (u32(rn) << 5) | u32(rd))
+        self.put(sf | imm_op | (field << 10) | (u32(rn) << 5) | u32(rd))
     } else {
-        rm: int = mut self.opnd(r, S1)
+        rm: int = self.opnd(r, S1)
         rd = self.dst(v)
-        mut self.put(sf | reg_op | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
+        self.put(sf | reg_op | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd))
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
-A64.unary(mut self, v: int) {
+A64.unary(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     sf: u32 = sfb(t)
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
+    rn: int = self.opnd(self.arg(v, 0), S0)
     rd: int = self.dst(v)
     if x.op == ir.IR_NEG {
         chk: bool = (x.flags & ir.IRF_CHECKED) != 0
         flags: bool = chk && !narrow(t)
-        mut self.put(sf | sel(flags, 0x6B0003E0, 0x4B0003E0) | (u32(rn) << 16) | u32(rd))
-        if flags { mut self.fail_if(C_VS) } else if chk { mut self.check_narrow(t, rd) } else { mut self.wrap(t, rd) }
+        self.put(sf | sel(flags, 0x6B0003E0, 0x4B0003E0) | (u32(rn) << 16) | u32(rd))
+        if flags { self.fail_if(C_VS) } else if chk { self.check_narrow(t, rd) } else { self.wrap(t, rd) }
     } else if t == ir.IT_BOOL || t == ir.IT_U8 || t == ir.IT_U16 { // eor with the type's ones
         ones: u64 = 0xFFFF
         if t == ir.IT_BOOL { ones = 1 } else if t == ir.IT_U8 { ones = 0xFF }
-        mut self.put(0x52000000 | (logical_imm_field(ones, false) << 10) | (u32(rn) << 5) | u32(rd))
+        self.put(0x52000000 | (logical_imm_field(ones, false) << 10) | (u32(rn) << 5) | u32(rd))
     } else {
-        mut self.put(sf | 0x2A2003E0 | (u32(rn) << 16) | u32(rd)) // mvn
+        self.put(sf | 0x2A2003E0 | (u32(rn) << 16) | u32(rd)) // mvn
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
 /* fadd, fsub, fmul, fdiv, fneg: IEEE, never trapping or fused */
-A64.farith(mut self, v: int) {
+A64.farith(self, v: int) {
     x: IrIns = self.x(v)
     ty: u32 = ftype(x.ty)
-    rn: int = mut self.opnd(self.arg(v, 0), FS0)
+    rn: int = self.opnd(self.arg(v, 0), FS0)
     if x.op == ir.IR_NEG {
         rd: int = self.dst(v)
-        mut self.put(0x1E214000 | ty | (R(rn) << 5) | R(rd))
-        mut self.dst_done(v, rd)
+        self.put(0x1E214000 | ty | (R(rn) << 5) | R(rd))
+        self.dst_done(v, rd)
         return
     }
     op: u32 = 0x1E201800 // fdiv
     if x.op == ir.IR_ADD { op = 0x1E202800 } else if x.op == ir.IR_SUB { op = 0x1E203800 } else if x.op == ir.IR_MUL { op = 0x1E200800 }
-    rm: int = mut self.opnd(self.arg(v, 1), FS1)
+    rm: int = self.opnd(self.arg(v, 1), FS1)
     rd: int = self.dst(v)
-    mut self.put(op | ty | (R(rm) << 16) | (R(rn) << 5) | R(rd))
-    mut self.dst_done(v, rd)
+    self.put(op | ty | (R(rm) << 16) | (R(rn) << 5) | R(rd))
+    self.dst_done(v, rd)
 }
 
 /* A conversion to or from a float: fcvt between widths; scvtf/ucvtf from an
  * integer's register form; fcvtzs/fcvtzu, which round toward zero and
  * saturate, then a narrow result wrapped.
  */
-A64.fcast(mut self, v: int) {
+A64.fcast(self, v: int) {
     x: IrIns = self.x(v)
     to: u8 = x.ty
     from: u8 = self.x(self.arg(v, 0)).ty
     rn: int = 0
-    if is_fp(from) { rn = mut self.opnd(self.arg(v, 0), FS0) } else { rn = mut self.opnd(self.arg(v, 0), S0) }
+    if is_fp(from) { rn = self.opnd(self.arg(v, 0), FS0) } else { rn = self.opnd(self.arg(v, 0), S0) }
     rd: int = self.dst(v)
     nd: u32 = (R(rn) << 5) | R(rd)
     if is_fp(from) && is_fp(to) {
-        if from == to { mut self.mov_reg(rd, rn) } else { mut self.put(sel(to == ir.IT_F64, 0x1E22C000, 0x1E624000) | nd) }
+        if from == to { self.mov_reg(rd, rn) } else { self.put(sel(to == ir.IT_F64, 0x1E22C000, 0x1E624000) | nd) }
     } else if is_fp(to) {
         op: u32 = sel(to == ir.IT_F64, 0x1E620000, 0x1E220000)
         if is64(from) { op = sel(to == ir.IT_F64, 0x9E620000, 0x9E220000) }
-        mut self.put(op | sel(ir.type_signed(from), 0, 0x10000) | nd)
+        self.put(op | sel(ir.type_signed(from), 0, 0x10000) | nd)
     } else {
         op: u32 = sel(is64(to), 0x9E380000, 0x1E380000)
         if from == ir.IT_F64 { op = sel(is64(to), 0x9E780000, 0x1E780000) }
-        mut self.put(op | sel(ir.type_signed(to), 0, 0x10000) | nd)
-        mut self.wrap(to, rd)
+        self.put(op | sel(ir.type_signed(to), 0, 0x10000) | nd)
+        self.wrap(to, rd)
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
 /* movi/fmov vector immediate fields from imm8 */
@@ -1676,7 +1676,7 @@ imm8_fields(imm8: int): u32 { return ((u32(imm8) >> 5) << 16) | ((u32(imm8) & 31
  * select through bsl, or bit or bif when the result's register already holds
  * the lanes it keeps.
  */
-A64.vector(mut self, v: int) {
+A64.vector(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     if x.op == ir.IR_SPLAT && t == ir.IT_V2F64 { // dup .2d from d lane 0, or fmov .2d/movi for an 8-bit immediate
@@ -1688,14 +1688,14 @@ A64.vector(mut self, v: int) {
             rd: int = self.dst(v)
             imm8: int = d
             if zero { imm8 = 0 }
-            mut self.put(sel(zero, 0x4F000400, 0x6F00F400) | imm8_fields(imm8) | R(rd))
-            mut self.dst_done(v, rd)
+            self.put(sel(zero, 0x4F000400, 0x6F00F400) | imm8_fields(imm8) | R(rd))
+            self.dst_done(v, rd)
             return
         }
-        rn: int = mut self.opnd(a0, FS0)
+        rn: int = self.opnd(a0, FS0)
         rd: int = self.dst(v)
-        mut self.put(0x4E080400 | (R(rn) << 5) | R(rd))
-        mut self.dst_done(v, rd)
+        self.put(0x4E080400 | (R(rn) << 5) | R(rd))
+        self.dst_done(v, rd)
         return
     }
     if x.op == ir.IR_SPLAT {
@@ -1707,51 +1707,51 @@ A64.vector(mut self, v: int) {
             if !f && b <= 0xFF { imm8 = int(b) } else if f && b == 0 { imm8 = 0 } else if f { imm8 = fmov_imm8(b, false) }
             if imm8 >= 0 {
                 rd: int = self.dst(v)
-                mut self.put(sel(f && b != 0, 0x4F00F400, 0x4F000400) | imm8_fields(imm8) | R(rd))
-                mut self.dst_done(v, rd)
+                self.put(sel(f && b != 0, 0x4F00F400, 0x4F000400) | imm8_fields(imm8) | R(rd))
+                self.dst_done(v, rd)
                 return
             }
         }
         rn: int = 0
-        if f { rn = mut self.opnd(a0, FS0) } else { rn = mut self.opnd(a0, S0) }
+        if f { rn = self.opnd(a0, FS0) } else { rn = self.opnd(a0, S0) }
         rd: int = self.dst(v)
-        mut self.put(sel(f, 0x4E040400, 0x4E040C00) | (R(rn) << 5) | R(rd)) // dup .4s, from s lane 0 or w
-        mut self.dst_done(v, rd)
+        self.put(sel(f, 0x4E040400, 0x4E040C00) | (R(rn) << 5) | R(rd)) // dup .4s, from s lane 0 or w
+        self.dst_done(v, rd)
         return
     }
     if x.op == ir.IR_SELECT {
-        m: int = mut self.opnd(self.arg(v, 0), FS0)
-        rn: int = mut self.opnd(self.arg(v, 1), FS1)
-        rm: int = mut self.opnd(self.arg(v, 2), FS2)
+        m: int = self.opnd(self.arg(v, 0), FS0)
+        rn: int = self.opnd(self.arg(v, 1), FS1)
+        rm: int = self.opnd(self.arg(v, 2), FS2)
         rd: int = self.dst(v)
         if rd == rm && rd != m {
-            mut self.put(0x6EA01C00 | (R(m) << 16) | (R(rn) << 5) | R(rd)) // bit: rn's lanes where m is set
+            self.put(0x6EA01C00 | (R(m) << 16) | (R(rn) << 5) | R(rd)) // bit: rn's lanes where m is set
         } else if rd == rn && rd != m {
-            mut self.put(0x6EE01C00 | (R(m) << 16) | (R(rm) << 5) | R(rd)) // bif: rm's lanes where m is clear
+            self.put(0x6EE01C00 | (R(m) << 16) | (R(rm) << 5) | R(rd)) // bif: rm's lanes where m is clear
         } else {
-            mut self.mov_q(rd, m)
-            mut self.put(0x6E601C00 | (R(rm) << 16) | (R(rn) << 5) | R(rd)) // bsl
+            self.mov_q(rd, m)
+            self.put(0x6E601C00 | (R(rm) << 16) | (R(rn) << 5) | R(rd)) // bsl
         }
-        mut self.dst_done(v, rd)
+        self.dst_done(v, rd)
         return
     }
     if x.op == ir.IR_LANES { // <0, 1> into the low half by fmov, which zeroes the high; <2, 3> inserted
         rd: int = self.dst(v)
-        mut self.mov_imm(S0, u64(1) << 32, true)
-        mut self.put(0x9E670000 | (u32(S0) << 5) | R(rd)) // fmov d, x
-        mut self.mov_imm(S0, (u64(3) << 32) | 2, true)
-        mut self.put(0x4E181C00 | (u32(S0) << 5) | R(rd)) // ins .d[1], x
-        mut self.dst_done(v, rd)
+        self.mov_imm(S0, u64(1) << 32, true)
+        self.put(0x9E670000 | (u32(S0) << 5) | R(rd)) // fmov d, x
+        self.mov_imm(S0, (u64(3) << 32) | 2, true)
+        self.put(0x4E181C00 | (u32(S0) << 5) | R(rd)) // ins .d[1], x
+        self.dst_done(v, rd)
         return
     }
     if x.op == ir.IR_SHL || x.op == ir.IR_SHR { // by an immediate; shr is arithmetic, as i32's
         n: u32 = u32(self.x(self.arg(v, 1)).imm)
-        rn: int = mut self.opnd(self.arg(v, 0), FS0)
+        rn: int = self.opnd(self.arg(v, 0), FS0)
         rd: int = self.dst(v)
         w: u32 = 0x4F000400 | ((64 - n) << 16)
         if x.op == ir.IR_SHL { w = 0x4F005400 | ((32 + n) << 16) }
-        mut self.put(w | (R(rn) << 5) | R(rd))
-        mut self.dst_done(v, rd)
+        self.put(w | (R(rn) << 5) | R(rd))
+        self.dst_done(v, rd)
         return
     }
     l: int = self.arg(v, 0)
@@ -1794,55 +1794,55 @@ A64.vector(mut self, v: int) {
         }
     }
     if ot == ir.IT_V2F64 { w |= 0x00400000 } // sz: .2d lanes (arithmetic only)
-    rn: int = mut self.opnd(l, FS0)
+    rn: int = self.opnd(l, FS0)
     rm: int = 0
-    if r >= 0 { rm = mut self.opnd(r, FS1) }
+    if r >= 0 { rm = self.opnd(r, FS1) }
     rd: int = self.dst(v)
-    mut self.put(w | (R(rm) << 16) | (R(rn) << 5) | R(rd))
-    if op == ir.IR_NE { mut self.put(0x6E205800 | (R(rd) << 5) | R(rd)) } // mvn
-    mut self.dst_done(v, rd)
+    self.put(w | (R(rm) << 16) | (R(rn) << 5) | R(rd))
+    if op == ir.IR_NE { self.put(0x6E205800 | (R(rd) << 5) | R(rd)) } // mvn
+    self.dst_done(v, rd)
 }
 
 /* Truncates, then extends by the target's signedness, in register form. */
-A64.cast(mut self, v: int) {
+A64.cast(self, v: int) {
     x: IrIns = self.x(v)
     to: u8 = x.ty
     from: u8 = self.x(self.arg(v, 0)).ty
     if is_fp(to) || is_fp(from) {
-        mut self.fcast(v)
+        self.fcast(v)
         return
     }
     fb: int = ir.type_bits(from)
     tb: int = ir.type_bits(to)
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
+    rn: int = self.opnd(self.arg(v, 0), S0)
     rd: int = self.dst(v)
     if cast_in_place(to, from) {
-        mut self.mov_reg(rd, rn) // none when it shares its operand's location
+        self.mov_reg(rd, rn) // none when it shares its operand's location
     } else if tb == 64 && fb < 64 && ir.type_signed(from) {
-        mut self.put(0x93407C00 | (u32(rn) << 5) | u32(rd)) // sxtw
+        self.put(0x93407C00 | (u32(rn) << 5) | u32(rd)) // sxtw
     } else if tb == 64 && fb < 64 {
-        mut self.put(0x2A0003E0 | (u32(rn) << 16) | u32(rd)) // mov w
+        self.put(0x2A0003E0 | (u32(rn) << 16) | u32(rd)) // mov w
     } else {
-        mut self.ext(to, rd, rn)
+        self.ext(to, rd, rn)
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
 /* fmov between a float and an integer register of its width (a 32-bit one
  * zeroes the upper bits, so a u32 result is held zero-extended).
  */
-A64.bitcast(mut self, v: int) {
+A64.bitcast(self, v: int) {
     x: IrIns = self.x(v)
     to: u8 = x.ty
     from: u8 = self.x(self.arg(v, 0)).ty
     rn: int = 0
-    if is_fp(from) { rn = mut self.opnd(self.arg(v, 0), FS0) } else { rn = mut self.opnd(self.arg(v, 0), S0) }
+    if is_fp(from) { rn = self.opnd(self.arg(v, 0), FS0) } else { rn = self.opnd(self.arg(v, 0), S0) }
     rd: int = self.dst(v)
     w: bool = to == ir.IT_F32 || from == ir.IT_F32
     op: u32 = sel(w, 0x1E260000, 0x9E660000)
     if is_fp(to) { op = sel(w, 0x1E270000, 0x9E670000) }
-    mut self.put(op | (R(rn) << 5) | R(rd))
-    mut self.dst_done(v, rd)
+    self.put(op | (R(rn) << 5) | R(rd))
+    self.dst_done(v, rd)
 }
 
 /* Bit operations on an unsigned value's register form: popcount through v31
@@ -1851,78 +1851,78 @@ A64.bitcast(mut self, v: int) {
  * width; rev16, rev, or none for a byte swap; a rotation by rorv, left by the
  * negated count, a narrow value first repeated across the word.
  */
-A64.bitop(mut self, v: int) {
+A64.bitop(self, v: int) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     nbits: int = ir.type_bits(t)
     sf: u32 = sfb(t)
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
+    rn: int = self.opnd(self.arg(v, 0), S0)
     if x.op == ir.IR_ROTL || x.op == ir.IR_ROTR {
-        rm: int = mut self.opnd(self.arg(v, 1), S1)
+        rm: int = self.opnd(self.arg(v, 1), S1)
         if nbits < 32 {
-            mut self.put(0x2A000000 | sel(nbits == 8, 0x2000, 0x4000) | (u32(rn) << 16) | (u32(rn) << 5) | u32(S0))
-            if nbits == 8 { mut self.put(0x2A004000 | (u32(S0) << 16) | (u32(S0) << 5) | u32(S0)) } // orr w16, w16, w16, lsl #16
+            self.put(0x2A000000 | sel(nbits == 8, 0x2000, 0x4000) | (u32(rn) << 16) | (u32(rn) << 5) | u32(S0))
+            if nbits == 8 { self.put(0x2A004000 | (u32(S0) << 16) | (u32(S0) << 5) | u32(S0)) } // orr w16, w16, w16, lsl #16
             rn = S0
         }
         if x.op == ir.IR_ROTL {
-            mut self.put(sf | 0x4B0003E0 | (u32(rm) << 16) | u32(S2)) // neg
+            self.put(sf | 0x4B0003E0 | (u32(rm) << 16) | u32(S2)) // neg
             rm = S2
         }
         rd: int = self.dst(v)
-        mut self.put(sf | 0x1AC02C00 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd)) // rorv
-        if nbits < 32 { mut self.wrap(t, rd) }
-        mut self.dst_done(v, rd)
+        self.put(sf | 0x1AC02C00 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd)) // rorv
+        if nbits < 32 { self.wrap(t, rd) }
+        self.dst_done(v, rd)
         return
     }
     rd: int = self.dst(v)
     if x.op == ir.IR_POPCNT {
-        mut self.put(sel(sf != 0, 0x9E670000, 0x1E270000) | (u32(rn) << 5) | R(FS0)) // fmov d31, x / s31, w
-        mut self.put(0x0E205800 | (R(FS0) << 5) | R(FS0)) // cnt v31.8b, v31.8b
-        mut self.put(0x0E31B800 | (R(FS0) << 5) | R(FS0)) // addv b31, v31.8b
-        mut self.put(0x0E013C00 | (R(FS0) << 5) | u32(rd)) // umov w, v31.b[0]
+        self.put(sel(sf != 0, 0x9E670000, 0x1E270000) | (u32(rn) << 5) | R(FS0)) // fmov d31, x / s31, w
+        self.put(0x0E205800 | (R(FS0) << 5) | R(FS0)) // cnt v31.8b, v31.8b
+        self.put(0x0E31B800 | (R(FS0) << 5) | R(FS0)) // addv b31, v31.8b
+        self.put(0x0E013C00 | (R(FS0) << 5) | u32(rd)) // umov w, v31.b[0]
     } else if x.op == ir.IR_CLZ {
-        mut self.put(sf | 0x5AC01000 | (u32(rn) << 5) | u32(rd))
-        if nbits < 32 { mut self.put(0x51000000 | (u32(32 - nbits) << 10) | (u32(rd) << 5) | u32(rd)) }
+        self.put(sf | 0x5AC01000 | (u32(rn) << 5) | u32(rd))
+        if nbits < 32 { self.put(0x51000000 | (u32(32 - nbits) << 10) | (u32(rd) << 5) | u32(rd)) }
     } else if x.op == ir.IR_CTZ {
         if nbits < 32 {
-            mut self.mov_imm(S1, u64(1) << u64(nbits), false)
-            mut self.put(0x2A000000 | (u32(S1) << 16) | (u32(rn) << 5) | u32(S1)) // orr w17, wn, w17
+            self.mov_imm(S1, u64(1) << u64(nbits), false)
+            self.put(0x2A000000 | (u32(S1) << 16) | (u32(rn) << 5) | u32(S1)) // orr w17, wn, w17
             rn = S1
         }
-        mut self.put(sf | 0x5AC00000 | (u32(rn) << 5) | u32(rd)) // rbit
-        mut self.put(sf | 0x5AC01000 | (u32(rd) << 5) | u32(rd)) // clz
+        self.put(sf | 0x5AC00000 | (u32(rn) << 5) | u32(rd)) // rbit
+        self.put(sf | 0x5AC01000 | (u32(rd) << 5) | u32(rd)) // clz
     } else { // IR_BSWAP
         if nbits == 8 {
-            mut self.mov_reg(rd, rn)
+            self.mov_reg(rd, rn)
         } else {
             op: u32 = 0xDAC00C00
             if nbits == 16 { op = 0x5AC00400 } else if nbits == 32 { op = 0x5AC00800 }
-            mut self.put(op | (u32(rn) << 5) | u32(rd))
+            self.put(op | (u32(rn) << 5) | u32(rd))
         }
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
 /* Exact IEEE operations: fsqrt, frintm (floor), frintp (ceil), and fmadd,
  * which rounds once.
  */
-A64.fexact(mut self, v: int) {
+A64.fexact(self, v: int) {
     x: IrIns = self.x(v)
     ty: u32 = ftype(x.ty)
-    rn: int = mut self.opnd(self.arg(v, 0), FS0)
+    rn: int = self.opnd(self.arg(v, 0), FS0)
     if x.op == ir.IR_FMA {
-        rm: int = mut self.opnd(self.arg(v, 1), FS1)
-        ra: int = mut self.opnd(self.arg(v, 2), FS2)
+        rm: int = self.opnd(self.arg(v, 1), FS1)
+        ra: int = self.opnd(self.arg(v, 2), FS2)
         rd: int = self.dst(v)
-        mut self.put(0x1F000000 | ty | (R(rm) << 16) | (R(ra) << 10) | (R(rn) << 5) | R(rd))
-        mut self.dst_done(v, rd)
+        self.put(0x1F000000 | ty | (R(rm) << 16) | (R(ra) << 10) | (R(rn) << 5) | R(rd))
+        self.dst_done(v, rd)
         return
     }
     op: u32 = 0x1E24C000 // ceil
     if x.op == ir.IR_SQRT { op = 0x1E21C000 } else if x.op == ir.IR_FLOOR { op = 0x1E254000 }
     rd: int = self.dst(v)
-    mut self.put(op | ty | (R(rn) << 5) | R(rd))
-    mut self.dst_done(v, rd)
+    self.put(op | ty | (R(rn) << 5) | R(rd))
+    self.dst_done(v, rd)
 }
 
 // --- memory -----------------------------------------------------------------
@@ -1942,30 +1942,30 @@ mem_op(t: u8, load: bool): u32 {
 }
 
 /* op rt, [rn + off]: scaled, unscaled, or through x15 as a register offset. */
-A64.mem(mut self, op: u32, size: int, rt: int, rn: int, off: i64) {
+A64.mem(self, op: u32, size: int, rt: int, rn: int, off: i64) {
     tn: u32 = (u32(rn) << 5) | R(rt)
     sz: i64 = i64(size)
     if off >= 0 && off % sz == 0 && off / sz <= 4095 {
-        mut self.put(op | (u32(off / sz) << 10) | tn)
+        self.put(op | (u32(off / sz) << 10) | tn)
     } else if off >= -256 && off <= 255 {
-        mut self.put((op & ~u32(0x01000000)) | ((u32(off) & 0x1FF) << 12) | tn)
+        self.put((op & ~u32(0x01000000)) | ((u32(off) & 0x1FF) << 12) | tn)
     } else {
-        mut self.mov_imm(S2, u64(off), true)
-        mut self.put((op & ~u32(0x01000000)) | 0x00206800 | (u32(S2) << 16) | tn)
+        self.mov_imm(S2, u64(off), true)
+        self.put((op & ~u32(0x01000000)) | 0x00206800 | (u32(S2) << 16) | tn)
     }
 }
 
 /* adrp rd, name@PAGE, then the page offset in the instruction w (add or a
  * load/store with a zero offset)
  */
-A64.page_ref(mut self, rd: int, name: string, w: u32) {
-    s: int = mut self.o.intern(name)
+A64.page_ref(self, rd: int, name: string, w: u32) {
+    s: int = self.o.intern(name)
     site: u32 = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, s, true, 2, true, macho.RM_PAGE21)
-    mut self.put(0x90000000 | u32(rd))
+    self.o.reloc(macho.SEC_TEXT, site, s, true, 2, true, macho.RM_PAGE21)
+    self.put(0x90000000 | u32(rd))
     site = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, s, false, 2, true, macho.RM_PAGEOFF12)
-    mut self.put(w)
+    self.o.reloc(macho.SEC_TEXT, site, s, false, 2, true, macho.RM_PAGEOFF12)
+    self.put(w)
 }
 
 /* An atomic operation (Stdlib #25) on the word at args[0]: ldar/stlr for an
@@ -1975,12 +1975,12 @@ A64.page_ref(mut self, rd: int, name: string, w: u32) {
  * stop being a load for ordering. Scratch: x15 holds a negated or inverted
  * operand, x16 the pointer, x17 the operand or a cas's expected word.
  */
-A64.atomic(mut self, v: int) {
+A64.atomic(self, v: int) {
     x: IrIns = self.x(v)
     kind: i32 = x.aux
     order: u64 = x.imm
     if kind == ir.AK_FENCE {
-        if order == ir.AO_ACQUIRE { mut self.put(0xD50339BF) } else { mut self.put(0xD5033BBF) } // dmb ishld, dmb ish
+        if order == ir.AO_ACQUIRE { self.put(0xD50339BF) } else { self.put(0xD5033BBF) } // dmb ishld, dmb ish
         return
     }
     t: u8 = x.ty
@@ -1991,45 +1991,45 @@ A64.atomic(mut self, v: int) {
     rel: u32 = 0
     if order == ir.AO_ACQUIRE || order == ir.AO_ACQ_REL || order == ir.AO_SEQ_CST { acq = 1 }
     if order == ir.AO_RELEASE || order == ir.AO_ACQ_REL || order == ir.AO_SEQ_CST { rel = 1 }
-    rn: int = mut self.opnd(self.arg(v, 0), S0)
-    if (x.flags & ir.IRF_CHECKED) != 0 { mut self.null_fail_if_zero(rn) }
+    rn: int = self.opnd(self.arg(v, 0), S0)
+    if (x.flags & ir.IRF_CHECKED) != 0 { self.null_fail_if_zero(rn) }
     if kind == ir.AK_LOAD {
         rd: int = self.dst(v)
         base: u32 = sel(acq != 0, sel(w64, 0xC8DFFC00, 0x88DFFC00), sel(w64, 0xF9400000, 0xB9400000)) // ldar, ldr
-        mut self.put(base | (u32(rn) << 5) | R(rd))
-        mut self.dst_done(v, rd)
+        self.put(base | (u32(rn) << 5) | R(rd))
+        self.dst_done(v, rd)
     } else if kind == ir.AK_STORE {
-        rs: int = mut self.opnd(self.arg(v, 1), S1)
+        rs: int = self.opnd(self.arg(v, 1), S1)
         base: u32 = sel(rel != 0, sel(w64, 0xC89FFC00, 0x889FFC00), sel(w64, 0xF9000000, 0xB9000000)) // stlr, str
-        mut self.put(base | (u32(rn) << 5) | R(rs))
+        self.put(base | (u32(rn) << 5) | R(rs))
     } else if kind == ir.AK_CAS {
-        re: int = mut self.opnd(self.arg(v, 1), S1)
-        mut self.mov_reg(S1, re) // cas overwrites its expected register with the observed word
-        rd: int = mut self.opnd(self.arg(v, 2), S2)
-        mut self.put(sz | 0x08A07C00 | (acq << 22) | (rel << 15) | (u32(S1) << 16) | (u32(rn) << 5) | R(rd))
+        re: int = self.opnd(self.arg(v, 1), S1)
+        self.mov_reg(S1, re) // cas overwrites its expected register with the observed word
+        rd: int = self.opnd(self.arg(v, 2), S2)
+        self.put(sz | 0x08A07C00 | (acq << 22) | (rel << 15) | (u32(S1) << 16) | (u32(rn) << 5) | R(rd))
         rr: int = self.dst(v)
-        mut self.mov_reg(rr, S1)
-        mut self.dst_done(v, rr)
+        self.mov_reg(rr, S1)
+        self.dst_done(v, rr)
     } else {
-        rs: int = mut self.opnd(self.arg(v, 1), S1)
+        rs: int = self.opnd(self.arg(v, 1), S1)
         opc: u32 = 3 << 12 // ldset
         if kind == ir.AK_XCHG { opc = 0x8000 } else if kind == ir.AK_ADD || kind == ir.AK_SUB { opc = 0 } else if kind == ir.AK_AND { opc = 1 << 12 } else if kind == ir.AK_XOR { opc = 2 << 12 } // swp, ldadd, ldclr, ldeor
         if kind == ir.AK_SUB { // x - y is x + -y
-            mut self.put(sel(w64, 0xCB0003E0, 0x4B0003E0) | (u32(rs) << 16) | R(S2))
+            self.put(sel(w64, 0xCB0003E0, 0x4B0003E0) | (u32(rs) << 16) | R(S2))
             rs = S2
         } else if kind == ir.AK_AND { // x & y is x & ~~y: clear the inverted bits
-            mut self.put(sel(w64, 0xAA2003E0, 0x2A2003E0) | (u32(rs) << 16) | R(S2))
+            self.put(sel(w64, 0xAA2003E0, 0x2A2003E0) | (u32(rs) << 16) | R(S2))
             rs = S2
         }
         rd: int = S2
         if self.ra.reg.get(v) >= 0 { rd = self.ra.reg.get(v) }
-        mut self.put(sz | 0x38200000 | (acq << 23) | (rel << 22) | (u32(rs) << 16) | opc | (u32(rn) << 5) | R(rd))
-        mut self.dst_done(v, rd)
+        self.put(sz | 0x38200000 | (acq << 23) | (rel << 22) | (u32(rs) << 16) | opc | (u32(rn) << 5) | R(rd))
+        self.dst_done(v, rd)
     }
 }
 
 /* Loads or stores v. */
-A64.access(mut self, v: int) {
+A64.access(self, v: int) {
     x: IrIns = self.x(v)
     load: bool = x.op == ir.IR_LOAD
     t: u8 = x.ty
@@ -2045,15 +2045,15 @@ A64.access(mut self, v: int) {
         if is_fp(t) && self.is_const(s) { // a float constant stores as its bits
             op = mem_op(ir.IT_U32, false)
             if t == ir.IT_F64 { op = mem_op(ir.IT_U64, false) }
-            if b != 0 { mut self.mov_imm(S1, b, t == ir.IT_F64) }
+            if b != 0 { self.mov_imm(S1, b, t == ir.IT_F64) }
             rt = 31
             if b != 0 { rt = S1 }
         } else if self.is_const(s) && b == 0 {
             rt = 31 // zr
         } else if is_fp(t) || is_vec(t) {
-            rt = mut self.opnd(s, FS1)
+            rt = self.opnd(s, FS1)
         } else {
-            rt = mut self.opnd(s, S1)
+            rt = self.opnd(s, S1)
         }
     }
     p: int = self.arg(v, 0)
@@ -2064,8 +2064,8 @@ A64.access(mut self, v: int) {
         rn = 31
         off += i64(self.obj.get(p))
     } else if self.ra.fused.get(p) && px.op == ir.IR_GLOBAL {
-        mut self.page_ref(S0, px.name, op | (u32(S0) << 5) | R(rt))
-        if load { mut self.dst_done(v, rt) }
+        self.page_ref(S0, px.name, op | (u32(S0) << 5) | R(rt))
+        if load { self.dst_done(v, rt) }
         return
     } else if self.ra.fused.get(p) { // an unchecked pointer offset
         n: int = self.arg(p, 1)
@@ -2077,34 +2077,34 @@ A64.access(mut self, v: int) {
                 rn = 31
                 off += i64(self.obj.get(base))
             } else {
-                rn = mut self.opnd(base, S0)
+                rn = self.opnd(base, S0)
             }
         } else {
-            rn = mut self.opnd(base, S0)
-            ri: int = mut self.opnd(n, S2)
-            mut self.put((op & ~u32(0x01000000)) | 0x00206800 | sel(px.imm > 1, 0x1000, 0) | (u32(ri) << 16) | (u32(rn) << 5) | R(rt))
-            if load { mut self.dst_done(v, rt) }
+            rn = self.opnd(base, S0)
+            ri: int = self.opnd(n, S2)
+            self.put((op & ~u32(0x01000000)) | 0x00206800 | sel(px.imm > 1, 0x1000, 0) | (u32(ri) << 16) | (u32(rn) << 5) | R(rt))
+            if load { self.dst_done(v, rt) }
             return
         }
     } else {
-        rn = mut self.opnd(p, S0)
-        if (x.flags & ir.IRF_CHECKED) != 0 { mut self.null_fail_if_zero(rn) }
+        rn = self.opnd(p, S0)
+        if (x.flags & ir.IRF_CHECKED) != 0 { self.null_fail_if_zero(rn) }
     }
-    mut self.mem(op, size, rt, rn, off)
-    if load { mut self.dst_done(v, rt) }
+    self.mem(op, size, rt, rn, off)
+    if load { self.dst_done(v, rt) }
 }
 
 /* rd = the address of a C global from its GOT slot, which the dynamic linker
  * fills: adrp rd, name@GOTPAGE; ldr rd, [rd, name@GOTPAGEOFF].
  */
-A64.got_ref(mut self, rd: int, name: string) {
-    s: int = mut self.o.intern(name)
+A64.got_ref(self, rd: int, name: string) {
+    s: int = self.o.intern(name)
     site: u32 = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, s, true, 2, true, macho.RM_GOT_LOAD_PAGE21)
-    mut self.put(0x90000000 | u32(rd))
+    self.o.reloc(macho.SEC_TEXT, site, s, true, 2, true, macho.RM_GOT_LOAD_PAGE21)
+    self.put(0x90000000 | u32(rd))
     site = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, s, false, 2, true, macho.RM_GOT_LOAD_PAGEOFF12)
-    mut self.put(0xF9400000 | (u32(rd) << 5) | u32(rd))
+    self.o.reloc(macho.SEC_TEXT, site, s, false, 2, true, macho.RM_GOT_LOAD_PAGEOFF12)
+    self.put(0xF9400000 | (u32(rd) << 5) | u32(rd))
 }
 
 /* rd = this thread's address of thread-local name, from the thunk its
@@ -2112,51 +2112,51 @@ A64.got_ref(mut self, rd: int, name: string) {
  * ldr x16, [x0]; blr x16. The thunk disturbs only x0, x16, x17, x30, and the
  * flags; allocation keeps a value live across it out of x0.
  */
-A64.thread_ref(mut self, rd: int, name: string) {
-    s: int = mut self.o.intern(name)
+A64.thread_ref(self, rd: int, name: string) {
+    s: int = self.o.intern(name)
     site: u32 = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, s, true, 2, true, macho.RM_TLVP_LOAD_PAGE21)
-    mut self.put(0x90000000)
+    self.o.reloc(macho.SEC_TEXT, site, s, true, 2, true, macho.RM_TLVP_LOAD_PAGE21)
+    self.put(0x90000000)
     site = self.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, s, false, 2, true, macho.RM_TLVP_LOAD_PAGEOFF12)
-    mut self.put(0xF9400000)
-    mut self.put(0xF9400000 | u32(S0)) // ldr x16, [x0]
-    mut self.put(0xD63F0000 | (u32(S0) << 5)) // blr x16
-    if rd != 0 { mut self.mov_reg(rd, 0) }
+    self.o.reloc(macho.SEC_TEXT, site, s, false, 2, true, macho.RM_TLVP_LOAD_PAGEOFF12)
+    self.put(0xF9400000)
+    self.put(0xF9400000 | u32(S0)) // ldr x16, [x0]
+    self.put(0xD63F0000 | (u32(S0) << 5)) // blr x16
+    if rd != 0 { self.mov_reg(rd, 0) }
 }
 
-A64.global(mut self, v: int) {
+A64.global(self, v: int) {
     rd: int = self.dst(v)
     x: IrIns = self.x(v)
     if thread_data(*self.s, x) {
-        mut self.thread_ref(rd, x.name)
+        self.thread_ref(rd, x.name)
     } else if got_data(*self.s, x) {
-        mut self.got_ref(rd, x.name)
+        self.got_ref(rd, x.name)
     } else {
-        mut self.page_ref(rd, x.name, 0x91000000 | (u32(rd) << 5) | u32(rd))
+        self.page_ref(rd, x.name, 0x91000000 | (u32(rd) << 5) | u32(rd))
     }
-    mut self.dst_done(v, rd)
+    self.dst_done(v, rd)
 }
 
-A64.string_bytes(mut self, v: int) {
+A64.string_bytes(self, v: int) {
     x: IrIns = self.x(v)
-    s: int = mut self.o.string(x.name[..usize(x.imm)])
+    s: int = self.o.string(x.name[..usize(x.imm)])
     rd: int = self.dst(v)
-    mut self.page_ref(rd, self.o.syms.get(s).name, 0x91000000 | (u32(rd) << 5) | u32(rd))
-    mut self.dst_done(v, rd)
+    self.page_ref(rd, self.o.syms.get(s).name, 0x91000000 | (u32(rd) << 5) | u32(rd))
+    self.dst_done(v, rd)
 }
 
 /* rd = rp +/- rn * scale: debug checks a null start, the scaled offset's
  * overflow, and a result past either end of the address space.
  */
-A64.pointer_offset(mut self, v: int) {
+A64.pointer_offset(self, v: int) {
     x: IrIns = self.x(v)
     sub: bool = x.op == ir.IR_PSUB
     chk: bool = (x.flags & ir.IRF_CHECKED) != 0
     scale: u64 = x.imm
     n: int = self.arg(v, 1)
-    rp: int = mut self.opnd(self.arg(v, 0), S0)
-    if chk { mut self.fail_if_zero(rp, true, false) }
+    rp: int = self.opnd(self.arg(v, 0), S0)
+    if chk { self.fail_if_zero(rp, true, false) }
     k: int = -1
     if scale != 0 && (scale & (scale - 1)) == 0 { k = int(bits.ctz(scale)) }
     adds: u32 = sel(chk, 0x20000000, 0)
@@ -2166,44 +2166,44 @@ A64.pointer_offset(mut self, v: int) {
         if d <= 0xFFF || (d <= 0xFFF000 && (d & 0xFFF) == 0) {
             imm: u32 = 0x400000 | (u32(d >> 12) << 10)
             if d <= 0xFFF { imm = u32(d) << 10 }
-            mut self.put(sel(sub, 0xD1000000, 0x91000000) | adds | imm | (u32(rp) << 5) | u32(rd))
+            self.put(sel(sub, 0xD1000000, 0x91000000) | adds | imm | (u32(rp) << 5) | u32(rd))
         } else {
-            mut self.mov_imm(S1, d, true)
-            mut self.put(sel(sub, 0xCB000000, 0x8B000000) | adds | (u32(S1) << 16) | (u32(rp) << 5) | u32(rd))
+            self.mov_imm(S1, d, true)
+            self.put(sel(sub, 0xCB000000, 0x8B000000) | adds | (u32(S1) << 16) | (u32(rp) << 5) | u32(rd))
         }
-        if chk { mut self.fail_if(sel(sub, C_LO, C_HS)) }
-        mut self.dst_done(v, rd)
+        if chk { self.fail_if(sel(sub, C_LO, C_HS)) }
+        self.dst_done(v, rd)
         return
     }
-    rn: int = mut self.opnd(n, S1)
+    rn: int = self.opnd(n, S1)
     if chk && scale != 1 { // the scaled offset must fit in 64 bits
         if k >= 0 {
-            mut self.put(0xD340FC00 | (u32(64 - k) << 16) | (u32(rn) << 5) | u32(S2)) // lsr x15, rn, #(64 - k)
+            self.put(0xD340FC00 | (u32(64 - k) << 16) | (u32(rn) << 5) | u32(S2)) // lsr x15, rn, #(64 - k)
         } else {
-            mut self.mov_imm(S2, scale, true)
-            mut self.put(0x9BC07C00 | (u32(S2) << 16) | (u32(rn) << 5) | u32(S2)) // umulh
+            self.mov_imm(S2, scale, true)
+            self.put(0x9BC07C00 | (u32(S2) << 16) | (u32(rn) << 5) | u32(S2)) // umulh
         }
-        mut self.fail_if_zero(S2, true, true)
+        self.fail_if_zero(S2, true, true)
     }
     rd: int = self.dst(v)
     if k >= 0 { // add/sub rd, rp, rn, lsl #k
-        mut self.put(sel(sub, 0xCB000000, 0x8B000000) | adds | (u32(rn) << 16) | (u32(k) << 10) | (u32(rp) << 5) | u32(rd))
+        self.put(sel(sub, 0xCB000000, 0x8B000000) | adds | (u32(rn) << 16) | (u32(k) << 10) | (u32(rp) << 5) | u32(rd))
     } else if !chk { // madd / msub rd, rn, scale, rp
-        mut self.mov_imm(S2, scale, true)
-        mut self.put(sel(sub, 0x9B008000, 0x9B000000) | (u32(S2) << 16) | (u32(rp) << 10) | (u32(rn) << 5) | u32(rd))
+        self.mov_imm(S2, scale, true)
+        self.put(sel(sub, 0x9B008000, 0x9B000000) | (u32(S2) << 16) | (u32(rp) << 10) | (u32(rn) << 5) | u32(rd))
     } else {
-        mut self.mov_imm(S2, scale, true)
-        mut self.put(0x9B007C00 | (u32(S2) << 16) | (u32(rn) << 5) | u32(S2)) // mul
-        mut self.put(sel(sub, 0xEB000000, 0xAB000000) | (u32(S2) << 16) | (u32(rp) << 5) | u32(rd))
+        self.mov_imm(S2, scale, true)
+        self.put(0x9B007C00 | (u32(S2) << 16) | (u32(rn) << 5) | u32(S2)) // mul
+        self.put(sel(sub, 0xEB000000, 0xAB000000) | (u32(S2) << 16) | (u32(rp) << 5) | u32(rd))
     }
-    if chk { mut self.fail_if(sel(sub, C_LO, C_HS)) }
-    mut self.dst_done(v, rd)
+    if chk { self.fail_if(sel(sub, C_LO, C_HS)) }
+    self.dst_done(v, rd)
 }
 
 /* Stores leaf v to [base + off], through scratch when it is a constant or in
  * a slot; wide stores a narrow integer as 32 bits (a scalar stack argument).
  */
-A64.store_leaf(mut self, v: int, base: int, off: i64, scratch: int, wide: bool) {
+A64.store_leaf(self, v: int, base: int, off: i64, scratch: int, wide: bool) {
     x: IrIns = self.x(v)
     t: u8 = x.ty
     size: int = ir.type_bits(t) / 8
@@ -2217,34 +2217,34 @@ A64.store_leaf(mut self, v: int, base: int, off: i64, scratch: int, wide: bool) 
         rt = 31
         if x.imm != 0 {
             rt = scratch
-            mut self.mov_imm(scratch, x.imm, size == 8)
+            self.mov_imm(scratch, x.imm, size == 8)
         }
     } else if is_fp(t) {
-        if scratch == S0 { rt = mut self.opnd(v, FS0) } else { rt = mut self.opnd(v, FS1) }
+        if scratch == S0 { rt = self.opnd(v, FS0) } else { rt = self.opnd(v, FS1) }
     } else {
-        rt = mut self.opnd(v, scratch)
+        rt = self.opnd(v, scratch)
     }
     if wide && size < 4 && !is_fp(t) {
         op = mem_op(ir.IT_U32, false)
         size = 4
     }
-    mut self.mem(op, size, rt, base, off)
+    self.mem(op, size, rt, base, off)
 }
 
 /* Loads leaf v, when it is used, from [base + off]. */
-A64.load_leaf(mut self, v: int, base: int, off: i64) {
+A64.load_leaf(self, v: int, base: int, off: i64) {
     if self.loc(v) == NOREG { return }
     t: u8 = self.x(v).ty
     rd: int = self.dst(v)
-    mut self.mem(mem_op(t, true), ir.type_bits(t) / 8, rd, base, off)
-    mut self.dst_done(v, rd)
+    self.mem(mem_op(t, true), ir.type_bits(t) / 8, rd, base, off)
+    self.dst_done(v, rd)
 }
 
-A64.str_x(mut self, r: int, base: int, off: u32) { mut self.mem(0xF9000000, 8, r, base, i64(off)) }
-A64.ldr_x(mut self, r: int, base: int, off: u32) { mut self.mem(0xF9400000, 8, r, base, i64(off)) }
+A64.str_x(self, r: int, base: int, off: u32) { self.mem(0xF9000000, 8, r, base, i64(off)) }
+A64.ldr_x(self, r: int, base: int, off: u32) { self.mem(0xF9400000, 8, r, base, i64(off)) }
 
 /* A head L_WORD's registers loaded from, or stored to, its memory at base + off. */
-A64.word_regs(mut self, g: Loc, load: bool, base: int, off: u32) {
+A64.word_regs(self, g: Loc, load: bool, base: int, off: u32) {
     n: int = 1
     if g.nreg != 0 { n = int(g.nreg) }
     sz: int = 8
@@ -2255,7 +2255,7 @@ A64.word_regs(mut self, g: Loc, load: bool, base: int, off: u32) {
         if sz == 4 { t = ir.IT_F32 }
     }
     op: u32 = mem_op(t, load)
-    for i: int in 0..n { mut self.mem(op, sz, g.reg + i, base, i64(off + u32(i * sz))) }
+    for i: int in 0..n { self.mem(op, sz, g.reg + i, base, i64(off + u32(i * sz))) }
 }
 
 /* A direct, extern, or indirect call: memory first (stack arguments, copies
@@ -2264,49 +2264,49 @@ A64.word_regs(mut self, g: Loc, load: bool, base: int, off: u32) {
  * waits in x17. The results then move to the call's value or its
  * projections, the words and a result buffer through memory.
  */
-A64.call(mut self, v: int) {
+A64.call(self, v: int) {
     x: IrIns = self.x(v)
     p: Plan = plan_call(*self.s, *self.fn, v)
-    defer mut p.wipe()
+    defer p.wipe()
     if x.op == ir.IR_CALLI {
-        mut self.mov_reg(S1, mut self.opnd(self.arg(v, 0), S1))
-        if (x.flags & ir.IRF_CHECKED) != 0 { mut self.null_fail_if_zero(S1) }
+        self.mov_reg(S1, self.opnd(self.arg(v, 0), S1))
+        if (x.flags & ir.IRF_CHECKED) != 0 { self.null_fail_if_zero(S1) }
     }
     m: array.Array[Move] = array.Array[Move] {}
-    defer mut m.wipe()
+    defer m.wipe()
     for k: int in 0..p.n {
         g: Loc = p.arg.get(k)
         w: int = self.arg(v, u32(p.k0 + k))
         if g.kind == L_REG {
-            fail(mut m.push(self.move_of(g.reg, w)))
+            fail(m.push(self.move_of(g.reg, w)))
         } else if g.kind == L_STACK {
-            mut self.store_leaf(w, 31, i64(g.soff), S0, g.size == 4)
+            self.store_leaf(w, 31, i64(g.soff), S0, g.size == 4)
         } else if g.kind == L_WORD {
-            mut self.store_leaf(w, 31, i64(g.mem + g.off), S0, false)
+            self.store_leaf(w, 31, i64(g.mem + g.off), S0, false)
         } else { // L_ADDR: the copy, and its address
-            mut self.store_leaf(w, 31, i64(g.mem + g.off), S0, false)
+            self.store_leaf(w, 31, i64(g.mem + g.off), S0, false)
             if !g.head { continue }
             if g.reg >= 0 {
-                fail(mut m.push(Move { dst = g.reg, imm = u64(g.mem), is_const = 2 }))
+                fail(m.push(Move { dst = g.reg, imm = u64(g.mem), is_const = 2 }))
             } else {
-                mut self.add_imm(S0, 31, g.mem)
-                mut self.str_x(S0, 31, g.soff)
+                self.add_imm(S0, 31, g.mem)
+                self.str_x(S0, 31, g.soff)
             }
         }
     }
-    if p.res.len > 0 && p.res.get(0).kind == L_ADDR { fail(mut m.push(Move { dst = 8, imm = u64(p.res.get(0).mem), is_const = 2 })) } // the result buffer
-    if (x.flags & ir.IRF_SRET) != 0 { fail(mut m.push(self.move_of(8, self.arg(v, x.nargs - 1)))) } // the result's memory
-    mut self.parallel_move(mut m, 0)
+    if p.res.len > 0 && p.res.get(0).kind == L_ADDR { fail(m.push(Move { dst = 8, imm = u64(p.res.get(0).mem), is_const = 2 })) } // the result buffer
+    if (x.flags & ir.IRF_SRET) != 0 { fail(m.push(self.move_of(8, self.arg(v, x.nargs - 1)))) } // the result's memory
+    self.parallel_move(&m, 0)
     for g: Loc in p.arg.view()[..usize(p.n)] {
-        if g.kind == L_WORD && g.head { mut self.word_regs(g, true, 31, g.mem) }
+        if g.kind == L_WORD && g.head { self.word_regs(g, true, 31, g.mem) }
     }
     c_call: bool = x.routine || (x.sym != 0 && self.s.sym(x.sym).is_extern)
     if x.op == ir.IR_CALLI {
-        mut self.put(0xD63F0000 | (u32(S1) << 5)) // blr x17
+        self.put(0xD63F0000 | (u32(S1) << 5)) // blr x17
     } else if c_call {
-        mut self.bl_extern(x.name)
+        self.bl_extern(x.name)
     } else {
-        mut self.bl_to(x.name)
+        self.bl_to(x.name)
     }
     own: bool = x.op == ir.IR_CALL && x.sym == 0 && !x.routine // one of the object's runtime routines
     if own && x.name.len >= 15 && mem.equal(x.name[..15], "__ace$registry_") && !mem.equal(x.name, "__ace$registry_leaks") {
@@ -2318,50 +2318,50 @@ A64.call(mut self, v: int) {
         if self.loc(v) == NOREG { return }
         rd: int = self.dst(v)
         if narrow(x.ty) {
-            mut self.ext(x.ty, rd, 0) // an AST-emitted callee may leave it unwrapped
+            self.ext(x.ty, rd, 0) // an AST-emitted callee may leave it unwrapped
         } else if is_fp(x.ty) {
-            mut self.mov_reg(rd, V)
+            self.mov_reg(rd, V)
         } else {
-            mut self.mov_reg(rd, 0)
+            self.mov_reg(rd, 0)
         }
-        mut self.dst_done(v, rd)
+        self.dst_done(v, rd)
         return
     }
-    bb: IrBlock = self.fn.block(x.block)
+    bb: IrBlock = *self.fn.block(x.block)
     first: usize = 0
     for bb.ins.get(first) != v { first += 1 }
     last: usize = first + 1
     for last < bb.ins.len && self.x(bb.ins.get(last)).op == ir.IR_PROJ { last += 1 }
     for g: Loc in p.res.view() {
-        if g.kind == L_WORD && g.head { mut self.word_regs(g, false, 31, g.mem) }
+        if g.kind == L_WORD && g.head { self.word_regs(g, false, 31, g.mem) }
     }
-    mut m.truncate(0)
+    m.truncate(0)
     for i: usize in first + 1..last {
         u: int = bb.ins.get(i)
         r: Loc = p.res.get(usize(self.x(u).imm))
         t: u8 = self.x(u).ty
         if r.kind != L_REG || self.loc(u) == NOREG { continue }
-        if narrow(t) || (t == ir.IT_BOOL && r.word) { mut self.ext(t, r.reg, r.reg) } // an AST-emitted callee may leave it unwrapped
-        fail(mut m.push(Move { dst = self.loc(u), src = r.reg }))
+        if narrow(t) || (t == ir.IT_BOOL && r.word) { self.ext(t, r.reg, r.reg) } // an AST-emitted callee may leave it unwrapped
+        fail(m.push(Move { dst = self.loc(u), src = r.reg }))
     }
-    mut self.parallel_move(mut m, 0)
+    self.parallel_move(&m, 0)
     for i: usize in first + 1..last {
         u: int = bb.ins.get(i)
         r: Loc = p.res.get(usize(self.x(u).imm))
-        if r.kind != L_REG { mut self.load_leaf(u, 31, i64(r.mem + r.off)) }
+        if r.kind != L_REG { self.load_leaf(u, 31, i64(r.mem + r.off)) }
     }
 }
 
 /* A byte routine: its arguments in x15, x16, and x17, a result in x17. It
  * disturbs only x8, x15-x17, x30, v24-v31, and the flags.
  */
-A64.rtcall(mut self, v: int) {
+A64.rtcall(self, v: int) {
     x: IrIns = self.x(v)
     m: array.Array[Move] = array.Array[Move] {}
-    defer mut m.wipe()
-    for k: u32 in 0..x.nargs { fail(mut m.push(self.move_of(S2 + int(k), self.arg(v, k)))) } // x15, x16, x17
-    mut self.parallel_move(mut m, 0)
-    mut self.bl_to(x.name)
+    defer m.wipe()
+    for k: u32 in 0..x.nargs { fail(m.push(self.move_of(S2 + int(k), self.arg(v, k)))) } // x15, x16, x17
+    self.parallel_move(&m, 0)
+    self.bl_to(x.name)
     if mem.equal(x.name, "__ace$mem_fill") {
         self.o.mem_fill_used = true
     } else if mem.equal(x.name, "__ace$mem_compare") {
@@ -2371,21 +2371,21 @@ A64.rtcall(mut self, v: int) {
     }
     if self.loc(v) == NOREG { return }
     rd: int = self.dst(v)
-    mut self.mov_reg(rd, S1)
-    mut self.dst_done(v, rd)
+    self.mov_reg(rd, S1)
+    self.dst_done(v, rd)
 }
 
 /* The mini-assembler's only recognized instructions: nop, svc #imm, brk
  * #imm; lowering already refused anything else, so this only encodes.
  */
-A64.asm_encode(mut self, p: string) {
+A64.asm_encode(self, p: string) {
     n: usize = p.len
     i: usize = 0
     for i < n && (p[i] == ' ' || p[i] == '\t') { i += 1 }
     start: usize = i
     for i < n && p[i] != ' ' && p[i] != '\t' && p[i] != '#' { i += 1 }
     if i - start == 3 && mem.equal(p[start..i], "nop") {
-        mut self.put(NOP)
+        self.put(NOP)
         return
     }
     is_svc: bool = p[start] == 's'
@@ -2395,46 +2395,46 @@ A64.asm_encode(mut self, p: string) {
         imm = imm * 10 + u64(p[i] - '0')
         i += 1
     }
-    mut self.put(sel(is_svc, 0xD4000001, 0xD4200000) | (u32(imm) << 5))
+    self.put(sel(is_svc, 0xD4000001, 0xD4200000) | (u32(imm) << 5))
 }
 
 /* asm "instruction text" { bindings }: moves each "in" binding into its
  * named register, emits the instruction, then moves each "out" binding's
  * register into its projection, narrowed to its declared type.
  */
-A64.asm_select(mut self, v: int) {
+A64.asm_select(self, v: int) {
     x: IrIns = self.x(v)
     ab: ir.IrAsm = self.fn.asms.get(x.asm)
     m: array.Array[Move] = array.Array[Move] {}
-    defer mut m.wipe()
-    for k: u32 in 0..x.nargs { fail(mut m.push(self.move_of(self.fn.asm_regs.get(usize(ab.regs + k)), self.arg(v, k)))) }
-    mut self.parallel_move(mut m, ab.reserved)
-    mut self.asm_encode(x.name)
+    defer m.wipe()
+    for k: u32 in 0..x.nargs { fail(m.push(self.move_of(self.fn.asm_regs.get(usize(ab.regs + k)), self.arg(v, k)))) }
+    self.parallel_move(&m, ab.reserved)
+    self.asm_encode(x.name)
     if ab.nout == 0 { return }
-    bb: IrBlock = self.fn.block(x.block)
+    bb: IrBlock = *self.fn.block(x.block)
     first: usize = 0
     for bb.ins.get(first) != v { first += 1 }
     last: usize = first + 1
     for last < bb.ins.len && self.x(bb.ins.get(last)).op == ir.IR_PROJ { last += 1 }
-    mut m.truncate(0)
+    m.truncate(0)
     for i: usize in first + 1..last {
         u: int = bb.ins.get(i)
         if self.loc(u) == NOREG { continue }
         reg: int = self.fn.asm_regs.get(usize(ab.regs + x.nargs + u32(self.x(u).imm)))
         t: u8 = self.x(u).ty
-        if narrow(t) { mut self.ext(t, reg, reg) }
-        fail(mut m.push(Move { dst = self.loc(u), src = reg }))
+        if narrow(t) { self.ext(t, reg, reg) }
+        fail(m.push(Move { dst = self.loc(u), src = reg }))
     }
-    mut self.parallel_move(mut m, ab.reserved)
+    self.parallel_move(&m, ab.reserved)
 }
 
 // --- emission ---------------------------------------------------------------
 
-A64.line_row(mut self, at: u32) {
+A64.line_row(self, at: u32) {
     if at == 0 || at == self.last_at || self.s.node(at).line == 0 { return }
     self.last_at = at
     n: parser.Node = self.s.node(at)
-    mut self.o.line(self.here(), n.line, n.col, self.s.path_of(at))
+    self.o.line(self.here(), n.line, n.col, self.s.path_of(at))
 }
 
 A64.next_block(self, b: int): int {
@@ -2443,89 +2443,89 @@ A64.next_block(self, b: int): int {
     return -1
 }
 
-A64.jump(mut self, from: int, to: int) {
-    if self.next_block(from) != to { mut self.branch_add(0x14000000, to, false) }
+A64.jump(self, from: int, to: int) {
+    if self.next_block(from) != to { self.branch_add(0x14000000, to, false) }
 }
 
-A64.phi_moves(mut self, b: int) {
+A64.phi_moves(self, b: int) {
     s: int = self.fn.block(b).succ0
-    sb: IrBlock = self.fn.block(s)
+    sb: IrBlock = *self.fn.block(s)
     p: u32 = 0
     for sb.preds.get(usize(p)) != b { p += 1 }
     m: array.Array[Move] = array.Array[Move] {}
-    defer mut m.wipe()
+    defer m.wipe()
     for phi: int in sb.ins.view() {
         if self.x(phi).op != ir.IR_PHI { break }
         d: int = self.loc(phi)
-        if d != NOREG { fail(mut m.push(self.move_of(d, self.arg(phi, p)))) }
+        if d != NOREG { fail(m.push(self.move_of(d, self.arg(phi, p)))) }
     }
-    if m.len > 0 { mut self.parallel_move(mut m, 0) }
+    if m.len > 0 { self.parallel_move(&m, 0) }
 }
 
-A64.terminator(mut self, b: int, v: int) {
+A64.terminator(self, b: int, v: int) {
     x: IrIns = self.x(v)
-    bb: IrBlock = self.fn.block(b)
+    bb: IrBlock = *self.fn.block(b)
     if x.op == ir.IR_JMP {
-        mut self.phi_moves(b)
-        mut self.jump(b, bb.succ0)
+        self.phi_moves(b)
+        self.jump(b, bb.succ0)
         return
     }
     if x.op == ir.IR_RET {
         m: array.Array[Move] = array.Array[Move] {}
-        defer mut m.wipe()
-        if x.nargs > 0 && self.rin.get(0).kind == L_ADDR { mut self.ldr_x(S0, 31, self.save_at + self.rin.get(0).mem) } // the caller's buffer
+        defer m.wipe()
+        if x.nargs > 0 && self.rin.get(0).kind == L_ADDR { self.ldr_x(S0, 31, self.save_at + self.rin.get(0).mem) } // the caller's buffer
         for k: u32 in 0..x.nargs {
             r: Loc = self.rin.get(usize(k))
             if r.kind == L_REG {
-                fail(mut m.push(self.move_of(r.reg, self.arg(v, k))))
+                fail(m.push(self.move_of(r.reg, self.arg(v, k))))
             } else if r.kind == L_WORD {
-                mut self.store_leaf(self.arg(v, k), 31, i64(self.save_at + r.mem + r.off), S0, false)
+                self.store_leaf(self.arg(v, k), 31, i64(self.save_at + r.mem + r.off), S0, false)
             } else {
-                mut self.store_leaf(self.arg(v, k), S0, i64(r.off), S1, false)
+                self.store_leaf(self.arg(v, k), S0, i64(r.off), S1, false)
             }
         }
-        mut self.parallel_move(mut m, 0)
+        self.parallel_move(&m, 0)
         for k: u32 in 0..x.nargs {
             r: Loc = self.rin.get(usize(k))
-            if r.kind == L_WORD && r.head { mut self.word_regs(r, true, 31, self.save_at + r.mem) }
+            if r.kind == L_WORD && r.head { self.word_regs(r, true, 31, self.save_at + r.mem) }
         }
-        mut self.epilogue()
+        self.epilogue()
         return
     }
     c: int = self.arg(v, 0)
     k: Cond = Cond {}
     if self.ra.fused.get(c) {
-        k = mut self.compare(c, true)
+        k = self.compare(c, true)
     } else {
-        reg: int = mut self.opnd(c, S0)
+        reg: int = self.opnd(c, S0)
         k = Cond { cbz = true, reg = reg, nz = true }
     }
     t: int = bb.succ0
     f: int = bb.succ1
     next: int = self.next_block(b)
     if f == next {
-        mut self.branch_if(k, t)
+        self.branch_if(k, t)
     } else if t == next {
-        mut self.branch_if(invert(k), f)
+        self.branch_if(invert(k), f)
     } else {
-        mut self.branch_if(k, t)
-        mut self.branch_add(0x14000000, f, false)
+        self.branch_if(k, t)
+        self.branch_add(0x14000000, f, false)
     }
 }
 
 /* A debug check: a branch to its site's stub when its condition is false. */
-A64.check(mut self, v: int) {
+A64.check(self, v: int) {
     x: IrIns = self.x(v)
     c: int = self.arg(v, 0)
     t: Cond = Cond {}
     if self.ra.fused.get(c) {
-        t = mut self.compare(c, true)
+        t = self.compare(c, true)
     } else {
-        reg: int = mut self.opnd(c, S0)
+        reg: int = self.opnd(c, S0)
         t = Cond { cbz = true, reg = reg, nz = true }
     }
     if !x.has_name { // the call contract failure, which reports no site
-        mut self.branch_if(invert(t), CFAIL)
+        self.branch_if(invert(t), CFAIL)
         return
     }
     k: usize = 0
@@ -2534,53 +2534,53 @@ A64.check(mut self, v: int) {
         if sx.at == x.at && mem.equal(sx.name, x.name) { break }
         k += 1
     }
-    if k == self.stub.len { fail(mut self.stub.push(v)) }
-    mut self.branch_if(invert(t), LFAIL - int(k))
+    if k == self.stub.len { fail(self.stub.push(v)) }
+    self.branch_if(invert(t), LFAIL - int(k))
 }
 
-A64.emit_block(mut self, b: int) {
-    bb: IrBlock = self.fn.block(b)
+A64.emit_block(self, b: int) {
+    bb: IrBlock = *self.fn.block(b)
     for v: int in bb.ins.view() {
         x: IrIns = self.x(v)
-        if x.op != ir.IR_CHECK { mut self.line_row(x.at) } // its at is the site its stub reports
+        if x.op != ir.IR_CHECK { self.line_row(x.at) } // its at is the site its stub reports
         if self.ra.fused.get(v) { continue }
         if is_vec(x.ty) && x.op != ir.IR_LOAD && x.op != ir.IR_PHI {
-            mut self.vector(v)
+            self.vector(v)
             continue
         }
         if is_fp(x.ty) && (x.op == ir.IR_ADD || x.op == ir.IR_SUB || x.op == ir.IR_MUL || x.op == ir.IR_DIV || x.op == ir.IR_NEG) {
-            mut self.farith(v)
+            self.farith(v)
             continue
         }
         switch x.op {
             ir.IR_CONST, ir.IR_PARAM, ir.IR_RESULT, ir.IR_PHI, ir.IR_PROJ, ir.IR_SLOT {} // a proj's value arrives at its call
-            ir.IR_POPCNT, ir.IR_CLZ, ir.IR_CTZ, ir.IR_BSWAP, ir.IR_ROTL, ir.IR_ROTR { mut self.bitop(v) }
-            ir.IR_SQRT, ir.IR_FLOOR, ir.IR_CEIL, ir.IR_FMA { mut self.fexact(v) }
-            ir.IR_RTCALL { mut self.rtcall(v) }
-            ir.IR_ASM { mut self.asm_select(v) }
-            ir.IR_ADD, ir.IR_SUB { mut self.add_sub(v) }
-            ir.IR_MUL { mut self.mul(v) }
-            ir.IR_MULH { mut self.mul_high(v) }
-            ir.IR_DIV, ir.IR_REM { mut self.div_rem(v) }
-            ir.IR_SHL, ir.IR_SHR { mut self.shift(v) }
-            ir.IR_AND, ir.IR_OR, ir.IR_XOR { mut self.logic(v) }
-            ir.IR_NEG, ir.IR_NOT { mut self.unary(v) }
+            ir.IR_POPCNT, ir.IR_CLZ, ir.IR_CTZ, ir.IR_BSWAP, ir.IR_ROTL, ir.IR_ROTR { self.bitop(v) }
+            ir.IR_SQRT, ir.IR_FLOOR, ir.IR_CEIL, ir.IR_FMA { self.fexact(v) }
+            ir.IR_RTCALL { self.rtcall(v) }
+            ir.IR_ASM { self.asm_select(v) }
+            ir.IR_ADD, ir.IR_SUB { self.add_sub(v) }
+            ir.IR_MUL { self.mul(v) }
+            ir.IR_MULH { self.mul_high(v) }
+            ir.IR_DIV, ir.IR_REM { self.div_rem(v) }
+            ir.IR_SHL, ir.IR_SHR { self.shift(v) }
+            ir.IR_AND, ir.IR_OR, ir.IR_XOR { self.logic(v) }
+            ir.IR_NEG, ir.IR_NOT { self.unary(v) }
             ir.IR_EQ, ir.IR_NE, ir.IR_LT, ir.IR_LE, ir.IR_GT, ir.IR_GE {
-                k: Cond = mut self.compare(v, false)
+                k: Cond = self.compare(v, false)
                 rd: int = self.dst(v)
-                mut self.put(0x1A9F07E0 | ((k.cond ^ 1) << 12) | u32(rd)) // cset
-                mut self.dst_done(v, rd)
+                self.put(0x1A9F07E0 | ((k.cond ^ 1) << 12) | u32(rd)) // cset
+                self.dst_done(v, rd)
             }
-            ir.IR_CAST { mut self.cast(v) }
-            ir.IR_BITCAST { mut self.bitcast(v) }
-            ir.IR_CALL, ir.IR_CALLI { mut self.call(v) }
-            ir.IR_GLOBAL { mut self.global(v) }
-            ir.IR_STR { mut self.string_bytes(v) }
-            ir.IR_LOAD, ir.IR_STORE { mut self.access(v) }
-            ir.IR_ATOMIC { mut self.atomic(v) }
-            ir.IR_PADD, ir.IR_PSUB { mut self.pointer_offset(v) }
-            ir.IR_CHECK { mut self.check(v) }
-            default { mut self.terminator(b, v) }
+            ir.IR_CAST { self.cast(v) }
+            ir.IR_BITCAST { self.bitcast(v) }
+            ir.IR_CALL, ir.IR_CALLI { self.call(v) }
+            ir.IR_GLOBAL { self.global(v) }
+            ir.IR_STR { self.string_bytes(v) }
+            ir.IR_LOAD, ir.IR_STORE { self.access(v) }
+            ir.IR_ATOMIC { self.atomic(v) }
+            ir.IR_PADD, ir.IR_PSUB { self.pointer_offset(v) }
+            ir.IR_CHECK { self.check(v) }
+            default { self.terminator(b, v) }
         }
     }
 }
@@ -2591,39 +2591,39 @@ A64.emit_block(mut self, b: int) {
  * load from memory: the saved words, through the saved or stacked
  * addresses, and the caller's frame.
  */
-A64.params(mut self) {
-    bb: IrBlock = self.fn.block(0)
-    if self.fn.rets.len > 0 && self.rin.get(0).kind == L_ADDR { mut self.str_x(8, 31, self.save_at + self.rin.get(0).mem) }
+A64.params(self) {
+    bb: IrBlock = *self.fn.block(0)
+    if self.fn.rets.len > 0 && self.rin.get(0).kind == L_ADDR { self.str_x(8, 31, self.save_at + self.rin.get(0).mem) }
     for g: Loc in self.pin.view() {
         if g.head && g.kind == L_WORD {
-            mut self.word_regs(g, false, 31, self.save_at + g.mem)
+            self.word_regs(g, false, 31, self.save_at + g.mem)
         } else if g.head && g.kind == L_ADDR && g.reg >= 0 {
-            mut self.str_x(g.reg, 31, self.save_at + g.mem)
+            self.str_x(g.reg, 31, self.save_at + g.mem)
         }
     }
     m: array.Array[Move] = array.Array[Move] {}
-    defer mut m.wipe()
+    defer m.wipe()
     for v: int in bb.ins.view() {
         x: IrIns = self.x(v)
-        if x.op == ir.IR_RESULT && self.loc(v) != NOREG { fail(mut m.push(Move { dst = self.loc(v), src = 8 })) } // the caller's memory
+        if x.op == ir.IR_RESULT && self.loc(v) != NOREG { fail(m.push(Move { dst = self.loc(v), src = 8 })) } // the caller's memory
         if x.op != ir.IR_PARAM || self.loc(v) == NOREG { continue }
         g: Loc = self.pin.get(usize(x.imm))
         if g.kind != L_REG { continue }
-        if narrow(x.ty) || (x.ty == ir.IT_BOOL && g.word) { mut self.ext(x.ty, g.reg, g.reg) }
-        fail(mut m.push(Move { dst = self.loc(v), src = g.reg }))
+        if narrow(x.ty) || (x.ty == ir.IT_BOOL && g.word) { self.ext(x.ty, g.reg, g.reg) }
+        fail(m.push(Move { dst = self.loc(v), src = g.reg }))
     }
-    mut self.parallel_move(mut m, 0)
+    self.parallel_move(&m, 0)
     for v: int in bb.ins.view() {
         x: IrIns = self.x(v)
         if x.op != ir.IR_PARAM { continue }
         g: Loc = self.pin.get(usize(x.imm))
         if g.kind == L_STACK {
-            mut self.load_leaf(v, 31, i64(self.frame + g.soff))
+            self.load_leaf(v, 31, i64(self.frame + g.soff))
         } else if g.kind == L_WORD {
-            mut self.load_leaf(v, 31, i64(self.save_at + g.mem + g.off))
+            self.load_leaf(v, 31, i64(self.save_at + g.mem + g.off))
         } else if g.kind == L_ADDR && self.loc(v) != NOREG {
-            if g.reg >= 0 { mut self.ldr_x(S1, 31, self.save_at + g.mem) } else { mut self.ldr_x(S1, 31, self.frame + g.soff) }
-            mut self.load_leaf(v, S1, i64(g.off))
+            if g.reg >= 0 { self.ldr_x(S1, 31, self.save_at + g.mem) } else { self.ldr_x(S1, 31, self.frame + g.soff) }
+            self.load_leaf(v, S1, i64(g.off))
         }
     }
 }
@@ -2639,7 +2639,7 @@ A64.is_loop_head(self, b: int): bool {
 /* The debug diagnostic "path:line:col: what\n" for site at, as a string
  * literal; returns its symbol and length.
  */
-located(s: sema.Sema, mut o: macho.Obj, at: u32, what: string): (int, u32) {
+located(s: sema.Sema, o: *macho.Obj, at: u32, what: string): (int, u32) {
     path: string = "<source>"
     line: u32 = 0
     col: u32 = 0
@@ -2649,48 +2649,48 @@ located(s: sema.Sema, mut o: macho.Obj, at: u32, what: string): (int, u32) {
         col = s.node(at).col
     }
     buf: [4096]u8
-    b: fmt.Buffer = fmt.Buffer.init(mut buf[0..4096])
-    _ = mut b.printf("%s:%d:%d: %s\n", path, int(line), int(col), what)
-    return mut o.string(b.text()), u32(b.text().len)
+    b: fmt.Buffer = fmt.Buffer.init(buf[0..4096])
+    _ = b.printf("%s:%d:%d: %s\n", path, int(line), int(col), what)
+    return o.string(b.text()), u32(b.text().len)
 }
 
 /* Emits the body; false when a conditional branch or a literal load is out
  * of range.
  */
-A64.emit_body(mut self): bool {
-    mut self.br.truncate(0)
-    mut self.pool.truncate(0)
-    mut self.psite.truncate(0)
-    mut self.stub.truncate(0)
-    mut self.stub_at.truncate(0)
+A64.emit_body(self): bool {
+    self.br.truncate(0)
+    self.pool.truncate(0)
+    self.psite.truncate(0)
+    self.stub.truncate(0)
+    self.stub_at.truncate(0)
     self.last_at = 0
-    mut self.line_row(self.fn.decl)
-    mut self.prologue()
-    mut self.params()
+    self.line_row(self.fn.decl)
+    self.prologue()
+    self.params()
     for i: usize in 0..self.ra.layout.len {
         b: int = self.ra.layout.get(i)
         if i > 0 && self.is_loop_head(b) {
-            for self.here() % u32(LOOP_ALIGN) != 0 { mut self.put(NOP) }
+            for self.here() % u32(LOOP_ALIGN) != 0 { self.put(NOP) }
         }
-        mut self.label.set(usize(b), self.here())
-        mut self.emit_block(b)
+        self.label.set(usize(b), self.here())
+        self.emit_block(b)
     }
     fail_at: [3]u32 = [0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF] // per function: bl to the routine
     for i: usize in 0..self.br.len {
         t: int = self.br.get(i).target
         if t >= 0 || t <= LFAIL || fail_at[-1 - t] != 0xFFFFFFFF { continue }
         fail_at[-1 - t] = self.here()
-        mut self.bl_to(mut self.fail_routine(t))
+        self.bl_to(self.fail_routine(t))
     }
     for k: usize in 0..self.stub.len { // write "path:line:col: what" to fd 2 and abort
         sx: IrIns = self.x(self.stub.get(k))
-        msg: int, n: u32 = located(*self.s, mut *self.o, sx.at, sx.name)
-        fail(mut self.stub_at.push(self.here()))
-        mut self.line_row(sx.at)
-        mut self.mov_imm(0, 2, true)
-        mut self.page_ref(1, self.o.syms.get(msg).name, 0x91000021) // add x1, x1, msg@PAGEOFF
-        mut self.mov_imm(2, u64(n), true)
-        mut self.bl_to("__ace$bounds_fail")
+        msg: int, n: u32 = located(*self.s, self.o, sx.at, sx.name)
+        fail(self.stub_at.push(self.here()))
+        self.line_row(sx.at)
+        self.mov_imm(0, 2, true)
+        self.page_ref(1, self.o.syms.get(msg).name, 0x91000021) // add x1, x1, msg@PAGEOFF
+        self.mov_imm(2, u64(n), true)
+        self.bl_to("__ace$bounds_fail")
         self.o.bounds_fail_used = true
     }
     for br: Branch in self.br.view() {
@@ -2704,21 +2704,21 @@ A64.emit_body(mut self): bool {
         } else {
             w |= u32(d) & 0x3FFFFFF
         }
-        mut self.o.patch32(usize(br.site), w)
+        self.o.patch32(usize(br.site), w)
     }
     if self.pool.len > 0 { // the float pool, 8-byte aligned (an f32 in the low half), after code that never falls in
-        if (self.here() & 7) != 0 { mut self.put(0) } // udf
+        if (self.here() & 7) != 0 { self.put(0) } // udf
         base: u32 = self.here()
         for c: u64 in self.pool.view() {
-            mut self.put(u32(c & 0xFFFFFFFF))
-            mut self.put(u32(c >> 32))
+            self.put(u32(c & 0xFFFFFFFF))
+            self.put(u32(c >> 32))
         }
         for i: usize = 0; i < self.psite.len; i += 2 {
             site: u32 = self.psite.get(i)
             d: i64 = (i64(base) + 8 * i64(self.psite.get(i + 1)) - i64(site)) / 4
             if d >= (1 << 18) { return false }
             w: u32 = self.o.get32(usize(site))
-            mut self.o.patch32(usize(site), w | (u32(d) << 5))
+            self.o.patch32(usize(site), w | (u32(d) << 5))
         }
     }
     return true
@@ -2727,64 +2727,64 @@ A64.emit_body(mut self): bool {
 /* Compiles lowered function `fn` into o's __text as symbol `name`, global
  * (visible to the linker) for main and a C export.
  */
-pub func(s: sema.Sema, mut o: macho.Obj, mut fn: Func, name: string, global: bool) {
-    pin: array.Array[Loc], rin: array.Array[Loc], nsave: u32 = entry(s, fn)
-    regalloc.split_critical_edges(mut fn)
-    a: A64 = A64 { s = &s, o = mut &o, fn = &fn, ra = blank(Ra), madd = array.Array[u8] {}, pin = pin, rin = rin, nsave = nsave, obj = array.Array[u32] {}, cs = array.Array[int] {}, label = array.Array[u32] {}, br = array.Array[Branch] {}, pool = array.Array[u64] {}, psite = array.Array[u32] {}, stub = array.Array[int] {}, stub_at = array.Array[u32] {} }
-    defer mut a.wipe()
-    regalloc.layout(mut a.ra, fn)
-    regalloc.count_uses(mut a.ra, fn)
-    a.madd = fuse(s, fn, mut a.ra)
-    regalloc.liveness(mut a.ra, fn)
+pub func(s: sema.Sema, o: *macho.Obj, fn: *Func, name: string, global: bool) {
+    pin: array.Array[Loc], rin: array.Array[Loc], nsave: u32 = entry(s, *fn)
+    regalloc.split_critical_edges(fn)
+    a: A64 = A64 { s = &s, o = o, fn = fn, ra = blank(Ra), madd = array.Array[u8] {}, pin = pin, rin = rin, nsave = nsave, obj = array.Array[u32] {}, cs = array.Array[int] {}, label = array.Array[u32] {}, br = array.Array[Branch] {}, pool = array.Array[u64] {}, psite = array.Array[u32] {}, stub = array.Array[int] {}, stub_at = array.Array[u32] {} }
+    defer a.wipe()
+    regalloc.layout(&a.ra, *fn)
+    regalloc.count_uses(&a.ra, *fn)
+    a.madd = fuse(s, *fn, &a.ra)
+    regalloc.liveness(&a.ra, *fn)
     a.ra.thread_reserved = u32(1) << 0 // the thunk's result register
-    regalloc.positions(mut a.ra, fn, s)
-    a.out, a.nthread = hints(s, fn, mut a.ra, a.pin, a.rin)
-    regalloc.coalesce(mut a.ra, fn, target())
-    a.cs = allocate(mut a.ra, fn)
+    regalloc.positions(&a.ra, *fn, s)
+    a.out, a.nthread = hints(s, *fn, &a.ra, a.pin, a.rin)
+    regalloc.coalesce(&a.ra, *fn, target())
+    a.cs = allocate(&a.ra, *fn)
     a.slot_base = a.out + 16 + 8 * u32(a.cs.len)
     // a byte routine's bl needs x30 saved; an asm statement reserving x29 or
     // x30 keeps the frame
     a.has_frame = a.ra.calls.len > 0 || a.ra.rtcalls.len > 0 || a.nthread > 0 || a.ra.nslots > 0 || a.cs.len > 0 || a.nsave > 0 || (a.ra.asm_all & (u32(3) << 29)) != 0
-    a.frame = mut a.place_objects()
+    a.frame = a.place_objects()
     if !a.has_frame { a.frame = 0 }
     err: Error = null
     a.label, err = array.Array[u32].filled(fn.blocks.len, 0)
     fail(err)
 
-    for usize(o.here()) % FUNC_ALIGN != 0 { mut a.put(NOP) }
+    for usize(o.here()) % FUNC_ALIGN != 0 { a.put(NOP) }
     start: u32 = a.here()
-    _ = mut o.define(name, global, macho.SEC_TEXT)
+    _ = o.define(name, global, macho.SEC_TEXT)
     nfix: usize = o.fix.len
     nrl: usize = o.secs.get(macho.SEC_TEXT).rels.len
     nlines: usize = o.lines.len
     last: macho.LineRow = macho.LineRow { addr = 0, line = 0, col = 0, path = "" }
     if nlines > 0 { last = o.lines.get(nlines - 1) }
-    if !mut a.emit_body() { // over 1 MiB: again with far conditional branches
-        t: mut *macho.Sec = mut o.sec(macho.SEC_TEXT)
-        mut t.data.truncate(usize(start))
-        mut t.rels.truncate(nrl)
-        mut o.fix.truncate(nfix)
-        mut o.lines.truncate(nlines)
-        if nlines > 0 { mut o.lines.set(nlines - 1, last) }
+    if !a.emit_body() { // over 1 MiB: again with far conditional branches
+        t: *macho.Sec = o.sec(macho.SEC_TEXT)
+        t.data.truncate(usize(start))
+        t.rels.truncate(nrl)
+        o.fix.truncate(nfix)
+        o.lines.truncate(nlines)
+        if nlines > 0 { o.lines.set(nlines - 1, last) }
         a.far = true
-        _ = mut a.emit_body()
+        _ = a.emit_body()
     }
-    mut o.debug_fn(start, a.here() - start, s.node(fn.decl).text)
+    o.debug_fn(start, a.here() - start, s.node(fn.decl).text)
 }
 
-A64.wipe(mut self) {
-    mut self.ra.wipe()
-    mut self.madd.wipe()
-    mut self.pin.wipe()
-    mut self.rin.wipe()
-    mut self.obj.wipe()
-    mut self.cs.wipe()
-    mut self.label.wipe()
-    mut self.br.wipe()
-    mut self.pool.wipe()
-    mut self.psite.wipe()
-    mut self.stub.wipe()
-    mut self.stub_at.wipe()
+A64.wipe(self) {
+    self.ra.wipe()
+    self.madd.wipe()
+    self.pin.wipe()
+    self.rin.wipe()
+    self.obj.wipe()
+    self.cs.wipe()
+    self.label.wipe()
+    self.br.wipe()
+    self.pool.wipe()
+    self.psite.wipe()
+    self.stub.wipe()
+    self.stub_at.wipe()
 }
 
 // --- runtime routines ---------------------------------------------------------
@@ -2793,7 +2793,7 @@ A64.wipe(mut self) {
  * every function (emit.c's helpers), with their own labels and branches.
  */
 Rt: struct {
-    o: mut *macho.Obj,
+    o: *macho.Obj,
     lab: array.Array[u32],
     bp: array.Array[RtBranch],
 }
@@ -2804,140 +2804,140 @@ RtBranch: struct {
     kind: u8, // 0 b, 1 b.cond, 2 cbz/cbnz
 }
 
-Rt.ins(mut self, w: u32) { mut self.o.put32(w) }
+Rt.ins(self, w: u32) { self.o.put32(w) }
 
-Rt.align_code(mut self, bytes: u32) {
-    for self.o.here() % bytes != 0 { mut self.ins(NOP) }
+Rt.align_code(self, bytes: u32) {
+    for self.o.here() % bytes != 0 { self.ins(NOP) }
 }
 
-Rt.new_label(mut self): int {
-    fail(mut self.lab.push(0xFFFFFFFF))
+Rt.new_label(self): int {
+    fail(self.lab.push(0xFFFFFFFF))
     return int(self.lab.len) - 1
 }
 
-Rt.bind(mut self, l: int) { mut self.lab.set(usize(l), self.o.here()) }
+Rt.bind(self, l: int) { self.lab.set(usize(l), self.o.here()) }
 
-Rt.branch(mut self, w: u32, kind: u8, l: int) {
-    mut self.ins(w)
-    fail(mut self.bp.push(RtBranch { site = self.o.here() - 4, lab = l, kind = kind }))
+Rt.branch(self, w: u32, kind: u8, l: int) {
+    self.ins(w)
+    fail(self.bp.push(RtBranch { site = self.o.here() - 4, lab = l, kind = kind }))
 }
 
-Rt.br(mut self, l: int) { mut self.branch(0x14000000, 0, l) }
-Rt.bcond(mut self, cond: u32, l: int) { mut self.branch(0x54000000 | (cond & 15), 1, l) }
-Rt.cbz(mut self, rt: int, nz: bool, l: int) { mut self.branch(sel(nz, 0x35000000, 0x34000000) | 0x80000000 | R(rt), 2, l) }
+Rt.br(self, l: int) { self.branch(0x14000000, 0, l) }
+Rt.bcond(self, cond: u32, l: int) { self.branch(0x54000000 | (cond & 15), 1, l) }
+Rt.cbz(self, rt: int, nz: bool, l: int) { self.branch(sel(nz, 0x35000000, 0x34000000) | 0x80000000 | R(rt), 2, l) }
 
-Rt.patch_branches(mut self) {
+Rt.patch_branches(self) {
     for b: RtBranch in self.bp.view() {
         target: u32 = self.lab.get(b.lab)
         if target == 0xFFFFFFFF { continue }
         delta: i64 = i64(target) - i64(b.site)
         cur: u32 = self.o.get32(usize(b.site))
         if b.kind == 0 { cur |= u32(delta >> 2) & 0x03FFFFFF } else { cur |= (u32(delta >> 2) & 0x7FFFF) << 5 }
-        mut self.o.patch32(usize(b.site), cur)
+        self.o.patch32(usize(b.site), cur)
     }
-    mut self.bp.truncate(0)
+    self.bp.truncate(0)
 }
 
 /* emit.c's load_imm: movz or movn, then a movk per nonzero half-word. */
-Rt.load_imm(mut self, sf: bool, reg: int, v0: u64) {
+Rt.load_imm(self, sf: bool, reg: int, v0: u64) {
     v: u64 = v0
     if !sf { v &= 0xFFFFFFFF }
     movz: u32 = sel(sf, 0xD2800000, 0x52800000)
     inv: u64 = v ^ 0xFFFFFFFF
     if sf { inv = ~v }
     if (v >> 16) == 0 {
-        mut self.ins(movz | (u32(v) << 5) | u32(reg))
+        self.ins(movz | (u32(v) << 5) | u32(reg))
         return
     }
     if (inv >> 16) == 0 { // movn: register = ~imm16
-        mut self.ins((movz & ~u32(0x40000000)) | (u32(inv) << 5) | u32(reg))
+        self.ins((movz & ~u32(0x40000000)) | (u32(inv) << 5) | u32(reg))
         return
     }
-    mut self.ins(movz | (u32(v & 0xFFFF) << 5) | u32(reg))
+    self.ins(movz | (u32(v & 0xFFFF) << 5) | u32(reg))
     hws: int = 2
     if sf { hws = 4 }
     for hw: int in 1..hws {
         chunk: u32 = u32((v >> (16 * u64(hw))) & 0xFFFF)
         if chunk == 0 { continue }
-        mut self.ins(sel(sf, 0xF2800000, 0x72800000) | (u32(hw) << 21) | (chunk << 5) | u32(reg))
+        self.ins(sel(sf, 0xF2800000, 0x72800000) | (u32(hw) << 21) | (chunk << 5) | u32(reg))
     }
 }
 
-Rt.mov(mut self, dst: int, src: int) {
-    if dst != src { mut self.ins(0xAA0003E0 | (u32(src) << 16) | R(dst)) }
+Rt.mov(self, dst: int, src: int) {
+    if dst != src { self.ins(0xAA0003E0 | (u32(src) << 16) | R(dst)) }
 }
 
 /* 64-bit ldr/str rt, [base, #off] for the small offsets the routines use. */
-Rt.ldr(mut self, rt: int, base: int, off: u32) { mut self.ins(0xF9400000 | ((off / 8) << 10) | (u32(base) << 5) | R(rt)) }
-Rt.str(mut self, rt: int, base: int, off: u32) { mut self.ins(0xF9000000 | ((off / 8) << 10) | (u32(base) << 5) | R(rt)) }
+Rt.ldr(self, rt: int, base: int, off: u32) { self.ins(0xF9400000 | ((off / 8) << 10) | (u32(base) << 5) | R(rt)) }
+Rt.str(self, rt: int, base: int, off: u32) { self.ins(0xF9000000 | ((off / 8) << 10) | (u32(base) << 5) | R(rt)) }
 
 /* adrp rd, sym@PAGE ; add rd, rd, sym@PAGEOFF */
-Rt.addr_of(mut self, rd: int, sym: int) {
+Rt.addr_of(self, rd: int, sym: int) {
     site: u32 = self.o.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, sym, true, 2, true, macho.RM_PAGE21)
-    mut self.ins(0x90000000 | R(rd))
+    self.o.reloc(macho.SEC_TEXT, site, sym, true, 2, true, macho.RM_PAGE21)
+    self.ins(0x90000000 | R(rd))
     site = self.o.here()
-    mut self.o.reloc(macho.SEC_TEXT, site, sym, false, 2, true, macho.RM_PAGEOFF12)
-    mut self.ins(0x91000000 | (u32(rd) << 5) | R(rd))
+    self.o.reloc(macho.SEC_TEXT, site, sym, false, 2, true, macho.RM_PAGEOFF12)
+    self.ins(0x91000000 | (u32(rd) << 5) | R(rd))
 }
 
-Rt.bl_extern(mut self, name: string) {
+Rt.bl_extern(self, name: string) {
     site: u32 = self.o.here()
-    mut self.ins(0x94000000)
-    mut self.o.reloc(macho.SEC_TEXT, site, mut self.o.intern(name), true, 2, true, macho.RM_BRANCH26)
+    self.ins(0x94000000)
+    self.o.reloc(macho.SEC_TEXT, site, self.o.intern(name), true, 2, true, macho.RM_BRANCH26)
 }
 
-Rt.bl_internal(mut self, name: string) {
-    mut self.ins(0x94000000)
-    mut self.o.fixup(macho.FK_BRANCH, self.o.here() - 4, mut self.o.intern(name))
+Rt.bl_internal(self, name: string) {
+    self.ins(0x94000000)
+    self.o.fixup(macho.FK_BRANCH, self.o.here() - 4, self.o.intern(name))
 }
 
-Rt.text(mut self, name: string) { _ = mut self.o.define(name, false, macho.SEC_TEXT) }
+Rt.text(self, name: string) { _ = self.o.define(name, false, macho.SEC_TEXT) }
 
 /* A routine writing `message` (under symbol msg in the constant section) to
  * fd 2, then aborting.
  */
-Rt.failure(mut self, routine: string, msg: string, message: string) {
-    m: int = mut self.o.define(msg, false, macho.SEC_CONST)
-    c: mut *macho.Sec = mut self.o.sec(macho.SEC_CONST)
-    macho.put_bytes(mut c.data, message)
-    mut self.text(routine)
-    mut self.ins(0xA9BF7BFD) // stp x29, x30, [sp, #-16]!
-    mut self.ins(0x910003FD) // mov x29, sp
-    mut self.load_imm(true, 0, 2)
-    mut self.addr_of(1, m)
-    mut self.load_imm(true, 2, u64(message.len))
-    mut self.bl_extern("_write")
-    mut self.bl_extern("_abort")
-    mut self.ins(0xD4200000) // brk #0 if abort unexpectedly returns
+Rt.failure(self, routine: string, msg: string, message: string) {
+    m: int = self.o.define(msg, false, macho.SEC_CONST)
+    c: *macho.Sec = self.o.sec(macho.SEC_CONST)
+    macho.put_bytes(&c.data, message)
+    self.text(routine)
+    self.ins(0xA9BF7BFD) // stp x29, x30, [sp, #-16]!
+    self.ins(0x910003FD) // mov x29, sp
+    self.load_imm(true, 0, 2)
+    self.addr_of(1, m)
+    self.load_imm(true, 2, u64(message.len))
+    self.bl_extern("_write")
+    self.bl_extern("_abort")
+    self.ins(0xD4200000) // brk #0 if abort unexpectedly returns
 }
 
-Rt.helper_prologue(mut self) {
-    mut self.ins(0xA9BF7BFD) // stp x29,x30,[sp,#-16]!
-    mut self.ins(0x910003FD) // mov x29,sp
-    mut self.ins(0xD10083FF) // sub sp,sp,#32
-    mut self.str(19, 31, 0)
-    mut self.str(20, 31, 8)
-    mut self.str(21, 31, 16)
+Rt.helper_prologue(self) {
+    self.ins(0xA9BF7BFD) // stp x29,x30,[sp,#-16]!
+    self.ins(0x910003FD) // mov x29,sp
+    self.ins(0xD10083FF) // sub sp,sp,#32
+    self.str(19, 31, 0)
+    self.str(20, 31, 8)
+    self.str(21, 31, 16)
 }
 
-Rt.helper_epilogue(mut self) {
-    mut self.ldr(19, 31, 0)
-    mut self.ldr(20, 31, 8)
-    mut self.ldr(21, 31, 16)
-    mut self.ins(0x910083FF) // add sp,sp,#32
-    mut self.ins(0xA8C17BFD)
-    mut self.ins(RET)
+Rt.helper_epilogue(self) {
+    self.ldr(19, 31, 0)
+    self.ldr(20, 31, 8)
+    self.ldr(21, 31, 16)
+    self.ins(0x910083FF) // add sp,sp,#32
+    self.ins(0xA8C17BFD)
+    self.ins(RET)
 }
 
 /* SIMD&FP single-register LDUR/STUR (op selects b/s/d/q and direction). */
-Rt.vmem(mut self, op: u32, rt: int, rn: int, off: i32) {
-    mut self.ins(op | ((u32(off) & 0x1FF) << 12) | (u32(rn) << 5) | u32(rt))
+Rt.vmem(self, op: u32, rt: int, rn: int, off: i32) {
+    self.ins(op | ((u32(off) & 0x1FF) << 12) | (u32(rn) << 5) | u32(rt))
 }
 
 /* Q-register LDP/STP (op selects offset, pre-, or post-index form). */
-Rt.vpair(mut self, op: u32, rt: int, rt2: int, rn: int, off: i32) {
-    mut self.ins(op | ((u32(off / 16) & 0x7F) << 15) | (u32(rt2) << 10) | (u32(rn) << 5) | u32(rt))
+Rt.vpair(self, op: u32, rt: int, rt2: int, rn: int, off: i32) {
+    self.ins(op | ((u32(off / 16) & 0x7F) << 15) | (u32(rt2) << 10) | (u32(rn) << 5) | u32(rt))
 }
 
 LDUR_B: const u32 = 0x3C400000
@@ -2958,475 +2958,475 @@ STP_Q_PRE: const u32 = 0xAD800000
 /* x-register forms the routines repeat: rd = rn + rm, rd = rn - rm,
  * cmp rn, #imm, cmp rn, rm, rd = rn ± #imm, subs rd, rn, #imm.
  */
-Rt.add(mut self, rd: int, rn: int, rm: int) { mut self.ins(0x8B000000 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd)) }
-Rt.sub(mut self, rd: int, rn: int, rm: int) { mut self.ins(0xCB000000 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd)) }
-Rt.cmpi(mut self, rn: int, imm: u32) { mut self.ins(0xF100001F | (imm << 10) | (u32(rn) << 5)) }
-Rt.cmp(mut self, rn: int, rm: int) { mut self.ins(0xEB00001F | (u32(rm) << 16) | (u32(rn) << 5)) }
-Rt.addi(mut self, rd: int, rn: int, imm: u32) { mut self.ins(0x91000000 | (imm << 10) | (u32(rn) << 5) | u32(rd)) }
-Rt.subi(mut self, rd: int, rn: int, imm: u32) { mut self.ins(0xD1000000 | (imm << 10) | (u32(rn) << 5) | u32(rd)) }
-Rt.subsi(mut self, rd: int, rn: int, imm: u32) { mut self.ins(0xF1000000 | (imm << 10) | (u32(rn) << 5) | u32(rd)) }
-Rt.fmov_x(mut self, rd: int, vn: int) { mut self.ins(0x9E660000 | (u32(vn) << 5) | u32(rd)) }
+Rt.add(self, rd: int, rn: int, rm: int) { self.ins(0x8B000000 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd)) }
+Rt.sub(self, rd: int, rn: int, rm: int) { self.ins(0xCB000000 | (u32(rm) << 16) | (u32(rn) << 5) | u32(rd)) }
+Rt.cmpi(self, rn: int, imm: u32) { self.ins(0xF100001F | (imm << 10) | (u32(rn) << 5)) }
+Rt.cmp(self, rn: int, rm: int) { self.ins(0xEB00001F | (u32(rm) << 16) | (u32(rn) << 5)) }
+Rt.addi(self, rd: int, rn: int, imm: u32) { self.ins(0x91000000 | (imm << 10) | (u32(rn) << 5) | u32(rd)) }
+Rt.subi(self, rd: int, rn: int, imm: u32) { self.ins(0xD1000000 | (imm << 10) | (u32(rn) << 5) | u32(rd)) }
+Rt.subsi(self, rd: int, rn: int, imm: u32) { self.ins(0xF1000000 | (imm << 10) | (u32(rn) << 5) | u32(rd)) }
+Rt.fmov_x(self, rd: int, vn: int) { self.ins(0x9E660000 | (u32(vn) << 5) | u32(rd)) }
 
 /* Branch to mismatch when the 32 bytes at [x15] and [x16] differ. */
-Rt.compare_block32(mut self, mismatch: int) {
-    mut self.vpair(LDP_Q, 24, 25, 15, 0)
-    mut self.vpair(LDP_Q, 26, 27, 16, 0)
-    mut self.ins(0x6E201C00 | (26 << 16) | (24 << 5) | 24) // eor v24, v24, v26
-    mut self.ins(0x6E201C00 | (27 << 16) | (25 << 5) | 25) // eor v25, v25, v27
-    mut self.ins(0x4EA01C00 | (25 << 16) | (24 << 5) | 24) // orr v24, v24, v25
-    mut self.ins(0x6EA0A400 | (24 << 16) | (24 << 5) | 24) // umaxp v24.4s
-    mut self.fmov_x(8, 24)
-    mut self.cbz(8, true, mismatch)
+Rt.compare_block32(self, mismatch: int) {
+    self.vpair(LDP_Q, 24, 25, 15, 0)
+    self.vpair(LDP_Q, 26, 27, 16, 0)
+    self.ins(0x6E201C00 | (26 << 16) | (24 << 5) | 24) // eor v24, v24, v26
+    self.ins(0x6E201C00 | (27 << 16) | (25 << 5) | 25) // eor v25, v25, v27
+    self.ins(0x4EA01C00 | (25 << 16) | (24 << 5) | 24) // orr v24, v24, v25
+    self.ins(0x6EA0A400 | (24 << 16) | (24 << 5) | 24) // umaxp v24.4s
+    self.fmov_x(8, 24)
+    self.cbz(8, true, mismatch)
 }
 
 /* Copy (and move) at x15 = destination, x16 = source, x17 = count; see
  * emit.c's emit_byte_helpers for the private convention and strategy.
  */
-Rt.mem_copy(mut self) {
-    copy: int = mut self.new_label()
-    backward: int = mut self.new_label()
-    lt16: int = mut self.new_label()
-    lt8: int = mut self.new_label()
-    lt4: int = mut self.new_label()
-    done: int = mut self.new_label()
-    gt32: int = mut self.new_label()
-    big: int = mut self.new_label()
-    loop: int = mut self.new_label()
-    bloop: int = mut self.new_label()
+Rt.mem_copy(self) {
+    copy: int = self.new_label()
+    backward: int = self.new_label()
+    lt16: int = self.new_label()
+    lt8: int = self.new_label()
+    lt4: int = self.new_label()
+    done: int = self.new_label()
+    gt32: int = self.new_label()
+    big: int = self.new_label()
+    loop: int = self.new_label()
+    bloop: int = self.new_label()
 
     // move: at most 64 bytes is overlap-safe; above that, go backward only
     // when the destination starts inside the source.
-    mut self.text("__ace$mem_move")
-    mut self.cmpi(17, 64)
-    mut self.bcond(C_LS, copy)
-    mut self.sub(8, 15, 16)
-    mut self.cmp(8, 17)
-    mut self.bcond(C_LO, backward)
+    self.text("__ace$mem_move")
+    self.cmpi(17, 64)
+    self.bcond(C_LS, copy)
+    self.sub(8, 15, 16)
+    self.cmp(8, 17)
+    self.bcond(C_LO, backward)
 
-    mut self.text("__ace$mem_copy")
-    mut self.bind(copy)
-    mut self.cmpi(17, 32)
-    mut self.bcond(C_HI, gt32)
-    mut self.cmpi(17, 16)
-    mut self.bcond(C_LO, lt16)
-    mut self.vmem(LDUR_Q, 24, 16, 0) // 16..32
-    mut self.add(16, 16, 17)
-    mut self.vmem(LDUR_Q, 25, 16, -16)
-    mut self.vmem(STUR_Q, 24, 15, 0)
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_Q, 25, 15, -16)
-    mut self.ins(RET)
-    mut self.bind(lt16)
-    mut self.cmpi(17, 8)
-    mut self.bcond(C_LO, lt8)
-    mut self.vmem(LDUR_D, 24, 16, 0) // 8..15
-    mut self.add(16, 16, 17)
-    mut self.vmem(LDUR_D, 25, 16, -8)
-    mut self.vmem(STUR_D, 24, 15, 0)
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_D, 25, 15, -8)
-    mut self.ins(RET)
-    mut self.bind(lt8)
-    mut self.cmpi(17, 4)
-    mut self.bcond(C_LO, lt4)
-    mut self.vmem(LDUR_S, 24, 16, 0) // 4..7
-    mut self.add(16, 16, 17)
-    mut self.vmem(LDUR_S, 25, 16, -4)
-    mut self.vmem(STUR_S, 24, 15, 0)
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_S, 25, 15, -4)
-    mut self.ins(RET)
-    mut self.bind(lt4) // 0..3: first, middle, last
-    mut self.cbz(17, false, done)
-    mut self.ins(0xD341FE28) // lsr x8, x17, #1
-    mut self.vmem(LDUR_B, 24, 16, 0)
-    mut self.ins(0x3C606800 | (8 << 16) | (16 << 5) | 25) // ldr b25, [x16, x8]
-    mut self.add(16, 16, 17)
-    mut self.vmem(LDUR_B, 26, 16, -1)
-    mut self.vmem(STUR_B, 24, 15, 0)
-    mut self.ins(0x3C206800 | (8 << 16) | (15 << 5) | 25) // str b25, [x15, x8]
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_B, 26, 15, -1)
-    mut self.bind(done)
-    mut self.ins(RET)
-    mut self.bind(gt32)
-    mut self.cmpi(17, 64)
-    mut self.bcond(C_HI, big)
-    mut self.vpair(LDP_Q, 24, 25, 16, 0) // 33..64
-    mut self.add(16, 16, 17)
-    mut self.vpair(LDP_Q, 26, 27, 16, -32)
-    mut self.vpair(STP_Q, 24, 25, 15, 0)
-    mut self.add(15, 15, 17)
-    mut self.vpair(STP_Q, 26, 27, 15, -32)
-    mut self.ins(RET)
+    self.text("__ace$mem_copy")
+    self.bind(copy)
+    self.cmpi(17, 32)
+    self.bcond(C_HI, gt32)
+    self.cmpi(17, 16)
+    self.bcond(C_LO, lt16)
+    self.vmem(LDUR_Q, 24, 16, 0) // 16..32
+    self.add(16, 16, 17)
+    self.vmem(LDUR_Q, 25, 16, -16)
+    self.vmem(STUR_Q, 24, 15, 0)
+    self.add(15, 15, 17)
+    self.vmem(STUR_Q, 25, 15, -16)
+    self.ins(RET)
+    self.bind(lt16)
+    self.cmpi(17, 8)
+    self.bcond(C_LO, lt8)
+    self.vmem(LDUR_D, 24, 16, 0) // 8..15
+    self.add(16, 16, 17)
+    self.vmem(LDUR_D, 25, 16, -8)
+    self.vmem(STUR_D, 24, 15, 0)
+    self.add(15, 15, 17)
+    self.vmem(STUR_D, 25, 15, -8)
+    self.ins(RET)
+    self.bind(lt8)
+    self.cmpi(17, 4)
+    self.bcond(C_LO, lt4)
+    self.vmem(LDUR_S, 24, 16, 0) // 4..7
+    self.add(16, 16, 17)
+    self.vmem(LDUR_S, 25, 16, -4)
+    self.vmem(STUR_S, 24, 15, 0)
+    self.add(15, 15, 17)
+    self.vmem(STUR_S, 25, 15, -4)
+    self.ins(RET)
+    self.bind(lt4) // 0..3: first, middle, last
+    self.cbz(17, false, done)
+    self.ins(0xD341FE28) // lsr x8, x17, #1
+    self.vmem(LDUR_B, 24, 16, 0)
+    self.ins(0x3C606800 | (8 << 16) | (16 << 5) | 25) // ldr b25, [x16, x8]
+    self.add(16, 16, 17)
+    self.vmem(LDUR_B, 26, 16, -1)
+    self.vmem(STUR_B, 24, 15, 0)
+    self.ins(0x3C206800 | (8 << 16) | (15 << 5) | 25) // str b25, [x15, x8]
+    self.add(15, 15, 17)
+    self.vmem(STUR_B, 26, 15, -1)
+    self.bind(done)
+    self.ins(RET)
+    self.bind(gt32)
+    self.cmpi(17, 64)
+    self.bcond(C_HI, big)
+    self.vpair(LDP_Q, 24, 25, 16, 0) // 33..64
+    self.add(16, 16, 17)
+    self.vpair(LDP_Q, 26, 27, 16, -32)
+    self.vpair(STP_Q, 24, 25, 15, 0)
+    self.add(15, 15, 17)
+    self.vpair(STP_Q, 26, 27, 15, -32)
+    self.ins(RET)
     // Forward: preload the tail and head, then continue from a 32-byte-aligned
     // destination so no loop store splits a cache line. The first aligned
     // chunk loads before the head store, which may overwrite it in a leftward
     // overlapping move.
-    tail: int = mut self.new_label()
-    mut self.bind(big)
-    mut self.add(8, 16, 17)
-    mut self.vpair(LDP_Q, 30, 31, 8, -32)
-    mut self.vpair(LDP_Q, 26, 27, 16, 0)
-    mut self.addi(8, 15, 32)
-    mut self.ins(0x927BE908) // and x8, x8, #~31
-    mut self.sub(8, 8, 15) // x8 = step, 1..32
-    mut self.add(16, 16, 8)
-    mut self.vpair(LDP_Q_POST, 24, 25, 16, 32)
-    mut self.vpair(STP_Q, 26, 27, 15, 0)
-    mut self.add(15, 15, 8)
-    mut self.sub(17, 17, 8)
-    mut self.vpair(STP_Q_POST, 24, 25, 15, 32)
-    mut self.subsi(17, 17, 64)
-    mut self.bcond(C_LS, tail)
-    mut self.align_code(16)
-    mut self.bind(loop)
-    mut self.vpair(LDP_Q_POST, 24, 25, 16, 32)
-    mut self.vpair(STP_Q_POST, 24, 25, 15, 32)
-    mut self.subsi(17, 17, 32)
-    mut self.bcond(C_HI, loop)
-    mut self.bind(tail)
-    mut self.add(8, 15, 17) // x8 = end - 32
-    mut self.vpair(STP_Q, 30, 31, 8, 0)
-    mut self.ins(RET)
-    mut self.bind(backward) // backward, head preloaded
-    mut self.vpair(LDP_Q, 30, 31, 16, 0)
-    mut self.mov(8, 15)
-    mut self.add(16, 16, 17)
-    mut self.add(15, 15, 17)
-    mut self.subi(17, 17, 32)
-    mut self.align_code(16)
-    mut self.bind(bloop)
-    mut self.vpair(LDP_Q_PRE, 24, 25, 16, -32)
-    mut self.vpair(STP_Q_PRE, 24, 25, 15, -32)
-    mut self.subsi(17, 17, 32)
-    mut self.bcond(C_HI, bloop)
-    mut self.vpair(STP_Q, 30, 31, 8, 0)
-    mut self.ins(RET)
+    tail: int = self.new_label()
+    self.bind(big)
+    self.add(8, 16, 17)
+    self.vpair(LDP_Q, 30, 31, 8, -32)
+    self.vpair(LDP_Q, 26, 27, 16, 0)
+    self.addi(8, 15, 32)
+    self.ins(0x927BE908) // and x8, x8, #~31
+    self.sub(8, 8, 15) // x8 = step, 1..32
+    self.add(16, 16, 8)
+    self.vpair(LDP_Q_POST, 24, 25, 16, 32)
+    self.vpair(STP_Q, 26, 27, 15, 0)
+    self.add(15, 15, 8)
+    self.sub(17, 17, 8)
+    self.vpair(STP_Q_POST, 24, 25, 15, 32)
+    self.subsi(17, 17, 64)
+    self.bcond(C_LS, tail)
+    self.align_code(16)
+    self.bind(loop)
+    self.vpair(LDP_Q_POST, 24, 25, 16, 32)
+    self.vpair(STP_Q_POST, 24, 25, 15, 32)
+    self.subsi(17, 17, 32)
+    self.bcond(C_HI, loop)
+    self.bind(tail)
+    self.add(8, 15, 17) // x8 = end - 32
+    self.vpair(STP_Q, 30, 31, 8, 0)
+    self.ins(RET)
+    self.bind(backward) // backward, head preloaded
+    self.vpair(LDP_Q, 30, 31, 16, 0)
+    self.mov(8, 15)
+    self.add(16, 16, 17)
+    self.add(15, 15, 17)
+    self.subi(17, 17, 32)
+    self.align_code(16)
+    self.bind(bloop)
+    self.vpair(LDP_Q_PRE, 24, 25, 16, -32)
+    self.vpair(STP_Q_PRE, 24, 25, 15, -32)
+    self.subsi(17, 17, 32)
+    self.bcond(C_HI, bloop)
+    self.vpair(STP_Q, 30, 31, 8, 0)
+    self.ins(RET)
 }
 
 /* Fill x17 bytes at x15 with the byte in w16. */
-Rt.mem_fill(mut self) {
-    lt16: int = mut self.new_label()
-    lt8: int = mut self.new_label()
-    lt4: int = mut self.new_label()
-    done: int = mut self.new_label()
-    gt32: int = mut self.new_label()
-    loop: int = mut self.new_label()
+Rt.mem_fill(self) {
+    lt16: int = self.new_label()
+    lt8: int = self.new_label()
+    lt4: int = self.new_label()
+    done: int = self.new_label()
+    gt32: int = self.new_label()
+    loop: int = self.new_label()
 
-    mut self.text("__ace$mem_fill")
-    mut self.ins(0x4E010C00 | (16 << 5) | 24) // dup v24.16b, w16
-    mut self.cmpi(17, 32)
-    mut self.bcond(C_HI, gt32)
-    mut self.cmpi(17, 16)
-    mut self.bcond(C_LO, lt16)
-    mut self.vmem(STUR_Q, 24, 15, 0) // 16..32
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_Q, 24, 15, -16)
-    mut self.ins(RET)
-    mut self.bind(lt16)
-    mut self.cmpi(17, 8)
-    mut self.bcond(C_LO, lt8)
-    mut self.vmem(STUR_D, 24, 15, 0) // 8..15
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_D, 24, 15, -8)
-    mut self.ins(RET)
-    mut self.bind(lt8)
-    mut self.cmpi(17, 4)
-    mut self.bcond(C_LO, lt4)
-    mut self.vmem(STUR_S, 24, 15, 0) // 4..7
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_S, 24, 15, -4)
-    mut self.ins(RET)
-    mut self.bind(lt4) // 0..3: first, middle, last
-    mut self.cbz(17, false, done)
-    mut self.ins(0xD341FE28) // lsr x8, x17, #1
-    mut self.vmem(STUR_B, 24, 15, 0)
-    mut self.ins(0x3C206800 | (8 << 16) | (15 << 5) | 24) // str b24, [x15, x8]
-    mut self.add(15, 15, 17)
-    mut self.vmem(STUR_B, 24, 15, -1)
-    mut self.bind(done)
-    mut self.ins(RET)
-    mut self.bind(gt32) // 33+: tail, then 32-byte runs
-    mut self.add(8, 15, 17)
-    mut self.vpair(STP_Q, 24, 24, 8, -32)
-    mut self.subi(17, 17, 32)
-    mut self.align_code(16)
-    mut self.bind(loop)
-    mut self.vpair(STP_Q_POST, 24, 24, 15, 32)
-    mut self.subsi(17, 17, 32)
-    mut self.bcond(C_HI, loop)
-    mut self.ins(RET)
+    self.text("__ace$mem_fill")
+    self.ins(0x4E010C00 | (16 << 5) | 24) // dup v24.16b, w16
+    self.cmpi(17, 32)
+    self.bcond(C_HI, gt32)
+    self.cmpi(17, 16)
+    self.bcond(C_LO, lt16)
+    self.vmem(STUR_Q, 24, 15, 0) // 16..32
+    self.add(15, 15, 17)
+    self.vmem(STUR_Q, 24, 15, -16)
+    self.ins(RET)
+    self.bind(lt16)
+    self.cmpi(17, 8)
+    self.bcond(C_LO, lt8)
+    self.vmem(STUR_D, 24, 15, 0) // 8..15
+    self.add(15, 15, 17)
+    self.vmem(STUR_D, 24, 15, -8)
+    self.ins(RET)
+    self.bind(lt8)
+    self.cmpi(17, 4)
+    self.bcond(C_LO, lt4)
+    self.vmem(STUR_S, 24, 15, 0) // 4..7
+    self.add(15, 15, 17)
+    self.vmem(STUR_S, 24, 15, -4)
+    self.ins(RET)
+    self.bind(lt4) // 0..3: first, middle, last
+    self.cbz(17, false, done)
+    self.ins(0xD341FE28) // lsr x8, x17, #1
+    self.vmem(STUR_B, 24, 15, 0)
+    self.ins(0x3C206800 | (8 << 16) | (15 << 5) | 24) // str b24, [x15, x8]
+    self.add(15, 15, 17)
+    self.vmem(STUR_B, 24, 15, -1)
+    self.bind(done)
+    self.ins(RET)
+    self.bind(gt32) // 33+: tail, then 32-byte runs
+    self.add(8, 15, 17)
+    self.vpair(STP_Q, 24, 24, 8, -32)
+    self.subi(17, 17, 32)
+    self.align_code(16)
+    self.bind(loop)
+    self.vpair(STP_Q_POST, 24, 24, 15, 32)
+    self.subsi(17, 17, 32)
+    self.bcond(C_HI, loop)
+    self.ins(RET)
 }
 
 /* Compare x17 bytes at x15 and x16; -1, 0, or 1 in x17 by the first
  * differing unsigned byte (emit.c's emit_byte_helpers has the strategy).
  */
-Rt.mem_compare(mut self) {
-    lt16: int = mut self.new_label()
-    lt8: int = mut self.new_label()
-    lt4: int = mut self.new_label()
-    gt32: int = mut self.new_label()
-    loop: int = mut self.new_label()
-    words: int = mut self.new_label()
-    same: int = mut self.new_label()
-    diff: int = mut self.new_label()
-    res16: int = mut self.new_label()
-    res32: int = mut self.new_label()
-    last: int = mut self.new_label()
+Rt.mem_compare(self) {
+    lt16: int = self.new_label()
+    lt8: int = self.new_label()
+    lt4: int = self.new_label()
+    gt32: int = self.new_label()
+    loop: int = self.new_label()
+    words: int = self.new_label()
+    same: int = self.new_label()
+    diff: int = self.new_label()
+    res16: int = self.new_label()
+    res32: int = self.new_label()
+    last: int = self.new_label()
 
-    mut self.text("__ace$mem_compare")
-    mut self.cmpi(17, 16)
-    mut self.bcond(C_LO, lt16)
-    mut self.cmpi(17, 32)
-    mut self.bcond(C_HI, gt32)
-    mut self.vmem(LDUR_Q, 24, 15, 0) // 16..32: head
-    mut self.vmem(LDUR_Q, 25, 16, 0)
-    mut self.ins(0x6E201C00 | (25 << 16) | (24 << 5) | 24) // eor v24, v24, v25
-    mut self.ins(0x6EA0A400 | (24 << 16) | (24 << 5) | 24) // umaxp v24.4s
-    mut self.fmov_x(8, 24)
-    mut self.cbz(8, true, res16)
-    mut self.add(15, 15, 17) // then the tail
-    mut self.add(16, 16, 17)
-    mut self.subi(15, 15, 16)
-    mut self.subi(16, 16, 16)
-    mut self.vmem(LDUR_Q, 24, 15, 0)
-    mut self.vmem(LDUR_Q, 25, 16, 0)
-    mut self.ins(0x6E201C00 | (25 << 16) | (24 << 5) | 24)
-    mut self.ins(0x6EA0A400 | (24 << 16) | (24 << 5) | 24)
-    mut self.fmov_x(8, 24)
-    mut self.cbz(8, false, same)
-    mut self.bind(res16) // [x15], [x16] differ in 16
-    mut self.ldr(8, 15, 0)
-    mut self.ldr(17, 16, 0)
-    mut self.cmp(8, 17)
-    mut self.bcond(C_NE, diff)
-    mut self.ldr(8, 15, 8)
-    mut self.ldr(17, 16, 8)
-    mut self.br(diff)
+    self.text("__ace$mem_compare")
+    self.cmpi(17, 16)
+    self.bcond(C_LO, lt16)
+    self.cmpi(17, 32)
+    self.bcond(C_HI, gt32)
+    self.vmem(LDUR_Q, 24, 15, 0) // 16..32: head
+    self.vmem(LDUR_Q, 25, 16, 0)
+    self.ins(0x6E201C00 | (25 << 16) | (24 << 5) | 24) // eor v24, v24, v25
+    self.ins(0x6EA0A400 | (24 << 16) | (24 << 5) | 24) // umaxp v24.4s
+    self.fmov_x(8, 24)
+    self.cbz(8, true, res16)
+    self.add(15, 15, 17) // then the tail
+    self.add(16, 16, 17)
+    self.subi(15, 15, 16)
+    self.subi(16, 16, 16)
+    self.vmem(LDUR_Q, 24, 15, 0)
+    self.vmem(LDUR_Q, 25, 16, 0)
+    self.ins(0x6E201C00 | (25 << 16) | (24 << 5) | 24)
+    self.ins(0x6EA0A400 | (24 << 16) | (24 << 5) | 24)
+    self.fmov_x(8, 24)
+    self.cbz(8, false, same)
+    self.bind(res16) // [x15], [x16] differ in 16
+    self.ldr(8, 15, 0)
+    self.ldr(17, 16, 0)
+    self.cmp(8, 17)
+    self.bcond(C_NE, diff)
+    self.ldr(8, 15, 8)
+    self.ldr(17, 16, 8)
+    self.br(diff)
 
-    mut self.bind(gt32) // 33+: 32-byte blocks
-    mut self.subi(17, 17, 32)
-    mut self.align_code(16)
-    mut self.bind(loop)
-    mut self.compare_block32(res32)
-    mut self.addi(15, 15, 32)
-    mut self.addi(16, 16, 32)
-    mut self.subsi(17, 17, 32)
-    mut self.bcond(C_HI, loop)
-    mut self.add(15, 15, 17) // final block: end - 32
-    mut self.add(16, 16, 17)
-    mut self.compare_block32(res32)
-    mut self.br(same)
-    mut self.bind(res32) // [x15], [x16] differ in 32
+    self.bind(gt32) // 33+: 32-byte blocks
+    self.subi(17, 17, 32)
+    self.align_code(16)
+    self.bind(loop)
+    self.compare_block32(res32)
+    self.addi(15, 15, 32)
+    self.addi(16, 16, 32)
+    self.subsi(17, 17, 32)
+    self.bcond(C_HI, loop)
+    self.add(15, 15, 17) // final block: end - 32
+    self.add(16, 16, 17)
+    self.compare_block32(res32)
+    self.br(same)
+    self.bind(res32) // [x15], [x16] differ in 32
     for w: u32 in 0..3 {
-        mut self.ldr(8, 15, w * 8)
-        mut self.ldr(17, 16, w * 8)
-        mut self.cmp(8, 17)
-        mut self.bcond(C_NE, diff)
+        self.ldr(8, 15, w * 8)
+        self.ldr(17, 16, w * 8)
+        self.cmp(8, 17)
+        self.bcond(C_NE, diff)
     }
-    mut self.ldr(8, 15, 24)
-    mut self.ldr(17, 16, 24)
-    mut self.br(diff)
+    self.ldr(8, 15, 24)
+    self.ldr(17, 16, 24)
+    self.br(diff)
 
-    mut self.bind(lt16) // 8..15: two overlapping words
-    mut self.cmpi(17, 8)
-    mut self.bcond(C_LO, lt8)
-    mut self.subi(17, 17, 8) // x17 = tail offset
-    mut self.vmem(LDUR_D, 24, 15, 0)
-    mut self.vmem(LDUR_D, 25, 16, 0)
-    mut self.ins(0xFC606800 | (17 << 16) | (15 << 5) | 26) // ldr d26, [x15, x17]
-    mut self.ins(0xFC606800 | (17 << 16) | (16 << 5) | 27) // ldr d27, [x16, x17]
-    mut self.br(words)
-    mut self.bind(lt8) // 4..7: two overlapping halves
-    mut self.cmpi(17, 4)
-    mut self.bcond(C_LO, lt4)
-    mut self.subi(17, 17, 4)
-    mut self.vmem(LDUR_S, 24, 15, 0)
-    mut self.vmem(LDUR_S, 25, 16, 0)
-    mut self.ins(0xBC606800 | (17 << 16) | (15 << 5) | 26) // ldr s26, [x15, x17]
-    mut self.ins(0xBC606800 | (17 << 16) | (16 << 5) | 27) // ldr s27, [x16, x17]
-    mut self.br(words)
-    mut self.bind(lt4) // 1..3: first, middle, last
-    mut self.cbz(17, false, same)
-    mut self.ins(0xD341FE28) // lsr x8, x17, #1
-    mut self.vmem(LDUR_B, 24, 15, 0)
-    mut self.vmem(LDUR_B, 25, 16, 0)
-    mut self.ins(0x3C606800 | (8 << 16) | (15 << 5) | 28) // ldr b28, [x15, x8]
-    mut self.ins(0x3C606800 | (8 << 16) | (16 << 5) | 29) // ldr b29, [x16, x8]
-    mut self.add(15, 15, 17)
-    mut self.add(16, 16, 17)
-    mut self.vmem(LDUR_B, 30, 15, -1)
-    mut self.vmem(LDUR_B, 31, 16, -1)
-    mut self.ins(0x6E000400 | (3 << 16) | (28 << 5) | 24) // mov v24.b[1], v28.b[0]
-    mut self.ins(0x6E000400 | (5 << 16) | (30 << 5) | 24) // mov v24.b[2], v30.b[0]
-    mut self.ins(0x6E000400 | (3 << 16) | (29 << 5) | 25) // mov v25.b[1], v29.b[0]
-    mut self.ins(0x6E000400 | (5 << 16) | (31 << 5) | 25) // mov v25.b[2], v31.b[0]
-    mut self.fmov_x(8, 24)
-    mut self.fmov_x(17, 25)
-    mut self.br(last)
-    mut self.bind(words) // head words, then tail words
-    mut self.fmov_x(8, 24)
-    mut self.fmov_x(17, 25)
-    mut self.cmp(8, 17)
-    mut self.bcond(C_NE, diff)
-    mut self.fmov_x(8, 26)
-    mut self.fmov_x(17, 27)
-    mut self.bind(last)
-    mut self.cmp(8, 17)
-    mut self.bcond(C_NE, diff)
-    mut self.bind(same)
-    mut self.load_imm(true, 17, 0)
-    mut self.ins(RET)
-    mut self.bind(diff) // x8 != x17 in memory order
-    mut self.ins(0xDAC00C00 | (8 << 5) | 8) // rev x8, x8
-    mut self.ins(0xDAC00C00 | (17 << 5) | 17) // rev x17, x17
-    mut self.cmp(8, 17)
-    mut self.load_imm(true, 17, 1)
-    mut self.ins(0xDA800400 | (17 << 16) | (C_HS << 12) | (17 << 5) | 17) // cneg x17, x17, lo
-    mut self.ins(RET)
+    self.bind(lt16) // 8..15: two overlapping words
+    self.cmpi(17, 8)
+    self.bcond(C_LO, lt8)
+    self.subi(17, 17, 8) // x17 = tail offset
+    self.vmem(LDUR_D, 24, 15, 0)
+    self.vmem(LDUR_D, 25, 16, 0)
+    self.ins(0xFC606800 | (17 << 16) | (15 << 5) | 26) // ldr d26, [x15, x17]
+    self.ins(0xFC606800 | (17 << 16) | (16 << 5) | 27) // ldr d27, [x16, x17]
+    self.br(words)
+    self.bind(lt8) // 4..7: two overlapping halves
+    self.cmpi(17, 4)
+    self.bcond(C_LO, lt4)
+    self.subi(17, 17, 4)
+    self.vmem(LDUR_S, 24, 15, 0)
+    self.vmem(LDUR_S, 25, 16, 0)
+    self.ins(0xBC606800 | (17 << 16) | (15 << 5) | 26) // ldr s26, [x15, x17]
+    self.ins(0xBC606800 | (17 << 16) | (16 << 5) | 27) // ldr s27, [x16, x17]
+    self.br(words)
+    self.bind(lt4) // 1..3: first, middle, last
+    self.cbz(17, false, same)
+    self.ins(0xD341FE28) // lsr x8, x17, #1
+    self.vmem(LDUR_B, 24, 15, 0)
+    self.vmem(LDUR_B, 25, 16, 0)
+    self.ins(0x3C606800 | (8 << 16) | (15 << 5) | 28) // ldr b28, [x15, x8]
+    self.ins(0x3C606800 | (8 << 16) | (16 << 5) | 29) // ldr b29, [x16, x8]
+    self.add(15, 15, 17)
+    self.add(16, 16, 17)
+    self.vmem(LDUR_B, 30, 15, -1)
+    self.vmem(LDUR_B, 31, 16, -1)
+    self.ins(0x6E000400 | (3 << 16) | (28 << 5) | 24) // mov v24.b[1], v28.b[0]
+    self.ins(0x6E000400 | (5 << 16) | (30 << 5) | 24) // mov v24.b[2], v30.b[0]
+    self.ins(0x6E000400 | (3 << 16) | (29 << 5) | 25) // mov v25.b[1], v29.b[0]
+    self.ins(0x6E000400 | (5 << 16) | (31 << 5) | 25) // mov v25.b[2], v31.b[0]
+    self.fmov_x(8, 24)
+    self.fmov_x(17, 25)
+    self.br(last)
+    self.bind(words) // head words, then tail words
+    self.fmov_x(8, 24)
+    self.fmov_x(17, 25)
+    self.cmp(8, 17)
+    self.bcond(C_NE, diff)
+    self.fmov_x(8, 26)
+    self.fmov_x(17, 27)
+    self.bind(last)
+    self.cmp(8, 17)
+    self.bcond(C_NE, diff)
+    self.bind(same)
+    self.load_imm(true, 17, 0)
+    self.ins(RET)
+    self.bind(diff) // x8 != x17 in memory order
+    self.ins(0xDAC00C00 | (8 << 5) | 8) // rev x8, x8
+    self.ins(0xDAC00C00 | (17 << 5) | 17) // rev x17, x17
+    self.cmp(8, 17)
+    self.load_imm(true, 17, 1)
+    self.ins(0xDA800400 | (17 << 16) | (C_HS << 12) | (17 << 5) | 17) // cneg x17, x17, lo
+    self.ins(RET)
 }
 
 /* The debug allocator registry: a list of (ptr, size, align, next) nodes
  * under __ace$registry_head, and its find, add, remove, and leak check.
  */
-Rt.allocator(mut self) {
+Rt.allocator(self) {
     if !self.o.allocator_used {
         if self.o.debug {
-            mut self.text("__ace$registry_leaks")
-            mut self.ins(RET) // no allocation intrinsic exists in this unit
+            self.text("__ace$registry_leaks")
+            self.ins(RET) // no allocation intrinsic exists in this unit
         }
         return
     }
-    b: mut *macho.Sec = mut self.o.sec(macho.SEC_BSS)
+    b: *macho.Sec = self.o.sec(macho.SEC_BSS)
     b.size = (b.size + 7) & ~u64(7)
-    head: int = mut self.o.define("__ace$registry_head", false, macho.SEC_BSS)
-    b = mut self.o.sec(macho.SEC_BSS)
+    head: int = self.o.define("__ace$registry_head", false, macho.SEC_BSS)
+    b = self.o.sec(macho.SEC_BSS)
     b.size += 8
-    mut self.failure("__ace$allocator_fail", "__ace$allocator_message", "ace: allocator violation\n")
+    self.failure("__ace$allocator_fail", "__ace$allocator_message", "ace: allocator violation\n")
 
     // find(ptr,size) -> node
-    mut self.text("__ace$registry_find")
-    mut self.mov(2, 0)
-    mut self.mov(3, 1)
-    mut self.addr_of(16, head)
-    mut self.ldr(0, 16, 0)
-    find_loop: int = mut self.new_label()
-    find_next: int = mut self.new_label()
-    find_ok: int = mut self.new_label()
-    mut self.bind(find_loop)
-    mut self.cbz(0, false, find_next)
-    mut self.ldr(16, 0, 0)
-    mut self.cmp(16, 2)
-    mut self.bcond(C_NE, find_next)
-    mut self.ldr(16, 0, 8)
-    mut self.cmp(16, 3)
-    mut self.bcond(C_EQ, find_ok)
-    mut self.bind(find_next)
-    mut self.cbz(0, false, find_ok) // null reaches failure below
-    mut self.ldr(0, 0, 24)
-    mut self.br(find_loop)
-    mut self.bind(find_ok)
-    find_ret: int = mut self.new_label()
-    mut self.cbz(0, true, find_ret)
-    mut self.bl_internal("__ace$allocator_fail")
-    mut self.bind(find_ret)
-    mut self.ins(RET)
+    self.text("__ace$registry_find")
+    self.mov(2, 0)
+    self.mov(3, 1)
+    self.addr_of(16, head)
+    self.ldr(0, 16, 0)
+    find_loop: int = self.new_label()
+    find_next: int = self.new_label()
+    find_ok: int = self.new_label()
+    self.bind(find_loop)
+    self.cbz(0, false, find_next)
+    self.ldr(16, 0, 0)
+    self.cmp(16, 2)
+    self.bcond(C_NE, find_next)
+    self.ldr(16, 0, 8)
+    self.cmp(16, 3)
+    self.bcond(C_EQ, find_ok)
+    self.bind(find_next)
+    self.cbz(0, false, find_ok) // null reaches failure below
+    self.ldr(0, 0, 24)
+    self.br(find_loop)
+    self.bind(find_ok)
+    find_ret: int = self.new_label()
+    self.cbz(0, true, find_ret)
+    self.bl_internal("__ace$allocator_fail")
+    self.bind(find_ret)
+    self.ins(RET)
 
-    mut self.text("__ace$registry_add")
-    mut self.helper_prologue()
-    mut self.mov(19, 0)
-    mut self.mov(20, 1)
-    mut self.mov(21, 2)
-    mut self.load_imm(true, 0, 32)
-    mut self.bl_extern("_malloc")
-    add_ok: int = mut self.new_label()
-    mut self.cbz(0, true, add_ok)
-    mut self.bl_internal("__ace$allocator_fail")
-    mut self.bind(add_ok)
-    mut self.str(19, 0, 0)
-    mut self.str(20, 0, 8)
-    mut self.str(21, 0, 16)
-    mut self.addr_of(16, head)
-    mut self.ldr(17, 16, 0)
-    mut self.str(17, 0, 24)
-    mut self.str(0, 16, 0)
-    mut self.helper_epilogue()
+    self.text("__ace$registry_add")
+    self.helper_prologue()
+    self.mov(19, 0)
+    self.mov(20, 1)
+    self.mov(21, 2)
+    self.load_imm(true, 0, 32)
+    self.bl_extern("_malloc")
+    add_ok: int = self.new_label()
+    self.cbz(0, true, add_ok)
+    self.bl_internal("__ace$allocator_fail")
+    self.bind(add_ok)
+    self.str(19, 0, 0)
+    self.str(20, 0, 8)
+    self.str(21, 0, 16)
+    self.addr_of(16, head)
+    self.ldr(17, 16, 0)
+    self.str(17, 0, 24)
+    self.str(0, 16, 0)
+    self.helper_epilogue()
 
-    mut self.text("__ace$registry_remove")
-    mut self.helper_prologue()
-    mut self.mov(19, 0)
-    mut self.mov(20, 1)
-    mut self.load_imm(true, 21, 0)
-    mut self.addr_of(16, head)
-    mut self.ldr(0, 16, 0)
-    rem_loop: int = mut self.new_label()
-    rem_next: int = mut self.new_label()
-    rem_found: int = mut self.new_label()
-    mut self.bind(rem_loop)
-    mut self.cbz(0, false, rem_next)
-    mut self.ldr(16, 0, 0)
-    mut self.cmp(16, 19)
-    mut self.bcond(C_NE, rem_next)
-    mut self.ldr(16, 0, 8)
-    mut self.cmp(16, 20)
-    mut self.bcond(C_EQ, rem_found)
-    mut self.bind(rem_next)
-    mut self.cbz(0, false, rem_found)
-    mut self.mov(21, 0)
-    mut self.ldr(0, 0, 24)
-    mut self.br(rem_loop)
-    mut self.bind(rem_found)
-    rem_present: int = mut self.new_label()
-    mut self.cbz(0, true, rem_present)
-    mut self.bl_internal("__ace$allocator_fail")
-    mut self.bind(rem_present)
-    mut self.ldr(17, 0, 24)
-    rem_nonhead: int = mut self.new_label()
-    rem_unlinked: int = mut self.new_label()
-    mut self.cbz(21, true, rem_nonhead)
-    mut self.addr_of(16, head)
-    mut self.str(17, 16, 0)
-    mut self.br(rem_unlinked)
-    mut self.bind(rem_nonhead)
-    mut self.str(17, 21, 24)
-    mut self.bind(rem_unlinked)
-    mut self.bl_extern("_free")
-    mut self.helper_epilogue()
+    self.text("__ace$registry_remove")
+    self.helper_prologue()
+    self.mov(19, 0)
+    self.mov(20, 1)
+    self.load_imm(true, 21, 0)
+    self.addr_of(16, head)
+    self.ldr(0, 16, 0)
+    rem_loop: int = self.new_label()
+    rem_next: int = self.new_label()
+    rem_found: int = self.new_label()
+    self.bind(rem_loop)
+    self.cbz(0, false, rem_next)
+    self.ldr(16, 0, 0)
+    self.cmp(16, 19)
+    self.bcond(C_NE, rem_next)
+    self.ldr(16, 0, 8)
+    self.cmp(16, 20)
+    self.bcond(C_EQ, rem_found)
+    self.bind(rem_next)
+    self.cbz(0, false, rem_found)
+    self.mov(21, 0)
+    self.ldr(0, 0, 24)
+    self.br(rem_loop)
+    self.bind(rem_found)
+    rem_present: int = self.new_label()
+    self.cbz(0, true, rem_present)
+    self.bl_internal("__ace$allocator_fail")
+    self.bind(rem_present)
+    self.ldr(17, 0, 24)
+    rem_nonhead: int = self.new_label()
+    rem_unlinked: int = self.new_label()
+    self.cbz(21, true, rem_nonhead)
+    self.addr_of(16, head)
+    self.str(17, 16, 0)
+    self.br(rem_unlinked)
+    self.bind(rem_nonhead)
+    self.str(17, 21, 24)
+    self.bind(rem_unlinked)
+    self.bl_extern("_free")
+    self.helper_epilogue()
 
-    mut self.text("__ace$registry_leaks")
-    mut self.addr_of(16, head)
-    mut self.ldr(16, 16, 0)
-    no_leaks: int = mut self.new_label()
-    mut self.cbz(16, false, no_leaks)
-    mut self.bl_internal("__ace$allocator_fail")
-    mut self.bind(no_leaks)
-    mut self.ins(RET)
-    mut self.patch_branches()
+    self.text("__ace$registry_leaks")
+    self.addr_of(16, head)
+    self.ldr(16, 16, 0)
+    no_leaks: int = self.new_label()
+    self.cbz(16, false, no_leaks)
+    self.bl_internal("__ace$allocator_fail")
+    self.bind(no_leaks)
+    self.ins(RET)
+    self.patch_branches()
 }
 
 /* Emits the runtime routines o's functions referenced, then patches every
  * internal call.
  */
-pub runtime(mut o: macho.Obj) {
-    r: Rt = Rt { o = mut &o, lab = array.Array[u32] {}, bp = array.Array[RtBranch] {} }
-    defer mut r.lab.wipe()
-    defer mut r.bp.wipe()
+pub runtime(o: *macho.Obj) {
+    r: Rt = Rt { o = o, lab = array.Array[u32] {}, bp = array.Array[RtBranch] {} }
+    defer r.lab.wipe()
+    defer r.bp.wipe()
     if o.bounds_fail_used {
-        mut r.text("__ace$bounds_fail")
-        mut r.ins(0xA9BF7BFD) // stp x29, x30, [sp, #-16]!
-        mut r.ins(0x910003FD) // mov x29, sp
-        mut r.bl_extern("_write")
-        mut r.bl_extern("_abort")
-        mut r.ins(0xD4200000) // brk #0 if abort unexpectedly returns
+        r.text("__ace$bounds_fail")
+        r.ins(0xA9BF7BFD) // stp x29, x30, [sp, #-16]!
+        r.ins(0x910003FD) // mov x29, sp
+        r.bl_extern("_write")
+        r.bl_extern("_abort")
+        r.ins(0xD4200000) // brk #0 if abort unexpectedly returns
     }
-    if o.arithmetic_fail_used { mut r.failure("__ace$arithmetic_fail", "__ace$arithmetic_message", "ace: arithmetic violation\n") }
-    if o.contract_fail_used { mut r.failure("__ace$contract_fail", "__ace$contract_message", "ace: call contract violation\n") }
-    if o.null_fail_used { mut r.failure("__ace$null_fail", "__ace$null_message", "ace: null use violation\n") }
-    mut r.allocator()
-    if o.mem_copy_used { mut r.mem_copy() }
-    if o.mem_fill_used { mut r.mem_fill() }
-    if o.mem_compare_used { mut r.mem_compare() }
-    mut r.patch_branches()
-    mut o.patch_fixups()
+    if o.arithmetic_fail_used { r.failure("__ace$arithmetic_fail", "__ace$arithmetic_message", "ace: arithmetic violation\n") }
+    if o.contract_fail_used { r.failure("__ace$contract_fail", "__ace$contract_message", "ace: call contract violation\n") }
+    if o.null_fail_used { r.failure("__ace$null_fail", "__ace$null_message", "ace: null use violation\n") }
+    r.allocator()
+    if o.mem_copy_used { r.mem_copy() }
+    if o.mem_fill_used { r.mem_fill() }
+    if o.mem_compare_used { r.mem_compare() }
+    r.patch_branches()
+    o.patch_fixups()
 }

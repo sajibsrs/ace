@@ -1,0 +1,49 @@
+/* Function values with pointer parameters: stored, passed, held in a field and
+   a table, called through the value with the caller's storage, in generics. */
+
+// expect-exit: 79
+
+Box: struct {
+    n: int,
+    big: [8]int,
+}
+
+bump(b: *Box) {
+    b.n += 1
+    b.big[7] += 10
+}
+
+trim(text: *[]u8, by: usize) {
+    *text = (*text)[0 .. text.len - by]
+}
+
+twice(f: (b: *Box): void, b: *Box) {
+    f(b)
+    f(b)
+}
+
+Holder: struct {
+    run: (b: *Box): void,
+}
+
+apply[A](f: (a: *A): void, a: *A) {
+    f(a)
+}
+
+main(): int {
+    b: Box = blank(Box)
+    f: (b: *Box): void = bump
+    f(&b)
+    twice(bump, &b)
+    h: Holder = Holder { run = bump }
+    h.run(&b)
+    table: [](string, (b: *Box): void) = [("bump", bump)]
+    name: string, g: (b: *Box): void = table[0]
+    g(&b)
+    apply[Box](bump, &b)
+    t: (text: *[]u8, by: usize): void = trim
+    s: []u8 = "hello"
+    t(&s, 2)
+    // n = 6, big[7] = 60, name and s lengths 4 and 3, plus 6
+    return b.n + b.big[7] + int(name.len) + int(s.len) + 6
+}

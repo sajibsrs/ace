@@ -4,7 +4,7 @@
 
 Value: contract {
     get(self): int
-    add(mut self, amount: int)
+    add(self, amount: int)
 }
 
 Base: struct {
@@ -17,7 +17,7 @@ Base.get(self): int {
     return self.value
 }
 
-Base.add(mut self, amount: int) {
+Base.add(self, amount: int) {
     self.value = self.value + amount
 }
 
@@ -35,7 +35,7 @@ main(): int {
 
     if outer.base.value != 10 { return 1 }
     value: Value = Value(&outer)
-    mut value.add(30)
+    value.add(30)
 
     if outer.get() != 40 { return 2 }
     return outer.prefix + outer.base.value

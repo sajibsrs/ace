@@ -10,19 +10,19 @@ import mem
 
 main(): int {
     storage: [10]u8
-    b: fmt.Buffer = fmt.Buffer.init(mut storage[..])
-    if mut b.printf("%s", "") != 0 || b.text().len != 0 { return 1 }
-    if mut b.printf("%d:%c", -4, u8(';')) != 4 { return 2 }
-    if mut b.printf("%s %u", "abcd", uint(12345)) != 6 { return 3 }
+    b: fmt.Buffer = fmt.Buffer.init(storage[..])
+    if b.printf("%s", "") != 0 || b.text().len != 0 { return 1 }
+    if b.printf("%d:%c", -4, u8(';')) != 4 { return 2 }
+    if b.printf("%s %u", "abcd", uint(12345)) != 6 { return 3 }
     if !mem.equal(b.text(), "-4:;abcd 1") || b.dropped() != 4 { return 4 }
-    if mut b.printf("%5d", 7) != 0 || b.dropped() != 9 { return 5 }
-    if mut b.flush() != 0 || !mem.equal(b.text(), "-4:;abcd 1") { return 6 }
+    if b.printf("%5d", 7) != 0 || b.dropped() != 9 { return 5 }
+    if b.flush() != 0 || !mem.equal(b.text(), "-4:;abcd 1") { return 6 }
 
     tail: [6]u8
-    t: fmt.Buffer = fmt.Buffer.init(mut tail[..])
-    if mut t.printf("ab%04d", 9) != 6 || !mem.equal(t.text(), "ab0009") || t.dropped() != 0 { return 7 }
+    t: fmt.Buffer = fmt.Buffer.init(tail[..])
+    if t.printf("ab%04d", 9) != 6 || !mem.equal(t.text(), "ab0009") || t.dropped() != 0 { return 7 }
 
-    none: fmt.Buffer = fmt.Buffer.init(mut storage[0..0])
-    if mut none.printf("x %d %8.3f %s", 7, 1.5, "y") != 0 || none.text().len != 0 || none.dropped() != 14 { return 8 }
+    none: fmt.Buffer = fmt.Buffer.init(storage[0..0])
+    if none.printf("x %d %8.3f %s", 7, 1.5, "y") != 0 || none.text().len != 0 || none.dropped() != 14 { return 8 }
     return 0
 }

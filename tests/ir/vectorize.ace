@@ -44,7 +44,7 @@ shift() {
     for i: usize in 0 .. 63 { ys[i] = ys[i + 1] }
 }
 
-slices(a: []f32, b: mut []f32) {
+slices(a: []f32, b: []f32) {
     for i: usize in 0 .. 64 { b[i] = a[i] + 1.0 }
 }
 
@@ -148,7 +148,7 @@ main(): int {
     scale(64)
     negate()
     b: [64]f32 = [0.0 : 64]
-    slices(xs[..], mut b[..])
+    slices(xs[..], b[..])
     calls()
     stays()
     wide(64)

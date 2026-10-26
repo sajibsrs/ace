@@ -32,7 +32,7 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
   (Syntax #6), breaking `xs.set(i, 0)` on an `Array[u32]`.
 - `view(): []T` is the live elements as a slice. It aliases the storage and is
   invalidated by any call that grows the array.
-- `view(mut self): mut []T`, called as `mut xs.view()`, is the same slice
+- `view(self): []T`, called as `xs.view()`, is the same slice
   writable in place: `live[i].field = v` edits an element without copying it
   out and back through `get`/`set`.
 - `clear()` drops every live element and keeps the storage.
@@ -45,8 +45,7 @@ Type arguments are explicit, as everywhere: `array.Array[int]`,
   is valid. Failure returns `ArrayErr.allocation` and leaves the array
   unchanged.
 
-`wipe`, `push`, `reserve`, `pop`, `set`, `clear`, `truncate`, and `resize`
-mutate, so the call site states `mut`. Access is checked against `len`, not
+Access is checked against `len`, not
 capacity: `get` and `set` at an index at or beyond `len`, and `truncate` past
 `len`, are bounds violations in debug builds and unchecked in release builds.
 
@@ -54,16 +53,16 @@ capacity: `get` and `set` at an index at or beyond `len`, and `truncate` past
 import array
 
 items: array.Array[int] = array.Array[int]{}
-defer mut items.wipe()
+defer items.wipe()
 
-err: Error = mut items.push(42)
+err: Error = items.push(42)
 
 if err != null {
     /* allocation failed; items is unchanged */
 }
 
 last: int
-last, err = mut items.pop()   /* 42, or 0 and ArrayErr.empty when empty */
+last, err = items.pop()   /* 42, or 0 and ArrayErr.empty when empty */
 ```
 
 Element types are bare named types (Generics #12), so an array of slices or of

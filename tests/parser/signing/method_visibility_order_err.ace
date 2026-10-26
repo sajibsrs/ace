@@ -1,7 +1,0 @@
-/* Method visibility order fixture. */
-
-Circle: struct { radius: int }
-
-mut pub Circle.scale(k: int) {
-    self.radius = self.radius * k
-}

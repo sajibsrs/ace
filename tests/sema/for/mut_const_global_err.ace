@@ -1,9 +1,0 @@
-/* `in mut` over a const global: const storage is not a writable lvalue. */
-
-vals: const [3]i32 = [1, 2, 3]
-
-main(): int {
-    for v: i32 in mut vals {
-    }
-    return 0
-}

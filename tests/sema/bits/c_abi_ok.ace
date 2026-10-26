@@ -7,7 +7,7 @@ extern "C" {
     take(value: Flags)
     give(): Flags
     take_event(event: *Event)
-    fill(small: mut *Small)
+    fill(small: *Small)
 }
 
 extern "c" expose(value: Flags, event: Event): Flags {

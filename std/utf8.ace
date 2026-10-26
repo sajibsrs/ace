@@ -27,7 +27,7 @@ pub inline width(value: u32): usize {
  * An invalid code point or insufficient capacity returns (0, false) without
  * writing; the unused destination suffix is unchanged.
  */
-pub encode(value: u32, destination: mut []char): (usize, bool) {
+pub encode(value: u32, destination: []char): (usize, bool) {
     n: usize = width(value)
     if n == 0 || destination.len < n { return 0, false }
     if n == 1 {

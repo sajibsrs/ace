@@ -24,17 +24,17 @@ square(value: int): int {
     return value * value
 }
 
-increment(mut value: int) {
-    value += 1
+increment(value: *int) {
+    *value += 1
 }
 
 divide(value: int, by: int): (int, int) {
     return (value / by, value % by)
 }
 
-long_parameter_list(url: string, config: int, policy: int, mut client: int): int {
-    client += config + policy
-    return int(url.len) + client
+long_parameter_list(url: string, config: int, policy: int, client: *int): int {
+    *client += config + policy
+    return int(url.len) + *client
 }
 
 render(value: string): int {
@@ -86,7 +86,7 @@ inline mix(value: u64): u64 {
 
 Buffer: struct { at: usize }
 
-pub inline Buffer.skip(mut self, n: usize) {
+pub inline Buffer.skip(self, n: usize) {
     self.at += n
 }
 
@@ -99,22 +99,22 @@ Box: struct {
     n: int,
 }
 
-bump(mut b: Box) {
+bump(b: *Box) {
     b.n += 1
 }
 
-bump_twice(f: (mut b: Box): void, mut b: Box) {
-    f(mut b)
-    f(mut b)
+bump_twice(f: (b: *Box): void, b: *Box) {
+    f(b)
+    f(b)
 }
 
 main(): int {
     box: Box = Box { n = 0 }
-    bump_twice(bump, mut box)
+    bump_twice(bump, &box)
     b: Buffer = Buffer{ at = 0 }
-    mut b.skip(2)
+    b.skip(2)
     count: int = 12 + int(mix(u64(b.at))) - 6
-    increment(mut count)
+    increment(&count)
     quotient: int, remainder: int = divide(count, 5)
     operation: (int): int = twice
     ten: int = run(twice)
@@ -147,7 +147,7 @@ extern "c" {
     c_variadic(tag: i32, ...): i32
 }
 
-extern "c" increment_c(value: mut *i32): i32 {
+extern "c" increment_c(value: *i32): i32 {
     *value += 1
     return *value
 }
@@ -159,8 +159,8 @@ check_c_variadic(): i32 {
 
 extern "c" {
     c_limit: i32
-    mut c_counter: i32
-    mut c_table: [4]i32
+    c_counter: i32
+    c_table: [4]i32
     c_bump()
 }
 
@@ -172,8 +172,8 @@ check_c_globals(): i32 {
 }
 
 extern "c" {
-    mut opterr: i32
-    mut ace_counter: i32 = 0
+    opterr: i32
+    ace_counter: i32 = 0
     ace_version: u32 = 3
 }
 

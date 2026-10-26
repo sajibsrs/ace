@@ -4,18 +4,18 @@ pub Router.new(start: int): Router {
     return Router { count = start }
 }
 
-pub Router.bump(mut self, k: int) {
+pub Router.bump(self, k: int) {
     self.count = self.count + k
 }
 
-pub Router.reset(mut r: Router): Router {
+pub Router.reset(r: *Router): Router {
     r.count = 0
-    return r
+    return *r
 }
 
 main(): int {
     r: Router = Router.new(10)
-    mut r.bump(5)
-    r = Router.reset(mut r)
+    r.bump(5)
+    r = Router.reset(&r)
     return r.count
 }

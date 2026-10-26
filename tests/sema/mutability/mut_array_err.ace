@@ -1,7 +1,0 @@
-/* err: fixed arrays are storage, not views — no mut [N]T form exists
- * (Mutability #9). */
-
-main(): int {
-    x: mut [4]u8
-    return 0
-}

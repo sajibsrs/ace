@@ -72,8 +72,7 @@ A `for` over a string, slice, or array prints as a loop over a pointer: the
 end is `padd ptr, len * size` computed once, the head compares the pointer with
 it, and each step is `padd ptr, 1 * size`, with a `u64` counter alongside when
 the loop has an index binder. A value binder is a copy of the element loaded at
-the pointer; under `in mut` it is the pointer itself, so its reads and writes
-are loads and stores. The body has no bounds checks. A tagged union is memory: its construction stores the payload and then the
+the pointer. The body has no bounds checks. A tagged union is memory: its construction stores the payload and then the
 `i32` tag, and it crosses a call as `u64` words (a `u32` for a last half word)
 up to 16 bytes, or by address above. `==` prints as a tag comparison and one
 block per payload variant. A struct, tuple, or array holding a union is memory
@@ -110,7 +109,7 @@ construct. An `asm` statement prints as one instruction, its
 bindings' registers beside the values moved into them, the registers it
 reads out after `->`, and every register it reserves as a `clobbers` mask;
 each value it writes out is a `proj` of it. A binding of a local or parameter
-kept in memory (address-taken, or a `mut` parameter) prints as a `load` before
+kept in memory (address-taken, or a receiver) prints as a `load` before
 the instruction and a `store` after it.
 
 The build target defaults from the compiler host and can be selected explicitly

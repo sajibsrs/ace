@@ -6,14 +6,12 @@ import str
 
 bad(): int {
     buffer: [16]u8 = [0 : 16]
-    read_only: []u8 = buffer[..]
     dynamic: string = "%d"
-    n: usize, ok: bool = str.format(mut buffer[..], "%d", uint(1))
-    n, ok = str.format(mut buffer[..], "%d %d", 1)
-    n, ok = str.format(mut buffer[..], "%d", 1, 2)
-    n, ok = str.format(mut buffer[..], dynamic, 1)
-    n, ok = str.format(mut buffer[..], "%q", 1)
-    n, ok = str.format(read_only, "%d", 1)
+    n: usize, ok: bool = str.format(buffer[..], "%d", uint(1))
+    n, ok = str.format(buffer[..], "%d %d", 1)
+    n, ok = str.format(buffer[..], "%d", 1, 2)
+    n, ok = str.format(buffer[..], dynamic, 1)
+    n, ok = str.format(buffer[..], "%q", 1)
     return int(n)
 }
 

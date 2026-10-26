@@ -1,11 +1,11 @@
 Flags: bits u8 { on: 1, _: 7 }
 
-change(mut value: u8) {}
+change(value: *u8) {}
 
 main(): int {
     flags: Flags = Flags { on = 1 }
     pointer: *u8 = &flags.on
-    change(mut flags.on)
+    change(&flags.on)
     flags._ = 1
     bad: usize = offsetof(Flags, on)
     value: u8 = volatile flags.on
