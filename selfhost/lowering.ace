@@ -763,10 +763,6 @@ Lw.scan_walk(self, at: u32) {
             if self.in_defer { self.hit = true }
             return
         }
-        if n.kind == Kind.call && n.a != 0 && self.node(n.a).kind == Kind.selector && !self.assoc_call(at) && !self.field_call(at) &&
-            self.node(self.node(n.a).a).kind == Kind.ident && self.nsym(self.node(n.a).a) == self.want {
-            self.hit = true // p.method(): the receiver is p's value
-        }
     }
     if n.kind == Kind.unary && (n.op == Token.amp || n.op == Token.volatile) { self.need_storage(n.a) }
     if n.kind == Kind.assign && (n.flags & parser.F_VOLATILE) != 0 {
@@ -2996,11 +2992,9 @@ Lw.call_args(self, call: u32, s: u32, g: *Args): int {
     return first_var
 }
 
-/* The struct receiver `a` names, through every pointer level. */
+/* The struct receiver `a` names. */
 Lw.recv_struct(self, a: u32): u32 {
-    t: u32 = self.unwrap(self.nty(a))
-    for t != 0 && self.ty(t).kind == TypeKind.ptr { t = self.unwrap(self.ty(t).base) }
-    return t
+    return self.unwrap(self.nty(a))
 }
 
 /* The embedded field of receiver `a`'s struct that a method on `pt` is
@@ -3396,8 +3390,7 @@ Lw.format_call(self, x: u32, fi: u32, to_fd: int, res: *Agg, want_res: bool): in
         if self.node(dest).kind == Kind.placearg { dest = self.node(dest).a }
     }
     if to_fd == 2 {
-        p: Place = blank(Place)
-        if self.is_pointer(dest) { p, _ = self.field_base(self.node(x).a) } else { p = self.place(dest) } // p.printf(...) is (*p).printf(...)
+        p: Place = self.place(dest)
         bt: u32 = self.unwrap(p.t)
         f: sema.SField = self.s.field(self.ty(bt), u32(self.find_field(bt, "sink")))
         fd = self.place_address(p)
@@ -4241,14 +4234,11 @@ Lw.inline_call(self, x: u32, out: *Agg, want_out: bool, dst: int): int {
         a: u32 = args.get(i)
         if self.node(a).kind == Kind.placearg { a = self.node(a).a }
         if i == 0 && recv {
-            // C's sema rewrites a receiver to the place the method takes:
-            // *p for a pointer, its embedded field for a promoted method
+            // a promoted method's receiver is its embedded field (C's sema rewrites it so)
             ef: int = self.promoting_field(a, self.s.sym(ps).ty)
-            if ef >= 0 || self.is_pointer(a) {
+            if ef >= 0 {
                 rp: Place = blank(Place)
-                if self.is_pointer(a) {
-                    rp, _ = self.field_base(cn.a)
-                } else if self.is_place(a) {
+                if self.is_place(a) {
                     rp = self.place(a)
                 } else {
                     rp = self.temp_place(a)

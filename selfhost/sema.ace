@@ -2759,11 +2759,17 @@ Sema.check_member_call(self, call: u32): u32 {
     }
     b: u32 = self.expr_type(callee.a)
     if self.ty(b).kind == TypeKind.err { return self.t_err }
-    // p.m() auto-derefs like p.x, once per pointer level
-    last: u32 = 0
+    // p.m() auto-derefs like p.x: the receiver becomes the ordinary
+    // explicit dereference (*p).m(), once per pointer level
     for self.ty(b).kind == TypeKind.ptr {
-        last = b
         b = self.ty(b).base
+        d: u32 = self.synth(callee.a, Kind.unary, 0, b)
+        self.p.node(d).op = lexer.Token.star
+        self.p.node(d).a = callee.a
+        self.p.node(n.a).a = d
+        callee.a = d
+        mods: []module.Module = self.l.mods.view()
+        mods[0].parser = self.p // the loader owns the tree, which adding may have moved
     }
     // fields and methods share one namespace: a field never competes with a method
     if self.ty(b).kind == TypeKind.struct {
@@ -2804,7 +2810,7 @@ Sema.check_member_call(self, call: u32): u32 {
         self.err(call, ["no method '", callee.text, "' for ", self.type_name(b)])
         return self.t_err
     }
-    return self.check_method_call(call, b, last)
+    return self.check_method_call(call, b)
 }
 
 /* The method of `m`'s set matching `call` on receiver type `b` exactly, or a
@@ -2837,10 +2843,8 @@ Sema.method_match(self, call: u32, head: u32, b: u32): (u32, bool) {
     return found, false
 }
 
-/* A method call on struct type `b`; `last` is the innermost pointer an
- * auto-dereferenced receiver went through, 0 for a direct one.
- */
-Sema.check_method_call(self, call: u32, b: u32, last: u32): u32 {
+/* A method call on struct type `b`. */
+Sema.check_method_call(self, call: u32, b: u32): u32 {
     n: Node = self.node(call)
     callee: Node = self.node(n.a)
     owner: string = ""
@@ -2852,10 +2856,8 @@ Sema.check_method_call(self, call: u32, b: u32, last: u32): u32 {
     }
     if head != 0 && self.node(self.sym(head).decl).ival == BI_FMT_PRINTF_BUF { // buffer.printf("format", ...)
         self.p.node(call).flags |= parser.F_BYADDR // the receiver is passed by address
-        if last == 0 { // as a writable method's receiver
-            _ = self.check_lvalue(callee.a, false)
-            self.reject_const_view(call, callee.a)
-        }
+        _ = self.check_lvalue(callee.a, false) // as a writable method's receiver
+        self.reject_const_view(call, callee.a)
         return self.check_format_call(call, head, BI_FMT_PRINTF_BUF)
     }
     found: u32, amb: bool = self.method_match(call, head, b)
@@ -2901,9 +2903,9 @@ Sema.check_method_call(self, call: u32, b: u32, last: u32): u32 {
         if self.ty(sig).kind == TypeKind.err { return self.t_err }
     }
     ft: SType = self.ty(sig)
-    if last == 0 && promoted == 0 { _ = self.coerce(recv, b) }
+    if promoted == 0 { _ = self.coerce(recv, b) }
     const_self: bool = x.decl != 0 && self.node(x.decl).nkids != 0 && (self.node(self.kid(x.decl, 0)).flags & parser.F_CONST) != 0
-    if last == 0 && !const_self { self.reject_const_view(call, recv) }
+    if !const_self { self.reject_const_view(call, recv) }
     self.p.node(call).flags |= parser.F_BYADDR // the receiver is passed by address
     for i: u32 in 0..n.nkids {
         arg: u32 = self.kid(call, i)

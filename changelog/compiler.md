@@ -233,3 +233,6 @@
 - Mangled function names drop the per-parameter `r`/`m` tag: every receiver
   passes by address, so the tag no longer told signatures apart (C and
   selfhost, #158).
+- Selfhost sema rewrites a pointer receiver `p.m()` to `(*p).m()` with a new
+  dereference node per pointer level, as the compiler does; lowering's
+  pointer-receiver special cases, `format_call`'s included, are gone (#158).
