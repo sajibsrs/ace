@@ -2120,7 +2120,6 @@ pub fn_mangle(s: sema.Sema, names: *path.Pool, sym: u32, ft: u32, targs: u32, nt
     if ft != 0 && s.ty(ft).kind == TypeKind.func {
         f: SType = s.ty(ft)
         for i: u32 in 0..f.nparams {
-            if sy.decl != 0 && i < s.node(sy.decl).nkids && (s.node(s.kid(sy.decl, i)).flags & parser.F_BYADDR) != 0 { _ = b.printf("m") } else { _ = b.printf("r") }
             mangle_type(s, &b, s.param(f, i))
             _ = b.printf("$")
         }

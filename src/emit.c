@@ -595,14 +595,13 @@ static char fnname_buf[512];
 // `spec` marks a generic specialization: its exact type-argument tuple rides
 // an 's' tag so the symbol can never collide with a template stamp ('g' tag)
 // or an ordinary same-params overload (no tag).
-const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec) {
+const char* fn_mangle(const char* name, uint32_t len, SType* ft, SType** targs, int nt, int spec) {
     Buf b = {0};
     buf_write(&b, "__ace$fn$", strlen("__ace$fn$"));
     buf_write(&b, name, len);
     buf_write(&b, "$p", 2);
     if (ft && ft->kind == SK_FUNC) {
         for (int i = 0; i < ft->nparams; i++) {
-            buf_put8(&b, decl && i < decl->nkids && (decl->kids[i]->flags & F_BYADDR) ? 'm' : 'r');
             mangle_type(&b, ft->params[i]);
             buf_put8(&b, '$');
         }
@@ -666,7 +665,7 @@ const char* fn_value_mangle(Sym* s, Node* x) {
         targs = inst->args;
         ft = inst->result;
     }
-    return fn_mangle(s->name, s->len, ft, s->decl, targs, nt, s->spec_args != NULL);
+    return fn_mangle(s->name, s->len, ft, targs, nt, s->spec_args != NULL);
 }
 
 const char* fn_call_mangle(Sym* s, Node* call) {
@@ -688,7 +687,7 @@ const char* fn_call_mangle(Sym* s, Node* call) {
         targs = s->spec_args;
         ntargs = s->spec_nargs;
     }
-    return fn_mangle(s->name, s->len, cft, s->decl, targs, ntargs, s->spec_args != NULL);
+    return fn_mangle(s->name, s->len, cft, targs, ntargs, s->spec_args != NULL);
 }
 
 // --- globals ---------------------------------------------------------------------------
@@ -1620,7 +1619,7 @@ ESym* obj_vtable(Obj* o, SType* conc, SType* contract, Node* conf) {
                 if (same) { ft = it->result; break; }
             }
         }
-        const char* fnm = fn_mangle(fsym->name, fsym->len, ft, fsym->decl, args, nargs, 0);
+        const char* fnm = fn_mangle(fsym->name, fsym->len, ft, args, nargs, 0);
         ESym* fs;
         if (ref->a) {
             fs = obj_embed_thunk(o, nm, i, fnm, field_off(conc, embed_fi), x64_result_in_memory(ft->ret));
@@ -2238,14 +2237,13 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
                     f.targs = inst->args;
                     f.ntargs = n->c->nkids;
                     snprintf(mn, sizeof mn, "%s", fn_mangle(decl_sym ? decl_sym->name : n->str,
-                                               decl_sym ? decl_sym->len : n->len, inst->result,
-                                               decl_sym ? decl_sym->decl : n, inst->args, f.ntargs, 0));
+                                               decl_sym ? decl_sym->len : n->len, inst->result, inst->args, f.ntargs, 0));
                 } else {
                     int is_main = !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
                     int export_c = (n->flags & F_EXPO) != 0;
                     if (is_main) snprintf(mn, sizeof mn, "_main");
                     else if (export_c) snprintf(mn, sizeof mn, "_%s", n->cname ? n->cname : n->str);
-                    else snprintf(mn, sizeof mn, "%s", fn_mangle(decl_sym->name, decl_sym->len, decl_sym->type, n, decl_sym->spec_args,
+                    else snprintf(mn, sizeof mn, "%s", fn_mangle(decl_sym->name, decl_sym->len, decl_sym->type, decl_sym->spec_args,
                                                              decl_sym->spec_args ? decl_sym->spec_nargs : 0, decl_sym->spec_args != NULL));
                     f.global = is_main || export_c;
                     if (is_main) main_at = nfns;

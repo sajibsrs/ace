@@ -196,7 +196,7 @@ enum { FUNC_ALIGN = 16, LOOP_ALIGN = 16 };
 
 // The internal symbol of an Ace function (emit.c); the result lives in a
 // static buffer until the next call.
-const char* fn_mangle(const char* name, uint32_t len, SType* ft, Node* decl, SType** targs, int nt, int spec);
+const char* fn_mangle(const char* name, uint32_t len, SType* ft, SType** targs, int nt, int spec);
 // The link symbol of conc's vtable for contract (emit.c), defined once per
 // pair: by module-level signing emission, or, for a generic signing, by
 // obj_vtable wherever a function constructs the pair.

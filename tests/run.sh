@@ -1765,7 +1765,7 @@ if [ -d tests/emit ]; then
             fail=1
         fi
         if nm /tmp/ace_emit/printf/main.o 2>/dev/null |
-           grep -qF '_ace$fn$fmt$printf$prstring$'; then
+           grep -qF '_ace$fn$fmt$printf$pstring$'; then
             echo "FAIL: checked fmt.printf calls must not emit a runtime printf body"
             fail=1
         fi

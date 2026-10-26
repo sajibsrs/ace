@@ -230,3 +230,6 @@
   check no longer scans every local in scope; a call checks the builtin names
   first (C and selfhost, #24). 8,000-local imported function: C 1.29G → 0.14G
   instructions, selfhost `--resolved` 3.63G → 0.26G.
+- Mangled function names drop the per-parameter `r`/`m` tag: every receiver
+  passes by address, so the tag no longer told signatures apart (C and
+  selfhost, #158).

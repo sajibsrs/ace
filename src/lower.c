@@ -729,7 +729,7 @@ static const char* link_name(Sym* s, SType* ft) {
         else snprintf(buf, sizeof buf, "_%.*s", (int)s->len, s->name);
         return arena_name(buf);
     }
-    return arena_name(fn_mangle(s->name, s->len, ft, s->decl, NULL, 0, 0));
+    return arena_name(fn_mangle(s->name, s->len, ft, NULL, 0, 0));
 }
 
 // The address of an external symbol with no Ace Sym of its own (a vtable).
@@ -1651,7 +1651,7 @@ static int format_helper_call(Lw* l, Sym* h, Args* g, IrType ret) {
     SType* ft = h->type;
     int id = emit(l, IR_CALL, ret);
     l->fn->ins[id].sym = h;
-    l->fn->ins[id].name = arena_name(fn_mangle(h->name, h->len, ft, h->decl, h->spec_args,
+    l->fn->ins[id].name = arena_name(fn_mangle(h->name, h->len, ft, h->spec_args,
                                                h->spec_args ? h->spec_nargs : 0, h->spec_args != NULL));
     return call_finish(l, id, g, ft->ret, NULL, -1);
 }
