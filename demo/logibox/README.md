@@ -76,22 +76,19 @@ Escape cancels.
 
 ## Example: SR latch
 
-`diagram/latch.lgbx` is a NOR latch: each NOR is an OR feeding a NOT, and
-the two are cross-coupled, so Q = NOR(R, Q′) and Q′ = NOR(S, Q).
+`diagram/latch.lgbx` is a NOR latch: two NOR gates, cross-coupled, so
+Q = NOR(R, Q′) and Q′ = NOR(S, Q). It sits at the board's center (columns
+5–10, rows 6–9):
 
 ```
-. . . . . . . . . . .
-. S I | . . . . . . .     R (reset)
-. . . | O I ! O W W L     Q
-. . I | . . . . . W .
-. . W . . . . . . W .
-. . W W W W W W . W .     Q′ back to the upper OR
-. . . . . . . W . W .
-. S I | . . . W . W .     S (set)
-. . . | O I ! O . W .     Q′
-. . I | . . . . . W .
-. . W W W W W W W W .     Q back to the lower OR
+S I V O W L     R (reset) into the upper NOR; Q to the light
+. . I . W .     Q′ into the upper NOR, by touch
+. . O . W .     the lower NOR's output, Q′
+S I V I W .     S (set) into the lower NOR; Q back down column 9
 ```
+
+Touching does most of the wiring: the lower NOR's output pin sits right
+against the upper NOR's input pin, so only Q needs wire.
 
 The file is saved with R on and S off, so it powers up held in reset: the
 light is off. Switch to Run (2), turn on auto-ticking (Space), and turn R off: the
@@ -104,7 +101,7 @@ state, so every load starts with all gates low. Saved with both R and S off,
 the latch's two halves rise and fall together and oscillate forever, since
 identical gates never break the tie. The same happens when R and S are
 released together, or when a pulse is shorter than the trip around the loop
-(about 4 ticks here). Hold each pulse at least that long, and save feedback
+(2 ticks here, one per NOR). Hold each pulse at least that long, and save feedback
 circuits with an input held, the way real circuits hold reset at power-on.
 
 ## Diagram format (`.lgbx`)
