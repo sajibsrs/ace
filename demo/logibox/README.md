@@ -20,14 +20,14 @@ it can be started from any directory.
 
 | Key | Block      | Label | What it does |
 |-----|------------|-------|--------------|
-| 1   | source     | `S`   | A 0/1 switch. Click it (with the source selected) to flip it. |
-| 2   | wire       | `W`   | Carries a signal over distance. Touching wires form one net. |
-| 3   | input pin  | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
-| 4   | output pin | `O`   | A gate's output: drives its gate's value onto what it touches. |
-| 5   | AND        | `&`   | High when every input is high. Needs at least 2 input pins. |
-| 6   | OR         | `\|`  | High when any input is high. Needs at least 1 input pin. |
-| 7   | NOT        | `!`   | High when its input is low. Needs exactly 1 input pin. |
-| 8   | light      | `L`   | Shows the level of what it touches. |
+| S   | source     | `S`   | A 0/1 switch. Click it in Run mode to flip it. |
+| W   | wire       | `W`   | Carries a signal over distance. Touching wires form one net. |
+| I   | input pin  | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
+| O   | output pin | `O`   | A gate's output: drives its gate's value onto what it touches. |
+| A   | AND        | `&`   | High when every input is high. Needs at least 2 input pins. |
+| R   | OR         | `\|`  | High when any input is high. Needs at least 1 input pin. |
+| N   | NOT        | `!`   | High when its input is low. Needs exactly 1 input pin. |
+| L   | light      | `L`   | Shows the level of what it touches. |
 
 ## Rules
 
@@ -55,12 +55,14 @@ it can be started from any directory.
 
 | Input | Action |
 |-------|--------|
-| 1–8 | Select a block |
-| Left click / drag | Place the selected block, or flip a source |
-| Right click / drag | Remove |
-| Space | Step one tick |
-| A | Toggle auto-ticking (every 250 ms) |
-| New / Open / Save / Save as | Bar buttons |
+| 1 / Edit | Edit mode: build the board |
+| 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
+| S W I O A R N L | Select a block (see Blocks) |
+| Left click / drag | Edit: place the selected block. Run: flip a source |
+| Right click / drag | Edit: remove |
+| Space | Run: toggle auto-ticking (every 250 ms) |
+| Step | Run: step one tick |
+| New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Ctrl+S | Save (asks for a name the first time) |
 | Ctrl+O | Show or hide the list of diagrams |
 | Escape | Close the list or name box; otherwise quit |
@@ -88,7 +90,7 @@ the two are cross-coupled, so Q = NOR(R, Q′) and Q′ = NOR(S, Q).
 ```
 
 The file is saved with R on and S off, so it powers up held in reset: the
-light is off. Turn on auto-ticking, select the source (1), and turn R off: the
+light is off. Switch to Run (2), turn on auto-ticking (Space), and turn R off: the
 light stays off. Flip S on and off: it turns on and stays on. Flip R on and
 off: it turns off and stays off.
 

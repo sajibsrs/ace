@@ -7,10 +7,11 @@
  * next input pin or a light. Each connects by touching, or through wire when
  * apart.
  *
- * Mouse: left-click places the selected block (drag to paint), or flips a
- * source; right-click (or drag) removes.
- * Keys: 1-8 select source, wire, input pin, output pin, AND, OR, NOT, light;
- * space steps one tick; a toggles auto-ticking; Escape quits.
+ * Edit (1) builds the board: left-click places the selected block (drag to
+ * paint), right-click (or drag) removes. Run (2) simulates it: left-click flips
+ * a source, space toggles auto-ticking, and Step ticks once. Letters select a
+ * block: s source, w wire, i input pin, o output pin, a AND, r OR, n NOT,
+ * l light. Escape quits.
  *
  * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
@@ -82,16 +83,16 @@ LOW: [grid.Block]u32 = [
 ]
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x202428,
-    grid.Block.source = 0xffa726,
-    grid.Block.wire = 0xffffcc,
-    grid.Block.input = 0x9ccc65,
-    grid.Block.output = 0xce93d8,
-    grid.Block.and = 0x64b5f6,
-    grid.Block.or = 0x69f0ae,
-    grid.Block.not = 0xffd54f,
-    grid.Block.light = 0xff3d3d,
+    grid.Block.source = 0xc07a1c,
+    grid.Block.wire = 0xb4b48c,
+    grid.Block.input = 0x6f9446,
+    grid.Block.output = 0x9a6aa6,
+    grid.Block.and = 0x3f82b8,
+    grid.Block.or = 0x3aa877,
+    grid.Block.not = 0xc0a03a,
+    grid.Block.light = 0xc03434,
 ]
-ERROR: const u32 = 0xff00ff
+ERROR: const u32 = 0xb030b0
 
 /* Bar and panel colors. */
 CHROME: const u32 = 0x181b1f
@@ -100,18 +101,38 @@ ACTIVE: const u32 = 0x3d4f63
 INK: const u32 = 0xdddddd
 DIM: const u32 = 0x888888
 
-/* What the editor is doing: editing the board, choosing a diagram to open, or
- * typing a name to save as. */
-Mode: enum u8 { edit, open, save_as }
+/* What the bar has open over the board: nothing, the Open list, or the
+ * Save-as box. */
+Mode: enum u8 { none, open, save_as }
+
+/* Whether the board is being built (blocks placed, no ticks) or simulated
+ * (sources flip, ticks run). */
+Phase: enum u8 { edit, run }
 
 /* The bar's buttons, left to right. */
-Button: enum u8 { new, open, save, save_as }
+Button: enum u8 { new, open, save, save_as, edit, run, step }
 
 LABEL: [Button]string = [
     Button.new = "New",
     Button.open = "Open",
     Button.save = "Save",
     Button.save_as = "Save as",
+    Button.edit = "Edit",
+    Button.run = "Run",
+    Button.step = "Step",
+]
+
+/* The block each letter key selects, lowercase as SDL reports it. */
+LETTER: [grid.Block]u8 = [
+    grid.Block.empty = 0,
+    grid.Block.source = 's',
+    grid.Block.wire = 'w',
+    grid.Block.input = 'i',
+    grid.Block.output = 'o',
+    grid.Block.and = 'a',
+    grid.Block.or = 'r',
+    grid.Block.not = 'n',
+    grid.Block.light = 'l',
 ]
 
 /* The bar rectangle of `button`: each fits its label, 6 pixels apart. */
@@ -120,6 +141,8 @@ place(button: Button): ui.Rect {
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         w: f32 = f32(LABEL[each].len) * ui.GLYPH + 16.0
+        /* A gap sets the phase buttons apart from the file buttons. */
+        if each == Button.edit { x += 18.0 }
         if each == button { return ui.Rect { x = x, y = 4.0, w = w, h = BAR - 8.0 } }
         x += w + 6.0
     }
@@ -232,7 +255,8 @@ Game: struct {
     block: grid.Block = grid.Block.wire,
     auto: bool = false,
     count: int = 0,
-    mode: Mode = Mode.edit,
+    mode: Mode = Mode.none,
+    phase: Phase = Phase.edit,
     /* The open diagram's name; empty until it is saved or opened. */
     name: Name = Name {},
     /* The name being typed in the Save-as box. */
@@ -307,6 +331,13 @@ Game.tick(self) {
     self.count += 1
 }
 
+/* Switches to `phase`; leaving Run stops auto-ticking. Levels and the tick
+ * count carry over, so an edit continues from where the run stopped. */
+Game.switch(self, phase: Phase) {
+    self.phase = phase
+    if phase == Phase.edit { self.auto = false }
+}
+
 /* Starts a new, unnamed diagram. */
 Game.clear(self) {
     self.s = sim.Sim.init(grid.Grid {})
@@ -354,7 +385,7 @@ Game.ask(self) {
 /* Opens the Open list, or closes it when it is showing. */
 Game.browse(self) {
     if self.mode == Mode.open {
-        self.mode = Mode.edit
+        self.mode = Mode.none
         return
     }
     /* A missing folder (ENOENT) just lists nothing. */
@@ -387,17 +418,19 @@ Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
     if x < 0 || (!press && x == self.px && y == self.py) { return }
     self.px = x
     self.py = y
+    if self.phase == Phase.run {
+        /* Running, the layout is fixed: a left click only flips a source. */
+        if press && button == MouseButton.left && self.s.g.get(x, y) == grid.Block.source {
+            self.s.toggle(x, y, self.s.level(x, y) != sim.Level.high)
+        }
+        return
+    }
     if button == MouseButton.right {
         self.s.place(x, y, grid.Block.empty)
         return
     }
     if button != MouseButton.left { return }
-    here: grid.Block = self.s.g.get(x, y)
-    if press && here == grid.Block.source && self.block == grid.Block.source {
-        self.s.toggle(x, y, self.s.level(x, y) != sim.Level.high)
-        return
-    }
-    if here == self.block { return }
+    if self.s.g.get(x, y) == self.block { return }
     self.s.place(x, y, self.block)
 }
 
@@ -406,7 +439,7 @@ Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
 Game.click(self, x: f32, y: f32, button: MouseButton): bool {
     if self.mode == Mode.save_as { return true }
     if self.mode == Mode.open {
-        self.mode = Mode.edit
+        self.mode = Mode.none
         for i: usize in 0 .. self.list.count {
             if row(i).has(x, y) && button == MouseButton.left {
                 self.load(self.list.names[i])
@@ -420,6 +453,9 @@ Game.click(self, x: f32, y: f32, button: MouseButton): bool {
     if place(Button.open).has(x, y) { self.browse() }
     if place(Button.save).has(x, y) { self.save() }
     if place(Button.save_as).has(x, y) { self.ask() }
+    if place(Button.edit).has(x, y) { self.switch(Phase.edit) }
+    if place(Button.run).has(x, y) { self.switch(Phase.run) }
+    if place(Button.step).has(x, y) && self.phase == Phase.run { self.tick() }
     return true
 }
 
@@ -428,10 +464,10 @@ Game.type(self, e: KeyboardEvent) {
     k: u32 = u32(e.key)
     shift: bool = (e.mod & KMOD_SHIFT) != 0
     if e.key == Keycode.escape {
-        self.mode = Mode.edit
+        self.mode = Mode.none
     } else if e.key == Keycode.enter {
         if self.draft.len == 0 { return }
-        self.mode = Mode.edit
+        self.mode = Mode.none
         self.write()
     } else if e.key == Keycode.backspace {
         self.draft.back()
@@ -465,14 +501,18 @@ Game.key(self, e: KeyboardEvent): bool {
         return true
     }
     if e.key == Keycode.escape {
-        if self.mode == Mode.edit { return false }
-        self.mode = Mode.edit
+        if self.mode == Mode.none { return false }
+        self.mode = Mode.none
         return true
     }
     k: u32 = u32(e.key)
-    if k >= '1' && k <= '8' { self.block = members(grid.Block)[int(k - '0')] }
-    if e.key == Keycode.space { self.tick() }
-    if e.key == Keycode.a { self.auto = !self.auto }
+    if k == '1' { self.switch(Phase.edit) }
+    if k == '2' { self.switch(Phase.run) }
+    if e.key == Keycode.space && self.phase == Phase.run { self.auto = !self.auto }
+    for i: usize in 1 .. members(grid.Block).len {
+        each: grid.Block = members(grid.Block)[i]
+        if k == u32(LETTER[each]) { self.block = each }
+    }
     return true
 }
 
@@ -494,7 +534,7 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             canvas.fill(box, Color.hex(rgb))
         }
     }
-    if self.mode == Mode.edit && self.hx >= 0 {
+    if self.mode == Mode.none && self.phase == Phase.edit && self.hx >= 0 {
         box: ui.Rect = ui.Rect { x = f32(self.hx) * CELL, y = BAR + f32(self.hy) * CELL, w = CELL, h = CELL }
         canvas.outline(box, 2.0, Color.hex(0xffffff))
     }
@@ -523,13 +563,19 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         if place(each).has(self.mx, self.my) || (each == Button.open && self.mode == Mode.open) {
             rgb = ACTIVE
         }
+        if (each == Button.edit && self.phase == Phase.edit) || (each == Button.run && self.phase == Phase.run) {
+            rgb = ACTIVE
+        }
         canvas.fill(place(each), Color.hex(rgb))
     }
     canvas.flush(r)
 
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
-        ui.center(r, place(each), LABEL[each], INK)
+        /* Step only ticks in Run; its label dims in Edit. */
+        ink: u32 = INK
+        if each == Button.step && self.phase == Phase.edit { ink = DIM }
+        ui.center(r, place(each), LABEL[each], ink)
     }
     title: string = self.name.text()
     if title.len == 0 { title = "untitled" }
@@ -539,8 +585,8 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
     if self.auto { auto = "on" }
     status.printf("%s   tick %d   auto %s", NAME[self.block], self.count, auto)
     ui.left(r, foot, 8.0, status.text(), INK)
-    at: ui.Rect = place(Button.save_as)
-    ui.left(r, ui.Rect { x = at.x + at.w, y = 0.0, w = WIDTH, h = BAR }, 16.0, title, INK)
+    bar: ui.Rect = ui.Rect { x = 0.0, y = 0.0, w = WIDTH, h = BAR }
+    ui.left(r, bar, WIDTH - 8.0 - ui.GLYPH * f32(title.len), title, INK)
     note: string = self.notes[0..self.note]
     ui.left(r, foot, WIDTH - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
 }
