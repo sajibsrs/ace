@@ -2694,7 +2694,6 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         e->sym = s; // emitter: storage (slot / global / function)
-        if (s->is_const_backed) e->flags |= F_CONST;
         return s->type ? s->type : T_ERR;
     }
     case N_TUPLE_E: {
@@ -3526,7 +3525,6 @@ static void finish_direct_call(Ck* k, Node* call, Sym* s) {
     check_args(k, call, s->type, variadic);
     call->sym = s;
     call->ty = s->type->ret;
-    if (s->decl && (s->decl->flags & F_CONST)) call->flags |= F_CONST;
 }
 
 /* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
@@ -3545,15 +3543,6 @@ static void reject_const_view(Ck* k, Node* at, Node* e) {
     if (s && s->kind == SYM_VAR && s->is_const)
         ck_err(k, at, "const '%.*s' cannot give a writable view", (int)e->len, e->str);
     else if (s && s->kind == SYM_VAR && s->is_param) s->is_written = 1;
-}
-
-static int const_lvalue(Ck* k, Node* e) {
-    while (e && (e->kind == N_FIELD_E || e->kind == N_INDEX)) e = e->a;
-    if (e && e->kind == N_IDENT) {
-        Sym* s = lookup_val(k, e->str, e->len);
-        return s && (s->is_const || s->is_const_backed);
-    }
-    return 0;
 }
 
 static Node* find_conformance(Ck* k, SType* conc, SType* contract) {
@@ -3597,7 +3586,6 @@ static SType* check_contract_construct(Ck* k, Node* call, SType* contract) {
         return T_ERR;
     }
     call->d = conf;
-    if (arg->kind == N_UNARY && arg->op == T_AMP && const_lvalue(k, arg->a)) call->flags |= F_CONST;
     return contract;
 }
 
@@ -5772,10 +5760,6 @@ static void check_stmt(Ck* k, Node* s) {
                 check_structlit(k, init, wants[0]);
             else if (init->kind == N_ARRAYLIT && wants[0]->kind == SK_ARRAY) check_arraylit(k, init, wants[0]);
             else coerce(k, init, wants[0]);
-            Sym* v = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
-            if (v) {
-                if (wants[0]->kind == SK_CONTRACT && (init->flags & F_CONST)) v->is_const_backed = 1;
-            }
             return;
         }
         SType* rt = expr_type(k, s->b);
@@ -5914,10 +5898,6 @@ static void check_stmt(Ck* k, Node* s) {
         }
         if (coerce(k, rhs, t)) // compound ops check as x = x op y with same type
             check_store_escape(k, s->kids[0], rhs);
-        if (t->kind == SK_CONTRACT && s->kids[0]->kind == N_IDENT) {
-            Sym* target = lookup_val(k, s->kids[0]->str, s->kids[0]->len);
-            if (target) target->is_const_backed = (rhs->flags & F_CONST) != 0;
-        }
         return;
     }
     case N_EXPRSTMT: {
@@ -6096,8 +6076,6 @@ static void check_stmt(Ck* k, Node* s) {
             return;
         }
         if (coerce(k, s->a, rt)) check_return_escape(k, s->a);
-        if (rt->kind == SK_CONTRACT && (s->a->flags & F_CONST) && k->curfn)
-            k->curfn->flags |= F_CONST; // conservative return-capability summary
         return;
     }
     case N_BREAK: {
@@ -7153,8 +7131,6 @@ static void check_func_body(Ck* k, Node* f) {
             s->is_byaddr = (pa->flags & F_BYADDR) != 0;
             s->is_const = (pa->flags & F_CONST) != 0;
             s->is_param = 1;
-            if (s->type && s->type->kind == SK_CONTRACT && !s->is_byaddr)
-                s->is_const_backed = 1; // a read-only contract param may wrap const
             s->decl = pa;
             pa->sym = s;
         }
@@ -7910,7 +7886,6 @@ static void resolve_global(Ck* k, Sym* s, Node* n) {
             check_structlit(k, n->b, t);
         else if (n->b->kind == N_ARRAYLIT && t->kind == SK_ARRAY) check_arraylit(k, n->b, t);
         else coerce(k, n->b, t);
-        if (t->kind == SK_CONTRACT && (n->b->flags & F_CONST)) s->is_const_backed = 1;
     } else if (t->kind == SK_STATICMAP) {
         if (n->flags & F_CONST) ck_err(k, n, "const is not permitted on a StaticMap declaration");
         ck_err(k, n, "StaticMap declaration requires a brace initializer");

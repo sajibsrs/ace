@@ -50,7 +50,6 @@ pub Sym: struct {
     pub is_extern: bool = false,
     pub is_global: bool = false,
     pub is_param: bool = false,
-    pub is_const_backed: bool = false,  // a contract binding that may wrap const storage
     pub is_root: bool = false,          // top-level in the root file: unseen from imported files
     pub is_thread: bool = false,        // a threadlocal module variable: one copy per thread
     pub is_written: bool = false,       // a parameter its function writes or views writably: copied on entry
@@ -217,7 +216,6 @@ pub Sema: struct {
     nsym: array.Array[u32],             // the symbol it names,
     nival: array.Array[u64],            // and its constant, as C keeps them on the node,
     nrep: array.Array[bool],            // and whether its error is already reported (F_REPORTED)
-    ncon: array.Array[bool],            // a contract value over const storage; a function returning one (F_CONST)
     nproof: array.Array[u8],            // bounds facts: PROOF_* bits (C's F_BOUNDS_PROVEN, F_STATICLIT, and a slice's aux)
     nview: map.Map[u32, u32],           // an array literal viewed as []T: its [N]T (C's aux)
     fplans: map.Map[u32, FormatPlan],   // a checked format call's plan (C's call->aux)
@@ -244,7 +242,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, ncon = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, norigin = array.Array[u32] {}, ncopy = array.Array[u32] {}, identities = map.Map[u32, u32] {}, auto_seen = map.Map[u32, int] {}, ik = blank(InitCk) }
+    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, norigin = array.Array[u32] {}, ncopy = array.Array[u32] {}, identities = map.Map[u32, u32] {}, auto_seen = map.Map[u32, int] {}, ik = blank(InitCk) }
     fail(s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(s.types.push(SType { kind = TypeKind.err }))
     s.t_err = s.new_type(SType { kind = TypeKind.err })
@@ -283,7 +281,6 @@ pub Sema.wipe(self) {
     self.nsym.wipe()
     self.nival.wipe()
     self.nrep.wipe()
-    self.ncon.wipe()
     self.nproof.wipe()
     self.nview.wipe()
     self.fplans.wipe()
@@ -1304,9 +1301,6 @@ Sema.resolve_global(self, s: u32) {
         } else {
             _ = self.coerce(n.b, t)
         }
-        if k == TypeKind.contract && self.node_const(n.b) {
-            self.sym(s).is_const_backed = true
-        }
     } else if k == TypeKind.staticmap {
         if (n.flags & parser.F_CONST) != 0 { self.err(x.top, ["const is not permitted on a StaticMap declaration"]) }
         self.err(x.top, ["StaticMap declaration requires a brace initializer"])
@@ -1331,7 +1325,6 @@ Sema.grow(self, e: u32) {
     fail(self.nsym.resize(n))
     fail(self.nival.resize(n))
     fail(self.nrep.resize(n))
-    fail(self.ncon.resize(n))
     fail(self.nproof.resize(n))
     fail(self.norigin.resize(n))
     fail(self.ncopy.resize(n))
@@ -1428,7 +1421,6 @@ Sema.copy_tree(self, n: u32): u32 {
         self.nsym.set(usize(c), self.nsym.get(usize(n)))
         self.nival.set(usize(c), self.nival.get(usize(n)))
         self.nrep.set(usize(c), self.nrep.get(usize(n)))
-        self.ncon.set(usize(c), self.ncon.get(usize(n)))
         self.nproof.set(usize(c), self.nproof.get(usize(n)))
     }
     v: u32, has_view: bool = self.nview.get(n)
@@ -1568,15 +1560,6 @@ Sema.set_node_ty(self, e: u32, t: u32) {
 Sema.set_node_sym(self, e: u32, s: u32) {
     self.grow(e)
     self.nsym.set(usize(e), s)
-}
-
-Sema.node_const(self, e: u32): bool {
-    return usize(e) < self.ncon.len && self.ncon.get(usize(e))
-}
-
-Sema.set_node_const(self, e: u32) {
-    self.grow(e)
-    self.ncon.set(usize(e), true)
 }
 
 Sema.set_node_reported(self, e: u32) {
@@ -2376,7 +2359,6 @@ Sema.check_ident(self, e: u32): u32 {
         x = *self.sym(s)
     }
     self.set_node_sym(e, s)
-    if x.is_const_backed { self.set_node_const(e) }
     if x.ty == 0 { return self.t_err }
     return x.ty
 }
@@ -4233,17 +4215,7 @@ Sema.check_contract_construct(self, call: u32, want: u32): u32 {
         return self.t_err
     }
     a: Node = self.node(arg)
-    if a.kind == Kind.unary && a.op == lexer.Token.amp && self.const_lvalue(a.a) { self.set_node_const(call) }
     return want
-}
-
-/* Whether place `e` is rooted in a const or const-backed binding. */
-Sema.const_lvalue(self, place: u32): bool {
-    e: u32 = place
-    for e != 0 && (self.node(e).kind == Kind.selector || self.node(e).kind == Kind.index) { e = self.node(e).a }
-    if e == 0 || self.node(e).kind != Kind.ident { return false }
-    s: u32 = self.lookup_val(self.node(e).text)
-    return s != 0 && (self.sym(s).is_const || self.sym(s).is_const_backed)
 }
 
 /* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
@@ -5904,7 +5876,6 @@ Sema.finish_direct_call(self, call: u32, s: u32) {
     self.check_args(call, x.ty, variadic)
     self.set_node_sym(call, s)
     self.set_node_ty(call, self.call_ret(s))
-    if x.decl != 0 && self.node_const(x.decl) { self.set_node_const(call) }
 }
 
 /* What a call of overload `s` gives: its return type, or no value. */
@@ -6297,7 +6268,6 @@ Sema.check_func_body(self, f: u32) {
             self.sym(s).is_byaddr = (self.node(pa).flags & parser.F_BYADDR) != 0
             self.sym(s).is_const = (self.node(pa).flags & parser.F_CONST) != 0
             self.sym(s).is_param = true
-            self.sym(s).is_const_backed = self.ty(t).kind == TypeKind.contract && !self.sym(s).is_byaddr // a read-only contract param may wrap const
             self.sym(s).decl = pa
             self.set_node_sym(pa, s)
         }
@@ -6718,10 +6688,6 @@ Sema.check_var_stmt(self, s: u32) {
         } else {
             _ = self.coerce(init, w0)
         }
-        v: u32 = self.lookup_val(self.node(self.kid(s, 0)).text)
-        if v != 0 && wk == TypeKind.contract && self.node_const(init) {
-            self.sym(v).is_const_backed = true
-        }
         return
     }
     rt: u32 = self.expr_type(n.b)
@@ -6875,12 +6841,6 @@ Sema.check_assign(self, s: u32) {
         return
     }
     if self.coerce(rhs, t) { self.check_store_escape(target, rhs) } // compound ops check as x = x op y
-    if tk == TypeKind.contract && self.node(target).kind == Kind.ident {
-        v: u32 = self.lookup_val(self.node(target).text)
-        if v != 0 {
-            self.sym(v).is_const_backed = self.node_const(rhs)
-        }
-    }
 }
 
 /* A pointer offset `rhs` of type `rhs_type` added to or taken from pointer type `t` at `at`; with
@@ -7118,7 +7078,6 @@ Sema.check_return(self, s: u32) {
         return
     }
     if self.coerce(n.a, rt) { self.check_return_escape(n.a) }
-    if self.ty(rt).kind == TypeKind.contract && self.node_const(n.a) && self.cur_fn != 0 { self.set_node_const(self.cur_fn) } // conservative return-capability summary
 }
 
 /* `lo..hi` with an optional step: its element type, the unified integer type. */

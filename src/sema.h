@@ -71,7 +71,7 @@ struct Sym {
     const char* name; uint32_t len;
     uint8_t     kind;
     uint8_t     is_const, is_byaddr, is_pub, is_generic, is_extern;
-    uint8_t     is_param, is_const_backed, is_global;
+    uint8_t     is_param, is_global;
     // top-level declarations are entered before any is resolved; a lookup
     // resolves one still DECL_ENTERED on demand (Compiler #5)
     uint8_t     decl_state, in_cycle;
