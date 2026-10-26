@@ -57,7 +57,7 @@ it can be started from any directory.
 |-------|--------|
 | 1 / Edit | Edit mode: build the board |
 | 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
-| S W I O A R N L | Select a block (see Blocks) |
+| S W I O A R N L | Select a block (see Blocks), or click it in the block row under the bar (Edit only) |
 | Left click / drag | Edit: place the selected block. Run: flip a source |
 | Right click / drag | Edit: remove |
 | Space | Run: toggle auto-ticking (every 250 ms) |

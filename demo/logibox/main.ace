@@ -35,6 +35,8 @@ import ui: "./ui.ace"
 
 CELL: const f32 = 40.0
 BAR: const f32 = 28.0
+/* The bar and, under it, the block row; the board starts below both. */
+TOP: const f32 = 2.0 * BAR
 FOOT: const f32 = 24.0
 WIDTH: const f32 = 16.0 * 40.0
 AUTO_MS: const u64 = 250
@@ -149,6 +151,27 @@ place(button: Button): ui.Rect {
     return ui.Rect {}
 }
 
+/* The block row's button for `block`: eight equal slots across the window. */
+TOOL_W: const f32 = (WIDTH - 6.0) / 8.0
+
+tool(block: grid.Block): ui.Rect {
+    i: f32 = f32(int(block) - 1)
+    return ui.Rect { x = 6.0 + i * TOOL_W, y = BAR, w = TOOL_W - 6.0, h = BAR - 4.0 }
+}
+
+/* The block row's labels. */
+TOOL: [grid.Block]string = [
+    grid.Block.empty = "",
+    grid.Block.source = "Source",
+    grid.Block.wire = "Wire",
+    grid.Block.input = "Input",
+    grid.Block.output = "Output",
+    grid.Block.and = "AND",
+    grid.Block.or = "OR",
+    grid.Block.not = "NOT",
+    grid.Block.light = "Light",
+]
+
 /* Row `i` of the Open list. */
 row(i: usize): ui.Rect {
     at: ui.Rect = place(Button.open)
@@ -160,9 +183,9 @@ PANEL: const ui.Rect = ui.Rect { x = 160.0, y = 280.0, w = 320.0, h = 72.0 }
 
 /* The cell under window point (x, y), or (-1, -1). */
 cell_at(x: f32, y: f32): (int, int) {
-    if x < 0.0 || y < BAR { return -1, -1 }
+    if x < 0.0 || y < TOP { return -1, -1 }
     cx: int = int(x / CELL)
-    cy: int = int((y - BAR) / CELL)
+    cy: int = int((y - TOP) / CELL)
     if !grid.inside(cx, cy) { return -1, -1 }
     return cx, cy
 }
@@ -447,7 +470,15 @@ Game.click(self, x: f32, y: f32, button: MouseButton): bool {
         }
         return true
     }
-    if y >= BAR { return false }
+    if y >= TOP { return false }
+    if y >= BAR {
+        if button != MouseButton.left || self.phase != Phase.edit { return true }
+        for i: usize in 1 .. members(grid.Block).len {
+            each: grid.Block = members(grid.Block)[i]
+            if tool(each).has(x, y) { self.block = each }
+        }
+        return true
+    }
     if button != MouseButton.left { return true }
     if place(Button.new).has(x, y) { self.clear() }
     if place(Button.open).has(x, y) { self.browse() }
@@ -528,14 +559,14 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             inset: f32 = 0.0
             if b == grid.Block.empty { inset = 1.0 }
             box: ui.Rect = ui.Rect {
-                x = f32(x) * CELL + inset, y = BAR + f32(y) * CELL + inset,
+                x = f32(x) * CELL + inset, y = TOP + f32(y) * CELL + inset,
                 w = CELL - 2.0 * inset, h = CELL - 2.0 * inset,
             }
             canvas.fill(box, Color.hex(rgb))
         }
     }
     if self.mode == Mode.none && self.phase == Phase.edit && self.hx >= 0 {
-        box: ui.Rect = ui.Rect { x = f32(self.hx) * CELL, y = BAR + f32(self.hy) * CELL, w = CELL, h = CELL }
+        box: ui.Rect = ui.Rect { x = f32(self.hx) * CELL, y = TOP + f32(self.hy) * CELL, w = CELL, h = CELL }
         canvas.outline(box, 2.0, Color.hex(0xffffff))
     }
     canvas.flush(r)
@@ -547,15 +578,25 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             /* Dark text on a lit block, light text on a dark one. */
             ink: u32 = INK
             if self.s.level(x, y) != sim.Level.low { ink = 0x000000 }
-            box: ui.Rect = ui.Rect { x = f32(x) * CELL, y = BAR + f32(y) * CELL, w = CELL, h = CELL }
+            box: ui.Rect = ui.Rect { x = f32(x) * CELL, y = TOP + f32(y) * CELL, w = CELL, h = CELL }
             ui.center(r, box, grid.SYMBOL[b], ink)
         }
     }
 }
 
 Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
-    foot: ui.Rect = ui.Rect { x = 0.0, y = BAR + 16.0 * CELL, w = WIDTH, h = FOOT }
-    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = WIDTH, h = BAR }, Color.hex(CHROME))
+    foot: ui.Rect = ui.Rect { x = 0.0, y = TOP + 16.0 * CELL, w = WIDTH, h = FOOT }
+    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = WIDTH, h = TOP }, Color.hex(CHROME))
+    /* Block buttons show in Edit only: each in its block's low color, the
+     * selected one lit. */
+    if self.phase == Phase.edit {
+        for i: usize in 1 .. members(grid.Block).len {
+            each: grid.Block = members(grid.Block)[i]
+            rgb: u32 = LOW[each]
+            if each == self.block { rgb = HIGH[each] }
+            canvas.fill(tool(each), Color.hex(rgb))
+        }
+    }
     canvas.fill(foot, Color.hex(CHROME))
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
@@ -576,6 +617,14 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         ink: u32 = INK
         if each == Button.step && self.phase == Phase.edit { ink = DIM }
         ui.center(r, place(each), LABEL[each], ink)
+    }
+    if self.phase == Phase.edit {
+        for i: usize in 1 .. members(grid.Block).len {
+            each: grid.Block = members(grid.Block)[i]
+            ink: u32 = INK
+            if each == self.block { ink = 0x000000 }
+            ui.center(r, tool(each), TOOL[each], ink)
+        }
     }
     title: string = self.name.text()
     if title.len == 0 { title = "untitled" }
@@ -646,7 +695,7 @@ main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
 
-    window: Window = Window.new("logibox", i32(WIDTH), i32(BAR + 16.0 * CELL + FOOT), WindowFlags {})
+    window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + FOOT), WindowFlags {})
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
