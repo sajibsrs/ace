@@ -1,0 +1,266 @@
+/* logibox: a logic-gate sandbox: square blocks on a grid, in an SDL3 window.
+ *
+ * Build and run from this directory (Homebrew SDL3 on Apple arm64):
+ *   ace pkg run
+ *
+ * A source feeds a gate's input pin (I); the gate's output pin (O) feeds the
+ * next input pin or a light. Each connects by touching, or through wire when
+ * apart.
+ *
+ * Mouse: left-click places the selected block (drag to paint), or flips a
+ * source; right-click (or drag) removes.
+ * Keys: 1-8 select source, wire, input pin, output pin, AND, OR, NOT, light;
+ * space steps one tick; a toggles auto-ticking; Escape quits.
+ */
+
+import fmt
+import (
+    init, quit, error, delay, ticks, Window, Renderer, Event, Vertex, Point, Color,
+    InitFlags, WindowFlags, EventType, Keycode, MouseButton, MouseButtonEvent,
+    MouseMotionEvent, KeyboardEvent,
+) from sdl
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+
+CELL: const f32 = 40.0
+BAR: const f32 = 28.0
+AUTO_MS: const u64 = 250
+/* Side of one SDL debug-text glyph, in pixels. */
+GLYPH: const f32 = 8.0
+
+NAME: [grid.Block]string = [
+    grid.Block.empty = "empty",
+    grid.Block.source = "source",
+    grid.Block.wire = "wire",
+    grid.Block.input = "input pin",
+    grid.Block.output = "output pin",
+    grid.Block.and = "AND",
+    grid.Block.or = "OR",
+    grid.Block.not = "NOT",
+    grid.Block.light = "light",
+]
+
+/* Low and high colors of each block; any block on an error is ERROR. */
+LOW: [grid.Block]u32 = [
+    grid.Block.empty = 0x202428,
+    grid.Block.source = 0x5a3a12,
+    grid.Block.wire = 0x4a1818,
+    grid.Block.input = 0x2a3a2a,
+    grid.Block.output = 0x3a2a4a,
+    grid.Block.and = 0x1e3a5a,
+    grid.Block.or = 0x1e4a3a,
+    grid.Block.not = 0x4a3a1e,
+    grid.Block.light = 0x303030,
+]
+HIGH: [grid.Block]u32 = [
+    grid.Block.empty = 0x202428,
+    grid.Block.source = 0xffa726,
+    grid.Block.wire = 0xff3d3d,
+    grid.Block.input = 0x9ccc65,
+    grid.Block.output = 0xce93d8,
+    grid.Block.and = 0x64b5f6,
+    grid.Block.or = 0x69f0ae,
+    grid.Block.not = 0xffd54f,
+    grid.Block.light = 0xffffcc,
+]
+ERROR: const u32 = 0xff00ff
+
+/* Triangles for one frame, drawn in a single geometry call. */
+Canvas: struct {
+    vertices: [4096]Vertex = [Vertex {} : 4096],
+    count: usize = 0,
+}
+
+Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
+    if self.count + 3 > self.vertices.len { return }
+    self.vertices[self.count] = Vertex { position = a, color = color }
+    self.vertices[self.count + 1] = Vertex { position = b, color = color }
+    self.vertices[self.count + 2] = Vertex { position = c, color = color }
+    self.count += 3
+}
+
+Canvas.rect(self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+    a: Point = Point { x = x, y = y }
+    b: Point = Point { x = x + w, y = y }
+    c: Point = Point { x = x + w, y = y + h }
+    d: Point = Point { x = x, y = y + h }
+    self.triangle(a, b, c, color)
+    self.triangle(a, c, d, color)
+}
+
+/* The editor: the simulation plus what the player has selected. */
+Game: struct {
+    s: sim.Sim = sim.Sim {},
+    block: grid.Block = grid.Block.wire,
+    auto: bool = false,
+    count: int = 0,
+    /* Hovered cell, or -1 off the board. */
+    hx: int = -1,
+    hy: int = -1,
+    /* Cell the current drag last painted, so a drag paints each cell once. */
+    px: int = -1,
+    py: int = -1,
+}
+
+/* The cell under window point (x, y), or (-1, -1). */
+cell_at(x: f32, y: f32): (int, int) {
+    if x < 0.0 || y < BAR { return -1, -1 }
+    cx: int = int(x / CELL)
+    cy: int = int((y - BAR) / CELL)
+    if !grid.inside(cx, cy) { return -1, -1 }
+    return cx, cy
+}
+
+Game.tick(self) {
+    self.s.tick()
+    self.count += 1
+}
+
+/* A press or drag over (x, y) with `button`; `press` is true on the click. */
+Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
+    if x < 0 || (!press && x == self.px && y == self.py) { return }
+    self.px = x
+    self.py = y
+    if button == MouseButton.right {
+        self.s.place(x, y, grid.Block.empty)
+        return
+    }
+    if button != MouseButton.left { return }
+    here: grid.Block = self.s.g.get(x, y)
+    if press && here == grid.Block.source && self.block == grid.Block.source {
+        self.s.toggle(x, y, self.s.level(x, y) != sim.Level.high)
+        return
+    }
+    if here == self.block { return }
+    self.s.place(x, y, self.block)
+}
+
+Game.key(self, key: Keycode): bool {
+    if key == Keycode.escape { return false }
+    k: u32 = u32(key)
+    if k >= '1' && k <= '8' { self.block = members(grid.Block)[int(k - '0')] }
+    if key == Keycode.space { self.tick() }
+    if key == Keycode.a { self.auto = !self.auto }
+    return true
+}
+
+Game.draw(const self, canvas: *Canvas, r: Renderer) {
+    canvas.count = 0
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = self.s.g.get(x, y)
+            v: sim.Level = self.s.level(x, y)
+            x0: f32 = f32(x) * CELL
+            y0: f32 = BAR + f32(y) * CELL
+            rgb: u32 = LOW[b]
+            if v == sim.Level.high { rgb = HIGH[b] }
+            if v == sim.Level.error && b != grid.Block.empty { rgb = ERROR }
+            /* Blocks fill their cell; empty cells keep a gap so the grid shows. */
+            inset: f32 = 0.0
+            if b == grid.Block.empty { inset = 1.0 }
+            canvas.rect(x0 + inset, y0 + inset, CELL - 2.0 * inset, CELL - 2.0 * inset, Color.hex(rgb))
+        }
+    }
+    if self.hx >= 0 {
+        x0: f32 = f32(self.hx) * CELL
+        y0: f32 = BAR + f32(self.hy) * CELL
+        white: Color = Color { r = 1.0, g = 1.0, b = 1.0, a = 1.0 }
+        canvas.rect(x0, y0, CELL, 2.0, white)
+        canvas.rect(x0, y0 + CELL - 2.0, CELL, 2.0, white)
+        canvas.rect(x0, y0, 2.0, CELL, white)
+        canvas.rect(x0 + CELL - 2.0, y0, 2.0, CELL, white)
+    }
+
+    r.color(Color.hex(0x101214))
+    r.clear()
+    r.geometry(canvas.vertices[0..canvas.count], [])
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = self.s.g.get(x, y)
+            if b == grid.Block.empty { continue }
+            /* Dark text on a lit block, light text on a dark one. */
+            ink: u32 = 0xdddddd
+            if self.s.level(x, y) != sim.Level.low { ink = 0x000000 }
+            r.color(Color.hex(ink))
+            label: string = grid.SYMBOL[b]
+            lx: f32 = f32(x) * CELL + (CELL - GLYPH * f32(label.len)) / 2.0
+            ly: f32 = BAR + f32(y) * CELL + (CELL - GLYPH) / 2.0
+            r.debug_text(lx, ly, label)
+        }
+    }
+
+    storage: [128]u8
+    status: fmt.Buffer = fmt.Buffer.init(storage[..])
+    auto: string = "off"
+    if self.auto { auto = "on" }
+    status.printf("%s   tick %d   auto %s", NAME[self.block], self.count, auto)
+    r.color(Color.hex(0xdddddd))
+    r.debug_text(8.0, 10.0, status.text())
+    r.present()
+}
+
+fail(context: string): int {
+    fmt.printf("%s: %s\n", context, error())
+    return 1
+}
+
+main(): int {
+    if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
+    defer quit()
+
+    w: i32 = i32(f32(grid.WIDTH) * CELL)
+    h: i32 = i32(BAR + f32(grid.HEIGHT) * CELL)
+    window: Window = Window.new("logibox", w, h, WindowFlags {})
+    defer window.wipe()
+    if !window.ok() { return fail("SDL_CreateWindow") }
+
+    renderer: Renderer = Renderer.new(window)
+    defer renderer.wipe()
+    if !renderer.ok() { return fail("SDL_CreateRenderer") }
+    renderer.vsync(1)
+
+    game: Game = Game { s = sim.Sim.init(grid.Grid {}) }
+    canvas: Canvas = Canvas {}
+    held: MouseButton = MouseButton.none
+    last: u64 = ticks()
+    running: bool = true
+    for running {
+        event: Event
+        for event.poll() {
+            if event.type == EventType.quit || event.type == EventType.window_close_requested {
+                running = false
+            }
+            key: KeyboardEvent, is_key: bool = event.key()
+            if is_key && key.down && !key.repeat {
+                running = running && game.key(key.key)
+            }
+            b: MouseButtonEvent, is_button: bool = event.mouse_button()
+            if is_button {
+                if b.down {
+                    held = b.button
+                    x: int, y: int = cell_at(b.x, b.y)
+                    game.paint(x, y, held, true)
+                } else if b.button == held {
+                    held = MouseButton.none
+                    game.px = -1
+                    game.py = -1
+                }
+            }
+            m: MouseMotionEvent, is_motion: bool = event.mouse_motion()
+            if is_motion {
+                x: int, y: int = cell_at(m.x, m.y)
+                game.hx = x
+                game.hy = y
+                if held != MouseButton.none { game.paint(x, y, held, false) }
+            }
+        }
+        now: u64 = ticks()
+        if game.auto && now - last >= AUTO_MS {
+            game.tick()
+            last = now
+        }
+        if !game.auto { last = now }
+        game.draw(&canvas, renderer)
+    }
+    return 0
+}

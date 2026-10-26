@@ -1,0 +1,19 @@
+import test
+import grid: "./grid.ace"
+
+pub place_and_get(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    test.equal[grid.Block](t, g.get(3, 2), grid.Block.empty)
+    t.equal(g.place(3, 2, grid.Block.and), true)
+    test.equal[grid.Block](t, g.get(3, 2), grid.Block.and)
+    t.equal(g.remove(3, 2), true)
+    test.equal[grid.Block](t, g.get(3, 2), grid.Block.empty)
+}
+
+pub bounds(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    t.equal(g.place(-1, 0, grid.Block.wire), false)
+    t.equal(g.place(0, grid.HEIGHT, grid.Block.wire), false)
+    t.equal(g.place(grid.WIDTH - 1, grid.HEIGHT - 1, grid.Block.wire), true)
+    test.equal[grid.Block](t, g.get(99, 99), grid.Block.empty)
+}

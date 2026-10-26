@@ -1,0 +1,83 @@
+import test
+import grid: "./grid.ace"
+import group: "./group.ace"
+
+wire(g: *grid.Grid, x: int, y: int) {
+    g.place(x, y, grid.Block.wire)
+}
+
+pub separate_runs(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    wire(&g, 0, 0)
+    wire(&g, 1, 0)
+    wire(&g, 5, 5)
+    n: group.Groups = group.Groups.init(g)
+    t.equal(n.count, 2)
+    t.equal(n.of(0, 0), 0)
+    t.equal(n.of(1, 0), 0)
+    t.equal(n.of(5, 5), 1)
+    t.equal(n.of(2, 2), -1)
+}
+
+pub diagonal_does_not_join(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    wire(&g, 0, 0)
+    wire(&g, 1, 1)
+    t.equal(group.Groups.init(g).count, 2)
+}
+
+pub bend_and_loop_are_one_net(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    for i: int in 0 .. 4 {
+        wire(&g, i, 0)
+        wire(&g, i, 3)
+    }
+    wire(&g, 0, 1)
+    wire(&g, 0, 2)
+    wire(&g, 3, 1)
+    wire(&g, 3, 2)
+    n: group.Groups = group.Groups.init(g)
+    t.equal(n.count, 1)
+    t.equal(n.of(2, 3), 0)
+}
+
+pub pins_sources_and_lights_have_no_group(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(0, 0, grid.Block.source)
+    wire(&g, 1, 0)
+    g.place(2, 0, grid.Block.input)
+    g.place(3, 0, grid.Block.output)
+    g.place(4, 0, grid.Block.light)
+    n: group.Groups = group.Groups.init(g)
+    t.equal(n.count, 1)
+    t.equal(n.of(0, 0), -1)
+    t.equal(n.of(2, 0), -1)
+    t.equal(n.of(3, 0), -1)
+    t.equal(n.of(4, 0), -1)
+}
+
+/* Touching cells of one gate type are one gate; other blocks stay apart. */
+pub same_gates_merge(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(0, 0, grid.Block.and)
+    g.place(1, 0, grid.Block.and)
+    g.place(1, 1, grid.Block.and)
+    g.place(2, 0, grid.Block.or)
+    wire(&g, 0, 1)
+    n: group.Groups = group.Groups.init(g)
+    t.equal(n.count, 3)
+    t.equal(n.of(1, 1), n.of(0, 0))
+    t.equal(n.of(2, 0) == n.of(1, 0), false)
+    t.equal(n.of(0, 1) == n.of(0, 0), false)
+    hx: int, hy: int = n.head(n.of(1, 1))
+    t.equal(hx, 0)
+    t.equal(hy, 0)
+}
+
+pub full_board(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH { wire(&g, x, y) }
+    }
+    t.equal(group.Groups.init(g).count, 1)
+}

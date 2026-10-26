@@ -1,0 +1,245 @@
+/* sim — signal levels and the tick.
+ *
+ * The stored state is each source's switch and each gate's output. Everything
+ * else is derived from it. A net's level joins its drivers, the sources and
+ * output pins touching it: none is low, agreeing drivers give their level, and
+ * disagreeing ones are an error. An input pin or light reads the sources, nets
+ * and output pins it touches, so a source or output pin beside it needs no
+ * wire; an input pin feeds every gate it touches, and an output pin drives its
+ * gates' output. A tick computes every gate's next output from the current state, so
+ * each gate adds one tick of delay and wire adds none.
+ */
+
+import fmt
+import grid: "./grid.ace"
+import group: "./group.ace"
+
+pub Level: enum u8 { low, high, error }
+
+DX: [4]int = [0, 1, 0, -1]
+DY: [4]int = [-1, 0, 1, 0]
+
+pub Sim: struct {
+    pub g: grid.Grid = grid.Grid {},
+    groups: group.Groups = group.Groups {},
+    /* Switch of each source cell. */
+    switches: [16][16]bool = [[false : 16] : 16],
+    /* Output of each gate cell; every cell of a gate holds the gate's. */
+    outs: [16][16]Level = [[Level.low : 16] : 16],
+    /* Level of each net, by group number. */
+    lit: [16 * 16]Level = [Level.low : 16 * 16],
+}
+
+/* What one gate's input pins read during a tick. */
+Tally: struct {
+    pins: int = 0,
+    high: bool = false,
+    low: bool = false,
+    error: bool = false,
+}
+
+/* The distinct gates beside one cell. */
+Near: struct {
+    ids: [4]int = [0 : 4],
+    count: int = 0,
+}
+
+/* A simulation of `g` with every switch and gate output off. */
+pub Sim.init(g: grid.Grid): Sim {
+    s: Sim = Sim { g = g }
+    s.groups = group.Groups.init(g)
+    s.settle()
+    return s
+}
+
+level(on: bool): Level {
+    if on { return Level.high }
+    return Level.low
+}
+
+/* `acc` joined with one more driver at `v`; `any` says whether `acc` already
+ * holds a driver. */
+join(acc: Level, any: bool, v: Level): Level {
+    if !any || acc == v { return v }
+    return Level.error
+}
+
+/* A gate's next output from what its input pins read. A gate with no input
+ * pin is idle; one with too few (AND) or too many (NOT) is an error. */
+evaluate(block: grid.Block, t: Tally): Level {
+    if t.pins == 0 { return Level.low }
+    if (block == grid.Block.and && t.pins < 2) || (block == grid.Block.not && t.pins != 1) {
+        return Level.error
+    }
+    if t.error { return Level.error }
+    if block == grid.Block.and { return level(!t.low) }
+    if block == grid.Block.or { return level(t.high) }
+    return level(!t.high)
+}
+
+/* What a pin or light at (x, y) reads: the sources, nets, and driving output
+ * pins beside it, low when there are none. */
+Sim.read(const self, x: int, y: int): Level {
+    acc: Level = Level.low
+    any: bool = false
+    for d: int in 0 .. 4 {
+        nx: int = x + DX[d]
+        ny: int = y + DY[d]
+        b: grid.Block = self.g.get(nx, ny)
+        if b == grid.Block.source {
+            acc = join(acc, any, level(self.switches[ny][nx]))
+            any = true
+        } else if b == grid.Block.wire {
+            acc = join(acc, any, self.lit[self.groups.of(nx, ny)])
+            any = true
+        } else if b == grid.Block.output {
+            v: Level, drives: bool = self.drive(nx, ny)
+            if drives {
+                acc = join(acc, any, v)
+                any = true
+            }
+        }
+    }
+    return acc
+}
+
+/* What the output pin at (x, y) drives, and whether it touches a gate. */
+Sim.drive(const self, x: int, y: int): (Level, bool) {
+    acc: Level = Level.low
+    any: bool = false
+    for d: int in 0 .. 4 {
+        nx: int = x + DX[d]
+        ny: int = y + DY[d]
+        if !grid.is_gate(self.g.get(nx, ny)) { continue }
+        acc = join(acc, any, self.outs[ny][nx])
+        any = true
+    }
+    return acc, any
+}
+
+/* The distinct gates beside (x, y). */
+Sim.near(const self, x: int, y: int): Near {
+    near: Near = Near {}
+    for d: int in 0 .. 4 {
+        nx: int = x + DX[d]
+        ny: int = y + DY[d]
+        if !grid.is_gate(self.g.get(nx, ny)) { continue }
+        id: int = self.groups.of(nx, ny)
+        seen: bool = false
+        for k: int in 0 .. near.count { seen = seen || near.ids[k] == id }
+        if seen { continue }
+        near.ids[near.count] = id
+        near.count += 1
+    }
+    return near
+}
+
+/* Recomputes every net from the switches and gate outputs. */
+Sim.settle(self) {
+    driven: [16 * 16]bool = [false : 16 * 16]
+    for i: int in 0 .. self.groups.count { self.lit[i] = Level.low }
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = self.g.get(x, y)
+            v: Level = Level.low
+            drives: bool = false
+            if b == grid.Block.source {
+                v = level(self.switches[y][x])
+                drives = true
+            } else if b == grid.Block.output {
+                v, drives = self.drive(x, y)
+            }
+            if !drives { continue }
+            for d: int in 0 .. 4 {
+                nx: int = x + DX[d]
+                ny: int = y + DY[d]
+                if self.g.get(nx, ny) != grid.Block.wire { continue }
+                id: int = self.groups.of(nx, ny)
+                self.lit[id] = join(self.lit[id], driven[id], v)
+                driven[id] = true
+            }
+        }
+    }
+}
+
+/* Advances one tick: every gate reads the current state and outputs next. */
+pub Sim.tick(self) {
+    tallies: [16 * 16]Tally = [Tally {} : 16 * 16]
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            if self.g.get(x, y) != grid.Block.input { continue }
+            v: Level = self.read(x, y)
+            near: Near = self.near(x, y)
+            for k: int in 0 .. near.count {
+                id: int = near.ids[k]
+                tallies[id].pins += 1
+                tallies[id].high = tallies[id].high || v == Level.high
+                tallies[id].low = tallies[id].low || v == Level.low
+                tallies[id].error = tallies[id].error || v == Level.error
+            }
+        }
+    }
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = self.g.get(x, y)
+            if !grid.is_gate(b) { continue }
+            self.outs[y][x] = evaluate(b, tallies[self.groups.of(x, y)])
+        }
+    }
+    self.settle()
+}
+
+/* Sets the source at (x, y). False when the cell is not a source. */
+pub Sim.toggle(self, x: int, y: int, on: bool): bool {
+    if self.g.get(x, y) != grid.Block.source { return false }
+    self.switches[y][x] = on
+    self.settle()
+    return true
+}
+
+/* The level shown at (x, y): a source's switch, a net's level, a gate's
+ * output, what an input pin or light reads, or what an output pin drives. */
+pub Sim.level(const self, x: int, y: int): Level {
+    b: grid.Block = self.g.get(x, y)
+    if b == grid.Block.source { return level(self.switches[y][x]) }
+    if b == grid.Block.wire { return self.lit[self.groups.of(x, y)] }
+    if grid.is_gate(b) { return self.outs[y][x] }
+    if b == grid.Block.input || b == grid.Block.light { return self.read(x, y) }
+    if b == grid.Block.output {
+        v: Level, drives: bool = self.drive(x, y)
+        return v
+    }
+    return Level.low
+}
+
+/* Puts `block` at (x, y) with its switch and output off, then regroups; a gate
+ * it merges into keeps that gate's output. False off the board. */
+pub Sim.place(self, x: int, y: int, block: grid.Block): bool {
+    if !self.g.place(x, y, block) { return false }
+    self.switches[y][x] = false
+    self.outs[y][x] = Level.low
+    self.groups = group.Groups.init(self.g)
+    for gy: int in 0 .. grid.HEIGHT {
+        for gx: int in 0 .. grid.WIDTH {
+            if !grid.is_gate(self.g.get(gx, gy)) { continue }
+            hx: int, hy: int = self.groups.head(self.groups.of(gx, gy))
+            self.outs[gy][gx] = self.outs[hy][hx]
+        }
+    }
+    self.settle()
+    return true
+}
+
+MARK: [Level]string = [Level.low = " ", Level.high = "*", Level.error = "x"]
+
+/* Prints the board like Grid.show, marking each cell `*` when high and `x`
+ * on an error. */
+pub Sim.show(const self) {
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            fmt.print(grid.SYMBOL[self.g.get(x, y)])
+            fmt.print(MARK[self.level(x, y)])
+        }
+        fmt.println("")
+    }
+}

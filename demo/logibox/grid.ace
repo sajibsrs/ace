@@ -1,0 +1,82 @@
+/* grid — the board of square blocks.
+ *
+ * The grid is a fixed WIDTH x HEIGHT array of cells, each empty or holding one
+ * block. Blocks have no direction: what a block touches decides its role.
+ */
+
+import fmt
+
+pub WIDTH: const int = 16
+pub HEIGHT: const int = 16
+
+pub Block: enum u8 {
+    empty,
+    /* A 0/1 switch; drives the wires, input pins and lights it touches. */
+    source,
+    wire,
+    /* A gate's input pin: reads the wires, sources and output pins it touches. */
+    input,
+    /* A gate's output pin: drives its gates' output onto the wires, input
+     * pins and lights it touches. */
+    output,
+    and,
+    or,
+    not,
+    /* Shows the level of the wires, sources and output pins it touches. */
+    light,
+}
+
+pub Grid: struct {
+    cells: [16][16]Block = [[Block.empty : 16] : 16],
+}
+
+pub SYMBOL: [Block]string = [
+    Block.empty = ".",
+    Block.source = "S",
+    Block.wire = "W",
+    Block.input = "I",
+    Block.output = "O",
+    Block.and = "&",
+    Block.or = "|",
+    Block.not = "!",
+    Block.light = "L",
+]
+
+/* Whether (x, y) lies on the board. */
+pub inside(x: int, y: int): bool {
+    return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT
+}
+
+/* Whether the block is a gate. */
+pub is_gate(block: Block): bool {
+    return block == Block.and || block == Block.or || block == Block.not
+}
+
+/* The block at (x, y); off the board it is empty. */
+pub Grid.get(const self, x: int, y: int): Block {
+    if !inside(x, y) { return Block.empty }
+    return self.cells[y][x]
+}
+
+/* Puts `block` at (x, y), replacing what is there. False off the board. */
+pub Grid.place(self, x: int, y: int, block: Block): bool {
+    if !inside(x, y) { return false }
+    self.cells[y][x] = block
+    return true
+}
+
+/* Empties (x, y). False off the board. */
+pub Grid.remove(self, x: int, y: int): bool {
+    return self.place(x, y, Block.empty)
+}
+
+/* Prints the board, one row per line. */
+pub Grid.show(const self) {
+    for y: int in 0 .. HEIGHT {
+        for x: int in 0 .. WIDTH {
+            fmt.print(SYMBOL[self.get(x, y)])
+            fmt.print(" ")
+        }
+        fmt.println("")
+    }
+}
