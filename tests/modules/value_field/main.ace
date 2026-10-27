@@ -1,0 +1,15 @@
+/* `binding.value.member` reads a module global's field or length, bare, inside
+ * a conversion, and under a same-named local declared later in the scope. */
+
+/* expect-exit: 35 */
+
+import cfg: "./cfg.ace"
+
+main(): int {
+    bare: int = int(cfg.NAME.len)
+    wide: i64 = i64(cfg.NAME.len)
+    real: f32 = f32(cfg.NAME.len)
+    total: int = bare + int(wide) + int(real) + cfg.PAIR.a + cfg.PAIR.b
+    cfg: int = 10
+    return total + cfg
+}

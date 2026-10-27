@@ -1,0 +1,5 @@
+pub NAME: const string = "Speed"
+
+pub Pair: struct { pub a: int, pub b: int }
+
+pub PAIR: Pair = Pair{a = 4, b = 6}

@@ -1691,6 +1691,15 @@ if [ -d tests/emit ]; then
         printf 'got:\n%s\nwant:\n%s\n' "$test_pass_out" "$test_pass_expected"
         fail=1
     fi
+    # a test file in a package resolves that package's dependencies
+    pkg_test_out=$(cd tests/test_package/app && "$ACE" test src)
+    pkg_test_expected=$(printf '%s\n' '== src/greet.test.ace' 'ok   greets' \
+        '1 passed, 0 failed' '1 module, 0 failed')
+    if [ "$pkg_test_out" != "$pkg_test_expected" ]; then
+        echo "FAIL: ace test in a package did not resolve its dependency"
+        printf 'got:\n%s\nwant:\n%s\n' "$pkg_test_out" "$pkg_test_expected"
+        fail=1
+    fi
     if test_dir_out=$("$ACE" test tests/test); then
         echo "FAIL: ace test with a failing module must exit nonzero"
         fail=1

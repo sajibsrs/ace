@@ -1,0 +1,8 @@
+/* A test file in a package imports that package's dependencies. */
+
+import test
+import greeter
+
+pub greets(t: *test.T) {
+    t.equal(greeter.greet(), 7)
+}

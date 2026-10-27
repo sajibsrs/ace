@@ -10,6 +10,10 @@
       per file, runs it, and exits 1 if any build or run failed. A `pub`
       function of another signature is a type error at its declaration; a
       user `main`, or a file with no `pub` function, is a compile error.
+    - A test file inside a package (nearest `ace.pkg` at or above its
+      directory) resolves that package's dependencies and links their native
+      inputs, as `ace pkg build` does; outside any package only `std` and
+      relative imports resolve.
     - Importing a `*.test.ace` file is a compile error.
     - `T: struct` has private fields: whether a check failed and how many ran.
     - `T.equal(self, got, want): bool` overloads `int`, `uint`, `usize`,

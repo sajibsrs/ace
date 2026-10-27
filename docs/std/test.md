@@ -32,6 +32,10 @@ run. Every non-method `pub` function is a test, in declaration order: one with
 another signature is a type error at its declaration. A test file may not
 define `main`, must have a test, and cannot be imported.
 
+A test file inside a package (the nearest `ace.pkg` at or above its directory)
+resolves that package's dependencies and links their native inputs, as
+`ace pkg build` does.
+
 - `T.equal(self, got, want): bool` compares `int`, `uint`, `usize`, `bool`,
   or `string` (exact bytes). On a mismatch it prints
   `check N: got X, want Y`, where N counts the test's checks from 1, marks the

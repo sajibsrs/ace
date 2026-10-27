@@ -273,9 +273,9 @@ static void package_usage(void) {
 // Walk up from the working directory looking for ace.pkg, mirroring how a
 // nested manifest starts an independent package (spec/modules-packages.md Package System
 // #11). Returns arena storage, or NULL if no ace.pkg is found up to '/'.
-static const char* find_package_root(void) {
+static const char* find_package_root_from(const char* start) {
     char dir[4096];
-    if (!getcwd(dir, sizeof dir)) return NULL;
+    if (!realpath(start, dir)) return NULL;
     for (;;) {
         char manifest[4160];
         snprintf(manifest, sizeof manifest, "%s/ace.pkg", dir);
@@ -287,6 +287,10 @@ static const char* find_package_root(void) {
         if (slash == dir) dir[1] = 0; // "/child" -> "/"
         else *slash = 0;
     }
+}
+
+static const char* find_package_root(void) {
+    return find_package_root_from(".");
 }
 
 // mkdir -p: create every missing path component. Tolerates an already-
@@ -889,9 +893,23 @@ static int test_build(const char* path, const char* target, EmitMode mode, const
         char root_dir[4096];
         path_dir(root_dir, sizeof root_dir, path);
         build_roots(root_dir);
+        // A test file inside a package resolves that package's dependencies
+        // and links their native inputs, as `ace pkg build` does.
+        Package* pkg = NULL;
+        Package** order = NULL;
+        int norder = 0;
+        const char* pkg_dir = find_package_root_from(root_dir[0] ? root_dir : ".");
+        if (pkg_dir) {
+            Diag pd = {pkg_dir, 0};
+            pkg = package_resolve(pkg_dir, target, &pd, &order, &norder);
+            if (!pkg || pd.errors > 0) {
+                fprintf(stderr, "%s: %d error%s\n", pkg_dir, pd.errors, pd.errors == 1 ? "" : "s");
+                return 1;
+            }
+        }
         Node* file = parse(toks, ntok, &d, target);
         if (d.errors == 0) test_synthesize_main(file, &d, target);
-        if (d.errors == 0) resolve_imports(file, &d, target, NULL, NULL);
+        if (d.errors == 0) resolve_imports(file, &d, target, NULL, pkg);
         if (d.errors == 0) sema_check(file, &d);
         if (d.errors == 0) {
             char obj[4096];
@@ -901,6 +919,10 @@ static int test_build(const char* path, const char* target, EmitMode mode, const
                 ArgList cc = {0};
                 arg_push(&cc, "cc");
                 arg_push(&cc, obj);
+                int nlinkargs = 0;
+                char** link_args = package_collect_links(order, norder, &d, &nlinkargs);
+                if (d.errors > 0) return 1;
+                for (int i = 0; i < nlinkargs; i++) arg_push(&cc, link_args[i]);
                 arg_push(&cc, "-o");
                 arg_push(&cc, (char*)bin);
                 arg_push(&cc, NULL);

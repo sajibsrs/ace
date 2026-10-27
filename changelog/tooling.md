@@ -1,5 +1,10 @@
 # Tooling
 
+- `ace test` finds the nearest `ace.pkg` at or above each test file, resolves
+  its dependency graph, and links the packages' native inputs, so a package's
+  tests import its dependencies (`tests/test_package/`).
+- `mod.VALUE.member` (a module global's field or `.len`) no longer reads as the
+  enum form `mod.Type.member` (`tests/modules/value_field/`).
 - Added `ace test PATH...` (#90): each `*.test.ace` (directories walked,
   `fixtures/` skipped) gets a generated `main` over its `pub` functions,
   spliced in after parsing, and is built in a forked child and run as its own

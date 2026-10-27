@@ -1124,6 +1124,8 @@ static void lower_field(Loader* L, Node* e, Binding* binds) {
         for (Binding* b = binds; b; b = b->next) {
             if (!text_is(inner->a->str, inner->a->len, b->name)) continue;
             Member* mem = find_member(b->mod, inner->str, inner->len, 1);
+            if (!mem && find_member(b->mod, inner->str, inner->len, 0))
+                return; // `binding.value.field`: the caller lowers the inner reference
             if (!mem) {
                 import_err(L->d, inner, "module '%.*s' has no type '%.*s'",
                            (int)b->len, b->name, (int)inner->len, inner->str);
