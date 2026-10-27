@@ -1191,6 +1191,8 @@ Loader.lower_field(self, mi: usize, c: *RefLower, e: u32) {
             if !mem.equal(c.p.node(a.a).text, b.name) { continue }
             m: Member, found: bool = self.member(b.module, a.text, true)
             if !found {
+                _, value: bool = self.member(b.module, a.text, false)
+                if value { return } // `binding.value.field`: the caller lowers the inner reference
                 self.err(mi, a, ["module '", b.name, "' has no type '", a.text, "'"])
             } else if !m.exported {
                 self.err(mi, a, ["type '", a.text, "' of module '", b.name, "' is not public"])

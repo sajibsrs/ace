@@ -349,6 +349,18 @@ wide(op: Token, a: u64, b: u64, sg: bool): (u64, bool) {
     return r, bitcast(i64, r) / ia != ib
 }
 
+/* The static length of `base` in `base.len` when base is a string literal or a
+ * global const string or array, as emit.c's fold_seq_len. */
+Em.seq_len(self, base: u32): (bool, u64) {
+    b: Node = self.s.node(base)
+    if b.kind == Kind.str_lit { return true, u64(b.text.len) }
+    ok: bool, init: u32 = self.const_init(self.s.node_sym(base))
+    if !ok { return false, 0 }
+    bt: u32 = self.unwrap(self.s.node_ty(base))
+    if bt != 0 && self.ty(bt).kind == TypeKind.array { return true, self.ty(bt).count }
+    return self.seq_len(init)
+}
+
 Em.fold_int(self, v: u32, t: u32): (int, u64) {
     n: Node = self.s.node(v)
     if n.kind == Kind.int_lit || n.kind == Kind.char_lit {
@@ -360,6 +372,12 @@ Em.fold_int(self, v: u32, t: u32): (int, u64) {
         vt: u32 = self.unwrap(self.s.node_ty(v))
         if !ok || vt == 0 || vt != self.unwrap(t) { return 0, 0 }
         return self.fold_int(init, t)
+    }
+    if n.kind == Kind.selector {
+        if !mem.equal(n.text, "len") || n.a == 0 { return 0, 0 }
+        ok: bool, len: u64 = self.seq_len(n.a)
+        if ok && self.lit_fits(t, len) { return 1, len }
+        return 0, 0
     }
     if n.kind == Kind.unary {
         if n.op != Token.minus && n.op != Token.tilde { return 0, 0 }
@@ -703,7 +721,7 @@ Em.eval_const(self, value: u32, ty: u32, out: *array.Array[u8], rels: *array.Arr
                 pad(out, start, usize(x.size))
                 return true
             }
-            return false
+            return self.eval_fold(value, ty, out) // a const sequence's `.len`
         }
         Kind.null {
             pad(out, out.len, usize(x.size))
