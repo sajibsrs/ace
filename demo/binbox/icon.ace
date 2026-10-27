@@ -4,7 +4,7 @@
  * POINTS is described there.
  */
 
-pub Id: enum u8 { source, wire, input, output, and, or, not, nand, nor, xor, xnor, led, bridge, new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in, select }
+pub Id: enum u8 { source, wire, input, output, and, or, not, nand, nor, xor, xnor, led, bridge, new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in, select, home, bars }
 
 /* Where each icon starts in POINTS. */
 pub START: [Id]u16 = [
@@ -32,9 +32,11 @@ pub START: [Id]u16 = [
     Id.zoom_out = 1774,
     Id.zoom_in = 1781,
     Id.select = 1794,
+    Id.home = 1867,
+    Id.bars = 1886,
 ]
 
-pub POINTS: [1867]f32 = [
+pub POINTS: [1911]f32 = [
     -1.0, 2.0, 12.0, 3.0, 12.0, 11.0, -1.0, 19.0,
     6.3, 7.0, 5.04, 8.66, 4.26, 10.59, 4.0, 12.65,
     4.28, 14.72, 5.09, 16.64, 6.36, 18.28, 8.01, 19.55,
@@ -268,5 +270,10 @@ pub POINTS: [1867]f32 = [
     20.01, 20.0, -1.0, 2.0, 4.0, 9.33, 4.01, 9.33,
     -1.0, 2.0, 20.0, 9.33, 20.01, 9.33, -1.0, 2.0,
     4.0, 14.67, 4.01, 14.67, -1.0, 2.0, 20.0, 14.67,
-    20.01, 14.67, -9.0,
+    20.01, 14.67, -9.0, -1.0, 3.0, 3.5, 11.5, 12.0,
+    4.0, 20.5, 11.5, -1.0, 4.0, 6.5, 10.0, 6.5,
+    20.5, 17.5, 20.5, 17.5, 10.0, -9.0, -1.0, 2.0,
+    4.5, 20.0, 4.5, 12.0, -1.0, 2.0, 9.5, 20.0,
+    9.5, 5.0, -1.0, 2.0, 14.5, 20.0, 14.5, 15.0,
+    -1.0, 2.0, 19.5, 20.0, 19.5, 9.0, -9.0,
 ]

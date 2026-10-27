@@ -1,4 +1,8 @@
-/* binbox: a logic-gate sandbox: square blocks on a grid, in an SDL3 window.
+/* binbox: logic circuits and programs to watch run, in an SDL3 window. It opens
+ * on a home screen of two tiles: Diagram, a logic-gate sandbox, and Program, a
+ * placeholder for now. The Home button, first in the toolbar, comes back.
+ *
+ * Diagram: square blocks on a grid.
  *
  * Build and run from this directory (Homebrew SDL3 on Apple arm64):
  *   ace pkg run
@@ -34,7 +38,9 @@ import grid: "./grid.ace"
 import sim: "./sim.ace"
 import ui: "./ui.ace"
 import app: "./app.ace"
+import home: "./home.ace"
 import input: "./input.ace"
+import program: "./program.ace"
 import render: "./render.ace"
 import view: "./view.ace"
 
@@ -50,7 +56,7 @@ main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
 
-    window: Window = Window.new("binbox", i32(bar.WIDTH), i32(bar.TOP + 16.0 * view.CELL + bar.BELOW), WindowFlags { resizable = 1 })
+    window: Window = Window.new(home.TITLE[home.Screen.home], i32(bar.WIDTH), i32(bar.TOP + 16.0 * view.CELL + bar.BELOW), WindowFlags { resizable = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
     window.maximize()
@@ -70,24 +76,55 @@ main(): int {
         fmt.println("binbox: cannot find the executable's path")
         return 1
     }
+    start: home.Home = home.Home {}
+    stage: program.Program = program.Program {}
     canvas: ui.Canvas = ui.Canvas {}
+    screen: home.Screen = home.Screen.home
     last: u64 = ticks()
+    w: f32 = 0.0
+    h: f32 = 0.0
     running: bool = true
     for running {
-        event: Event
-        for event.poll() {
-            running = mouse.event(&editor, &event) && running
-        }
         /* The window may be resized or made full screen. */
         rw: i32, rh: i32, sized: bool = renderer.size()
-        if sized { editor.view.resize(f32(rw), f32(rh)) }
+        if sized {
+            w = f32(rw)
+            h = f32(rh)
+            editor.view.resize(w, h)
+        }
+        shown: home.Screen = screen
+        event: Event
+        for event.poll() {
+            if screen == home.Screen.diagram {
+                running = mouse.event(&editor, &event) && running
+                if editor.leave {
+                    editor.leave = false
+                    screen = home.Screen.home
+                }
+            } else {
+                if home.quits(&event) { running = false }
+                if screen == home.Screen.home {
+                    opened: home.Screen = start.event(&event, w, h)
+                    if opened != home.Screen.home { screen = opened }
+                } else if stage.event(&event) {
+                    screen = home.Screen.home
+                }
+            }
+        }
+        if screen != shown { window.title(home.TITLE[screen]) }
         now: u64 = ticks()
-        if editor.auto && now - last >= AUTO_MS {
+        if screen == home.Screen.diagram && editor.auto && now - last >= AUTO_MS {
             editor.tick()
             last = now
         }
-        if !editor.auto { last = now }
-        render.draw(&editor, &canvas, renderer)
+        if screen != home.Screen.diagram || !editor.auto { last = now }
+        if screen == home.Screen.home {
+            start.draw(&canvas, renderer, w, h)
+        } else if screen == home.Screen.program {
+            stage.draw(&canvas, renderer, w, h)
+        } else {
+            render.draw(&editor, &canvas, renderer)
+        }
     }
     return 0
 }

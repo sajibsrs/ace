@@ -6,6 +6,7 @@ import fmt
 import math
 import Renderer, Color from sdl
 import bar: "./bar.ace"
+import theme: "./theme.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
 import diagram: "./diagram.ace"
@@ -88,22 +89,10 @@ icon_ink(b: grid.Block, level: sim.Level): u32 {
     return mix(LOW[b], HIGH[b], UNLIT)
 }
 
-/* Bar and panel colors. */
-CHROME: const u32 = 0x181b1f
-/* The board panel's background, and what shows between the panels. */
-PANEL: const u32 = 0x101214
-WINDOW: const u32 = 0x0a0b0c
-BUTTON: const u32 = 0x2c3238
-ACTIVE: const u32 = 0x3d4f63
-/* A button the current phase cannot use. */
-DISABLED: const u32 = 0x22262b
-INK: const u32 = 0xdddddd
-DIM: const u32 = 0x888888
-
 draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     a: ui.Rect = g.view.area()
     /* The board's panel; nothing below is drawn outside it. */
-    canvas.fill(a, Color.hex(PANEL))
+    canvas.fill(a, Color.hex(theme.PANEL))
     canvas.flush(r)
     r.clip(i32(a.x), i32(a.y), i32(a.w), i32(a.h))
     for y: int in 0 .. grid.HEIGHT {
@@ -128,10 +117,10 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     if hovers(g) { canvas.fill(g.view.box(g.hx, g.hy), Color.hex(LOW[g.block])) }
     /* The box being drawn, or the selection, carried along while it moves. */
     if g.sel.drag == select.Drag.box {
-        canvas.dashed(g.view.span(math.min[int](g.sel.ax, g.sel.bx), math.min[int](g.sel.ay, g.sel.by), math.max[int](g.sel.ax, g.sel.bx), math.max[int](g.sel.ay, g.sel.by)), 2.0, Color.hex(DIM), a)
+        canvas.dashed(g.view.span(math.min[int](g.sel.ax, g.sel.bx), math.min[int](g.sel.ay, g.sel.by), math.max[int](g.sel.ax, g.sel.bx), math.max[int](g.sel.ay, g.sel.by)), 2.0, Color.hex(theme.DIM), a)
     }
     if g.sel.on && g.sel.drag != select.Drag.box {
-        canvas.dashed(g.view.span(g.sel.x0 + g.sel.dx, g.sel.y0 + g.sel.dy, g.sel.x1 + g.sel.dx, g.sel.y1 + g.sel.dy), 2.0, Color.hex(DIM), a)
+        canvas.dashed(g.view.span(g.sel.x0 + g.sel.dx, g.sel.y0 + g.sel.dy, g.sel.x1 + g.sel.dx, g.sel.y1 + g.sel.dy), 2.0, Color.hex(theme.DIM), a)
     }
     canvas.flush(r)
 
@@ -191,15 +180,15 @@ disabled(g: *app.App, button: bar.Button): bool {
 
 draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     foot: ui.Rect = g.view.foot()
-    canvas.fill(g.view.head(), Color.hex(CHROME))
-    canvas.fill(g.view.blocks(), Color.hex(CHROME))
+    canvas.fill(g.view.head(), Color.hex(theme.CHROME))
+    canvas.fill(g.view.blocks(), Color.hex(theme.CHROME))
     /* Block buttons: with the pencil each in its block's low color, the
      * selected one lit; in Sim and with the select tool all grey. */
     live: bool = g.phase == app.Phase.edit && g.pick == bar.Tool.pencil
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
-        rgb: u32 = DISABLED
-        ink: u32 = DIM
+        rgb: u32 = theme.DISABLED
+        ink: u32 = theme.DIM
         if live {
             rgb = LOW[each]
             if each == g.block { rgb = HIGH[each] }
@@ -211,26 +200,26 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         at: ui.Rect = bar.tool(each)
         canvas.icon(r, bar.BLOCK_ICON[each], ui.Rect { x = at.x + bar.TOOL_PAD, y = at.y + bar.TOOL_PAD, w = at.w - 2.0 * bar.TOOL_PAD, h = at.h - 2.0 * bar.TOOL_PAD }, Color.hex(ink))
     }
-    canvas.fill(foot, Color.hex(CHROME))
-    canvas.fill(g.view.side(), Color.hex(CHROME))
+    canvas.fill(foot, Color.hex(theme.CHROME))
+    canvas.fill(g.view.side(), Color.hex(theme.CHROME))
     canvas.flush(r)
     /* The group titles, dim, before the buttons they head. */
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
         if bar.heading(each).len == 0 { continue }
         at: ui.Rect = bar.place(each)
-        ui.left(r, at, -(f32(bar.heading(each).len) * ui.GLYPH + 6.0), bar.heading(each), DIM)
+        ui.left(r, at, -(f32(bar.heading(each).len) * ui.GLYPH + 6.0), bar.heading(each), theme.DIM)
     }
-    ui.left(r, g.view.blocks(), 6.0, bar.COMPONENTS, DIM)
+    ui.left(r, g.view.blocks(), 6.0, bar.COMPONENTS, theme.DIM)
     for i: usize in 0 .. members(bar.Tool).len {
         each: bar.Tool = members(bar.Tool)[i]
-        rgb: u32 = DISABLED
-        ink: u32 = DIM
+        rgb: u32 = theme.DISABLED
+        ink: u32 = theme.DIM
         if g.phase == app.Phase.edit {
-            rgb = BUTTON
-            ink = INK
-            if bar.strip_at(each).has(g.mx, g.my) { rgb = ACTIVE }
-            if each == g.pick { rgb = ACTIVE }
+            rgb = theme.BUTTON
+            ink = theme.INK
+            if bar.strip_at(each).has(g.mx, g.my) { rgb = theme.ACTIVE }
+            if each == g.pick { rgb = theme.ACTIVE }
         }
         canvas.fill(bar.strip_at(each), Color.hex(rgb))
         at: ui.Rect = bar.strip_at(each)
@@ -238,34 +227,30 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     }
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
-        rgb: u32 = BUTTON
+        rgb: u32 = theme.BUTTON
         if bar.place(each).has(g.mx, g.my) || (each == bar.Button.open && g.mode == app.Mode.open) {
-            rgb = ACTIVE
+            rgb = theme.ACTIVE
         }
         if (each == bar.Button.edit && g.phase == app.Phase.edit) || (each == bar.Button.run && g.phase == app.Phase.run) ||
             (each == bar.Button.auto && g.auto) {
-            rgb = ACTIVE
+            rgb = theme.ACTIVE
         }
-        if disabled(g, each) { rgb = DISABLED }
+        if disabled(g, each) { rgb = theme.DISABLED }
         canvas.fill(bar.place(each), Color.hex(rgb))
-        ink: u32 = INK
-        if disabled(g, each) { ink = DIM }
+        ink: u32 = theme.INK
+        if disabled(g, each) { ink = theme.DIM }
         at: ui.Rect = bar.place(each)
-        /* A lone icon fills its square less `bar.TOOL_PAD` all round. */
-        side: f32 = bar.GLYPH_SIDE
+        /* A lone icon is centred in its square, the size of a labelled one. */
         inset: f32 = bar.PAD
-        if bar.LABEL[each].len == 0 {
-            side = at.w - 2.0 * bar.TOOL_PAD
-            inset = bar.TOOL_PAD
-        }
-        canvas.icon(r, bar.ICON[each], ui.Rect { x = at.x + inset, y = at.y + (at.h - side) / 2.0, w = side, h = side }, Color.hex(ink))
+        if bar.LABEL[each].len == 0 { inset = (at.w - bar.GLYPH_SIDE) / 2.0 }
+        canvas.icon(r, bar.ICON[each], ui.Rect { x = at.x + inset, y = at.y + (at.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(ink))
     }
     canvas.flush(r)
 
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
-        ink: u32 = INK
-        if disabled(g, each) { ink = DIM }
+        ink: u32 = theme.INK
+        if disabled(g, each) { ink = theme.DIM }
         ui.left(r, bar.place(each), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.LABEL[each], ink)
     }
     title: string = g.name.text()
@@ -281,57 +266,57 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     } else {
         status.printf("tick %d", g.count)
     }
-    ui.left(r, foot, 8.0, status.text(), INK)
+    ui.left(r, foot, 8.0, status.text(), theme.INK)
     /* The hovered block's name, in either phase. */
     if g.hx >= 0 {
         here: grid.Block = g.s.g.get(g.hx, g.hy)
-        if here != grid.Block.empty { ui.center(r, foot, NAME[here], INK) }
+        if here != grid.Block.empty { ui.center(r, foot, NAME[here], theme.INK) }
     }
     bar: ui.Rect = g.view.head()
-    ui.left(r, bar, bar.w - 8.0 - ui.GLYPH * f32(title.len), title, INK)
+    ui.left(r, bar, bar.w - 8.0 - ui.GLYPH * f32(title.len), title, theme.INK)
     note: string = g.status()
-    ui.left(r, foot, foot.w - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
+    ui.left(r, foot, foot.w - 8.0 - ui.GLYPH * f32(note.len), note, theme.DIM)
 }
 
 draw_list(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     rows: usize = g.store.list.count
     if rows == 0 { rows = 1 }
     for i: usize in 0 .. rows {
-        rgb: u32 = BUTTON
-        if i < g.store.list.count && bar.row(i).has(g.mx, g.my) { rgb = ACTIVE }
+        rgb: u32 = theme.BUTTON
+        if i < g.store.list.count && bar.row(i).has(g.mx, g.my) { rgb = theme.ACTIVE }
         canvas.fill(bar.row(i), Color.hex(rgb))
     }
     canvas.flush(r)
 
-    if g.store.list.count == 0 { ui.left(r, bar.row(0), 8.0, "no diagrams in diagram/", DIM) }
+    if g.store.list.count == 0 { ui.left(r, bar.row(0), 8.0, "no diagrams in diagram/", theme.DIM) }
     for i: usize in 0 .. g.store.list.count {
-        ui.left(r, bar.row(i), 8.0, g.store.list.names[i], INK)
+        ui.left(r, bar.row(i), 8.0, g.store.list.names[i], theme.INK)
     }
 }
 
 draw_ask(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     panel: ui.Rect = g.view.panel()
     field: ui.Rect = ui.Rect { x = panel.x + 12.0, y = panel.y + 32.0, w = panel.w - 24.0, h = 28.0 }
-    canvas.fill(panel, Color.hex(BUTTON))
-    canvas.outline(panel, 1.0, Color.hex(DIM))
-    canvas.fill(field, Color.hex(CHROME))
+    canvas.fill(panel, Color.hex(theme.BUTTON))
+    canvas.outline(panel, 1.0, Color.hex(theme.DIM))
+    canvas.fill(field, Color.hex(theme.CHROME))
     /* The cursor: a bar before byte `at`. */
     caret: f32 = field.x + 8.0 + f32(g.draft.at) * ui.GLYPH
-    canvas.fill(ui.Rect { x = caret - 1.0, y = field.y + 6.0, w = 2.0, h = field.h - 12.0 }, Color.hex(INK))
+    canvas.fill(ui.Rect { x = caret - 1.0, y = field.y + 6.0, w = 2.0, h = field.h - 12.0 }, Color.hex(theme.INK))
     canvas.flush(r)
 
     title: ui.Rect = ui.Rect { x = panel.x, y = panel.y + 4.0, w = panel.w, h = 24.0 }
-    ui.left(r, title, 12.0, "Save as     Enter saves, Esc cancels", INK)
+    ui.left(r, title, 12.0, "Save as     Enter saves, Esc cancels", theme.INK)
     storage: [64]u8
     b: fmt.Buffer = fmt.Buffer.init(storage[..])
     b.printf("%s", g.draft.text())
-    ui.left(r, field, 8.0, b.text(), INK)
+    ui.left(r, field, 8.0, b.text(), theme.INK)
     /* The extension, dimmed: it is added, not typed. */
-    ui.left(r, field, 8.0 + ui.GLYPH * f32(g.draft.len), diagram.EXTENSION, DIM)
+    ui.left(r, field, 8.0 + ui.GLYPH * f32(g.draft.len), diagram.EXTENSION, theme.DIM)
 }
 
 pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
-    r.color(Color.hex(WINDOW))
+    r.color(Color.hex(theme.WINDOW))
     r.clear()
     draw_board(g, canvas, r)
     draw_bars(g, canvas, r)

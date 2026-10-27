@@ -43,9 +43,10 @@ pub STRIP_ICON: [Tool]icon.Id = [
 ]
 
 /* The bar's buttons, left to right. */
-pub Button: enum u8 { new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in }
+pub Button: enum u8 { home, new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in }
 
 pub LABEL: [Button]string = [
+    Button.home = "",
     Button.new = "New",
     Button.open = "Open",
     Button.save = "Save",
@@ -65,6 +66,7 @@ pub GLYPH_SIDE: const f32 = 18.0
 pub LABEL_GAP: const f32 = 4.0
 
 pub ICON: [Button]icon.Id = [
+    Button.home = icon.Id.home,
     Button.new = icon.Id.new,
     Button.open = icon.Id.open,
     Button.save = icon.Id.save,
@@ -100,8 +102,7 @@ pub place(button: Button): ui.Rect {
         if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR - 8.0 }
         /* Each group follows its title, set apart from the last. */
         if heading(each).len > 0 {
-            if each != Button.new { x += 18.0 }
-            x += f32(heading(each).len) * ui.GLYPH + 6.0
+            x += 18.0 + f32(heading(each).len) * ui.GLYPH + 6.0
         }
         if each == button { return ui.Rect { x = x, y = GAP + 4.0, w = w, h = BAR - 8.0 } }
         x += w + 6.0

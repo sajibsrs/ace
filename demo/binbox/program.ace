@@ -1,0 +1,42 @@
+/* program — the screen for running programs step by step. A placeholder until
+ * the first one (a sort, with its pseudocode beside the animation) exists.
+ */
+
+import Renderer, Event, MouseButton, MouseButtonEvent, MouseMotionEvent, Color from sdl
+import bar: "./bar.ace"
+import ui: "./ui.ace"
+import theme: "./theme.ace"
+
+/* Where the pointer is, so the button under it lights. */
+pub Program: struct {
+    mx: f32 = -1.0,
+    my: f32 = -1.0,
+}
+
+/* Handles one event; true when the Home button was pressed. */
+pub Program.event(self, event: *Event): bool {
+    m: MouseMotionEvent, is_motion: bool = event.mouse_motion()
+    if is_motion {
+        self.mx = m.x
+        self.my = m.y
+    }
+    b: MouseButtonEvent, is_button: bool = event.mouse_button()
+    return is_button && b.down && b.button == MouseButton.left && bar.place(bar.Button.home).has(b.x, b.y)
+}
+
+pub Program.draw(self, canvas: *ui.Canvas, r: Renderer, w: f32, h: f32) {
+    r.color(Color.hex(theme.WINDOW))
+    r.clear()
+    head: ui.Rect = ui.Rect { x = bar.GAP, y = bar.GAP, w = w - 2.0 * bar.GAP, h = bar.BAR }
+    canvas.fill(head, Color.hex(theme.CHROME))
+    at: ui.Rect = bar.place(bar.Button.home)
+    rgb: u32 = theme.BUTTON
+    if at.has(self.mx, self.my) { rgb = theme.ACTIVE }
+    canvas.fill(at, Color.hex(rgb))
+    canvas.icon(r, bar.ICON[bar.Button.home], ui.Rect { x = at.x + (at.w - bar.GLYPH_SIDE) / 2.0, y = at.y + (at.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
+    canvas.flush(r)
+    body: ui.Rect = ui.Rect { x = 0.0, y = bar.TOP, w = w, h = h - bar.TOP }
+    ui.center(r, ui.Rect { x = body.x, y = body.y + body.h / 2.0 - 16.0, w = body.w, h = 16.0 }, "Program", theme.INK)
+    ui.center(r, ui.Rect { x = body.x, y = body.y + body.h / 2.0 + 8.0, w = body.w, h = 16.0 }, "Coming soon...", theme.DIM)
+    r.present()
+}

@@ -295,6 +295,7 @@ extern "c" {
     c_get_error(): *u8 as "SDL_GetError"
     c_create_window(title: *u8, w: i32, h: i32, flags: u64): *SDL_Window as "SDL_CreateWindow"
     c_destroy_window(window: *SDL_Window) as "SDL_DestroyWindow"
+    c_set_window_title(window: *SDL_Window, title: *u8): bool as "SDL_SetWindowTitle"
     c_minimize_window(window: *SDL_Window): bool as "SDL_MinimizeWindow"
     c_maximize_window(window: *SDL_Window): bool as "SDL_MaximizeWindow"
     c_restore_window(window: *SDL_Window): bool as "SDL_RestoreWindow"
@@ -387,6 +388,14 @@ pub Window.new(title: string, w: i32, h: i32, flags: WindowFlags): Window {
     buf: [TEXT_MAX + 1]u8
     if !str.cstring(title, buf[..]) { return Window { handle = null } }
     return Window { handle = c_create_window(&buf[0], w, h, u64(flags)) }
+}
+
+// Retitles the window; false for a title longer than TEXT_MAX bytes or holding
+// a NUL byte, which leaves the old one.
+pub Window.title(self, title: string): bool {
+    buf: [TEXT_MAX + 1]u8
+    if !str.cstring(title, buf[..]) { return false }
+    return c_set_window_title(self.handle, &buf[0])
 }
 
 pub Window.ok(const self): bool { return self.handle != null }

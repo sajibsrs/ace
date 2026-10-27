@@ -1,8 +1,12 @@
 # binbox
 
-A logic-gate sandbox written in Ace: place square blocks on a 64×32 grid,
-flip switches, and watch signals move through gates, one tick at a time, in
-an SDL3 window.
+Logic circuits and programs to watch run, written in Ace, in an SDL3 window. It
+opens on a home screen with two tiles:
+
+- **Diagram**: a logic-gate sandbox. Place square blocks on a 64×32 grid, flip
+  switches, and watch signals move through gates, one tick at a time. The Home
+  button, first in the toolbar, goes back.
+- **Program**: a placeholder for now (coming soon).
 
 ## Running
 
@@ -123,7 +127,11 @@ circuits with an input held, the way real circuits hold reset at power-on.
 - `diagram/latch.bnbx`: SR latch
 - `diagram/half-adder.bnbx`: half adder
 - `diagram/full-adder.bnbx`: full adder
-- `diagram/alu.bnbx`: 3-bit add/subtract ALU
+- `diagram/alu.bnbx`: 4-bit add/subtract ALU. Four full-adder slices, least
+  significant on the right; in each slice the left switch is a B bit and the
+  right one an A bit. The switch at the bus's right end is SUB: it XORs every
+  B bit and is the first carry in, so the LEDs show A − B. The carry LED at the
+  bottom left is the carry out (no borrow, when subtracting).
 
 ## Diagram format (`.bnbx`)
 
@@ -170,5 +178,9 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `app.ace` | `App`: the simulation, the selection, the file, and the commands that change them. |
 | `input.ace` | SDL events to `App` commands. |
 | `render.ace` | Draws the board, bars, and panels. |
+| `theme.ace` | The bar and panel colors every screen shares. |
+| `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
+| `home.ace` | The home screen: a tile for each screen to open, and the shared quit check. |
+| `program.ace` | The Program screen, a placeholder. |
 | `main.ace` | The SDL window and the event loop. |
 | `*.test.ace` | Tests for each module, run with `ace test .`. |

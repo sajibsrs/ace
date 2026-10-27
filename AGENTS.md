@@ -152,6 +152,7 @@ Path-specific guidance lives in `.claude/rules/`:
 - `language-boundaries.md`: fixed language and compiler design boundaries.
 - `documentation.md`: documentation and editor-support requirements.
 - `testing.md`: test selection, organization, and environment caveats.
+- `binbox.md`: building, icons, toolbar, and diagram checks for `demo/binbox`.
 
 ## Commands
 
