@@ -6,7 +6,7 @@
 
 import fmt
 
-pub WIDTH: const int = 32
+pub WIDTH: const int = 64
 pub HEIGHT: const int = 32
 
 pub Block: enum u8 {
@@ -35,7 +35,7 @@ pub Block: enum u8 {
 }
 
 pub Grid: struct {
-    cells: [32][32]Block = [[Block.empty : 32] : 32],
+    cells: [32][64]Block = [[Block.empty : 64] : 32],
 }
 
 pub SYMBOL: [Block]string = [

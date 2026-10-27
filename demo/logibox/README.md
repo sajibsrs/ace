@@ -1,6 +1,6 @@
 # logibox
 
-A logic-gate sandbox written in Ace: place square blocks on a 32×32 grid,
+A logic-gate sandbox written in Ace: place square blocks on a 64×32 grid,
 flip switches, and watch signals move through gates, one tick at a time, in
 an SDL3 window.
 
@@ -66,9 +66,9 @@ it can be started from any directory.
 | 1 / Edit | Edit mode: build the board; blocks show without levels |
 | 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
-| Wheel | Zoom the board about the pointer, in either mode: 1× (40-pixel cells) at start, up to 4×, and out until the whole board fits the window |
+| Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode |
-| Middle drag | Pan the board, in either mode; the cursor shows a closed hand |
+| Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
 | S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
 | Left click / drag | Edit: place the selected block. Run: flip a source |
@@ -128,7 +128,7 @@ An 8-byte header, then one byte per cell, row by row:
 |--------|------|-------|
 | 0 | 4 | magic `LGBX` |
 | 4 | 1 | version, `1` |
-| 5 | 1 | width, `32` |
+| 5 | 1 | width, `64` |
 | 6 | 1 | height, `32` |
 | 7 | 1 | reserved, `0` |
 | 8 | w × h | cell codes |

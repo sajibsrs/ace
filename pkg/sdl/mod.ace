@@ -97,6 +97,11 @@ pub VSYNC_ADAPTIVE: const i32 = -1
 // renderers take a Shader and a RenderState.
 pub GPU_DRIVER: const string = "gpu"
 
+// Blend modes for Renderer.blend (SDL_BlendMode): none overwrites, alpha mixes
+// the source over the target by its alpha.
+pub BLEND_NONE: const u32 = 0
+pub BLEND_ALPHA: const u32 = 1
+
 // Longest text, in bytes, that Window.new, a render driver name, and
 // Renderer.debug_text accept.
 pub TEXT_MAX: const usize = 255
@@ -290,9 +295,14 @@ extern "c" {
     c_get_error(): *u8 as "SDL_GetError"
     c_create_window(title: *u8, w: i32, h: i32, flags: u64): *SDL_Window as "SDL_CreateWindow"
     c_destroy_window(window: *SDL_Window) as "SDL_DestroyWindow"
+    c_minimize_window(window: *SDL_Window): bool as "SDL_MinimizeWindow"
+    c_maximize_window(window: *SDL_Window): bool as "SDL_MaximizeWindow"
+    c_restore_window(window: *SDL_Window): bool as "SDL_RestoreWindow"
+    c_get_window_flags(window: *SDL_Window): u64 as "SDL_GetWindowFlags"
     c_create_renderer(window: *SDL_Window, name: *u8): *SDL_Renderer as "SDL_CreateRenderer"
     c_destroy_renderer(renderer: *SDL_Renderer) as "SDL_DestroyRenderer"
     c_set_render_draw_color_float(renderer: *SDL_Renderer, r: f32, g: f32, b: f32, a: f32): bool as "SDL_SetRenderDrawColorFloat"
+    c_set_render_draw_blend_mode(renderer: *SDL_Renderer, mode: u32): bool as "SDL_SetRenderDrawBlendMode"
     c_get_render_draw_color_float(renderer: *SDL_Renderer, r: *f32, g: *f32, b: *f32, a: *f32): bool as "SDL_GetRenderDrawColorFloat"
     c_render_clear(renderer: *SDL_Renderer): bool as "SDL_RenderClear"
     c_render_present(renderer: *SDL_Renderer): bool as "SDL_RenderPresent"
@@ -384,6 +394,15 @@ pub Window.wipe(self) {
     self.handle = null
 }
 
+// Iconifies the window, fills the screen's usable area with it, or undoes
+// either; the change takes effect when the window system gets to it.
+pub Window.minimize(self): bool { return c_minimize_window(self.handle) }
+pub Window.maximize(self): bool { return c_maximize_window(self.handle) }
+pub Window.restore(self): bool { return c_restore_window(self.handle) }
+
+// Whether the window is maximized (SDL_WINDOW_MAXIMIZED).
+pub Window.maximized(const self): bool { return (c_get_window_flags(self.handle) & 0x80) != 0 }
+
 // The platform's `shape` cursor; needs the video subsystem.
 pub Cursor.new(shape: SystemCursor): Cursor {
     return Cursor { handle = c_create_system_cursor(u32(shape)) }
@@ -424,6 +443,12 @@ pub Renderer.color(const self): (Color, bool) {
     c: Color
     ok: bool = c_get_render_draw_color_float(self.handle, &c.r, &c.g, &c.b, &c.a)
     return c, ok
+}
+
+// How later draws blend with what is already there; BLEND_ALPHA lets vertex
+// alpha fade geometry edges.
+pub Renderer.blend(self, mode: u32): bool {
+    return c_set_render_draw_blend_mode(self.handle, mode)
 }
 
 pub Renderer.clear(self): bool { return c_render_clear(self.handle) }

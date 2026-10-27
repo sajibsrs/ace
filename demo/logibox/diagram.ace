@@ -20,7 +20,7 @@ pub EXTENSION: const string = ".lgbx"
 pub VERSION: const u8 = 1
 HEADER: const usize = 8
 /* Bytes in a diagram of the board. */
-pub SIZE: const usize = 8 + 32 * 32
+pub SIZE: const usize = 8 + 64 * 32
 
 MAGIC: const string = "LGBX"
 

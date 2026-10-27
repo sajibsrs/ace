@@ -30,19 +30,23 @@ import sys
 import (
     init, quit, error, ticks, Window, Renderer, Event, Color, InitFlags, WindowFlags,
     EventType, Keycode, MouseButton, MouseButtonEvent, MouseMotionEvent, MouseWheelEvent,
-    KeyboardEvent, Cursor, SystemCursor, cursor,
+    KeyboardEvent, Cursor, SystemCursor, cursor, BLEND_ALPHA,
 ) from sdl
 import grid: "./grid.ace"
 import sim: "./sim.ace"
 import diagram: "./diagram.ace"
 import ui: "./ui.ace"
+import icon: "./icon.ace"
 
-/* A cell's side at 1x, the default zoom; the default window shows 16 x 16
- * cells of the board. */
+/* A cell's side at 1x; the window is created 16 x 16 cells at 1x. */
 CELL: const f32 = 40.0
-/* The most zoom, as a multiple of 1x, and the factor one wheel step applies.
- * The least is whatever shows the whole board in the window. */
+/* The most and least zoom, as multiples of 1x, and the factor one wheel step
+ * applies. A window too small for the least zoom to show the board still
+ * fits it. */
 ZOOM_MAX: const f32 = 4.0
+ZOOM_MIN: const f32 = 0.25
+/* The zoom at start. */
+ZOOM_START: const f32 = 0.5
 ZOOM_STEP: const f32 = 1.25
 BAR: const f32 = 28.0
 /* The bar and, under it, the block row; the board starts below both. */
@@ -88,38 +92,59 @@ NAME: [grid.Block]string = [
 
 /* Low and high colors of each block; any block on an error is ERROR. */
 LOW: [grid.Block]u32 = [
-    grid.Block.empty = 0x202428,
-    grid.Block.source = 0x5a3a12,
-    grid.Block.wire = 0x303030,
-    grid.Block.input = 0x2a3a2a,
-    grid.Block.output = 0x3a2a4a,
-    grid.Block.and = 0x1e3a5a,
-    grid.Block.or = 0x1e4a3a,
-    grid.Block.not = 0x4a3a1e,
-    grid.Block.nand = 0x2a2a5a,
-    grid.Block.nor = 0x1e4a4a,
-    grid.Block.xor = 0x4a1e2e,
-    grid.Block.xnor = 0x3a3a1e,
-    grid.Block.led = 0x4a1818,
-    grid.Block.bridge = 0x2c2c2c,
+    grid.Block.empty = 0x2d3238,
+    grid.Block.source = 0x7e5119,
+    grid.Block.wire = 0x434343,
+    grid.Block.input = 0x3b513b,
+    grid.Block.output = 0x513b68,
+    grid.Block.and = 0x2a517e,
+    grid.Block.or = 0x2a6851,
+    grid.Block.not = 0x68512a,
+    grid.Block.nand = 0x3b3b7e,
+    grid.Block.nor = 0x2a6868,
+    grid.Block.xor = 0x682a40,
+    grid.Block.xnor = 0x51512a,
+    grid.Block.led = 0x682222,
+    grid.Block.bridge = 0x3e3e3e,
 ]
 HIGH: [grid.Block]u32 = [
-    grid.Block.empty = 0x202428,
-    grid.Block.source = 0xc07a1c,
-    grid.Block.wire = 0xb4b48c,
-    grid.Block.input = 0x6f9446,
-    grid.Block.output = 0x9a6aa6,
-    grid.Block.and = 0x3f82b8,
-    grid.Block.or = 0x3aa877,
-    grid.Block.not = 0xc0a03a,
-    grid.Block.nand = 0x5a5ab8,
-    grid.Block.nor = 0x3a9aa0,
-    grid.Block.xor = 0xb84a6a,
-    grid.Block.xnor = 0x8a9a3a,
-    grid.Block.led = 0xc03434,
-    grid.Block.bridge = 0xa4a47f,
+    grid.Block.empty = 0x2d3238,
+    grid.Block.source = 0xffa225,
+    grid.Block.wire = 0x7c8470,
+    grid.Block.input = 0x9bcf62,
+    grid.Block.output = 0xd894e8,
+    grid.Block.and = 0x57b4ff,
+    grid.Block.or = 0x51eba7,
+    grid.Block.not = 0xffd44d,
+    grid.Block.nand = 0x7d7dff,
+    grid.Block.nor = 0x51d8e0,
+    grid.Block.xor = 0xff6793,
+    grid.Block.xnor = 0xc1d851,
+    grid.Block.led = 0xff4545,
+    grid.Block.bridge = 0x70786a,
 ]
 ERROR: const u32 = 0xb030b0
+
+/* `from` moved `percent` of the way to `to`, channel by channel. */
+mix(from: u32, to: u32, percent: u32): u32 {
+    r: u32 = ((from / 0x10000) % 0x100 * (100 - percent) + (to / 0x10000) % 0x100 * percent) / 100
+    g: u32 = ((from / 0x100) % 0x100 * (100 - percent) + (to / 0x100) % 0x100 * percent) / 100
+    b: u32 = (from % 0x100 * (100 - percent) + to % 0x100 * percent) / 100
+    return r * 0x10000 + g * 0x100 + b
+}
+
+/* How far an icon sits from its block's fill: a lit block's icon goes this
+ * far toward the block's dark color, an unlit block's toward its bright one.
+ * Both stay in the block's own hue, so no icon stands out from the rest. */
+LIT: const u32 = 55
+UNLIT: const u32 = 28
+
+/* The color of block `b`'s icon while it shows `level`. */
+icon_ink(b: grid.Block, level: sim.Level): u32 {
+    if level == sim.Level.error { return mix(ERROR, 0x000000, LIT) }
+    if level == sim.Level.high { return mix(HIGH[b], LOW[b], LIT) }
+    return mix(LOW[b], HIGH[b], UNLIT)
+}
 
 /* Bar and panel colors. */
 CHROME: const u32 = 0x181b1f
@@ -150,8 +175,27 @@ LABEL: [Button]string = [
     Button.run = "Run",
     Button.step = "Step",
     Button.auto = "Auto",
-    Button.zoom_out = "-",
-    Button.zoom_in = "+",
+    Button.zoom_out = "",
+    Button.zoom_in = "",
+]
+
+/* A button's inset before its icon and after its text, the icon's side, and
+ * the gap between icon and label. */
+PAD: const f32 = 6.0
+GLYPH_SIDE: const f32 = 18.0
+GAP: const f32 = 4.0
+
+ICON: [Button]icon.Id = [
+    Button.new = icon.Id.new,
+    Button.open = icon.Id.open,
+    Button.save = icon.Id.save,
+    Button.save_as = icon.Id.save_as,
+    Button.edit = icon.Id.edit,
+    Button.run = icon.Id.run,
+    Button.step = icon.Id.step,
+    Button.auto = icon.Id.auto,
+    Button.zoom_out = icon.Id.zoom_out,
+    Button.zoom_in = icon.Id.zoom_in,
 ]
 
 /* The block each letter key selects, lowercase as SDL reports it. */
@@ -172,12 +216,15 @@ LETTER: [grid.Block]u8 = [
     grid.Block.bridge = 'b',
 ]
 
-/* The bar rectangle of `button`: each fits its label, 6 pixels apart. */
+/* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
+ * buttons hold an icon alone. */
 place(button: Button): ui.Rect {
     x: f32 = 6.0
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
-        w: f32 = f32(LABEL[each].len) * ui.GLYPH + 16.0
+        /* Icon, gap, and label, inset by PAD. */
+        w: f32 = 2.0 * PAD + GLYPH_SIDE
+        if LABEL[each].len > 0 { w += GAP + f32(LABEL[each].len) * ui.GLYPH }
         /* Gaps set the phase and zoom buttons apart. */
         if each == Button.edit || each == Button.zoom_out { x += 18.0 }
         if each == button { return ui.Rect { x = x, y = 4.0, w = w, h = BAR - 8.0 } }
@@ -194,22 +241,22 @@ tool(block: grid.Block, width: f32): ui.Rect {
     return ui.Rect { x = 6.0 + i * slot, y = BAR, w = slot - 6.0, h = BAR - 4.0 }
 }
 
-/* The block row's labels. */
-TOOL: [grid.Block]string = [
-    grid.Block.empty = "",
-    grid.Block.source = "Source",
-    grid.Block.wire = "Wire",
-    grid.Block.input = "Input",
-    grid.Block.output = "Output",
-    grid.Block.and = "AND",
-    grid.Block.or = "OR",
-    grid.Block.not = "NOT",
-    grid.Block.nand = "NAND",
-    grid.Block.nor = "NOR",
-    grid.Block.xor = "XOR",
-    grid.Block.xnor = "XNOR",
-    grid.Block.led = "LED",
-    grid.Block.bridge = "Bridge",
+/* The block row's icons; the empty block has none. */
+BLOCK_ICON: [grid.Block]icon.Id = [
+    grid.Block.empty = icon.Id.source,
+    grid.Block.source = icon.Id.source,
+    grid.Block.wire = icon.Id.wire,
+    grid.Block.input = icon.Id.input,
+    grid.Block.output = icon.Id.output,
+    grid.Block.and = icon.Id.and,
+    grid.Block.or = icon.Id.or,
+    grid.Block.not = icon.Id.not,
+    grid.Block.nand = icon.Id.nand,
+    grid.Block.nor = icon.Id.nor,
+    grid.Block.xor = icon.Id.xor,
+    grid.Block.xnor = icon.Id.xnor,
+    grid.Block.led = icon.Id.led,
+    grid.Block.bridge = icon.Id.bridge,
 ]
 
 /* Row `i` of the Open list. */
@@ -333,7 +380,7 @@ Game: struct {
      * whole board in its area; zero until the first `resize`. */
     w: f32 = 0.0,
     h: f32 = 0.0,
-    cell: f32 = CELL,
+    cell: f32 = CELL * ZOOM_START,
     fit: f32 = 0.0,
     ox: f32 = 0.0,
     oy: f32 = 0.0,
@@ -395,21 +442,17 @@ Game.area(const self): ui.Rect {
     return ui.Rect { x = 0.0, y = TOP, w = self.w, h = self.h - TOP - FOOT }
 }
 
-/* Keeps the board in view: covering the area on an axis it is longer on, so
- * panning never leaves empty space beside it, and centered on the others. */
+/* Keeps the board in reach: at any zoom, any cell, the corner ones too, can
+ * be panned to the area's center, so the board may leave empty space of half
+ * the area at either end. */
 Game.clamp(self) {
     a: ui.Rect = self.area()
-    side: f32 = f32(grid.WIDTH) * self.cell
-    if side <= a.w {
-        self.ox = a.x + (a.w - side) / 2.0
-    } else {
-        self.ox = math.min[f32](math.max[f32](self.ox, a.x + a.w - side), a.x)
-    }
-    if side <= a.h {
-        self.oy = a.y + (a.h - side) / 2.0
-    } else {
-        self.oy = math.min[f32](math.max[f32](self.oy, a.y + a.h - side), a.y)
-    }
+    wide: f32 = f32(grid.WIDTH) * self.cell
+    high: f32 = f32(grid.HEIGHT) * self.cell
+    mx: f32 = a.x + a.w / 2.0
+    my: f32 = a.y + a.h / 2.0
+    self.ox = math.min[f32](math.max[f32](self.ox, mx - wide + self.cell / 2.0), mx - self.cell / 2.0)
+    self.oy = math.min[f32](math.max[f32](self.oy, my - high + self.cell / 2.0), my - self.cell / 2.0)
 }
 
 /* Follows a window of `w` x `h`, keeping the zoom and the board point at the
@@ -426,8 +469,8 @@ Game.resize(self, w: f32, h: f32) {
     self.w = w
     self.h = h
     a: ui.Rect = self.area()
-    self.fit = math.max[f32](math.min[f32](a.w, a.h) / f32(grid.WIDTH), 1.0)
-    self.cell = math.max[f32](self.cell, self.fit)
+    self.fit = math.max[f32](math.min[f32](a.w / f32(grid.WIDTH), a.h / f32(grid.HEIGHT)), 1.0)
+    self.cell = math.max[f32](self.cell, math.min[f32](self.fit, CELL * ZOOM_MIN))
     self.ox = a.x + a.w / 2.0 - bx * self.cell
     self.oy = a.y + a.h / 2.0 - by * self.cell
     self.clamp()
@@ -446,7 +489,7 @@ Game.zoom(self, steps: f32, x: f32, y: f32) {
     want: f32 = self.cell
     if steps > 0.0 { want *= ZOOM_STEP }
     if steps < 0.0 { want /= ZOOM_STEP }
-    want = math.min[f32](math.max[f32](want, self.fit), CELL * ZOOM_MAX)
+    want = math.min[f32](math.max[f32](want, math.min[f32](self.fit, CELL * ZOOM_MIN)), CELL * ZOOM_MAX)
     self.ox = x - (x - self.ox) * want / self.cell
     self.oy = y - (y - self.oy) * want / self.cell
     self.cell = want
@@ -714,13 +757,17 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
         for x: int in 0 .. grid.WIDTH {
             b: grid.Block = self.s.g.get(x, y)
             if b == grid.Block.empty || !self.shows(x, y, a) { continue }
-            /* Dark text on a lit block, light text on a dark one. */
-            ink: u32 = INK
-            if self.phase == Phase.run && self.s.level(x, y) != sim.Level.low { ink = 0x000000 }
-            box: ui.Rect = self.box(x, y)
-            ui.center(r, box, grid.SYMBOL[b], ink)
+            level: sim.Level = sim.Level.low
+            if self.phase == Phase.run { level = self.s.level(x, y) }
+            ink: u32 = icon_ink(b, level)
+            /* Each icon sits inside its cell with a margin. */
+            cell: ui.Rect = self.box(x, y)
+            m: f32 = cell.w * 0.12
+            box: ui.Rect = ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }
+            canvas.icon(r, BLOCK_ICON[b], box, Color.hex(ink))
         }
     }
+    canvas.flush(r)
 }
 
 /* Whether `button` is unusable in the current phase: Step and Auto only work
@@ -742,6 +789,9 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
             if each == self.block { rgb = HIGH[each] }
         }
         canvas.fill(tool(each, self.w), Color.hex(rgb))
+        level: sim.Level = sim.Level.low
+        if self.phase == Phase.edit && each == self.block { level = sim.Level.high }
+        canvas.icon(r, BLOCK_ICON[each], tool(each, self.w), Color.hex(icon_ink(each, level)))
     }
     canvas.fill(foot, Color.hex(CHROME))
     for i: usize in 0 .. members(Button).len {
@@ -756,6 +806,10 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         }
         if self.disabled(each) { rgb = DISABLED }
         canvas.fill(place(each), Color.hex(rgb))
+        ink: u32 = INK
+        if self.disabled(each) { ink = DIM }
+        at: ui.Rect = place(each)
+        canvas.icon(r, ICON[each], ui.Rect { x = at.x + PAD, y = at.y + (at.h - GLYPH_SIDE) / 2.0, w = GLYPH_SIDE, h = GLYPH_SIDE }, Color.hex(ink))
     }
     canvas.flush(r)
 
@@ -763,16 +817,7 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         each: Button = members(Button)[i]
         ink: u32 = INK
         if self.disabled(each) { ink = DIM }
-        ui.center(r, place(each), LABEL[each], ink)
-    }
-    for i: usize in 1 .. members(grid.Block).len {
-        each: grid.Block = members(grid.Block)[i]
-        ink: u32 = DIM
-        if self.phase == Phase.edit {
-            ink = INK
-            if each == self.block { ink = 0x000000 }
-        }
-        ui.center(r, tool(each, self.w), TOOL[each], ink)
+        ui.left(r, place(each), PAD + GLYPH_SIDE + GAP, LABEL[each], ink)
     }
     title: string = self.name.text()
     if title.len == 0 { title = "untitled" }
@@ -854,11 +899,14 @@ main(): int {
     window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + FOOT), WindowFlags { resizable = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
+    window.maximize()
 
     renderer: Renderer = Renderer.new(window)
     defer renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     renderer.vsync(1)
+    /* Icon edges fade out through vertex alpha. */
+    renderer.blend(BLEND_ALPHA)
 
     /* The arrow, and the closed hand a middle-button drag shows while it pans. */
     arrow: Cursor = Cursor.new(SystemCursor.default)
@@ -888,7 +936,8 @@ main(): int {
             b: MouseButtonEvent, is_button: bool = event.mouse_button()
             if is_button {
                 if b.down {
-                    if !game.click(b.x, b.y, b.button) {
+                    clicked: bool = game.click(b.x, b.y, b.button)
+                    if !clicked {
                         held = b.button
                         x: int, y: int = game.cell_at(b.x, b.y)
                         if held == MouseButton.middle {

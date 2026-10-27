@@ -5,7 +5,9 @@
  * later layer, so it covers the board's text too.
  */
 
+import math
 import Renderer, Vertex, Point, Color, DEBUG_TEXT_SIZE from sdl
+import icon: "./icon.ace"
 
 /* Side of one debug-text glyph, in pixels. */
 pub GLYPH: const f32 = DEBUG_TEXT_SIZE
@@ -23,9 +25,9 @@ pub Rect.has(const self, x: f32, y: f32): bool {
 }
 
 /* Triangles for one layer, drawn in a single geometry call. Room for a whole
- * 32 x 32 board of cells and the hover outline. */
+ * 64 x 32 board of cells and the hover outline. */
 pub Canvas: struct {
-    vertices: [8192]Vertex = [Vertex {} : 8192],
+    vertices: [16384]Vertex = [Vertex {} : 16384],
     count: usize = 0,
 }
 
@@ -52,6 +54,182 @@ pub Canvas.outline(self, box: Rect, thick: f32, color: Color) {
     self.fill(Rect { x = box.x, y = box.y + box.h - thick, w = box.w, h = thick }, color)
     self.fill(Rect { x = box.x, y = box.y, w = thick, h = box.h }, color)
     self.fill(Rect { x = box.x + box.w - thick, y = box.y, w = thick, h = box.h }, color)
+}
+
+pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
+    if self.count + 6 > self.vertices.len { return }
+    self.vertices[self.count] = a
+    self.vertices[self.count + 1] = b
+    self.vertices[self.count + 2] = c
+    self.vertices[self.count + 3] = a
+    self.vertices[self.count + 4] = c
+    self.vertices[self.count + 5] = d
+    self.count += 6
+}
+
+/* Most points of one icon shape. */
+SHAPE_MAX: const usize = 48
+/* Stroke of an icon's lines, in grid units. */
+STROKE: const f32 = 3.5
+
+/* A `thick` stroke through `pts`, joined at its corners and square-capped
+ * unless `closed`, anti-aliased: an opaque ribbon whose edges fade out over
+ * one pixel straddling the true edge. */
+pub Canvas.stroke(self, r: Renderer, pts: []Point, closed: bool, thick: f32, color: Color) {
+    n: usize = pts.len
+    if n < 2 || n > SHAPE_MAX { return }
+    if self.count + 18 * n + 12 > self.vertices.len { self.flush(r) }
+    clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
+    /* The opaque ribbon reaches `fill` from the path; the fade, `fade`. */
+    fill: f32 = thick / 2.0 - 0.5
+    fade: f32 = thick / 2.0 + 0.5
+    /* Both edges of the ribbon, and where each fades out, at every point. */
+    a: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    b: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    oa: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    ob: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    for k: usize in 0 .. n {
+        here: Point = pts[k]
+        mx: f32 = 0.0
+        my: f32 = 0.0
+        scale: f32 = 1.0
+        if !closed && k == 0 {
+            m: Point = turn(here, pts[1])
+            mx = m.x
+            my = m.y
+            /* The cap pushes the end back by what the ribbon reaches. */
+            here = Point { x = here.x + my * fill, y = here.y - mx * fill }
+        } else if !closed && k == n - 1 {
+            m: Point = turn(pts[n - 2], here)
+            mx = m.x
+            my = m.y
+            here = Point { x = here.x - my * fill, y = here.y + mx * fill }
+        } else {
+            n1: Point = turn(pts[(k + n - 1) % n], here)
+            n2: Point = turn(here, pts[(k + 1) % n])
+            mx = n1.x + n2.x
+            my = n1.y + n2.y
+            ml: f32 = math.sqrt(mx * mx + my * my)
+            if ml < 0.0001 {
+                mx = n1.x
+                my = n1.y
+                ml = 1.0
+            }
+            mx /= ml
+            my /= ml
+            cosine: f32 = mx * n1.x + my * n1.y
+            if cosine < 0.5 { cosine = 0.5 }
+            scale = 1.0 / cosine
+        }
+        a[k] = Point { x = here.x + mx * fill * scale, y = here.y + my * fill * scale }
+        b[k] = Point { x = here.x - mx * fill * scale, y = here.y - my * fill * scale }
+        oa[k] = Point { x = here.x + mx * fade * scale, y = here.y + my * fade * scale }
+        ob[k] = Point { x = here.x - mx * fade * scale, y = here.y - my * fade * scale }
+    }
+    last: usize = n - 1
+    if closed { last = n }
+    for k: usize in 0 .. last {
+        j: usize = (k + 1) % n
+        self.quad(Vertex { position = a[k], color = color }, Vertex { position = a[j], color = color },
+            Vertex { position = b[j], color = color }, Vertex { position = b[k], color = color })
+        self.quad(Vertex { position = a[k], color = color }, Vertex { position = a[j], color = color },
+            Vertex { position = oa[j], color = clear }, Vertex { position = oa[k], color = clear })
+        self.quad(Vertex { position = b[k], color = color }, Vertex { position = b[j], color = color },
+            Vertex { position = ob[j], color = clear }, Vertex { position = ob[k], color = clear })
+    }
+    if closed { return }
+    /* A cap's fade runs one pixel past each end, along the path. */
+    d0: Point = turn(b[0], a[0])
+    d1: Point = turn(a[last], b[last])
+    self.quad(Vertex { position = a[0], color = color }, Vertex { position = b[0], color = color },
+        Vertex { position = Point { x = b[0].x + d0.x, y = b[0].y + d0.y }, color = clear },
+        Vertex { position = Point { x = a[0].x + d0.x, y = a[0].y + d0.y }, color = clear })
+    self.quad(Vertex { position = a[last], color = color }, Vertex { position = b[last], color = color },
+        Vertex { position = Point { x = b[last].x + d1.x, y = b[last].y + d1.y }, color = clear },
+        Vertex { position = Point { x = a[last].x + d1.x, y = a[last].y + d1.y }, color = clear })
+}
+
+/* `which` drawn in the largest square that fits `box`, centered: bold lines
+ * and filled polygons whose edges fade out over one pixel. Flushes `r`
+ * whenever the layer fills. */
+pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
+    side: f32 = box.w
+    if box.h < side { side = box.h }
+    unit: f32 = side / 24.0
+    ox: f32 = box.x + (box.w - side) / 2.0
+    oy: f32 = box.y + (box.h - side) / 2.0
+    clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
+    edge: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    inner: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    outer: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    i: usize = usize(icon.START[which])
+    for icon.POINTS[i] != -9.0 {
+        tag: f32 = icon.POINTS[i]
+        n: usize = usize(icon.POINTS[i + 1])
+        i += 2
+        if tag != -2.0 {
+            if n > SHAPE_MAX { return }
+            for k: usize in 0 .. n {
+                edge[k] = Point { x = ox + icon.POINTS[i + 2 * k] * unit, y = oy + icon.POINTS[i + 2 * k + 1] * unit }
+            }
+            self.stroke(r, edge[0..n], tag == -3.0, STROKE * unit, color)
+            i += 2 * n
+            continue
+        }
+        if n > SHAPE_MAX { return }
+        for k: usize in 0 .. n {
+            edge[k] = Point { x = ox + icon.POINTS[i + 2 * k] * unit, y = oy + icon.POINTS[i + 2 * k + 1] * unit }
+        }
+        i += 2 * n
+        /* Each point moves half a pixel in and out along its corner's
+         * bisector, so the fringe between the two straddles the true edge. */
+        for k: usize in 0 .. n {
+            before: Point = edge[(k + n - 1) % n]
+            here: Point = edge[k]
+            after: Point = edge[(k + 1) % n]
+            n1: Point = turn(before, here)
+            n2: Point = turn(here, after)
+            mx: f32 = n1.x + n2.x
+            my: f32 = n1.y + n2.y
+            ml: f32 = math.sqrt(mx * mx + my * my)
+            if ml < 0.0001 {
+                mx = n1.x
+                my = n1.y
+                ml = 1.0
+            }
+            mx /= ml
+            my /= ml
+            /* A sharp corner reaches farther, up to twice. */
+            cosine: f32 = mx * n1.x + my * n1.y
+            if cosine < 0.5 { cosine = 0.5 }
+            reach: f32 = 0.5 / cosine
+            inner[k] = Point { x = here.x - mx * reach, y = here.y - my * reach }
+            outer[k] = Point { x = here.x + mx * reach, y = here.y + my * reach }
+        }
+        if self.count + 3 * (n - 2) + 6 * n > self.vertices.len { self.flush(r) }
+        for t: usize in 0 .. n - 2 {
+            a: usize = usize(icon.POINTS[i + 3 * t])
+            b: usize = usize(icon.POINTS[i + 3 * t + 1])
+            c: usize = usize(icon.POINTS[i + 3 * t + 2])
+            self.triangle(inner[a], inner[b], inner[c], color)
+        }
+        i += 3 * (n - 2)
+        for k: usize in 0 .. n {
+            j: usize = (k + 1) % n
+            self.quad(Vertex { position = inner[k], color = color }, Vertex { position = inner[j], color = color },
+                Vertex { position = outer[j], color = clear }, Vertex { position = outer[k], color = clear })
+        }
+    }
+}
+
+/* The unit normal of the edge from a to b, pointing out of a polygon wound
+ * clockwise on screen. */
+turn(a: Point, b: Point): Point {
+    dx: f32 = b.x - a.x
+    dy: f32 = b.y - a.y
+    length: f32 = math.sqrt(dx * dx + dy * dy)
+    if length < 0.0001 { length = 0.0001 }
+    return Point { x = dy / length, y = -dx / length }
 }
 
 /* Draws the layer and empties it for the next. */
