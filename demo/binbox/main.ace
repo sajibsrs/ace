@@ -1,4 +1,4 @@
-/* logibox: a logic-gate sandbox: square blocks on a grid, in an SDL3 window.
+/* binbox: a logic-gate sandbox: square blocks on a grid, in an SDL3 window.
  *
  * Build and run from this directory (Homebrew SDL3 on Apple arm64):
  *   ace pkg run
@@ -21,7 +21,7 @@
  * kept) and Cmd+Shift+Z redoes it; all of these are Edit only. A selection
  * being carried shows the move cursor.
  *
- * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
+ * Diagrams live in diagram/ as .bnbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
  * - and _; Enter saves, Escape cancels). Cmd+S saves and Cmd+O opens.
  */
@@ -1413,7 +1413,7 @@ main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
 
-    window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + BELOW), WindowFlags { resizable = 1 })
+    window: Window = Window.new("binbox", i32(WIDTH), i32(TOP + 16.0 * CELL + BELOW), WindowFlags { resizable = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
     window.maximize()
@@ -1433,7 +1433,7 @@ main(): int {
 
     game: Game = Game { s = sim.Sim.init(grid.Grid {}) }
     if game.locate() != null {
-        fmt.println("logibox: cannot find the executable's path")
+        fmt.println("binbox: cannot find the executable's path")
         return 1
     }
     canvas: ui.Canvas = ui.Canvas {}

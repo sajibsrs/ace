@@ -1,4 +1,4 @@
-# logibox
+# binbox
 
 A logic-gate sandbox written in Ace: place square blocks on a 64×32 grid,
 flip switches, and watch signals move through gates, one tick at a time, in
@@ -90,7 +90,7 @@ Escape cancels.
 
 ## Example: SR latch
 
-`diagram/latch.lgbx` is a NOR latch: two NOR gates, cross-coupled, so
+`diagram/latch.bnbx` is a NOR latch: two NOR gates, cross-coupled, so
 Q = NOR(R, Q′) and Q′ = NOR(S, Q). It sits at the board's center (columns
 29–34, rows 14–17):
 
@@ -120,18 +120,18 @@ circuits with an input held, the way real circuits hold reset at power-on.
 
 ## Diagrams
 
-- `diagram/latch.lgbx`: SR latch
-- `diagram/half-adder.lgbx`: half adder
-- `diagram/full-adder.lgbx`: full adder
-- `diagram/alu.lgbx`: 3-bit add/subtract ALU
+- `diagram/latch.bnbx`: SR latch
+- `diagram/half-adder.bnbx`: half adder
+- `diagram/full-adder.bnbx`: full adder
+- `diagram/alu.bnbx`: 3-bit add/subtract ALU
 
-## Diagram format (`.lgbx`)
+## Diagram format (`.bnbx`)
 
 An 8-byte header, then one byte per cell, row by row:
 
 | Offset | Size | Field |
 |--------|------|-------|
-| 0 | 4 | magic `LGBX` |
+| 0 | 4 | magic `BNBX` |
 | 4 | 1 | version, `1` |
 | 5 | 1 | width, `64` |
 | 6 | 1 | height, `32` |
@@ -160,7 +160,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `grid.ace` | The board: blocks and their placement. |
 | `group.ace` | Groups of touching cells: wire nets and multi-cell gates. |
 | `sim.ace` | Levels, drivers and contention, and the tick. |
-| `diagram.ace` | `.lgbx` encode and decode. |
+| `diagram.ace` | `.bnbx` encode and decode. |
 | `ui.ace` | Rectangles, layered drawing, and text helpers. |
 | `main.ace` | The window, input, bar, Open list, and Save-as box. |
 | `*.test.ace` | Tests for each module, run with `ace test .`. |

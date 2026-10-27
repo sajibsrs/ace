@@ -256,7 +256,7 @@ ticks(s: *sim.Sim, n: int) {
 }
 
 /* Two NORs cross-coupled: Q = NOR(R, Q'), and Q' = NOR(S, Q), centered on the
- * board as diagram/latch.lgbx stores it. Sources R (29,14) and S (29,17) touch
+ * board as diagram/latch.bnbx stores it. Sources R (29,14) and S (29,17) touch
  * the NORs' input pins; LED Q at (34,14). Q' needs no wire: the lower NOR's
  * output pin (31,16) touches the upper NOR's input pin (31,15). Q runs down
  * column 33 to the lower NOR's input pin (32,17). */
@@ -274,9 +274,9 @@ latch(): sim.Sim {
     return sim.Sim.init(g)
 }
 
-/* The latch as diagram/latch.lgbx stores it. */
+/* The latch as diagram/latch.bnbx stores it. */
 pub latch_matches_file(t: *test.T) {
-    data: []u8, err: Error = file.read("diagram/latch.lgbx")
+    data: []u8, err: Error = file.read("diagram/latch.bnbx")
     defer mem.release[u8](&data)
     t.equal(err == null, true)
     stored: sim.Sim, derr: Error = diagram.decode(data)

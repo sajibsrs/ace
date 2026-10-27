@@ -36,7 +36,7 @@ pub layout(t: *test.T) {
     n: usize, err: Error = diagram.encode(sample(), out[..])
     t.equal(err == null, true)
     t.equal(n, diagram.SIZE)
-    t.equal(out[0] == 'L' && out[1] == 'G' && out[2] == 'B' && out[3] == 'X', true)
+    t.equal(out[0] == 'B' && out[1] == 'N' && out[2] == 'B' && out[3] == 'X', true)
     t.equal(int(out[4]), int(diagram.VERSION))
     t.equal(int(out[5]), 64)
     t.equal(int(out[6]), 32)
@@ -111,7 +111,7 @@ pub bad_code(t: *test.T) {
 /* The shipped SR latch powers up held in reset (R on, S off), settles to
  * Q low, and then holds whatever the last pulse stored. */
 pub latch_file(t: *test.T) {
-    data: []u8, ferr: Error = file.read("diagram/latch.lgbx")
+    data: []u8, ferr: Error = file.read("diagram/latch.bnbx")
     defer mem.release[u8](&data)
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)

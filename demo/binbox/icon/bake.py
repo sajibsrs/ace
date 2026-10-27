@@ -12,7 +12,7 @@ Z z and <circle>. The table holds, per icon, a run of shapes on the 24 x 24 grid
     -2, n, x0, y0 ... , then 3 * (n - 2) vertex numbers     a polygon of n points
     -9                                  the end of the icon
 
-    python3 -I icon/bake.py        (from demo/logibox)
+    python3 -I icon/bake.py        (from demo/binbox)
 """
 
 import math

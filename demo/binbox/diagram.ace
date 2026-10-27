@@ -1,8 +1,8 @@
-/* diagram — the .lgbx blueprint format.
+/* diagram — the .bnbx blueprint format.
  *
  * A diagram is an 8-byte header, then one byte per cell in row-major order:
  *
- *   0..4  magic "LGBX"
+ *   0..4  magic "BNBX"
  *   4     version (VERSION)
  *   5     width
  *   6     height
@@ -16,16 +16,16 @@
 import grid: "./grid.ace"
 import sim: "./sim.ace"
 
-pub EXTENSION: const string = ".lgbx"
+pub EXTENSION: const string = ".bnbx"
 pub VERSION: const u8 = 1
 HEADER: const usize = 8
 /* Bytes in a diagram of the board. */
 pub SIZE: const usize = 8 + 64 * 32
 
-MAGIC: const string = "LGBX"
+MAGIC: const string = "BNBX"
 
 pub DiagramErr: error {
-    1: magic = "not a logibox diagram",
+    1: magic = "not a binbox diagram",
     2: version = "unsupported diagram version",
     3: reserved = "reserved header byte is not zero",
     4: size = "unsupported board size",
