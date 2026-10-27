@@ -7,13 +7,15 @@
  * next input pin or an LED. Each connects by touching, or through wire when
  * apart.
  *
- * Edit (1) builds the board: left-click places the selected block (drag to
- * paint), right-click (or drag) removes. Run (2) simulates it: left-click flips
+ * Edit (F1) builds the board: left-click places the selected block (drag to
+ * paint), right-click (or drag) removes. Run (F2) simulates it: left-click flips
  * a source, space or Auto toggles auto-ticking, and Step ticks once. Letters
  * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
  * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge. The wheel zooms the
- * board about the pointer; the window resizes and goes full screen. Escape
- * quits.
+ * board about the pointer; the window resizes and goes full screen. Cmd+Q
+ * quits. The strip at the board's left holds the tools, picked by 1 and 2: the
+ * pencil (above) and box select: drag over blocks to select them, drag the selection to
+ * move it, Delete removes it, Escape or a click elsewhere drops it.
  *
  * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
@@ -49,9 +51,17 @@ ZOOM_MIN: const f32 = 0.25
 ZOOM_START: const f32 = 0.5
 ZOOM_STEP: const f32 = 1.25
 BAR: const f32 = 28.0
-/* The bar and, under it, the block row; the board starts below both. */
-TOP: const f32 = 2.0 * BAR
 FOOT: const f32 = 24.0
+/* Space between panels, and between a panel and the window's edge. */
+GAP: const f32 = 8.0
+/* Top to bottom the window holds the toolbar, the block row, then the sidebar
+ * beside the board, and the footer: TOP is where the sidebar and board start,
+ * BELOW the space under them. */
+TOP: const f32 = 3.0 * GAP + 2.0 * BAR
+BELOW: const f32 = 2.0 * GAP + FOOT
+/* The tool strip down the board's left side, and a tool button in it. */
+STRIP: const f32 = 40.0
+PICK: const f32 = 32.0
 WIDTH: const f32 = 16.0 * 40.0
 AUTO_MS: const u64 = 250
 
@@ -68,10 +78,14 @@ ROW: const f32 = 20.0
 KEY_DELETE: const u32 = 0x7f
 KEY_HOME: const u32 = 0x4000_004a
 KEY_END: const u32 = 0x4000_004d
+KEY_F1: const u32 = 0x4000_003a
+KEY_F2: const u32 = 0x4000_003b
 
 /* SDL_KMOD_SHIFT and SDL_KMOD_CTRL: either side's key. */
 KMOD_SHIFT: const u16 = 0x0003
 KMOD_CTRL: const u16 = 0x00c0
+/* SDL_KMOD_GUI: either side's Command (Windows) key. */
+KMOD_GUI: const u16 = 0x0c00
 
 NAME: [grid.Block]string = [
     grid.Block.empty = "empty",
@@ -148,12 +162,17 @@ icon_ink(b: grid.Block, level: sim.Level): u32 {
 
 /* Bar and panel colors. */
 CHROME: const u32 = 0x181b1f
+/* The board panel's background, and what shows between the panels. */
+PANEL: const u32 = 0x101214
+WINDOW: const u32 = 0x0a0b0c
 BUTTON: const u32 = 0x2c3238
 ACTIVE: const u32 = 0x3d4f63
 /* A button the current phase cannot use. */
 DISABLED: const u32 = 0x22262b
 INK: const u32 = 0xdddddd
 DIM: const u32 = 0x888888
+/* The selection's outline. */
+SELECT: const u32 = 0x57b4ff
 
 /* What the bar has open over the board: nothing, the Open list, or the
  * Save-as box. */
@@ -162,6 +181,24 @@ Mode: enum u8 { none, open, save_as }
 /* Whether the board is being built (blocks placed, no ticks) or simulated
  * (sources flip, ticks run). */
 Phase: enum u8 { edit, run }
+
+/* What the left mouse button does on the board in Edit: place the selected
+ * block, or box-select blocks and drag them. */
+Tool: enum u8 { pencil, select }
+
+/* How a select-tool drag is going: none, drawing the box, or moving the
+ * selected blocks, which are lifted off the board until the drop. */
+Drag: enum u8 { none, box, move }
+
+/* The strip button of `pick`. */
+strip_at(pick: Tool): ui.Rect {
+    return ui.Rect { x = GAP + (STRIP - PICK) / 2.0, y = TOP + 6.0 + f32(int(pick)) * (PICK + 6.0), w = PICK, h = PICK }
+}
+
+STRIP_ICON: [Tool]icon.Id = [
+    Tool.pencil = icon.Id.edit,
+    Tool.select = icon.Id.select,
+]
 
 /* The bar's buttons, left to right. */
 Button: enum u8 { new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in }
@@ -183,7 +220,7 @@ LABEL: [Button]string = [
  * the gap between icon and label. */
 PAD: const f32 = 6.0
 GLYPH_SIDE: const f32 = 18.0
-GAP: const f32 = 4.0
+LABEL_GAP: const f32 = 4.0
 
 ICON: [Button]icon.Id = [
     Button.new = icon.Id.new,
@@ -219,15 +256,15 @@ LETTER: [grid.Block]u8 = [
 /* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
  * buttons hold an icon alone. */
 place(button: Button): ui.Rect {
-    x: f32 = 6.0
+    x: f32 = GAP + 6.0
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         /* Icon, gap, and label, inset by PAD. */
         w: f32 = 2.0 * PAD + GLYPH_SIDE
-        if LABEL[each].len > 0 { w += GAP + f32(LABEL[each].len) * ui.GLYPH }
+        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH }
         /* Gaps set the phase and zoom buttons apart. */
         if each == Button.edit || each == Button.zoom_out { x += 18.0 }
-        if each == button { return ui.Rect { x = x, y = 4.0, w = w, h = BAR - 8.0 } }
+        if each == button { return ui.Rect { x = x, y = GAP + 4.0, w = w, h = BAR - 8.0 } }
         x += w + 6.0
     }
     return ui.Rect {}
@@ -236,9 +273,9 @@ place(button: Button): ui.Rect {
 /* The block row's button for `block` in a window `width` wide: one equal slot
  * for each block. */
 tool(block: grid.Block, width: f32): ui.Rect {
-    slot: f32 = (width - 6.0) / f32(members(grid.Block).len - 1)
+    slot: f32 = (width - 2.0 * GAP - 6.0) / f32(members(grid.Block).len - 1)
     i: f32 = f32(int(block) - 1)
-    return ui.Rect { x = 6.0 + i * slot, y = BAR, w = slot - 6.0, h = BAR - 4.0 }
+    return ui.Rect { x = GAP + 6.0 + i * slot, y = 2.0 * GAP + BAR + 4.0, w = slot - 6.0, h = BAR - 8.0 }
 }
 
 /* The block row's icons; the empty block has none. */
@@ -262,7 +299,7 @@ BLOCK_ICON: [grid.Block]icon.Id = [
 /* Row `i` of the Open list. */
 row(i: usize): ui.Rect {
     at: ui.Rect = place(Button.open)
-    return ui.Rect { x = at.x, y = BAR + f32(i) * ROW, w = 280.0, h = ROW }
+    return ui.Rect { x = at.x, y = GAP + BAR + f32(i) * ROW, w = 280.0, h = ROW }
 }
 
 /* The Save-as panel's size; it sits centered in the window. */
@@ -384,6 +421,25 @@ Game: struct {
     fit: f32 = 0.0,
     ox: f32 = 0.0,
     oy: f32 = 0.0,
+    /* The tool in use, and the selected cells' box (corners inclusive) when `sel`. */
+    pick: Tool = Tool.pencil,
+    sel: bool = false,
+    sx0: int = 0,
+    sy0: int = 0,
+    sx1: int = 0,
+    sy1: int = 0,
+    /* The drag in progress: its anchor cell, the cell it is at, and for a move
+     * how far the selection has been carried; `lift` holds the lifted blocks,
+     * row by row over the box, and `lifton` which sources were on. */
+    drag: Drag = Drag.none,
+    ax: int = 0,
+    ay: int = 0,
+    bx: int = 0,
+    by: int = 0,
+    dx: int = 0,
+    dy: int = 0,
+    lift: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
+    lifton: [32 * 64]bool = [false : 32 * 64],
     /* Cell the current drag last painted, so a drag paints each cell once. */
     px: int = -1,
     py: int = -1,
@@ -439,7 +495,7 @@ Game.path(self, name: string, out: []u8): string {
 
 /* The board's area: the window between the bars. */
 Game.area(const self): ui.Rect {
-    return ui.Rect { x = 0.0, y = TOP, w = self.w, h = self.h - TOP - FOOT }
+    return ui.Rect { x = 2.0 * GAP + STRIP, y = TOP, w = self.w - 3.0 * GAP - STRIP, h = self.h - TOP - BELOW }
 }
 
 /* Keeps the board in reach: at any zoom, any cell, the corner ones too, can
@@ -533,11 +589,13 @@ Game.tick(self) {
  * count carry over, so an edit continues from where the run stopped. */
 Game.switch(self, phase: Phase) {
     self.phase = phase
+    if phase == Phase.run { self.deselect() }
     if phase == Phase.edit { self.auto = false }
 }
 
 /* Starts a new, unnamed diagram. */
 Game.clear(self) {
+    self.deselect()
     self.s = sim.Sim.init(grid.Grid {})
     self.count = 0
     self.name.len = 0
@@ -603,12 +661,142 @@ Game.load(self, name: string) {
         self.failed("cannot open", name, err)
         return
     }
+    self.deselect()
     self.s = s
     self.count = 0
     self.name.copy(name)
     b: fmt.Buffer = self.say()
     b.printf("opened %s", self.name.text())
     self.said(b)
+}
+
+/* Drops the selection. */
+Game.deselect(self) {
+    self.sel = false
+    self.drag = Drag.none
+}
+
+/* The cell nearest window point (x, y), kept on the board. */
+Game.cell_near(const self, x: f32, y: f32): (int, int) {
+    fx: f32 = math.min[f32](math.max[f32]((x - self.ox) / self.cell, 0.0), f32(grid.WIDTH - 1))
+    fy: f32 = math.min[f32](math.max[f32]((y - self.oy) / self.cell, 0.0), f32(grid.HEIGHT - 1))
+    return int(fx), int(fy)
+}
+
+/* Whether cell (x, y) is inside the selection. */
+Game.selected(const self, x: int, y: int): bool {
+    return self.sel && x >= self.sx0 && x <= self.sx1 && y >= self.sy0 && y <= self.sy1
+}
+
+/* The window rectangle that covers cells (x0, y0) to (x1, y1), inclusive. */
+Game.span(const self, x0: int, y0: int, x1: int, y1: int): ui.Rect {
+    a: ui.Rect = self.box(x0, y0)
+    b: ui.Rect = self.box(x1, y1)
+    return ui.Rect { x = a.x, y = a.y, w = b.x + b.w - a.x, h = b.y + b.h - a.y }
+}
+
+/* Lifts the selected blocks off the board into `lift`, remembering which
+ * sources are on, to be carried and dropped. */
+Game.lift_up(self) {
+    g: grid.Grid = self.s.g
+    w: int = self.sx1 - self.sx0 + 1
+    for y: int in self.sy0 .. self.sy1 + 1 {
+        for x: int in self.sx0 .. self.sx1 + 1 {
+            i: int = (y - self.sy0) * w + x - self.sx0
+            b: grid.Block = g.get(x, y)
+            self.lift[i] = b
+            self.lifton[i] = b == grid.Block.source && self.s.level(x, y) == sim.Level.high
+            g.remove(x, y)
+        }
+    }
+    self.s = sim.Sim.init(g)
+}
+
+/* Puts the lifted blocks down `dx`, `dy` cells over: they replace what is
+ * there, and empty cells of the selection leave the board as it is. */
+Game.drop(self) {
+    g: grid.Grid = self.s.g
+    w: int = self.sx1 - self.sx0 + 1
+    for y: int in self.sy0 .. self.sy1 + 1 {
+        for x: int in self.sx0 .. self.sx1 + 1 {
+            b: grid.Block = self.lift[(y - self.sy0) * w + x - self.sx0]
+            if b != grid.Block.empty { g.place(x + self.dx, y + self.dy, b) }
+        }
+    }
+    self.s = sim.Sim.init(g)
+    for y: int in self.sy0 .. self.sy1 + 1 {
+        for x: int in self.sx0 .. self.sx1 + 1 {
+            if self.lifton[(y - self.sy0) * w + x - self.sx0] { self.s.toggle(x + self.dx, y + self.dy, true) }
+        }
+    }
+    self.sx0 += self.dx
+    self.sx1 += self.dx
+    self.sy0 += self.dy
+    self.sy1 += self.dy
+    self.drag = Drag.none
+}
+
+/* Removes every selected block. */
+Game.erase(self) {
+    if !self.sel { return }
+    g: grid.Grid = self.s.g
+    for y: int in self.sy0 .. self.sy1 + 1 {
+        for x: int in self.sx0 .. self.sx1 + 1 { g.remove(x, y) }
+    }
+    self.s = sim.Sim.init(g)
+    self.deselect()
+}
+
+/* A left press at window point (x, y) with the select tool: inside the
+ * selection it picks the blocks up, elsewhere it starts a new box. */
+Game.select_press(self, x: f32, y: f32) {
+    cx: int, cy: int = self.cell_at(x, y)
+    if cx < 0 {
+        self.deselect()
+        return
+    }
+    self.ax = cx
+    self.ay = cy
+    self.bx = cx
+    self.by = cy
+    if self.selected(cx, cy) {
+        self.drag = Drag.move
+        self.dx = 0
+        self.dy = 0
+        self.lift_up()
+    } else {
+        self.sel = false
+        self.drag = Drag.box
+    }
+}
+
+/* The pointer moved to window point (x, y) during a select-tool drag. */
+Game.select_drag(self, x: f32, y: f32) {
+    cx: int, cy: int = self.cell_near(x, y)
+    if self.drag == Drag.box {
+        self.bx = cx
+        self.by = cy
+    }
+    if self.drag == Drag.move {
+        /* The selection stays on the board. */
+        self.dx = math.min[int](math.max[int](cx - self.ax, -self.sx0), grid.WIDTH - 1 - self.sx1)
+        self.dy = math.min[int](math.max[int](cy - self.ay, -self.sy0), grid.HEIGHT - 1 - self.sy1)
+    }
+}
+
+/* The left button went up: a box becomes the selection (a click on an empty
+ * cell selects nothing), a move drops its blocks. */
+Game.select_release(self) {
+    if self.drag == Drag.move { self.drop() }
+    if self.drag == Drag.box {
+        self.sx0 = math.min[int](self.ax, self.bx)
+        self.sx1 = math.max[int](self.ax, self.bx)
+        self.sy0 = math.min[int](self.ay, self.by)
+        self.sy1 = math.max[int](self.ay, self.by)
+        lone: bool = self.ax == self.bx && self.ay == self.by
+        self.sel = !lone || self.s.g.get(self.ax, self.ay) != grid.Block.empty
+        self.drag = Drag.none
+    }
 }
 
 /* A press or drag over (x, y) with `button`; `press` is true on the click. */
@@ -632,10 +820,35 @@ Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
     self.s.place(x, y, self.block)
 }
 
+/* Switches to tool `pick`, leaving no selection behind. */
+Game.use(self, pick: Tool) {
+    if self.phase != Phase.edit { return }
+    self.pick = pick
+    self.deselect()
+}
+
+/* The panels: the toolbar and the block row across the top, the sidebar down
+ * the board's left, and the footer. */
+Game.head(const self): ui.Rect {
+    return ui.Rect { x = GAP, y = GAP, w = self.w - 2.0 * GAP, h = BAR }
+}
+
+Game.blocks(const self): ui.Rect {
+    return ui.Rect { x = GAP, y = 2.0 * GAP + BAR, w = self.w - 2.0 * GAP, h = BAR }
+}
+
+Game.side(const self): ui.Rect {
+    return ui.Rect { x = GAP, y = TOP, w = STRIP, h = self.h - TOP - BELOW }
+}
+
+Game.foot(const self): ui.Rect {
+    return ui.Rect { x = GAP, y = self.h - GAP - FOOT, w = self.w - 2.0 * GAP, h = FOOT }
+}
+
 /* A press at window point (x, y). True when the bar or a panel took it, so it
  * paints nothing. */
 Game.click(self, x: f32, y: f32, button: MouseButton): bool {
-    if self.mode == Mode.save_as { return true }
+    if self.mode == Mode.save_as || self.drag == Drag.move { return true }
     if self.mode == Mode.open {
         self.mode = Mode.none
         for i: usize in 0 .. self.list.count {
@@ -645,12 +858,23 @@ Game.click(self, x: f32, y: f32, button: MouseButton): bool {
         }
         return true
     }
+    if self.side().has(x, y) {
+        if button != MouseButton.left || self.phase != Phase.edit { return true }
+        for i: usize in 0 .. members(Tool).len {
+            each: Tool = members(Tool)[i]
+            if strip_at(each).has(x, y) { self.use(each) }
+        }
+        return true
+    }
     if y >= TOP { return false }
-    if y >= BAR {
+    if y >= 2.0 * GAP + BAR {
         if button != MouseButton.left || self.phase != Phase.edit { return true }
         for i: usize in 1 .. members(grid.Block).len {
             each: grid.Block = members(grid.Block)[i]
-            if tool(each, self.w).has(x, y) { self.block = each }
+            if tool(each, self.w).has(x, y) {
+                self.use(Tool.pencil)
+                self.block = each
+            }
         }
         return true
     }
@@ -705,6 +929,8 @@ Game.key(self, e: KeyboardEvent): bool {
         self.type(e)
         return true
     }
+    if self.drag == Drag.move { return true }
+    if (e.mod & KMOD_GUI) != 0 && e.key == Keycode.q { return false }
     if e.repeat { return true }
     if (e.mod & KMOD_CTRL) != 0 {
         if e.key == Keycode.s { self.save() }
@@ -712,23 +938,36 @@ Game.key(self, e: KeyboardEvent): bool {
         return true
     }
     if e.key == Keycode.escape {
-        if self.mode == Mode.none { return false }
-        self.mode = Mode.none
+        if self.mode != Mode.none {
+            self.mode = Mode.none
+        } else {
+            self.deselect()
+        }
         return true
     }
     k: u32 = u32(e.key)
-    if k == '1' { self.switch(Phase.edit) }
-    if k == '2' { self.switch(Phase.run) }
+    if k == '1' { self.use(Tool.pencil) }
+    if k == '2' { self.use(Tool.select) }
+    if (e.key == Keycode.backspace || k == KEY_DELETE) && self.pick == Tool.select && self.mode == Mode.none { self.erase() }
+    if k == KEY_F1 { self.switch(Phase.edit) }
+    if k == KEY_F2 { self.switch(Phase.run) }
     if e.key == Keycode.space && self.phase == Phase.run { self.auto = !self.auto }
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
-        if k == u32(LETTER[each]) { self.block = each }
+        if k == u32(LETTER[each]) {
+            self.use(Tool.pencil)
+            self.block = each
+        }
     }
     return true
 }
 
 Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
     a: ui.Rect = self.area()
+    /* The board's panel; nothing below is drawn outside it. */
+    canvas.fill(a, Color.hex(PANEL))
+    canvas.flush(r)
+    r.clip(i32(a.x), i32(a.y), i32(a.w), i32(a.h))
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if !self.shows(x, y, a) { continue }
@@ -747,9 +986,17 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             canvas.fill(box, Color.hex(rgb))
         }
     }
-    if self.mode == Mode.none && self.phase == Phase.edit && self.hx >= 0 {
+    if self.drag == Drag.move { self.draw_lifted(canvas, r, false) }
+    if self.mode == Mode.none && self.phase == Phase.edit && self.pick == Tool.pencil && self.hx >= 0 {
         box: ui.Rect = self.box(self.hx, self.hy)
         canvas.outline(box, 2.0, Color.hex(0xffffff))
+    }
+    /* The box being drawn, or the selection, carried along while it moves. */
+    if self.drag == Drag.box {
+        canvas.outline(self.span(math.min[int](self.ax, self.bx), math.min[int](self.ay, self.by), math.max[int](self.ax, self.bx), math.max[int](self.ay, self.by)), 2.0, Color.hex(SELECT))
+    }
+    if self.sel && self.drag != Drag.box {
+        canvas.outline(self.span(self.sx0 + self.dx, self.sy0 + self.dy, self.sx1 + self.dx, self.sy1 + self.dy), 2.0, Color.hex(SELECT))
     }
     canvas.flush(r)
 
@@ -767,7 +1014,27 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             canvas.icon(r, BLOCK_ICON[b], box, Color.hex(ink))
         }
     }
+    if self.drag == Drag.move { self.draw_lifted(canvas, r, true) }
     canvas.flush(r)
+    r.unclip()
+}
+
+/* The blocks being carried, `icons` or their fills, at the drag's offset. */
+Game.draw_lifted(self, canvas: *ui.Canvas, r: Renderer, icons: bool) {
+    w: int = self.sx1 - self.sx0 + 1
+    for y: int in self.sy0 .. self.sy1 + 1 {
+        for x: int in self.sx0 .. self.sx1 + 1 {
+            b: grid.Block = self.lift[(y - self.sy0) * w + x - self.sx0]
+            if b == grid.Block.empty { continue }
+            cell: ui.Rect = self.box(x + self.dx, y + self.dy)
+            if !icons {
+                canvas.fill(cell, Color.hex(LOW[b]))
+            } else {
+                m: f32 = cell.w * 0.12
+                canvas.icon(r, BLOCK_ICON[b], ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }, Color.hex(icon_ink(b, sim.Level.low)))
+            }
+        }
+    }
 }
 
 /* Whether `button` is unusable in the current phase: Step and Auto only work
@@ -777,8 +1044,9 @@ Game.disabled(const self, button: Button): bool {
 }
 
 Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
-    foot: ui.Rect = ui.Rect { x = 0.0, y = self.h - FOOT, w = self.w, h = FOOT }
-    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = self.w, h = TOP }, Color.hex(CHROME))
+    foot: ui.Rect = self.foot()
+    canvas.fill(self.head(), Color.hex(CHROME))
+    canvas.fill(self.blocks(), Color.hex(CHROME))
     /* Block buttons: in Edit each in its block's low color, the selected one
      * lit; in Run all disabled. */
     for i: usize in 1 .. members(grid.Block).len {
@@ -794,6 +1062,20 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         canvas.icon(r, BLOCK_ICON[each], tool(each, self.w), Color.hex(icon_ink(each, level)))
     }
     canvas.fill(foot, Color.hex(CHROME))
+    canvas.fill(self.side(), Color.hex(CHROME))
+    for i: usize in 0 .. members(Tool).len {
+        each: Tool = members(Tool)[i]
+        rgb: u32 = DISABLED
+        ink: u32 = DIM
+        if self.phase == Phase.edit {
+            rgb = BUTTON
+            ink = INK
+            if strip_at(each).has(self.mx, self.my) { rgb = ACTIVE }
+            if each == self.pick { rgb = ACTIVE }
+        }
+        canvas.fill(strip_at(each), Color.hex(rgb))
+        canvas.icon(r, STRIP_ICON[each], strip_at(each), Color.hex(ink))
+    }
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         rgb: u32 = BUTTON
@@ -817,14 +1099,18 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         each: Button = members(Button)[i]
         ink: u32 = INK
         if self.disabled(each) { ink = DIM }
-        ui.left(r, place(each), PAD + GLYPH_SIDE + GAP, LABEL[each], ink)
+        ui.left(r, place(each), PAD + GLYPH_SIDE + LABEL_GAP, LABEL[each], ink)
     }
     title: string = self.name.text()
     if title.len == 0 { title = "untitled" }
     storage: [128]u8
     status: fmt.Buffer = fmt.Buffer.init(storage[..])
     if self.phase == Phase.edit {
-        status.printf("%s", NAME[self.block])
+        if self.pick == Tool.select {
+            status.printf("select")
+        } else {
+            status.printf("%s", NAME[self.block])
+        }
     } else {
         status.printf("tick %d", self.count)
     }
@@ -834,10 +1120,10 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         here: grid.Block = self.s.g.get(self.hx, self.hy)
         if here != grid.Block.empty { ui.center(r, foot, NAME[here], INK) }
     }
-    bar: ui.Rect = ui.Rect { x = 0.0, y = 0.0, w = self.w, h = BAR }
-    ui.left(r, bar, self.w - 8.0 - ui.GLYPH * f32(title.len), title, INK)
+    bar: ui.Rect = self.head()
+    ui.left(r, bar, bar.w - 8.0 - ui.GLYPH * f32(title.len), title, INK)
     note: string = self.notes[0..self.note]
-    ui.left(r, foot, self.w - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
+    ui.left(r, foot, foot.w - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
 }
 
 Game.draw_list(self, canvas: *ui.Canvas, r: Renderer) {
@@ -878,7 +1164,7 @@ Game.draw_ask(self, canvas: *ui.Canvas, r: Renderer) {
 }
 
 Game.draw(self, canvas: *ui.Canvas, r: Renderer) {
-    r.color(Color.hex(0x101214))
+    r.color(Color.hex(WINDOW))
     r.clear()
     self.draw_board(canvas, r)
     self.draw_bars(canvas, r)
@@ -896,7 +1182,7 @@ main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
 
-    window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + FOOT), WindowFlags { resizable = 1 })
+    window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + BELOW), WindowFlags { resizable = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
     window.maximize()
@@ -942,12 +1228,15 @@ main(): int {
                         x: int, y: int = game.cell_at(b.x, b.y)
                         if held == MouseButton.middle {
                             cursor(grab)
+                        } else if game.pick == Tool.select && game.phase == Phase.edit {
+                            if held == MouseButton.left { game.select_press(b.x, b.y) }
                         } else {
                             game.paint(x, y, held, true)
                         }
                     }
                 } else if b.button == held {
                     if held == MouseButton.middle { cursor(arrow) }
+                    if held == MouseButton.left { game.select_release() }
                     held = MouseButton.none
                     game.px = -1
                     game.py = -1
@@ -962,7 +1251,10 @@ main(): int {
                 game.my = m.y
                 game.hx = x
                 game.hy = y
-                if held != MouseButton.none && held != MouseButton.middle { game.paint(x, y, held, false) }
+                if held == MouseButton.left && game.drag != Drag.none { game.select_drag(m.x, m.y) }
+                if held != MouseButton.none && held != MouseButton.middle && game.drag == Drag.none && game.pick == Tool.pencil {
+                    game.paint(x, y, held, false)
+                }
             }
             /* The wheel zooms the board about the pointer, in either phase. */
             wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()

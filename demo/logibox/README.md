@@ -63,22 +63,25 @@ it can be started from any directory.
 
 | Input | Action |
 |-------|--------|
-| 1 / Edit | Edit mode: build the board; blocks show without levels |
-| 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
+| F1 / Edit | Edit mode: build the board; blocks show without levels |
+| F2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
 | Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
 | S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
-| Left click / drag | Edit: place the selected block. Run: flip a source |
+| 1 / Pencil | Strip button at the board's left: the pencil tool (Edit only); selecting a block returns to it |
+| 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
+| Left click / drag | Edit with the pencil: place the selected block. Run: flip a source |
 | Right click / drag | Edit: remove |
 | Space / Auto | Run: toggle auto-ticking (every 250 ms); disabled in Edit |
 | Step | Run: step one tick; disabled in Edit |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Ctrl+S | Save (asks for a name the first time) |
 | Ctrl+O | Show or hide the list of diagrams |
-| Escape | Close the list or name box; otherwise quit |
+| Escape | Close the list or name box, otherwise drop the selection |
+| Cmd+Q | Quit |
 
 The Save-as box takes `a`–`z`, `0`–`9`, `-` and `_` (Shift+`-`); Enter saves,
 Escape cancels.

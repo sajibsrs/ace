@@ -305,6 +305,7 @@ extern "c" {
     c_set_render_draw_blend_mode(renderer: *SDL_Renderer, mode: u32): bool as "SDL_SetRenderDrawBlendMode"
     c_get_render_draw_color_float(renderer: *SDL_Renderer, r: *f32, g: *f32, b: *f32, a: *f32): bool as "SDL_GetRenderDrawColorFloat"
     c_render_clear(renderer: *SDL_Renderer): bool as "SDL_RenderClear"
+    c_set_render_clip_rect(renderer: *SDL_Renderer, rect: *i32): bool as "SDL_SetRenderClipRect"
     c_render_present(renderer: *SDL_Renderer): bool as "SDL_RenderPresent"
     c_get_current_render_output_size(renderer: *SDL_Renderer, w: *i32, h: *i32): bool as "SDL_GetCurrentRenderOutputSize"
     c_render_geometry(renderer: *SDL_Renderer, texture: *SDL_Texture, vertices: *Vertex, num_vertices: i32, indices: *i32, num_indices: i32): bool as "SDL_RenderGeometry"
@@ -452,6 +453,16 @@ pub Renderer.blend(self, mode: u32): bool {
 }
 
 pub Renderer.clear(self): bool { return c_render_clear(self.handle) }
+
+// Cuts later draws off outside the w x h rectangle at (x, y), in window
+// coordinates; clear ignores it.
+pub Renderer.clip(self, x: i32, y: i32, w: i32, h: i32): bool {
+    rect: [4]i32 = [x, y, w, h]
+    return c_set_render_clip_rect(self.handle, &rect[0])
+}
+
+// Draws everywhere again.
+pub Renderer.unclip(self): bool { return c_set_render_clip_rect(self.handle, null) }
 pub Renderer.present(self): bool { return c_render_present(self.handle) }
 
 // The current output size in render pixels, which follows window resizes.
