@@ -4,8 +4,6 @@
  * block. Blocks have no direction: what a block touches decides its role.
  */
 
-import fmt
-
 pub WIDTH: const int = 64
 pub HEIGHT: const int = 32
 
@@ -38,23 +36,6 @@ pub Grid: struct {
     cells: [32][64]Block = [[Block.empty : 64] : 32],
 }
 
-pub SYMBOL: [Block]string = [
-    Block.empty = ".",
-    Block.source = "S",
-    Block.wire = "W",
-    Block.input = "I",
-    Block.output = "O",
-    Block.and = "&",
-    Block.or = "|",
-    Block.not = "!",
-    Block.nand = "D",
-    Block.nor = "V",
-    Block.xor = "^",
-    Block.xnor = "=",
-    Block.led = "L",
-    Block.bridge = "+",
-]
-
 /* Whether (x, y) lies on the board. */
 pub inside(x: int, y: int): bool {
     return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT
@@ -82,15 +63,4 @@ pub Grid.place(self, x: int, y: int, block: Block): bool {
 /* Empties (x, y). False off the board. */
 pub Grid.remove(self, x: int, y: int): bool {
     return self.place(x, y, Block.empty)
-}
-
-/* Prints the board, one row per line. */
-pub Grid.show(const self) {
-    for y: int in 0 .. HEIGHT {
-        for x: int in 0 .. WIDTH {
-            fmt.print(SYMBOL[self.get(x, y)])
-            fmt.print(" ")
-        }
-        fmt.println("")
-    }
 }

@@ -10,7 +10,6 @@
  * each gate adds one tick of delay and wire adds none.
  */
 
-import fmt
 import grid: "./grid.ace"
 import group: "./group.ace"
 
@@ -269,18 +268,4 @@ Sim.carries(const self, x: int, y: int, d: int): Level {
 pub Sim.cross(const self, x: int, y: int): (Level, Level) {
     if self.g.get(x, y) != grid.Block.bridge { return Level.low, Level.low }
     return self.carries(x, y, 0), self.carries(x, y, 1)
-}
-
-MARK: [Level]string = [Level.low = " ", Level.high = "*", Level.error = "x"]
-
-/* Prints the board like Grid.show, marking each cell `*` when high and `x`
- * on an error. */
-pub Sim.show(const self) {
-    for y: int in 0 .. grid.HEIGHT {
-        for x: int in 0 .. grid.WIDTH {
-            fmt.print(grid.SYMBOL[self.g.get(x, y)])
-            fmt.print(MARK[self.level(x, y)])
-        }
-        fmt.println("")
-    }
 }
