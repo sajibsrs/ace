@@ -102,7 +102,7 @@ pub bad_length(t: *test.T) {
 
 pub bad_code(t: *test.T) {
     out: [diagram.SIZE]u8 = encoded()
-    out[20] = 14
+    out[20] = 15
     rejects(t, out[..], diagram.DiagramErr.code)
     out[20] = 0x83
     rejects(t, out[..], diagram.DiagramErr.code)

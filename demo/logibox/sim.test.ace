@@ -326,3 +326,26 @@ pub touching_blocks_need_no_wire(t: *test.T) {
     s.tick()
     low(t, s, 7, 0)
 }
+
+/* Source A runs east and source B runs south through a bridge at (2, 2); each
+ * reaches only its own LED. */
+pub bridge_crosses_signals(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 2, [grid.Block.source, grid.Block.wire, grid.Block.bridge, grid.Block.wire, grid.Block.led])
+    g.place(2, 0, grid.Block.source)
+    g.place(2, 1, grid.Block.wire)
+    g.place(2, 3, grid.Block.wire)
+    g.place(2, 4, grid.Block.led)
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 2, true)
+    high(t, s, 4, 2)
+    low(t, s, 2, 4)
+    v: sim.Level, h: sim.Level = s.cross(2, 2)
+    test.equal[sim.Level](t, v, sim.Level.low)
+    test.equal[sim.Level](t, h, sim.Level.high)
+    high(t, s, 2, 2)
+    s.toggle(0, 2, false)
+    s.toggle(2, 0, true)
+    low(t, s, 4, 2)
+    high(t, s, 2, 4)
+}

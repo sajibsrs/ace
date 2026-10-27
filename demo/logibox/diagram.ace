@@ -52,14 +52,15 @@ CODE: [grid.Block]u8 = [
     grid.Block.nor = 11,
     grid.Block.xor = 12,
     grid.Block.xnor = 13,
+    grid.Block.bridge = 14,
 ]
 
 /* The block of each code, by code. */
-BLOCK: [14]grid.Block = [
+BLOCK: [15]grid.Block = [
     grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
     grid.Block.input, grid.Block.output, grid.Block.and, grid.Block.or,
     grid.Block.not, grid.Block.led, grid.Block.nand, grid.Block.nor,
-    grid.Block.xor, grid.Block.xnor,
+    grid.Block.xor, grid.Block.xnor, grid.Block.bridge,
 ]
 
 /* Writes the diagram of `s` into `out` and returns its length, SIZE. */

@@ -81,3 +81,29 @@ pub full_board(t: *test.T) {
     }
     t.equal(group.Groups.init(g).count, 1)
 }
+
+/* Wire from (1, 2) runs east through bridges (2..4, 2) to (5, 2); wire from
+ * (3, 1) crosses south through the middle one to (3, 3). Two nets. */
+pub bridge_keeps_crossing_nets_apart(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    for x: int in 2 .. 5 { g.place(x, 2, grid.Block.bridge) }
+    wire(&g, 1, 2)
+    wire(&g, 5, 2)
+    wire(&g, 3, 1)
+    wire(&g, 3, 3)
+    n: group.Groups = group.Groups.init(g)
+    t.equal(n.count, 2)
+    t.equal(n.of(1, 2), n.of(5, 2))
+    t.equal(n.of(3, 1), n.of(3, 3))
+    t.equal(n.of(1, 2) != n.of(3, 1), true)
+    t.equal(n.of(3, 2), -1)
+}
+
+/* A bridge passes only wire to wire: gate cells on either side stay apart. */
+pub bridge_does_not_join_gates(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(0, 0, grid.Block.and)
+    g.place(1, 0, grid.Block.bridge)
+    g.place(2, 0, grid.Block.and)
+    t.equal(group.Groups.init(g).count, 2)
+}

@@ -208,7 +208,9 @@ pub Sim.toggle(self, x: int, y: int, on: bool): bool {
 }
 
 /* The level shown at (x, y): a source's switch, a net's level, a gate's
- * output, what an input pin or LED reads, or what an output pin drives. */
+ * output, what an input pin or LED reads, or what an output pin drives. A
+ * bridge carries two levels (see Sim.cross) and shows the higher: error
+ * over high over low. */
 pub Sim.level(const self, x: int, y: int): Level {
     b: grid.Block = self.g.get(x, y)
     if b == grid.Block.source { return level(self.switches[y][x]) }
@@ -218,6 +220,11 @@ pub Sim.level(const self, x: int, y: int): Level {
     if b == grid.Block.output {
         v: Level, drives: bool = self.drive(x, y)
         return v
+    }
+    if b == grid.Block.bridge {
+        v: Level, h: Level = self.cross(x, y)
+        if v == Level.error || h == Level.error { return Level.error }
+        if v == Level.high || h == Level.high { return Level.high }
     }
     return Level.low
 }
@@ -238,6 +245,30 @@ pub Sim.place(self, x: int, y: int, block: grid.Block): bool {
     }
     self.settle()
     return true
+}
+
+/* The level a bridge at (x, y) carries in direction `d` and its opposite: the
+ * net of the wire past the run of bridges either way, low when neither end is
+ * a wire. */
+Sim.carries(const self, x: int, y: int, d: int): Level {
+    for k: int in 0 .. 2 {
+        nx: int = x + DX[d]
+        ny: int = y + DY[d]
+        for self.g.get(nx, ny) == grid.Block.bridge {
+            nx += DX[d]
+            ny += DY[d]
+        }
+        if self.g.get(nx, ny) == grid.Block.wire { return self.lit[self.groups.of(nx, ny)] }
+        d = (d + 2) % 4
+    }
+    return Level.low
+}
+
+/* The levels a bridge at (x, y) carries north-south and east-west. Both are
+ * low when the cell is not a bridge. */
+pub Sim.cross(const self, x: int, y: int): (Level, Level) {
+    if self.g.get(x, y) != grid.Block.bridge { return Level.low, Level.low }
+    return self.carries(x, y, 0), self.carries(x, y, 1)
 }
 
 MARK: [Level]string = [Level.low = " ", Level.high = "*", Level.error = "x"]

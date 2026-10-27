@@ -32,6 +32,7 @@ it can be started from any directory.
 | X   | XOR        | `^`   | High when an odd number of inputs are high. Needs at least 2 inputs. |
 | C   | XNOR       | `=`   | High when an even number of inputs are high. Needs at least 2 inputs. |
 | L   | LED        | `L`   | Shows the level of what it touches. |
+| B   | bridge     | `+`   | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
 
 ## Rules
 
@@ -40,6 +41,9 @@ it can be started from any directory.
 - **Things connect by touching** (north, east, south, west, never diagonally).
   A source or output next to an input or LED drives it directly.
   Wire is only needed to cover distance.
+- **A bridge joins wire to wire only.** A run of bridges passes straight
+  through, so a wire can cross several buses at once. A source, pin, or gate
+  touching a bridge does nothing. It lights when either direction is high.
 - **A gate connects only through its pins.** A wire or source touching a gate
   directly does nothing; it must reach an input.
 - **Touching cells of one gate type are one gate**, so a gate can be any
@@ -62,11 +66,11 @@ it can be started from any directory.
 | 1 / Edit | Edit mode: build the board; blocks show without levels |
 | 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
-| Wheel | Zoom the board about the pointer, in either mode: 1× (40-pixel cells) at start, up to 4×, and out only as far as the board still fills the window both ways |
+| Wheel | Zoom the board about the pointer, in either mode: 1× (40-pixel cells) at start, up to 4×, and out until the whole board fits the window |
 | − / + | Zoom out or in about the board's center, in either mode |
 | Middle drag | Pan the board, in either mode; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S W I O A R N Z V X C L | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
+| S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
 | Left click / drag | Edit: place the selected block. Run: flip a source |
 | Right click / drag | Edit: remove |
 | Space / Auto | Run: toggle auto-ticking (every 250 ms); disabled in Edit |
@@ -131,6 +135,7 @@ An 8-byte header, then one byte per cell, row by row:
 | 4 | input | 9 | LED |
 | 10 | NAND | 12 | XOR |
 | 11 | NOR | 13 | XNOR |
+| 14 | bridge | | |
 
 A cell's top bit is reserved for future flags and must be 0. Gate outputs are
 not stored: a loaded diagram starts with every gate low. A reader rejects a

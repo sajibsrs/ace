@@ -29,6 +29,9 @@ pub Block: enum u8 {
     xnor,
     /* Shows the level of the wires, sources and output pins it touches. */
     led,
+    /* Joins the wires on opposite sides: north with south, east with west,
+     * the two pairs kept apart. A run of bridges passes straight through. */
+    bridge,
 }
 
 pub Grid: struct {
@@ -49,6 +52,7 @@ pub SYMBOL: [Block]string = [
     Block.xor = "^",
     Block.xnor = "=",
     Block.led = "L",
+    Block.bridge = "+",
 ]
 
 /* Whether (x, y) lies on the board. */

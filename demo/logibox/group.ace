@@ -3,7 +3,9 @@
  * Touching cells (north, east, south, west) of the same joining block form one
  * group: wire cells form a net, and cells of one gate type form one gate. A
  * signal travels over a whole net, and a gate acts as one block however many
- * cells it covers. Every other block has no group.
+ * cells it covers. A wire continues straight through a run of bridges to the
+ * wire beyond, so a bridge carries two nets that never meet. Every other
+ * block has no group.
  */
 
 import grid: "./grid.ace"
@@ -50,6 +52,10 @@ pub Groups.init(g: grid.Grid): Groups {
                 for d: int in 0 .. 4 {
                     nx: int = at % grid.WIDTH + DX[d]
                     ny: int = at / grid.WIDTH + DY[d]
+                    for block == grid.Block.wire && g.get(nx, ny) == grid.Block.bridge {
+                        nx += DX[d]
+                        ny += DY[d]
+                    }
                     if !grid.inside(nx, ny) || g.get(nx, ny) != block { continue }
                     if groups.ids[ny][nx] != NONE { continue }
                     groups.ids[ny][nx] = id

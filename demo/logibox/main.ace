@@ -11,8 +11,9 @@
  * paint), right-click (or drag) removes. Run (2) simulates it: left-click flips
  * a source, space or Auto toggles auto-ticking, and Step ticks once. Letters
  * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
- * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED. The wheel zooms the board about
- * the pointer; the window resizes and goes full screen. Escape quits.
+ * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge. The wheel zooms the
+ * board about the pointer; the window resizes and goes full screen. Escape
+ * quits.
  *
  * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
@@ -40,7 +41,7 @@ import ui: "./ui.ace"
  * cells of the board. */
 CELL: const f32 = 40.0
 /* The most zoom, as a multiple of 1x, and the factor one wheel step applies.
- * The least is whatever keeps the board covering the window both ways. */
+ * The least is whatever shows the whole board in the window. */
 ZOOM_MAX: const f32 = 4.0
 ZOOM_STEP: const f32 = 1.25
 BAR: const f32 = 28.0
@@ -82,6 +83,7 @@ NAME: [grid.Block]string = [
     grid.Block.xor = "XOR",
     grid.Block.xnor = "XNOR",
     grid.Block.led = "LED",
+    grid.Block.bridge = "bridge",
 ]
 
 /* Low and high colors of each block; any block on an error is ERROR. */
@@ -99,6 +101,7 @@ LOW: [grid.Block]u32 = [
     grid.Block.xor = 0x4a1e2e,
     grid.Block.xnor = 0x3a3a1e,
     grid.Block.led = 0x4a1818,
+    grid.Block.bridge = 0x2c2c2c,
 ]
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x202428,
@@ -114,6 +117,7 @@ HIGH: [grid.Block]u32 = [
     grid.Block.xor = 0xb84a6a,
     grid.Block.xnor = 0x8a9a3a,
     grid.Block.led = 0xc03434,
+    grid.Block.bridge = 0xa4a47f,
 ]
 ERROR: const u32 = 0xb030b0
 
@@ -165,6 +169,7 @@ LETTER: [grid.Block]u8 = [
     grid.Block.xor = 'x',
     grid.Block.xnor = 'c',
     grid.Block.led = 'l',
+    grid.Block.bridge = 'b',
 ]
 
 /* The bar rectangle of `button`: each fits its label, 6 pixels apart. */
@@ -182,9 +187,9 @@ place(button: Button): ui.Rect {
 }
 
 /* The block row's button for `block` in a window `width` wide: one equal slot
- * for each of the 11 blocks. */
+ * for each block. */
 tool(block: grid.Block, width: f32): ui.Rect {
-    slot: f32 = (width - 6.0) / 11.0
+    slot: f32 = (width - 6.0) / f32(members(grid.Block).len - 1)
     i: f32 = f32(int(block) - 1)
     return ui.Rect { x = 6.0 + i * slot, y = BAR, w = slot - 6.0, h = BAR - 4.0 }
 }
@@ -204,6 +209,7 @@ TOOL: [grid.Block]string = [
     grid.Block.xor = "XOR",
     grid.Block.xnor = "XNOR",
     grid.Block.led = "LED",
+    grid.Block.bridge = "Bridge",
 ]
 
 /* Row `i` of the Open list. */
@@ -323,12 +329,12 @@ Game: struct {
     hx: int = -1,
     hy: int = -1,
     /* Window size, and the board view: a cell's side and the board's top-left
-     * corner, in window points. `cover` is the least cell side that still fills
-     * the board area both ways; zero until the first `resize`. */
+     * corner, in window points. `fit` is the least cell side, which shows the
+     * whole board in its area; zero until the first `resize`. */
     w: f32 = 0.0,
     h: f32 = 0.0,
     cell: f32 = CELL,
-    cover: f32 = 0.0,
+    fit: f32 = 0.0,
     ox: f32 = 0.0,
     oy: f32 = 0.0,
     /* Cell the current drag last painted, so a drag paints each cell once. */
@@ -389,8 +395,8 @@ Game.area(const self): ui.Rect {
     return ui.Rect { x = 0.0, y = TOP, w = self.w, h = self.h - TOP - FOOT }
 }
 
-/* Keeps the board in view: covering the area, so panning and zooming never
- * leave empty space beside it, or centered on an axis it cannot cover. */
+/* Keeps the board in view: covering the area on an axis it is longer on, so
+ * panning never leaves empty space beside it, and centered on the others. */
 Game.clamp(self) {
     a: ui.Rect = self.area()
     side: f32 = f32(grid.WIDTH) * self.cell
@@ -413,15 +419,15 @@ Game.resize(self, w: f32, h: f32) {
     old: ui.Rect = self.area()
     bx: f32 = f32(grid.WIDTH) / 2.0
     by: f32 = f32(grid.HEIGHT) / 2.0
-    if self.cover > 0.0 {
+    if self.fit > 0.0 {
         bx = (old.x + old.w / 2.0 - self.ox) / self.cell
         by = (old.y + old.h / 2.0 - self.oy) / self.cell
     }
     self.w = w
     self.h = h
     a: ui.Rect = self.area()
-    self.cover = math.max[f32](math.max[f32](a.w, a.h) / f32(grid.WIDTH), 1.0)
-    self.cell = math.max[f32](self.cell, self.cover)
+    self.fit = math.max[f32](math.min[f32](a.w, a.h) / f32(grid.WIDTH), 1.0)
+    self.cell = math.max[f32](self.cell, self.fit)
     self.ox = a.x + a.w / 2.0 - bx * self.cell
     self.oy = a.y + a.h / 2.0 - by * self.cell
     self.clamp()
@@ -440,7 +446,7 @@ Game.zoom(self, steps: f32, x: f32, y: f32) {
     want: f32 = self.cell
     if steps > 0.0 { want *= ZOOM_STEP }
     if steps < 0.0 { want /= ZOOM_STEP }
-    want = math.min[f32](math.max[f32](want, self.cover), CELL * ZOOM_MAX)
+    want = math.min[f32](math.max[f32](want, self.fit), CELL * ZOOM_MAX)
     self.ox = x - (x - self.ox) * want / self.cell
     self.oy = y - (y - self.oy) * want / self.cell
     self.cell = want
