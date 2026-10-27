@@ -11,7 +11,7 @@ sample(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     blocks: [6]grid.Block = [
         grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and,
-        grid.Block.output, grid.Block.light,
+        grid.Block.output, grid.Block.led,
     ]
     for i: int in 0 .. 6 { g.place(i, 0, blocks[i]) }
     g.place(15, 15, grid.Block.not)
@@ -38,19 +38,19 @@ pub layout(t: *test.T) {
     t.equal(n, diagram.SIZE)
     t.equal(out[0] == 'L' && out[1] == 'G' && out[2] == 'B' && out[3] == 'X', true)
     t.equal(int(out[4]), int(diagram.VERSION))
-    t.equal(int(out[5]), 16)
-    t.equal(int(out[6]), 16)
+    t.equal(int(out[5]), 32)
+    t.equal(int(out[6]), 32)
     t.equal(int(out[7]), 0)
-    /* source on, wire, input, AND, output, light; a source off at (0,3). */
+    /* source on, wire, input, AND, output, LED; a source off at (0,3). */
     t.equal(int(out[8]), 2)
     t.equal(int(out[9]), 3)
     t.equal(int(out[13]), 9)
-    t.equal(int(out[8 + 3 * 16]), 1)
-    t.equal(int(out[8 + 255]), 8)
-    t.equal(int(out[8 + 5 * 16]), 10)
-    t.equal(int(out[8 + 5 * 16 + 2]), 11)
-    t.equal(int(out[8 + 5 * 16 + 4]), 12)
-    t.equal(int(out[8 + 5 * 16 + 6]), 13)
+    t.equal(int(out[8 + 3 * 32]), 1)
+    t.equal(int(out[8 + 15 * 32 + 15]), 8)
+    t.equal(int(out[8 + 5 * 32]), 10)
+    t.equal(int(out[8 + 5 * 32 + 2]), 11)
+    t.equal(int(out[8 + 5 * 32 + 4]), 12)
+    t.equal(int(out[8 + 5 * 32 + 6]), 13)
 }
 
 pub round_trip(t: *test.T) {
@@ -116,21 +116,21 @@ pub latch_file(t: *test.T) {
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
-    test.equal[sim.Level](t, s.level(5, 6), sim.Level.high)
-    test.equal[sim.Level](t, s.level(5, 9), sim.Level.low)
+    test.equal[sim.Level](t, s.level(13, 14), sim.Level.high)
+    test.equal[sim.Level](t, s.level(13, 17), sim.Level.low)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(10, 6), sim.Level.low)
-    s.toggle(5, 6, false)
+    test.equal[sim.Level](t, s.level(18, 14), sim.Level.low)
+    s.toggle(13, 14, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(10, 6), sim.Level.low)
-    s.toggle(5, 9, true)
+    test.equal[sim.Level](t, s.level(18, 14), sim.Level.low)
+    s.toggle(13, 17, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(5, 9, false)
+    s.toggle(13, 17, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(10, 6), sim.Level.high)
-    s.toggle(5, 6, true)
+    test.equal[sim.Level](t, s.level(18, 14), sim.Level.high)
+    s.toggle(13, 14, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(5, 6, false)
+    s.toggle(13, 14, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(10, 6), sim.Level.low)
+    test.equal[sim.Level](t, s.level(18, 14), sim.Level.low)
 }

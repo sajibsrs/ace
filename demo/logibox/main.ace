@@ -4,14 +4,15 @@
  *   ace pkg run
  *
  * A source feeds a gate's input pin (I); the gate's output pin (O) feeds the
- * next input pin or a light. Each connects by touching, or through wire when
+ * next input pin or an LED. Each connects by touching, or through wire when
  * apart.
  *
  * Edit (1) builds the board: left-click places the selected block (drag to
  * paint), right-click (or drag) removes. Run (2) simulates it: left-click flips
- * a source, space toggles auto-ticking, and Step ticks once. Letters select a
- * block: s source, w wire, i input pin, o output pin, a AND, r OR, n NOT,
- * z NAND, v NOR, x XOR, c XNOR, l light. Escape quits.
+ * a source, space or Auto toggles auto-ticking, and Step ticks once. Letters
+ * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
+ * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED. The wheel zooms the board about
+ * the pointer; the window resizes and goes full screen. Escape quits.
  *
  * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
@@ -20,20 +21,28 @@
 
 import file
 import fmt
+import math
 import mem
 import sort
 import str
 import sys
 import (
     init, quit, error, ticks, Window, Renderer, Event, Color, InitFlags, WindowFlags,
-    EventType, Keycode, MouseButton, MouseButtonEvent, MouseMotionEvent, KeyboardEvent,
+    EventType, Keycode, MouseButton, MouseButtonEvent, MouseMotionEvent, MouseWheelEvent,
+    KeyboardEvent, Cursor, SystemCursor, cursor,
 ) from sdl
 import grid: "./grid.ace"
 import sim: "./sim.ace"
 import diagram: "./diagram.ace"
 import ui: "./ui.ace"
 
+/* A cell's side at 1x, the default zoom; the default window shows 16 x 16
+ * cells of the board. */
 CELL: const f32 = 40.0
+/* The most zoom, as a multiple of 1x, and the factor one wheel step applies.
+ * The least is whatever keeps the board covering the window both ways. */
+ZOOM_MAX: const f32 = 4.0
+ZOOM_STEP: const f32 = 1.25
 BAR: const f32 = 28.0
 /* The bar and, under it, the block row; the board starts below both. */
 TOP: const f32 = 2.0 * BAR
@@ -63,8 +72,8 @@ NAME: [grid.Block]string = [
     grid.Block.empty = "empty",
     grid.Block.source = "source",
     grid.Block.wire = "wire",
-    grid.Block.input = "input pin",
-    grid.Block.output = "output pin",
+    grid.Block.input = "input",
+    grid.Block.output = "output",
     grid.Block.and = "AND",
     grid.Block.or = "OR",
     grid.Block.not = "NOT",
@@ -72,7 +81,7 @@ NAME: [grid.Block]string = [
     grid.Block.nor = "NOR",
     grid.Block.xor = "XOR",
     grid.Block.xnor = "XNOR",
-    grid.Block.light = "light",
+    grid.Block.led = "LED",
 ]
 
 /* Low and high colors of each block; any block on an error is ERROR. */
@@ -89,7 +98,7 @@ LOW: [grid.Block]u32 = [
     grid.Block.nor = 0x1e4a4a,
     grid.Block.xor = 0x4a1e2e,
     grid.Block.xnor = 0x3a3a1e,
-    grid.Block.light = 0x4a1818,
+    grid.Block.led = 0x4a1818,
 ]
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x202428,
@@ -104,7 +113,7 @@ HIGH: [grid.Block]u32 = [
     grid.Block.nor = 0x3a9aa0,
     grid.Block.xor = 0xb84a6a,
     grid.Block.xnor = 0x8a9a3a,
-    grid.Block.light = 0xc03434,
+    grid.Block.led = 0xc03434,
 ]
 ERROR: const u32 = 0xb030b0
 
@@ -112,6 +121,8 @@ ERROR: const u32 = 0xb030b0
 CHROME: const u32 = 0x181b1f
 BUTTON: const u32 = 0x2c3238
 ACTIVE: const u32 = 0x3d4f63
+/* A button the current phase cannot use. */
+DISABLED: const u32 = 0x22262b
 INK: const u32 = 0xdddddd
 DIM: const u32 = 0x888888
 
@@ -124,7 +135,7 @@ Mode: enum u8 { none, open, save_as }
 Phase: enum u8 { edit, run }
 
 /* The bar's buttons, left to right. */
-Button: enum u8 { new, open, save, save_as, edit, run, step }
+Button: enum u8 { new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in }
 
 LABEL: [Button]string = [
     Button.new = "New",
@@ -134,6 +145,9 @@ LABEL: [Button]string = [
     Button.edit = "Edit",
     Button.run = "Run",
     Button.step = "Step",
+    Button.auto = "Auto",
+    Button.zoom_out = "-",
+    Button.zoom_in = "+",
 ]
 
 /* The block each letter key selects, lowercase as SDL reports it. */
@@ -150,7 +164,7 @@ LETTER: [grid.Block]u8 = [
     grid.Block.nor = 'v',
     grid.Block.xor = 'x',
     grid.Block.xnor = 'c',
-    grid.Block.light = 'l',
+    grid.Block.led = 'l',
 ]
 
 /* The bar rectangle of `button`: each fits its label, 6 pixels apart. */
@@ -159,21 +173,20 @@ place(button: Button): ui.Rect {
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         w: f32 = f32(LABEL[each].len) * ui.GLYPH + 16.0
-        /* A gap sets the phase buttons apart from the file buttons. */
-        if each == Button.edit { x += 18.0 }
+        /* Gaps set the phase and zoom buttons apart. */
+        if each == Button.edit || each == Button.zoom_out { x += 18.0 }
         if each == button { return ui.Rect { x = x, y = 4.0, w = w, h = BAR - 8.0 } }
         x += w + 6.0
     }
     return ui.Rect {}
 }
 
-/* The block row's button for `block`: one equal slot for each
- * of the 11 blocks. */
-TOOL_W: const f32 = (WIDTH - 6.0) / 11.0
-
-tool(block: grid.Block): ui.Rect {
+/* The block row's button for `block` in a window `width` wide: one equal slot
+ * for each of the 11 blocks. */
+tool(block: grid.Block, width: f32): ui.Rect {
+    slot: f32 = (width - 6.0) / 11.0
     i: f32 = f32(int(block) - 1)
-    return ui.Rect { x = 6.0 + i * TOOL_W, y = BAR, w = TOOL_W - 6.0, h = BAR - 4.0 }
+    return ui.Rect { x = 6.0 + i * slot, y = BAR, w = slot - 6.0, h = BAR - 4.0 }
 }
 
 /* The block row's labels. */
@@ -190,7 +203,7 @@ TOOL: [grid.Block]string = [
     grid.Block.nor = "NOR",
     grid.Block.xor = "XOR",
     grid.Block.xnor = "XNOR",
-    grid.Block.light = "Light",
+    grid.Block.led = "LED",
 ]
 
 /* Row `i` of the Open list. */
@@ -199,17 +212,9 @@ row(i: usize): ui.Rect {
     return ui.Rect { x = at.x, y = BAR + f32(i) * ROW, w = 280.0, h = ROW }
 }
 
-/* The Save-as panel, centered on the board. */
-PANEL: const ui.Rect = ui.Rect { x = 160.0, y = 280.0, w = 320.0, h = 72.0 }
-
-/* The cell under window point (x, y), or (-1, -1). */
-cell_at(x: f32, y: f32): (int, int) {
-    if x < 0.0 || y < TOP { return -1, -1 }
-    cx: int = int(x / CELL)
-    cy: int = int((y - TOP) / CELL)
-    if !grid.inside(cx, cy) { return -1, -1 }
-    return cx, cy
-}
+/* The Save-as panel's size; it sits centered in the window. */
+PANEL_W: const f32 = 320.0
+PANEL_H: const f32 = 72.0
 
 before(a: string, b: string): bool {
     return str.compare(a, b) < 0
@@ -317,6 +322,15 @@ Game: struct {
     my: f32 = -1.0,
     hx: int = -1,
     hy: int = -1,
+    /* Window size, and the board view: a cell's side and the board's top-left
+     * corner, in window points. `cover` is the least cell side that still fills
+     * the board area both ways; zero until the first `resize`. */
+    w: f32 = 0.0,
+    h: f32 = 0.0,
+    cell: f32 = CELL,
+    cover: f32 = 0.0,
+    ox: f32 = 0.0,
+    oy: f32 = 0.0,
     /* Cell the current drag last painted, so a drag paints each cell once. */
     px: int = -1,
     py: int = -1,
@@ -368,6 +382,97 @@ Game.path(self, name: string, out: []u8): string {
     b: fmt.Buffer = fmt.Buffer.init(out)
     b.printf("%s/%s%s", self.where(), name, diagram.EXTENSION)
     return b.text()
+}
+
+/* The board's area: the window between the bars. */
+Game.area(const self): ui.Rect {
+    return ui.Rect { x = 0.0, y = TOP, w = self.w, h = self.h - TOP - FOOT }
+}
+
+/* Keeps the board in view: covering the area, so panning and zooming never
+ * leave empty space beside it, or centered on an axis it cannot cover. */
+Game.clamp(self) {
+    a: ui.Rect = self.area()
+    side: f32 = f32(grid.WIDTH) * self.cell
+    if side <= a.w {
+        self.ox = a.x + (a.w - side) / 2.0
+    } else {
+        self.ox = math.min[f32](math.max[f32](self.ox, a.x + a.w - side), a.x)
+    }
+    if side <= a.h {
+        self.oy = a.y + (a.h - side) / 2.0
+    } else {
+        self.oy = math.min[f32](math.max[f32](self.oy, a.y + a.h - side), a.y)
+    }
+}
+
+/* Follows a window of `w` x `h`, keeping the zoom and the board point at the
+ * area's center; the first call centers the board. */
+Game.resize(self, w: f32, h: f32) {
+    if w == self.w && h == self.h { return }
+    old: ui.Rect = self.area()
+    bx: f32 = f32(grid.WIDTH) / 2.0
+    by: f32 = f32(grid.HEIGHT) / 2.0
+    if self.cover > 0.0 {
+        bx = (old.x + old.w / 2.0 - self.ox) / self.cell
+        by = (old.y + old.h / 2.0 - self.oy) / self.cell
+    }
+    self.w = w
+    self.h = h
+    a: ui.Rect = self.area()
+    self.cover = math.max[f32](math.max[f32](a.w, a.h) / f32(grid.WIDTH), 1.0)
+    self.cell = math.max[f32](self.cell, self.cover)
+    self.ox = a.x + a.w / 2.0 - bx * self.cell
+    self.oy = a.y + a.h / 2.0 - by * self.cell
+    self.clamp()
+}
+
+/* Moves the board by (dx, dy) window points, as a middle-button drag does. */
+Game.pan(self, dx: f32, dy: f32) {
+    self.ox += dx
+    self.oy += dy
+    self.clamp()
+}
+
+/* Zooms by `steps` wheel steps (positive in) about window point (x, y), which
+ * stays over the same spot on the board. */
+Game.zoom(self, steps: f32, x: f32, y: f32) {
+    want: f32 = self.cell
+    if steps > 0.0 { want *= ZOOM_STEP }
+    if steps < 0.0 { want /= ZOOM_STEP }
+    want = math.min[f32](math.max[f32](want, self.cover), CELL * ZOOM_MAX)
+    self.ox = x - (x - self.ox) * want / self.cell
+    self.oy = y - (y - self.oy) * want / self.cell
+    self.cell = want
+    self.clamp()
+}
+
+/* Cell (x, y)'s rectangle on screen. */
+Game.box(const self, x: int, y: int): ui.Rect {
+    return ui.Rect { x = self.ox + f32(x) * self.cell, y = self.oy + f32(y) * self.cell, w = self.cell, h = self.cell }
+}
+
+/* Whether cell (x, y) shows at all in area `a`; the rest is not drawn. */
+Game.shows(const self, x: int, y: int, a: ui.Rect): bool {
+    box: ui.Rect = self.box(x, y)
+    return box.x + box.w > a.x && box.x < a.x + a.w && box.y + box.h > a.y && box.y < a.y + a.h
+}
+
+/* The cell under window point (x, y), or (-1, -1) off the board or its area. */
+Game.cell_at(const self, x: f32, y: f32): (int, int) {
+    if !self.area().has(x, y) { return -1, -1 }
+    fx: f32 = (x - self.ox) / self.cell
+    fy: f32 = (y - self.oy) / self.cell
+    if fx < 0.0 || fy < 0.0 { return -1, -1 }
+    cx: int = int(fx)
+    cy: int = int(fy)
+    if !grid.inside(cx, cy) { return -1, -1 }
+    return cx, cy
+}
+
+/* The Save-as panel, centered in the window. */
+Game.panel(const self): ui.Rect {
+    return ui.Rect { x = (self.w - PANEL_W) / 2.0, y = (self.h - PANEL_H) / 2.0, w = PANEL_W, h = PANEL_H }
 }
 
 Game.tick(self) {
@@ -496,7 +601,7 @@ Game.click(self, x: f32, y: f32, button: MouseButton): bool {
         if button != MouseButton.left || self.phase != Phase.edit { return true }
         for i: usize in 1 .. members(grid.Block).len {
             each: grid.Block = members(grid.Block)[i]
-            if tool(each).has(x, y) { self.block = each }
+            if tool(each, self.w).has(x, y) { self.block = each }
         }
         return true
     }
@@ -508,6 +613,11 @@ Game.click(self, x: f32, y: f32, button: MouseButton): bool {
     if place(Button.edit).has(x, y) { self.switch(Phase.edit) }
     if place(Button.run).has(x, y) { self.switch(Phase.run) }
     if place(Button.step).has(x, y) && self.phase == Phase.run { self.tick() }
+    if place(Button.auto).has(x, y) && self.phase == Phase.run { self.auto = !self.auto }
+    /* The zoom buttons zoom about the board area's center. */
+    a: ui.Rect = self.area()
+    if place(Button.zoom_out).has(x, y) { self.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    if place(Button.zoom_in).has(x, y) { self.zoom(1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
     return true
 }
 
@@ -569,25 +679,27 @@ Game.key(self, e: KeyboardEvent): bool {
 }
 
 Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
+    a: ui.Rect = self.area()
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
+            if !self.shows(x, y, a) { continue }
             b: grid.Block = self.s.g.get(x, y)
-            v: sim.Level = self.s.level(x, y)
+            /* Edit shows only how the board is built: no levels. */
+            v: sim.Level = sim.Level.low
+            if self.phase == Phase.run { v = self.s.level(x, y) }
             rgb: u32 = LOW[b]
             if v == sim.Level.high { rgb = HIGH[b] }
             if v == sim.Level.error && b != grid.Block.empty { rgb = ERROR }
             /* Blocks fill their cell; empty cells keep a gap so the grid shows. */
             inset: f32 = 0.0
             if b == grid.Block.empty { inset = 1.0 }
-            box: ui.Rect = ui.Rect {
-                x = f32(x) * CELL + inset, y = TOP + f32(y) * CELL + inset,
-                w = CELL - 2.0 * inset, h = CELL - 2.0 * inset,
-            }
+            box: ui.Rect = self.box(x, y)
+            box = ui.Rect { x = box.x + inset, y = box.y + inset, w = box.w - 2.0 * inset, h = box.h - 2.0 * inset }
             canvas.fill(box, Color.hex(rgb))
         }
     }
     if self.mode == Mode.none && self.phase == Phase.edit && self.hx >= 0 {
-        box: ui.Rect = ui.Rect { x = f32(self.hx) * CELL, y = TOP + f32(self.hy) * CELL, w = CELL, h = CELL }
+        box: ui.Rect = self.box(self.hx, self.hy)
         canvas.outline(box, 2.0, Color.hex(0xffffff))
     }
     canvas.flush(r)
@@ -595,28 +707,35 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             b: grid.Block = self.s.g.get(x, y)
-            if b == grid.Block.empty { continue }
+            if b == grid.Block.empty || !self.shows(x, y, a) { continue }
             /* Dark text on a lit block, light text on a dark one. */
             ink: u32 = INK
-            if self.s.level(x, y) != sim.Level.low { ink = 0x000000 }
-            box: ui.Rect = ui.Rect { x = f32(x) * CELL, y = TOP + f32(y) * CELL, w = CELL, h = CELL }
+            if self.phase == Phase.run && self.s.level(x, y) != sim.Level.low { ink = 0x000000 }
+            box: ui.Rect = self.box(x, y)
             ui.center(r, box, grid.SYMBOL[b], ink)
         }
     }
 }
 
+/* Whether `button` is unusable in the current phase: Step and Auto only work
+ * in Run. */
+Game.disabled(const self, button: Button): bool {
+    return self.phase == Phase.edit && (button == Button.step || button == Button.auto)
+}
+
 Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
-    foot: ui.Rect = ui.Rect { x = 0.0, y = TOP + 16.0 * CELL, w = WIDTH, h = FOOT }
-    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = WIDTH, h = TOP }, Color.hex(CHROME))
-    /* Block buttons show in Edit only: each in its block's low color, the
-     * selected one lit. */
-    if self.phase == Phase.edit {
-        for i: usize in 1 .. members(grid.Block).len {
-            each: grid.Block = members(grid.Block)[i]
-            rgb: u32 = LOW[each]
+    foot: ui.Rect = ui.Rect { x = 0.0, y = self.h - FOOT, w = self.w, h = FOOT }
+    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = self.w, h = TOP }, Color.hex(CHROME))
+    /* Block buttons: in Edit each in its block's low color, the selected one
+     * lit; in Run all disabled. */
+    for i: usize in 1 .. members(grid.Block).len {
+        each: grid.Block = members(grid.Block)[i]
+        rgb: u32 = DISABLED
+        if self.phase == Phase.edit {
+            rgb = LOW[each]
             if each == self.block { rgb = HIGH[each] }
-            canvas.fill(tool(each), Color.hex(rgb))
         }
+        canvas.fill(tool(each, self.w), Color.hex(rgb))
     }
     canvas.fill(foot, Color.hex(CHROME))
     for i: usize in 0 .. members(Button).len {
@@ -625,40 +744,49 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         if place(each).has(self.mx, self.my) || (each == Button.open && self.mode == Mode.open) {
             rgb = ACTIVE
         }
-        if (each == Button.edit && self.phase == Phase.edit) || (each == Button.run && self.phase == Phase.run) {
+        if (each == Button.edit && self.phase == Phase.edit) || (each == Button.run && self.phase == Phase.run) ||
+            (each == Button.auto && self.auto) {
             rgb = ACTIVE
         }
+        if self.disabled(each) { rgb = DISABLED }
         canvas.fill(place(each), Color.hex(rgb))
     }
     canvas.flush(r)
 
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
-        /* Step only ticks in Run; its label dims in Edit. */
         ink: u32 = INK
-        if each == Button.step && self.phase == Phase.edit { ink = DIM }
+        if self.disabled(each) { ink = DIM }
         ui.center(r, place(each), LABEL[each], ink)
     }
-    if self.phase == Phase.edit {
-        for i: usize in 1 .. members(grid.Block).len {
-            each: grid.Block = members(grid.Block)[i]
-            ink: u32 = INK
+    for i: usize in 1 .. members(grid.Block).len {
+        each: grid.Block = members(grid.Block)[i]
+        ink: u32 = DIM
+        if self.phase == Phase.edit {
+            ink = INK
             if each == self.block { ink = 0x000000 }
-            ui.center(r, tool(each), TOOL[each], ink)
         }
+        ui.center(r, tool(each, self.w), TOOL[each], ink)
     }
     title: string = self.name.text()
     if title.len == 0 { title = "untitled" }
     storage: [128]u8
     status: fmt.Buffer = fmt.Buffer.init(storage[..])
-    auto: string = "off"
-    if self.auto { auto = "on" }
-    status.printf("%s   tick %d   auto %s", NAME[self.block], self.count, auto)
+    if self.phase == Phase.edit {
+        status.printf("%s", NAME[self.block])
+    } else {
+        status.printf("tick %d", self.count)
+    }
     ui.left(r, foot, 8.0, status.text(), INK)
-    bar: ui.Rect = ui.Rect { x = 0.0, y = 0.0, w = WIDTH, h = BAR }
-    ui.left(r, bar, WIDTH - 8.0 - ui.GLYPH * f32(title.len), title, INK)
+    /* The hovered block's name, in either phase. */
+    if self.hx >= 0 {
+        here: grid.Block = self.s.g.get(self.hx, self.hy)
+        if here != grid.Block.empty { ui.center(r, foot, NAME[here], INK) }
+    }
+    bar: ui.Rect = ui.Rect { x = 0.0, y = 0.0, w = self.w, h = BAR }
+    ui.left(r, bar, self.w - 8.0 - ui.GLYPH * f32(title.len), title, INK)
     note: string = self.notes[0..self.note]
-    ui.left(r, foot, WIDTH - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
+    ui.left(r, foot, self.w - 8.0 - ui.GLYPH * f32(note.len), note, DIM)
 }
 
 Game.draw_list(self, canvas: *ui.Canvas, r: Renderer) {
@@ -678,16 +806,17 @@ Game.draw_list(self, canvas: *ui.Canvas, r: Renderer) {
 }
 
 Game.draw_ask(self, canvas: *ui.Canvas, r: Renderer) {
-    field: ui.Rect = ui.Rect { x = PANEL.x + 12.0, y = PANEL.y + 32.0, w = PANEL.w - 24.0, h = 28.0 }
-    canvas.fill(PANEL, Color.hex(BUTTON))
-    canvas.outline(PANEL, 1.0, Color.hex(DIM))
+    panel: ui.Rect = self.panel()
+    field: ui.Rect = ui.Rect { x = panel.x + 12.0, y = panel.y + 32.0, w = panel.w - 24.0, h = 28.0 }
+    canvas.fill(panel, Color.hex(BUTTON))
+    canvas.outline(panel, 1.0, Color.hex(DIM))
     canvas.fill(field, Color.hex(CHROME))
     /* The cursor: a bar before byte `at`. */
     caret: f32 = field.x + 8.0 + f32(self.draft.at) * ui.GLYPH
     canvas.fill(ui.Rect { x = caret - 1.0, y = field.y + 6.0, w = 2.0, h = field.h - 12.0 }, Color.hex(INK))
     canvas.flush(r)
 
-    title: ui.Rect = ui.Rect { x = PANEL.x, y = PANEL.y + 4.0, w = PANEL.w, h = 24.0 }
+    title: ui.Rect = ui.Rect { x = panel.x, y = panel.y + 4.0, w = panel.w, h = 24.0 }
     ui.left(r, title, 12.0, "Save as     Enter saves, Esc cancels", INK)
     storage: [64]u8
     b: fmt.Buffer = fmt.Buffer.init(storage[..])
@@ -716,7 +845,7 @@ main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
 
-    window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + FOOT), WindowFlags {})
+    window: Window = Window.new("logibox", i32(WIDTH), i32(TOP + 16.0 * CELL + FOOT), WindowFlags { resizable = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
 
@@ -724,6 +853,12 @@ main(): int {
     defer renderer.wipe()
     if !renderer.ok() { return fail("SDL_CreateRenderer") }
     renderer.vsync(1)
+
+    /* The arrow, and the closed hand a middle-button drag shows while it pans. */
+    arrow: Cursor = Cursor.new(SystemCursor.default)
+    defer arrow.wipe()
+    grab: Cursor = Cursor.new(SystemCursor.move)
+    defer grab.wipe()
 
     game: Game = Game { s = sim.Sim.init(grid.Grid {}) }
     if game.locate() != null {
@@ -749,10 +884,15 @@ main(): int {
                 if b.down {
                     if !game.click(b.x, b.y, b.button) {
                         held = b.button
-                        x: int, y: int = cell_at(b.x, b.y)
-                        game.paint(x, y, held, true)
+                        x: int, y: int = game.cell_at(b.x, b.y)
+                        if held == MouseButton.middle {
+                            cursor(grab)
+                        } else {
+                            game.paint(x, y, held, true)
+                        }
                     }
                 } else if b.button == held {
+                    if held == MouseButton.middle { cursor(arrow) }
                     held = MouseButton.none
                     game.px = -1
                     game.py = -1
@@ -760,14 +900,27 @@ main(): int {
             }
             m: MouseMotionEvent, is_motion: bool = event.mouse_motion()
             if is_motion {
-                x: int, y: int = cell_at(m.x, m.y)
+                /* A middle-button drag pans the board, in either phase. */
+                if held == MouseButton.middle { game.pan(m.xrel, m.yrel) }
+                x: int, y: int = game.cell_at(m.x, m.y)
                 game.mx = m.x
                 game.my = m.y
                 game.hx = x
                 game.hy = y
-                if held != MouseButton.none { game.paint(x, y, held, false) }
+                if held != MouseButton.none && held != MouseButton.middle { game.paint(x, y, held, false) }
+            }
+            /* The wheel zooms the board about the pointer, in either phase. */
+            wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()
+            if is_wheel && game.mode == Mode.none {
+                game.zoom(wh.y, wh.mouse_x, wh.mouse_y)
+                x: int, y: int = game.cell_at(wh.mouse_x, wh.mouse_y)
+                game.hx = x
+                game.hy = y
             }
         }
+        /* The window may be resized or made full screen. */
+        rw: i32, rh: i32, sized: bool = renderer.size()
+        if sized { game.resize(f32(rw), f32(rh)) }
         now: u64 = ticks()
         if game.auto && now - last >= AUTO_MS {
             game.tick()

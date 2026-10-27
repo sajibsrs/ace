@@ -20,7 +20,7 @@ pub EXTENSION: const string = ".lgbx"
 pub VERSION: const u8 = 1
 HEADER: const usize = 8
 /* Bytes in a diagram of the board. */
-pub SIZE: const usize = 8 + 16 * 16
+pub SIZE: const usize = 8 + 32 * 32
 
 MAGIC: const string = "LGBX"
 
@@ -47,7 +47,7 @@ CODE: [grid.Block]u8 = [
     grid.Block.and = 6,
     grid.Block.or = 7,
     grid.Block.not = 8,
-    grid.Block.light = 9,
+    grid.Block.led = 9,
     grid.Block.nand = 10,
     grid.Block.nor = 11,
     grid.Block.xor = 12,
@@ -58,7 +58,7 @@ CODE: [grid.Block]u8 = [
 BLOCK: [14]grid.Block = [
     grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
     grid.Block.input, grid.Block.output, grid.Block.and, grid.Block.or,
-    grid.Block.not, grid.Block.light, grid.Block.nand, grid.Block.nor,
+    grid.Block.not, grid.Block.led, grid.Block.nand, grid.Block.nor,
     grid.Block.xor, grid.Block.xnor,
 ]
 

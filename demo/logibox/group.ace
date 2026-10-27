@@ -20,9 +20,9 @@ pub joins(block: grid.Block): bool {
 
 pub Groups: struct {
     /* The group number of each cell, or NONE for a cell in no group. */
-    ids: [16][16]int = [[NONE : 16] : 16],
+    ids: [32][32]int = [[NONE : 32] : 32],
     /* The first cell of each group, packed as y * WIDTH + x. */
-    heads: [16 * 16]int = [0 : 16 * 16],
+    heads: [32 * 32]int = [0 : 32 * 32],
     /* How many groups there are; numbers run 0 .. count-1. */
     pub count: int = 0,
 }
@@ -31,7 +31,7 @@ pub Groups: struct {
 pub Groups.init(g: grid.Grid): Groups {
     groups: Groups = Groups {}
     /* Cells still to visit, each packed as y * WIDTH + x. */
-    stack: [16 * 16]int = [0 : 16 * 16]
+    stack: [32 * 32]int = [0 : 32 * 32]
 
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {

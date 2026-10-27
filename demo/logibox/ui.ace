@@ -22,9 +22,10 @@ pub Rect.has(const self, x: f32, y: f32): bool {
     return x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
 }
 
-/* Triangles for one layer, drawn in a single geometry call. */
+/* Triangles for one layer, drawn in a single geometry call. Room for a whole
+ * 32 x 32 board of cells and the hover outline. */
 pub Canvas: struct {
-    vertices: [4096]Vertex = [Vertex {} : 4096],
+    vertices: [8192]Vertex = [Vertex {} : 8192],
     count: usize = 0,
 }
 

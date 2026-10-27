@@ -41,13 +41,13 @@ pub bend_and_loop_are_one_net(t: *test.T) {
     t.equal(n.of(2, 3), 0)
 }
 
-pub pins_sources_and_lights_have_no_group(t: *test.T) {
+pub pins_sources_and_leds_have_no_group(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.source)
     wire(&g, 1, 0)
     g.place(2, 0, grid.Block.input)
     g.place(3, 0, grid.Block.output)
-    g.place(4, 0, grid.Block.light)
+    g.place(4, 0, grid.Block.led)
     n: group.Groups = group.Groups.init(g)
     t.equal(n.count, 1)
     t.equal(n.of(0, 0), -1)

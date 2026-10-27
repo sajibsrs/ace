@@ -3,7 +3,7 @@
  * The stored state is each source's switch and each gate's output. Everything
  * else is derived from it. A net's level joins its drivers, the sources and
  * output pins touching it: none is low, agreeing drivers give their level, and
- * disagreeing ones are an error. An input pin or light reads the sources, nets
+ * disagreeing ones are an error. An input pin or LED reads the sources, nets
  * and output pins it touches, so a source or output pin beside it needs no
  * wire; an input pin feeds every gate it touches, and an output pin drives its
  * gates' output. A tick computes every gate's next output from the current state, so
@@ -23,11 +23,11 @@ pub Sim: struct {
     pub g: grid.Grid = grid.Grid {},
     groups: group.Groups = group.Groups {},
     /* Switch of each source cell. */
-    switches: [16][16]bool = [[false : 16] : 16],
+    switches: [32][32]bool = [[false : 32] : 32],
     /* Output of each gate cell; every cell of a gate holds the gate's. */
-    outs: [16][16]Level = [[Level.low : 16] : 16],
+    outs: [32][32]Level = [[Level.low : 32] : 32],
     /* Level of each net, by group number. */
-    lit: [16 * 16]Level = [Level.low : 16 * 16],
+    lit: [32 * 32]Level = [Level.low : 32 * 32],
 }
 
 /* What one gate's input pins read during a tick. */
@@ -86,7 +86,7 @@ evaluate(block: grid.Block, t: Tally): Level {
     return level(!t.high)
 }
 
-/* What a pin or light at (x, y) reads: the sources, nets, and driving output
+/* What a pin or LED at (x, y) reads: the sources, nets, and driving output
  * pins beside it, low when there are none. */
 Sim.read(const self, x: int, y: int): Level {
     acc: Level = Level.low
@@ -145,7 +145,7 @@ Sim.near(const self, x: int, y: int): Near {
 
 /* Recomputes every net from the switches and gate outputs. */
 Sim.settle(self) {
-    driven: [16 * 16]bool = [false : 16 * 16]
+    driven: [32 * 32]bool = [false : 32 * 32]
     for i: int in 0 .. self.groups.count { self.lit[i] = Level.low }
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
@@ -173,7 +173,7 @@ Sim.settle(self) {
 
 /* Advances one tick: every gate reads the current state and outputs next. */
 pub Sim.tick(self) {
-    tallies: [16 * 16]Tally = [Tally {} : 16 * 16]
+    tallies: [32 * 32]Tally = [Tally {} : 32 * 32]
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if self.g.get(x, y) != grid.Block.input { continue }
@@ -208,13 +208,13 @@ pub Sim.toggle(self, x: int, y: int, on: bool): bool {
 }
 
 /* The level shown at (x, y): a source's switch, a net's level, a gate's
- * output, what an input pin or light reads, or what an output pin drives. */
+ * output, what an input pin or LED reads, or what an output pin drives. */
 pub Sim.level(const self, x: int, y: int): Level {
     b: grid.Block = self.g.get(x, y)
     if b == grid.Block.source { return level(self.switches[y][x]) }
     if b == grid.Block.wire { return self.lit[self.groups.of(x, y)] }
     if grid.is_gate(b) { return self.outs[y][x] }
-    if b == grid.Block.input || b == grid.Block.light { return self.read(x, y) }
+    if b == grid.Block.input || b == grid.Block.led { return self.read(x, y) }
     if b == grid.Block.output {
         v: Level, drives: bool = self.drive(x, y)
         return v

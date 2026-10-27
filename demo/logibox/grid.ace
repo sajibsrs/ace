@@ -6,18 +6,18 @@
 
 import fmt
 
-pub WIDTH: const int = 16
-pub HEIGHT: const int = 16
+pub WIDTH: const int = 32
+pub HEIGHT: const int = 32
 
 pub Block: enum u8 {
     empty,
-    /* A 0/1 switch; drives the wires, input pins and lights it touches. */
+    /* A 0/1 switch; drives the wires, input pins and LEDs it touches. */
     source,
     wire,
     /* A gate's input pin: reads the wires, sources and output pins it touches. */
     input,
     /* A gate's output pin: drives its gates' output onto the wires, input
-     * pins and lights it touches. */
+     * pins and LEDs it touches. */
     output,
     and,
     or,
@@ -28,11 +28,11 @@ pub Block: enum u8 {
     xor,
     xnor,
     /* Shows the level of the wires, sources and output pins it touches. */
-    light,
+    led,
 }
 
 pub Grid: struct {
-    cells: [16][16]Block = [[Block.empty : 16] : 16],
+    cells: [32][32]Block = [[Block.empty : 32] : 32],
 }
 
 pub SYMBOL: [Block]string = [
@@ -48,7 +48,7 @@ pub SYMBOL: [Block]string = [
     Block.nor = "V",
     Block.xor = "^",
     Block.xnor = "=",
-    Block.light = "L",
+    Block.led = "L",
 ]
 
 /* Whether (x, y) lies on the board. */

@@ -23,12 +23,12 @@ error(t: *test.T, s: sim.Sim, x: int, y: int) {
 }
 
 /* Sources (0,0) and (0,2) feed wires into input pins (2,0) and (2,2) above and
- * below a gate at (2,1); its output pin (3,1) drives a wire into a light at
+ * below a gate at (2,1); its output pin (3,1) drives a wire into an LED at
  * (5,1). */
 two_input(block: grid.Block): sim.Sim {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input])
-    row(&g, 2, 1, [block, grid.Block.output, grid.Block.wire, grid.Block.light])
+    row(&g, 2, 1, [block, grid.Block.output, grid.Block.wire, grid.Block.led])
     row(&g, 0, 2, [grid.Block.source, grid.Block.wire, grid.Block.input])
     return sim.Sim.init(g)
 }
@@ -89,7 +89,7 @@ pub xor_is_parity(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     for y: int in 0 .. 5 { g.place(3, y, grid.Block.xor) }
     for y: int in [0, 2, 4] { row(&g, 0, y, [grid.Block.source, grid.Block.wire, grid.Block.input]) }
-    row(&g, 4, 2, [grid.Block.output, grid.Block.wire, grid.Block.light])
+    row(&g, 4, 2, [grid.Block.output, grid.Block.wire, grid.Block.led])
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     s.toggle(0, 2, true)
@@ -129,7 +129,7 @@ pub gate_adds_one_tick(t: *test.T) {
 /* A gate without an output pin still shows its output but drives nothing. */
 pub gate_without_output_pin_drives_nothing(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.or, grid.Block.wire, grid.Block.light])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.or, grid.Block.wire, grid.Block.led])
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     s.tick()
@@ -143,7 +143,7 @@ pub chained_gates_delay_per_gate(t: *test.T) {
     row(&g, 0, 0, [
         grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.not, grid.Block.output,
         grid.Block.wire, grid.Block.input, grid.Block.not, grid.Block.output, grid.Block.wire,
-        grid.Block.light,
+        grid.Block.led,
     ])
     s: sim.Sim = sim.Sim.init(g)
     s.tick()
@@ -184,7 +184,7 @@ pub not_with_two_pins_is_an_error(t: *test.T) {
 pub merged_gate_counts_all_pins(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and])
-    row(&g, 0, 1, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and, grid.Block.output, grid.Block.wire, grid.Block.light])
+    row(&g, 0, 1, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and, grid.Block.output, grid.Block.wire, grid.Block.led])
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     s.toggle(0, 1, true)
@@ -197,7 +197,7 @@ pub merged_gate_counts_all_pins(t: *test.T) {
 pub contention_is_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.source])
-    g.place(1, 1, grid.Block.light)
+    g.place(1, 1, grid.Block.led)
     s: sim.Sim = sim.Sim.init(g)
     low(t, s, 1, 0)
     s.toggle(0, 0, true)
@@ -256,21 +256,21 @@ ticks(s: *sim.Sim, n: int) {
 }
 
 /* Two NORs cross-coupled: Q = NOR(R, Q'), and Q' = NOR(S, Q), centered on the
- * board as diagram/latch.lgbx stores it. Sources R (5,6) and S (5,9) touch the
- * NORs' input pins; light Q at (10,6). Q' needs no wire: the lower NOR's output
- * pin (7,8) touches the upper NOR's input pin (7,7). Q runs down column 9 to
- * the lower NOR's input pin (8,9). */
+ * board as diagram/latch.lgbx stores it. Sources R (13,14) and S (13,17) touch
+ * the NORs' input pins; LED Q at (18,14). Q' needs no wire: the lower NOR's
+ * output pin (15,16) touches the upper NOR's input pin (15,15). Q runs down
+ * column 17 to the lower NOR's input pin (16,17). */
 latch(): sim.Sim {
     g: grid.Grid = grid.Grid {}
-    row(&g, 5, 6, [
+    row(&g, 13, 14, [
         grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.output,
-        grid.Block.wire, grid.Block.light,
+        grid.Block.wire, grid.Block.led,
     ])
-    g.place(7, 7, grid.Block.input)
-    g.place(7, 8, grid.Block.output)
-    g.place(9, 7, grid.Block.wire)
-    g.place(9, 8, grid.Block.wire)
-    row(&g, 5, 9, [grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.input, grid.Block.wire])
+    g.place(15, 15, grid.Block.input)
+    g.place(15, 16, grid.Block.output)
+    g.place(17, 15, grid.Block.wire)
+    g.place(17, 16, grid.Block.wire)
+    row(&g, 13, 17, [grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.input, grid.Block.wire])
     return sim.Sim.init(g)
 }
 
@@ -291,29 +291,29 @@ pub latch_matches_file(t: *test.T) {
 
 pub sr_latch_holds_a_bit(t: *test.T) {
     s: sim.Sim = latch()
-    s.toggle(5, 9, true)
+    s.toggle(13, 17, true)
     ticks(&s, 8)
-    s.toggle(5, 9, false)
+    s.toggle(13, 17, false)
     ticks(&s, 8)
-    high(t, s, 10, 6)
-    low(t, s, 7, 8)
+    high(t, s, 18, 14)
+    low(t, s, 15, 16)
 
-    s.toggle(5, 6, true)
+    s.toggle(13, 14, true)
     ticks(&s, 8)
-    s.toggle(5, 6, false)
+    s.toggle(13, 14, false)
     ticks(&s, 8)
-    low(t, s, 10, 6)
-    high(t, s, 7, 8)
+    low(t, s, 18, 14)
+    high(t, s, 15, 16)
 }
 
-/* Sources, pins and lights connect by touching; wire only spans distance. */
+/* Sources, pins and LEDs connect by touching; wire only spans distance. */
 pub touching_blocks_need_no_wire(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [
         grid.Block.source, grid.Block.input, grid.Block.not, grid.Block.output,
-        grid.Block.input, grid.Block.not, grid.Block.output, grid.Block.light,
+        grid.Block.input, grid.Block.not, grid.Block.output, grid.Block.led,
     ])
-    g.place(0, 1, grid.Block.light)
+    g.place(0, 1, grid.Block.led)
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     high(t, s, 0, 1)

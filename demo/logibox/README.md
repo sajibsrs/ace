@@ -1,6 +1,6 @@
 # logibox
 
-A logic-gate sandbox written in Ace: place square blocks on a 16×16 grid,
+A logic-gate sandbox written in Ace: place square blocks on a 32×32 grid,
 flip switches, and watch signals move through gates, one tick at a time, in
 an SDL3 window.
 
@@ -22,34 +22,34 @@ it can be started from any directory.
 |-----|------------|-------|--------------|
 | S   | source     | `S`   | A 0/1 switch. Click it in Run mode to flip it. |
 | W   | wire       | `W`   | Carries a signal over distance. Touching wires form one net. |
-| I   | input pin  | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
-| O   | output pin | `O`   | A gate's output: drives its gate's value onto what it touches. |
-| A   | AND        | `&`   | High when every input is high. Needs at least 2 input pins. |
-| R   | OR         | `\|`  | High when any input is high. Needs at least 1 input pin. |
-| N   | NOT        | `!`   | High when its input is low. Needs exactly 1 input pin. |
-| Z   | NAND       | `D`   | Low when every input is high. Needs at least 2 input pins. |
-| V   | NOR        | `V`   | High when no input is high. Needs at least 1 input pin. |
-| X   | XOR        | `^`   | High when an odd number of inputs are high. Needs at least 2 input pins. |
-| C   | XNOR       | `=`   | High when an even number of inputs are high. Needs at least 2 input pins. |
-| L   | light      | `L`   | Shows the level of what it touches. |
+| I   | input      | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
+| O   | output     | `O`   | A gate's output: drives its gate's value onto what it touches. |
+| A   | AND        | `&`   | High when every input is high. Needs at least 2 inputs. |
+| R   | OR         | `\|`  | High when any input is high. Needs at least 1 input. |
+| N   | NOT        | `!`   | High when its input is low. Needs exactly 1 input. |
+| Z   | NAND       | `D`   | Low when every input is high. Needs at least 2 inputs. |
+| V   | NOR        | `V`   | High when no input is high. Needs at least 1 input. |
+| X   | XOR        | `^`   | High when an odd number of inputs are high. Needs at least 2 inputs. |
+| C   | XNOR       | `=`   | High when an even number of inputs are high. Needs at least 2 inputs. |
+| L   | LED        | `L`   | Shows the level of what it touches. |
 
 ## Rules
 
 - **Blocks have no direction.** A block's role comes from its type and what
   it touches.
 - **Things connect by touching** (north, east, south, west, never diagonally).
-  A source or output pin next to an input pin or light drives it directly.
+  A source or output next to an input or LED drives it directly.
   Wire is only needed to cover distance.
 - **A gate connects only through its pins.** A wire or source touching a gate
-  directly does nothing; it must reach an input pin.
+  directly does nothing; it must reach an input.
 - **Touching cells of one gate type are one gate**, so a gate can be any
-  shape, and every input pin around it counts. Different gate types never
+  shape, and every input around it counts. Different gate types never
   merge.
-- **A gate with no input pins is idle** (low). One with too few (AND, NAND,
+- **A gate with no inputs is idle** (low). One with too few (AND, NAND,
   XOR, XNOR) or too many (NOT) is an error.
 - **A wire is low, high, or error.** With no driver it is low. Drivers that
   agree give their level. Drivers that disagree (for example a high source and
-  a low output pin on one net) are contention, an error, shown magenta.
+  a low output on one net) are contention, an error, shown magenta.
 - **Errors spread.** A gate reading an error outputs an error.
 - **Timing.** Every gate takes one tick to respond; wires respond instantly.
   That alone gives the textbook behaviours: glitches, a NOT wired back into
@@ -59,13 +59,18 @@ it can be started from any directory.
 
 | Input | Action |
 |-------|--------|
-| 1 / Edit | Edit mode: build the board |
+| 1 / Edit | Edit mode: build the board; blocks show without levels |
 | 2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
-| S W I O A R N Z V X C L | Select a block (see Blocks), or click it in the block row under the bar (Edit only) |
+| Hover | Shows the block's name at the bottom center, in either mode |
+| Wheel | Zoom the board about the pointer, in either mode: 1× (40-pixel cells) at start, up to 4×, and out only as far as the board still fills the window both ways |
+| − / + | Zoom out or in about the board's center, in either mode |
+| Middle drag | Pan the board, in either mode; the cursor shows a closed hand |
+| Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
+| S W I O A R N Z V X C L | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
 | Left click / drag | Edit: place the selected block. Run: flip a source |
 | Right click / drag | Edit: remove |
-| Space | Run: toggle auto-ticking (every 250 ms) |
-| Step | Run: step one tick |
+| Space / Auto | Run: toggle auto-ticking (every 250 ms); disabled in Edit |
+| Step | Run: step one tick; disabled in Edit |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Ctrl+S | Save (asks for a name the first time) |
 | Ctrl+O | Show or hide the list of diagrams |
@@ -78,21 +83,21 @@ Escape cancels.
 
 `diagram/latch.lgbx` is a NOR latch: two NOR gates, cross-coupled, so
 Q = NOR(R, Q′) and Q′ = NOR(S, Q). It sits at the board's center (columns
-5–10, rows 6–9):
+13–18, rows 14–17):
 
 ```
-S I V O W L     R (reset) into the upper NOR; Q to the light
+S I V O W L     R (reset) into the upper NOR; Q to the LED
 . . I . W .     Q′ into the upper NOR, by touch
 . . O . W .     the lower NOR's output, Q′
 S I V I W .     S (set) into the lower NOR; Q back down column 9
 ```
 
-Touching does most of the wiring: the lower NOR's output pin sits right
-against the upper NOR's input pin, so only Q needs wire.
+Touching does most of the wiring: the lower NOR's output sits right
+against the upper NOR's input, so only Q needs wire.
 
 The file is saved with R on and S off, so it powers up held in reset: the
-light is off. Switch to Run (2), turn on auto-ticking (Space), and turn R off: the
-light stays off. Flip S on and off: it turns on and stays on. Flip R on and
+LED is off. Switch to Run (2), turn on auto-ticking (Space), and turn R off: the
+LED stays off. Flip S on and off: it turns on and stays on. Flip R on and
 off: it turns off and stays off.
 
 **Feedback circuits need a defined start and long enough pulses.** A diagram
@@ -112,18 +117,18 @@ An 8-byte header, then one byte per cell, row by row:
 |--------|------|-------|
 | 0 | 4 | magic `LGBX` |
 | 4 | 1 | version, `1` |
-| 5 | 1 | width, `16` |
-| 6 | 1 | height, `16` |
+| 5 | 1 | width, `32` |
+| 6 | 1 | height, `32` |
 | 7 | 1 | reserved, `0` |
 | 8 | w × h | cell codes |
 
 | Code | Block | Code | Block |
 |------|-------|------|-------|
-| 0 | empty | 5 | output pin |
+| 0 | empty | 5 | output |
 | 1 | source, off | 6 | AND |
 | 2 | source, on | 7 | OR |
 | 3 | wire | 8 | NOT |
-| 4 | input pin | 9 | light |
+| 4 | input | 9 | LED |
 | 10 | NAND | 12 | XOR |
 | 11 | NOR | 13 | XNOR |
 
