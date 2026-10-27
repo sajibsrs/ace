@@ -8,7 +8,7 @@
  * apart.
  *
  * Edit (F1) builds the board: left-click places the selected block (drag to
- * paint), right-click (or drag) removes. Run (F2) simulates it: left-click flips
+ * paint), right-click (or drag) removes. Sim (F2) simulates it: left-click flips
  * a source, space or Auto toggles auto-ticking, and Step ticks once. Letters
  * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
  * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge. The wheel zooms the
@@ -57,7 +57,7 @@ ZOOM_STEP: const f32 = 1.25
 BAR: const f32 = 28.0
 FOOT: const f32 = 24.0
 /* Space between panels, and between a panel and the window's edge. */
-GAP: const f32 = 8.0
+GAP: const f32 = 4.0
 /* Top to bottom the window holds the toolbar, the block row, then the sidebar
  * beside the board, and the footer: TOP is where the sidebar and board start,
  * BELOW the space under them. */
@@ -235,7 +235,7 @@ LABEL: [Button]string = [
     Button.save = "Save",
     Button.save_as = "Save as",
     Button.edit = "Edit",
-    Button.run = "Run",
+    Button.run = "Sim",
     Button.step = "Step",
     Button.auto = "Auto",
     Button.zoom_out = "",
@@ -281,15 +281,30 @@ LETTER: [grid.Block]u8 = [
 
 /* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
  * buttons hold an icon alone. */
+/* The title of the button group `button` starts, else empty. */
+heading(button: Button): string {
+    if button == Button.new { return "File" }
+    if button == Button.edit { return "Mode" }
+    if button == Button.step { return "Run" }
+    if button == Button.zoom_out { return "Zoom" }
+    return ""
+}
+
+/* The block row's title. */
+COMPONENTS: const string = "Blocks"
+
 place(button: Button): ui.Rect {
     x: f32 = GAP + 6.0
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         /* Icon, gap, and label, inset by PAD. */
         w: f32 = 2.0 * PAD + GLYPH_SIDE
-        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH }
-        /* Gaps set the phase and zoom buttons apart. */
-        if each == Button.edit || each == Button.zoom_out { x += 18.0 }
+        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR - 8.0 }
+        /* Each group follows its title, set apart from the last. */
+        if heading(each).len > 0 {
+            if each != Button.new { x += 18.0 }
+            x += f32(heading(each).len) * ui.GLYPH + 6.0
+        }
         if each == button { return ui.Rect { x = x, y = GAP + 4.0, w = w, h = BAR - 8.0 } }
         x += w + 6.0
     }
@@ -303,7 +318,7 @@ TOOL_PAD: const f32 = 4.0
  * from the left. */
 tool(block: grid.Block): ui.Rect {
     i: f32 = f32(int(block) - 1)
-    return ui.Rect { x = GAP + 6.0 + i * (BAR + 6.0), y = 2.0 * GAP + BAR, w = BAR, h = BAR }
+    return ui.Rect { x = GAP + 6.0 + f32(COMPONENTS.len) * ui.GLYPH + 6.0 + i * (BAR + 6.0), y = 2.0 * GAP + BAR, w = BAR, h = BAR }
 }
 
 /* The block row's icons; the empty block has none. */
@@ -629,7 +644,7 @@ Game.tick(self) {
     self.count += 1
 }
 
-/* Switches to `phase`; leaving Run stops auto-ticking. Levels and the tick
+/* Switches to `phase`; leaving Sim stops auto-ticking. Levels and the tick
  * count carry over, so an edit continues from where the run stopped. */
 Game.switch(self, phase: Phase) {
     self.phase = phase
@@ -1233,7 +1248,7 @@ Game.hovers(const self): bool {
 }
 
 /* Whether `button` is unusable in the current phase: Step and Auto only work
- * in Run. */
+ * in Sim. */
 Game.disabled(const self, button: Button): bool {
     return self.phase == Phase.edit && (button == Button.step || button == Button.auto)
 }
@@ -1243,7 +1258,7 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
     canvas.fill(self.head(), Color.hex(CHROME))
     canvas.fill(self.blocks(), Color.hex(CHROME))
     /* Block buttons: with the pencil each in its block's low color, the
-     * selected one lit; in Run and with the select tool all grey. */
+     * selected one lit; in Sim and with the select tool all grey. */
     live: bool = self.phase == Phase.edit && self.pick == Tool.pencil
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
@@ -1262,6 +1277,15 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
     }
     canvas.fill(foot, Color.hex(CHROME))
     canvas.fill(self.side(), Color.hex(CHROME))
+    canvas.flush(r)
+    /* The group titles, dim, before the buttons they head. */
+    for i: usize in 0 .. members(Button).len {
+        each: Button = members(Button)[i]
+        if heading(each).len == 0 { continue }
+        at: ui.Rect = place(each)
+        ui.left(r, at, -(f32(heading(each).len) * ui.GLYPH + 6.0), heading(each), DIM)
+    }
+    ui.left(r, self.blocks(), 6.0, COMPONENTS, DIM)
     for i: usize in 0 .. members(Tool).len {
         each: Tool = members(Tool)[i]
         rgb: u32 = DISABLED
@@ -1291,7 +1315,14 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
         ink: u32 = INK
         if self.disabled(each) { ink = DIM }
         at: ui.Rect = place(each)
-        canvas.icon(r, ICON[each], ui.Rect { x = at.x + PAD, y = at.y + (at.h - GLYPH_SIDE) / 2.0, w = GLYPH_SIDE, h = GLYPH_SIDE }, Color.hex(ink))
+        /* A lone icon fills its square less `TOOL_PAD` all round. */
+        side: f32 = GLYPH_SIDE
+        inset: f32 = PAD
+        if LABEL[each].len == 0 {
+            side = at.w - 2.0 * TOOL_PAD
+            inset = TOOL_PAD
+        }
+        canvas.icon(r, ICON[each], ui.Rect { x = at.x + inset, y = at.y + (at.h - side) / 2.0, w = side, h = side }, Color.hex(ink))
     }
     canvas.flush(r)
 

@@ -20,7 +20,7 @@ it can be started from any directory.
 
 | Key | Block      | Label | What it does |
 |-----|------------|-------|--------------|
-| S   | source     | `S`   | A 0/1 switch. Click it in Run mode to flip it. |
+| S   | source     | `S`   | A 0/1 switch. Click it in Sim mode to flip it. |
 | W   | wire       | `W`   | Carries a signal over distance. Touching wires form one net. |
 | I   | input      | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
 | O   | output     | `O`   | A gate's output: drives its gate's value onto what it touches. |
@@ -64,21 +64,21 @@ it can be started from any directory.
 | Input | Action |
 |-------|--------|
 | F1 / Edit | Edit mode: build the board; blocks show without levels |
-| F2 / Run | Run mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
+| F2 / Sim | Sim mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
 | Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
+| S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Sim) |
 | 1 / Pencil | Strip button at the board's left: the pencil tool (Edit only); selecting a block returns to it |
 | 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
 | Cmd+C / Cmd+X / Cmd+V | Edit only: copy or cut the selection to an in-app clipboard; paste it as a floating selection at the pointer (else the board's center), kept on the board, to drag and drop like a move (Escape or a click elsewhere drops it where it is) |
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing a floating paste cancels it |
-| Left click / drag | Edit with the pencil: place the selected block. Run: flip a source |
+| Left click / drag | Edit with the pencil: place the selected block. Sim: flip a source |
 | Right click / drag | Edit: remove |
-| Space / Auto | Run: toggle auto-ticking (every 250 ms); disabled in Edit |
-| Step | Run: step one tick; disabled in Edit |
+| Space / Auto | Sim: toggle auto-ticking (every 250 ms); disabled in Edit |
+| Step | Sim: step one tick; disabled in Edit |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Cmd+S | Save (asks for a name the first time) |
 | Cmd+O | Show or hide the list of diagrams |
@@ -105,7 +105,7 @@ Touching does most of the wiring: the lower NOR's output sits right
 against the upper NOR's input, so only Q needs wire.
 
 The file is saved with R on and S off, so it powers up held in reset: the
-LED is off. Switch to Run (2), turn on auto-ticking (Space), and turn R off: the
+LED is off. Switch to Sim (2), turn on auto-ticking (Space), and turn R off: the
 LED stays off. Flip S on and off: it turns on and stays on. Flip R on and
 off: it turns off and stays off.
 
