@@ -73,13 +73,15 @@ it can be started from any directory.
 | S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Run) |
 | 1 / Pencil | Strip button at the board's left: the pencil tool (Edit only); selecting a block returns to it |
 | 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
+| Cmd+C / Cmd+X / Cmd+V | Edit only: copy or cut the selection to an in-app clipboard; paste it as a floating selection at the pointer (else the board's center), kept on the board, to drag and drop like a move (Escape or a click elsewhere drops it where it is) |
+| Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing a floating paste cancels it |
 | Left click / drag | Edit with the pencil: place the selected block. Run: flip a source |
 | Right click / drag | Edit: remove |
 | Space / Auto | Run: toggle auto-ticking (every 250 ms); disabled in Edit |
 | Step | Run: step one tick; disabled in Edit |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
-| Ctrl+S | Save (asks for a name the first time) |
-| Ctrl+O | Show or hide the list of diagrams |
+| Cmd+S | Save (asks for a name the first time) |
+| Cmd+O | Show or hide the list of diagrams |
 | Escape | Close the list or name box, otherwise drop the selection |
 | Cmd+Q | Quit |
 

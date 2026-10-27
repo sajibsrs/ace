@@ -56,6 +56,31 @@ pub Canvas.outline(self, box: Rect, thick: f32, color: Color) {
     self.fill(Rect { x = box.x + box.w - thick, y = box.y, w = thick, h = box.h }, color)
 }
 
+/* A `thick` dashed outline just inside `box`, in dashes of 3 and gaps of 2
+ * times `thick`; only dashes that reach `view` are drawn. */
+pub Canvas.dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
+    dash: f32 = 3.0 * thick
+    step: f32 = 5.0 * thick
+    x: f32 = box.x
+    for x < box.x + box.w {
+        w: f32 = math.min[f32](dash, box.x + box.w - x)
+        if x + w > view.x && x < view.x + view.w {
+            self.fill(Rect { x = x, y = box.y, w = w, h = thick }, color)
+            self.fill(Rect { x = x, y = box.y + box.h - thick, w = w, h = thick }, color)
+        }
+        x += step
+    }
+    y: f32 = box.y
+    for y < box.y + box.h {
+        h: f32 = math.min[f32](dash, box.y + box.h - y)
+        if y + h > view.y && y < view.y + view.h {
+            self.fill(Rect { x = box.x, y = y, w = thick, h = h }, color)
+            self.fill(Rect { x = box.x + box.w - thick, y = y, w = thick, h = h }, color)
+        }
+        y += step
+    }
+}
+
 pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
     if self.count + 6 > self.vertices.len { return }
     self.vertices[self.count] = a

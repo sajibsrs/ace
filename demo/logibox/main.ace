@@ -15,11 +15,15 @@
  * board about the pointer; the window resizes and goes full screen. Cmd+Q
  * quits. The strip at the board's left holds the tools, picked by 1 and 2: the
  * pencil (above) and box select: drag over blocks to select them, drag the selection to
- * move it, Delete removes it, Escape or a click elsewhere drops it.
+ * move it, Delete removes it, Escape or a click elsewhere drops it. Cmd+C
+ * copies the selection, Cmd+X cuts it, and Cmd+V pastes it as a floating
+ * selection at the pointer to drag and drop. Cmd+Z undoes an edit (20 are
+ * kept) and Cmd+Shift+Z redoes it; all of these are Edit only. A selection
+ * being carried shows the move cursor.
  *
  * Diagrams live in diagram/ as .lgbx files, relative to where it runs. The bar
  * has New, Open (a list of diagram/), Save, and Save as (a name box: a-z, 0-9,
- * - and _; Enter saves, Escape cancels). Ctrl+S saves and Ctrl+O opens.
+ * - and _; Enter saves, Escape cancels). Cmd+S saves and Cmd+O opens.
  */
 
 import file
@@ -81,9 +85,8 @@ KEY_END: const u32 = 0x4000_004d
 KEY_F1: const u32 = 0x4000_003a
 KEY_F2: const u32 = 0x4000_003b
 
-/* SDL_KMOD_SHIFT and SDL_KMOD_CTRL: either side's key. */
+/* SDL_KMOD_SHIFT: either side's key. */
 KMOD_SHIFT: const u16 = 0x0003
-KMOD_CTRL: const u16 = 0x00c0
 /* SDL_KMOD_GUI: either side's Command (Windows) key. */
 KMOD_GUI: const u16 = 0x0c00
 
@@ -185,6 +188,31 @@ Phase: enum u8 { edit, run }
 /* What the left mouse button does on the board in Edit: place the selected
  * block, or box-select blocks and drag them. */
 Tool: enum u8 { pencil, select }
+
+/* How many edits Undo can take back. */
+HISTORY: const int = 20
+
+/* Up to `HISTORY` (the array's length) snapshots, the latest last. */
+Stack: struct {
+    snaps: [20]Snap = [Snap {} : 20],
+    n: int = 0,
+}
+
+/* Adds `r`, the oldest falling off when full. */
+Stack.push(self, r: Snap) {
+    if self.n == HISTORY {
+        for i: int in 1 .. HISTORY { self.snaps[i - 1] = self.snaps[i] }
+        self.n -= 1
+    }
+    self.snaps[self.n] = r
+    self.n += 1
+}
+
+/* The board and which sources are on: what Undo and Redo bring back. */
+Snap: struct {
+    g: grid.Grid = grid.Grid {},
+    on: [32][64]bool = [[false : 64] : 32],
+}
 
 /* How a select-tool drag is going: none, drawing the box, or moving the
  * selected blocks, which are lifted off the board until the drop. */
@@ -440,6 +468,22 @@ Game: struct {
     dy: int = 0,
     lift: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
     lifton: [32 * 64]bool = [false : 32 * 64],
+    /* Set while `lift` holds blocks that are not on the board (a paste), so a
+     * press inside the selection carries them instead of lifting from the board. */
+    held: bool = false,
+    /* The clipboard: copied blocks, row by row over a `clipw` by `cliph` box,
+     * and which sources were on; `clipw` is zero when nothing was copied. */
+    clip: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
+    clipon: [32 * 64]bool = [false : 32 * 64],
+    clipw: int = 0,
+    cliph: int = 0,
+    /* Undo and Redo: the boards before the last `nundo` edits (the latest last)
+     * and those Undo took back; `stroke` is set once a pencil drag has recorded
+     * its edit, and `pre` is the board before a carried selection was lifted. */
+    undone: Stack = Stack {},
+    redone: Stack = Stack {},
+    stroke: bool = false,
+    pre: Snap = Snap {},
     /* Cell the current drag last painted, so a drag paints each cell once. */
     px: int = -1,
     py: int = -1,
@@ -593,9 +637,61 @@ Game.switch(self, phase: Phase) {
     if phase == Phase.edit { self.auto = false }
 }
 
+/* The board as it is now. */
+Game.snap(const self): Snap {
+    r: Snap = Snap { g = self.s.g }
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            r.on[y][x] = self.s.g.get(x, y) == grid.Block.source && self.s.level(x, y) == sim.Level.high
+        }
+    }
+    return r
+}
+
+/* Replaces the board with `r`. */
+Game.restore(self, r: Snap) {
+    self.s = sim.Sim.init(r.g)
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            if r.on[y][x] { self.s.toggle(x, y, true) }
+        }
+    }
+}
+
+/* Notes `r`, the board before an edit, so Undo can bring it back; a new edit
+ * ends Redo. */
+Game.record(self, r: Snap) {
+    self.undone.push(r)
+    self.redone.n = 0
+}
+
+/* Takes back the last edit. A floating paste is just cancelled. */
+Game.undo(self) {
+    if self.held {
+        self.held = false
+        self.deselect()
+        return
+    }
+    if self.undone.n == 0 { return }
+    self.deselect()
+    self.redone.push(self.snap())
+    self.undone.n -= 1
+    self.restore(self.undone.snaps[self.undone.n])
+}
+
+/* Brings back the edit Undo took back. */
+Game.redo(self) {
+    if self.held || self.redone.n == 0 { return }
+    self.deselect()
+    self.undone.push(self.snap())
+    self.redone.n -= 1
+    self.restore(self.redone.snaps[self.redone.n])
+}
+
 /* Starts a new, unnamed diagram. */
 Game.clear(self) {
     self.deselect()
+    self.record(self.snap())
     self.s = sim.Sim.init(grid.Grid {})
     self.count = 0
     self.name.len = 0
@@ -662,6 +758,8 @@ Game.load(self, name: string) {
         return
     }
     self.deselect()
+    self.undone.n = 0
+    self.redone.n = 0
     self.s = s
     self.count = 0
     self.name.copy(name)
@@ -670,8 +768,9 @@ Game.load(self, name: string) {
     self.said(b)
 }
 
-/* Drops the selection. */
+/* Drops the selection; a pasted one lands where it floats. */
 Game.deselect(self) {
+    if self.sel && self.held && self.drag != Drag.move { self.drop() }
     self.sel = false
     self.drag = Drag.none
 }
@@ -715,6 +814,7 @@ Game.lift_up(self) {
 /* Puts the lifted blocks down `dx`, `dy` cells over: they replace what is
  * there, and empty cells of the selection leave the board as it is. */
 Game.drop(self) {
+    if self.held || self.dx != 0 || self.dy != 0 { self.record(self.pre) }
     g: grid.Grid = self.s.g
     w: int = self.sx1 - self.sx0 + 1
     for y: int in self.sy0 .. self.sy1 + 1 {
@@ -733,18 +833,84 @@ Game.drop(self) {
     self.sx1 += self.dx
     self.sy0 += self.dy
     self.sy1 += self.dy
+    self.dx = 0
+    self.dy = 0
     self.drag = Drag.none
+    self.held = false
 }
 
 /* Removes every selected block. */
 Game.erase(self) {
     if !self.sel { return }
+    if self.held {
+        /* A floating paste is not on the board: it just goes away. */
+        self.held = false
+        self.deselect()
+        return
+    }
+    self.record(self.snap())
     g: grid.Grid = self.s.g
     for y: int in self.sy0 .. self.sy1 + 1 {
         for x: int in self.sx0 .. self.sx1 + 1 { g.remove(x, y) }
     }
     self.s = sim.Sim.init(g)
     self.deselect()
+}
+
+/* Copies the selected blocks, and which sources are on, to the clipboard. */
+Game.copy(self) {
+    if !self.sel { return }
+    /* A floating paste lands first, so the board holds what is copied. */
+    self.deselect_keep()
+    g: grid.Grid = self.s.g
+    self.clipw = self.sx1 - self.sx0 + 1
+    self.cliph = self.sy1 - self.sy0 + 1
+    for y: int in self.sy0 .. self.sy1 + 1 {
+        for x: int in self.sx0 .. self.sx1 + 1 {
+            i: int = (y - self.sy0) * self.clipw + x - self.sx0
+            b: grid.Block = g.get(x, y)
+            self.clip[i] = b
+            self.clipon[i] = b == grid.Block.source && self.s.level(x, y) == sim.Level.high
+        }
+    }
+}
+
+/* Lands a floating paste and keeps its box selected. */
+Game.deselect_keep(self) {
+    if self.sel && self.held { self.drop() }
+}
+
+/* Copies the selection, then removes it. */
+Game.cut(self) {
+    if !self.sel { return }
+    self.copy()
+    self.erase()
+}
+
+/* Pastes the clipboard as a floating selection with its top-left corner at
+ * the pointer's cell, else at the board area's center, kept on the board. */
+Game.paste(self) {
+    if self.clipw == 0 { return }
+    self.use(Tool.select)
+    cx: int = self.hx
+    cy: int = self.hy
+    if cx < 0 {
+        a: ui.Rect = self.area()
+        cx, cy = self.cell_near(a.x + a.w / 2.0, a.y + a.h / 2.0)
+    }
+    self.sx0 = math.min[int](cx, grid.WIDTH - self.clipw)
+    self.sy0 = math.min[int](cy, grid.HEIGHT - self.cliph)
+    self.sx1 = self.sx0 + self.clipw - 1
+    self.sy1 = self.sy0 + self.cliph - 1
+    for i: int in 0 .. self.clipw * self.cliph {
+        self.lift[i] = self.clip[i]
+        self.lifton[i] = self.clipon[i]
+    }
+    self.dx = 0
+    self.dy = 0
+    self.sel = true
+    self.held = true
+    self.pre = self.snap()
 }
 
 /* A left press at window point (x, y) with the select tool: inside the
@@ -763,9 +929,12 @@ Game.select_press(self, x: f32, y: f32) {
         self.drag = Drag.move
         self.dx = 0
         self.dy = 0
-        self.lift_up()
+        if !self.held {
+            self.pre = self.snap()
+            self.lift_up()
+        }
     } else {
-        self.sel = false
+        self.deselect()
         self.drag = Drag.box
     }
 }
@@ -799,6 +968,13 @@ Game.select_release(self) {
     }
 }
 
+/* Records the board before a pencil drag's first change. */
+Game.begin(self) {
+    if self.stroke { return }
+    self.stroke = true
+    self.record(self.snap())
+}
+
 /* A press or drag over (x, y) with `button`; `press` is true on the click. */
 Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
     if x < 0 || (!press && x == self.px && y == self.py) { return }
@@ -812,11 +988,14 @@ Game.paint(self, x: int, y: int, button: MouseButton, press: bool) {
         return
     }
     if button == MouseButton.right {
+        if self.s.g.get(x, y) == grid.Block.empty { return }
+        self.begin()
         self.s.place(x, y, grid.Block.empty)
         return
     }
     if button != MouseButton.left { return }
     if self.s.g.get(x, y) == self.block { return }
+    self.begin()
     self.s.place(x, y, self.block)
 }
 
@@ -932,7 +1111,15 @@ Game.key(self, e: KeyboardEvent): bool {
     if self.drag == Drag.move { return true }
     if (e.mod & KMOD_GUI) != 0 && e.key == Keycode.q { return false }
     if e.repeat { return true }
-    if (e.mod & KMOD_CTRL) != 0 {
+    if (e.mod & KMOD_GUI) != 0 && (e.key == Keycode.c || e.key == Keycode.x || e.key == Keycode.v || e.key == Keycode.z) {
+        if self.phase != Phase.edit || self.mode != Mode.none { return true }
+        if e.key == Keycode.z && (e.mod & KMOD_SHIFT) != 0 { self.redo() } else if e.key == Keycode.z { self.undo() }
+        if e.key == Keycode.c { self.copy() }
+        if e.key == Keycode.x { self.cut() }
+        if e.key == Keycode.v { self.paste() }
+        return true
+    }
+    if (e.mod & KMOD_GUI) != 0 {
         if e.key == Keycode.s { self.save() }
         if e.key == Keycode.o { self.browse() }
         return true
@@ -986,17 +1173,17 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             canvas.fill(box, Color.hex(rgb))
         }
     }
-    if self.drag == Drag.move { self.draw_lifted(canvas, r, false) }
+    if self.drag == Drag.move || self.held { self.draw_lifted(canvas, r, false) }
     if self.mode == Mode.none && self.phase == Phase.edit && self.pick == Tool.pencil && self.hx >= 0 {
         box: ui.Rect = self.box(self.hx, self.hy)
         canvas.outline(box, 2.0, Color.hex(0xffffff))
     }
     /* The box being drawn, or the selection, carried along while it moves. */
     if self.drag == Drag.box {
-        canvas.outline(self.span(math.min[int](self.ax, self.bx), math.min[int](self.ay, self.by), math.max[int](self.ax, self.bx), math.max[int](self.ay, self.by)), 2.0, Color.hex(SELECT))
+        canvas.dashed(self.span(math.min[int](self.ax, self.bx), math.min[int](self.ay, self.by), math.max[int](self.ax, self.bx), math.max[int](self.ay, self.by)), 2.0, Color.hex(SELECT), a)
     }
     if self.sel && self.drag != Drag.box {
-        canvas.outline(self.span(self.sx0 + self.dx, self.sy0 + self.dy, self.sx1 + self.dx, self.sy1 + self.dy), 2.0, Color.hex(SELECT))
+        canvas.dashed(self.span(self.sx0 + self.dx, self.sy0 + self.dy, self.sx1 + self.dx, self.sy1 + self.dy), 2.0, Color.hex(SELECT), a)
     }
     canvas.flush(r)
 
@@ -1014,7 +1201,7 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             canvas.icon(r, BLOCK_ICON[b], box, Color.hex(ink))
         }
     }
-    if self.drag == Drag.move { self.draw_lifted(canvas, r, true) }
+    if self.drag == Drag.move || self.held { self.draw_lifted(canvas, r, true) }
     canvas.flush(r)
     r.unclip()
 }
@@ -1230,14 +1417,20 @@ main(): int {
                             cursor(grab)
                         } else if game.pick == Tool.select && game.phase == Phase.edit {
                             if held == MouseButton.left { game.select_press(b.x, b.y) }
+                            /* Carrying a selection shows the move cursor. */
+                            if game.drag == Drag.move { cursor(grab) }
                         } else {
                             game.paint(x, y, held, true)
                         }
                     }
                 } else if b.button == held {
                     if held == MouseButton.middle { cursor(arrow) }
-                    if held == MouseButton.left { game.select_release() }
+                    if held == MouseButton.left {
+                        game.select_release()
+                        cursor(arrow)
+                    }
                     held = MouseButton.none
+                    game.stroke = false
                     game.px = -1
                     game.py = -1
                 }
