@@ -6,10 +6,12 @@
  */
 
 import fmt
+import time
 import ui: "./ui.ace"
 import bar: "./bar.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
+import speed: "./speed.ace"
 import history: "./history.ace"
 import select: "./select.ace"
 import store: "./store.ace"
@@ -27,6 +29,16 @@ pub App: struct {
     pub s: sim.Sim = sim.Sim {},
     pub block: grid.Block = grid.Block.wire,
     pub auto: bool = false,
+    /* Auto's speed as a slider stop (speed.ace); 4 Hz at start. */
+    pub stop: int = 3,
+    /* Time of the last `pace` (ns), and the ticks Auto owes. */
+    last: u64 = 0,
+    owed: f64 = 0.0,
+    /* Ticks run and time spent in the rate being measured, and the last rate
+     * measured (ticks per second). */
+    metered: int = 0,
+    span: u64 = 0,
+    pub rate: f64 = 0.0,
     /* Whether blocks draw with depth. */
     pub depth: bool = true,
     /* Set when the Home button is pressed; the caller leaves the editor. */
@@ -83,6 +95,47 @@ App.failed(self, what: string, name: string, err: Error) {
 pub App.tick(self) {
     self.s.tick()
     self.count += 1
+}
+
+/* The longest Auto ticks in one frame, in ns, so the window keeps up. */
+SLICE: const u64 = 8000000
+/* How long a rate is measured over, in ns. */
+WINDOW: const u64 = 500000000
+
+/* Runs the ticks Auto owes since the last call; `live` is false while the
+ * editor is not on screen. The rate is measured over the time passed, so it
+ * falls short of the setting when the frames cannot fit the ticks. */
+pub App.pace(self, live: bool) {
+    now: u64 = time.elapsed()
+    passed: u64 = now - self.last
+    self.last = now
+    if !live || !self.auto {
+        self.owed = 0.0
+        self.metered = 0
+        self.span = 0
+        self.rate = 0.0
+        return
+    }
+    self.owed += f64(passed) * speed.hz(self.stop) / 1000000000.0
+    for self.owed >= 1.0 && time.elapsed() - now < SLICE {
+        self.tick()
+        self.owed -= 1.0
+        self.metered += 1
+    }
+    /* Ticks the frame had no time for are dropped, not caught up. */
+    if self.owed >= 1.0 { self.owed = 0.0 }
+    self.span += passed
+    if self.span >= WINDOW {
+        self.rate = f64(self.metered) * 1000000000.0 / f64(self.span)
+        self.metered = 0
+        self.span = 0
+    }
+}
+
+/* Moves the speed slider to window x. */
+pub App.slide(self, x: f32) {
+    at: ui.Rect = bar.speed()
+    self.stop = speed.stop_at((x - at.x) / at.w)
 }
 
 /* Drops the selection; a pasted one lands where it floats. */

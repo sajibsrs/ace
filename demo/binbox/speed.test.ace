@@ -1,0 +1,40 @@
+import fmt
+import test
+import speed: "./speed.ace"
+
+/* Checks that `rate` shows as `want`. */
+shows(t: *test.T, rate: f64, want: string) {
+    storage: [32]u8
+    b: fmt.Buffer = fmt.Buffer.init(storage[..])
+    speed.show(&b, rate)
+    t.equal(b.text(), want)
+}
+
+pub steps_by_decade(t: *test.T) {
+    shows(t, speed.hz(0), "1 Hz")
+    shows(t, speed.hz(8), "9 Hz")
+    shows(t, speed.hz(9), "10 Hz")
+    shows(t, speed.hz(10), "20 Hz")
+    shows(t, speed.hz(18), "100 Hz")
+    shows(t, speed.hz(27), "1 kHz")
+    shows(t, speed.hz(35), "9 kHz")
+    shows(t, speed.hz(36), "10 kHz")
+}
+
+pub zones_are_equal(t: *test.T) {
+    t.equal(speed.stop_at(0.0), 0)
+    t.equal(speed.stop_at(0.999), speed.STOPS - 1)
+    shows(t, speed.hz(speed.STOPS - 1), "10 kHz")
+    t.equal(speed.stop_at(1.0), speed.STOPS - 1)
+    t.equal(speed.stop_at(-0.5), 0)
+    /* Half way is the middle zone, and filling it reaches its far edge. */
+    t.equal(speed.stop_at(0.5), speed.STOPS / 2)
+    t.equal(speed.fill(speed.STOPS - 1) == 1.0, true)
+}
+
+pub units(t: *test.T) {
+    shows(t, 250.0, "250 Hz")
+    shows(t, 2000.0, "2 kHz")
+    shows(t, 41263.0, "41.26 kHz")
+    shows(t, 2500000.0, "2.5 MHz")
+}

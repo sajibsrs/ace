@@ -13,7 +13,8 @@
  *
  * Edit (F1) builds the board: left-click places the selected block (drag to
  * paint), right-click (or drag) removes. Sim (F2) simulates it: left-click flips
- * a source, space or Auto toggles auto-ticking, and Step ticks once. Letters
+ * a source, space or Auto toggles auto-ticking at the Speed slider's rate, and
+ * Step ticks once. Letters
  * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
  * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge. The wheel zooms the
  * board about the pointer; the window resizes and goes full screen. Cmd+Q
@@ -31,7 +32,7 @@
  */
 import fmt
 import (
-    init, quit, error, ticks, Window, Renderer, Event, InitFlags, WindowFlags, BLEND_ALPHA,
+    init, quit, error, Window, Renderer, Event, InitFlags, WindowFlags, BLEND_ALPHA,
 ) from sdl
 import bar: "./bar.ace"
 import grid: "./grid.ace"
@@ -43,9 +44,6 @@ import input: "./input.ace"
 import program: "./program.ace"
 import render: "./render.ace"
 import view: "./view.ace"
-
-/* Ticks per second of Auto, as the milliseconds between two. */
-AUTO_MS: const u64 = 250
 
 fail(context: string): int {
     fmt.printf("%s: %s\n", context, error())
@@ -80,7 +78,6 @@ main(): int {
     stage: program.Program = program.Program {}
     canvas: ui.Canvas = ui.Canvas {}
     screen: home.Screen = home.Screen.home
-    last: u64 = ticks()
     w: f32 = 0.0
     h: f32 = 0.0
     running: bool = true
@@ -112,12 +109,7 @@ main(): int {
             }
         }
         if screen != shown { window.title(home.TITLE[screen]) }
-        now: u64 = ticks()
-        if screen == home.Screen.diagram && editor.auto && now - last >= AUTO_MS {
-            editor.tick()
-            last = now
-        }
-        if screen != home.Screen.diagram || !editor.auto { last = now }
+        editor.pace(screen == home.Screen.diagram)
         if screen == home.Screen.home {
             start.draw(&canvas, renderer, w, h)
         } else if screen == home.Screen.program {

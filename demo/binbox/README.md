@@ -82,7 +82,8 @@ it can be started from any directory.
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing a floating paste cancels it |
 | Left click / drag | Edit with the pencil: place the selected block. Sim: flip a source |
 | Right click / drag | Edit: remove |
-| Space / Auto | Sim: toggle auto-ticking (every 250 ms); disabled in Edit |
+| Space / Auto | Sim: toggle auto-ticking at the Speed slider's rate; disabled in Edit |
+| Speed slider | Drag for Auto's rate. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, and 10 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
 | Step | Sim: step one tick; disabled in Edit |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Cmd+S | Save (asks for a name the first time) |
@@ -169,6 +170,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `grid.ace` | The board: blocks and their placement. |
 | `group.ace` | Groups of touching cells: wire nets and multi-cell gates. |
 | `sim.ace` | Levels, drivers and contention, and the tick. |
+| `speed.ace` | The Speed slider's stops as tick rates, and their Hz/kHz/MHz text. |
 | `diagram.ace` | `.bnbx` encode and decode. |
 | `ui.ace` | Rectangles, layered drawing, and text helpers. |
 | `bar.ace` | Where the toolbar, block row and tool strip sit, and what is in them. |

@@ -1,0 +1,44 @@
+/* speed — how fast Auto ticks: a slider stop and the rate it stands for.
+ *
+ * The slider has STOPS equal zones. The first nine step 1 .. 9 Hz and every
+ * decade after steps nine times by its power of ten (10 .. 90, 100 .. 900,
+ * 1000 .. 9000); the last is the top of the last decade, 10 kHz.
+ */
+
+import fmt
+import math
+
+/* Decades above 1 Hz the stops reach. */
+DECADES: const int = 4
+/* Stops per decade, and in all: 1 Hz to 10 kHz. */
+PER: const int = 9
+pub STOPS: const int = PER * DECADES + 1
+
+/* Ticks per second at `stop`: 1 .. 9, then 10 .. 90, and so on. */
+pub hz(stop: int): f64 {
+    rate: f64 = f64(stop % PER + 1)
+    for d: int in 0 .. stop / PER { rate *= 10.0 }
+    return rate
+}
+
+/* The stop under fraction `t` (0 .. 1) of the slider's width. */
+pub stop_at(t: f32): int {
+    return math.max[int](0, math.min[int](STOPS - 1, int(t * f32(STOPS))))
+}
+
+/* How much of the slider's width is filled when `stop` is picked, 0 .. 1. */
+pub fill(stop: int): f32 {
+    return f32(stop + 1) / f32(STOPS)
+}
+
+/* Writes `rate` ticks per second to `b` with a unit (Hz, kHz or MHz) and at
+ * most four significant digits. */
+pub show(b: *fmt.Buffer, rate: f64) {
+    if rate >= 1000000.0 {
+        b.printf("%.4g MHz", rate / 1000000.0)
+    } else if rate >= 1000.0 {
+        b.printf("%.4g kHz", rate / 1000.0)
+    } else {
+        b.printf("%.4g Hz", rate)
+    }
+}

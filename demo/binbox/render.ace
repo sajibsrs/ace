@@ -9,6 +9,7 @@ import bar: "./bar.ace"
 import theme: "./theme.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
+import speed: "./speed.ace"
 import diagram: "./diagram.ace"
 import ui: "./ui.ace"
 import app: "./app.ace"
@@ -318,6 +319,10 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         if bar.LABEL[each].len == 0 { inset = (at.w - bar.GLYPH_SIDE) / 2.0 }
         canvas.icon(r, bar.ICON[each], ui.Rect { x = at.x + inset, y = at.y + (at.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(ink))
     }
+    /* The speed slider: filled up to its stop. */
+    pace: ui.Rect = bar.speed()
+    canvas.fill(pace, Color.hex(theme.BUTTON))
+    canvas.fill(ui.Rect { x = pace.x, y = pace.y, w = pace.w * speed.fill(g.stop), h = pace.h }, Color.hex(theme.ACTIVE))
     canvas.flush(r)
 
     for i: usize in 0 .. members(bar.Button).len {
@@ -326,6 +331,11 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         if disabled(g, each) { ink = theme.DIM }
         ui.left(r, bar.place(each), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.LABEL[each], ink)
     }
+    ui.left(r, pace, -(f32(bar.SPEED.len) * ui.GLYPH + 6.0), bar.SPEED, theme.DIM)
+    rated: [16]u8
+    setting: fmt.Buffer = fmt.Buffer.init(rated[..])
+    speed.show(&setting, speed.hz(g.stop))
+    ui.center(r, pace, setting.text(), theme.INK)
     title: string = g.name.text()
     if title.len == 0 { title = "untitled" }
     storage: [128]u8
@@ -338,6 +348,11 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         }
     } else {
         status.printf("tick %d", g.count)
+        /* The rate reached, when the frames cannot keep up with the setting. */
+        if g.auto && g.rate > 0.0 && g.rate < 0.9 * speed.hz(g.stop) {
+            status.printf(" | ")
+            speed.show(&status, g.rate)
+        }
     }
     ui.left(r, foot, 8.0, status.text(), theme.INK)
     /* The hovered block's name, in either phase. */

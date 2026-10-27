@@ -57,6 +57,8 @@ pub Input: struct {
     py: int = -1,
     /* Set once a pencil drag has recorded its edit. */
     stroke: bool = false,
+    /* Whether the speed slider is being dragged. */
+    slide: bool = false,
 }
 
 pub Input.new(): Input {
@@ -133,6 +135,10 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
         return true
     }
     if button != MouseButton.left { return true }
+    if bar.speed().has(x, y) {
+        self.slide = true
+        g.slide(x)
+    }
     if bar.place(bar.Button.home).has(x, y) { g.leave = true }
     if bar.place(bar.Button.new).has(x, y) { g.clear() }
     if bar.place(bar.Button.open).has(x, y) { g.browse() }
@@ -238,6 +244,7 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
     }
     b: MouseButtonEvent, is_button: bool = event.mouse_button()
     if is_button {
+        if !b.down && b.button == MouseButton.left { self.slide = false }
         if b.down {
             clicked: bool = self.click(g, b.x, b.y, b.button)
             if !clicked {
@@ -275,6 +282,7 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
         x: int, y: int = g.view.cell_at(m.x, m.y)
         g.mx = m.x
         g.my = m.y
+        if self.slide { g.slide(m.x) }
         g.hx = x
         g.hy = y
         if self.held == MouseButton.left && g.sel.drag != select.Drag.none {

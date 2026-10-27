@@ -1,0 +1,59 @@
+import time
+import test
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+import speed: "./speed.ace"
+import app: "./app.ace"
+
+/* Pace's work is timed, so these check ranges wide enough for a busy machine. */
+
+/* An editor running Sim at slider stop `stop`, with Auto just turned on:
+ * the frame before it, the clock was noted. */
+running(stop: int): app.App {
+    a: app.App = app.App { s = sim.Sim.init(grid.Grid {}) }
+    a.switch(app.Phase.run)
+    a.stop = stop
+    a.pace(true)
+    a.auto = true
+    return a
+}
+
+/* Calls `pace` flat out for `ns` nanoseconds. */
+spin(a: *app.App, ns: u64) {
+    begin: u64 = time.elapsed()
+    for time.elapsed() - begin < ns { a.pace(true) }
+}
+
+pub fixed_rate_is_kept(t: *test.T) {
+    /* Stop 18 is 100 Hz. */
+    a: app.App = running(18)
+    spin(&a, 700000000)
+    t.equal(a.count >= 50 && a.count <= 90, true)
+    t.equal(a.rate >= 90.0 && a.rate <= 110.0, true)
+}
+
+pub top_rate_is_kept(t: *test.T) {
+    a: app.App = running(speed.STOPS - 1)
+    spin(&a, 700000000)
+    /* 10 kHz for 0.7 s; the empty board ticks faster than that. */
+    t.equal(a.count > 3000 && a.count <= 7500, true)
+    t.equal(a.rate > 3000.0 && a.rate <= 11000.0, true)
+}
+
+pub pausing_stops_ticks_and_clears_the_rate(t: *test.T) {
+    a: app.App = running(speed.STOPS - 1)
+    spin(&a, 600000000)
+    a.auto = false
+    count: int = a.count
+    spin(&a, 50000000)
+    t.equal(a.count, count)
+    t.equal(a.rate == 0.0, true)
+}
+
+pub off_screen_does_not_tick(t: *test.T) {
+    a: app.App = running(speed.STOPS - 1)
+    a.pace(false)
+    begin: u64 = time.elapsed()
+    for time.elapsed() - begin < 50000000 { a.pace(false) }
+    t.equal(a.count, 0)
+}

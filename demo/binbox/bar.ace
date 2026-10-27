@@ -87,15 +87,24 @@ pub heading(button: Button): string {
     if button == Button.edit { return "Mode" }
     if button == Button.step { return "Run" }
     if button == Button.zoom_out { return "Zoom" }
-    if button == Button.depth { return "View" }
+    if button == Button.depth { return "Depth" }
     return ""
 }
 
 /* The block row's title. */
 pub COMPONENTS: const string = "Blocks"
 
+/* The speed slider's title and width. */
+pub SPEED: const string = "Speed"
+pub SPEED_W: const f32 = 140.0
+
+/* The space the speed slider's group takes: its title, the slider, and the
+ * gap after it. */
+SPEED_SPAN: const f32 = 18.0 + f32(SPEED.len) * ui.GLYPH + 6.0 + SPEED_W + 6.0
+
 /* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
- * and depth buttons hold an icon alone. */
+ * and depth buttons hold an icon alone. The speed slider sits between Auto
+ * and the zoom buttons. */
 pub place(button: Button): ui.Rect {
     x: f32 = GAP + 6.0
     for i: usize in 0 .. members(Button).len {
@@ -103,6 +112,7 @@ pub place(button: Button): ui.Rect {
         /* Icon, gap, and label, inset by PAD. */
         w: f32 = 2.0 * PAD + GLYPH_SIDE
         if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR - 8.0 }
+        if each == Button.zoom_out { x += SPEED_SPAN }
         /* Each group follows its title, set apart from the last. */
         if heading(each).len > 0 {
             x += 18.0 + f32(heading(each).len) * ui.GLYPH + 6.0
@@ -111,6 +121,12 @@ pub place(button: Button): ui.Rect {
         x += w + 6.0
     }
     return ui.Rect {}
+}
+
+/* The speed slider's rectangle: its own group, after Auto. */
+pub speed(): ui.Rect {
+    last: ui.Rect = place(Button.auto)
+    return ui.Rect { x = last.x + last.w + 6.0 + 18.0 + f32(SPEED.len) * ui.GLYPH + 6.0, y = GAP + 4.0, w = SPEED_W, h = BAR - 8.0 }
 }
 
 /* Space around a block button's icon. */
