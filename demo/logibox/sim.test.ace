@@ -256,21 +256,21 @@ ticks(s: *sim.Sim, n: int) {
 }
 
 /* Two NORs cross-coupled: Q = NOR(R, Q'), and Q' = NOR(S, Q), centered on the
- * board as diagram/latch.lgbx stores it. Sources R (13,14) and S (13,17) touch
- * the NORs' input pins; LED Q at (18,14). Q' needs no wire: the lower NOR's
- * output pin (15,16) touches the upper NOR's input pin (15,15). Q runs down
- * column 17 to the lower NOR's input pin (16,17). */
+ * board as diagram/latch.lgbx stores it. Sources R (29,14) and S (29,17) touch
+ * the NORs' input pins; LED Q at (34,14). Q' needs no wire: the lower NOR's
+ * output pin (31,16) touches the upper NOR's input pin (31,15). Q runs down
+ * column 33 to the lower NOR's input pin (32,17). */
 latch(): sim.Sim {
     g: grid.Grid = grid.Grid {}
-    row(&g, 13, 14, [
+    row(&g, 29, 14, [
         grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.output,
         grid.Block.wire, grid.Block.led,
     ])
-    g.place(15, 15, grid.Block.input)
-    g.place(15, 16, grid.Block.output)
-    g.place(17, 15, grid.Block.wire)
-    g.place(17, 16, grid.Block.wire)
-    row(&g, 13, 17, [grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.input, grid.Block.wire])
+    g.place(31, 15, grid.Block.input)
+    g.place(31, 16, grid.Block.output)
+    g.place(33, 15, grid.Block.wire)
+    g.place(33, 16, grid.Block.wire)
+    row(&g, 29, 17, [grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.input, grid.Block.wire])
     return sim.Sim.init(g)
 }
 
@@ -291,19 +291,19 @@ pub latch_matches_file(t: *test.T) {
 
 pub sr_latch_holds_a_bit(t: *test.T) {
     s: sim.Sim = latch()
-    s.toggle(13, 17, true)
+    s.toggle(29, 17, true)
     ticks(&s, 8)
-    s.toggle(13, 17, false)
+    s.toggle(29, 17, false)
     ticks(&s, 8)
-    high(t, s, 18, 14)
-    low(t, s, 15, 16)
+    high(t, s, 34, 14)
+    low(t, s, 31, 16)
 
-    s.toggle(13, 14, true)
+    s.toggle(29, 14, true)
     ticks(&s, 8)
-    s.toggle(13, 14, false)
+    s.toggle(29, 14, false)
     ticks(&s, 8)
-    low(t, s, 18, 14)
-    high(t, s, 15, 16)
+    low(t, s, 34, 14)
+    high(t, s, 31, 16)
 }
 
 /* Sources, pins and LEDs connect by touching; wire only spans distance. */

@@ -87,7 +87,7 @@ Escape cancels.
 
 `diagram/latch.lgbx` is a NOR latch: two NOR gates, cross-coupled, so
 Q = NOR(R, Q′) and Q′ = NOR(S, Q). It sits at the board's center (columns
-13–18, rows 14–17):
+29–34, rows 14–17):
 
 ```
 S I V O W L     R (reset) into the upper NOR; Q to the LED

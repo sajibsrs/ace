@@ -116,21 +116,21 @@ pub latch_file(t: *test.T) {
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
-    test.equal[sim.Level](t, s.level(13, 14), sim.Level.high)
-    test.equal[sim.Level](t, s.level(13, 17), sim.Level.low)
+    test.equal[sim.Level](t, s.level(29, 14), sim.Level.high)
+    test.equal[sim.Level](t, s.level(29, 17), sim.Level.low)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(18, 14), sim.Level.low)
-    s.toggle(13, 14, false)
+    test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
+    s.toggle(29, 14, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(18, 14), sim.Level.low)
-    s.toggle(13, 17, true)
+    test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
+    s.toggle(29, 17, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(13, 17, false)
+    s.toggle(29, 17, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(18, 14), sim.Level.high)
-    s.toggle(13, 14, true)
+    test.equal[sim.Level](t, s.level(34, 14), sim.Level.high)
+    s.toggle(29, 14, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(13, 14, false)
+    s.toggle(29, 14, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(18, 14), sim.Level.low)
+    test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
 }
