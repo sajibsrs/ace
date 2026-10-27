@@ -65,7 +65,7 @@ TOP: const f32 = 3.0 * GAP + 2.0 * BAR
 BELOW: const f32 = 2.0 * GAP + FOOT
 /* The tool strip down the board's left side, and a tool button in it. */
 STRIP: const f32 = 40.0
-PICK: const f32 = 32.0
+PICK: const f32 = BAR
 WIDTH: const f32 = 16.0 * 40.0
 AUTO_MS: const u64 = 250
 
@@ -109,7 +109,7 @@ NAME: [grid.Block]string = [
 
 /* Low and high colors of each block; any block on an error is ERROR. */
 LOW: [grid.Block]u32 = [
-    grid.Block.empty = 0x2d3238,
+    grid.Block.empty = 0x171b20,
     grid.Block.source = 0x7e5119,
     grid.Block.wire = 0x434343,
     grid.Block.input = 0x3b513b,
@@ -125,7 +125,7 @@ LOW: [grid.Block]u32 = [
     grid.Block.bridge = 0x3e3e3e,
 ]
 HIGH: [grid.Block]u32 = [
-    grid.Block.empty = 0x2d3238,
+    grid.Block.empty = 0x171b20,
     grid.Block.source = 0xffa225,
     grid.Block.wire = 0x7c8470,
     grid.Block.input = 0x9bcf62,
@@ -174,8 +174,6 @@ ACTIVE: const u32 = 0x3d4f63
 DISABLED: const u32 = 0x22262b
 INK: const u32 = 0xdddddd
 DIM: const u32 = 0x888888
-/* The selection's outline. */
-SELECT: const u32 = 0x57b4ff
 
 /* What the bar has open over the board: nothing, the Open list, or the
  * Save-as box. */
@@ -298,12 +296,14 @@ place(button: Button): ui.Rect {
     return ui.Rect {}
 }
 
-/* The block row's button for `block` in a window `width` wide: one equal slot
- * for each block. */
-tool(block: grid.Block, width: f32): ui.Rect {
-    slot: f32 = (width - 2.0 * GAP - 6.0) / f32(members(grid.Block).len - 1)
+/* Space around a block button's icon. */
+TOOL_PAD: const f32 = 4.0
+
+/* The block row's button for `block`: a square as tall as the row, in a row
+ * from the left. */
+tool(block: grid.Block): ui.Rect {
     i: f32 = f32(int(block) - 1)
-    return ui.Rect { x = GAP + 6.0 + i * slot, y = 2.0 * GAP + BAR + 4.0, w = slot - 6.0, h = BAR - 8.0 }
+    return ui.Rect { x = GAP + 6.0 + i * (BAR + 6.0), y = 2.0 * GAP + BAR, w = BAR, h = BAR }
 }
 
 /* The block row's icons; the empty block has none. */
@@ -1050,7 +1050,7 @@ Game.click(self, x: f32, y: f32, button: MouseButton): bool {
         if button != MouseButton.left || self.phase != Phase.edit { return true }
         for i: usize in 1 .. members(grid.Block).len {
             each: grid.Block = members(grid.Block)[i]
-            if tool(each, self.w).has(x, y) {
+            if tool(each).has(x, y) {
                 self.use(Tool.pencil)
                 self.block = each
             }
@@ -1174,16 +1174,13 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
         }
     }
     if self.drag == Drag.move || self.held { self.draw_lifted(canvas, r, false) }
-    if self.mode == Mode.none && self.phase == Phase.edit && self.pick == Tool.pencil && self.hx >= 0 {
-        box: ui.Rect = self.box(self.hx, self.hy)
-        canvas.outline(box, 2.0, Color.hex(0xffffff))
-    }
+    if self.hovers() { canvas.fill(self.box(self.hx, self.hy), Color.hex(LOW[self.block])) }
     /* The box being drawn, or the selection, carried along while it moves. */
     if self.drag == Drag.box {
-        canvas.dashed(self.span(math.min[int](self.ax, self.bx), math.min[int](self.ay, self.by), math.max[int](self.ax, self.bx), math.max[int](self.ay, self.by)), 2.0, Color.hex(SELECT), a)
+        canvas.dashed(self.span(math.min[int](self.ax, self.bx), math.min[int](self.ay, self.by), math.max[int](self.ax, self.bx), math.max[int](self.ay, self.by)), 2.0, Color.hex(DIM), a)
     }
     if self.sel && self.drag != Drag.box {
-        canvas.dashed(self.span(self.sx0 + self.dx, self.sy0 + self.dy, self.sx1 + self.dx, self.sy1 + self.dy), 2.0, Color.hex(SELECT), a)
+        canvas.dashed(self.span(self.sx0 + self.dx, self.sy0 + self.dy, self.sx1 + self.dx, self.sy1 + self.dy), 2.0, Color.hex(DIM), a)
     }
     canvas.flush(r)
 
@@ -1200,6 +1197,11 @@ Game.draw_board(self, canvas: *ui.Canvas, r: Renderer) {
             box: ui.Rect = ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }
             canvas.icon(r, BLOCK_ICON[b], box, Color.hex(ink))
         }
+    }
+    if self.hovers() {
+        cell: ui.Rect = self.box(self.hx, self.hy)
+        m: f32 = cell.w * 0.12
+        canvas.icon(r, BLOCK_ICON[self.block], ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }, Color.hex(icon_ink(self.block, sim.Level.low)))
     }
     if self.drag == Drag.move || self.held { self.draw_lifted(canvas, r, true) }
     canvas.flush(r)
@@ -1224,6 +1226,12 @@ Game.draw_lifted(self, canvas: *ui.Canvas, r: Renderer, icons: bool) {
     }
 }
 
+/* Whether the pencil's block shows under the pointer, as a preview of where
+ * a click puts it. */
+Game.hovers(const self): bool {
+    return self.mode == Mode.none && self.phase == Phase.edit && self.pick == Tool.pencil && self.hx >= 0
+}
+
 /* Whether `button` is unusable in the current phase: Step and Auto only work
  * in Run. */
 Game.disabled(const self, button: Button): bool {
@@ -1234,19 +1242,23 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
     foot: ui.Rect = self.foot()
     canvas.fill(self.head(), Color.hex(CHROME))
     canvas.fill(self.blocks(), Color.hex(CHROME))
-    /* Block buttons: in Edit each in its block's low color, the selected one
-     * lit; in Run all disabled. */
+    /* Block buttons: with the pencil each in its block's low color, the
+     * selected one lit; in Run and with the select tool all grey. */
+    live: bool = self.phase == Phase.edit && self.pick == Tool.pencil
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
         rgb: u32 = DISABLED
-        if self.phase == Phase.edit {
+        ink: u32 = DIM
+        if live {
             rgb = LOW[each]
             if each == self.block { rgb = HIGH[each] }
+            level: sim.Level = sim.Level.low
+            if each == self.block { level = sim.Level.high }
+            ink = icon_ink(each, level)
         }
-        canvas.fill(tool(each, self.w), Color.hex(rgb))
-        level: sim.Level = sim.Level.low
-        if self.phase == Phase.edit && each == self.block { level = sim.Level.high }
-        canvas.icon(r, BLOCK_ICON[each], tool(each, self.w), Color.hex(icon_ink(each, level)))
+        canvas.fill(tool(each), Color.hex(rgb))
+        at: ui.Rect = tool(each)
+        canvas.icon(r, BLOCK_ICON[each], ui.Rect { x = at.x + TOOL_PAD, y = at.y + TOOL_PAD, w = at.w - 2.0 * TOOL_PAD, h = at.h - 2.0 * TOOL_PAD }, Color.hex(ink))
     }
     canvas.fill(foot, Color.hex(CHROME))
     canvas.fill(self.side(), Color.hex(CHROME))
@@ -1261,7 +1273,8 @@ Game.draw_bars(self, canvas: *ui.Canvas, r: Renderer) {
             if each == self.pick { rgb = ACTIVE }
         }
         canvas.fill(strip_at(each), Color.hex(rgb))
-        canvas.icon(r, STRIP_ICON[each], strip_at(each), Color.hex(ink))
+        at: ui.Rect = strip_at(each)
+        canvas.icon(r, STRIP_ICON[each], ui.Rect { x = at.x + TOOL_PAD, y = at.y + TOOL_PAD, w = at.w - 2.0 * TOOL_PAD, h = at.h - 2.0 * TOOL_PAD }, Color.hex(ink))
     }
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
