@@ -32,6 +32,7 @@ pub EventType: enum u32 {
     mouse_motion = 0x400,
     mouse_button_down = 0x401,
     mouse_button_up = 0x402,
+    mouse_wheel = 0x403,
     _,
 }
 
@@ -110,11 +111,20 @@ SDL_Texture: struct {}
 SDL_GPUDevice: struct {}
 SDL_GPUShader: struct {}
 SDL_GPURenderState: struct {}
+SDL_Cursor: struct {}
 
 // Handles own one C object each; a null handle means creation failed.
 pub Window: struct { pub handle: *SDL_Window }
 pub Renderer: struct { pub handle: *SDL_Renderer }
 pub RenderState: struct { pub handle: *SDL_GPURenderState }
+pub Cursor: struct { pub handle: *SDL_Cursor }
+
+// SDL_SystemCursor: the platform's own cursor shapes. macOS draws `move` as
+// a closed hand.
+pub SystemCursor: enum u32 {
+    default, text, wait, crosshair, progress, nwse_resize, nesw_resize,
+    ew_resize, ns_resize, move, not_allowed, pointer,
+}
 
 // A fragment shader, with the renderer's device that releases it.
 pub Shader: struct { pub device: *SDL_GPUDevice, pub handle: *SDL_GPUShader }
@@ -185,6 +195,25 @@ pub MouseButtonEvent: struct {
     pub y: f32,
 }
 
+// SDL_MouseWheelEvent. x and y are the scroll amounts (y positive away from
+// the user), already unflipped when direction is 1 (SDL_MOUSEWHEEL_FLIPPED);
+// mouse_x and mouse_y are the pointer's window position; integer_x and
+// integer_y accumulate whole wheel steps.
+pub MouseWheelEvent: struct {
+    pub type: EventType,
+    pub reserved: u32,
+    pub timestamp: u64,
+    pub window_id: u32,
+    pub which: u32,
+    pub x: f32,
+    pub y: f32,
+    pub direction: u32,
+    pub mouse_x: f32,
+    pub mouse_y: f32,
+    pub integer_x: i32,
+    pub integer_y: i32,
+}
+
 // SDL_Event: a C union, written as an overlapping struct.
 pub Event: struct {
     @offset(0)
@@ -201,6 +230,9 @@ pub Event: struct {
 
     @offset(0)
     pub button: MouseButtonEvent,
+
+    @offset(0)
+    pub wheel: MouseWheelEvent,
 
     @offset(0)
     pub padding: [128]u8,
@@ -244,6 +276,8 @@ static_assert(sizeof(MouseMotionEvent) == 48 && offsetof(MouseMotionEvent, state
 static_assert(offsetof(MouseMotionEvent, x) == 28 && offsetof(MouseMotionEvent, yrel) == 40)
 static_assert(sizeof(MouseButtonEvent) == 40 && offsetof(MouseButtonEvent, button) == 24)
 static_assert(offsetof(MouseButtonEvent, clicks) == 26 && offsetof(MouseButtonEvent, x) == 28)
+static_assert(sizeof(MouseWheelEvent) == 56 && offsetof(MouseWheelEvent, x) == 24)
+static_assert(offsetof(MouseWheelEvent, mouse_x) == 36 && offsetof(MouseWheelEvent, integer_y) == 48)
 static_assert(sizeof(Event) == 128 && alignof(Event) == 8)
 static_assert(sizeof(Color) == 16)
 static_assert(sizeof(Vertex) == 32 && offsetof(Vertex, color) == 8)
@@ -279,6 +313,9 @@ extern "c" {
     c_set_gpu_render_state(renderer: *SDL_Renderer, state: *SDL_GPURenderState): bool as "SDL_SetGPURenderState"
     c_poll_event(event: *Event): bool as "SDL_PollEvent"
     c_delay(ms: u32) as "SDL_Delay"
+    c_create_system_cursor(id: u32): *SDL_Cursor as "SDL_CreateSystemCursor"
+    c_destroy_cursor(cursor: *SDL_Cursor) as "SDL_DestroyCursor"
+    c_set_cursor(cursor: *SDL_Cursor): bool as "SDL_SetCursor"
 }
 
 pub init(flags: InitFlags): bool { return c_init(u32(flags)) }
@@ -319,6 +356,11 @@ pub Event.mouse_button(const self): (MouseButtonEvent, bool) {
     return self.button, self.type == EventType.mouse_button_down || self.type == EventType.mouse_button_up
 }
 
+// The mouse-wheel member, and whether type says it holds one.
+pub Event.mouse_wheel(const self): (MouseWheelEvent, bool) {
+    return self.wheel, self.type == EventType.mouse_wheel
+}
+
 // An opaque color from a 24-bit 0xRRGGBB value, e.g. 0xF44336, as written
 // in CSS and design tools.
 pub Color.hex(rgb: u32): Color {
@@ -341,6 +383,20 @@ pub Window.wipe(self) {
     c_destroy_window(self.handle)
     self.handle = null
 }
+
+// The platform's `shape` cursor; needs the video subsystem.
+pub Cursor.new(shape: SystemCursor): Cursor {
+    return Cursor { handle = c_create_system_cursor(u32(shape)) }
+}
+
+pub Cursor.ok(const self): bool { return self.handle != null }
+pub Cursor.wipe(self) {
+    c_destroy_cursor(self.handle)
+    self.handle = null
+}
+
+// Makes `c` the active cursor; it must outlive its use.
+pub cursor(c: Cursor): bool { return c_set_cursor(c.handle) }
 
 pub Renderer.new(window: Window): Renderer {
     return Renderer { handle = c_create_renderer(window.handle, null) }

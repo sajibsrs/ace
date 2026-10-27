@@ -194,9 +194,10 @@ integer for a range check:
 if u32(key) >= 'a' && u32(key) <= 'z' { ... }
 ```
 
-Mouse input arrives as `mouse_button_down`, `mouse_button_up`, and
-`mouse_motion`. `event.mouse_button(): (MouseButtonEvent, bool)` and
-`event.mouse_motion(): (MouseMotionEvent, bool)` check `type` as `key()`
+Mouse input arrives as `mouse_button_down`, `mouse_button_up`,
+`mouse_motion`, and `mouse_wheel`. `event.mouse_button(): (MouseButtonEvent,
+bool)`, `event.mouse_motion(): (MouseMotionEvent, bool)`, and
+`event.mouse_wheel(): (MouseWheelEvent, bool)` check `type` as `key()`
 does. A `MouseButtonEvent` carries `button` (a `MouseButton`: `left`,
 `middle`, `right`, `x1`, `x2`), `down`, `clicks`, and the window position
 `x`, `y`; a `MouseMotionEvent` carries `x`, `y`, the relative `xrel`, `yrel`,
@@ -205,6 +206,22 @@ and the held buttons in `state`, as `MouseButtons` bits:
 ```ace
 m: sdl.MouseMotionEvent, is_motion: bool = event.mouse_motion()
 if is_motion && m.state.left == 1 { ... }
+```
+
+A `MouseWheelEvent` carries the scroll amounts `x`, `y` (`y` positive away
+from the user), the pointer's window position `mouse_x`, `mouse_y`, the
+whole wheel steps `integer_x`, `integer_y`, and `direction` (1 when the
+platform flips scrolling; `x` and `y` are then negated, as SDL reports them).
+
+`Cursor.new(shape)` creates one of the platform's cursors, a `SystemCursor`
+(`default`, `text`, `pointer`, `move`, the resize arrows, and so on; macOS
+draws `move` as a closed hand), and `sdl.cursor(c)` makes it active. Like a
+window, a cursor is released with `wipe()`, and must outlive its use:
+
+```ace
+grab: sdl.Cursor = sdl.Cursor.new(sdl.SystemCursor.move)
+defer grab.wipe()
+sdl.cursor(grab)
 ```
 
 ## Testing

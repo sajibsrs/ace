@@ -1,5 +1,9 @@
 # Packages
 
+- `pkg/sdl` creates system cursors: `Cursor.new(SystemCursor)`, released with
+  `wipe()`, and made active with `sdl.cursor(c)`.
+- `pkg/sdl` delivers `MouseWheelEvent` as an `Event` member, read through
+  `Event.mouse_wheel()`.
 - `pkg/sdl` `MouseMotionEvent.state` is now `MouseButtons`, replacing
   `buttons()`, since `bits` types cross the C boundary.
 - `pkg/sdl` delivers mouse events: `MouseButtonEvent` and `MouseMotionEvent`

@@ -1,6 +1,6 @@
-/* Headless round trip: a mouse-button and a mouse-motion event are pushed
- * onto SDL's queue and polled back, proving SDL and Ace agree on their
- * layouts.
+/* Headless round trip: a mouse-button, a mouse-motion and a mouse-wheel event
+ * are pushed onto SDL's queue and polled back, proving SDL and Ace agree on
+ * their layouts.
  */
 
 import sdl
@@ -35,12 +35,23 @@ main(): int {
     move.motion.yrel = 2.0
     if !push_event(&move) { return 2 }
 
+    roll: sdl.Event
+    roll.padding = [0 : 128]
+    roll.wheel.type = sdl.EventType.mouse_wheel
+    roll.wheel.window_id = 7
+    roll.wheel.y = -2.0
+    roll.wheel.mouse_x = 9.0
+    roll.wheel.mouse_y = 11.0
+    roll.wheel.integer_y = -2
+    if !push_event(&roll) { return 2 }
+
     seen: int = 0
     got: sdl.Event
     for got.poll() {
         b: sdl.MouseButtonEvent, is_button: bool = got.mouse_button()
         m: sdl.MouseMotionEvent, is_motion: bool = got.mouse_motion()
-        if is_button && is_motion { return 3 }
+        w: sdl.MouseWheelEvent, is_wheel: bool = got.mouse_wheel()
+        if (is_button && is_motion) || (is_wheel && (is_button || is_motion)) { return 3 }
         if is_button {
             if b.button != sdl.MouseButton.right || !b.down || b.clicks != 2 { return 4 }
             if b.x != 12.5 || b.y != 40.0 || b.window_id != 7 { return 5 }
@@ -50,8 +61,11 @@ main(): int {
             if held.left != 1 || held.middle != 0 || held.right != 1 { return 6 }
             if m.x != 3.0 || m.y != 4.0 || m.xrel != -1.5 || m.yrel != 2.0 { return 7 }
             seen += 1
+        } else if is_wheel {
+            if w.y != -2.0 || w.mouse_x != 9.0 || w.mouse_y != 11.0 || w.integer_y != -2 { return 9 }
+            seen += 1
         }
     }
-    if seen != 2 { return 8 }
+    if seen != 3 { return 8 }
     return 0
 }
