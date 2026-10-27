@@ -1,0 +1,221 @@
+/* app — the editor: the simulation, what the player has selected, and the
+ * file, with the commands that change them.
+ *
+ * Input turns events into these commands (input.ace) and render.ace draws the
+ * result; neither is part of App.
+ */
+
+import fmt
+import ui: "./ui.ace"
+import bar: "./bar.ace"
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+import history: "./history.ace"
+import select: "./select.ace"
+import store: "./store.ace"
+import view: "./view.ace"
+
+/* What the bar has open over the board: nothing, the Open list, or the
+ * Save-as box. */
+pub Mode: enum u8 { none, open, save_as }
+
+/* Whether the board is being built (blocks placed, no ticks) or simulated
+ * (sources flip, ticks run). */
+pub Phase: enum u8 { edit, run }
+
+pub App: struct {
+    pub s: sim.Sim = sim.Sim {},
+    pub block: grid.Block = grid.Block.wire,
+    pub auto: bool = false,
+    pub count: int = 0,
+    pub mode: Mode = Mode.none,
+    pub phase: Phase = Phase.edit,
+    /* The open diagram's name; empty until it is saved or opened. */
+    pub name: store.Name = store.Name {},
+    /* The name being typed in the Save-as box. */
+    pub draft: store.Name = store.Name {},
+    pub store: store.Store = store.Store {},
+    /* The last file result, shown in the status line. */
+    notes: [96]u8 = [0 : 96],
+    note: usize = 0,
+    /* Mouse position, and the hovered cell or -1 off the board. */
+    pub mx: f32 = -1.0,
+    pub my: f32 = -1.0,
+    pub hx: int = -1,
+    pub hy: int = -1,
+    pub view: view.View = view.View {},
+    /* The tool in use, and the select tool's selection. */
+    pub pick: bar.Tool = bar.Tool.pencil,
+    pub sel: select.Selection = select.Selection {},
+    pub hist: history.History = history.History {},
+}
+
+/* A buffer that replaces the status note. */
+App.say(self): fmt.Buffer {
+    return fmt.Buffer.init(self.notes[..])
+}
+
+/* Keeps what `b` wrote as the status note. */
+App.said(self, b: fmt.Buffer) {
+    self.note = b.text().len
+}
+
+/* The status note. */
+pub App.status(self): string {
+    return self.notes[0..self.note]
+}
+
+/* Notes that `what` failed for `name` with `err`. */
+App.failed(self, what: string, name: string, err: Error) {
+    b: fmt.Buffer = self.say()
+    if err.message.len > 0 {
+        b.printf("%s %s: %s", what, name, err.message)
+    } else {
+        b.printf("%s %s: error %d", what, name, int(err.code))
+    }
+    self.said(b)
+}
+
+pub App.tick(self) {
+    self.s.tick()
+    self.count += 1
+}
+
+/* Drops the selection; a pasted one lands where it floats. */
+pub App.deselect(self) {
+    self.sel.deselect(&self.s, &self.hist)
+}
+
+/* Switches to `phase`; leaving Sim stops auto-ticking. Levels and the tick
+ * count carry over, so an edit continues from where the run stopped. */
+pub App.switch(self, phase: Phase) {
+    self.phase = phase
+    if phase == Phase.run { self.deselect() }
+    if phase == Phase.edit { self.auto = false }
+}
+
+/* Switches to tool `pick`, leaving no selection behind. */
+pub App.use(self, pick: bar.Tool) {
+    if self.phase != Phase.edit { return }
+    self.pick = pick
+    self.deselect()
+}
+
+/* Takes back the last edit. A floating paste is just cancelled. */
+pub App.undo(self) {
+    if self.sel.held {
+        self.sel.held = false
+        self.deselect()
+        return
+    }
+    if !self.hist.can_undo() { return }
+    self.deselect()
+    r: history.Snap, ok: bool = self.hist.undo(history.Snap.of(self.s))
+    if ok { self.s = r.sim() }
+}
+
+/* Brings back the edit Undo took back. */
+pub App.redo(self) {
+    if self.sel.held || !self.hist.can_redo() { return }
+    self.deselect()
+    r: history.Snap, ok: bool = self.hist.redo(history.Snap.of(self.s))
+    if ok { self.s = r.sim() }
+}
+
+/* Removes every selected block. */
+pub App.erase(self) {
+    self.sel.erase(&self.s, &self.hist)
+}
+
+/* Copies the selected blocks to the clipboard. */
+pub App.copy(self) {
+    self.sel.copy(&self.s, &self.hist)
+}
+
+/* Copies the selection, then removes it. */
+pub App.cut(self) {
+    self.sel.cut(&self.s, &self.hist)
+}
+
+/* Pastes the clipboard as a floating selection with its top-left corner at
+ * the pointer's cell, else at the board area's center. */
+pub App.paste(self) {
+    if self.sel.clipw == 0 { return }
+    self.use(bar.Tool.select)
+    cx: int = self.hx
+    cy: int = self.hy
+    if cx < 0 {
+        a: ui.Rect = self.view.area()
+        cx, cy = self.view.cell_near(a.x + a.w / 2.0, a.y + a.h / 2.0)
+    }
+    self.sel.paste(&self.s, cx, cy)
+}
+
+/* Starts a new, unnamed diagram. */
+pub App.clear(self) {
+    self.deselect()
+    self.hist.record(history.Snap.of(self.s))
+    self.s = sim.Sim.init(grid.Grid {})
+    self.count = 0
+    self.name.len = 0
+    b: fmt.Buffer = self.say()
+    b.printf("new diagram")
+    self.said(b)
+}
+
+/* Writes the board as the draft's name, which then becomes the diagram's. */
+pub App.write(self) {
+    err: Error = self.store.write(self.s, self.draft.text())
+    if err != null {
+        self.failed("cannot save", self.draft.text(), err)
+        return
+    }
+    self.name.copy(self.draft.text())
+    b: fmt.Buffer = self.say()
+    b.printf("saved %s", self.name.text())
+    self.said(b)
+}
+
+/* Saves under the diagram's name, or asks for one. */
+pub App.save(self) {
+    if self.name.len == 0 {
+        self.ask()
+        return
+    }
+    self.draft.copy(self.name.text())
+    self.write()
+}
+
+/* Opens the Save-as box, starting from the current name. */
+pub App.ask(self) {
+    self.draft.copy(self.name.text())
+    self.mode = Mode.save_as
+}
+
+/* Opens the Open list, or closes it when it is showing. */
+pub App.browse(self) {
+    if self.mode == Mode.open {
+        self.mode = Mode.none
+        return
+    }
+    err: Error = self.store.scan()
+    if err != null { self.failed("cannot list", self.store.where(), err) }
+    self.mode = Mode.open
+}
+
+/* Replaces the board with diagram `name`. */
+pub App.load(self, name: string) {
+    s: sim.Sim, err: Error = self.store.read(name)
+    if err != null {
+        self.failed("cannot open", name, err)
+        return
+    }
+    self.deselect()
+    self.hist.reset()
+    self.s = s
+    self.count = 0
+    self.name.copy(name)
+    b: fmt.Buffer = self.say()
+    b.printf("opened %s", self.name.text())
+    self.said(b)
+}

@@ -1,0 +1,100 @@
+/* history — Undo and Redo: snapshots of the board.
+ *
+ * `record` notes the board before an edit; `undo` and `redo` swap the board
+ * with the snapshot they bring back.
+ */
+
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+
+/* How many edits Undo can take back. */
+HISTORY: const int = 20
+
+/* The board and which sources are on: what Undo and Redo bring back. */
+pub Snap: struct {
+    g: grid.Grid = grid.Grid {},
+    on: [32][64]bool = [[false : 64] : 32],
+}
+
+/* The board of `s` as it is now. */
+pub Snap.of(s: sim.Sim): Snap {
+    r: Snap = Snap { g = s.g }
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            r.on[y][x] = s.g.get(x, y) == grid.Block.source && s.level(x, y) == sim.Level.high
+        }
+    }
+    return r
+}
+
+/* A simulation of the snapshot's board, its sources on or off as they were. */
+pub Snap.sim(const self): sim.Sim {
+    s: sim.Sim = sim.Sim.init(self.g)
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            if self.on[y][x] { s.toggle(x, y, true) }
+        }
+    }
+    return s
+}
+
+/* Up to `HISTORY` (the array's length) snapshots, the latest last. */
+Stack: struct {
+    snaps: [20]Snap = [Snap {} : 20],
+    n: int = 0,
+}
+
+/* Adds `r`, the oldest falling off when full. */
+Stack.push(self, r: Snap) {
+    if self.n == HISTORY {
+        for i: int in 1 .. HISTORY { self.snaps[i - 1] = self.snaps[i] }
+        self.n -= 1
+    }
+    self.snaps[self.n] = r
+    self.n += 1
+}
+
+/* Removes and returns the latest snapshot. */
+Stack.pop(self): Snap {
+    self.n -= 1
+    return self.snaps[self.n]
+}
+
+/* The boards before the last edits (the latest last) and those Undo took back. */
+pub History: struct {
+    undone: Stack = Stack {},
+    redone: Stack = Stack {},
+}
+
+/* Notes `r`, the board before an edit, so Undo can bring it back; a new edit
+ * ends Redo. */
+pub History.record(self, r: Snap) {
+    self.undone.push(r)
+    self.redone.n = 0
+}
+
+/* Forgets every edit, as a freshly opened diagram has none. */
+pub History.reset(self) {
+    self.undone.n = 0
+    self.redone.n = 0
+}
+
+/* Takes back the last edit: `now` joins Redo, and the board to bring back is
+ * returned. False when there is nothing to take back. */
+pub History.undo(self, now: Snap): (Snap, bool) {
+    if self.undone.n == 0 { return Snap {}, false }
+    self.redone.push(now)
+    return self.undone.pop(), true
+}
+
+/* Brings back the edit Undo took back: `now` joins Undo. False when there is
+ * nothing to bring back. */
+pub History.redo(self, now: Snap): (Snap, bool) {
+    if self.redone.n == 0 { return Snap {}, false }
+    self.undone.push(now)
+    return self.redone.pop(), true
+}
+
+/* Whether Undo has an edit to take back, or Redo one to bring back. */
+pub History.can_undo(const self): bool { return self.undone.n > 0 }
+pub History.can_redo(const self): bool { return self.redone.n > 0 }

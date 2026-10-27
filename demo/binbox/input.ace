@@ -1,0 +1,295 @@
+/* input — turns SDL events into editor commands.
+ *
+ * The mouse state a drag needs lives here: the button held, the cell the
+ * pencil last painted, and whether the stroke has recorded its edit.
+ */
+
+import (
+    Event, EventType, Keycode, MouseButton, MouseButtonEvent, MouseMotionEvent,
+    MouseWheelEvent, KeyboardEvent, Cursor, SystemCursor, cursor,
+) from sdl
+import ui: "./ui.ace"
+import bar: "./bar.ace"
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+import history: "./history.ace"
+import select: "./select.ace"
+import app: "./app.ace"
+
+/* SDL keycodes the binding leaves unnamed. */
+KEY_DELETE: const u32 = 0x7f
+KEY_HOME: const u32 = 0x4000_004a
+KEY_END: const u32 = 0x4000_004d
+KEY_F1: const u32 = 0x4000_003a
+KEY_F2: const u32 = 0x4000_003b
+
+/* SDL_KMOD_SHIFT: either side's key. */
+KMOD_SHIFT: const u16 = 0x0003
+/* SDL_KMOD_GUI: either side's Command (Windows) key. */
+KMOD_GUI: const u16 = 0x0c00
+
+/* The block each letter key selects, lowercase as SDL reports it. */
+LETTER: [grid.Block]u8 = [
+    grid.Block.empty = 0,
+    grid.Block.source = 's',
+    grid.Block.wire = 'w',
+    grid.Block.input = 'i',
+    grid.Block.output = 'o',
+    grid.Block.and = 'a',
+    grid.Block.or = 'r',
+    grid.Block.not = 'n',
+    grid.Block.nand = 'z',
+    grid.Block.nor = 'v',
+    grid.Block.xor = 'x',
+    grid.Block.xnor = 'c',
+    grid.Block.led = 'l',
+    grid.Block.bridge = 'b',
+]
+
+/* The arrow, and the closed hand a middle-button drag shows while it pans or
+ * a selection is carried. `held` is the button of the drag in progress. */
+pub Input: struct {
+    arrow: Cursor = Cursor { handle = null },
+    grab: Cursor = Cursor { handle = null },
+    held: MouseButton = MouseButton.none,
+    /* Cell the current drag last painted, so a drag paints each cell once. */
+    px: int = -1,
+    py: int = -1,
+    /* Set once a pencil drag has recorded its edit. */
+    stroke: bool = false,
+}
+
+pub Input.new(): Input {
+    return Input { arrow = Cursor.new(SystemCursor.default), grab = Cursor.new(SystemCursor.move) }
+}
+
+pub Input.wipe(self) {
+    self.arrow.wipe()
+    self.grab.wipe()
+}
+
+/* Records the board before a pencil drag's first change. */
+Input.begin(self, g: *app.App) {
+    if self.stroke { return }
+    self.stroke = true
+    g.hist.record(history.Snap.of(g.s))
+}
+
+/* A press or drag over (x, y) with `button`; `press` is true on the click. */
+Input.paint(self, g: *app.App, x: int, y: int, button: MouseButton, press: bool) {
+    if x < 0 || (!press && x == self.px && y == self.py) { return }
+    self.px = x
+    self.py = y
+    if g.phase == app.Phase.run {
+        /* Running, the layout is fixed: a left click only flips a source. */
+        if press && button == MouseButton.left && g.s.g.get(x, y) == grid.Block.source {
+            g.s.toggle(x, y, g.s.level(x, y) != sim.Level.high)
+        }
+        return
+    }
+    if button == MouseButton.right {
+        if g.s.g.get(x, y) == grid.Block.empty { return }
+        self.begin(g)
+        g.s.place(x, y, grid.Block.empty)
+        return
+    }
+    if button != MouseButton.left { return }
+    if g.s.g.get(x, y) == g.block { return }
+    self.begin(g)
+    g.s.place(x, y, g.block)
+}
+
+/* A press at window point (x, y). True when the bar or a panel took it, so it
+ * paints nothing. */
+Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
+    if g.mode == app.Mode.save_as || g.sel.drag == select.Drag.move { return true }
+    if g.mode == app.Mode.open {
+        g.mode = app.Mode.none
+        for i: usize in 0 .. g.store.list.count {
+            if bar.row(i).has(x, y) && button == MouseButton.left {
+                g.load(g.store.list.names[i])
+            }
+        }
+        return true
+    }
+    if g.view.side().has(x, y) {
+        if button != MouseButton.left || g.phase != app.Phase.edit { return true }
+        for i: usize in 0 .. members(bar.Tool).len {
+            each: bar.Tool = members(bar.Tool)[i]
+            if bar.strip_at(each).has(x, y) { g.use(each) }
+        }
+        return true
+    }
+    if y >= bar.TOP { return false }
+    if y >= 2.0 * bar.GAP + bar.BAR {
+        if button != MouseButton.left || g.phase != app.Phase.edit { return true }
+        for i: usize in 1 .. members(grid.Block).len {
+            each: grid.Block = members(grid.Block)[i]
+            if bar.tool(each).has(x, y) {
+                g.use(bar.Tool.pencil)
+                g.block = each
+            }
+        }
+        return true
+    }
+    if button != MouseButton.left { return true }
+    if bar.place(bar.Button.new).has(x, y) { g.clear() }
+    if bar.place(bar.Button.open).has(x, y) { g.browse() }
+    if bar.place(bar.Button.save).has(x, y) { g.save() }
+    if bar.place(bar.Button.save_as).has(x, y) { g.ask() }
+    if bar.place(bar.Button.edit).has(x, y) { g.switch(app.Phase.edit) }
+    if bar.place(bar.Button.run).has(x, y) { g.switch(app.Phase.run) }
+    if bar.place(bar.Button.step).has(x, y) && g.phase == app.Phase.run { g.tick() }
+    if bar.place(bar.Button.auto).has(x, y) && g.phase == app.Phase.run { g.auto = !g.auto }
+    /* The zoom buttons zoom about the board area's center. */
+    a: ui.Rect = g.view.area()
+    if bar.place(bar.Button.zoom_out).has(x, y) { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    if bar.place(bar.Button.zoom_in).has(x, y) { g.view.zoom(1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    return true
+}
+
+/* A key typed into the Save-as box. */
+Input.type(self, g: *app.App, e: KeyboardEvent) {
+    k: u32 = u32(e.key)
+    shift: bool = (e.mod & KMOD_SHIFT) != 0
+    if e.key == Keycode.escape {
+        g.mode = app.Mode.none
+    } else if e.key == Keycode.enter {
+        if g.draft.len == 0 { return }
+        g.mode = app.Mode.none
+        g.write()
+    } else if e.key == Keycode.backspace {
+        g.draft.back()
+    } else if k == KEY_DELETE {
+        g.draft.forward()
+    } else if e.key == Keycode.left {
+        if g.draft.at > 0 { g.draft.at -= 1 }
+    } else if e.key == Keycode.right {
+        if g.draft.at < g.draft.len { g.draft.at += 1 }
+    } else if k == KEY_HOME {
+        g.draft.at = 0
+    } else if k == KEY_END {
+        g.draft.at = g.draft.len
+    } else if k == '-' && shift {
+        g.draft.add('_')
+    } else if !shift && ((k >= 'a' && k <= 'z') || (k >= '0' && k <= '9') || k == '-') {
+        g.draft.add(u8(k))
+    }
+}
+
+/* A key press; false to quit. A held key repeats only in the Save-as box. */
+Input.key(self, g: *app.App, e: KeyboardEvent): bool {
+    if g.mode == app.Mode.save_as {
+        self.type(g, e)
+        return true
+    }
+    if g.sel.drag == select.Drag.move { return true }
+    if (e.mod & KMOD_GUI) != 0 && e.key == Keycode.q { return false }
+    if e.repeat { return true }
+    if (e.mod & KMOD_GUI) != 0 && (e.key == Keycode.c || e.key == Keycode.x || e.key == Keycode.v || e.key == Keycode.z) {
+        if g.phase != app.Phase.edit || g.mode != app.Mode.none { return true }
+        if e.key == Keycode.z && (e.mod & KMOD_SHIFT) != 0 { g.redo() } else if e.key == Keycode.z { g.undo() }
+        if e.key == Keycode.c { g.copy() }
+        if e.key == Keycode.x { g.cut() }
+        if e.key == Keycode.v { g.paste() }
+        return true
+    }
+    if (e.mod & KMOD_GUI) != 0 {
+        if e.key == Keycode.s { g.save() }
+        if e.key == Keycode.o { g.browse() }
+        return true
+    }
+    if e.key == Keycode.escape {
+        if g.mode != app.Mode.none {
+            g.mode = app.Mode.none
+        } else {
+            g.deselect()
+        }
+        return true
+    }
+    k: u32 = u32(e.key)
+    if k == '1' { g.use(bar.Tool.pencil) }
+    if k == '2' { g.use(bar.Tool.select) }
+    if (e.key == Keycode.backspace || k == KEY_DELETE) && g.pick == bar.Tool.select && g.mode == app.Mode.none { g.erase() }
+    if k == KEY_F1 { g.switch(app.Phase.edit) }
+    if k == KEY_F2 { g.switch(app.Phase.run) }
+    if e.key == Keycode.space && g.phase == app.Phase.run { g.auto = !g.auto }
+    for i: usize in 1 .. members(grid.Block).len {
+        each: grid.Block = members(grid.Block)[i]
+        if k == u32(LETTER[each]) {
+            g.use(bar.Tool.pencil)
+            g.block = each
+        }
+    }
+    return true
+}
+
+/* Handles one event; false when the program should quit. */
+pub Input.event(self, g: *app.App, event: *Event): bool {
+    running: bool = true
+    if event.type == EventType.quit || event.type == EventType.window_close_requested {
+        running = false
+    }
+    key: KeyboardEvent, is_key: bool = event.key()
+    if is_key && key.down {
+        running = running && self.key(g, key)
+    }
+    b: MouseButtonEvent, is_button: bool = event.mouse_button()
+    if is_button {
+        if b.down {
+            clicked: bool = self.click(g, b.x, b.y, b.button)
+            if !clicked {
+                self.held = b.button
+                x: int, y: int = g.view.cell_at(b.x, b.y)
+                if self.held == MouseButton.middle {
+                    cursor(self.grab)
+                } else if g.pick == bar.Tool.select && g.phase == app.Phase.edit {
+                    if self.held == MouseButton.left {
+                        cx: int, cy: int = g.view.cell_at(b.x, b.y)
+                        g.sel.press(&g.s, &g.hist, cx, cy)
+                    }
+                    /* Carrying a selection shows the move cursor. */
+                    if g.sel.drag == select.Drag.move { cursor(self.grab) }
+                } else {
+                    self.paint(g, x, y, self.held, true)
+                }
+            }
+        } else if b.button == self.held {
+            if self.held == MouseButton.middle { cursor(self.arrow) }
+            if self.held == MouseButton.left {
+                g.sel.release(&g.s, &g.hist)
+                cursor(self.arrow)
+            }
+            self.held = MouseButton.none
+            self.stroke = false
+            self.px = -1
+            self.py = -1
+        }
+    }
+    m: MouseMotionEvent, is_motion: bool = event.mouse_motion()
+    if is_motion {
+        /* A middle-button drag pans the board, in either phase. */
+        if self.held == MouseButton.middle { g.view.pan(m.xrel, m.yrel) }
+        x: int, y: int = g.view.cell_at(m.x, m.y)
+        g.mx = m.x
+        g.my = m.y
+        g.hx = x
+        g.hy = y
+        if self.held == MouseButton.left && g.sel.drag != select.Drag.none {
+            cx: int, cy: int = g.view.cell_near(m.x, m.y)
+            g.sel.sweep(cx, cy)
+        }
+        if self.held != MouseButton.none && self.held != MouseButton.middle && g.sel.drag == select.Drag.none && g.pick == bar.Tool.pencil {
+            self.paint(g, x, y, self.held, false)
+        }
+    }
+    /* The wheel zooms the board about the pointer, in either phase. */
+    wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()
+    if is_wheel && g.mode == app.Mode.none {
+        g.view.zoom(wh.y, wh.mouse_x, wh.mouse_y)
+        x: int, y: int = g.view.cell_at(wh.mouse_x, wh.mouse_y)
+        g.hx = x
+        g.hy = y
+    }
+    return running
+}

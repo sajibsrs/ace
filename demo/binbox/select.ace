@@ -1,0 +1,226 @@
+/* select — the select tool's box, the blocks it carries, and the clipboard.
+ *
+ * A selection is a box of cells (corners inclusive). Picking it up lifts its
+ * blocks off the board into `lift`; they are carried by (dx, dy) and put down
+ * on the drop. A paste floats the same way, with `held` set because its
+ * blocks were never on the board.
+ */
+
+import math
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+import history: "./history.ace"
+
+/* How a select-tool drag is going: none, drawing the box, or moving the
+ * selected blocks, which are lifted off the board until the drop. */
+pub Drag: enum u8 { none, box, move }
+
+/* The cells of the selection box and the blocks lifted from them, row by row
+ * over the box, and which sources were on. */
+pub Selection: struct {
+    /* Whether a box is selected, and its corners. */
+    pub on: bool = false,
+    pub x0: int = 0,
+    pub y0: int = 0,
+    pub x1: int = 0,
+    pub y1: int = 0,
+    /* The drag in progress: its anchor cell, the cell it is at, and for a move
+     * how far the selection has been carried. */
+    pub drag: Drag = Drag.none,
+    pub ax: int = 0,
+    pub ay: int = 0,
+    pub bx: int = 0,
+    pub by: int = 0,
+    pub dx: int = 0,
+    pub dy: int = 0,
+    pub lift: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
+    lifton: [32 * 64]bool = [false : 32 * 64],
+    /* Set while `lift` holds blocks that are not on the board (a paste), so a
+     * press inside the selection carries them instead of lifting from the board. */
+    pub held: bool = false,
+    /* The clipboard: copied blocks, row by row over a `clipw` by `cliph` box,
+     * and which sources were on; `clipw` is zero when nothing was copied. */
+    clip: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
+    clipon: [32 * 64]bool = [false : 32 * 64],
+    pub clipw: int = 0,
+    cliph: int = 0,
+    /* The board before a carried selection was lifted. */
+    pre: history.Snap = history.Snap {},
+}
+
+/* Whether a carried selection is in the air: lifted blocks, or a paste. */
+pub Selection.carrying(const self): bool {
+    return self.drag == Drag.move || self.held
+}
+
+/* Drops the selection; a pasted one lands where it floats. */
+pub Selection.deselect(self, s: *sim.Sim, h: *history.History) {
+    if self.on && self.held && self.drag != Drag.move { self.drop(s, h) }
+    self.on = false
+    self.drag = Drag.none
+}
+
+/* Whether cell (x, y) is inside the selection. */
+pub Selection.has(const self, x: int, y: int): bool {
+    return self.on && x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
+}
+
+/* Lifts the selected blocks off the board into `lift`, remembering which
+ * sources are on, to be carried and dropped. */
+Selection.lift_up(self, s: *sim.Sim) {
+    g: grid.Grid = s.g
+    w: int = self.x1 - self.x0 + 1
+    for y: int in self.y0 .. self.y1 + 1 {
+        for x: int in self.x0 .. self.x1 + 1 {
+            i: int = (y - self.y0) * w + x - self.x0
+            b: grid.Block = g.get(x, y)
+            self.lift[i] = b
+            self.lifton[i] = b == grid.Block.source && s.level(x, y) == sim.Level.high
+            g.remove(x, y)
+        }
+    }
+    *s = sim.Sim.init(g)
+}
+
+/* Puts the lifted blocks down `dx`, `dy` cells over: they replace what is
+ * there, and empty cells of the selection leave the board as it is. */
+Selection.drop(self, s: *sim.Sim, h: *history.History) {
+    if self.held || self.dx != 0 || self.dy != 0 { h.record(self.pre) }
+    g: grid.Grid = s.g
+    w: int = self.x1 - self.x0 + 1
+    for y: int in self.y0 .. self.y1 + 1 {
+        for x: int in self.x0 .. self.x1 + 1 {
+            b: grid.Block = self.lift[(y - self.y0) * w + x - self.x0]
+            if b != grid.Block.empty { g.place(x + self.dx, y + self.dy, b) }
+        }
+    }
+    *s = sim.Sim.init(g)
+    for y: int in self.y0 .. self.y1 + 1 {
+        for x: int in self.x0 .. self.x1 + 1 {
+            if self.lifton[(y - self.y0) * w + x - self.x0] { s.toggle(x + self.dx, y + self.dy, true) }
+        }
+    }
+    self.x0 += self.dx
+    self.x1 += self.dx
+    self.y0 += self.dy
+    self.y1 += self.dy
+    self.dx = 0
+    self.dy = 0
+    self.drag = Drag.none
+    self.held = false
+}
+
+/* Removes every selected block. */
+pub Selection.erase(self, s: *sim.Sim, h: *history.History) {
+    if !self.on { return }
+    if self.held {
+        /* A floating paste is not on the board: it just goes away. */
+        self.held = false
+        self.deselect(s, h)
+        return
+    }
+    h.record(history.Snap.of(*s))
+    g: grid.Grid = s.g
+    for y: int in self.y0 .. self.y1 + 1 {
+        for x: int in self.x0 .. self.x1 + 1 { g.remove(x, y) }
+    }
+    *s = sim.Sim.init(g)
+    self.deselect(s, h)
+}
+
+/* Copies the selected blocks, and which sources are on, to the clipboard. */
+pub Selection.copy(self, s: *sim.Sim, h: *history.History) {
+    if !self.on { return }
+    /* A floating paste lands first, so the board holds what is copied. */
+    if self.held { self.drop(s, h) }
+    g: grid.Grid = s.g
+    self.clipw = self.x1 - self.x0 + 1
+    self.cliph = self.y1 - self.y0 + 1
+    for y: int in self.y0 .. self.y1 + 1 {
+        for x: int in self.x0 .. self.x1 + 1 {
+            i: int = (y - self.y0) * self.clipw + x - self.x0
+            b: grid.Block = g.get(x, y)
+            self.clip[i] = b
+            self.clipon[i] = b == grid.Block.source && s.level(x, y) == sim.Level.high
+        }
+    }
+}
+
+/* Copies the selection, then removes it. */
+pub Selection.cut(self, s: *sim.Sim, h: *history.History) {
+    if !self.on { return }
+    self.copy(s, h)
+    self.erase(s, h)
+}
+
+/* Pastes the clipboard as a floating selection with its top-left corner at
+ * cell (cx, cy), kept on the board. */
+pub Selection.paste(self, s: *sim.Sim, cx: int, cy: int) {
+    self.x0 = math.min[int](cx, grid.WIDTH - self.clipw)
+    self.y0 = math.min[int](cy, grid.HEIGHT - self.cliph)
+    self.x1 = self.x0 + self.clipw - 1
+    self.y1 = self.y0 + self.cliph - 1
+    for i: int in 0 .. self.clipw * self.cliph {
+        self.lift[i] = self.clip[i]
+        self.lifton[i] = self.clipon[i]
+    }
+    self.dx = 0
+    self.dy = 0
+    self.on = true
+    self.held = true
+    self.pre = history.Snap.of(*s)
+}
+
+/* A left press on cell (cx, cy), or off the board when `cx` is negative:
+ * inside the selection it picks the blocks up, elsewhere it starts a new
+ * box. */
+pub Selection.press(self, s: *sim.Sim, h: *history.History, cx: int, cy: int) {
+    if cx < 0 {
+        self.deselect(s, h)
+        return
+    }
+    self.ax = cx
+    self.ay = cy
+    self.bx = cx
+    self.by = cy
+    if self.has(cx, cy) {
+        self.drag = Drag.move
+        self.dx = 0
+        self.dy = 0
+        if !self.held {
+            self.pre = history.Snap.of(*s)
+            self.lift_up(s)
+        }
+    } else {
+        self.deselect(s, h)
+        self.drag = Drag.box
+    }
+}
+
+/* The pointer moved to cell (cx, cy), the one nearest it, during a drag. */
+pub Selection.sweep(self, cx: int, cy: int) {
+    if self.drag == Drag.box {
+        self.bx = cx
+        self.by = cy
+    }
+    if self.drag == Drag.move {
+        /* The selection stays on the board. */
+        self.dx = math.min[int](math.max[int](cx - self.ax, -self.x0), grid.WIDTH - 1 - self.x1)
+        self.dy = math.min[int](math.max[int](cy - self.ay, -self.y0), grid.HEIGHT - 1 - self.y1)
+    }
+}
+
+/* The left button went up: a box becomes the selection (a click on an empty
+ * cell selects nothing), a move drops its blocks. */
+pub Selection.release(self, s: *sim.Sim, h: *history.History) {
+    if self.drag == Drag.move { self.drop(s, h) }
+    if self.drag == Drag.box {
+        self.x0 = math.min[int](self.ax, self.bx)
+        self.x1 = math.max[int](self.ax, self.bx)
+        self.y0 = math.min[int](self.ay, self.by)
+        self.y1 = math.max[int](self.ay, self.by)
+        lone: bool = self.ax == self.bx && self.ay == self.by
+        self.on = !lone || s.g.get(self.ax, self.ay) != grid.Block.empty
+        self.drag = Drag.none
+    }
+}

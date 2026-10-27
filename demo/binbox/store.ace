@@ -1,0 +1,167 @@
+/* store — the diagram folder and the names of the diagrams in it.
+ *
+ * Diagrams are listed, read and written in a folder beside the executable's
+ * build/ folder, so the program does not depend on where it starts.
+ */
+
+import file
+import fmt
+import mem
+import sort
+import str
+import sys
+import sim: "./sim.ace"
+import diagram: "./diagram.ace"
+
+/* Where diagrams are listed, read and written, relative to the folder that
+ * holds the executable's build/ folder. */
+FOLDER: const string = "../diagram"
+/* Longest diagram name, without the extension. */
+pub NAME_MAX: const usize = 32
+/* Most diagrams the Open list shows. */
+LIST_MAX: const usize = 24
+
+before(a: string, b: string): bool {
+    return str.compare(a, b) < 0
+}
+
+/* A name typed or chosen for a diagram, without folder or extension, with
+ * the cursor before byte `at`. */
+pub Name: struct {
+    bytes: [32]u8 = [0 : 32],
+    pub len: usize = 0,
+    pub at: usize = 0,
+}
+
+pub Name.text(self): string {
+    return self.bytes[0..self.len]
+}
+
+/* Inserts `c` at the cursor and moves past it. */
+pub Name.add(self, c: u8) {
+    if self.len == NAME_MAX { return }
+    for i: usize = self.len; i > self.at; i -= 1 { self.bytes[i] = self.bytes[i - 1] }
+    self.bytes[self.at] = c
+    self.len += 1
+    self.at += 1
+}
+
+/* Removes the byte at `i`, before the cursor or after it. */
+Name.cut(self, i: usize) {
+    for j: usize in i .. self.len - 1 { self.bytes[j] = self.bytes[j + 1] }
+    self.len -= 1
+    if self.at > i { self.at -= 1 }
+}
+
+/* Backspace: removes the byte before the cursor. */
+pub Name.back(self) {
+    if self.at > 0 { self.cut(self.at - 1) }
+}
+
+/* Delete: removes the byte after the cursor. */
+pub Name.forward(self) {
+    if self.at < self.len { self.cut(self.at) }
+}
+
+/* Replaces the name with `text`, the cursor at its end. */
+pub Name.copy(self, text: string) {
+    self.len = 0
+    self.at = 0
+    for i: usize in 0 .. text.len { self.add(text[i]) }
+}
+
+/* The diagrams in a folder, by name without the extension, sorted. */
+pub Listing: struct {
+    pool: [24 * 32]u8 = [0 : 24 * 32],
+    pub names: [24]string = ["" : 24],
+    pub count: usize = 0,
+}
+
+/* Rereads `folder`; a missing folder lists nothing. The names view the pool,
+ * so a Listing stays where it was scanned. */
+Listing.scan(self, folder: string): Error {
+    self.count = 0
+    dir: sys.Dir, err: Error = sys.opendir(folder)
+    defer sys.closedir(&dir)
+    if err != null { return err }
+
+    entry: [256]u8
+    used: usize = 0
+    for self.count < LIST_MAX {
+        n: usize, kind: sys.FileType, done: bool, rerr: Error = sys.readdir(&dir, entry[..])
+        if rerr != null { return rerr }
+        if done { break }
+        if kind != sys.FileType.regular { continue }
+        stem: string, ok: bool = str.trim(entry[0..n], diagram.EXTENSION, true)
+        if !ok || stem.len == 0 || stem.len > NAME_MAX { continue }
+        for i: usize in 0 .. stem.len { self.pool[used + i] = stem[i] }
+        self.names[self.count] = self.pool[used .. used + stem.len]
+        used += stem.len
+        self.count += 1
+    }
+    sort.unstable[string](self.names[0..self.count], before)
+    return null
+}
+
+/* The diagram folder, and the diagrams listed in it. */
+pub Store: struct {
+    pub list: Listing = Listing {},
+    /* The folder's path, from `locate`. */
+    folders: [1024]u8 = [0 : 1024],
+    folder: usize = 0,
+}
+
+/* Finds the diagram folder beside the executable's folder. */
+pub Store.locate(self): Error {
+    exe: [1024]u8
+    n: usize, err: Error = sys.executable(exe[..])
+    if err != null { return err }
+    end: usize = n
+    for end > 0 && exe[end - 1] != '/' { end -= 1 }
+    b: fmt.Buffer = fmt.Buffer.init(self.folders[..])
+    b.printf("%s%s", exe[0..end], FOLDER)
+    if b.dropped() > 0 { return sys.ExecutableErr.capacity }
+    self.folder = b.text().len
+    return null
+}
+
+/* The diagram folder's path. */
+pub Store.where(self): string {
+    return self.folders[0..self.folder]
+}
+
+/* The path of diagram `name` in `out`. */
+Store.path(self, name: string, out: []u8): string {
+    b: fmt.Buffer = fmt.Buffer.init(out)
+    b.printf("%s/%s%s", self.where(), name, diagram.EXTENSION)
+    return b.text()
+}
+
+/* Rereads the folder into `list`. A missing folder (ENOENT) just lists
+ * nothing. */
+pub Store.scan(self): Error {
+    err: Error = self.list.scan(self.where())
+    if err != null && err.code == 2 { return null }
+    return err
+}
+
+/* Writes `s` as diagram `name`, making the folder if it is missing. */
+pub Store.write(self, s: sim.Sim, name: string): Error {
+    storage: [1200]u8
+    bytes: [diagram.SIZE]u8
+    /* A folder that exists already is fine; any real failure shows on write. */
+    sys.mkdir(self.where())
+    n: usize, err: Error = diagram.encode(s, bytes[..])
+    if err != null { return err }
+    return file.write(self.path(name, storage[..]), bytes[0..n])
+}
+
+/* Reads diagram `name`. */
+pub Store.read(self, name: string): (sim.Sim, Error) {
+    storage: [1200]u8
+    data: []u8, err: Error = file.read(self.path(name, storage[..]))
+    defer mem.release[u8](&data)
+    s: sim.Sim = sim.Sim {}
+    if err == null { s, err = diagram.decode(data) }
+    return s, err
+}

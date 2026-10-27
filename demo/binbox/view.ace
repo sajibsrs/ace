@@ -1,0 +1,151 @@
+/* view — the window's size and the board's zoom and pan.
+ *
+ * A cell's side at 1x is CELL; the board sits at (ox, oy) in window points.
+ */
+
+import math
+import grid: "./grid.ace"
+import ui: "./ui.ace"
+import bar: "./bar.ace"
+
+/* A cell's side at 1x; the window is created 16 x 16 cells at 1x. */
+pub CELL: const f32 = 40.0
+/* The most and least zoom, as multiples of 1x, and the factor one wheel step
+ * applies. A window too small for the least zoom to show the board still
+ * fits it. */
+ZOOM_MAX: const f32 = 4.0
+ZOOM_MIN: const f32 = 0.25
+/* The zoom at start. */
+ZOOM_START: const f32 = 0.5
+ZOOM_STEP: const f32 = 1.25
+
+/* Window size, and the board view: a cell's side and the board's top-left
+ * corner, in window points. `fit` is the least cell side, which shows the
+ * whole board in its area; zero until the first `resize`. */
+pub View: struct {
+    w: f32 = 0.0,
+    h: f32 = 0.0,
+    cell: f32 = CELL * ZOOM_START,
+    fit: f32 = 0.0,
+    ox: f32 = 0.0,
+    oy: f32 = 0.0,
+}
+
+/* The board's area: the window between the bars. */
+pub View.area(const self): ui.Rect {
+    return ui.Rect { x = 2.0 * bar.GAP + bar.STRIP, y = bar.TOP, w = self.w - 3.0 * bar.GAP - bar.STRIP, h = self.h - bar.TOP - bar.BELOW }
+}
+
+/* The panels: the toolbar and the block row across the top, the sidebar down
+ * the board's left, and the footer. */
+pub View.head(const self): ui.Rect {
+    return ui.Rect { x = bar.GAP, y = bar.GAP, w = self.w - 2.0 * bar.GAP, h = bar.BAR }
+}
+
+pub View.blocks(const self): ui.Rect {
+    return ui.Rect { x = bar.GAP, y = 2.0 * bar.GAP + bar.BAR, w = self.w - 2.0 * bar.GAP, h = bar.BAR }
+}
+
+pub View.side(const self): ui.Rect {
+    return ui.Rect { x = bar.GAP, y = bar.TOP, w = bar.STRIP, h = self.h - bar.TOP - bar.BELOW }
+}
+
+pub View.foot(const self): ui.Rect {
+    return ui.Rect { x = bar.GAP, y = self.h - bar.GAP - bar.FOOT, w = self.w - 2.0 * bar.GAP, h = bar.FOOT }
+}
+
+/* The Save-as panel, centered in the window. */
+pub View.panel(const self): ui.Rect {
+    return ui.Rect { x = (self.w - bar.PANEL_W) / 2.0, y = (self.h - bar.PANEL_H) / 2.0, w = bar.PANEL_W, h = bar.PANEL_H }
+}
+
+/* Keeps the board in reach: at any zoom, any cell, the corner ones too, can
+ * be panned to the area's center, so the board may leave empty space of half
+ * the area at either end. */
+View.clamp(self) {
+    a: ui.Rect = self.area()
+    wide: f32 = f32(grid.WIDTH) * self.cell
+    high: f32 = f32(grid.HEIGHT) * self.cell
+    mx: f32 = a.x + a.w / 2.0
+    my: f32 = a.y + a.h / 2.0
+    self.ox = math.min[f32](math.max[f32](self.ox, mx - wide + self.cell / 2.0), mx - self.cell / 2.0)
+    self.oy = math.min[f32](math.max[f32](self.oy, my - high + self.cell / 2.0), my - self.cell / 2.0)
+}
+
+/* Follows a window of `w` x `h`, keeping the zoom and the board point at the
+ * area's center; the first call centers the board. */
+pub View.resize(self, w: f32, h: f32) {
+    if w == self.w && h == self.h { return }
+    old: ui.Rect = self.area()
+    bx: f32 = f32(grid.WIDTH) / 2.0
+    by: f32 = f32(grid.HEIGHT) / 2.0
+    if self.fit > 0.0 {
+        bx = (old.x + old.w / 2.0 - self.ox) / self.cell
+        by = (old.y + old.h / 2.0 - self.oy) / self.cell
+    }
+    self.w = w
+    self.h = h
+    a: ui.Rect = self.area()
+    self.fit = math.max[f32](math.min[f32](a.w / f32(grid.WIDTH), a.h / f32(grid.HEIGHT)), 1.0)
+    self.cell = math.max[f32](self.cell, math.min[f32](self.fit, CELL * ZOOM_MIN))
+    self.ox = a.x + a.w / 2.0 - bx * self.cell
+    self.oy = a.y + a.h / 2.0 - by * self.cell
+    self.clamp()
+}
+
+/* Moves the board by (dx, dy) window points, as a middle-button drag does. */
+pub View.pan(self, dx: f32, dy: f32) {
+    self.ox += dx
+    self.oy += dy
+    self.clamp()
+}
+
+/* Zooms by `steps` wheel steps (positive in) about window point (x, y), which
+ * stays over the same spot on the board. */
+pub View.zoom(self, steps: f32, x: f32, y: f32) {
+    want: f32 = self.cell
+    if steps > 0.0 { want *= ZOOM_STEP }
+    if steps < 0.0 { want /= ZOOM_STEP }
+    want = math.min[f32](math.max[f32](want, math.min[f32](self.fit, CELL * ZOOM_MIN)), CELL * ZOOM_MAX)
+    self.ox = x - (x - self.ox) * want / self.cell
+    self.oy = y - (y - self.oy) * want / self.cell
+    self.cell = want
+    self.clamp()
+}
+
+/* Cell (x, y)'s rectangle on screen. */
+pub View.box(const self, x: int, y: int): ui.Rect {
+    return ui.Rect { x = self.ox + f32(x) * self.cell, y = self.oy + f32(y) * self.cell, w = self.cell, h = self.cell }
+}
+
+/* Whether cell (x, y) shows at all in area `a`; the rest is not drawn. */
+pub View.shows(const self, x: int, y: int, a: ui.Rect): bool {
+    box: ui.Rect = self.box(x, y)
+    return box.x + box.w > a.x && box.x < a.x + a.w && box.y + box.h > a.y && box.y < a.y + a.h
+}
+
+/* The cell under window point (x, y), or (-1, -1) off the board or its area. */
+pub View.cell_at(const self, x: f32, y: f32): (int, int) {
+    if !self.area().has(x, y) { return -1, -1 }
+    fx: f32 = (x - self.ox) / self.cell
+    fy: f32 = (y - self.oy) / self.cell
+    if fx < 0.0 || fy < 0.0 { return -1, -1 }
+    cx: int = int(fx)
+    cy: int = int(fy)
+    if !grid.inside(cx, cy) { return -1, -1 }
+    return cx, cy
+}
+
+/* The cell nearest window point (x, y), kept on the board. */
+pub View.cell_near(const self, x: f32, y: f32): (int, int) {
+    fx: f32 = math.min[f32](math.max[f32]((x - self.ox) / self.cell, 0.0), f32(grid.WIDTH - 1))
+    fy: f32 = math.min[f32](math.max[f32]((y - self.oy) / self.cell, 0.0), f32(grid.HEIGHT - 1))
+    return int(fx), int(fy)
+}
+
+/* The window rectangle that covers cells (x0, y0) to (x1, y1), inclusive. */
+pub View.span(const self, x0: int, y0: int, x1: int, y1: int): ui.Rect {
+    a: ui.Rect = self.box(x0, y0)
+    b: ui.Rect = self.box(x1, y1)
+    return ui.Rect { x = a.x, y = a.y, w = b.x + b.w - a.x, h = b.y + b.h - a.y }
+}

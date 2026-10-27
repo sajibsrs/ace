@@ -162,5 +162,13 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `sim.ace` | Levels, drivers and contention, and the tick. |
 | `diagram.ace` | `.bnbx` encode and decode. |
 | `ui.ace` | Rectangles, layered drawing, and text helpers. |
-| `main.ace` | The window, input, bar, Open list, and Save-as box. |
+| `bar.ace` | Where the toolbar, block row and tool strip sit, and what is in them. |
+| `view.ace` | The window size and the board's zoom and pan. |
+| `history.ace` | Undo and Redo snapshots. |
+| `select.ace` | The select tool's box, carried blocks, and clipboard. |
+| `store.ace` | The diagram folder, names, and the Open list. |
+| `app.ace` | `App`: the simulation, the selection, the file, and the commands that change them. |
+| `input.ace` | SDL events to `App` commands. |
+| `render.ace` | Draws the board, bars, and panels. |
+| `main.ace` | The SDL window and the event loop. |
 | `*.test.ace` | Tests for each module, run with `ace test .`. |

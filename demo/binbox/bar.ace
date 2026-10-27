@@ -1,0 +1,144 @@
+/* bar — where the toolbar, the block row and the tool strip sit, and what is
+ * in them.
+ *
+ * Top to bottom the window holds the toolbar, the block row, then the sidebar
+ * beside the board, and the footer: TOP is where the sidebar and board start,
+ * BELOW the space under them.
+ */
+
+import grid: "./grid.ace"
+import ui: "./ui.ace"
+import icon: "./icon.ace"
+
+pub BAR: const f32 = 28.0
+pub FOOT: const f32 = 24.0
+/* Space between panels, and between a panel and the window's edge. */
+pub GAP: const f32 = 4.0
+pub TOP: const f32 = 3.0 * GAP + 2.0 * BAR
+pub BELOW: const f32 = 2.0 * GAP + FOOT
+/* The tool strip down the board's left side, and a tool button in it. */
+pub STRIP: const f32 = 40.0
+pub PICK: const f32 = BAR
+/* The window's width at start. */
+pub WIDTH: const f32 = 16.0 * 40.0
+
+/* The Save-as panel's size; it sits centered in the window. */
+pub PANEL_W: const f32 = 320.0
+pub PANEL_H: const f32 = 72.0
+/* A row of the Open list. */
+pub ROW: const f32 = 20.0
+
+/* What the left mouse button does on the board in Edit: place the selected
+ * block, or box-select blocks and drag them. */
+pub Tool: enum u8 { pencil, select }
+
+/* The strip button of `pick`. */
+pub strip_at(pick: Tool): ui.Rect {
+    return ui.Rect { x = GAP + (STRIP - PICK) / 2.0, y = TOP + 6.0 + f32(int(pick)) * (PICK + 6.0), w = PICK, h = PICK }
+}
+
+pub STRIP_ICON: [Tool]icon.Id = [
+    Tool.pencil = icon.Id.edit,
+    Tool.select = icon.Id.select,
+]
+
+/* The bar's buttons, left to right. */
+pub Button: enum u8 { new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in }
+
+pub LABEL: [Button]string = [
+    Button.new = "New",
+    Button.open = "Open",
+    Button.save = "Save",
+    Button.save_as = "Save as",
+    Button.edit = "Edit",
+    Button.run = "Sim",
+    Button.step = "Step",
+    Button.auto = "Auto",
+    Button.zoom_out = "",
+    Button.zoom_in = "",
+]
+
+/* A button's inset before its icon and after its text, the icon's side, and
+ * the gap between icon and label. */
+pub PAD: const f32 = 6.0
+pub GLYPH_SIDE: const f32 = 18.0
+pub LABEL_GAP: const f32 = 4.0
+
+pub ICON: [Button]icon.Id = [
+    Button.new = icon.Id.new,
+    Button.open = icon.Id.open,
+    Button.save = icon.Id.save,
+    Button.save_as = icon.Id.save_as,
+    Button.edit = icon.Id.edit,
+    Button.run = icon.Id.run,
+    Button.step = icon.Id.step,
+    Button.auto = icon.Id.auto,
+    Button.zoom_out = icon.Id.zoom_out,
+    Button.zoom_in = icon.Id.zoom_in,
+]
+
+/* The title of the button group `button` starts, else empty. */
+pub heading(button: Button): string {
+    if button == Button.new { return "File" }
+    if button == Button.edit { return "Mode" }
+    if button == Button.step { return "Run" }
+    if button == Button.zoom_out { return "Zoom" }
+    return ""
+}
+
+/* The block row's title. */
+pub COMPONENTS: const string = "Blocks"
+
+/* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
+ * buttons hold an icon alone. */
+pub place(button: Button): ui.Rect {
+    x: f32 = GAP + 6.0
+    for i: usize in 0 .. members(Button).len {
+        each: Button = members(Button)[i]
+        /* Icon, gap, and label, inset by PAD. */
+        w: f32 = 2.0 * PAD + GLYPH_SIDE
+        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR - 8.0 }
+        /* Each group follows its title, set apart from the last. */
+        if heading(each).len > 0 {
+            if each != Button.new { x += 18.0 }
+            x += f32(heading(each).len) * ui.GLYPH + 6.0
+        }
+        if each == button { return ui.Rect { x = x, y = GAP + 4.0, w = w, h = BAR - 8.0 } }
+        x += w + 6.0
+    }
+    return ui.Rect {}
+}
+
+/* Space around a block button's icon. */
+pub TOOL_PAD: const f32 = 4.0
+
+/* The block row's button for `block`: a square as tall as the row, in a row
+ * from the left. */
+pub tool(block: grid.Block): ui.Rect {
+    i: f32 = f32(int(block) - 1)
+    return ui.Rect { x = GAP + 6.0 + f32(COMPONENTS.len) * ui.GLYPH + 6.0 + i * (BAR + 6.0), y = 2.0 * GAP + BAR, w = BAR, h = BAR }
+}
+
+/* The block row's icons; the empty block has none. */
+pub BLOCK_ICON: [grid.Block]icon.Id = [
+    grid.Block.empty = icon.Id.source,
+    grid.Block.source = icon.Id.source,
+    grid.Block.wire = icon.Id.wire,
+    grid.Block.input = icon.Id.input,
+    grid.Block.output = icon.Id.output,
+    grid.Block.and = icon.Id.and,
+    grid.Block.or = icon.Id.or,
+    grid.Block.not = icon.Id.not,
+    grid.Block.nand = icon.Id.nand,
+    grid.Block.nor = icon.Id.nor,
+    grid.Block.xor = icon.Id.xor,
+    grid.Block.xnor = icon.Id.xnor,
+    grid.Block.led = icon.Id.led,
+    grid.Block.bridge = icon.Id.bridge,
+]
+
+/* Row `i` of the Open list. */
+pub row(i: usize): ui.Rect {
+    at: ui.Rect = place(Button.open)
+    return ui.Rect { x = at.x, y = GAP + BAR + f32(i) * ROW, w = 280.0, h = ROW }
+}
