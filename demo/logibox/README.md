@@ -113,6 +113,13 @@ released together, or when a pulse is shorter than the trip around the loop
 (2 ticks here, one per NOR). Hold each pulse at least that long, and save feedback
 circuits with an input held, the way real circuits hold reset at power-on.
 
+## Diagrams
+
+- `diagram/latch.lgbx`: SR latch
+- `diagram/half-adder.lgbx`: half adder
+- `diagram/full-adder.lgbx`: full adder
+- `diagram/alu.lgbx`: 3-bit add/subtract ALU
+
 ## Diagram format (`.lgbx`)
 
 An 8-byte header, then one byte per cell, row by row:
