@@ -4,7 +4,7 @@
 
 import fmt
 import math
-import Renderer, Color from sdl
+import Renderer, Point, Color from sdl
 import bar: "./bar.ace"
 import theme: "./theme.ace"
 import grid: "./grid.ace"
@@ -34,36 +34,36 @@ NAME: [grid.Block]string = [
 /* Low and high colors of each block; any block on an error is ERROR. */
 LOW: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
-    grid.Block.source = 0x7e5119,
-    grid.Block.wire = 0x434343,
-    grid.Block.input = 0x3b513b,
-    grid.Block.output = 0x513b68,
-    grid.Block.and = 0x2a517e,
-    grid.Block.or = 0x2a6851,
-    grid.Block.not = 0x68512a,
-    grid.Block.nand = 0x3b3b7e,
-    grid.Block.nor = 0x2a6868,
-    grid.Block.xor = 0x682a40,
-    grid.Block.xnor = 0x51512a,
-    grid.Block.led = 0x682222,
-    grid.Block.bridge = 0x3e3e3e,
+    grid.Block.source = 0x478f59,
+    grid.Block.wire = 0x4d5b6c,
+    grid.Block.input = 0x4e6da3,
+    grid.Block.output = 0x8c4d51,
+    grid.Block.and = 0xb59b45,
+    grid.Block.or = 0x42ad9f,
+    grid.Block.not = 0xd871b2,
+    grid.Block.nand = 0x926a35,
+    grid.Block.nor = 0x2f7b8a,
+    grid.Block.xor = 0xa66ee6,
+    grid.Block.xnor = 0xb142b8,
+    grid.Block.led = 0x8c8c8c,
+    grid.Block.bridge = 0x504e68,
 ]
 
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
-    grid.Block.source = 0xffa225,
-    grid.Block.wire = 0x7c8470,
-    grid.Block.input = 0x9bcf62,
-    grid.Block.output = 0xd894e8,
-    grid.Block.and = 0x57b4ff,
-    grid.Block.or = 0x51eba7,
-    grid.Block.not = 0xffd44d,
-    grid.Block.nand = 0x7d7dff,
-    grid.Block.nor = 0x51d8e0,
-    grid.Block.xor = 0xff6793,
-    grid.Block.xnor = 0xc1d851,
-    grid.Block.led = 0xff4545,
-    grid.Block.bridge = 0x70786a,
+    grid.Block.source = 0x55d675,
+    grid.Block.wire = 0x6e8db3,
+    grid.Block.input = 0x598eea,
+    grid.Block.output = 0xd14f58,
+    grid.Block.and = 0xfcd247,
+    grid.Block.or = 0x45f4dd,
+    grid.Block.not = 0xff6cc9,
+    grid.Block.nand = 0xd99439,
+    grid.Block.nor = 0x32b7d1,
+    grid.Block.xor = 0xaa60ff,
+    grid.Block.xnor = 0xf442ff,
+    grid.Block.led = 0xffffff,
+    grid.Block.bridge = 0x7772af,
 ]
 
 ERROR: const u32 = 0xb030b0
@@ -76,17 +76,75 @@ mix(from: u32, to: u32, percent: u32): u32 {
     return r * 0x10000 + g * 0x100 + b
 }
 
-/* How far an icon sits from its block's fill: a lit block's icon goes this
- * far toward the block's dark color, an unlit block's toward its bright one.
- * Both stay in the block's own hue, so no icon stands out from the rest. */
-LIT: const u32 = 55
-UNLIT: const u32 = 28
+/* How far an icon sits from its block's fill, toward black: the icon keeps
+ * the block's own hue, so no icon stands out from the rest. */
+SHADE: const u32 = 35
 
 /* The color of block `b`'s icon while it shows `level`. */
 icon_ink(b: grid.Block, level: sim.Level): u32 {
-    if level == sim.Level.error { return mix(ERROR, 0x000000, LIT) }
-    if level == sim.Level.high { return mix(HIGH[b], LOW[b], LIT) }
-    return mix(LOW[b], HIGH[b], UNLIT)
+    if level == sim.Level.error { return mix(ERROR, 0x000000, SHADE) }
+    if level == sim.Level.high { return mix(HIGH[b], 0x000000, SHADE) }
+    return mix(LOW[b], 0x000000, SHADE)
+}
+
+/* How far a block's sides reach down and to the left of its cell, and how
+ * far toward black each is shaded; the top face stays on the grid. */
+RISE: const f32 = 0.14
+/* The opacity of the block that follows the pointer. */
+GHOST: const f32 = 0.5
+SIDE_LEFT: const u32 = 30
+SIDE_BOTTOM: const u32 = 50
+
+/* `rgb` at opacity `alpha`. */
+shade(rgb: u32, alpha: f32): Color {
+    c: Color = Color.hex(rgb)
+    return Color { r = c.r, g = c.g, b = c.b, a = alpha }
+}
+
+/* The sides of the block in `cell`, on whichever of its left and bottom edges
+ * nothing else covers: each a slanted strip from the top face's edge. */
+extrude(canvas: *ui.Canvas, cell: ui.Rect, rgb: u32, alpha: f32, left: bool, bottom: bool) {
+    d: f32 = cell.w * RISE
+    x1: f32 = cell.x + cell.w
+    y1: f32 = cell.y + cell.h
+    tl: Point = Point { x = cell.x, y = cell.y }
+    bl: Point = Point { x = cell.x, y = y1 }
+    br: Point = Point { x = x1, y = y1 }
+    sl: Point = Point { x = cell.x - d, y = cell.y + d }
+    sb: Point = Point { x = cell.x - d, y = y1 + d }
+    sr: Point = Point { x = x1 - d, y = y1 + d }
+    if left {
+        c: Color = shade(mix(rgb, 0x000000, SIDE_LEFT), alpha)
+        canvas.triangle(tl, bl, sb, c)
+        canvas.triangle(tl, sb, sl, c)
+    }
+    if bottom {
+        c: Color = shade(mix(rgb, 0x000000, SIDE_BOTTOM), alpha)
+        canvas.triangle(bl, br, sr, c)
+        canvas.triangle(bl, sr, sb, c)
+    }
+}
+
+/* The fill of the block at (x, y): its level's color, or ERROR. */
+face(g: *app.App, b: grid.Block, x: int, y: int): u32 {
+    /* Edit shows only how the board is built: no levels. */
+    v: sim.Level = sim.Level.low
+    if g.phase == app.Phase.run { v = g.s.level(x, y) }
+    if v == sim.Level.error && b != grid.Block.empty { return ERROR }
+    if v == sim.Level.high { return HIGH[b] }
+    return LOW[b]
+}
+
+/* An icon's box inside `cell`, with a margin. */
+icon_box(cell: ui.Rect): ui.Rect {
+    m: f32 = cell.w * 0.12
+    return ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }
+}
+
+/* Whether the board has no block at (x, y), off the board included. */
+bare(g: *app.App, x: int, y: int): bool {
+    if x < 0 || y < 0 || x >= grid.WIDTH || y >= grid.HEIGHT { return true }
+    return g.s.g.get(x, y) == grid.Block.empty
 }
 
 draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
@@ -95,26 +153,54 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     canvas.fill(a, Color.hex(theme.PANEL))
     canvas.flush(r)
     r.clip(i32(a.x), i32(a.y), i32(a.w), i32(a.h))
+    /* Empty cells keep a gap so the grid shows. Block sides go down next, then
+     * every top face over them, so a side shows only where no block covers it. */
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if !g.view.shows(x, y, a) { continue }
-            b: grid.Block = g.s.g.get(x, y)
-            /* Edit shows only how the board is built: no levels. */
-            v: sim.Level = sim.Level.low
-            if g.phase == app.Phase.run { v = g.s.level(x, y) }
-            rgb: u32 = LOW[b]
-            if v == sim.Level.high { rgb = HIGH[b] }
-            if v == sim.Level.error && b != grid.Block.empty { rgb = ERROR }
-            /* Blocks fill their cell; empty cells keep a gap so the grid shows. */
-            inset: f32 = 0.0
-            if b == grid.Block.empty { inset = 1.0 }
             box: ui.Rect = g.view.box(x, y)
-            box = ui.Rect { x = box.x + inset, y = box.y + inset, w = box.w - 2.0 * inset, h = box.h - 2.0 * inset }
-            canvas.fill(box, Color.hex(rgb))
+            b: grid.Block = g.s.g.get(x, y)
+            if b == grid.Block.empty {
+                canvas.fill(ui.Rect { x = box.x + 1.0, y = box.y + 1.0, w = box.w - 2.0, h = box.h - 2.0 }, Color.hex(LOW[b]))
+            }
         }
     }
-    if g.sel.drag == select.Drag.move || g.sel.held { draw_lifted(g, canvas, r, false) }
-    if hovers(g) { canvas.fill(g.view.box(g.hx, g.hy), Color.hex(LOW[g.block])) }
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = g.s.g.get(x, y)
+            if b == grid.Block.empty || !g.view.shows(x, y, a) { continue }
+            if g.depth { extrude(canvas, g.view.box(x, y), face(g, b, x, y), 1.0, bare(g, x - 1, y), bare(g, x, y + 1)) }
+        }
+    }
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = g.s.g.get(x, y)
+            if b == grid.Block.empty || !g.view.shows(x, y, a) { continue }
+            canvas.fill(g.view.box(x, y), Color.hex(face(g, b, x, y)))
+        }
+    }
+    /* Icons next, then whatever follows the pointer, each over all before it. */
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = g.s.g.get(x, y)
+            if b == grid.Block.empty || b == grid.Block.wire || !g.view.shows(x, y, a) { continue }
+            level: sim.Level = sim.Level.low
+            if g.phase == app.Phase.run { level = g.s.level(x, y) }
+            canvas.icon(r, bar.BLOCK_ICON[b], icon_box(g.view.box(x, y)), Color.hex(icon_ink(b, level)))
+        }
+    }
+    if g.sel.drag == select.Drag.move || g.sel.held {
+        draw_lifted(g, canvas, r, false)
+        draw_lifted(g, canvas, r, true)
+    }
+    if hovers(g) {
+        at: ui.Rect = g.view.box(g.hx, g.hy)
+        /* It floats over the board, half see-through, both its sides always
+         * showing. */
+        if g.depth { extrude(canvas, at, LOW[g.block], GHOST, true, true) }
+        canvas.fill(at, shade(LOW[g.block], GHOST))
+        if g.block != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[g.block], icon_box(at), shade(icon_ink(g.block, sim.Level.low), GHOST)) }
+    }
     /* The box being drawn, or the selection, carried along while it moves. */
     if g.sel.drag == select.Drag.box {
         canvas.dashed(g.view.span(math.min[int](g.sel.ax, g.sel.bx), math.min[int](g.sel.ay, g.sel.by), math.max[int](g.sel.ax, g.sel.bx), math.max[int](g.sel.ay, g.sel.by)), 2.0, Color.hex(theme.DIM), a)
@@ -123,44 +209,31 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         canvas.dashed(g.view.span(g.sel.x0 + g.sel.dx, g.sel.y0 + g.sel.dy, g.sel.x1 + g.sel.dx, g.sel.y1 + g.sel.dy), 2.0, Color.hex(theme.DIM), a)
     }
     canvas.flush(r)
-
-    for y: int in 0 .. grid.HEIGHT {
-        for x: int in 0 .. grid.WIDTH {
-            b: grid.Block = g.s.g.get(x, y)
-            if b == grid.Block.empty || !g.view.shows(x, y, a) { continue }
-            level: sim.Level = sim.Level.low
-            if g.phase == app.Phase.run { level = g.s.level(x, y) }
-            ink: u32 = icon_ink(b, level)
-            /* Each icon sits inside its cell with a margin. */
-            cell: ui.Rect = g.view.box(x, y)
-            m: f32 = cell.w * 0.12
-            box: ui.Rect = ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }
-            canvas.icon(r, bar.BLOCK_ICON[b], box, Color.hex(ink))
-        }
-    }
-    if hovers(g) {
-        cell: ui.Rect = g.view.box(g.hx, g.hy)
-        m: f32 = cell.w * 0.12
-        canvas.icon(r, bar.BLOCK_ICON[g.block], ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }, Color.hex(icon_ink(g.block, sim.Level.low)))
-    }
-    if g.sel.drag == select.Drag.move || g.sel.held { draw_lifted(g, canvas, r, true) }
-    canvas.flush(r)
     r.unclip()
+}
+
+/* The block carried at (x, y) of the selection, empty off its edge. */
+carried(g: *app.App, x: int, y: int): grid.Block {
+    if x < g.sel.x0 || y < g.sel.y0 || x > g.sel.x1 || y > g.sel.y1 { return grid.Block.empty }
+    return g.sel.lift[(y - g.sel.y0) * (g.sel.x1 - g.sel.x0 + 1) + x - g.sel.x0]
 }
 
 /* The blocks being carried, `icons` or their fills, at the drag's offset. */
 draw_lifted(g: *app.App, canvas: *ui.Canvas, r: Renderer, icons: bool) {
-    w: int = g.sel.x1 - g.sel.x0 + 1
-    for y: int in g.sel.y0 .. g.sel.y1 + 1 {
-        for x: int in g.sel.x0 .. g.sel.x1 + 1 {
-            b: grid.Block = g.sel.lift[(y - g.sel.y0) * w + x - g.sel.x0]
-            if b == grid.Block.empty { continue }
-            cell: ui.Rect = g.view.box(x + g.sel.dx, y + g.sel.dy)
-            if !icons {
-                canvas.fill(cell, Color.hex(LOW[b]))
-            } else {
-                m: f32 = cell.w * 0.12
-                canvas.icon(r, bar.BLOCK_ICON[b], ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }, Color.hex(icon_ink(b, sim.Level.low)))
+    /* Fills go down in two passes, as on the board: sides, then top faces. */
+    for pass: int in 0 .. 2 {
+        for y: int in g.sel.y0 .. g.sel.y1 + 1 {
+            for x: int in g.sel.x0 .. g.sel.x1 + 1 {
+                b: grid.Block = carried(g, x, y)
+                if b == grid.Block.empty { continue }
+                cell: ui.Rect = g.view.box(x + g.sel.dx, y + g.sel.dy)
+                if icons {
+                    if pass == 0 && b != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[b], icon_box(cell), Color.hex(icon_ink(b, sim.Level.low))) }
+                } else if pass == 0 {
+                    if g.depth { extrude(canvas, cell, LOW[b], 1.0, carried(g, x - 1, y) == grid.Block.empty, carried(g, x, y + 1) == grid.Block.empty) }
+                } else {
+                    canvas.fill(cell, Color.hex(LOW[b]))
+                }
             }
         }
     }
@@ -232,7 +305,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
             rgb = theme.ACTIVE
         }
         if (each == bar.Button.edit && g.phase == app.Phase.edit) || (each == bar.Button.run && g.phase == app.Phase.run) ||
-            (each == bar.Button.auto && g.auto) {
+            (each == bar.Button.auto && g.auto) || (each == bar.Button.depth && g.depth) {
             rgb = theme.ACTIVE
         }
         if disabled(g, each) { rgb = theme.DISABLED }

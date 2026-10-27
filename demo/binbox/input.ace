@@ -145,6 +145,7 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
     /* The zoom buttons zoom about the board area's center. */
     a: ui.Rect = g.view.area()
     if bar.place(bar.Button.zoom_out).has(x, y) { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    if bar.place(bar.Button.depth).has(x, y) { g.depth = !g.depth }
     if bar.place(bar.Button.zoom_in).has(x, y) { g.view.zoom(1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
     return true
 }

@@ -72,6 +72,7 @@ it can be started from any directory.
 | Hover | Shows the block's name at the bottom center, in either mode |
 | Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode |
+| Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
 | S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Sim) |

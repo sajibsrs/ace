@@ -3,13 +3,21 @@
 
 An element with a stroke is a bold line: its path flattens to a polyline that
 the program draws as a line of fixed width. An element without one is a filled
-shape: its path or circle flattens to a simple polygon, oriented clockwise on
-screen, and is split into triangles here. Paths use only M m L l H h V v C c A a
-Z z and <circle>. The table holds, per icon, a run of shapes on the 24 x 24 grid:
+shape: its path or circle flattens to a polygon, oriented clockwise on screen,
+and is split into triangles here. A subpath of a filled path that lies inside
+another subpath of it is a hole (even-odd): each hole is joined to its outline
+by a zero-width bridge cut, which makes one simple polygon with a pair of
+coincident bridge edges. Paths use only M m L l H h V v C c A a Z z and
+<circle>. The table holds, per icon, a run of shapes on the 24 x 24 grid:
 
     -1, n, x0, y0 ... xn, yn           an open polyline of n points
     -3, n, x0, y0 ...                   a closed polyline of n points
     -2, n, x0, y0 ... , then 3 * (n - 2) vertex numbers     a polygon of n points
+    -4, n, x0, y0 ... , then 3 * (n - 2) vertex numbers, then m and m pairs a, c
+                                        a polygon with m bridges: the bridge edges
+                                        run a -> a + 1 and c -> c + 1 (modulo n),
+                                        a + 1 and c lie at one point, as do c + 1
+                                        and a; the fringe skips them
     -9                                  the end of the icon
 
     python3 -I icon/bake.py        (from demo/binbox)
@@ -26,10 +34,11 @@ ORDER = [
     "source", "wire", "input", "output", "and", "or", "not", "nand", "nor",
     "xor", "xnor", "led", "bridge",
     "new", "open", "save", "save-as", "edit", "run", "step", "auto",
-    "zoom-out", "zoom-in", "select", "home", "bars",
+    "zoom-out", "zoom-in", "select", "home", "bars", "depth",
 ]
 ARITY = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "A": 7, "Z": 0}
 CURVE_STEPS = 10
+SHAPE_MAX = 48  # also ui.SHAPE_MAX
 ARC_STEP = math.pi / 12
 
 
@@ -137,6 +146,70 @@ def inside(p, a, b, c):
     return cross(a, b, p) >= 0 and cross(b, c, p) >= 0 and cross(c, a, p) >= 0
 
 
+def seg_cross(p, q, r, t):
+    """True when segments pq and rt cross at a point inside both."""
+    d1, d2 = cross(p, q, r), cross(p, q, t)
+    d3, d4 = cross(r, t, p), cross(r, t, q)
+    return d1 * d2 < -1e-9 and d3 * d4 < -1e-9
+
+
+def on_seg(p, q, r):
+    """True when r lies on segment pq, ends excluded."""
+    if abs(cross(p, q, r)) > 1e-9:
+        return False
+    d = (q[0] - p[0]) * (r[0] - p[0]) + (q[1] - p[1]) * (r[1] - p[1])
+    return 1e-9 < d < (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 - 1e-9
+
+
+def contains(poly, pt):
+    """Even-odd point in polygon."""
+    c = False
+    for k in range(len(poly)):
+        a, b = poly[k], poly[(k + 1) % len(poly)]
+        if (a[1] > pt[1]) != (b[1] > pt[1]) and pt[0] < a[0] + (pt[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
+            c = not c
+    return c
+
+
+def merge(outline, holes):
+    """Outline (positive area) and holes -> (one polygon, bridges as (a, c))."""
+    nodes = [[p, ("o", i)] for i, p in enumerate(outline)]  # [point, role]
+    segs = [(poly[k], poly[(k + 1) % len(poly)]) for poly in [outline] + holes for k in range(len(poly))]
+    used = set()
+    for hole in sorted(holes, key=lambda h: -max(x for x, _ in h)):
+        best = None
+        for i, q in enumerate(outline):
+            if i in used:
+                continue
+            for j, p in enumerate(hole):
+                d = math.dist(p, q)
+                if best is not None and d >= best[0]:
+                    continue
+                if any(seg_cross(p, q, a, b) for a, b in segs):
+                    continue
+                if any(on_seg(p, q, v) for poly in [outline] + holes for v in poly):
+                    continue
+                mid = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+                if not contains(outline, mid) or any(contains(h, mid) for h in holes):
+                    continue
+                best = (d, i, j)
+        if best is None:
+            sys.exit("cannot bridge a hole")
+        _, i, j = best
+        used.add(i)
+        segs.append((outline[i], hole[j]))
+        at = next(k for k, n in enumerate(nodes) if n[1] == ("o", i))
+        h = len(hole)
+        ins = [[hole[(j + t) % h], None] for t in range(h + 1)] + [[outline[i], None]]
+        ins[0][1] = ("b", i)
+        ins[h][1] = ("c", i)
+        ins[h + 1][1] = ("d", i)
+        nodes[at + 1:at + 1] = ins
+    bridges = [(next(k for k, n in enumerate(nodes) if n[1] == ("o", i)),
+                next(k for k, n in enumerate(nodes) if n[1] == ("c", i))) for i in sorted(used)]
+    return [n[0] for n in nodes], bridges
+
+
 def triangulate(poly):
     """Ear clipping of a simple polygon with positive area; vertex numbers."""
     left = list(range(len(poly)))
@@ -147,7 +220,7 @@ def triangulate(poly):
             a, b, c = poly[i], poly[j], poly[l]
             if cross(a, b, c) <= 1e-9:
                 continue
-            if any(inside(poly[m], a, b, c) for m in left if m not in (i, j, l)):
+            if any(inside(poly[m], a, b, c) for m in left if m not in (i, j, l) and poly[m] not in (a, b, c)):
                 continue
             out += [i, j, l]
             left.pop(k)
@@ -167,6 +240,7 @@ def shapes_of(name):
             shapes = [circle(float(attrs["cx"]), float(attrs["cy"]), float(attrs["r"]))]
         else:
             shapes = path(attrs["d"])
+        rings = []
         for sh in shapes:
             if stroked:
                 sh = [p for k, p in enumerate(sh) if k == 0 or math.dist(p, sh[k - 1]) > 1e-6]
@@ -176,9 +250,24 @@ def shapes_of(name):
             sh = [p for k, p in enumerate(sh) if k == 0 or math.dist(p, sh[k - 1]) > 1e-6]
             if math.dist(sh[0], sh[-1]) < 1e-6:
                 sh = sh[:-1]
-            if area(sh) < 0:
-                sh.reverse()
-            polys.append(sh)
+            rings.append(sh)
+        # Even-odd: a ring inside an odd number of others is a hole of the
+        # innermost one that holds it.
+        owner = {}
+        for k, ring in enumerate(rings):
+            held = [m for m, other in enumerate(rings) if m != k and contains(other, ring[0])]
+            if len(held) % 2:
+                owner[k] = max(held, key=lambda m: sum(contains(rings[n], rings[m][0]) for n in range(len(rings)) if n != m))
+        for k, ring in enumerate(rings):
+            if k in owner:
+                continue
+            if area(ring) < 0:
+                ring.reverse()
+            holes = []
+            for h, o in owner.items():
+                if o == k:
+                    holes.append(rings[h][::-1] if area(rings[h]) > 0 else rings[h])
+            polys.append(merge(ring, holes) if holes else (ring, []))
     return lines, polys
 
 
@@ -191,13 +280,17 @@ def main():
             flat += [-3.0 if closed else -1.0, float(len(s))]
             for px, py in s:
                 flat += [round(px, 2), round(py, 2)]
-        for p in polys:
-            if len(p) > 48:
+        for p, bridges in polys:
+            if len(p) > SHAPE_MAX:
                 sys.exit(f"{name}: polygon of {len(p)} points")
-            flat += [-2.0, float(len(p))]
+            flat += [-4.0 if bridges else -2.0, float(len(p))]
             for px, py in p:
                 flat += [round(px, 2), round(py, 2)]
             flat += [float(v) for v in triangulate([(round(x, 2), round(y, 2)) for x, y in p])]
+            if bridges:
+                flat += [float(len(bridges))]
+                for a, c in bridges:
+                    flat += [float(a), float(c)]
         flat += [-9.0]
     members = [n.replace("-", "_") for n in ORDER]
 

@@ -187,12 +187,16 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
     edge: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
     inner: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
     outer: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
+    /* The corner neighbors a fringe follows, and the bridge edges it skips. */
+    prev: [SHAPE_MAX]usize = [0 : SHAPE_MAX]
+    next: [SHAPE_MAX]usize = [0 : SHAPE_MAX]
+    bridge: [SHAPE_MAX]bool = [false : SHAPE_MAX]
     i: usize = usize(icon.START[which])
     for icon.POINTS[i] != -9.0 {
         tag: f32 = icon.POINTS[i]
         n: usize = usize(icon.POINTS[i + 1])
         i += 2
-        if tag != -2.0 {
+        if tag != -2.0 && tag != -4.0 {
             if n > SHAPE_MAX { return }
             for k: usize in 0 .. n {
                 edge[k] = Point { x = ox + icon.POINTS[i + 2 * k] * unit, y = oy + icon.POINTS[i + 2 * k + 1] * unit }
@@ -206,12 +210,37 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
             edge[k] = Point { x = ox + icon.POINTS[i + 2 * k] * unit, y = oy + icon.POINTS[i + 2 * k + 1] * unit }
         }
         i += 2 * n
+        tris: usize = i
+        i += 3 * (n - 2)
+        for k: usize in 0 .. n {
+            prev[k] = (k + n - 1) % n
+            next[k] = (k + 1) % n
+            bridge[k] = false
+        }
+        /* A bridge a -> b, c -> d (b at c's point, d at a's) is a zero-width
+         * cut: it draws no fringe, and its corners follow the true outline
+         * and hole edges around it. */
+        if tag == -4.0 {
+            for m: usize in 0 .. usize(icon.POINTS[i]) {
+                a: usize = usize(icon.POINTS[i + 1 + 2 * m])
+                c: usize = usize(icon.POINTS[i + 2 + 2 * m])
+                b: usize = (a + 1) % n
+                d: usize = (c + 1) % n
+                bridge[a] = true
+                bridge[c] = true
+                next[a] = (d + 1) % n
+                prev[d] = (a + n - 1) % n
+                prev[b] = (c + n - 1) % n
+                next[c] = (b + 1) % n
+            }
+            i += 1 + 2 * usize(icon.POINTS[i])
+        }
         /* Each point moves half a pixel in and out along its corner's
          * bisector, so the fringe between the two straddles the true edge. */
         for k: usize in 0 .. n {
-            before: Point = edge[(k + n - 1) % n]
+            before: Point = edge[prev[k]]
             here: Point = edge[k]
-            after: Point = edge[(k + 1) % n]
+            after: Point = edge[next[k]]
             n1: Point = turn(before, here)
             n2: Point = turn(here, after)
             mx: f32 = n1.x + n2.x
@@ -233,13 +262,13 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
         }
         if self.count + 3 * (n - 2) + 6 * n > self.vertices.len { self.flush(r) }
         for t: usize in 0 .. n - 2 {
-            a: usize = usize(icon.POINTS[i + 3 * t])
-            b: usize = usize(icon.POINTS[i + 3 * t + 1])
-            c: usize = usize(icon.POINTS[i + 3 * t + 2])
+            a: usize = usize(icon.POINTS[tris + 3 * t])
+            b: usize = usize(icon.POINTS[tris + 3 * t + 1])
+            c: usize = usize(icon.POINTS[tris + 3 * t + 2])
             self.triangle(inner[a], inner[b], inner[c], color)
         }
-        i += 3 * (n - 2)
         for k: usize in 0 .. n {
+            if bridge[k] { continue }
             j: usize = (k + 1) % n
             self.quad(Vertex { position = inner[k], color = color }, Vertex { position = inner[j], color = color },
                 Vertex { position = outer[j], color = clear }, Vertex { position = outer[k], color = clear })

@@ -27,6 +27,8 @@ pub App: struct {
     pub s: sim.Sim = sim.Sim {},
     pub block: grid.Block = grid.Block.wire,
     pub auto: bool = false,
+    /* Whether blocks draw with depth. */
+    pub depth: bool = true,
     /* Set when the Home button is pressed; the caller leaves the editor. */
     pub leave: bool = false,
     pub count: int = 0,
