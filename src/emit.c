@@ -776,6 +776,23 @@ static Wide fold_trunc(SType* t, Wide v) {
 
 static int fold_float(Em* e, Node* v, SType* t, double* out);
 
+// The static length of `base` in `base.len` when base is a string literal or
+// a global const string or array (Values & Passing #12), else 0.
+static int fold_seq_len(Node* base, Wide* out) {
+    if (base->kind == N_STR) {
+        *out = (Wide)base->len;
+        return 1;
+    }
+    Sym* s = node_sym(base);
+    if (!s || !s->is_global || !s->is_const || !s->init) return 0;
+    SType* bt = unwrap(node_ty(base));
+    if (bt && bt->kind == SK_ARRAY) {
+        *out = (Wide)bt->count;
+        return 1;
+    }
+    return fold_seq_len(s->init, out);
+}
+
 static int fold_int(Em* e, Node* v, SType* t, Wide* out) {
     Wide a, b;
     int r;
@@ -789,6 +806,9 @@ static int fold_int(Em* e, Node* v, SType* t, Wide* out) {
         if (!s || !s->is_global || !s->is_const || !s->init || !vt || vt != unwrap(t)) return 0;
         return fold_int(e, s->init, t, out);
     }
+    case N_FIELD_E:
+        if (v->len != 3 || memcmp(v->str, "len", 3) != 0 || !v->a || !fold_seq_len(v->a, out)) return 0;
+        return fold_fits(t, *out);
     case N_UNARY:
         if (v->op != T_MINUS && v->op != T_TILDE) return 0;
         if ((r = fold_int(e, v->a, t, &a)) != 1) return r;
@@ -1067,7 +1087,7 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
                 return 1;
             }
         }
-        return 0;
+        return eval_fold(e, v, t, out); // a const sequence's `.len`
     }
     case N_NULL: {
         for (uint32_t i = 0; i < ty_size(t); i++) buf_put8(out, 0);

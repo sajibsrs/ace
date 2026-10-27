@@ -1,5 +1,10 @@
 # Language
 
+- A global initializer folds `.len` of a string literal or of a global `const`
+  string or array, so `N: const usize = S.len` and `f32(S.len) * GLYPH` are
+  constants. `fold_int` reads the length from the literal, the array type, or
+  the const's initializer. C only; selfhost has not ported it.
+
 - Plain parameters are writable locals: the callee copies an aggregate on
   entry only when its body writes it, takes `&p`, or calls a non-`const self`
   method on it (`Sym.is_written`), else reads the argument in place.

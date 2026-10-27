@@ -1,0 +1,26 @@
+/* A global initializer folds `.len` of a string literal or of a const string
+ * or array global, alone or inside constant arithmetic and casts. */
+
+// expect-exit: 0
+
+TITLE: const string = "Speed"
+ALIAS: const string = TITLE
+CELLS: const [7]u8 = [0 : 7]
+WIDE: const f32 = 3.0
+
+SPAN: const usize = TITLE.len
+CHAIN: const usize = ALIAS.len + 1
+ITEMS: const usize = CELLS.len * 2
+LITERAL: const usize = "abc".len
+SIZED: const u8 = u8(TITLE.len)
+SCALED: const f32 = 18.0 + f32(TITLE.len) * WIDE + 6.0
+
+main(): int {
+    if SPAN != 5 || SPAN != TITLE.len { return 1 }
+    if CHAIN != 6 { return 2 }
+    if ITEMS != 14 { return 3 }
+    if LITERAL != 3 { return 4 }
+    if SIZED != 5 { return 5 }
+    if SCALED != 18.0 + f32(TITLE.len) * WIDE + 6.0 || SCALED != 39.0 { return 6 }
+    return 0
+}
