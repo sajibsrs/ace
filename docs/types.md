@@ -430,8 +430,10 @@ alias analysis.
 compile-time constant expression: a literal, a `const` identifier,
 `sizeof`/`alignof`/`offsetof`, integer/bitwise arithmetic over these, or an
 integer-primitive conversion of one — the same restricted surface `@align(N)`
-uses. A conversion wraps to its target's width exactly as it does at runtime,
-so `int` dimensions size an array as `[usize(WIDTH * HEIGHT)]T`; a 64-bit
+uses. The expression may have any integer type and is checked by its value,
+which must be positive, so `int` dimensions size an array as `[WIDTH * HEIGHT]T`
+with no conversion. A conversion wraps to its target's width exactly as it does
+at runtime, so `[usize(u8(WRAPS))]T` is the wrapped length; a 64-bit
 unsigned result at or above 2^63, such as `usize(-1)` over a `const`, does not
 reduce and is rejected. `[]T` is a two-word view containing
 a pointer and length.

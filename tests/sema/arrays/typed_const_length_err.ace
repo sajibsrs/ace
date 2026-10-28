@@ -1,0 +1,13 @@
+/* A typed constant length is still checked by value: it must be positive and
+ * must match the repetition count, and a runtime integer is not a constant. */
+
+NEGATIVE: const int = -1
+COUNT: const int = 4
+
+main(): int {
+    n: int = 3
+    a: [NEGATIVE]int
+    b: [COUNT]int = [0 : 3]
+    c: [n]int
+    return 0
+}

@@ -1,5 +1,9 @@
 # Compiler
 
+- An array length or repetition count of any integer type is checked by its
+  constant value (positive, equal to the array length) instead of coercing to
+  `usize`, so a `const int` sizes an array without a duplicate `usize` constant
+  or a conversion. One `coerce_length` helper serves all three sites.
 - Release hoists a loop's pure non-trapping operations, and its stack-object
   loads when it neither stores nor calls, to the loop's entry; branch threading
   enters successors with other predecessors or phis; `Map.get`/`has` are

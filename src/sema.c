@@ -817,6 +817,7 @@ static void reject_const_view(Ck* k, Node* at, Node* e);
 static SType* deref_sequence(Ck* k, Node** at);
 static uint32_t type_identity(SType* t);
 static int coerce(Ck* k, Node* e, SType* want);
+static int coerce_length(Ck* k, Node* e);
 static SType* check_call(Ck* k, Node* call);
 static Node* inline_callee(Node* call);
 static void check_stmt(Ck* k, Node* s);
@@ -1471,7 +1472,7 @@ static SType* build_type(Ck* k, Node* t) {
             (prim_by_name(t->b->str, t->b->len) || lookup_type(k, t->b->str, t->b->len)))
             return enum_array_type(k, t); // [E]T: the bracket names a type
         int errors = k->d->errors + k->quiet_errors;
-        coerce(k, t->b, st_prim(P_USIZE));
+        coerce_length(k, t->b);
         if (k->d->errors + k->quiet_errors != errors) return T_ERR; // already reported
         int64_t len;
         if (!ut_const(t->b, &len)) {
@@ -2250,7 +2251,7 @@ static int coerce_slicelit(Ck* k, Node* e, SType* want) {
     }
     int64_t count = e->nkids;
     if (e->a) {
-        coerce(k, e->b, st_prim(P_USIZE));
+        coerce_length(k, e->b);
         if (!ut_const(e->b, &count) || count < 0) {
             ck_err(k, e->b, "array repetition count must be a compile-time usize expression");
             return 0;
@@ -2269,6 +2270,17 @@ static int coerce_slicelit(Ck* k, Node* e, SType* want) {
 }
 
 static int cond_test(Ck* k, Node* e);
+
+// An array length or repetition count is checked by value: any integer
+// constant expression is accepted, typed or untyped, and the caller range-checks
+// the evaluated value. A runtime or non-integer expression keeps coerce's error.
+static int coerce_length(Ck* k, Node* e) {
+    SType* t = expr_type(k, e);
+    int64_t v;
+    if (t && t->kind == SK_ERR) return 1; // already reported; coerce would report it again
+    if (t && t != T_UT_INT && is_int(t) && ut_const(e, &v)) return 1;
+    return coerce(k, e, st_prim(P_USIZE));
+}
 
 static int coerce(Ck* k, Node* e, SType* want) {
     // An already-reported type leaves a context-typed literal nothing to check against.
@@ -6323,7 +6335,7 @@ static void check_arraylit(Ck* k, Node* lit, SType* want) {
         return;
     }
     if (lit->a) {
-        coerce(k, lit->b, st_prim(P_USIZE));
+        coerce_length(k, lit->b);
         int64_t count;
         if (!ut_const(lit->b, &count)) {
             ck_err(k, lit->b, "array repetition count must be a compile-time usize expression");

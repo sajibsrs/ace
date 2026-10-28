@@ -1916,6 +1916,18 @@ Sema.settle_operand(self, e: u32, want: u32): bool {
 }
 
 /* Checks `e` against `want`, settling an untyped constant at it. */
+/* An array length or repetition count is checked by value: any integer
+ * constant expression is accepted, typed or untyped. */
+Sema.coerce_length(self, e: u32): bool {
+    t: u32 = self.expr_type(e)
+    if t != 0 && self.ty(t).kind == TypeKind.err { return true } // already reported
+    if t != 0 && t != self.t_ut_int && self.is_int(t) {
+        _, ok: bool = self.ut_const(e)
+        if ok { return true }
+    }
+    return self.coerce(e, self.prim(P_USIZE))
+}
+
 Sema.coerce(self, e: u32, want: u32): bool {
     n: Node = self.node(e)
     wk: TypeKind = TypeKind.err
@@ -2226,7 +2238,7 @@ Sema.coerce_slicelit(self, e: u32, want: u32): bool {
     }
     count: i64 = i64(n.nkids)
     if n.a != 0 {
-        _ = self.coerce(n.b, self.prim(P_USIZE))
+        _ = self.coerce_length(n.b)
         c: i64, ok: bool = self.ut_const(n.b)
         if !ok || c < 0 {
             self.err(n.b, ["array repetition count must be a compile-time usize expression"])
@@ -4537,7 +4549,7 @@ Sema.check_arraylit(self, lit: u32, want: u32) {
     }
     l: Node = self.node(lit)
     if l.a != 0 {
-        _ = self.coerce(l.b, self.prim(P_USIZE))
+        _ = self.coerce_length(l.b)
         count: i64, ok: bool = self.ut_const(l.b)
         if !ok {
             self.err(l.b, ["array repetition count must be a compile-time usize expression"])
@@ -5086,7 +5098,7 @@ Sema.build_array(self, id: u32): u32 {
         return self.enum_array(id)
     }
     errors: int = self.errors
-    _ = self.coerce(t.b, self.prim(P_USIZE))
+    _ = self.coerce_length(t.b)
     if self.errors != errors { return self.t_err } // already reported
     len: i64, ok: bool = self.ut_const(t.b)
     if !ok {

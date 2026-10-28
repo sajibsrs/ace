@@ -90,7 +90,8 @@
     an integer-primitive conversion `T(x)` of one, wrapped to `T`'s width as at
     runtime (a 64-bit unsigned result at or above 2^63 does not reduce) —
     the same restricted surface `@align(N)` already uses (Type System,
-    Carved). The evaluated length must be a positive `usize`; a runtime
+    Carved). The expression may have any integer type, typed or untyped, and
+    is checked by its evaluated value, which must be positive; a runtime
     value, a non-positive result, or an expression the compiler cannot
     reduce is a compile-time error. An array literal's repetition count
     (Syntax & Parsing #8) uses the identical surface and must match the

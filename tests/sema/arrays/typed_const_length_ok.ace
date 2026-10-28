@@ -1,0 +1,19 @@
+/* A typed integer constant backs an array length and a repetition count by
+ * value, with no conversion: any integer type whose evaluated value is a
+ * positive length is accepted. */
+
+WIDTH: const int = 16
+HEIGHT: const i8 = 4
+DEPTH: const u8 = 2
+
+Board: struct {
+    cells: [WIDTH * WIDTH]u8 = [0 : WIDTH * WIDTH],
+    layers: [DEPTH][HEIGHT]i16 = [[0 : HEIGHT] : DEPTH],
+}
+
+main(): int {
+    b: Board
+    local: [WIDTH + 1]int = [0 : WIDTH + 1]
+    if b.cells.len != 256 || b.layers.len != 2 || local.len != 17 { return 1 }
+    return 0
+}
