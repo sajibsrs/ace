@@ -7,7 +7,7 @@ paths:
 
 The user-facing guide is `demo/binbox/README.md` (blocks, rules, controls,
 `.bnbx` format, file map, and what each shipped diagram does, including the
-SR latch's S and R). Read it first for any question about binbox or its
+JK flip-flop's J and K). Read it first for any question about binbox or its
 diagrams, and before changing behavior; read source only when it does not
 answer. Keep its diagram descriptions current whenever a diagram changes.
 

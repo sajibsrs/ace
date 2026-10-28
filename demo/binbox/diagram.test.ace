@@ -108,10 +108,10 @@ pub bad_code(t: *test.T) {
     rejects(t, out[..], diagram.DiagramErr.code)
 }
 
-/* The shipped SR latch powers up with S and R off and Q low, and then holds
+/* The shipped JK flip-flop powers up with J and K off and Q low, and then holds
  * whatever the last pulse stored. */
-pub latch_file(t: *test.T) {
-    data: []u8, ferr: Error = file.read("diagram/latch.bnbx")
+pub jk_file(t: *test.T) {
+    data: []u8, ferr: Error = file.read("diagram/jk-flip-flop.bnbx")
     defer mem.release[u8](&data)
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)

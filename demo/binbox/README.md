@@ -100,22 +100,24 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 The Save-as box takes `a`–`z`, `0`–`9`, `-` and `_` (Shift+`-`); Enter saves,
 Escape cancels.
 
-## Example: SR latch
+## Example: JK flip-flop
 
-`diagram/latch.bnbx` is an SR latch built around one toggle (T). A toggle
-flips only when its input rises, so the input is made high exactly when the
-latch must change: `(S and not Q) or (R and Q)`. S sets Q low to high, R sets
-it high to low, and a pulse that would change nothing (S while set, R while
-reset) does nothing. It sits at the board's center (columns 26-37, rows 12-18):
+`diagram/jk-flip-flop.bnbx` is a JK flip-flop built around one toggle (T), with
+J the source at the left and K the lower source. A toggle flips only when its
+input rises, so the input is made high exactly when the flip-flop must change:
+`(J and not Q) or (K and Q)`. That is the JK equation `Q+ = J·Q' + K'·Q`. J sets
+Q low to high, K sets it high to low, and a pulse that would change nothing (J
+while set, K while reset) does nothing. It has no clock: it reacts as soon as J
+or K changes. It sits at the board's center (columns 26-37, rows 12-18):
 
 ```
 . . N I W W W W W W W .     NOT of Q: the upper AND's second pin
 . . O . . . . . . . W .
 . . I . . . . . . . W .
-S I & O I | O I T O W L     S into the upper AND; OR; the toggle; Q to the LED
+S I & O I | O I T O W L     J (S) into the upper AND; OR; the toggle; Q to the LED
 . . . . . I . . . . W .
 . . . . . O . . . . W .
-. . . S I & I W W W W .     R (the lower S) into the lower AND; Q into its other pin
+. . . S I & I W W W W .     K (the lower S) into the lower AND; Q into its other pin
 ```
 
 In the drawing, `I` is a read pin and `O` a write pin.
@@ -123,17 +125,20 @@ In the drawing, `I` is a read pin and `O` a write pin.
 Touching does most of the wiring: each gate's write pin sits against the next
 gate's read pin, so only Q needs wire.
 
-The file is saved with S and R off and Q low. Switch to Simulate (2), turn on
-auto-ticking (Space), and flip S on and off: the LED turns on and stays on. Flip
-R on and off: it turns off and stays off. Holding both on leaves the latch as
-it is. Pulses of any length work, since the toggle reacts to the edge, not to
-the level. Q follows about 4 ticks after the input changes.
+The file is saved with J and K off and Q low. Switch to Simulate (2), turn on
+auto-ticking (Space), and flip J on and off: the LED turns on and stays on. Flip
+K on and off: it turns off and stays off. Holding both on leaves it set: from
+reset it sets, and from set Q dips low for a few ticks and flips back. It does
+not toggle on every tick as a clocked JK would, because the toggle's input
+stays high after the first flip. Pulses of any length work, since the toggle
+reacts to the edge, not to the level. Q follows about 4 ticks after the input
+changes.
 
 **Feedback circuits with gates alone need a defined start and long enough
 pulses.** Gate outputs are simulation state, so every load starts with all
 gates low. Two cross-coupled NORs saved with both inputs off rise and fall
 together and oscillate forever, since identical gates never break the tie. A
-toggle breaks the tie by remembering, which is why this latch needs no held
+toggle breaks the tie by remembering, which is why this flip-flop needs no held
 input at power-on.
 
 ## Diagrams
@@ -142,7 +147,7 @@ input at power-on.
   it. A NOT (a tick late) and an AND make a one-tick pulse when the switch rises, and an
   XOR fed back on itself flips on that pulse. Flip the switch on and off: the LED turns on
   and stays on; again: it turns off. Needs no reset.
-- `diagram/latch.bnbx`: SR latch from one toggle and four gates (a latch built from the toggle)
+- `diagram/jk-flip-flop.bnbx`: JK flip-flop from one toggle and four gates (J sets, K resets, no clock)
 - `diagram/half-adder.bnbx`: half adder
 - `diagram/full-adder.bnbx`: full adder
 - `diagram/ripple-counter.bnbx`: 8-bit ripple counter on a clock. Each bit is three

@@ -255,14 +255,14 @@ ticks(s: *sim.Sim, n: int) {
     for i: int in 0 .. n { s.tick() }
 }
 
-/* An SR latch around one toggle, centered on the board as diagram/latch.bnbx
+/* A JK flip-flop around one toggle, centered on the board as diagram/jk-flip-flop.bnbx
  * stores it. The toggle (34,15) flips when its input rises, and the input is
- * (S AND NOT Q) OR (R AND Q): high only when the latch must change. Q (output
+ * (J AND NOT Q) OR (K AND Q): high only when the flip-flop must change. Q (output
  * pin (35,15)) runs down column 36 and back along rows 18 and 12; LED at
- * (37,15). Source S (26,15) feeds the upper AND (28,15), the NOT (28,12)
- * feeds its other pin (28,14); source R (29,18) feeds the lower AND (31,18),
+ * (37,15). Source J (26,15) feeds the upper AND (28,15), the NOT (28,12)
+ * feeds its other pin (28,14); source K (29,18) feeds the lower AND (31,18),
  * whose other pin (32,18) reads Q. The ANDs' outputs meet at the OR (31,15). */
-latch(): sim.Sim {
+jk(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     row(&g, 28, 12, [
         grid.Block.not, grid.Block.read, grid.Block.wire, grid.Block.wire,
@@ -286,14 +286,14 @@ latch(): sim.Sim {
     return sim.Sim.init(g)
 }
 
-/* The latch as diagram/latch.bnbx stores it. */
-pub latch_matches_file(t: *test.T) {
-    data: []u8, err: Error = file.read("diagram/latch.bnbx")
+/* The JK flip-flop as diagram/jk-flip-flop.bnbx stores it. */
+pub jk_matches_file(t: *test.T) {
+    data: []u8, err: Error = file.read("diagram/jk-flip-flop.bnbx")
     defer mem.release[u8](&data)
     t.equal(err == null, true)
     stored: sim.Sim, derr: Error = diagram.decode(data)
     t.equal(derr == null, true)
-    built: sim.Sim = latch()
+    built: sim.Sim = jk()
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             test.equal[grid.Block](t, stored.g.get(x, y), built.g.get(x, y))
@@ -301,9 +301,9 @@ pub latch_matches_file(t: *test.T) {
     }
 }
 
-/* Set, reset, and the no-op pulses: S on a set latch and R on a reset one. */
-pub sr_latch_holds_a_bit(t: *test.T) {
-    s: sim.Sim = latch()
+/* J sets, K resets, and the no-op pulses: J on a set flip-flop and K on a reset one. */
+pub jk_holds_a_bit(t: *test.T) {
+    s: sim.Sim = jk()
     ticks(&s, 8)
     low(t, s, 37, 15)
 
@@ -332,10 +332,29 @@ pub sr_latch_holds_a_bit(t: *test.T) {
     low(t, s, 37, 15)
 }
 
-/* S and R together on a latch that is set leave it set, and on a reset one
- * leave it set too: S wins by being seen first, then R holds the input high. */
-pub sr_latch_both_inputs(t: *test.T) {
-    s: sim.Sim = latch()
+/* J and K together leave the flip-flop set, from either state: from reset J sets it
+ * and the input stays high; from set Q dips low for a few ticks and flips back,
+ * since there is no clock to make J=K=1 toggle on every tick. */
+pub jk_both_inputs(t: *test.T) {
+    s: sim.Sim = jk()
+    s.toggle(26, 15, true)
+    s.toggle(29, 18, true)
+    ticks(&s, 12)
+    high(t, s, 37, 15)
+    s.toggle(26, 15, false)
+    s.toggle(29, 18, false)
+    ticks(&s, 12)
+    high(t, s, 37, 15)
+}
+
+/* From set, J and K together end set too, after Q dips and returns. */
+pub jk_both_inputs_from_set(t: *test.T) {
+    s: sim.Sim = jk()
+    s.toggle(26, 15, true)
+    ticks(&s, 8)
+    s.toggle(26, 15, false)
+    ticks(&s, 8)
+    high(t, s, 37, 15)
     s.toggle(26, 15, true)
     s.toggle(29, 18, true)
     ticks(&s, 12)
