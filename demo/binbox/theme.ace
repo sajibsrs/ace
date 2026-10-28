@@ -9,6 +9,8 @@ pub PANEL: const u32 = 0x101214
 pub WINDOW: const u32 = 0x0a0b0c
 pub BUTTON: const u32 = 0x2c3238
 pub ACTIVE: const u32 = 0x3d4f63
+/* Every other row of a list, a shade darker than BUTTON. */
+pub STRIPE: const u32 = 0x252a2f
 /* The Edit button, and the Simulate button: resting, then lit (current
  * phase or under the pointer). */
 pub EDIT: const u32 = 0x8a2a2a

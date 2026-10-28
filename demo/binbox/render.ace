@@ -473,16 +473,18 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
 draw_list(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     rows: usize = g.store.list.count
     if rows == 0 { rows = 1 }
+    canvas.fill(bar.list(rows), Color.hex(theme.BUTTON))
     for i: usize in 0 .. rows {
         rgb: u32 = theme.BUTTON
+        if i % 2 == 1 { rgb = theme.STRIPE }
         if i < g.store.list.count && bar.row(i).has(g.mx, g.my) { rgb = theme.ACTIVE }
         canvas.fill(bar.row(i), Color.hex(rgb))
     }
     canvas.flush(r)
 
-    if g.store.list.count == 0 { ui.left(r, bar.row(0), 8.0, "no diagrams in diagram/", theme.DIM) }
+    if g.store.list.count == 0 { ui.left(r, bar.row(0), bar.LIST_PAD + 8.0, "no diagrams in diagram/", theme.DIM) }
     for i: usize in 0 .. g.store.list.count {
-        ui.left(r, bar.row(i), 8.0, g.store.list.names[i], theme.INK)
+        ui.left(r, bar.row(i), bar.LIST_PAD + 8.0, g.store.list.names[i], theme.INK)
     }
 }
 

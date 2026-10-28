@@ -25,7 +25,7 @@ pub WIDTH: const f32 = 16.0 * 40.0
 pub PANEL_W: const f32 = 440.0
 pub PANEL_H: const f32 = 72.0
 /* A row of the Open list. */
-pub ROW: const f32 = 20.0
+pub ROW: const f32 = 22.0
 
 /* What the left mouse button does on the board in Edit: place the selected
  * block, or box-select blocks and drag them. */
@@ -297,8 +297,19 @@ pub BLOCK_ICON: [grid.Block]icon.Id = [
     grid.Block.toggle = icon.Id.toggle,
 ]
 
+/* The space around the Open list's rows: before its text, above and below. */
+pub LIST_PAD: const f32 = 8.0
+pub LIST_TOP: const f32 = 4.0
+pub LIST_BOTTOM: const f32 = 12.0
+
+/* The Open list's panel, around `rows` rows. */
+pub list(rows: usize): ui.Rect {
+    at: ui.Rect = place(Button.open)
+    return ui.Rect { x = at.x, y = GAP + BAR, w = 280.0 + 2.0 * LIST_PAD, h = f32(rows) * ROW + LIST_TOP + LIST_BOTTOM }
+}
+
 /* Row `i` of the Open list. */
 pub row(i: usize): ui.Rect {
-    at: ui.Rect = place(Button.open)
-    return ui.Rect { x = at.x, y = GAP + BAR + f32(i) * ROW, w = 280.0, h = ROW }
+    at: ui.Rect = list(1)
+    return ui.Rect { x = at.x, y = at.y + LIST_TOP + f32(i) * ROW, w = at.w, h = ROW }
 }
