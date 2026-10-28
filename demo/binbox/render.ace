@@ -329,7 +329,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
             canvas.icon(r, bar.STRIP_ICON[each], ui.Rect { x = at.x + bar.TOOL_PAD, y = at.y + bar.TOOL_PAD, w = at.w - 2.0 * bar.TOOL_PAD, h = at.h - 2.0 * bar.TOOL_PAD }, Color.hex(theme.INK))
         }
     }
-    /* The simulation widget: Step, Auto (lit while auto-ticking), Reset, and the
+    /* The simulation widget: Step, Play/Pause (auto-ticking, lit while on), Reset, and the
      * speed slider filled up to its stop. */
     if unfolded && bar.shown(bar.Widget.sim, edit, pencil, clocked) {
         step: ui.Rect = bar.step_at(side)
@@ -346,7 +346,9 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         canvas.fill(reset, Color.hex(rgb))
         canvas.icon(r, icon.Id.reset, ui.Rect { x = reset.x + bar.PAD, y = reset.y + (reset.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
         canvas.icon(r, icon.Id.step, ui.Rect { x = step.x + bar.PAD, y = step.y + (step.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
-        canvas.icon(r, icon.Id.auto, ui.Rect { x = auto.x + bar.PAD, y = auto.y + (auto.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
+        shown: icon.Id = icon.Id.run
+        if g.auto { shown = icon.Id.pause }
+        canvas.icon(r, shown, ui.Rect { x = auto.x + bar.PAD, y = auto.y + (auto.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
         pace: ui.Rect = bar.speed(side)
         canvas.fill(pace, Color.hex(theme.BUTTON))
         canvas.fill(ui.Rect { x = pace.x, y = pace.y, w = pace.w * speed.fill(g.stop), h = pace.h }, Color.hex(theme.ACTIVE))
@@ -402,9 +404,11 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     if unfolded && bar.shown(bar.Widget.sim, edit, pencil, clocked) {
         pace: ui.Rect = bar.speed(side)
         ui.left(r, bar.step_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.STEP_LABEL, theme.INK)
-        ui.left(r, bar.auto_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.AUTO_LABEL, theme.INK)
+        play: string = bar.PLAY_LABEL
+        if g.auto { play = bar.PAUSE_LABEL }
+        ui.left(r, bar.auto_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, play, theme.INK)
         ui.left(r, bar.reset_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.RESET_LABEL, theme.INK)
-        ui.left(r, ui.Rect { x = side.x, y = pace.y - bar.LINE, w = side.w, h = bar.LINE }, bar.INSET, bar.SPEED, theme.DIM)
+        ui.left(r, ui.Rect { x = side.x, y = pace.y - bar.SPEED_GAP - bar.LINE, w = side.w, h = bar.LINE }, bar.INSET, bar.SPEED, theme.DIM)
         rated: [16]u8
         setting: fmt.Buffer = fmt.Buffer.init(rated[..])
         speed.show(&setting, speed.hz(g.stop))

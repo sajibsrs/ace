@@ -84,9 +84,9 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing a floating paste cancels it |
 | Left click / drag | Edit with the pencil: place the selected block. Simulate: flip a source |
 | Right click / drag | Edit: remove |
-| Space / Auto | Simulate: toggle auto-ticking at the Speed slider's rate; a button in the side panel's Simulate widget |
-| Speed slider | Drag for Auto's rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, 10 to 90 kHz by 10 kHz, and 100 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
-| Reset | Simulate: returns to the state Simulate was entered with: every gate low, the tick count and clocks back to 0, sources as they were then; Auto keeps running or stopped; a button in the side panel's Simulate widget (no key) |
+| Space / Play / Pause | Simulate: toggle auto-ticking at the Speed slider's rate; a button in the side panel's Simulate widget that reads Play while stopped and Pause while ticking |
+| Speed slider | Drag for the auto-tick rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, 10 to 90 kHz by 10 kHz, and 100 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
+| Reset | Simulate: returns to the state Simulate was entered with: every gate low, the tick count and clocks back to 0, sources as they were then; auto-ticking keeps running or stopped; a button in the side panel's Simulate widget (no key) |
 | Step | Simulate: step one second of ticks at the Speed slider's rate (1 tick at 1 Hz); a button in the side panel's Simulate widget |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Cmd+S | Save (asks for a name the first time) |

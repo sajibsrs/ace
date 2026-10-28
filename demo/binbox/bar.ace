@@ -136,9 +136,12 @@ BLOCK_ROWS: const int = (int(members(grid.Block).len) - 1 + COLS - 1) / COLS
 
 /* The simulation widget's slider height. */
 SLIDER_H: const f32 = BAR - 8.0
+/* The space between the speed slider's title and the slider. */
+pub SPEED_GAP: const f32 = 4.0
 /* The simulation widget's labels, and the speed slider's title. */
 pub STEP_LABEL: const string = "Step"
-pub AUTO_LABEL: const string = "Auto"
+pub PLAY_LABEL: const string = "Play"
+pub PAUSE_LABEL: const string = "Pause"
 pub RESET_LABEL: const string = "Reset"
 pub SPEED: const string = "Speed"
 
@@ -170,7 +173,7 @@ pub height(widget: Widget): f32 {
     if widget == Widget.tools { return TITLE_H + BODY_GAP + PICK + INSET }
     if widget == Widget.blocks { return TITLE_H + BODY_GAP + f32(BLOCK_ROWS) * BAR + f32(BLOCK_ROWS - 1) * BLOCK_GAP + INSET }
     if widget == Widget.clock { return TITLE_H + BODY_GAP + SLIDER_H + INSET }
-    if widget == Widget.sim { return TITLE_H + BODY_GAP + 2.0 * PICK + 2.0 * BLOCK_GAP + LINE + SLIDER_H + INSET }
+    if widget == Widget.sim { return TITLE_H + BODY_GAP + 2.0 * PICK + 2.0 * BLOCK_GAP + LINE + SPEED_GAP + SLIDER_H + INSET }
     return TITLE_H + BODY_GAP + 3.0 * LINE + INSET
 }
 
@@ -232,7 +235,7 @@ pub clock_at(side: ui.Rect): ui.Rect {
 
 /* The speed slider's rectangle. */
 pub speed(side: ui.Rect): ui.Rect {
-    return ui.Rect { x = side.x + INSET, y = top(side, Widget.sim, false, false, false) + TITLE_H + BODY_GAP + 2.0 * (PICK + BLOCK_GAP) + LINE, w = side.w - 2.0 * INSET, h = SLIDER_H }
+    return ui.Rect { x = side.x + INSET, y = top(side, Widget.sim, false, false, false) + TITLE_H + BODY_GAP + 2.0 * (PICK + BLOCK_GAP) + LINE + SPEED_GAP, w = side.w - 2.0 * INSET, h = SLIDER_H }
 }
 
 /* The blocks widget's button for `block`. Tools are above blocks whenever the
