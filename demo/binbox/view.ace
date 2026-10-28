@@ -25,29 +25,32 @@ ZOOM_STEP: const f32 = 1.25
 pub View: struct {
     w: f32 = 0.0,
     h: f32 = 0.0,
+    pub shut: bool = false,
     cell: f32 = CELL * ZOOM_START,
     fit: f32 = 0.0,
     ox: f32 = 0.0,
     oy: f32 = 0.0,
 }
 
-/* The board's area: the window between the bars. */
-pub View.area(const self): ui.Rect {
-    return ui.Rect { x = 2.0 * bar.GAP + bar.STRIP, y = bar.TOP, w = self.w - 3.0 * bar.GAP - bar.STRIP, h = self.h - bar.TOP - bar.BELOW }
+/* The side panel's width: its fold button alone when folded. */
+pub View.width(const self): f32 {
+    if self.shut { return bar.FOLDED }
+    return bar.SIDE
 }
 
-/* The panels: the toolbar and the block row across the top, the sidebar down
- * the board's left, and the footer. */
+/* The board's area: the window between the bars. */
+pub View.area(const self): ui.Rect {
+    return ui.Rect { x = bar.GAP, y = bar.TOP, w = self.w - 3.0 * bar.GAP - self.width(), h = self.h - bar.TOP - bar.BELOW }
+}
+
+/* The panels: the toolbar across the top, the side panel down the board's
+ * right, and the footer. */
 pub View.head(const self): ui.Rect {
     return ui.Rect { x = bar.GAP, y = bar.GAP, w = self.w - 2.0 * bar.GAP, h = bar.BAR }
 }
 
-pub View.blocks(const self): ui.Rect {
-    return ui.Rect { x = bar.GAP, y = 2.0 * bar.GAP + bar.BAR, w = self.w - 2.0 * bar.GAP, h = bar.BAR }
-}
-
 pub View.side(const self): ui.Rect {
-    return ui.Rect { x = bar.GAP, y = bar.TOP, w = bar.STRIP, h = self.h - bar.TOP - bar.BELOW }
+    return ui.Rect { x = self.w - bar.GAP - self.width(), y = bar.TOP, w = self.width(), h = self.h - bar.TOP - bar.BELOW }
 }
 
 pub View.foot(const self): ui.Rect {
@@ -90,6 +93,15 @@ pub View.resize(self, w: f32, h: f32) {
     self.cell = math.max[f32](self.cell, math.min[f32](self.fit, CELL * ZOOM_MIN))
     self.ox = a.x + a.w / 2.0 - bx * self.cell
     self.oy = a.y + a.h / 2.0 - by * self.cell
+    self.clamp()
+}
+
+/* Folds the side panel, or unfolds it; the board takes the width it frees. */
+pub View.fold(self) {
+    self.shut = !self.shut
+    a: ui.Rect = self.area()
+    self.fit = math.max[f32](math.min[f32](a.w / f32(grid.WIDTH), a.h / f32(grid.HEIGHT)), 1.0)
+    self.cell = math.max[f32](self.cell, math.min[f32](self.fit, CELL * ZOOM_MIN))
     self.clamp()
 }
 

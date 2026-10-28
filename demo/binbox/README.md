@@ -24,7 +24,7 @@ it can be started from any directory.
 
 | Key | Block      | Label | What it does |
 |-----|------------|-------|--------------|
-| S   | source     | `S`   | A 0/1 switch. Click it in Sim mode to flip it. |
+| S   | source     | `S`   | A 0/1 switch. Click it in Simulate mode to flip it. |
 | W   | wire       | `W`   | Carries a signal over distance. Touching wires form one net. |
 | I   | input      | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
 | O   | output     | `O`   | A gate's output: drives its gate's value onto what it touches. |
@@ -68,23 +68,24 @@ it can be started from any directory.
 | Input | Action |
 |-------|--------|
 | F1 / Edit | Edit mode: build the board; blocks show without levels |
-| F2 / Sim | Sim mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
+| F2 / Simulate | Simulate mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
 | Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode |
 | Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the block row under the bar (disabled in Sim) |
-| 1 / Pencil | Strip button at the board's left: the pencil tool (Edit only); selecting a block returns to it |
+| S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
+| Chevron at the side panel's top left | Folds the panel to a narrow strip, or unfolds it; the board takes the freed width |
+| 1 / Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
 | 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
 | Cmd+C / Cmd+X / Cmd+V | Edit only: copy or cut the selection to an in-app clipboard; paste it as a floating selection at the pointer (else the board's center), kept on the board, to drag and drop like a move (Escape or a click elsewhere drops it where it is) |
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing a floating paste cancels it |
-| Left click / drag | Edit with the pencil: place the selected block. Sim: flip a source |
+| Left click / drag | Edit with the pencil: place the selected block. Simulate: flip a source |
 | Right click / drag | Edit: remove |
-| Space / Auto | Sim: toggle auto-ticking at the Speed slider's rate; disabled in Edit |
-| Speed slider | Drag for Auto's rate. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, and 10 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
-| Step | Sim: step one tick; disabled in Edit |
+| Space / Auto | Simulate: toggle auto-ticking at the Speed slider's rate; a button in the side panel's Simulate widget |
+| Speed slider | Drag for Auto's rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, and 10 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
+| Step | Simulate: step one second of ticks at the Speed slider's rate (1 tick at 1 Hz); a button in the side panel's Simulate widget |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Cmd+S | Save (asks for a name the first time) |
 | Cmd+O | Show or hide the list of diagrams |
@@ -111,7 +112,7 @@ Touching does most of the wiring: the lower NOR's output sits right
 against the upper NOR's input, so only Q needs wire.
 
 The file is saved with R on and S off, so it powers up held in reset: the
-LED is off. Switch to Sim (2), turn on auto-ticking (Space), and turn R off: the
+LED is off. Switch to Simulate (2), turn on auto-ticking (Space), and turn R off: the
 LED stays off. Flip S on and off: it turns on and stays on. Flip R on and
 off: it turns off and stays off.
 
@@ -173,7 +174,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `speed.ace` | The Speed slider's stops as tick rates, and their Hz/kHz/MHz text. |
 | `diagram.ace` | `.bnbx` encode and decode. |
 | `ui.ace` | Rectangles, layered drawing, and text helpers. |
-| `bar.ace` | Where the toolbar, block row and tool strip sit, and what is in them. |
+| `bar.ace` | Where the toolbar and the side panel's Tools, Blocks, Simulate and Info widgets sit, and what is in them. |
 | `view.ace` | The window size and the board's zoom and pan. |
 | `history.ace` | Undo and Redo snapshots. |
 | `select.ace` | The select tool's box, carried blocks, and clipboard. |

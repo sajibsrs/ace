@@ -82,9 +82,7 @@ tile(screen: Screen, w: f32, h: f32): ui.Rect {
 
 /* `text` centered in `box`, drawn `scale` times larger than the debug font. */
 big(r: Renderer, box: ui.Rect, text: string, ink: u32, scale: f32) {
-    r.scale(scale, scale)
-    ui.center(r, ui.Rect { x = box.x / scale, y = box.y / scale, w = box.w / scale, h = box.h / scale }, text, ink)
-    r.scale(1.0, 1.0)
+    ui.center_sized(r, box, text, ink, 8.0 * scale)
 }
 
 /* Where the pointer is, so the tile under it lights. */

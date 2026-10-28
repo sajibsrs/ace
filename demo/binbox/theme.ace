@@ -2,12 +2,18 @@
 
 /* Bar and panel colors. */
 pub CHROME: const u32 = 0x181b1f
+/* A panel's or widget's header, deeper than the panel under it. */
+pub DEEP: const u32 = 0x0f1215
 /* The board panel's background, and what shows between the panels. */
 pub PANEL: const u32 = 0x101214
 pub WINDOW: const u32 = 0x0a0b0c
 pub BUTTON: const u32 = 0x2c3238
 pub ACTIVE: const u32 = 0x3d4f63
-/* A button the current phase cannot use. */
-pub DISABLED: const u32 = 0x22262b
+/* The Edit button, and the Simulate button: resting, then lit (current
+ * phase or under the pointer). */
+pub EDIT: const u32 = 0x8a2a2a
+pub EDIT_LIT: const u32 = 0xc23c3c
+pub SIM: const u32 = 0x24603a
+pub SIM_LIT: const u32 = 0x35934f
 pub INK: const u32 = 0xdddddd
 pub DIM: const u32 = 0x888888

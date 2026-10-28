@@ -9,8 +9,8 @@ import math
 import Renderer, Vertex, Point, Color, DEBUG_TEXT_SIZE from sdl
 import icon: "./icon.ace"
 
-/* Side of one debug-text glyph, in pixels. */
-pub GLYPH: const f32 = DEBUG_TEXT_SIZE
+/* Side of one text glyph, in pixels: the 8 pixel debug font, scaled up. */
+pub GLYPH: const f32 = 10.0
 
 pub Rect: struct {
     pub x: f32 = 0.0,
@@ -292,14 +292,27 @@ pub Canvas.flush(self, r: Renderer) {
     self.count = 0
 }
 
+/* `text` at window point (x, y), `glyph` pixels per glyph. */
+draw(r: Renderer, x: f32, y: f32, text: string, glyph: f32) {
+    k: f32 = glyph / DEBUG_TEXT_SIZE
+    r.scale(k, k)
+    r.debug_text(x / k, y / k, text)
+    r.scale(1.0, 1.0)
+}
+
+/* `text` centered in `box`, `glyph` pixels per glyph. */
+pub center_sized(r: Renderer, box: Rect, text: string, ink: u32, glyph: f32) {
+    r.color(Color.hex(ink))
+    draw(r, box.x + (box.w - glyph * f32(text.len)) / 2.0, box.y + (box.h - glyph) / 2.0, text, glyph)
+}
+
 /* `text` centered in `box`. */
 pub center(r: Renderer, box: Rect, text: string, ink: u32) {
-    r.color(Color.hex(ink))
-    r.debug_text(box.x + (box.w - GLYPH * f32(text.len)) / 2.0, box.y + (box.h - GLYPH) / 2.0, text)
+    center_sized(r, box, text, ink, GLYPH)
 }
 
 /* `text` left-aligned in `box`, `pad` pixels in, centered vertically. */
 pub left(r: Renderer, box: Rect, pad: f32, text: string, ink: u32) {
     r.color(Color.hex(ink))
-    r.debug_text(box.x + pad, box.y + (box.h - GLYPH) / 2.0, text)
+    draw(r, box.x + pad, box.y + (box.h - GLYPH) / 2.0, text, GLYPH)
 }

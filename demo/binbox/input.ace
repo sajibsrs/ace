@@ -115,30 +115,33 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
         return true
     }
     if g.view.side().has(x, y) {
-        if button != MouseButton.left || g.phase != app.Phase.edit { return true }
+        side: ui.Rect = g.view.side()
+        if button == MouseButton.left && bar.fold_at(side).has(x, y) { g.view.fold() }
+        if button != MouseButton.left || g.view.shut { return true }
+        if g.phase == app.Phase.run {
+            if bar.step_at(side).has(x, y) { g.step() }
+            if bar.auto_at(side).has(x, y) { g.auto = !g.auto }
+            if bar.speed(side).has(x, y) {
+                self.slide = true
+                g.slide(x)
+            }
+            return true
+        }
         for i: usize in 0 .. members(bar.Tool).len {
             each: bar.Tool = members(bar.Tool)[i]
-            if bar.strip_at(each).has(x, y) { g.use(each) }
+            if bar.pick_at(side, each).has(x, y) { g.use(each) }
         }
-        return true
-    }
-    if y >= bar.TOP { return false }
-    if y >= 2.0 * bar.GAP + bar.BAR {
-        if button != MouseButton.left || g.phase != app.Phase.edit { return true }
+        if g.pick != bar.Tool.pencil { return true }
         for i: usize in 1 .. members(grid.Block).len {
             each: grid.Block = members(grid.Block)[i]
-            if bar.tool(each).has(x, y) {
-                g.use(bar.Tool.pencil)
+            if bar.block_at(side, each).has(x, y) {
                 g.block = each
             }
         }
         return true
     }
+    if y >= bar.TOP { return false }
     if button != MouseButton.left { return true }
-    if bar.speed().has(x, y) {
-        self.slide = true
-        g.slide(x)
-    }
     if bar.place(bar.Button.home).has(x, y) { g.leave = true }
     if bar.place(bar.Button.new).has(x, y) { g.clear() }
     if bar.place(bar.Button.open).has(x, y) { g.browse() }
@@ -146,8 +149,6 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
     if bar.place(bar.Button.save_as).has(x, y) { g.ask() }
     if bar.place(bar.Button.edit).has(x, y) { g.switch(app.Phase.edit) }
     if bar.place(bar.Button.run).has(x, y) { g.switch(app.Phase.run) }
-    if bar.place(bar.Button.step).has(x, y) && g.phase == app.Phase.run { g.tick() }
-    if bar.place(bar.Button.auto).has(x, y) && g.phase == app.Phase.run { g.auto = !g.auto }
     /* The zoom buttons zoom about the board area's center. */
     a: ui.Rect = g.view.area()
     if bar.place(bar.Button.zoom_out).has(x, y) { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }

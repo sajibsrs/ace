@@ -97,6 +97,11 @@ pub App.tick(self) {
     self.count += 1
 }
 
+/* Step: one second's worth of ticks at the speed slider's rate. */
+pub App.step(self) {
+    for i: int in 0 .. int(speed.hz(self.stop)) { self.tick() }
+}
+
 /* The longest Auto ticks in one frame, in ns, so the window keeps up. */
 SLICE: const u64 = 8000000
 /* How long a rate is measured over, in ns. */
@@ -134,7 +139,7 @@ pub App.pace(self, live: bool) {
 
 /* Moves the speed slider to window x. */
 pub App.slide(self, x: f32) {
-    at: ui.Rect = bar.speed()
+    at: ui.Rect = bar.speed(self.view.side())
     self.stop = speed.stop_at((x - at.x) / at.w)
 }
 

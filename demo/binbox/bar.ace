@@ -1,29 +1,28 @@
-/* bar — where the toolbar, the block row and the tool strip sit, and what is
- * in them.
+/* bar — where the toolbar and the side panel's widgets sit, and what is in
+ * them.
  *
- * Top to bottom the window holds the toolbar, the block row, then the sidebar
- * beside the board, and the footer: TOP is where the sidebar and board start,
- * BELOW the space under them.
+ * Top to bottom the window holds the toolbar, then the board beside the side
+ * panel, and the footer: TOP is where the board and panel start, BELOW the
+ * space under them.
  */
 
 import grid: "./grid.ace"
 import ui: "./ui.ace"
 import icon: "./icon.ace"
 
-pub BAR: const f32 = 28.0
+pub BAR: const f32 = 30.0
 pub FOOT: const f32 = 24.0
 /* Space between panels, and between a panel and the window's edge. */
 pub GAP: const f32 = 4.0
-pub TOP: const f32 = 3.0 * GAP + 2.0 * BAR
+pub TOP: const f32 = 2.0 * GAP + BAR
 pub BELOW: const f32 = 2.0 * GAP + FOOT
-/* The tool strip down the board's left side, and a tool button in it. */
-pub STRIP: const f32 = 40.0
+/* A tool button in the panel's tools widget. */
 pub PICK: const f32 = BAR
 /* The window's width at start. */
 pub WIDTH: const f32 = 16.0 * 40.0
 
 /* The Save-as panel's size; it sits centered in the window. */
-pub PANEL_W: const f32 = 320.0
+pub PANEL_W: const f32 = 440.0
 pub PANEL_H: const f32 = 72.0
 /* A row of the Open list. */
 pub ROW: const f32 = 20.0
@@ -32,18 +31,13 @@ pub ROW: const f32 = 20.0
  * block, or box-select blocks and drag them. */
 pub Tool: enum u8 { pencil, select }
 
-/* The strip button of `pick`. */
-pub strip_at(pick: Tool): ui.Rect {
-    return ui.Rect { x = GAP + (STRIP - PICK) / 2.0, y = TOP + 6.0 + f32(int(pick)) * (PICK + 6.0), w = PICK, h = PICK }
-}
-
 pub STRIP_ICON: [Tool]icon.Id = [
     Tool.pencil = icon.Id.edit,
     Tool.select = icon.Id.select,
 ]
 
 /* The bar's buttons, left to right. */
-pub Button: enum u8 { home, new, open, save, save_as, edit, run, step, auto, zoom_out, zoom_in, depth }
+pub Button: enum u8 { home, new, open, save, save_as, edit, run, zoom_out, zoom_in, depth }
 
 pub LABEL: [Button]string = [
     Button.home = "",
@@ -52,9 +46,7 @@ pub LABEL: [Button]string = [
     Button.save = "Save",
     Button.save_as = "Save as",
     Button.edit = "Edit",
-    Button.run = "Sim",
-    Button.step = "Step",
-    Button.auto = "Auto",
+    Button.run = "Simulate",
     Button.zoom_out = "",
     Button.zoom_in = "",
     Button.depth = "",
@@ -62,7 +54,7 @@ pub LABEL: [Button]string = [
 
 /* A button's inset before its icon and after its text, the icon's side, and
  * the gap between icon and label. */
-pub PAD: const f32 = 6.0
+pub PAD: const f32 = 10.0
 pub GLYPH_SIDE: const f32 = 18.0
 pub LABEL_GAP: const f32 = 4.0
 
@@ -74,8 +66,6 @@ pub ICON: [Button]icon.Id = [
     Button.save_as = icon.Id.save_as,
     Button.edit = icon.Id.edit,
     Button.run = icon.Id.run,
-    Button.step = icon.Id.step,
-    Button.auto = icon.Id.auto,
     Button.zoom_out = icon.Id.zoom_out,
     Button.zoom_in = icon.Id.zoom_in,
     Button.depth = icon.Id.depth,
@@ -85,61 +75,180 @@ pub ICON: [Button]icon.Id = [
 pub heading(button: Button): string {
     if button == Button.new { return "File" }
     if button == Button.edit { return "Mode" }
-    if button == Button.step { return "Run" }
     if button == Button.zoom_out { return "Zoom" }
     if button == Button.depth { return "Depth" }
     return ""
 }
 
-/* The block row's title. */
-pub COMPONENTS: const string = "Blocks"
+/* The space inside the toolbar and the footer at their left and right ends. */
+pub EDGE: const f32 = 18.0
 
-/* The speed slider's title and width. */
-pub SPEED: const string = "Speed"
-pub SPEED_W: const f32 = 140.0
-
-/* The space the speed slider's group takes: its title, the slider, and the
- * gap after it. */
-SPEED_SPAN: const f32 = 18.0 + f32(SPEED.len) * ui.GLYPH + 6.0 + SPEED_W + 6.0
+/* A button's top and height in the bar. */
+pub BTN_Y: const f32 = GAP + 2.0
+pub BTN_H: const f32 = BAR - 4.0
 
 /* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
- * and depth buttons hold an icon alone. The speed slider sits between Auto
- * and the zoom buttons. */
+ * and depth buttons hold an icon alone. */
 pub place(button: Button): ui.Rect {
-    x: f32 = GAP + 6.0
+    x: f32 = GAP + EDGE
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         /* Icon, gap, and label, inset by PAD. */
         w: f32 = 2.0 * PAD + GLYPH_SIDE
-        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR - 8.0 }
-        if each == Button.zoom_out { x += SPEED_SPAN }
+        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR }
         /* Each group follows its title, set apart from the last. */
         if heading(each).len > 0 {
             x += 18.0 + f32(heading(each).len) * ui.GLYPH + 6.0
         }
-        if each == button { return ui.Rect { x = x, y = GAP + 4.0, w = w, h = BAR - 8.0 } }
+        if each == button { return ui.Rect { x = x, y = BTN_Y, w = w, h = BTN_H } }
         x += w + 6.0
     }
     return ui.Rect {}
 }
 
-/* The speed slider's rectangle: its own group, after Auto. */
-pub speed(): ui.Rect {
-    last: ui.Rect = place(Button.auto)
-    return ui.Rect { x = last.x + last.w + 6.0 + 18.0 + f32(SPEED.len) * ui.GLYPH + 6.0, y = GAP + 4.0, w = SPEED_W, h = BAR - 8.0 }
-}
-
 /* Space around a block button's icon. */
 pub TOOL_PAD: const f32 = 4.0
 
-/* The block row's button for `block`: a square as tall as the row, in a row
- * from the left. */
-pub tool(block: grid.Block): ui.Rect {
-    i: f32 = f32(int(block) - 1)
-    return ui.Rect { x = GAP + 6.0 + f32(COMPONENTS.len) * ui.GLYPH + 6.0 + i * (BAR + 6.0), y = 2.0 * GAP + BAR, w = BAR, h = BAR }
+/* The side panel's width, its widgets' inset from its edges, a widget title's
+ * height, and a line of text in the info widget. */
+pub SIDE: const f32 = 200.0
+/* The panel's width folded: just its header's fold button. */
+pub FOLDED: const f32 = BAR
+pub INSET: const f32 = 8.0
+pub TITLE_H: const f32 = 22.0
+/* The space between a widget's header and its content. */
+pub BODY_GAP: const f32 = 6.0
+pub LINE: const f32 = 16.0
+/* Block buttons wrap into rows of COLS, BLOCK_GAP apart. */
+COLS: const int = 5
+BLOCK_GAP: const f32 = 4.0
+BLOCK_ROWS: const int = (int(members(grid.Block).len) - 1 + COLS - 1) / COLS
+
+/* The simulation widget's slider height. */
+SLIDER_H: const f32 = BAR - 8.0
+/* The simulation widget's labels, and the speed slider's title. */
+pub STEP_LABEL: const string = "Step"
+pub AUTO_LABEL: const string = "Auto"
+pub SPEED: const string = "Speed"
+
+/* The panel's widgets, top to bottom: the tools, the blocks, the simulation
+ * controls, the info. */
+pub Widget: enum u8 { tools, blocks, sim, info }
+
+pub TITLE: [Widget]string = [
+    Widget.tools = "Tools",
+    Widget.blocks = "Blocks",
+    Widget.sim = "Simulate",
+    Widget.info = "Info",
+]
+
+/* Whether `widget` shows: the tools in Edit, the blocks in Edit with the
+ * pencil, the simulation controls in Simulate, the info always. */
+pub shown(widget: Widget, edit: bool, pencil: bool): bool {
+    if widget == Widget.tools { return edit }
+    if widget == Widget.blocks { return edit && pencil }
+    if widget == Widget.sim { return !edit }
+    return true
 }
 
-/* The block row's icons; the empty block has none. */
+/* A widget's height, its title included. */
+pub height(widget: Widget): f32 {
+    if widget == Widget.tools { return TITLE_H + BODY_GAP + PICK + INSET }
+    if widget == Widget.blocks { return TITLE_H + BODY_GAP + f32(BLOCK_ROWS) * BAR + f32(BLOCK_ROWS - 1) * BLOCK_GAP + INSET }
+    if widget == Widget.sim { return TITLE_H + BODY_GAP + PICK + BLOCK_GAP + LINE + SLIDER_H + INSET }
+    return TITLE_H + BODY_GAP + 3.0 * LINE + INSET
+}
+
+/* The top of `widget` in panel `side`: the shown widgets above it stack with
+ * no gaps. */
+pub top(side: ui.Rect, widget: Widget, edit: bool, pencil: bool): f32 {
+    y: f32 = side.y + BAR + GAP
+    for i: usize in 0 .. members(Widget).len {
+        each: Widget = members(Widget)[i]
+        if each == widget { return y }
+        if shown(each, edit, pencil) { y += height(each) + GAP }
+    }
+    return y
+}
+
+/* The panel header's fold button, a square at its left. */
+pub fold_at(side: ui.Rect): ui.Rect {
+    return ui.Rect { x = side.x, y = side.y, w = BAR, h = BAR }
+}
+
+/* The header band of the widget whose top is `y` in panel `side`. */
+pub head_at(side: ui.Rect, y: f32): ui.Rect {
+    return ui.Rect { x = side.x + GAP, y = y, w = side.w - 2.0 * GAP, h = TITLE_H }
+}
+
+/* The panel's title in Edit and in Simulate. */
+pub PANEL_TITLE: const string = "Editor"
+pub PANEL_TITLE_RUN: const string = "Simulation"
+
+/* The tools widget's button of `pick`. */
+pub pick_at(side: ui.Rect, pick: Tool): ui.Rect {
+    return ui.Rect { x = side.x + INSET + f32(int(pick)) * (PICK + BLOCK_GAP), y = top(side, Widget.tools, true, true) + TITLE_H + BODY_GAP, w = PICK, h = PICK }
+}
+
+/* The simulation widget is shown only in Simulate, where nothing is above
+ * it, so its place does not depend on the mode. Step and Auto split its first
+ * row; the speed slider takes the second, under its tag. */
+SIM_W: const f32 = (SIDE - 2.0 * INSET - BLOCK_GAP) / 2.0
+
+pub step_at(side: ui.Rect): ui.Rect {
+    return ui.Rect { x = side.x + INSET, y = top(side, Widget.sim, false, false) + TITLE_H + BODY_GAP, w = SIM_W, h = PICK }
+}
+
+pub auto_at(side: ui.Rect): ui.Rect {
+    return ui.Rect { x = side.x + INSET + SIM_W + BLOCK_GAP, y = top(side, Widget.sim, false, false) + TITLE_H + BODY_GAP, w = SIM_W, h = PICK }
+}
+
+/* The speed slider's rectangle. */
+pub speed(side: ui.Rect): ui.Rect {
+    return ui.Rect { x = side.x + INSET, y = top(side, Widget.sim, false, false) + TITLE_H + BODY_GAP + PICK + BLOCK_GAP + LINE, w = side.w - 2.0 * INSET, h = SLIDER_H }
+}
+
+/* The blocks widget's button for `block`. Tools are above blocks whenever the
+ * blocks show, so its place does not depend on the mode. */
+pub block_at(side: ui.Rect, block: grid.Block): ui.Rect {
+    i: int = int(block) - 1
+    return ui.Rect {
+        x = side.x + INSET + f32(i % COLS) * (BAR + BLOCK_GAP),
+        y = top(side, Widget.blocks, true, true) + TITLE_H + BODY_GAP + f32(i / COLS) * (BAR + BLOCK_GAP),
+        w = BAR,
+        h = BAR,
+    }
+}
+
+/* The longest side, in the icon grid's 24 units and stroke included, that each
+ * block icon draws; the panel scales every icon so this side shows as
+ * ICON_SHOWN pixels. A stroked icon keeps a larger entry than its shape needs,
+ * so its stroke stays thin. */
+pub ICON_SHOWN: const f32 = 18.0
+pub BLOCK_EXTENT: [grid.Block]f32 = [
+    grid.Block.empty = 24.0,
+    grid.Block.source = 21.1,
+    grid.Block.wire = 21.5,
+    grid.Block.input = 17.0,
+    grid.Block.output = 18.5,
+    grid.Block.and = 18.0,
+    grid.Block.or = 19.0,
+    grid.Block.not = 20.5,
+    grid.Block.nand = 21.5,
+    grid.Block.nor = 21.5,
+    grid.Block.xor = 19.5,
+    grid.Block.xnor = 20.5,
+    grid.Block.led = 19.6,
+    grid.Block.bridge = 18.0,
+]
+
+/* The square `block`'s icon draws in, centered on its button `at`. */
+pub block_icon_box(at: ui.Rect, block: grid.Block): ui.Rect {
+    side: f32 = ICON_SHOWN * 24.0 / BLOCK_EXTENT[block]
+    return ui.Rect { x = at.x + (at.w - side) / 2.0, y = at.y + (at.h - side) / 2.0, w = side, h = side }
+}
+
+/* The blocks widget's icons; the empty block has none. */
 pub BLOCK_ICON: [grid.Block]icon.Id = [
     grid.Block.empty = icon.Id.source,
     grid.Block.source = icon.Id.source,
