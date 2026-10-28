@@ -31,8 +31,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 OUT = HERE.parent / "icon.ace"
 ORDER = [
-    "source", "wire", "input", "output", "and", "or", "not", "nand", "nor",
-    "xor", "xnor", "led", "bridge", "clock",
+    "source", "wire", "read", "write", "and", "or", "not", "nand", "nor",
+    "xor", "xnor", "led", "bridge", "clock", "toggle",
     "new", "open", "save", "save-as", "edit", "run", "step", "auto", "reset",
     "zoom-out", "zoom-in", "select", "home", "bars", "depth", "panel-left", "panel-right",
 ]

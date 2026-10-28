@@ -39,14 +39,16 @@ SOURCE_OFF: const u8 = 1
 SOURCE_ON: const u8 = 2
 /* A clock's code is CLOCK plus its span, CLOCK .. CLOCK + SPANS - 1. */
 CLOCK: const u8 = 15
+/* Follows the last clock code, CLOCK + SPANS - 1. */
+TOGGLE: const u8 = 23
 
 /* The code of each block; a source's is SOURCE_OFF, or SOURCE_ON when on. */
 CODE: [grid.Block]u8 = [
     grid.Block.empty = 0,
     grid.Block.source = SOURCE_OFF,
     grid.Block.wire = 3,
-    grid.Block.input = 4,
-    grid.Block.output = 5,
+    grid.Block.read = 4,
+    grid.Block.write = 5,
     grid.Block.and = 6,
     grid.Block.or = 7,
     grid.Block.not = 8,
@@ -57,16 +59,17 @@ CODE: [grid.Block]u8 = [
     grid.Block.xnor = 13,
     grid.Block.bridge = 14,
     grid.Block.clock = CLOCK,
+    grid.Block.toggle = TOGGLE,
 ]
 
 /* The block of each code, by code. */
-BLOCK: [23]grid.Block = [
+BLOCK: [24]grid.Block = [
     grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
-    grid.Block.input, grid.Block.output, grid.Block.and, grid.Block.or,
+    grid.Block.read, grid.Block.write, grid.Block.and, grid.Block.or,
     grid.Block.not, grid.Block.led, grid.Block.nand, grid.Block.nor,
     grid.Block.xor, grid.Block.xnor, grid.Block.bridge, grid.Block.clock,
     grid.Block.clock, grid.Block.clock, grid.Block.clock, grid.Block.clock,
-    grid.Block.clock, grid.Block.clock, grid.Block.clock,
+    grid.Block.clock, grid.Block.clock, grid.Block.clock, grid.Block.toggle,
 ]
 
 /* Writes the diagram of `s` into `out` and returns its length, SIZE. */

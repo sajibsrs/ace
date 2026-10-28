@@ -33,8 +33,8 @@ LETTER: [grid.Block]u8 = [
     grid.Block.empty = 0,
     grid.Block.source = 's',
     grid.Block.wire = 'w',
-    grid.Block.input = 'i',
-    grid.Block.output = 'o',
+    grid.Block.read = 'i',
+    grid.Block.write = 'o',
     grid.Block.and = 'a',
     grid.Block.or = 'r',
     grid.Block.not = 'n',
@@ -45,6 +45,7 @@ LETTER: [grid.Block]u8 = [
     grid.Block.led = 'l',
     grid.Block.bridge = 'b',
     grid.Block.clock = 'k',
+    grid.Block.toggle = 't',
 ]
 
 /* The arrow, and the closed hand a middle-button drag shows while it pans or

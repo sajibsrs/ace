@@ -22,14 +22,14 @@ error(t: *test.T, s: sim.Sim, x: int, y: int) {
     test.equal[sim.Level](t, s.level(x, y), sim.Level.error)
 }
 
-/* Sources (0,0) and (0,2) feed wires into input pins (2,0) and (2,2) above and
- * below a gate at (2,1); its output pin (3,1) drives a wire into an LED at
+/* Sources (0,0) and (0,2) feed wires into read pins (2,0) and (2,2) above and
+ * below a gate at (2,1); its write pin (3,1) drives a wire into an LED at
  * (5,1). */
 two_input(block: grid.Block): sim.Sim {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input])
-    row(&g, 2, 1, [block, grid.Block.output, grid.Block.wire, grid.Block.led])
-    row(&g, 0, 2, [grid.Block.source, grid.Block.wire, grid.Block.input])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.read])
+    row(&g, 2, 1, [block, grid.Block.write, grid.Block.wire, grid.Block.led])
+    row(&g, 0, 2, [grid.Block.source, grid.Block.wire, grid.Block.read])
     return sim.Sim.init(g)
 }
 
@@ -88,8 +88,8 @@ pub xnor_truth_table(t: *test.T) {
 pub xor_is_parity(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     for y: int in 0 .. 5 { g.place(3, y, grid.Block.xor) }
-    for y: int in [0, 2, 4] { row(&g, 0, y, [grid.Block.source, grid.Block.wire, grid.Block.input]) }
-    row(&g, 4, 2, [grid.Block.output, grid.Block.wire, grid.Block.led])
+    for y: int in [0, 2, 4] { row(&g, 0, y, [grid.Block.source, grid.Block.wire, grid.Block.read]) }
+    row(&g, 4, 2, [grid.Block.write, grid.Block.wire, grid.Block.led])
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     s.toggle(0, 2, true)
@@ -102,7 +102,7 @@ pub xor_is_parity(t: *test.T) {
 
 pub xor_with_one_pin_is_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.xor])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.xor])
     s: sim.Sim = sim.Sim.init(g)
     s.tick()
     error(t, s, 3, 0)
@@ -126,10 +126,10 @@ pub gate_adds_one_tick(t: *test.T) {
     high(t, s, 5, 1)
 }
 
-/* A gate without an output pin still shows its output but drives nothing. */
+/* A gate without an write pin still shows its output but drives nothing. */
 pub gate_without_output_pin_drives_nothing(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.or, grid.Block.wire, grid.Block.led])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.or, grid.Block.wire, grid.Block.led])
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     s.tick()
@@ -141,8 +141,8 @@ pub gate_without_output_pin_drives_nothing(t: *test.T) {
 pub chained_gates_delay_per_gate(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [
-        grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.not, grid.Block.output,
-        grid.Block.wire, grid.Block.input, grid.Block.not, grid.Block.output, grid.Block.wire,
+        grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.not, grid.Block.write,
+        grid.Block.wire, grid.Block.read, grid.Block.not, grid.Block.write, grid.Block.wire,
         grid.Block.led,
     ])
     s: sim.Sim = sim.Sim.init(g)
@@ -167,7 +167,7 @@ pub lone_gate_is_idle(t: *test.T) {
 
 pub and_with_one_pin_is_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and, grid.Block.output, grid.Block.wire])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.and, grid.Block.write, grid.Block.wire])
     s: sim.Sim = sim.Sim.init(g)
     s.tick()
     error(t, s, 3, 0)
@@ -183,8 +183,8 @@ pub not_with_two_pins_is_an_error(t: *test.T) {
 /* Cells of one gate type merge: two AND cells with a pin each are one AND. */
 pub merged_gate_counts_all_pins(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and])
-    row(&g, 0, 1, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and, grid.Block.output, grid.Block.wire, grid.Block.led])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.and])
+    row(&g, 0, 1, [grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.and, grid.Block.write, grid.Block.wire, grid.Block.led])
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     s.toggle(0, 1, true)
@@ -210,7 +210,7 @@ pub contention_is_an_error(t: *test.T) {
 /* An error on a gate's input spreads to its output a tick later. */
 pub error_propagates(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.not, grid.Block.output, grid.Block.wire])
+    row(&g, 0, 0, [grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.not, grid.Block.write, grid.Block.wire])
     g.place(1, 1, grid.Block.source)
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(1, 1, true)
@@ -219,10 +219,10 @@ pub error_propagates(t: *test.T) {
     error(t, s, 5, 0)
 }
 
-/* One input pin touching two gates feeds both. */
+/* One read pin touching two gates feeds both. */
 pub pin_fans_out(t: *test.T) {
     g: grid.Grid = grid.Grid {}
-    row(&g, 0, 1, [grid.Block.source, grid.Block.wire, grid.Block.input])
+    row(&g, 0, 1, [grid.Block.source, grid.Block.wire, grid.Block.read])
     g.place(2, 0, grid.Block.or)
     g.place(2, 2, grid.Block.not)
     s: sim.Sim = sim.Sim.init(g)
@@ -232,11 +232,11 @@ pub pin_fans_out(t: *test.T) {
     low(t, s, 2, 2)
 }
 
-/* A NOT whose output wire loops back to its input pin oscillates. */
+/* A NOT whose output wire loops back to its read pin oscillates. */
 pub not_loop_oscillates(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.wire, grid.Block.wire, grid.Block.wire])
-    row(&g, 0, 1, [grid.Block.input, grid.Block.not, grid.Block.output])
+    row(&g, 0, 1, [grid.Block.read, grid.Block.not, grid.Block.write])
     s: sim.Sim = sim.Sim.init(g)
     s.tick()
     high(t, s, 1, 1)
@@ -255,22 +255,34 @@ ticks(s: *sim.Sim, n: int) {
     for i: int in 0 .. n { s.tick() }
 }
 
-/* Two NORs cross-coupled: Q = NOR(R, Q'), and Q' = NOR(S, Q), centered on the
- * board as diagram/latch.bnbx stores it. Sources R (29,14) and S (29,17) touch
- * the NORs' input pins; LED Q at (34,14). Q' needs no wire: the lower NOR's
- * output pin (31,16) touches the upper NOR's input pin (31,15). Q runs down
- * column 33 to the lower NOR's input pin (32,17). */
+/* An SR latch around one toggle, centered on the board as diagram/latch.bnbx
+ * stores it. The toggle (34,15) flips when its input rises, and the input is
+ * (S AND NOT Q) OR (R AND Q): high only when the latch must change. Q (output
+ * pin (35,15)) runs down column 36 and back along rows 18 and 12; LED at
+ * (37,15). Source S (26,15) feeds the upper AND (28,15), the NOT (28,12)
+ * feeds its other pin (28,14); source R (29,18) feeds the lower AND (31,18),
+ * whose other pin (32,18) reads Q. The ANDs' outputs meet at the OR (31,15). */
 latch(): sim.Sim {
     g: grid.Grid = grid.Grid {}
-    row(&g, 29, 14, [
-        grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.output,
-        grid.Block.wire, grid.Block.led,
+    row(&g, 28, 12, [
+        grid.Block.not, grid.Block.read, grid.Block.wire, grid.Block.wire,
+        grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.wire,
+        grid.Block.wire,
     ])
-    g.place(31, 15, grid.Block.input)
-    g.place(31, 16, grid.Block.output)
-    g.place(33, 15, grid.Block.wire)
-    g.place(33, 16, grid.Block.wire)
-    row(&g, 29, 17, [grid.Block.source, grid.Block.input, grid.Block.nor, grid.Block.input, grid.Block.wire])
+    g.place(28, 13, grid.Block.write)
+    g.place(28, 14, grid.Block.read)
+    row(&g, 26, 15, [
+        grid.Block.source, grid.Block.read, grid.Block.and, grid.Block.write,
+        grid.Block.read, grid.Block.or, grid.Block.write, grid.Block.read,
+        grid.Block.toggle, grid.Block.write, grid.Block.wire, grid.Block.led,
+    ])
+    g.place(31, 16, grid.Block.read)
+    g.place(31, 17, grid.Block.write)
+    row(&g, 29, 18, [
+        grid.Block.source, grid.Block.read, grid.Block.and, grid.Block.read,
+        grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.wire,
+    ])
+    for y: int in 12 .. 19 { g.place(36, y, grid.Block.wire) }
     return sim.Sim.init(g)
 }
 
@@ -289,29 +301,136 @@ pub latch_matches_file(t: *test.T) {
     }
 }
 
+/* Set, reset, and the no-op pulses: S on a set latch and R on a reset one. */
 pub sr_latch_holds_a_bit(t: *test.T) {
     s: sim.Sim = latch()
-    s.toggle(29, 17, true)
     ticks(&s, 8)
-    s.toggle(29, 17, false)
-    ticks(&s, 8)
-    high(t, s, 34, 14)
-    low(t, s, 31, 16)
+    low(t, s, 37, 15)
 
-    s.toggle(29, 14, true)
+    s.toggle(26, 15, true)
     ticks(&s, 8)
-    s.toggle(29, 14, false)
+    s.toggle(26, 15, false)
     ticks(&s, 8)
-    low(t, s, 34, 14)
-    high(t, s, 31, 16)
+    high(t, s, 37, 15)
+
+    s.toggle(26, 15, true)
+    ticks(&s, 8)
+    s.toggle(26, 15, false)
+    ticks(&s, 8)
+    high(t, s, 37, 15)
+
+    s.toggle(29, 18, true)
+    ticks(&s, 8)
+    s.toggle(29, 18, false)
+    ticks(&s, 8)
+    low(t, s, 37, 15)
+
+    s.toggle(29, 18, true)
+    ticks(&s, 8)
+    s.toggle(29, 18, false)
+    ticks(&s, 8)
+    low(t, s, 37, 15)
+}
+
+/* S and R together on a latch that is set leave it set, and on a reset one
+ * leave it set too: S wins by being seen first, then R holds the input high. */
+pub sr_latch_both_inputs(t: *test.T) {
+    s: sim.Sim = latch()
+    s.toggle(26, 15, true)
+    s.toggle(29, 18, true)
+    ticks(&s, 12)
+    high(t, s, 37, 15)
+    s.toggle(26, 15, false)
+    s.toggle(29, 18, false)
+    ticks(&s, 12)
+    high(t, s, 37, 15)
+}
+
+/* Source (0,0), pin (1,0), toggle (2,0), write pin (3,0), LED (4,0). */
+flipper(): sim.Sim {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [
+        grid.Block.source, grid.Block.read, grid.Block.toggle, grid.Block.write,
+        grid.Block.led,
+    ])
+    return sim.Sim.init(g)
+}
+
+/* Q flips on each rising edge of the input and holds through a high level and
+ * a falling edge. */
+pub toggle_flips_on_rising_edge(t: *test.T) {
+    s: sim.Sim = flipper()
+    ticks(&s, 3)
+    low(t, s, 4, 0)
+    s.toggle(0, 0, true)
+    s.tick()
+    high(t, s, 4, 0)
+    ticks(&s, 5)
+    high(t, s, 4, 0)
+    s.toggle(0, 0, false)
+    ticks(&s, 5)
+    high(t, s, 4, 0)
+    s.toggle(0, 0, true)
+    s.tick()
+    low(t, s, 4, 0)
+    s.toggle(0, 0, false)
+    ticks(&s, 3)
+    low(t, s, 4, 0)
+}
+
+/* A toggle with no pins never flips. */
+pub toggle_without_a_pin_is_idle(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.toggle, grid.Block.write, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    ticks(&s, 4)
+    low(t, s, 2, 0)
+}
+
+/* An read pin reading an error makes the toggle's output an error; its Q
+ * comes back when the error clears. */
+pub toggle_keeps_q_through_an_error(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [
+        grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.toggle,
+        grid.Block.write, grid.Block.led,
+    ])
+    g.place(1, 1, grid.Block.source)
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 0, true)
+    s.toggle(1, 1, true)
+    s.tick()
+    high(t, s, 5, 0)
+    s.toggle(1, 1, false)
+    s.tick()
+    error(t, s, 5, 0)
+    s.toggle(0, 0, false)
+    ticks(&s, 3)
+    high(t, s, 5, 0)
+    s.toggle(0, 0, true)
+    s.toggle(1, 1, true)
+    s.tick()
+    low(t, s, 5, 0)
+}
+
+/* Placing a block elsewhere regroups the board but keeps a toggle's Q and what
+ * it last read, so a held input does not flip it again. */
+pub toggle_survives_an_edit(t: *test.T) {
+    s: sim.Sim = flipper()
+    s.toggle(0, 0, true)
+    ticks(&s, 3)
+    high(t, s, 4, 0)
+    s.place(10, 10, grid.Block.wire)
+    ticks(&s, 3)
+    high(t, s, 4, 0)
 }
 
 /* Sources, pins and LEDs connect by touching; wire only spans distance. */
 pub touching_blocks_need_no_wire(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [
-        grid.Block.source, grid.Block.input, grid.Block.not, grid.Block.output,
-        grid.Block.input, grid.Block.not, grid.Block.output, grid.Block.led,
+        grid.Block.source, grid.Block.read, grid.Block.not, grid.Block.write,
+        grid.Block.read, grid.Block.not, grid.Block.write, grid.Block.led,
     ])
     g.place(0, 1, grid.Block.led)
     s: sim.Sim = sim.Sim.init(g)

@@ -248,8 +248,8 @@ pub BLOCK_EXTENT: [grid.Block]f32 = [
     grid.Block.empty = 24.0,
     grid.Block.source = 21.1,
     grid.Block.wire = 21.5,
-    grid.Block.input = 17.0,
-    grid.Block.output = 18.5,
+    grid.Block.read = 17.0,
+    grid.Block.write = 18.5,
     grid.Block.and = 18.0,
     grid.Block.or = 19.0,
     grid.Block.not = 20.5,
@@ -260,6 +260,7 @@ pub BLOCK_EXTENT: [grid.Block]f32 = [
     grid.Block.led = 19.6,
     grid.Block.bridge = 18.0,
     grid.Block.clock = 21.0,
+    grid.Block.toggle = 21.5,
 ]
 
 /* The square `block`'s icon draws in, centered on its button `at`. */
@@ -273,8 +274,8 @@ pub BLOCK_ICON: [grid.Block]icon.Id = [
     grid.Block.empty = icon.Id.source,
     grid.Block.source = icon.Id.source,
     grid.Block.wire = icon.Id.wire,
-    grid.Block.input = icon.Id.input,
-    grid.Block.output = icon.Id.output,
+    grid.Block.read = icon.Id.read,
+    grid.Block.write = icon.Id.write,
     grid.Block.and = icon.Id.and,
     grid.Block.or = icon.Id.or,
     grid.Block.not = icon.Id.not,
@@ -285,6 +286,7 @@ pub BLOCK_ICON: [grid.Block]icon.Id = [
     grid.Block.led = icon.Id.led,
     grid.Block.bridge = icon.Id.bridge,
     grid.Block.clock = icon.Id.clock,
+    grid.Block.toggle = icon.Id.toggle,
 ]
 
 /* Row `i` of the Open list. */

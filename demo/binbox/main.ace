@@ -7,16 +7,16 @@
  * Build and run from this directory (Homebrew SDL3 on Apple arm64):
  *   ace pkg run
  *
- * A source feeds a gate's input pin (I); the gate's output pin (O) feeds the
- * next input pin or an LED. Each connects by touching, or through wire when
+ * A source feeds a gate's read pin (I); the gate's write pin (O) feeds the
+ * next read pin or an LED. Each connects by touching, or through wire when
  * apart.
  *
  * Edit (F1) builds the board: left-click places the selected block (drag to
  * paint), right-click (or drag) removes. Simulate (F2) simulates it: left-click flips
  * a source, space or Auto toggles auto-ticking at the Speed slider's rate, and
  * Step ticks once. Letters
- * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
- * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge, k clock. The wheel zooms the
+ * select a block: s source, w wire, i read pin, o write pin, a AND, r OR,
+ * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge, k clock, t toggle. The wheel zooms the
  * board about the pointer; the window resizes and goes full screen. Cmd+Q
  * quits. The side panel at the board's right holds the tools, picked by 1 and 2: the
  * pencil (above) and box select: drag over blocks to select them, drag the selection to

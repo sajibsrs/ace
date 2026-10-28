@@ -22,35 +22,38 @@ it can be started from any directory.
 
 ## Blocks
 
-| Key | Block      | Label | What it does |
-|-----|------------|-------|--------------|
-| S   | source     | `S`   | A 0/1 switch. Click it in Simulate mode to flip it. |
-| W   | wire       | `W`   | Carries a signal over distance. Touching wires form one net. |
-| I   | input      | `I`   | A gate's input: reads what it touches and feeds every gate it touches. |
-| O   | output     | `O`   | A gate's output: drives its gate's value onto what it touches. |
-| A   | AND        | `&`   | High when every input is high. Needs at least 2 inputs. |
-| R   | OR         | `\|`  | High when any input is high. Needs at least 1 input. |
-| N   | NOT        | `!`   | High when its input is low. Needs exactly 1 input. |
-| Z   | NAND       | `D`   | Low when every input is high. Needs at least 2 inputs. |
-| V   | NOR        | `V`   | High when no input is high. Needs at least 1 input. |
-| X   | XOR        | `^`   | High when an odd number of inputs are high. Needs at least 2 inputs. |
-| C   | XNOR       | `=`   | High when an even number of inputs are high. Needs at least 2 inputs. |
-| L   | LED        | `L`   | Shows the level of what it touches. |
-| B   | bridge     | `+`   | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
-| K   | clock      | clock icon | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
+| Key | Block      | What it does |
+|-----|------------|--------------|
+| S   | source     | A 0/1 switch. Click it in Simulate mode to flip it. |
+| W   | wire       | Carries a signal over distance. Touching wires form one net. |
+| I   | read       | A gate's read pin: reads what it touches and feeds every gate it touches. |
+| O   | write      | A gate's write pin: drives its gate's value onto what it touches. |
+| A   | AND        | High when every input is high. Needs at least 2 inputs. |
+| R   | OR         | High when any input is high. Needs at least 1 input. |
+| N   | NOT        | High when its input is low. Needs exactly 1 input. |
+| Z   | NAND       | Low when every input is high. Needs at least 2 inputs. |
+| V   | NOR        | High when no input is high. Needs at least 1 input. |
+| X   | XOR        | High when an odd number of inputs are high. Needs at least 2 inputs. |
+| C   | XNOR       | High when an even number of inputs are high. Needs at least 2 inputs. |
+| L   | LED        | Shows the level of what it touches. |
+| B   | bridge     | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
+| K   | clock      | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
+| T   | toggle     | A gate with memory: its output flips on each rising edge of its input, then holds. Its pins are read as for OR; with none it never flips. An error on a pin makes its output an error, and its stored value returns when the error clears. |
+
+The pin keys `I` and `O` are temporary: the keys are being remapped.
 
 ## Rules
 
 - **Blocks have no direction.** A block's role comes from its type and what
   it touches.
 - **Things connect by touching** (north, east, south, west, never diagonally).
-  A source or output next to an input or LED drives it directly.
+  A source or write pin next to a read pin or LED drives it directly.
   Wire is only needed to cover distance.
 - **A bridge joins wire to wire only.** A run of bridges passes straight
   through, so a wire can cross several buses at once. A source, pin, or gate
   touching a bridge does nothing. It lights when either direction is high.
 - **A gate connects only through its pins.** A wire or source touching a gate
-  directly does nothing; it must reach an input.
+  directly does nothing; it must reach a read pin.
 - **Touching cells of one gate type are one gate**, so a gate can be any
   shape, and every input around it counts. Different gate types never
   merge.
@@ -76,7 +79,7 @@ it can be started from any directory.
 | Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S W I O A R N Z V X C L B K | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
+| S W I O A R N Z V X C L B K T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
 | Chevron at the side panel's top left | Folds the panel to a narrow strip, or unfolds it; the board takes the freed width |
 | 1 / Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
 | 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
@@ -99,37 +102,47 @@ Escape cancels.
 
 ## Example: SR latch
 
-`diagram/latch.bnbx` is a NOR latch: two NOR gates, cross-coupled, so
-Q = NOR(R, Q′) and Q′ = NOR(S, Q). It sits at the board's center (columns
-29–34, rows 14–17):
+`diagram/latch.bnbx` is an SR latch built around one toggle (T). A toggle
+flips only when its input rises, so the input is made high exactly when the
+latch must change: `(S and not Q) or (R and Q)`. S sets Q low to high, R sets
+it high to low, and a pulse that would change nothing (S while set, R while
+reset) does nothing. It sits at the board's center (columns 26-37, rows 12-18):
 
 ```
-S I V O W L     R (reset) into the upper NOR; Q to the LED
-. . I . W .     Q′ into the upper NOR, by touch
-. . O . W .     the lower NOR's output, Q′
-S I V I W .     S (set) into the lower NOR; Q back down column 9
+. . N I W W W W W W W .     NOT of Q: the upper AND's second pin
+. . O . . . . . . . W .
+. . I . . . . . . . W .
+S I & O I | O I T O W L     S into the upper AND; OR; the toggle; Q to the LED
+. . . . . I . . . . W .
+. . . . . O . . . . W .
+. . . S I & I W W W W .     R (the lower S) into the lower AND; Q into its other pin
 ```
 
-Touching does most of the wiring: the lower NOR's output sits right
-against the upper NOR's input, so only Q needs wire.
+In the drawing, `I` is a read pin and `O` a write pin.
 
-The file is saved with R on and S off, so it powers up held in reset: the
-LED is off. Switch to Simulate (2), turn on auto-ticking (Space), and turn R off: the
-LED stays off. Flip S on and off: it turns on and stays on. Flip R on and
-off: it turns off and stays off.
+Touching does most of the wiring: each gate's write pin sits against the next
+gate's read pin, so only Q needs wire.
 
-**Feedback circuits need a defined start and long enough pulses.** A diagram
-stores how a circuit is built, sources included; gate outputs are simulation
-state, so every load starts with all gates low. Saved with both R and S off,
-the latch's two halves rise and fall together and oscillate forever, since
-identical gates never break the tie. The same happens when R and S are
-released together, or when a pulse is shorter than the trip around the loop
-(2 ticks here, one per NOR). Hold each pulse at least that long, and save feedback
-circuits with an input held, the way real circuits hold reset at power-on.
+The file is saved with S and R off and Q low. Switch to Simulate (2), turn on
+auto-ticking (Space), and flip S on and off: the LED turns on and stays on. Flip
+R on and off: it turns off and stays off. Holding both on leaves the latch as
+it is. Pulses of any length work, since the toggle reacts to the edge, not to
+the level. Q follows about 4 ticks after the input changes.
+
+**Feedback circuits with gates alone need a defined start and long enough
+pulses.** Gate outputs are simulation state, so every load starts with all
+gates low. Two cross-coupled NORs saved with both inputs off rise and fall
+together and oscillate forever, since identical gates never break the tie. A
+toggle breaks the tie by remembering, which is why this latch needs no held
+input at power-on.
 
 ## Diagrams
 
-- `diagram/latch.bnbx`: SR latch
+- `diagram/toggle.bnbx`: a toggle built from gates, what the toggle block does without
+  it. A NOT (a tick late) and an AND make a one-tick pulse when the switch rises, and an
+  XOR fed back on itself flips on that pulse. Flip the switch on and off: the LED turns on
+  and stays on; again: it turns off. Needs no reset.
+- `diagram/latch.bnbx`: SR latch from one toggle and four gates (a latch built from the toggle)
 - `diagram/half-adder.bnbx`: half adder
 - `diagram/full-adder.bnbx`: full adder
 - `diagram/ripple-counter.bnbx`: 8-bit ripple counter on a clock. Each bit is three
@@ -158,11 +171,11 @@ An 8-byte header, then one byte per cell, row by row:
 
 | Code | Block | Code | Block |
 |------|-------|------|-------|
-| 0 | empty | 5 | output |
+| 0 | empty | 5 | write |
 | 1 | source, off | 6 | AND |
 | 2 | source, on | 7 | OR |
 | 3 | wire | 8 | NOT |
-| 4 | input | 9 | LED |
+| 4 | read | 9 | LED |
 | 10 | NAND | 12 | XOR |
 | 11 | NOR | 13 | XNOR |
 | 14 | bridge | 15–22 | clock, span 0–7 (CLOCK + span) |

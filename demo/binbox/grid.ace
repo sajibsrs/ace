@@ -9,14 +9,14 @@ pub HEIGHT: const int = 32
 
 pub Block: enum u8 {
     empty,
-    /* A 0/1 switch; drives the wires, input pins and LEDs it touches. */
+    /* A 0/1 switch; drives the wires, read pins and LEDs it touches. */
     source,
     wire,
-    /* A gate's input pin: reads the wires, sources and output pins it touches. */
-    input,
-    /* A gate's output pin: drives its gates' output onto the wires, input
+    /* A gate's read pin: reads the wires, sources and write pins it touches. */
+    read,
+    /* A gate's write pin: drives its gates' output onto the wires, input
      * pins and LEDs it touches. */
-    output,
+    write,
     and,
     or,
     not,
@@ -25,7 +25,7 @@ pub Block: enum u8 {
     /* High on an odd number of high inputs; XNOR on an even number. */
     xor,
     xnor,
-    /* Shows the level of the wires, sources and output pins it touches. */
+    /* Shows the level of the wires, sources and write pins it touches. */
     led,
     /* Joins the wires on opposite sides: north with south, east with west,
      * the two pairs kept apart. A run of bridges passes straight through. */
@@ -33,6 +33,9 @@ pub Block: enum u8 {
     /* A source that flips itself: low for 1 << span ticks, then high for as many,
      * from the first tick of the simulation. Touching works as for a source. */
     clock,
+    /* A gate whose output flips on each rising edge of its input, then holds.
+     * Its pins are read as for OR; with none it never flips. */
+    toggle,
 }
 
 /* How many spans a clock has, 0 .. SPANS - 1: 1, 2, 4 .. 128 ticks a half
@@ -53,7 +56,8 @@ pub inside(x: int, y: int): bool {
 /* Whether the block is a gate. */
 pub is_gate(block: Block): bool {
     return block == Block.and || block == Block.or || block == Block.not ||
-        block == Block.nand || block == Block.nor || block == Block.xor || block == Block.xnor
+        block == Block.nand || block == Block.nor || block == Block.xor || block == Block.xnor ||
+        block == Block.toggle
 }
 
 /* The block at (x, y); off the board it is empty. */

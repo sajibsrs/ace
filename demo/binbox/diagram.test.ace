@@ -10,8 +10,8 @@ import diagram: "./diagram.ace"
 sample(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     blocks: [6]grid.Block = [
-        grid.Block.source, grid.Block.wire, grid.Block.input, grid.Block.and,
-        grid.Block.output, grid.Block.led,
+        grid.Block.source, grid.Block.wire, grid.Block.read, grid.Block.and,
+        grid.Block.write, grid.Block.led,
     ]
     for i: int in 0 .. 6 { g.place(i, 0, blocks[i]) }
     g.place(15, 15, grid.Block.not)
@@ -102,37 +102,67 @@ pub bad_length(t: *test.T) {
 
 pub bad_code(t: *test.T) {
     out: [diagram.SIZE]u8 = encoded()
-    out[20] = 23
+    out[20] = 24
     rejects(t, out[..], diagram.DiagramErr.code)
     out[20] = 0x83
     rejects(t, out[..], diagram.DiagramErr.code)
 }
 
-/* The shipped SR latch powers up held in reset (R on, S off), settles to
- * Q low, and then holds whatever the last pulse stored. */
+/* The shipped SR latch powers up with S and R off and Q low, and then holds
+ * whatever the last pulse stored. */
 pub latch_file(t: *test.T) {
     data: []u8, ferr: Error = file.read("diagram/latch.bnbx")
     defer mem.release[u8](&data)
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
-    test.equal[sim.Level](t, s.level(29, 14), sim.Level.high)
-    test.equal[sim.Level](t, s.level(29, 17), sim.Level.low)
+    test.equal[sim.Level](t, s.level(26, 15), sim.Level.low)
+    test.equal[sim.Level](t, s.level(29, 18), sim.Level.low)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(37, 15), sim.Level.low)
+    s.toggle(26, 15, true)
+    for i: int in 0 .. 8 { s.tick() }
+    s.toggle(26, 15, false)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(37, 15), sim.Level.high)
+    s.toggle(29, 18, true)
+    for i: int in 0 .. 8 { s.tick() }
+    s.toggle(29, 18, false)
+    for i: int in 0 .. 8 { s.tick() }
+    test.equal[sim.Level](t, s.level(37, 15), sim.Level.low)
+}
+
+/* A toggle's code is TOGGLE and it survives a round trip. */
+pub toggle_round_trips(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(4, 4, grid.Block.toggle)
+    out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
+    diagram.encode(sim.Sim.init(g), out[..])
+    s: sim.Sim, err: Error = diagram.decode(out[..])
+    t.equal(err == null, true)
+    test.equal[grid.Block](t, s.g.get(4, 4), grid.Block.toggle)
+}
+
+/* The shipped toggle diagram is a toggle built from gates: the switch (28,15)
+ * flips the LED (34,14) on each rising edge, and the LED holds otherwise. */
+pub toggle_file(t: *test.T) {
+    data: []u8, ferr: Error = file.read("diagram/toggle.bnbx")
+    defer mem.release[u8](&data)
+    t.equal(ferr == null, true)
+    s: sim.Sim, err: Error = diagram.decode(data)
+    t.equal(err == null, true)
     for i: int in 0 .. 8 { s.tick() }
     test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
-    s.toggle(29, 14, false)
-    for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
-    s.toggle(29, 17, true)
-    for i: int in 0 .. 8 { s.tick() }
-    s.toggle(29, 17, false)
-    for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(34, 14), sim.Level.high)
-    s.toggle(29, 14, true)
-    for i: int in 0 .. 8 { s.tick() }
-    s.toggle(29, 14, false)
-    for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
+    for n: int in 1 .. 6 {
+        s.toggle(28, 15, true)
+        for i: int in 0 .. 8 { s.tick() }
+        want: sim.Level = sim.Level.low
+        if n % 2 == 1 { want = sim.Level.high }
+        test.equal[sim.Level](t, s.level(34, 14), want)
+        s.toggle(28, 15, false)
+        for i: int in 0 .. 8 { s.tick() }
+        test.equal[sim.Level](t, s.level(34, 14), want)
+    }
 }
 
 /* A clock's span is part of its code and survives a round trip. */

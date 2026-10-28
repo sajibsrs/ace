@@ -20,8 +20,8 @@ NAME: [grid.Block]string = [
     grid.Block.empty = "empty",
     grid.Block.source = "source",
     grid.Block.wire = "wire",
-    grid.Block.input = "input",
-    grid.Block.output = "output",
+    grid.Block.read = "read",
+    grid.Block.write = "write",
     grid.Block.and = "AND",
     grid.Block.or = "OR",
     grid.Block.not = "NOT",
@@ -32,6 +32,7 @@ NAME: [grid.Block]string = [
     grid.Block.led = "LED",
     grid.Block.bridge = "bridge",
     grid.Block.clock = "clock",
+    grid.Block.toggle = "toggle",
 ]
 
 /* Low and high colors of each block; any block on an error is ERROR. */
@@ -39,8 +40,8 @@ LOW: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
     grid.Block.source = 0x478f59,
     grid.Block.wire = 0x4d5b6c,
-    grid.Block.input = 0x4e6da3,
-    grid.Block.output = 0x8c4d51,
+    grid.Block.read = 0x4e6da3,
+    grid.Block.write = 0x8c4d51,
     grid.Block.and = 0xb59b45,
     grid.Block.or = 0x42ad9f,
     grid.Block.not = 0xd871b2,
@@ -51,14 +52,15 @@ LOW: [grid.Block]u32 = [
     grid.Block.led = 0x8c8c8c,
     grid.Block.bridge = 0x504e68,
     grid.Block.clock = 0x9a6a3a,
+    grid.Block.toggle = 0x4f9a5a,
 ]
 
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
     grid.Block.source = 0x55d675,
     grid.Block.wire = 0x6e8db3,
-    grid.Block.input = 0x598eea,
-    grid.Block.output = 0xd14f58,
+    grid.Block.read = 0x619bff,
+    grid.Block.write = 0xd14f58,
     grid.Block.and = 0xfcd247,
     grid.Block.or = 0x45f4dd,
     grid.Block.not = 0xff6cc9,
@@ -69,6 +71,7 @@ HIGH: [grid.Block]u32 = [
     grid.Block.led = 0xffffff,
     grid.Block.bridge = 0x7772af,
     grid.Block.clock = 0xffa24d,
+    grid.Block.toggle = 0x7dff8c,
 ]
 
 ERROR: const u32 = 0xb030b0
