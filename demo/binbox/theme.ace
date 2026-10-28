@@ -15,7 +15,7 @@ pub STRIPE: const u32 = 0x252a2f
  * phase or under the pointer). */
 pub EDIT: const u32 = 0x8a2a2a
 pub EDIT_LIT: const u32 = 0xc23c3c
-pub SIM: const u32 = 0x24603a
-pub SIM_LIT: const u32 = 0x35934f
+pub SIM: const u32 = 0x478f59
+pub SIM_LIT: const u32 = 0x55d675
 pub INK: const u32 = 0xdddddd
 pub DIM: const u32 = 0x888888

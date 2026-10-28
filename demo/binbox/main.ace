@@ -7,14 +7,15 @@
  * next read pin or an LED. Each connects by touching, or through wire when
  * apart.
  *
- * Edit (F1) builds the board: left-click places the selected block (drag to
- * paint), right-click (or drag) removes. Simulate (F2) simulates it: left-click flips
+ * Edit builds the board: left-click places the selected block (drag to
+ * paint), right-click (or drag) removes. Simulate simulates it (F1 toggles the
+ * two): left-click flips
  * a source, space or Auto toggles auto-ticking at the Speed slider's rate, and
- * Step ticks once. Letters
- * select a block: s source, w wire, i read pin, o write pin, a AND, r OR,
- * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge, k clock, t toggle. The wheel zooms the
+ * Step ticks once. Keys
+ * select a block: s source, e wire, r read pin, w write pin, 1 AND, 2 OR,
+ * 3 NOT, 4 NAND, 5 NOR, 6 XOR, 7 XNOR, l LED, b bridge, k clock, t toggle. The wheel zooms the
  * board about the pointer; the window resizes and goes full screen. Cmd+Q
- * quits. The side panel at the board's right holds the tools, picked by 1 and 2: the
+ * quits. The side panel at the board's right holds the tools: the
  * pencil (above) and box select: drag over blocks to select them, drag the selection to
  * move it, Delete removes it, Escape or a click elsewhere drops it. Cmd+C
  * copies the selection, Cmd+X cuts it, and Cmd+V pastes it as a floating

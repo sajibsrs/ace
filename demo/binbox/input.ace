@@ -21,27 +21,26 @@ KEY_DELETE: const u32 = 0x7f
 KEY_HOME: const u32 = 0x4000_004a
 KEY_END: const u32 = 0x4000_004d
 KEY_F1: const u32 = 0x4000_003a
-KEY_F2: const u32 = 0x4000_003b
 
 /* SDL_KMOD_SHIFT: either side's key. */
 KMOD_SHIFT: const u16 = 0x0003
 /* SDL_KMOD_GUI: either side's Command (Windows) key. */
 KMOD_GUI: const u16 = 0x0c00
 
-/* The block each letter key selects, lowercase as SDL reports it. */
-LETTER: [grid.Block]u8 = [
+/* The key that selects each block, lowercase as SDL reports it; 0 for none. */
+KEY: [grid.Block]u8 = [
     grid.Block.empty = 0,
     grid.Block.source = 's',
-    grid.Block.wire = 'w',
-    grid.Block.read = 'i',
-    grid.Block.write = 'o',
-    grid.Block.and = 'a',
-    grid.Block.or = 'r',
-    grid.Block.not = 'n',
-    grid.Block.nand = 'z',
-    grid.Block.nor = 'v',
-    grid.Block.xor = 'x',
-    grid.Block.xnor = 'c',
+    grid.Block.wire = 'e',
+    grid.Block.read = 'r',
+    grid.Block.write = 'w',
+    grid.Block.and = '1',
+    grid.Block.or = '2',
+    grid.Block.not = '3',
+    grid.Block.nand = '4',
+    grid.Block.nor = '5',
+    grid.Block.xor = '6',
+    grid.Block.xnor = '7',
     grid.Block.led = 'l',
     grid.Block.bridge = 'b',
     grid.Block.clock = 'k',
@@ -229,15 +228,14 @@ Input.key(self, g: *app.App, e: KeyboardEvent): bool {
         return true
     }
     k: u32 = u32(e.key)
-    if k == '1' { g.use(bar.Tool.pencil) }
-    if k == '2' { g.use(bar.Tool.select) }
     if (e.key == Keycode.backspace || k == KEY_DELETE) && g.pick == bar.Tool.select && g.mode == app.Mode.none { g.erase() }
-    if k == KEY_F1 { g.switch(app.Phase.edit) }
-    if k == KEY_F2 { g.switch(app.Phase.run) }
+    if k == KEY_F1 {
+        if g.phase == app.Phase.edit { g.switch(app.Phase.run) } else { g.switch(app.Phase.edit) }
+    }
     if e.key == Keycode.space && g.phase == app.Phase.run { g.auto = !g.auto }
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
-        if k == u32(LETTER[each]) {
+        if k == u32(KEY[each]) {
             g.use(bar.Tool.pencil)
             g.block = each
         }

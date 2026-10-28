@@ -21,22 +21,20 @@ it can be started from any directory.
 | Key | Block      | What it does |
 |-----|------------|--------------|
 | S   | source     | A 0/1 switch. Click it in Simulate mode to flip it. |
-| W   | wire       | Carries a signal over distance. Touching wires form one net. |
-| I   | read       | A gate's read pin: reads what it touches and feeds every gate it touches. |
-| O   | write      | A gate's write pin: drives its gate's value onto what it touches. |
-| A   | AND        | High when every input is high. Needs at least 2 inputs. |
-| R   | OR         | High when any input is high. Needs at least 1 input. |
-| N   | NOT        | High when its input is low. Needs exactly 1 input. |
-| Z   | NAND       | Low when every input is high. Needs at least 2 inputs. |
-| V   | NOR        | High when no input is high. Needs at least 1 input. |
-| X   | XOR        | High when an odd number of inputs are high. Needs at least 2 inputs. |
-| C   | XNOR       | High when an even number of inputs are high. Needs at least 2 inputs. |
+| E   | wire       | Carries a signal over distance. Touching wires form one net. |
+| R   | read       | A gate's read pin: reads what it touches and feeds every gate it touches. |
+| W   | write      | A gate's write pin: drives its gate's value onto what it touches. |
+| 1   | AND        | High when every input is high. Needs at least 2 inputs. |
+| 2   | OR         | High when any input is high. Needs at least 1 input. |
+| 3   | NOT        | High when its input is low. Needs exactly 1 input. |
+| 4   | NAND       | Low when every input is high. Needs at least 2 inputs. |
+| 5   | NOR        | High when no input is high. Needs at least 1 input. |
+| 6   | XOR        | High when an odd number of inputs are high. Needs at least 2 inputs. |
+| 7   | XNOR       | High when an even number of inputs are high. Needs at least 2 inputs. |
 | L   | LED        | Shows the level of what it touches. |
 | B   | bridge     | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
 | K   | clock      | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
 | T   | toggle     | A gate with memory: its output flips on each rising edge of its input, then holds. Its pins are read as for OR; with none it never flips. An error on a pin makes its output an error, and its stored value returns when the error clears. |
-
-The pin keys `I` and `O` are temporary: the keys are being remapped.
 
 ## Rules
 
@@ -67,8 +65,7 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 
 | Input | Action |
 |-------|--------|
-| F1 / Edit | Edit mode: build the board; blocks show without levels. The bar's Mode button toggles the two modes and names the one a press switches to |
-| F2 / Simulate | Simulate mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
+| F1 / Mode | Toggle between Edit and Simulate, as the bar's Mode button does (it names the mode a press switches to). Edit: build the board; blocks show without levels. Simulate: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
 | Wheel | Zoom the board about the pointer, in either mode, in steps of 0.125: 0.5× (20-pixel cells) at start, up to 1.5× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode; the field before them shows the zoom level (0.5 at start) |
@@ -76,10 +73,10 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 | Snap button | Make the block being placed (Edit, pencil) snap to the cell under the pointer; off, it follows the pointer freely and a click still places it in that cell. Off at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S W I O A R N Z V X C L B K T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
+| S E R W 1–7 L B K T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
 | Chevron at the side panel's top left | Folds the panel to a narrow strip, or unfolds it; the board takes the freed width |
-| 1 / Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
-| 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
+| Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
+| Select | Tools widget in the side panel: the select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
 | Cmd+C / Cmd+X / Cmd+V | Edit only: copy or cut the selection to an in-app clipboard; paste it as a floating selection at the pointer (else the board's center), kept on the board, to drag and drop like a move (Escape or a click elsewhere drops it where it is) |
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing a floating paste cancels it |
 | Left click / drag | Edit with the pencil: place the selected block. Simulate: flip a source |
