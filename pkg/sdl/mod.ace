@@ -272,6 +272,20 @@ RenderStateCreateInfo: struct {
     props: u32,
 }
 
+// SDL_DisplayMode: a display's size and refresh rate.
+DisplayMode: struct {
+    display: u32,
+    format: u32,
+    w: i32,
+    h: i32,
+    pixel_density: f32,
+    refresh_rate: f32,
+    refresh_numerator: i32,
+    refresh_denominator: i32,
+    internal: *u8,
+}
+
+static_assert(sizeof(DisplayMode) == 40 && offsetof(DisplayMode, refresh_rate) == 20)
 static_assert(sizeof(QuitEvent) == 16)
 static_assert(sizeof(KeyboardEvent) == 40 && alignof(KeyboardEvent) == 8)
 static_assert(offsetof(KeyboardEvent, key) == 28)
@@ -296,6 +310,8 @@ extern "c" {
     c_create_window(title: *u8, w: i32, h: i32, flags: u64): *SDL_Window as "SDL_CreateWindow"
     c_destroy_window(window: *SDL_Window) as "SDL_DestroyWindow"
     c_set_window_title(window: *SDL_Window, title: *u8): bool as "SDL_SetWindowTitle"
+    c_get_display_for_window(window: *SDL_Window): u32 as "SDL_GetDisplayForWindow"
+    c_get_current_display_mode(display: u32): *DisplayMode as "SDL_GetCurrentDisplayMode"
     c_minimize_window(window: *SDL_Window): bool as "SDL_MinimizeWindow"
     c_maximize_window(window: *SDL_Window): bool as "SDL_MaximizeWindow"
     c_restore_window(window: *SDL_Window): bool as "SDL_RestoreWindow"
@@ -396,6 +412,14 @@ pub Window.title(self, title: string): bool {
     buf: [TEXT_MAX + 1]u8
     if !str.cstring(title, buf[..]) { return false }
     return c_set_window_title(self.handle, &buf[0])
+}
+
+// The refresh rate in Hz of the display the window is on, or 0.0 when SDL
+// does not report one.
+pub Window.refresh(const self): f32 {
+    mode: *DisplayMode = c_get_current_display_mode(c_get_display_for_window(self.handle))
+    if mode == null { return 0.0 }
+    return mode.refresh_rate
 }
 
 pub Window.ok(const self): bool { return self.handle != null }

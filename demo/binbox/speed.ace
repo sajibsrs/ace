@@ -2,15 +2,15 @@
  *
  * The slider has STOPS equal zones. The first nine step 1 .. 9 Hz and every
  * decade after steps nine times by its power of ten (10 .. 90, 100 .. 900,
- * 1000 .. 9000, 10000 .. 90000); the last is the top of the last decade, 100 kHz.
+ * 1000 .. 9000, and so on to 900000); the last is the top of the last decade, 1 MHz.
  */
 
 import fmt
 import math
 
 /* Decades above 1 Hz the stops reach. */
-DECADES: const int = 5
-/* Stops per decade, and in all: 1 Hz to 100 kHz. */
+DECADES: const int = 6
+/* Stops per decade, and in all: 1 Hz to 1 MHz. */
 PER: const int = 9
 pub STOPS: const int = PER * DECADES + 1
 
@@ -32,13 +32,14 @@ pub fill(stop: int): f32 {
 }
 
 /* Writes `rate` ticks per second to `b` with a unit (Hz, kHz or MHz) and at
- * most four significant digits. */
+ * most three significant digits. */
 pub show(b: *fmt.Buffer, rate: f64) {
-    if rate >= 1000000.0 {
-        b.printf("%.4g MHz", rate / 1000000.0)
-    } else if rate >= 1000.0 {
-        b.printf("%.4g kHz", rate / 1000.0)
+    /* Units switch where three digits round up to the next one: 999.5 kHz is 1 MHz. */
+    if rate >= 999500.0 {
+        b.printf("%.3g MHz", rate / 1000000.0)
+    } else if rate >= 999.5 {
+        b.printf("%.3g kHz", rate / 1000.0)
     } else {
-        b.printf("%.4g Hz", rate)
+        b.printf("%.3g Hz", rate)
     }
 }

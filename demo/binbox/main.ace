@@ -28,6 +28,7 @@
  * - and _; Enter saves, Escape cancels). Cmd+S saves and Cmd+O opens.
  */
 import fmt
+import time
 import (
     init, quit, error, Window, Renderer, Event, InitFlags, WindowFlags, BLEND_ALPHA,
 ) from sdl
@@ -85,8 +86,12 @@ main(): int {
         for event.poll() {
             running = mouse.event(&editor, &event) && running
         }
+        editor.refresh(window.refresh())
         editor.pace()
+        drawing: u64 = time.elapsed()
         render.draw(&editor, &canvas, renderer)
+        editor.drawn = time.elapsed() - drawing
+        renderer.present()
     }
     return 0
 }

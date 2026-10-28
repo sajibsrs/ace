@@ -461,8 +461,8 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         }
     } else {
         status.printf("tick %d", g.count)
-        /* The rate reached, when the frames cannot keep up with the setting. */
-        if g.auto && g.rate > 0.0 && g.rate < 0.9 * speed.hz(g.stop) {
+        /* The rate reached, which falls short of the setting when the frames cannot keep up. */
+        if g.auto && g.rate > 0.0 {
             status.printf(" | ")
             speed.show(&status, g.rate)
         }
@@ -520,5 +520,4 @@ pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     draw_bars(g, canvas, r)
     if g.mode == app.Mode.open { draw_list(g, canvas, r) }
     if g.mode == app.Mode.save_as { draw_ask(g, canvas, r) }
-    r.present()
 }

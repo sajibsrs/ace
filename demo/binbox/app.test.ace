@@ -26,6 +26,21 @@ spin(a: *app.App, ns: u64) {
     for time.elapsed() - begin < ns { a.pace() }
 }
 
+pub slice_leaves_room_for_drawing(t: *test.T) {
+    a: app.App = app.App {}
+    t.equal(a.slice() == 14600000, true)
+    a.drawn = 5000000
+    t.equal(a.slice() == 9600000, true)
+    a.drawn = 40000000
+    t.equal(a.slice() == 2000000, true)
+    /* A 120 Hz display leaves half the room. */
+    a.drawn = 1000000
+    a.refresh(120.0)
+    t.equal(a.slice() > 5000000 && a.slice() < 5400000, true)
+    a.refresh(0.0)
+    t.equal(a.frame == app.FRAME, true)
+}
+
 pub fixed_rate_is_kept(t: *test.T) {
     /* Stop 18 is 100 Hz. */
     a: app.App = running(18)
@@ -34,8 +49,9 @@ pub fixed_rate_is_kept(t: *test.T) {
     t.equal(a.rate >= 90.0 && a.rate <= 110.0, true)
 }
 
-pub top_rate_is_kept(t: *test.T) {
-    a: app.App = running(speed.STOPS - 1)
+pub high_rate_is_kept(t: *test.T) {
+    /* Stop 45 is 100 kHz. */
+    a: app.App = running(45)
     spin(&a, 700000000)
     /* 100 kHz for 0.7 s; the empty board ticks faster than that. */
     t.equal(a.count > 30000 && a.count <= 75000, true)

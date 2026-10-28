@@ -43,3 +43,7 @@
 - `regex.Syntax.parse` and `Regex.new` take an optional `mut diag:
   fmt.Buffer` for error context (the error at line:column, then each enclosing
   class or group) and no longer return a byte offset (Standard Library #23).
+- `sdl.Window.refresh` returns the refresh rate of the window's display. binbox
+  Auto ticks for what a frame has left after the last draw and a margin (the
+  display's period, 60 Hz until known), and its Speed slider reaches 1 MHz; the
+  footer shows the reached rate with three digits while Auto runs.

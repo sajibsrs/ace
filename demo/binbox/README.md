@@ -82,7 +82,7 @@ it can be started from any directory.
 | Left click / drag | Edit with the pencil: place the selected block. Simulate: flip a source |
 | Right click / drag | Edit: remove |
 | Space / Play / Pause | Simulate: toggle auto-ticking at the Speed slider's rate; a button in the side panel's Simulate widget that reads Play while stopped and Pause while ticking |
-| Speed slider | Drag for the auto-tick rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, 10 to 90 kHz by 10 kHz, and 100 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
+| Speed slider | Drag for the auto-tick rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, 10 to 90 kHz by 10 kHz, 100 to 900 kHz by 100 kHz, and 1 MHz (4 Hz at start). The footer shows the rate reached after the tick count while Auto runs; it falls short of the setting when the frames cannot keep up |
 | Reset | Simulate: returns to the state Simulate was entered with: every gate low, the tick count and clocks back to 0, sources as they were then; auto-ticking keeps running or stopped; a button in the side panel's Simulate widget (no key) |
 | Step | Simulate: step one second of ticks at the Speed slider's rate (1 tick at 1 Hz); a button in the side panel's Simulate widget |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |

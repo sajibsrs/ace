@@ -42,6 +42,10 @@ pub App: struct {
     metered: int = 0,
     span: u64 = 0,
     pub rate: f64 = 0.0,
+    /* How long the last frame took to draw (ns), set by the event loop. */
+    pub drawn: u64 = 0,
+    /* How long a frame lasts (ns): the display's refresh period, FRAME until known. */
+    pub frame: u64 = FRAME,
     /* Whether blocks draw with depth. */
     pub depth: bool = true,
     /* Whether the block being placed snaps to the cell under the pointer; off,
@@ -108,10 +112,30 @@ pub App.step(self) {
     for i: int in 0 .. int(speed.hz(self.stop)) { self.tick() }
 }
 
-/* The longest Auto ticks in one frame, in ns, so the window keeps up. */
-SLICE: const u64 = 8000000
+/* A frame at 60 Hz, in ns, until the display's rate is known. */
+pub FRAME: const u64 = 16600000
+/* What a frame keeps for events and presenting besides drawing and ticks, and the
+ * least Auto may tick in one, so it still advances when drawing is slow (ns). */
+MARGIN: const u64 = 2000000
+LEAST: const u64 = 2000000
 /* How long a rate is measured over, in ns. */
 WINDOW: const u64 = 500000000
+
+/* Sets the frame from the display's refresh rate in Hz; 0 or less keeps FRAME. */
+pub App.refresh(self, hz: f32) {
+    if hz <= 0.0 {
+        self.frame = FRAME
+    } else {
+        self.frame = u64(1000000000.0 / f64(hz))
+    }
+}
+
+/* The longest Auto ticks in one frame, in ns: what the last draw and MARGIN leave
+ * of the frame, so the window keeps up, at least LEAST. */
+pub App.slice(const self): u64 {
+    if self.drawn + MARGIN + LEAST >= self.frame { return LEAST }
+    return self.frame - self.drawn - MARGIN
+}
 
 /* Runs the ticks Auto owes since the last call. The rate is measured over the time passed, so it
  * falls short of the setting when the frames cannot fit the ticks. */
@@ -127,7 +151,8 @@ pub App.pace(self) {
         return
     }
     self.owed += f64(passed) * speed.hz(self.stop) / 1000000000.0
-    for self.owed >= 1.0 && time.elapsed() - now < SLICE {
+    slice: u64 = self.slice()
+    for self.owed >= 1.0 && time.elapsed() - now < slice {
         self.tick()
         self.owed -= 1.0
         self.metered += 1

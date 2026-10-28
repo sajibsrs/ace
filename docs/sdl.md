@@ -95,7 +95,9 @@ timing work.
 frames arrive evenly and the loop needs no delay of its own; `2` waits for
 every other refresh, `sdl.VSYNC_ADAPTIVE` tears only when a frame is late, and
 `sdl.VSYNC_DISABLED` never waits. It returns `false` where the renderer cannot
-honor the interval.
+honor the interval. `Window.refresh()` returns the refresh rate in Hz of the
+display the window is on, `0.0` when SDL reports none, for a loop that budgets
+its work per frame.
 
 `Renderer.debug_text(x, y, text)` draws one line in SDL's built-in 8x8 font
 (`sdl.DEBUG_TEXT_SIZE`) with the current draw color; text longer than `sdl.TEXT_MAX`
