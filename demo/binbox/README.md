@@ -70,7 +70,7 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 | F1 / Edit | Edit mode: build the board; blocks show without levels. The bar's Mode button toggles the two modes and names the one a press switches to |
 | F2 / Simulate | Simulate mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
-| Wheel | Zoom the board about the pointer, in either mode, in steps of 0.25: 0.5× (20-pixel cells) at start, up to 2× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
+| Wheel | Zoom the board about the pointer, in either mode, in steps of 0.125: 0.5× (20-pixel cells) at start, up to 1.5× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode; the field before them shows the zoom level (0.5 at start) |
 | Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |

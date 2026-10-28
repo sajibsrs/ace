@@ -560,7 +560,8 @@ pub clock_keeps_time_across_a_place(t: *test.T) {
     low(t, s, 1, 0)
 }
 
-/* The shipped ripple counter: its LEDs (row 26) count up by one every 16 ticks. */
+/* The shipped ripple counter: its LEDs (row 14) count up by one every 32 ticks,
+ * a full clock cycle, which leaves the carry time to settle. */
 pub counter_counts(t: *test.T) {
     data: []u8, err: Error = file.read("diagram/ripple-counter.bnbx")
     defer mem.release[u8](&data)
@@ -568,10 +569,10 @@ pub counter_counts(t: *test.T) {
     t.equal(err == null && derr == null, true)
     last: int = -1
     for k: int in 0 .. 30 {
-        ticks(&s, 16)
+        ticks(&s, 32)
         v: int = 0
         for i: int in 0 .. 8 {
-            if s.level(10 + 7 * i, 26) == sim.Level.high { v += 1 << i }
+            if s.level(19 + 4 * i, 14) == sim.Level.high { v += 1 << i }
         }
         if k > 1 { t.equal(v, (last + 1) % 256) }
         last = v
