@@ -196,7 +196,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `sim.ace` | Levels, drivers and contention, and the tick. |
 | `speed.ace` | The Speed slider's stops as tick rates, and their Hz/kHz/MHz text. |
 | `diagram.ace` | `.bnbx` encode and decode. |
-| `ui.ace` | Rectangles, layered drawing, and text helpers. |
+| `ui.ace` | Rectangles, layered drawing, and text helpers (text size 16 px). |
 | `bar.ace` | Where the toolbar and the side panel's Tools, Blocks, Simulate and Info widgets sit, and what is in them. |
 | `view.ace` | The window size and the board's zoom and pan. |
 | `history.ace` | Undo and Redo snapshots. |
@@ -207,5 +207,6 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `render.ace` | Draws the board, bars, and panels. |
 | `theme.ace` | The bar and panel colors. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
+| `font.ace` | The text font (Lilex SemiBold, monospaced, printable ASCII), generated from `font/Lilex-SemiBold.ttf` by `python3 -I font/bake.py`; do not edit by hand. License in `font/LICENSE.txt`. |
 | `main.ace` | The SDL window and the event loop. |
 | `*.test.ace` | Tests for each module, run with `ace test .`. |

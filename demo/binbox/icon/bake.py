@@ -38,7 +38,7 @@ ORDER = [
 ]
 ARITY = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "A": 7, "Z": 0}
 CURVE_STEPS = 10
-SHAPE_MAX = 48  # also ui.SHAPE_MAX
+SHAPE_MAX = 48  # icons only; ui.SHAPE_MAX is larger, for glyphs
 ARC_STEP = math.pi / 12
 
 
@@ -230,6 +230,27 @@ def triangulate(poly):
     return out + left
 
 
+def polygons(rings):
+    """Rings -> (polygon, bridges) pairs. Even-odd: a ring inside an odd number
+    of others is a hole of the innermost one that holds it."""
+    polys, owner = [], {}
+    for k, ring in enumerate(rings):
+        held = [m for m, other in enumerate(rings) if m != k and contains(other, ring[0])]
+        if len(held) % 2:
+            owner[k] = max(held, key=lambda m: sum(contains(rings[n], rings[m][0]) for n in range(len(rings)) if n != m))
+    for k, ring in enumerate(rings):
+        if k in owner:
+            continue
+        if area(ring) < 0:
+            ring.reverse()
+        holes = []
+        for h, o in owner.items():
+            if o == k:
+                holes.append(rings[h][::-1] if area(rings[h]) > 0 else rings[h])
+        polys.append(merge(ring, holes) if holes else (ring, []))
+    return polys
+
+
 def shapes_of(name):
     svg = (HERE / f"{name}.svg").read_text()
     lines, polys = [], []
@@ -251,23 +272,7 @@ def shapes_of(name):
             if math.dist(sh[0], sh[-1]) < 1e-6:
                 sh = sh[:-1]
             rings.append(sh)
-        # Even-odd: a ring inside an odd number of others is a hole of the
-        # innermost one that holds it.
-        owner = {}
-        for k, ring in enumerate(rings):
-            held = [m for m, other in enumerate(rings) if m != k and contains(other, ring[0])]
-            if len(held) % 2:
-                owner[k] = max(held, key=lambda m: sum(contains(rings[n], rings[m][0]) for n in range(len(rings)) if n != m))
-        for k, ring in enumerate(rings):
-            if k in owner:
-                continue
-            if area(ring) < 0:
-                ring.reverse()
-            holes = []
-            for h, o in owner.items():
-                if o == k:
-                    holes.append(rings[h][::-1] if area(rings[h]) > 0 else rings[h])
-            polys.append(merge(ring, holes) if holes else (ring, []))
+        polys += polygons(rings)
     return lines, polys
 
 
@@ -318,4 +323,5 @@ def main():
     print(f"{OUT}: {len(ORDER)} icons, {len(flat)} numbers")
 
 
-main()
+if __name__ == "__main__":
+    main()

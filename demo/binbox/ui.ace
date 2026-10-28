@@ -6,11 +6,15 @@
  */
 
 import math
-import Renderer, Vertex, Point, Color, DEBUG_TEXT_SIZE from sdl
+import Renderer, Vertex, Point, Color from sdl
 import icon: "./icon.ace"
+import font: "./font.ace"
 
-/* Side of one text glyph, in pixels: the 8 pixel debug font, scaled up. */
-pub GLYPH: const f32 = 10.0
+/* Text size, in pixels per em. */
+pub TEXT: const f32 = 16.0
+
+/* Advance of one glyph, the font being monospaced: 0.6 of TEXT. */
+pub GLYPH: const f32 = 9.6
 
 pub Rect: struct {
     pub x: f32 = 0.0,
@@ -92,8 +96,8 @@ pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
     self.count += 6
 }
 
-/* Most points of one icon shape. */
-SHAPE_MAX: const usize = 48
+/* Most points of one icon or glyph polygon. */
+SHAPE_MAX: const usize = 128
 /* Stroke of an icon's lines, in grid units. */
 STROKE: const f32 = 3.5
 
@@ -183,6 +187,12 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
     unit: f32 = side / 24.0
     ox: f32 = box.x + (box.w - side) / 2.0
     oy: f32 = box.y + (box.h - side) / 2.0
+    self.shapes(r, icon.POINTS[0..], usize(icon.START[which]), ox, oy, unit, color)
+}
+
+/* The shapes of `data` from index `i` to its -9 end mark, each point scaled
+ * by `unit` and moved to (ox, oy). */
+Canvas.shapes(self, r: Renderer, data: []f32, at: usize, ox: f32, oy: f32, unit: f32, color: Color) {
     clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
     edge: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
     inner: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
@@ -191,15 +201,15 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
     prev: [SHAPE_MAX]usize = [0 : SHAPE_MAX]
     next: [SHAPE_MAX]usize = [0 : SHAPE_MAX]
     bridge: [SHAPE_MAX]bool = [false : SHAPE_MAX]
-    i: usize = usize(icon.START[which])
-    for icon.POINTS[i] != -9.0 {
-        tag: f32 = icon.POINTS[i]
-        n: usize = usize(icon.POINTS[i + 1])
+    i: usize = at
+    for data[i] != -9.0 {
+        tag: f32 = data[i]
+        n: usize = usize(data[i + 1])
         i += 2
         if tag != -2.0 && tag != -4.0 {
             if n > SHAPE_MAX { return }
             for k: usize in 0 .. n {
-                edge[k] = Point { x = ox + icon.POINTS[i + 2 * k] * unit, y = oy + icon.POINTS[i + 2 * k + 1] * unit }
+                edge[k] = Point { x = ox + data[i + 2 * k] * unit, y = oy + data[i + 2 * k + 1] * unit }
             }
             self.stroke(r, edge[0..n], tag == -3.0, STROKE * unit, color)
             i += 2 * n
@@ -207,7 +217,7 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
         }
         if n > SHAPE_MAX { return }
         for k: usize in 0 .. n {
-            edge[k] = Point { x = ox + icon.POINTS[i + 2 * k] * unit, y = oy + icon.POINTS[i + 2 * k + 1] * unit }
+            edge[k] = Point { x = ox + data[i + 2 * k] * unit, y = oy + data[i + 2 * k + 1] * unit }
         }
         i += 2 * n
         tris: usize = i
@@ -221,9 +231,9 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
          * cut: it draws no fringe, and its corners follow the true outline
          * and hole edges around it. */
         if tag == -4.0 {
-            for m: usize in 0 .. usize(icon.POINTS[i]) {
-                a: usize = usize(icon.POINTS[i + 1 + 2 * m])
-                c: usize = usize(icon.POINTS[i + 2 + 2 * m])
+            for m: usize in 0 .. usize(data[i]) {
+                a: usize = usize(data[i + 1 + 2 * m])
+                c: usize = usize(data[i + 2 + 2 * m])
                 b: usize = (a + 1) % n
                 d: usize = (c + 1) % n
                 bridge[a] = true
@@ -233,7 +243,7 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
                 prev[b] = (c + n - 1) % n
                 next[c] = (b + 1) % n
             }
-            i += 1 + 2 * usize(icon.POINTS[i])
+            i += 1 + 2 * usize(data[i])
         }
         /* Each point moves half a pixel in and out along its corner's
          * bisector, so the fringe between the two straddles the true edge. */
@@ -262,9 +272,9 @@ pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
         }
         if self.count + 3 * (n - 2) + 6 * n > self.vertices.len { self.flush(r) }
         for t: usize in 0 .. n - 2 {
-            a: usize = usize(icon.POINTS[tris + 3 * t])
-            b: usize = usize(icon.POINTS[tris + 3 * t + 1])
-            c: usize = usize(icon.POINTS[tris + 3 * t + 2])
+            a: usize = usize(data[tris + 3 * t])
+            b: usize = usize(data[tris + 3 * t + 1])
+            c: usize = usize(data[tris + 3 * t + 2])
             self.triangle(inner[a], inner[b], inner[c], color)
         }
         for k: usize in 0 .. n {
@@ -292,27 +302,37 @@ pub Canvas.flush(self, r: Renderer) {
     self.count = 0
 }
 
-/* `text` at window point (x, y), `glyph` pixels per glyph. */
-draw(r: Renderer, x: f32, y: f32, text: string, glyph: f32) {
-    k: f32 = glyph / DEBUG_TEXT_SIZE
-    r.scale(k, k)
-    r.debug_text(x / k, y / k, text)
-    r.scale(1.0, 1.0)
+/* The layer text is built in: each string fills it and flushes it, so it lands
+ * over everything flushed before it. */
+layer: Canvas
+
+/* `text` with its baseline at window point (x, y). Glyphs sit on whole
+ * pixels, so every copy of a letter looks alike. */
+draw(r: Renderer, x: f32, y: f32, text: string, ink: u32) {
+    color: Color = Color.hex(ink)
+    unit: f32 = TEXT / font.EM
+    base: f32 = math.floor(y + 0.5)
+    for k: usize in 0 .. text.len {
+        c: usize = usize(text[k])
+        if c < font.FIRST || c > font.LAST { continue }
+        pen: f32 = math.floor(x + GLYPH * f32(k) + 0.5)
+        if layer.count + 3000 > layer.vertices.len { layer.flush(r) }
+        layer.shapes(r, font.POINTS[0..], usize(font.START[c - font.FIRST]), pen, base, unit, color)
+    }
+    layer.flush(r)
 }
 
-/* `text` centered in `box`, `glyph` pixels per glyph. */
-pub center_sized(r: Renderer, box: Rect, text: string, ink: u32, glyph: f32) {
-    r.color(Color.hex(ink))
-    draw(r, box.x + (box.w - glyph * f32(text.len)) / 2.0, box.y + (box.h - glyph) / 2.0, text, glyph)
+/* The baseline that centers capital letters in `box`. */
+baseline(box: Rect): f32 {
+    return box.y + (box.h + font.CAP * TEXT / font.EM) / 2.0
 }
 
 /* `text` centered in `box`. */
 pub center(r: Renderer, box: Rect, text: string, ink: u32) {
-    center_sized(r, box, text, ink, GLYPH)
+    draw(r, box.x + (box.w - GLYPH * f32(text.len)) / 2.0, baseline(box), text, ink)
 }
 
 /* `text` left-aligned in `box`, `pad` pixels in, centered vertically. */
 pub left(r: Renderer, box: Rect, pad: f32, text: string, ink: u32) {
-    r.color(Color.hex(ink))
-    draw(r, box.x + pad, box.y + (box.h - GLYPH) / 2.0, text, GLYPH)
+    draw(r, box.x + pad, baseline(box), text, ink)
 }

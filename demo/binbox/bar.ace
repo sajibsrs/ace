@@ -128,7 +128,7 @@ pub INSET: const f32 = 8.0
 pub TITLE_H: const f32 = 22.0
 /* The space between a widget's header and its content. */
 pub BODY_GAP: const f32 = 6.0
-pub LINE: const f32 = 16.0
+pub LINE: const f32 = 22.0
 /* Block buttons wrap into rows of COLS, BLOCK_GAP apart. */
 COLS: const int = 5
 BLOCK_GAP: const f32 = 4.0

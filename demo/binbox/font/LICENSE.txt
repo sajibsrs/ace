@@ -1,0 +1,7 @@
+Lilex SemiBold (font/Lilex-SemiBold.ttf), from https://github.com/mishamyrt/Lilex
+
+Copyright 2019 The Lilex Project Authors (https://github.com/mishamyrt/Lilex)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://openfontlicense.org
+
+Full license: https://openfontlicense.org
