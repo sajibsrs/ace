@@ -1,5 +1,8 @@
 # Compiler
 
+- A struct field whose array type is rejected no longer also reports its
+  default as a non-constant; the failed type is reported once, in both the C
+  compiler and selfhost (#160).
 - An array length or repetition count of any integer type is checked by its
   constant value (positive, equal to the array length) instead of coercing to
   `usize`, so a `const int` sizes an array without a duplicate `usize` constant

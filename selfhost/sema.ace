@@ -5352,7 +5352,7 @@ Sema.fill_struct(self, decl: u32, id: u32) {
             } else {
                 _ = self.coerce(fd.c, f.ty)
             }
-            if !self.compile_time_expr(fd.c) {
+            if k != TypeKind.err && !self.compile_time_expr(fd.c) { // a failed type is reported once
                 self.err(fd.c, ["default for field '", f.name, "' must be a compile-time expression"])
             }
         }

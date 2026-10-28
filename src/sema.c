@@ -7341,7 +7341,7 @@ static SType* fill_struct_type(Ck* k, Node* decl, SType* t) {
             else if (value->kind == N_ARRAYLIT && t->fields[i].t->kind == SK_ARRAY)
                 check_arraylit(k, value, t->fields[i].t);
             else coerce(k, value, t->fields[i].t);
-            if (!compile_time_expr(value))
+            if (t->fields[i].t->kind != SK_ERR && !compile_time_expr(value)) // a failed type is reported once
                 ck_err(k, value, "default for field '%s' must be a compile-time expression",
                        t->fields[i].name);
         }

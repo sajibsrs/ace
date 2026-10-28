@@ -1,0 +1,14 @@
+/* A rejected array length fails its field once; the field's default is not
+ * reported again as a non-constant. */
+
+Level: enum u8 { low, high }
+
+n: int
+
+Board: struct {
+    cells: [n]Level = [Level.low : 3],
+}
+
+main(): int {
+    return 0
+}
