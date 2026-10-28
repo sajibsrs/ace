@@ -255,34 +255,34 @@ ticks(s: *sim.Sim, n: int) {
     for i: int in 0 .. n { s.tick() }
 }
 
-/* A JK flip-flop around one toggle, centered on the board as diagram/jk-flip-flop.bnbx
- * stores it. The toggle (34,15) flips when its input rises, and the input is
- * (J AND NOT Q) OR (K AND Q): high only when the flip-flop must change. Q (output
- * pin (35,15)) runs down column 36 and back along rows 18 and 12; LED at
- * (37,15). Source J (26,15) feeds the upper AND (28,15), the NOT (28,12)
- * feeds its other pin (28,14); source K (29,18) feeds the lower AND (31,18),
- * whose other pin (32,18) reads Q. The ANDs' outputs meet at the OR (31,15). */
+/* A JK flip-flop around one toggle, as diagram/jk-flip-flop.bnbx stores it. The
+ * toggle (33,15) flips when its input rises, and the input is (J AND NOT Q) OR
+ * (K AND Q): high only when the flip-flop must change. Q (the toggle's output pin
+ * (33,14)) runs along row 13 to the LED (36,13), down column 35, and back along
+ * row 18. Source J (26,16) feeds the lower AND (28,16); the NOT (29,18) reads Q
+ * and feeds that AND's other pin (28,17). Source K (29,13) feeds the upper AND
+ * (31,13), whose other pin (32,13) reads Q. The ANDs' outputs meet at the OR
+ * (31,16), which feeds the toggle through the pin (33,16). */
 jk(): sim.Sim {
     g: grid.Grid = grid.Grid {}
-    row(&g, 28, 12, [
-        grid.Block.not, grid.Block.read, grid.Block.wire, grid.Block.wire,
-        grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.wire,
-        grid.Block.wire,
+    row(&g, 29, 13, [
+        grid.Block.source, grid.Block.read, grid.Block.and, grid.Block.read,
+        grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.led,
     ])
-    g.place(28, 13, grid.Block.write)
-    g.place(28, 14, grid.Block.read)
-    row(&g, 26, 15, [
+    g.place(31, 14, grid.Block.write)
+    g.place(33, 14, grid.Block.write)
+    g.place(31, 15, grid.Block.read)
+    g.place(33, 15, grid.Block.toggle)
+    row(&g, 26, 16, [
         grid.Block.source, grid.Block.read, grid.Block.and, grid.Block.write,
         grid.Block.read, grid.Block.or, grid.Block.write, grid.Block.read,
-        grid.Block.toggle, grid.Block.write, grid.Block.wire, grid.Block.led,
     ])
-    g.place(31, 16, grid.Block.read)
-    g.place(31, 17, grid.Block.write)
-    row(&g, 29, 18, [
-        grid.Block.source, grid.Block.read, grid.Block.and, grid.Block.read,
+    g.place(28, 17, grid.Block.read)
+    row(&g, 28, 18, [
+        grid.Block.write, grid.Block.not, grid.Block.read, grid.Block.wire,
         grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.wire,
     ])
-    for y: int in 12 .. 19 { g.place(36, y, grid.Block.wire) }
+    for y: int in 14 .. 18 { g.place(35, y, grid.Block.wire) }
     return sim.Sim.init(g)
 }
 
@@ -305,31 +305,31 @@ pub jk_matches_file(t: *test.T) {
 pub jk_holds_a_bit(t: *test.T) {
     s: sim.Sim = jk()
     ticks(&s, 8)
-    low(t, s, 37, 15)
+    low(t, s, 36, 13)
 
-    s.toggle(26, 15, true)
+    s.toggle(26, 16, true)
     ticks(&s, 8)
-    s.toggle(26, 15, false)
+    s.toggle(26, 16, false)
     ticks(&s, 8)
-    high(t, s, 37, 15)
+    high(t, s, 36, 13)
 
-    s.toggle(26, 15, true)
+    s.toggle(26, 16, true)
     ticks(&s, 8)
-    s.toggle(26, 15, false)
+    s.toggle(26, 16, false)
     ticks(&s, 8)
-    high(t, s, 37, 15)
+    high(t, s, 36, 13)
 
-    s.toggle(29, 18, true)
+    s.toggle(29, 13, true)
     ticks(&s, 8)
-    s.toggle(29, 18, false)
+    s.toggle(29, 13, false)
     ticks(&s, 8)
-    low(t, s, 37, 15)
+    low(t, s, 36, 13)
 
-    s.toggle(29, 18, true)
+    s.toggle(29, 13, true)
     ticks(&s, 8)
-    s.toggle(29, 18, false)
+    s.toggle(29, 13, false)
     ticks(&s, 8)
-    low(t, s, 37, 15)
+    low(t, s, 36, 13)
 }
 
 /* J and K together leave the flip-flop set, from either state: from reset J sets it
@@ -337,32 +337,32 @@ pub jk_holds_a_bit(t: *test.T) {
  * since there is no clock to make J=K=1 toggle on every tick. */
 pub jk_both_inputs(t: *test.T) {
     s: sim.Sim = jk()
-    s.toggle(26, 15, true)
-    s.toggle(29, 18, true)
+    s.toggle(26, 16, true)
+    s.toggle(29, 13, true)
     ticks(&s, 12)
-    high(t, s, 37, 15)
-    s.toggle(26, 15, false)
-    s.toggle(29, 18, false)
+    high(t, s, 36, 13)
+    s.toggle(26, 16, false)
+    s.toggle(29, 13, false)
     ticks(&s, 12)
-    high(t, s, 37, 15)
+    high(t, s, 36, 13)
 }
 
 /* From set, J and K together end set too, after Q dips and returns. */
 pub jk_both_inputs_from_set(t: *test.T) {
     s: sim.Sim = jk()
-    s.toggle(26, 15, true)
+    s.toggle(26, 16, true)
     ticks(&s, 8)
-    s.toggle(26, 15, false)
+    s.toggle(26, 16, false)
     ticks(&s, 8)
-    high(t, s, 37, 15)
-    s.toggle(26, 15, true)
-    s.toggle(29, 18, true)
+    high(t, s, 36, 13)
+    s.toggle(26, 16, true)
+    s.toggle(29, 13, true)
     ticks(&s, 12)
-    high(t, s, 37, 15)
-    s.toggle(26, 15, false)
-    s.toggle(29, 18, false)
+    high(t, s, 36, 13)
+    s.toggle(26, 16, false)
+    s.toggle(29, 13, false)
     ticks(&s, 12)
-    high(t, s, 37, 15)
+    high(t, s, 36, 13)
 }
 
 /* Source (0,0), pin (1,0), toggle (2,0), write pin (3,0), LED (4,0). */

@@ -116,20 +116,20 @@ pub jk_file(t: *test.T) {
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
-    test.equal[sim.Level](t, s.level(26, 15), sim.Level.low)
-    test.equal[sim.Level](t, s.level(29, 18), sim.Level.low)
+    test.equal[sim.Level](t, s.level(26, 16), sim.Level.low)
+    test.equal[sim.Level](t, s.level(29, 13), sim.Level.low)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(37, 15), sim.Level.low)
-    s.toggle(26, 15, true)
+    test.equal[sim.Level](t, s.level(36, 13), sim.Level.low)
+    s.toggle(26, 16, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(26, 15, false)
+    s.toggle(26, 16, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(37, 15), sim.Level.high)
-    s.toggle(29, 18, true)
+    test.equal[sim.Level](t, s.level(36, 13), sim.Level.high)
+    s.toggle(29, 13, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(29, 18, false)
+    s.toggle(29, 13, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(37, 15), sim.Level.low)
+    test.equal[sim.Level](t, s.level(36, 13), sim.Level.low)
 }
 
 /* A toggle's code is TOGGLE and it survives a round trip. */

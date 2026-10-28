@@ -97,21 +97,21 @@ Escape cancels.
 ## Example: JK flip-flop
 
 `diagram/jk-flip-flop.bnbx` is a JK flip-flop built around one toggle (T), with
-J the source at the left and K the lower source. A toggle flips only when its
-input rises, so the input is made high exactly when the flip-flop must change:
-`(J and not Q) or (K and Q)`. That is the JK equation `Q+ = J·Q' + K'·Q`. J sets
-Q low to high, K sets it high to low, and a pulse that would change nothing (J
-while set, K while reset) does nothing. It has no clock: it reacts as soon as J
-or K changes. It sits at the board's center (columns 26-37, rows 12-18):
+J the source at the lower left and K the source at the top. A toggle flips only
+when its input rises, so the input is made high exactly when the flip-flop must
+change: `(J and not Q) or (K and Q)`. That is the JK equation
+`Q+ = J·Q' + K'·Q`. J sets Q low to high, K sets it high to low, and a pulse
+that would change nothing (J while set, K while reset) does nothing. It has no
+clock: it reacts as soon as J or K changes. It sits at the board's center
+(columns 26-36, rows 13-18):
 
 ```
-. . N I W W W W W W W .     NOT of Q: the upper AND's second pin
-. . O . . . . . . . W .
-. . I . . . . . . . W .
-S I & O I | O I T O W L     J (S) into the upper AND; OR; the toggle; Q to the LED
-. . . . . I . . . . W .
-. . . . . O . . . . W .
-. . . S I & I W W W W .     K (the lower S) into the lower AND; Q into its other pin
+. . . S I & I W W W L     K (S) and Q (I) into the upper AND; Q to the LED
+. . . . . O . O . W .
+. . . . . I . T . W .     the upper AND feeds the OR; the toggle's output is Q
+S I & O I | O I . W .     J (S) and NOT Q (I) into the lower AND; OR into the toggle
+. . I . . . . . . W .
+. . O N I W W W W W .     NOT of Q, from the Q wire
 ```
 
 In the drawing, `I` is a read pin and `O` a write pin.
@@ -119,7 +119,7 @@ In the drawing, `I` is a read pin and `O` a write pin.
 Touching does most of the wiring: each gate's write pin sits against the next
 gate's read pin, so only Q needs wire.
 
-The file is saved with J and K off and Q low. Switch to Simulate (2), turn on
+The file is saved with J and K off and Q low. Switch to Simulate (F1), turn on
 auto-ticking (Space), and flip J on and off: the LED turns on and stays on. Flip
 K on and off: it turns off and stays off. Holding both on leaves it set: from
 reset it sets, and from set Q dips low for a few ticks and flips back. It does
