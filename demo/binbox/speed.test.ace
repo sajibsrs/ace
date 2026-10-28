@@ -19,12 +19,14 @@ pub steps_by_decade(t: *test.T) {
     shows(t, speed.hz(27), "1 kHz")
     shows(t, speed.hz(35), "9 kHz")
     shows(t, speed.hz(36), "10 kHz")
+    shows(t, speed.hz(44), "90 kHz")
+    shows(t, speed.hz(45), "100 kHz")
 }
 
 pub zones_are_equal(t: *test.T) {
     t.equal(speed.stop_at(0.0), 0)
     t.equal(speed.stop_at(0.999), speed.STOPS - 1)
-    shows(t, speed.hz(speed.STOPS - 1), "10 kHz")
+    shows(t, speed.hz(speed.STOPS - 1), "100 kHz")
     t.equal(speed.stop_at(1.0), speed.STOPS - 1)
     t.equal(speed.stop_at(-0.5), 0)
     /* Half way is the middle zone, and filling it reaches its far edge. */

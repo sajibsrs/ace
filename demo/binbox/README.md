@@ -37,6 +37,7 @@ it can be started from any directory.
 | C   | XNOR       | `=`   | High when an even number of inputs are high. Needs at least 2 inputs. |
 | L   | LED        | `L`   | Shows the level of what it touches. |
 | B   | bridge     | `+`   | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
+| K   | clock      | clock icon | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
 
 ## Rules
 
@@ -67,7 +68,7 @@ it can be started from any directory.
 
 | Input | Action |
 |-------|--------|
-| F1 / Edit | Edit mode: build the board; blocks show without levels |
+| F1 / Edit | Edit mode: build the board; blocks show without levels. The bar's Mode button toggles the two modes and names the one a press switches to |
 | F2 / Simulate | Simulate mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
 | Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
@@ -75,7 +76,7 @@ it can be started from any directory.
 | Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S W I O A R N Z V X C L B | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
+| S W I O A R N Z V X C L B K | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
 | Chevron at the side panel's top left | Folds the panel to a narrow strip, or unfolds it; the board takes the freed width |
 | 1 / Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
 | 2 / Select | Select tool (Edit only): drag a box over blocks; drag inside the selection to move it (blocks replace what they land on); Delete or Backspace removes it; Escape or a click elsewhere drops it |
@@ -84,7 +85,8 @@ it can be started from any directory.
 | Left click / drag | Edit with the pencil: place the selected block. Simulate: flip a source |
 | Right click / drag | Edit: remove |
 | Space / Auto | Simulate: toggle auto-ticking at the Speed slider's rate; a button in the side panel's Simulate widget |
-| Speed slider | Drag for Auto's rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, and 10 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
+| Speed slider | Drag for Auto's rate; in the side panel's Simulate widget. It snaps to 1 to 9 Hz by 1, then 10 to 90 by 10, 100 to 900 by 100, 1 to 9 kHz by 1 kHz, 10 to 90 kHz by 10 kHz, and 100 kHz (4 Hz at start). The footer shows the rate reached when the frames cannot keep up with it |
+| Reset | Simulate: returns to the state Simulate was entered with: every gate low, the tick count and clocks back to 0, sources as they were then; Auto keeps running or stopped; a button in the side panel's Simulate widget (no key) |
 | Step | Simulate: step one second of ticks at the Speed slider's rate (1 tick at 1 Hz); a button in the side panel's Simulate widget |
 | New / Open / Save / Save as | Bar buttons; the diagram's name shows at the bar's right |
 | Cmd+S | Save (asks for a name the first time) |
@@ -130,6 +132,11 @@ circuits with an input held, the way real circuits hold reset at power-on.
 - `diagram/latch.bnbx`: SR latch
 - `diagram/half-adder.bnbx`: half adder
 - `diagram/full-adder.bnbx`: full adder
+- `diagram/ripple-counter.bnbx`: 8-bit ripple counter on a clock. Each bit is three
+  gates: a NOT and a NOR make a one-tick pulse when the bit's clock falls, and an
+  XOR fed back on itself toggles on that pulse (the first bit's clock is the
+  clock block, the next bit's is this bit). The LEDs show the count, least
+  significant on the left. Needs no reset.
 - `diagram/alu.bnbx`: 4-bit add/subtract ALU. Four full-adder slices, least
   significant on the right; in each slice the left switch is a B bit and the
   right one an A bit. The switch at the bus's right end is SUB: it XORs every
@@ -158,7 +165,7 @@ An 8-byte header, then one byte per cell, row by row:
 | 4 | input | 9 | LED |
 | 10 | NAND | 12 | XOR |
 | 11 | NOR | 13 | XNOR |
-| 14 | bridge | | |
+| 14 | bridge | 15–22 | clock, span 0–7 (CLOCK + span) |
 
 A cell's top bit is reserved for future flags and must be 0. Gate outputs are
 not stored: a loaded diagram starts with every gate low. A reader rejects a

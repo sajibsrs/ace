@@ -31,6 +31,7 @@ NAME: [grid.Block]string = [
     grid.Block.xnor = "XNOR",
     grid.Block.led = "LED",
     grid.Block.bridge = "bridge",
+    grid.Block.clock = "clock",
 ]
 
 /* Low and high colors of each block; any block on an error is ERROR. */
@@ -49,6 +50,7 @@ LOW: [grid.Block]u32 = [
     grid.Block.xnor = 0xb142b8,
     grid.Block.led = 0x8c8c8c,
     grid.Block.bridge = 0x504e68,
+    grid.Block.clock = 0x9a6a3a,
 ]
 
 HIGH: [grid.Block]u32 = [
@@ -66,6 +68,7 @@ HIGH: [grid.Block]u32 = [
     grid.Block.xnor = 0xf442ff,
     grid.Block.led = 0xffffff,
     grid.Block.bridge = 0x7772af,
+    grid.Block.clock = 0xffa24d,
 ]
 
 ERROR: const u32 = 0xb030b0
@@ -272,27 +275,29 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         rgb: u32 = theme.BUTTON
         if lit || (each == bar.Button.open && g.mode == app.Mode.open) { rgb = theme.ACTIVE }
         if each == bar.Button.depth && g.depth { rgb = theme.ACTIVE }
-        /* Edit is blue and Simulate green, each lit while its phase is
-         * current or under the pointer. */
-        if each == bar.Button.edit {
-            rgb = theme.EDIT
-            if lit || g.phase == app.Phase.edit { rgb = theme.EDIT_LIT }
-        }
-        if each == bar.Button.run {
+        /* The mode button names the mode a press switches to: Simulate in
+         * green while editing, Edit in blue while simulating; brighter under
+         * the pointer. */
+        if each == bar.Button.mode {
             rgb = theme.SIM
-            if lit || run { rgb = theme.SIM_LIT }
+            if g.phase == app.Phase.run { rgb = theme.EDIT }
+            if lit && g.phase == app.Phase.edit { rgb = theme.SIM_LIT }
+            if lit && g.phase == app.Phase.run { rgb = theme.EDIT_LIT }
         }
         canvas.fill(at, Color.hex(rgb))
         ink: u32 = theme.INK
         /* A lone icon is centred in its square, the size of a labelled one. */
         inset: f32 = bar.PAD
         if bar.LABEL[each].len == 0 { inset = (at.w - bar.GLYPH_SIDE) / 2.0 }
-        canvas.icon(r, bar.ICON[each], ui.Rect { x = at.x + inset, y = at.y + (at.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(ink))
+        shown: icon.Id = bar.ICON[each]
+        if each == bar.Button.mode && g.phase == app.Phase.run { shown = icon.Id.edit }
+        canvas.icon(r, shown, ui.Rect { x = at.x + inset, y = at.y + (at.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(ink))
     }
     side: ui.Rect = g.view.side()
     edit: bool = g.phase == app.Phase.edit
     pencil: bool = g.pick == bar.Tool.pencil
     unfolded: bool = !g.view.shut
+    clocked: bool = g.block == grid.Block.clock
     /* The panel's header, the fold button in it, and each widget's header. */
     canvas.fill(ui.Rect { x = side.x, y = side.y, w = side.w, h = bar.BAR }, Color.hex(theme.DEEP))
     fold: ui.Rect = bar.fold_at(side)
@@ -302,9 +307,9 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     canvas.icon(r, fold_icon, ui.Rect { x = fold.x + (fold.w - bar.GLYPH_SIDE) / 2.0, y = fold.y + (fold.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
     for i: usize in 0 .. members(bar.Widget).len {
         each: bar.Widget = members(bar.Widget)[i]
-        if unfolded && bar.shown(each, edit, pencil) { canvas.fill(bar.head_at(side, bar.top(side, each, edit, pencil)), Color.hex(theme.DEEP)) }
+        if unfolded && bar.shown(each, edit, pencil, clocked) { canvas.fill(bar.head_at(side, bar.top(side, each, edit, pencil, clocked)), Color.hex(theme.DEEP)) }
     }
-    if unfolded && bar.shown(bar.Widget.tools, edit, pencil) {
+    if unfolded && bar.shown(bar.Widget.tools, edit, pencil, clocked) {
         for i: usize in 0 .. members(bar.Tool).len {
             each: bar.Tool = members(bar.Tool)[i]
             at: ui.Rect = bar.pick_at(side, each)
@@ -314,9 +319,9 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
             canvas.icon(r, bar.STRIP_ICON[each], ui.Rect { x = at.x + bar.TOOL_PAD, y = at.y + bar.TOOL_PAD, w = at.w - 2.0 * bar.TOOL_PAD, h = at.h - 2.0 * bar.TOOL_PAD }, Color.hex(theme.INK))
         }
     }
-    /* The simulation widget: Step, Auto (lit while auto-ticking), and the
+    /* The simulation widget: Step, Auto (lit while auto-ticking), Reset, and the
      * speed slider filled up to its stop. */
-    if unfolded && bar.shown(bar.Widget.sim, edit, pencil) {
+    if unfolded && bar.shown(bar.Widget.sim, edit, pencil, clocked) {
         step: ui.Rect = bar.step_at(side)
         auto: ui.Rect = bar.auto_at(side)
         rgb: u32 = theme.BUTTON
@@ -325,6 +330,11 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         rgb = theme.BUTTON
         if auto.has(g.mx, g.my) || g.auto { rgb = theme.ACTIVE }
         canvas.fill(auto, Color.hex(rgb))
+        reset: ui.Rect = bar.reset_at(side)
+        rgb = theme.BUTTON
+        if reset.has(g.mx, g.my) { rgb = theme.ACTIVE }
+        canvas.fill(reset, Color.hex(rgb))
+        canvas.icon(r, icon.Id.reset, ui.Rect { x = reset.x + bar.PAD, y = reset.y + (reset.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
         canvas.icon(r, icon.Id.step, ui.Rect { x = step.x + bar.PAD, y = step.y + (step.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
         canvas.icon(r, icon.Id.auto, ui.Rect { x = auto.x + bar.PAD, y = auto.y + (auto.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
         pace: ui.Rect = bar.speed(side)
@@ -334,7 +344,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     canvas.flush(r)
     /* Block buttons are icons alone: the selected one in its block's color, one
      * under the pointer in its dimmer color, the rest grey. */
-    if unfolded && bar.shown(bar.Widget.blocks, edit, pencil) {
+    if unfolded && bar.shown(bar.Widget.blocks, edit, pencil, clocked) {
         for i: usize in 1 .. members(grid.Block).len {
             each: grid.Block = members(grid.Block)[i]
             at: ui.Rect = bar.block_at(side, each)
@@ -351,16 +361,35 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
             canvas.icon(r, bar.BLOCK_ICON[each], bar.block_icon_box(at, each), Color.hex(ink))
         }
     }
+    /* The clock widget's slider, filled up to its span. */
+    if unfolded && bar.shown(bar.Widget.clock, edit, pencil, clocked) {
+        span: ui.Rect = bar.clock_at(side)
+        canvas.fill(span, Color.hex(theme.BUTTON))
+        canvas.fill(ui.Rect { x = span.x, y = span.y, w = span.w * f32(g.clock + 1) / f32(grid.SPANS), h = span.h }, Color.hex(theme.ACTIVE))
+    }
     canvas.flush(r)
 
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
-        ui.left(r, bar.place(each), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.LABEL[each], theme.INK)
+        label: string = bar.LABEL[each]
+        if each == bar.Button.mode && g.phase == app.Phase.run { label = bar.EDIT_LABEL }
+        ui.left(r, bar.place(each), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, label, theme.INK)
     }
-    if unfolded && bar.shown(bar.Widget.sim, edit, pencil) {
+    if unfolded && bar.shown(bar.Widget.clock, edit, pencil, clocked) {
+        half: [16]u8
+        ticks: fmt.Buffer = fmt.Buffer.init(half[..])
+        if g.clock == 0 {
+            ticks.printf("1 tick")
+        } else {
+            ticks.printf("%d ticks", 1 << g.clock)
+        }
+        ui.center(r, bar.clock_at(side), ticks.text(), theme.INK)
+    }
+    if unfolded && bar.shown(bar.Widget.sim, edit, pencil, clocked) {
         pace: ui.Rect = bar.speed(side)
         ui.left(r, bar.step_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.STEP_LABEL, theme.INK)
         ui.left(r, bar.auto_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.AUTO_LABEL, theme.INK)
+        ui.left(r, bar.reset_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.RESET_LABEL, theme.INK)
         ui.left(r, ui.Rect { x = side.x, y = pace.y - bar.LINE, w = side.w, h = bar.LINE }, bar.INSET, bar.SPEED, theme.DIM)
         rated: [16]u8
         setting: fmt.Buffer = fmt.Buffer.init(rated[..])
@@ -369,8 +398,8 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     }
     for i: usize in 0 .. members(bar.Widget).len {
         each: bar.Widget = members(bar.Widget)[i]
-        if !unfolded || !bar.shown(each, edit, pencil) { continue }
-        ui.left(r, bar.head_at(side, bar.top(side, each, edit, pencil)), 6.0, bar.TITLE[each], theme.DIM)
+        if !unfolded || !bar.shown(each, edit, pencil, clocked) { continue }
+        ui.left(r, bar.head_at(side, bar.top(side, each, edit, pencil, clocked)), 6.0, bar.TITLE[each], theme.DIM)
     }
     heading: string = bar.PANEL_TITLE
     if !edit { heading = bar.PANEL_TITLE_RUN }
@@ -379,7 +408,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
      * board's size. */
     lines: [96]u8
     info: fmt.Buffer = fmt.Buffer.init(lines[..])
-    row: ui.Rect = ui.Rect { x = side.x, y = bar.top(side, bar.Widget.info, edit, pencil) + bar.TITLE_H + bar.BODY_GAP, w = side.w, h = bar.LINE }
+    row: ui.Rect = ui.Rect { x = side.x, y = bar.top(side, bar.Widget.info, edit, pencil, clocked) + bar.TITLE_H + bar.BODY_GAP, w = side.w, h = bar.LINE }
     if !unfolded { row.y = -100.0 }
     if g.hx >= 0 { info.printf("X %d, Y %d", g.hx, g.hy) } else { info.printf("X -, Y -") }
     ui.left(r, row, bar.INSET, info.text(), theme.DIM)

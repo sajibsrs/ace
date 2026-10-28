@@ -349,3 +349,93 @@ pub bridge_crosses_signals(t: *test.T) {
     low(t, s, 4, 2)
     high(t, s, 2, 4)
 }
+
+/* A clock at (0, 0) feeding an LED at (1, 0), set to span 3 (8 ticks a half
+ * cycle). */
+clocked(): sim.Sim {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.clock, grid.Block.led])
+    g.span(0, 0, 3)
+    return sim.Sim.init(g)
+}
+
+pub new_clock_flips_every_tick(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.clock, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    low(t, s, 1, 0)
+    ticks(&s, 1)
+    high(t, s, 1, 0)
+    ticks(&s, 1)
+    low(t, s, 1, 0)
+}
+
+pub clock_flips_every_half_cycle(t: *test.T) {
+    s: sim.Sim = clocked()
+    low(t, s, 0, 0)
+    low(t, s, 1, 0)
+    ticks(&s, 7)
+    low(t, s, 1, 0)
+    ticks(&s, 1)
+    high(t, s, 0, 0)
+    high(t, s, 1, 0)
+    ticks(&s, 7)
+    high(t, s, 1, 0)
+    ticks(&s, 1)
+    low(t, s, 1, 0)
+}
+
+pub clock_drives_a_wire(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.clock, grid.Block.wire, grid.Block.wire, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    ticks(&s, 1)
+    high(t, s, 1, 0)
+    high(t, s, 3, 0)
+}
+
+pub span_sets_a_clock_s_half_cycle(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.clock, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    t.equal(s.span(0, 0, 2), true)
+    t.equal(s.g.span(0, 0), 2)
+    ticks(&s, 3)
+    low(t, s, 1, 0)
+    ticks(&s, 1)
+    high(t, s, 1, 0)
+    t.equal(s.span(1, 0, 2), false)
+}
+
+pub toggle_rejects_a_clock(t: *test.T) {
+    s: sim.Sim = clocked()
+    t.equal(s.toggle(0, 0, true), false)
+}
+
+/* Placing elsewhere regroups but keeps the time, so clocks stay in step. */
+pub clock_keeps_time_across_a_place(t: *test.T) {
+    s: sim.Sim = clocked()
+    ticks(&s, 8)
+    s.place(5, 5, grid.Block.wire)
+    high(t, s, 1, 0)
+    ticks(&s, 8)
+    low(t, s, 1, 0)
+}
+
+/* The shipped ripple counter: its LEDs (row 26) count up by one every 16 ticks. */
+pub counter_counts(t: *test.T) {
+    data: []u8, err: Error = file.read("diagram/ripple-counter.bnbx")
+    defer mem.release[u8](&data)
+    s: sim.Sim, derr: Error = diagram.decode(data)
+    t.equal(err == null && derr == null, true)
+    last: int = -1
+    for k: int in 0 .. 30 {
+        ticks(&s, 16)
+        v: int = 0
+        for i: int in 0 .. 8 {
+            if s.level(10 + 7 * i, 26) == sim.Level.high { v += 1 << i }
+        }
+        if k > 1 { t.equal(v, (last + 1) % 256) }
+        last = v
+    }
+}

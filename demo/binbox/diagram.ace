@@ -9,8 +9,9 @@
  *   7     reserved, zero
  *
  * A cell byte's low 7 bits are its code (CODE); the high bit is reserved for
- * flags and must be zero. A source's switch is part of its code; gate outputs
- * are not stored, so a decoded diagram starts with every gate low.
+ * flags and must be zero. A source's switch and a clock's span are part of its
+ * code; gate outputs are not stored, so a decoded diagram starts with every gate
+ * low.
  */
 
 import grid: "./grid.ace"
@@ -36,6 +37,8 @@ pub DiagramErr: error {
 
 SOURCE_OFF: const u8 = 1
 SOURCE_ON: const u8 = 2
+/* A clock's code is CLOCK plus its span, CLOCK .. CLOCK + SPANS - 1. */
+CLOCK: const u8 = 15
 
 /* The code of each block; a source's is SOURCE_OFF, or SOURCE_ON when on. */
 CODE: [grid.Block]u8 = [
@@ -53,14 +56,17 @@ CODE: [grid.Block]u8 = [
     grid.Block.xor = 12,
     grid.Block.xnor = 13,
     grid.Block.bridge = 14,
+    grid.Block.clock = CLOCK,
 ]
 
 /* The block of each code, by code. */
-BLOCK: [15]grid.Block = [
+BLOCK: [23]grid.Block = [
     grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
     grid.Block.input, grid.Block.output, grid.Block.and, grid.Block.or,
     grid.Block.not, grid.Block.led, grid.Block.nand, grid.Block.nor,
-    grid.Block.xor, grid.Block.xnor, grid.Block.bridge,
+    grid.Block.xor, grid.Block.xnor, grid.Block.bridge, grid.Block.clock,
+    grid.Block.clock, grid.Block.clock, grid.Block.clock, grid.Block.clock,
+    grid.Block.clock, grid.Block.clock, grid.Block.clock,
 ]
 
 /* Writes the diagram of `s` into `out` and returns its length, SIZE. */
@@ -76,6 +82,7 @@ pub encode(s: sim.Sim, out: []u8): (usize, Error) {
             block: grid.Block = s.g.get(x, y)
             code: u8 = CODE[block]
             if block == grid.Block.source && s.level(x, y) == sim.Level.high { code = SOURCE_ON }
+            if block == grid.Block.clock { code += u8(s.g.span(x, y)) }
             out[HEADER + usize(y * grid.WIDTH + x)] = code
         }
     }
@@ -99,6 +106,7 @@ pub decode(data: []u8): (sim.Sim, Error) {
             code: u8 = data[HEADER + usize(y * grid.WIDTH + x)]
             if usize(code) >= BLOCK.len { return sim.Sim {}, DiagramErr.code }
             g.place(x, y, BLOCK[code])
+            if code >= CLOCK { g.span(x, y, int(code - CLOCK)) }
         }
     }
     s: sim.Sim = sim.Sim.init(g)

@@ -2,15 +2,15 @@
  *
  * The slider has STOPS equal zones. The first nine step 1 .. 9 Hz and every
  * decade after steps nine times by its power of ten (10 .. 90, 100 .. 900,
- * 1000 .. 9000); the last is the top of the last decade, 10 kHz.
+ * 1000 .. 9000, 10000 .. 90000); the last is the top of the last decade, 100 kHz.
  */
 
 import fmt
 import math
 
 /* Decades above 1 Hz the stops reach. */
-DECADES: const int = 4
-/* Stops per decade, and in all: 1 Hz to 10 kHz. */
+DECADES: const int = 5
+/* Stops per decade, and in all: 1 Hz to 100 kHz. */
 PER: const int = 9
 pub STOPS: const int = PER * DECADES + 1
 

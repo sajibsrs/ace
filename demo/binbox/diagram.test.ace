@@ -102,7 +102,7 @@ pub bad_length(t: *test.T) {
 
 pub bad_code(t: *test.T) {
     out: [diagram.SIZE]u8 = encoded()
-    out[20] = 15
+    out[20] = 23
     rejects(t, out[..], diagram.DiagramErr.code)
     out[20] = 0x83
     rejects(t, out[..], diagram.DiagramErr.code)
@@ -133,4 +133,22 @@ pub latch_file(t: *test.T) {
     s.toggle(29, 14, false)
     for i: int in 0 .. 8 { s.tick() }
     test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
+}
+
+/* A clock's span is part of its code and survives a round trip. */
+pub clock_span_round_trips(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(4, 4, grid.Block.clock)
+    g.span(4, 4, 5)
+    g.place(6, 4, grid.Block.clock)
+    s: sim.Sim = sim.Sim.init(g)
+    out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
+    n: usize, err: Error = diagram.encode(s, out[..])
+    t.equal(err == null, true)
+    back: sim.Sim, derr: Error = diagram.decode(out[..])
+    t.equal(derr == null, true)
+    t.equal(back.g.get(4, 4) == grid.Block.clock, true)
+    t.equal(back.g.span(4, 4), 5)
+    t.equal(back.g.span(6, 4), 0)
+    t.equal(back.g.span(5, 5), 0)
 }

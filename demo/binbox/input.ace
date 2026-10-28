@@ -44,6 +44,7 @@ LETTER: [grid.Block]u8 = [
     grid.Block.xnor = 'c',
     grid.Block.led = 'l',
     grid.Block.bridge = 'b',
+    grid.Block.clock = 'k',
 ]
 
 /* The arrow, and the closed hand a middle-button drag shows while it pans or
@@ -59,6 +60,8 @@ pub Input: struct {
     stroke: bool = false,
     /* Whether the speed slider is being dragged. */
     slide: bool = false,
+    /* Whether the clock span slider is being dragged. */
+    cslide: bool = false,
 }
 
 pub Input.new(): Input {
@@ -99,6 +102,7 @@ Input.paint(self, g: *app.App, x: int, y: int, button: MouseButton, press: bool)
     if g.s.g.get(x, y) == g.block { return }
     self.begin(g)
     g.s.place(x, y, g.block)
+    if g.block == grid.Block.clock { g.s.span(x, y, g.clock) }
 }
 
 /* A press at window point (x, y). True when the bar or a panel took it, so it
@@ -121,10 +125,16 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
         if g.phase == app.Phase.run {
             if bar.step_at(side).has(x, y) { g.step() }
             if bar.auto_at(side).has(x, y) { g.auto = !g.auto }
+            if bar.reset_at(side).has(x, y) { g.reset() }
             if bar.speed(side).has(x, y) {
                 self.slide = true
                 g.slide(x)
             }
+            return true
+        }
+        if g.pick == bar.Tool.pencil && g.block == grid.Block.clock && bar.clock_at(side).has(x, y) {
+            self.cslide = true
+            g.slide_clock(x)
             return true
         }
         for i: usize in 0 .. members(bar.Tool).len {
@@ -147,8 +157,9 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
     if bar.place(bar.Button.open).has(x, y) { g.browse() }
     if bar.place(bar.Button.save).has(x, y) { g.save() }
     if bar.place(bar.Button.save_as).has(x, y) { g.ask() }
-    if bar.place(bar.Button.edit).has(x, y) { g.switch(app.Phase.edit) }
-    if bar.place(bar.Button.run).has(x, y) { g.switch(app.Phase.run) }
+    if bar.place(bar.Button.mode).has(x, y) {
+        if g.phase == app.Phase.edit { g.switch(app.Phase.run) } else { g.switch(app.Phase.edit) }
+    }
     /* The zoom buttons zoom about the board area's center. */
     a: ui.Rect = g.view.area()
     if bar.place(bar.Button.zoom_out).has(x, y) { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
@@ -245,7 +256,10 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
     }
     b: MouseButtonEvent, is_button: bool = event.mouse_button()
     if is_button {
-        if !b.down && b.button == MouseButton.left { self.slide = false }
+        if !b.down && b.button == MouseButton.left {
+            self.slide = false
+            self.cslide = false
+        }
         if b.down {
             clicked: bool = self.click(g, b.x, b.y, b.button)
             if !clicked {
@@ -284,6 +298,7 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
         g.mx = m.x
         g.my = m.y
         if self.slide { g.slide(m.x) }
+        if self.cslide { g.slide_clock(m.x) }
         g.hx = x
         g.hy = y
         if self.held == MouseButton.left && g.sel.drag != select.Drag.none {

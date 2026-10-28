@@ -6,6 +6,7 @@
  */
 
 import fmt
+import math
 import time
 import ui: "./ui.ace"
 import bar: "./bar.ace"
@@ -29,6 +30,8 @@ pub App: struct {
     pub s: sim.Sim = sim.Sim {},
     pub block: grid.Block = grid.Block.wire,
     pub auto: bool = false,
+    /* The span a new clock gets (grid.SPANS stops); 1 tick at start. */
+    pub clock: int = 0,
     /* Auto's speed as a slider stop (speed.ace); 4 Hz at start. */
     pub stop: int = 3,
     /* Time of the last `pace` (ns), and the ticks Auto owes. */
@@ -64,6 +67,8 @@ pub App: struct {
     pub pick: bar.Tool = bar.Tool.pencil,
     pub sel: select.Selection = select.Selection {},
     pub hist: history.History = history.History {},
+    /* The board and sources as Simulate was entered: what Reset returns to. */
+    start: history.Snap = history.Snap {},
 }
 
 /* A buffer that replaces the status note. */
@@ -143,16 +148,37 @@ pub App.slide(self, x: f32) {
     self.stop = speed.stop_at((x - at.x) / at.w)
 }
 
+/* Moves the clock span slider to window x. */
+pub App.slide_clock(self, x: f32) {
+    at: ui.Rect = bar.clock_at(self.view.side())
+    self.clock = math.max[int](0, math.min[int](grid.SPANS - 1, int((x - at.x) / at.w * f32(grid.SPANS))))
+}
+
 /* Drops the selection; a pasted one lands where it floats. */
 pub App.deselect(self) {
     self.sel.deselect(&self.s, &self.hist)
 }
 
+/* Reset: the board as Simulate was entered, every gate low, the tick count
+ * and the measured rate at 0, the sources as they were then. Auto keeps its
+ * state. */
+pub App.reset(self) {
+    self.s = self.start.sim()
+    self.count = 0
+    self.owed = 0.0
+    self.metered = 0
+    self.span = 0
+    self.rate = 0.0
+}
+
 /* Switches to `phase`; leaving Sim stops auto-ticking. Levels and the tick
- * count carry over, so an edit continues from where the run stopped. */
+ * count carry over, so an edit continues from where the run stopped. Entering
+ * Sim notes the board for Reset. */
 pub App.switch(self, phase: Phase) {
+    entering: bool = phase == Phase.run && self.phase != Phase.run
     self.phase = phase
     if phase == Phase.run { self.deselect() }
+    if entering { self.start = history.Snap.of(self.s) }
     if phase == Phase.edit { self.auto = false }
 }
 
@@ -218,6 +244,7 @@ pub App.clear(self) {
     self.deselect()
     self.hist.record(history.Snap.of(self.s))
     self.s = sim.Sim.init(grid.Grid {})
+    self.start = history.Snap.of(self.s)
     self.count = 0
     self.name.len = 0
     b: fmt.Buffer = self.say()
@@ -275,6 +302,7 @@ pub App.load(self, name: string) {
     self.deselect()
     self.hist.reset()
     self.s = s
+    self.start = history.Snap.of(self.s)
     self.count = 0
     self.name.copy(name)
     b: fmt.Buffer = self.say()

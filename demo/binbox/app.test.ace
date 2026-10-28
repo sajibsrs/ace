@@ -1,5 +1,7 @@
 import time
 import test
+import ui: "./ui.ace"
+import bar: "./bar.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
 import speed: "./speed.ace"
@@ -35,9 +37,9 @@ pub fixed_rate_is_kept(t: *test.T) {
 pub top_rate_is_kept(t: *test.T) {
     a: app.App = running(speed.STOPS - 1)
     spin(&a, 700000000)
-    /* 10 kHz for 0.7 s; the empty board ticks faster than that. */
-    t.equal(a.count > 3000 && a.count <= 7500, true)
-    t.equal(a.rate > 3000.0 && a.rate <= 11000.0, true)
+    /* 100 kHz for 0.7 s; the empty board ticks faster than that. */
+    t.equal(a.count > 30000 && a.count <= 75000, true)
+    t.equal(a.rate > 30000.0 && a.rate <= 110000.0, true)
 }
 
 pub pausing_stops_ticks_and_clears_the_rate(t: *test.T) {
@@ -56,4 +58,40 @@ pub off_screen_does_not_tick(t: *test.T) {
     begin: u64 = time.elapsed()
     for time.elapsed() - begin < 50000000 { a.pace(false) }
     t.equal(a.count, 0)
+}
+
+pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(0, 0, grid.Block.source)
+    g.place(1, 0, grid.Block.wire)
+    g.place(2, 0, grid.Block.not)
+    g.place(3, 0, grid.Block.output)
+    a: app.App = app.App { s = sim.Sim.init(g) }
+    a.s.toggle(0, 0, true)
+    a.switch(app.Phase.run)
+    for i: int in 0 .. 5 { a.tick() }
+    a.s.toggle(0, 0, false)
+    for i: int in 0 .. 5 { a.tick() }
+    a.auto = true
+    a.reset()
+    t.equal(a.count, 0)
+    t.equal(a.auto, true)
+    t.equal(a.s.level(0, 0) == sim.Level.high, true)
+    t.equal(a.s.level(2, 0) == sim.Level.high, false)
+    t.equal(a.s.g.get(2, 0) == grid.Block.not, true)
+    /* The same ticks give the same result as the first time. */
+    for i: int in 0 .. 5 { a.tick() }
+    t.equal(a.s.level(2, 0) == sim.Level.high, false)
+}
+
+pub clock_slider_picks_a_span(t: *test.T) {
+    a: app.App = app.App {}
+    at: ui.Rect = bar.clock_at(a.view.side())
+    t.equal(a.clock, 0)
+    a.slide_clock(at.x + at.w - 1.0)
+    t.equal(a.clock, grid.SPANS - 1)
+    a.slide_clock(at.x - 50.0)
+    t.equal(a.clock, 0)
+    a.slide_clock(at.x + at.w / 2.0 + 1.0)
+    t.equal(a.clock, grid.SPANS / 2)
 }

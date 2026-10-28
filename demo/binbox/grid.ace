@@ -30,10 +30,19 @@ pub Block: enum u8 {
     /* Joins the wires on opposite sides: north with south, east with west,
      * the two pairs kept apart. A run of bridges passes straight through. */
     bridge,
+    /* A source that flips itself: low for 1 << span ticks, then high for as many,
+     * from the first tick of the simulation. Touching works as for a source. */
+    clock,
 }
+
+/* How many spans a clock has, 0 .. SPANS - 1: 1, 2, 4 .. 128 ticks a half
+ * cycle. A new clock gets span 0. */
+pub SPANS: const int = 8
 
 pub Grid: struct {
     cells: [32][64]Block = [[Block.empty : 64] : 32],
+    /* Each clock's span; zero for every other cell. */
+    spans: [32][64]u8 = [[0 : 64] : 32],
 }
 
 /* Whether (x, y) lies on the board. */
@@ -57,7 +66,21 @@ pub Grid.get(const self, x: int, y: int): Block {
 pub Grid.place(self, x: int, y: int, block: Block): bool {
     if !inside(x, y) { return false }
     self.cells[y][x] = block
+    self.spans[y][x] = 0
     return true
+}
+
+/* The span of the clock at (x, y); zero for any other cell. */
+pub Grid.span(const self, x: int, y: int): int {
+    if !inside(x, y) { return 0 }
+    return int(self.spans[y][x])
+}
+
+/* Sets the span of the clock at (x, y), taken modulo SPANS. Other cells keep
+ * zero. */
+pub Grid.span(self, x: int, y: int, span: int) {
+    if self.get(x, y) != Block.clock { return }
+    self.spans[y][x] = u8(span % SPANS)
 }
 
 /* Empties (x, y). False off the board. */

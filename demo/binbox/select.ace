@@ -35,6 +35,7 @@ pub Selection: struct {
     pub dy: int = 0,
     pub lift: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
     lifton: [32 * 64]bool = [false : 32 * 64],
+    liftspan: [32 * 64]int = [0 : 32 * 64],
     /* Set while `lift` holds blocks that are not on the board (a paste), so a
      * press inside the selection carries them instead of lifting from the board. */
     pub held: bool = false,
@@ -42,6 +43,7 @@ pub Selection: struct {
      * and which sources were on; `clipw` is zero when nothing was copied. */
     clip: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
     clipon: [32 * 64]bool = [false : 32 * 64],
+    clipspan: [32 * 64]int = [0 : 32 * 64],
     pub clipw: int = 0,
     cliph: int = 0,
     /* The board before a carried selection was lifted. */
@@ -76,6 +78,7 @@ Selection.lift_up(self, s: *sim.Sim) {
             b: grid.Block = g.get(x, y)
             self.lift[i] = b
             self.lifton[i] = b == grid.Block.source && s.level(x, y) == sim.Level.high
+            self.liftspan[i] = g.span(x, y)
             g.remove(x, y)
         }
     }
@@ -91,7 +94,10 @@ Selection.drop(self, s: *sim.Sim, h: *history.History) {
     for y: int in self.y0 .. self.y1 + 1 {
         for x: int in self.x0 .. self.x1 + 1 {
             b: grid.Block = self.lift[(y - self.y0) * w + x - self.x0]
-            if b != grid.Block.empty { g.place(x + self.dx, y + self.dy, b) }
+            if b != grid.Block.empty {
+                g.place(x + self.dx, y + self.dy, b)
+                g.span(x + self.dx, y + self.dy, self.liftspan[(y - self.y0) * w + x - self.x0])
+            }
         }
     }
     *s = sim.Sim.init(g)
@@ -142,6 +148,7 @@ pub Selection.copy(self, s: *sim.Sim, h: *history.History) {
             b: grid.Block = g.get(x, y)
             self.clip[i] = b
             self.clipon[i] = b == grid.Block.source && s.level(x, y) == sim.Level.high
+            self.clipspan[i] = g.span(x, y)
         }
     }
 }
@@ -163,6 +170,7 @@ pub Selection.paste(self, s: *sim.Sim, cx: int, cy: int) {
     for i: int in 0 .. self.clipw * self.cliph {
         self.lift[i] = self.clip[i]
         self.lifton[i] = self.clipon[i]
+        self.liftspan[i] = self.clipspan[i]
     }
     self.dx = 0
     self.dy = 0

@@ -16,7 +16,7 @@
  * a source, space or Auto toggles auto-ticking at the Speed slider's rate, and
  * Step ticks once. Letters
  * select a block: s source, w wire, i input pin, o output pin, a AND, r OR,
- * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge. The wheel zooms the
+ * n NOT, z NAND, v NOR, x XOR, c XNOR, l LED, b bridge, k clock. The wheel zooms the
  * board about the pointer; the window resizes and goes full screen. Cmd+Q
  * quits. The side panel at the board's right holds the tools, picked by 1 and 2: the
  * pencil (above) and box select: drag over blocks to select them, drag the selection to
