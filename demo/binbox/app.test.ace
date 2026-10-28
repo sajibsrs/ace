@@ -15,7 +15,7 @@ running(stop: int): app.App {
     a: app.App = app.App { s = sim.Sim.init(grid.Grid {}) }
     a.switch(app.Phase.run)
     a.stop = stop
-    a.pace(true)
+    a.pace()
     a.auto = true
     return a
 }
@@ -23,7 +23,7 @@ running(stop: int): app.App {
 /* Calls `pace` flat out for `ns` nanoseconds. */
 spin(a: *app.App, ns: u64) {
     begin: u64 = time.elapsed()
-    for time.elapsed() - begin < ns { a.pace(true) }
+    for time.elapsed() - begin < ns { a.pace() }
 }
 
 pub fixed_rate_is_kept(t: *test.T) {
@@ -50,14 +50,6 @@ pub pausing_stops_ticks_and_clears_the_rate(t: *test.T) {
     spin(&a, 50000000)
     t.equal(a.count, count)
     t.equal(a.rate == 0.0, true)
-}
-
-pub off_screen_does_not_tick(t: *test.T) {
-    a: app.App = running(speed.STOPS - 1)
-    a.pace(false)
-    begin: u64 = time.elapsed()
-    for time.elapsed() - begin < 50000000 { a.pace(false) }
-    t.equal(a.count, 0)
 }
 
 pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {

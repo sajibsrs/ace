@@ -10,14 +10,14 @@ import bar: "./bar.ace"
 
 /* A cell's side at 1x; the window is created 16 x 16 cells at 1x. */
 pub CELL: const f32 = 40.0
-/* The most and least zoom, as multiples of 1x, and the factor one wheel step
- * applies. A window too small for the least zoom to show the board still
+/* The most and least zoom, as multiples of 1x, and what one wheel step
+ * adds; steps land on multiples of it. A window too small for the least zoom to show the board still
  * fits it. */
-ZOOM_MAX: const f32 = 4.0
+ZOOM_MAX: const f32 = 2.0
 ZOOM_MIN: const f32 = 0.25
 /* The zoom at start. */
 ZOOM_START: const f32 = 0.5
-ZOOM_STEP: const f32 = 1.25
+ZOOM_STEP: const f32 = 0.25
 
 /* Window size, and the board view: a cell's side and the board's top-left
  * corner, in window points. `fit` is the least cell side, which shows the
@@ -116,13 +116,24 @@ pub View.pan(self, dx: f32, dy: f32) {
  * stays over the same spot on the board. */
 pub View.zoom(self, steps: f32, x: f32, y: f32) {
     want: f32 = self.cell
-    if steps > 0.0 { want *= ZOOM_STEP }
-    if steps < 0.0 { want /= ZOOM_STEP }
+    /* The next multiple of ZOOM_STEP above or below the level, which a window
+     * too small for the least zoom may have left between two. */
+    stops: f32 = self.level() / ZOOM_STEP
+    k: int = int(stops + 0.001)
+    if steps > 0.0 { want = CELL * ZOOM_STEP * f32(k + 1) }
+    if steps < 0.0 {
+        if stops - f32(k) > 0.002 { want = CELL * ZOOM_STEP * f32(k) } else { want = CELL * ZOOM_STEP * f32(k - 1) }
+    }
     want = math.min[f32](math.max[f32](want, math.min[f32](self.fit, CELL * ZOOM_MIN)), CELL * ZOOM_MAX)
     self.ox = x - (x - self.ox) * want / self.cell
     self.oy = y - (y - self.oy) * want / self.cell
     self.cell = want
     self.clamp()
+}
+
+/* The zoom as a multiple of 1x. */
+pub View.level(const self): f32 {
+    return self.cell / CELL
 }
 
 /* Cell (x, y)'s rectangle on screen. */

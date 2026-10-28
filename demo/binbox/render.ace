@@ -274,6 +274,11 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
         at: ui.Rect = bar.place(each)
+        /* The zoom readout is not a button: it shows the level, drawn below. */
+        if each == bar.Button.zoom_level {
+            canvas.fill(at, Color.hex(theme.DEEP))
+            continue
+        }
         lit: bool = at.has(g.mx, g.my)
         rgb: u32 = theme.BUTTON
         if lit || (each == bar.Button.open && g.mode == app.Mode.open) { rgb = theme.ACTIVE }
@@ -372,6 +377,10 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     }
     canvas.flush(r)
 
+    level: [16]u8
+    zoom: fmt.Buffer = fmt.Buffer.init(level[..])
+    zoom.printf("%.3g", g.view.level())
+    ui.center(r, bar.place(bar.Button.zoom_level), zoom.text(), theme.INK)
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
         label: string = bar.LABEL[each]

@@ -1,12 +1,8 @@
 # binbox
 
-Logic circuits and programs to watch run, written in Ace, in an SDL3 window. It
-opens on a home screen with two tiles:
-
-- **Diagram**: a logic-gate sandbox. Place square blocks on a 64×32 grid, flip
-  switches, and watch signals move through gates, one tick at a time. The Home
-  button, first in the toolbar, goes back.
-- **Program**: a placeholder for now (coming soon).
+A logic-gate sandbox written in Ace, in an SDL3 window. Place square blocks on
+a 64×32 grid, flip switches, and watch signals move through gates, one tick at
+a time.
 
 ## Running
 
@@ -74,8 +70,8 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 | F1 / Edit | Edit mode: build the board; blocks show without levels. The bar's Mode button toggles the two modes and names the one a press switches to |
 | F2 / Simulate | Simulate mode: simulate it (leaving stops auto-ticking; levels and the tick count carry over) |
 | Hover | Shows the block's name at the bottom center, in either mode |
-| Wheel | Zoom the board about the pointer, in either mode: 0.5× (20-pixel cells) at start, up to 4× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
-| − / + | Zoom out or in about the board's center, in either mode |
+| Wheel | Zoom the board about the pointer, in either mode, in steps of 0.25: 0.5× (20-pixel cells) at start, up to 2× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
+| − / + | Zoom out or in about the board's center, in either mode; the field before them shows the zoom level (0.5 at start) |
 | Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
@@ -207,9 +203,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `app.ace` | `App`: the simulation, the selection, the file, and the commands that change them. |
 | `input.ace` | SDL events to `App` commands. |
 | `render.ace` | Draws the board, bars, and panels. |
-| `theme.ace` | The bar and panel colors every screen shares. |
+| `theme.ace` | The bar and panel colors. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
-| `home.ace` | The home screen: a tile for each screen to open, and the shared quit check. |
-| `program.ace` | The Program screen, a placeholder. |
 | `main.ace` | The SDL window and the event loop. |
 | `*.test.ace` | Tests for each module, run with `ace test .`. |

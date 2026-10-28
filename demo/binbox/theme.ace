@@ -1,4 +1,4 @@
-/* theme — the bar and panel colors every screen shares. */
+/* theme — the bar and panel colors. */
 
 /* Bar and panel colors. */
 pub CHROME: const u32 = 0x181b1f

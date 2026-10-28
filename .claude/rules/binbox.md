@@ -25,7 +25,7 @@ answer. Keep its diagram descriptions current whenever a diagram changes.
   including each hole's points and 2 per bridge. Untracked SVGs cannot be restored by git: keep a copy
   before redrawing, and show drafts for approval before baking.
 - Toolbar layout is `bar.place` (button widths, group gaps); icon sizes are
-  drawn in `render.ace` and `program.ace`.
+  drawn in `render.ace`.
 - Diagrams: one byte per cell after an 8-byte header; codes are `CODE` in
   `diagram.ace`. Verify a diagram with a temporary `*.test.ace` that loads it
   through `diagram.decode` and drives `sim.Sim` (`toggle`, `tick`, `level`),

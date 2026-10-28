@@ -37,19 +37,19 @@ pub STRIP_ICON: [Tool]icon.Id = [
 ]
 
 /* The bar's buttons, left to right. */
-pub Button: enum u8 { home, new, open, save, save_as, mode, zoom_out, zoom_in, depth }
+pub Button: enum u8 { new, open, save, save_as, mode, zoom_level, zoom_out, zoom_in, depth }
 
 /* The mode button names the mode a press switches to; its width is that of the
  * longer label. */
 pub EDIT_LABEL: const string = "Edit"
 
 pub LABEL: [Button]string = [
-    Button.home = "",
     Button.new = "New",
     Button.open = "Open",
     Button.save = "Save",
     Button.save_as = "Save as",
     Button.mode = "Simulate",
+    Button.zoom_level = "",
     Button.zoom_out = "",
     Button.zoom_in = "",
     Button.depth = "",
@@ -62,12 +62,12 @@ pub GLYPH_SIDE: const f32 = 18.0
 pub LABEL_GAP: const f32 = 4.0
 
 pub ICON: [Button]icon.Id = [
-    Button.home = icon.Id.home,
     Button.new = icon.Id.new,
     Button.open = icon.Id.open,
     Button.save = icon.Id.save,
     Button.save_as = icon.Id.save_as,
     Button.mode = icon.Id.run,
+    Button.zoom_level = icon.Id.zoom_in,
     Button.zoom_out = icon.Id.zoom_out,
     Button.zoom_in = icon.Id.zoom_in,
     Button.depth = icon.Id.depth,
@@ -77,7 +77,7 @@ pub ICON: [Button]icon.Id = [
 pub heading(button: Button): string {
     if button == Button.new { return "File" }
     if button == Button.mode { return "Mode" }
-    if button == Button.zoom_out { return "Zoom" }
+    if button == Button.zoom_level { return "Zoom" }
     if button == Button.depth { return "Depth" }
     return ""
 }
@@ -89,18 +89,23 @@ pub EDGE: const f32 = 18.0
 pub BTN_Y: const f32 = GAP + 2.0
 pub BTN_H: const f32 = BAR - 4.0
 
+/* The width of the zoom readout, which shows five characters at most. */
+pub ZOOM_W: const f32 = 6.0 * ui.GLYPH
+
 /* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
- * and depth buttons hold an icon alone. */
+ * and depth buttons hold an icon alone; the zoom readout holds its text. */
 pub place(button: Button): ui.Rect {
     x: f32 = GAP + EDGE
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         /* Icon, gap, and label, inset by PAD. */
         w: f32 = 2.0 * PAD + GLYPH_SIDE
-        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else { w = BAR }
-        /* Each group follows its title, set apart from the last. */
+        if LABEL[each].len > 0 { w += LABEL_GAP + f32(LABEL[each].len) * ui.GLYPH } else if each == Button.zoom_level { w = ZOOM_W } else { w = BAR }
+        /* Each group follows its title, set apart from the last; the first
+         * title sits at the bar's edge, as the footer's text does. */
         if heading(each).len > 0 {
-            x += 18.0 + f32(heading(each).len) * ui.GLYPH + 6.0
+            if i > 0 { x += 18.0 }
+            x += f32(heading(each).len) * ui.GLYPH + 6.0
         }
         if each == button { return ui.Rect { x = x, y = BTN_Y, w = w, h = BTN_H } }
         x += w + 6.0

@@ -153,7 +153,6 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
     }
     if y >= bar.TOP { return false }
     if button != MouseButton.left { return true }
-    if bar.place(bar.Button.home).has(x, y) { g.leave = true }
     if bar.place(bar.Button.new).has(x, y) { g.clear() }
     if bar.place(bar.Button.open).has(x, y) { g.browse() }
     if bar.place(bar.Button.save).has(x, y) { g.save() }
