@@ -44,6 +44,9 @@ pub App: struct {
     pub rate: f64 = 0.0,
     /* Whether blocks draw with depth. */
     pub depth: bool = true,
+    /* Whether the block being placed snaps to the cell under the pointer; off,
+     * it follows the pointer freely and a click still places it in that cell. */
+    pub snap: bool = false,
     pub count: int = 0,
     pub mode: Mode = Mode.none,
     pub phase: Phase = Phase.edit,

@@ -73,6 +73,7 @@ The pin keys `I` and `O` are temporary: the keys are being remapped.
 | Wheel | Zoom the board about the pointer, in either mode, in steps of 0.125: 0.5× (20-pixel cells) at start, up to 1.5× (1× is 40-pixel cells), and out to 0.25× (10-pixel cells) |
 | − / + | Zoom out or in about the board's center, in either mode; the field before them shows the zoom level (0.5 at start) |
 | Depth button | Toggle the side faces that make blocks look raised, in either mode; on at start |
+| Snap button | Make the block being placed (Edit, pencil) snap to the cell under the pointer; off, it follows the pointer freely and a click still places it in that cell. Off at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
 | S W I O A R N Z V X C L B K T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |

@@ -37,7 +37,7 @@ pub STRIP_ICON: [Tool]icon.Id = [
 ]
 
 /* The bar's buttons, left to right. */
-pub Button: enum u8 { new, open, save, save_as, mode, zoom_level, zoom_out, zoom_in, depth }
+pub Button: enum u8 { new, open, save, save_as, mode, zoom_level, zoom_out, zoom_in, depth, snap }
 
 /* The mode button names the mode a press switches to; its width is that of the
  * longer label. */
@@ -53,6 +53,7 @@ pub LABEL: [Button]string = [
     Button.zoom_out = "",
     Button.zoom_in = "",
     Button.depth = "",
+    Button.snap = "",
 ]
 
 /* A button's inset before its icon and after its text, the icon's side, and
@@ -71,6 +72,7 @@ pub ICON: [Button]icon.Id = [
     Button.zoom_out = icon.Id.zoom_out,
     Button.zoom_in = icon.Id.zoom_in,
     Button.depth = icon.Id.depth,
+    Button.snap = icon.Id.snap,
 ]
 
 /* The title of the button group `button` starts, else empty. */
@@ -79,6 +81,7 @@ pub heading(button: Button): string {
     if button == Button.mode { return "Mode" }
     if button == Button.zoom_level { return "Zoom" }
     if button == Button.depth { return "Depth" }
+    if button == Button.snap { return "Snap" }
     return ""
 }
 
@@ -93,7 +96,7 @@ pub BTN_H: const f32 = BAR - 4.0
 pub ZOOM_W: const f32 = 6.0 * ui.GLYPH
 
 /* The bar rectangle of `button`: its icon and label, 6 pixels apart. The zoom
- * and depth buttons hold an icon alone; the zoom readout holds its text. */
+ * depth and snap buttons hold an icon alone; the zoom readout holds its text. */
 pub place(button: Button): ui.Rect {
     x: f32 = GAP + EDGE
     for i: usize in 0 .. members(Button).len {

@@ -207,6 +207,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     }
     if hovers(g) {
         at: ui.Rect = g.view.box(g.hx, g.hy)
+        if !g.snap { at = ui.Rect { x = g.mx - at.w / 2.0, y = g.my - at.h / 2.0, w = at.w, h = at.h } }
         /* It floats over the board, half see-through, both its sides always
          * showing. */
         if g.depth { extrude(canvas, at, LOW[g.block], GHOST, true, true) }
@@ -283,6 +284,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         rgb: u32 = theme.BUTTON
         if lit || (each == bar.Button.open && g.mode == app.Mode.open) { rgb = theme.ACTIVE }
         if each == bar.Button.depth && g.depth { rgb = theme.ACTIVE }
+        if each == bar.Button.snap && g.snap { rgb = theme.ACTIVE }
         /* The mode button names the mode a press switches to: Simulate in
          * green while editing, Edit in blue while simulating; brighter under
          * the pointer. */
