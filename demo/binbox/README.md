@@ -146,11 +146,12 @@ input at power-on.
 - `diagram/jk-flip-flop.bnbx`: JK flip-flop from one toggle and four gates (J sets, K resets, no clock)
 - `diagram/half-adder.bnbx`: half adder
 - `diagram/full-adder.bnbx`: full adder
-- `diagram/ripple-counter.bnbx`: 8-bit ripple counter on a clock. Each bit is three
-  gates: a NOT and a NOR make a one-tick pulse when the bit's clock falls, and an
-  XOR fed back on itself toggles on that pulse (the first bit's clock is the
-  clock block, the next bit's is this bit). The LEDs show the count, least
-  significant on the left. Needs no reset.
+- `diagram/ripple-counter.bnbx`: 8-bit ripple counter on a clock. Each bit is a
+  toggle (T) and, between bits, a NOT: the toggle flips on every rising edge of
+  its input, and its input is the NOT of the bit before (the first bit's input
+  is the clock block), so each bit flips when the one before falls. The LEDs
+  show the count, least significant on the left. Needs no reset; the first
+  few ticks settle to 0 as the NOTs come up.
 - `diagram/alu.bnbx`: 4-bit add/subtract ALU. Four full-adder slices, least
   significant on the right; in each slice the left switch is a B bit and the
   right one an A bit. The switch at the bus's right end is SUB: it XORs every
