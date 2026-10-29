@@ -24,6 +24,11 @@ answer. Keep its diagram descriptions current whenever a diagram changes.
   path, not overlapping pieces. A polygon holds at most `SHAPE_MAX` (48) points
   including each hole's points and 2 per bridge. Untracked SVGs cannot be restored by git: keep a copy
   before redrawing, and show drafts for approval before baking.
+  Show drafts cheaply: write each as a plain `.svg` in the scratchpad and send
+  it with `SendUserFile` (render), one or two variants per round, the large
+  drawing and a 24px copy beside an existing tool icon; do not load the
+  visualize guide or use `show_widget` for icons. Compute rotated shapes with a
+  short script. A thicker body than the stroke allows must be a filled polygon.
 - Toolbar layout is `bar.place` (button widths, group gaps); icon sizes are
   drawn in `render.ace`.
 - Diagrams: one byte per cell after an 8-byte header; codes are `CODE` in
