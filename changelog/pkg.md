@@ -51,6 +51,8 @@
   pins form one net (a run of pins touching no device is an error), and touching
   LEDs, sources and same-span clocks are one block (`group.Groups`, `Sim`).
 - binbox's maximum zoom is 2× (`view.ZOOM_MAX`).
+- binbox has a dropper tool in the Tools widget, and the I key to select it: a
+  click on a block makes it the pencil's block (`App.drop`).
 - binbox bridge runs join pin to pin as well as wire to wire or pin to wire
   (`group.Groups`, `Sim.carries`); a run still goes straight and gates, LEDs,
   and sources never cross it.

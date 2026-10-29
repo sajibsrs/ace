@@ -28,12 +28,13 @@ pub PANEL_H: const f32 = 72.0
 pub ROW: const f32 = 22.0
 
 /* What the left mouse button does on the board in Edit: place the selected
- * block, or box-select blocks and drag them. */
-pub Tool: enum u8 { pencil, select }
+ * block, box-select blocks and drag them, or pick the block clicked. */
+pub Tool: enum u8 { pencil, select, dropper }
 
 pub STRIP_ICON: [Tool]icon.Id = [
     Tool.pencil = icon.Id.edit,
     Tool.select = icon.Id.select,
+    Tool.dropper = icon.Id.dropper,
 ]
 
 /* The bar's buttons, left to right. */

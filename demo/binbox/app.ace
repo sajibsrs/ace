@@ -214,6 +214,18 @@ pub App.use(self, pick: bar.Tool) {
     self.deselect()
 }
 
+/* The eyedropper: makes the block at (x, y) the pencil's block, with a
+ * clock's span, and switches to the pencil. Nothing from an empty cell or off
+ * the board. */
+pub App.drop(self, x: int, y: int) {
+    if self.phase != Phase.edit || self.mode != Mode.none { return }
+    block: grid.Block = self.s.g.get(x, y)
+    if block == grid.Block.empty { return }
+    self.use(bar.Tool.pencil)
+    self.block = block
+    if block == grid.Block.clock { self.clock = self.s.g.span(x, y) }
+}
+
 /* Takes back the last edit. Floating blocks just go back: a move to where it
  * started, a paste away. */
 pub App.undo(self) {

@@ -34,7 +34,7 @@ ORDER = [
     "source", "wire", "read", "write", "and", "or", "not", "nand", "nor",
     "xor", "xnor", "led", "bridge", "clock", "toggle",
     "new", "open", "save", "save-as", "edit", "run", "pause", "step", "reset",
-    "zoom-out", "zoom-in", "select", "depth", "snap", "panel-left", "panel-right",
+    "zoom-out", "zoom-in", "select", "dropper", "depth", "snap", "panel-left", "panel-right",
 ]
 ARITY = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "A": 7, "Z": 0}
 CURVE_STEPS = 10

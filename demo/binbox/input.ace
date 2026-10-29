@@ -235,6 +235,7 @@ Input.key(self, g: *app.App, e: KeyboardEvent): bool {
     }
     if e.key == Keycode.space && g.phase == app.Phase.run { g.auto = !g.auto }
     if e.key == Keycode.v { g.use(bar.Tool.select) }
+    if e.key == Keycode.i { g.use(bar.Tool.dropper) }
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
         if k == u32(KEY[each]) {
@@ -275,6 +276,8 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
                     }
                     /* Carrying a selection shows the move cursor. */
                     if g.sel.drag == select.Drag.move { cursor(self.grab) }
+                } else if g.pick == bar.Tool.dropper && g.phase == app.Phase.edit {
+                    if self.held == MouseButton.left { g.drop(x, y) }
                 } else {
                     self.paint(g, x, y, self.held, true)
                 }

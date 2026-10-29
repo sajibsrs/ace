@@ -456,6 +456,8 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     if g.phase == app.Phase.edit {
         if g.pick == bar.Tool.select {
             status.printf("select")
+        } else if g.pick == bar.Tool.dropper {
+            status.printf("dropper")
         } else {
             status.printf("%s", NAME[g.block])
         }

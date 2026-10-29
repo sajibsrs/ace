@@ -103,3 +103,29 @@ pub clock_slider_picks_a_span(t: *test.T) {
     a.slide_clock(at.x + at.w / 2.0 + 1.0)
     t.equal(a.clock, grid.SPANS / 2)
 }
+
+/* The dropper takes the block under the pointer, and a clock's span, and
+ * switches to the pencil; an empty cell, or Sim, changes nothing. */
+pub dropper_picks_the_block_under_the_pointer(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(3, 2, grid.Block.xor)
+    g.place(4, 2, grid.Block.clock)
+    g.span(4, 2, 5)
+    a: app.App = app.App { s = sim.Sim.init(g) }
+    a.pick = bar.Tool.select
+    a.drop(3, 2)
+    t.equal(a.block == grid.Block.xor, true)
+    t.equal(a.pick == bar.Tool.pencil, true)
+    a.pick = bar.Tool.dropper
+    a.drop(4, 2)
+    t.equal(a.block == grid.Block.clock, true)
+    t.equal(a.clock, 5)
+    t.equal(a.pick == bar.Tool.pencil, true)
+    a.pick = bar.Tool.dropper
+    a.drop(0, 0)
+    t.equal(a.block == grid.Block.clock, true)
+    t.equal(a.pick == bar.Tool.dropper, true)
+    a.switch(app.Phase.run)
+    a.drop(3, 2)
+    t.equal(a.block == grid.Block.clock, true)
+}

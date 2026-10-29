@@ -87,6 +87,7 @@ it can be started from any directory.
 | S E R W 1–7 L B C T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
 | Chevron at the side panel's top left | Folds the panel to a narrow strip, or unfolds it; the board takes the freed width |
 | Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
+| I / Dropper | Tools widget in the side panel, or the I key: the dropper tool (Edit only): a left click on a block makes it the pencil's block, with a clock's span, and switches to the pencil; an empty cell does nothing |
 | V / Select | Tools widget in the side panel, or the V key: the select tool (Edit only): drag a box over blocks; drag inside the selection to move it: its blocks float, joining nothing, until Escape or a click elsewhere drops them, replacing what they land on; Cmd+drag inside it carries a copy instead and leaves the original (floating blocks are put down first); Delete or Backspace removes it; Escape or a click elsewhere drops it |
 | Cmd+C / Cmd+X / Cmd+V | Edit only: copy or cut the selection to an in-app clipboard; paste it as a floating selection at the pointer (else the board's center), kept on the board, to drag and drop like a move (Escape or a click elsewhere drops it where it is) |
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing floating blocks cancels them: a move goes back, a paste away |
