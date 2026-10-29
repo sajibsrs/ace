@@ -80,18 +80,35 @@ pub devices_merge_by_kind(t: *test.T) {
     t.equal(n.of(1, 4) != n.of(2, 4), true)
 }
 
-/* A bridge joins a pin only to the wire past it, never to another pin. */
-pub bridge_does_not_join_pins(t: *test.T) {
+/* A run of bridges joins pins like wire: pin to pin, or pin to wire. */
+pub bridge_joins_pins(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.read)
     g.place(1, 0, grid.Block.bridge)
     g.place(2, 0, grid.Block.write)
     g.place(0, 2, grid.Block.read)
     g.place(1, 2, grid.Block.bridge)
-    wire(&g, 2, 2)
+    g.place(2, 2, grid.Block.bridge)
+    wire(&g, 3, 2)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.of(0, 0) != n.of(2, 0), true)
-    t.equal(n.of(0, 2), n.of(2, 2))
+    t.equal(n.of(0, 0), n.of(2, 0))
+    t.equal(n.of(0, 2), n.of(3, 2))
+}
+
+/* A pin pair crossing another pin pair in one bridge cell stays two nets: a
+ * run keeps its direction and never turns. */
+pub bridge_pin_pairs_stay_apart(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(1, 1, grid.Block.bridge)
+    g.place(0, 1, grid.Block.write)
+    g.place(2, 1, grid.Block.read)
+    g.place(1, 0, grid.Block.write)
+    g.place(1, 2, grid.Block.read)
+    n: group.Groups = group.Groups.init(g)
+    t.equal(n.count, 2)
+    t.equal(n.of(0, 1), n.of(2, 1))
+    t.equal(n.of(1, 0), n.of(1, 2))
+    t.equal(n.of(0, 1) != n.of(1, 0), true)
 }
 
 /* Touching cells of one gate type are one gate; other blocks stay apart. */
@@ -137,7 +154,7 @@ pub bridge_keeps_crossing_nets_apart(t: *test.T) {
     t.equal(n.of(3, 2), -1)
 }
 
-/* A bridge passes only wire to wire: gate cells on either side stay apart. */
+/* A bridge passes only conductors: gate cells on either side stay apart. */
 pub bridge_does_not_join_gates(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.and)

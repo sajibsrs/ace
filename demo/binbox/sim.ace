@@ -475,8 +475,8 @@ Sim.regroup(self) {
 }
 
 /* The level a bridge at (x, y) carries in direction `d` and its opposite: the
- * net of the wire past the run of bridges either way, low when neither end is
- * a wire. */
+ * net of the conductor (wire or pin) past the run of bridges either way, low
+ * when neither end is one. */
 Sim.carries(const self, x: int, y: int, d: int): Level {
     for k: int in 0 .. 2 {
         nx: int = x + DX[d]
@@ -485,7 +485,7 @@ Sim.carries(const self, x: int, y: int, d: int): Level {
             nx += DX[d]
             ny += DY[d]
         }
-        if self.g.get(nx, ny) == grid.Block.wire { return self.val[self.groups.of(nx, ny)] }
+        if group.conducts(self.g.get(nx, ny)) { return self.val[self.groups.of(nx, ny)] }
         d = (d + 2) % 4
     }
     return Level.low

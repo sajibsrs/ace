@@ -51,5 +51,8 @@
   pins form one net (a run of pins touching no device is an error), and touching
   LEDs, sources and same-span clocks are one block (`group.Groups`, `Sim`).
 - binbox's maximum zoom is 2× (`view.ZOOM_MAX`).
+- binbox bridge runs join pin to pin as well as wire to wire or pin to wire
+  (`group.Groups`, `Sim.carries`); a run still goes straight and gates, LEDs,
+  and sources never cross it.
 - `sdl.mod_state` returns the modifier keys held now. binbox Cmd-drag on a
   selection carries a copy and leaves the original in place.

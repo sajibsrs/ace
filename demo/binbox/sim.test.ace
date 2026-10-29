@@ -525,9 +525,9 @@ pub bridge_crosses_signals(t: *test.T) {
     high(t, s, 2, 5)
 }
 
-/* Read and write pins reach the wire past a bridge run; sources and LEDs do
- * not, and a pin with no wire past its bridge touches nothing, so it is an
- * error. */
+/* Read and write pins reach the wire or pin past a bridge run; sources and
+ * LEDs do not, and a pin with nothing past its bridge touches nothing, so it
+ * is an error. */
 pub bridge_reaches_wire(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     /* Source, write, bridges, wire, read, LED. */
@@ -540,8 +540,11 @@ pub bridge_reaches_wire(t: *test.T) {
     row(&g, 0, 6, [grid.Block.source, grid.Block.bridge, grid.Block.wire, grid.Block.read, grid.Block.led])
     /* Source, write, wire, bridge, LED: an LED does not reach. */
     row(&g, 0, 8, [grid.Block.source, grid.Block.write, grid.Block.wire, grid.Block.bridge, grid.Block.led])
-    /* Source, write, bridge, read: no wire past it. */
-    row(&g, 0, 10, [grid.Block.source, grid.Block.write, grid.Block.bridge, grid.Block.read])
+    /* Source, write, bridge, read, LED: the write reaches the read. */
+    row(&g, 0, 10, [grid.Block.source, grid.Block.write, grid.Block.bridge, grid.Block.read, grid.Block.led])
+    /* Source, write, bridge: nothing past it. */
+    row(&g, 0, 12, [grid.Block.source, grid.Block.write, grid.Block.bridge])
+    g.place(5, 12, grid.Block.read)
     s: sim.Sim = sim.Sim.init(g)
     s.toggle(0, 0, true)
     high(t, s, 6, 0)
@@ -555,7 +558,9 @@ pub bridge_reaches_wire(t: *test.T) {
     s.toggle(0, 8, true)
     low(t, s, 4, 8)
     s.toggle(0, 10, true)
-    error(t, s, 3, 10)
+    high(t, s, 4, 10)
+    s.toggle(0, 12, true)
+    error(t, s, 5, 12)
 }
 
 /* Read pins side by side are one net: the pin touching the gate reads what the

@@ -55,8 +55,10 @@ it can be started from any directory.
   touching clocks of one span are one clock.
 - **A bridge passes wire straight through.** A run of bridges joins the wires
   at its two ends, so a wire can cross several buses at once. A pin touching a
-  bridge reaches the wire past it; with no wire there, touching a bridge does
-  nothing. It lights when either direction is high.
+  bridge reaches the wire or pin past it, as if the bridges were wire; sources,
+  gates, and LEDs never cross one, so they touch their pins directly. A run
+  never turns: it joins only along one straight line. With nothing to
+  reach, touching a bridge does nothing. It lights when either direction is high.
 - **Touching cells of one gate type are one gate**, so a gate can be any
   shape, and every input around it counts. Different gate types never
   merge.

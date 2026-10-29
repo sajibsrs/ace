@@ -78,8 +78,9 @@ pub Groups.init(g: grid.Grid): Groups {
                         bridged = true
                     }
                     if !grid.inside(nx, ny) || !same(g, ax, ay, nx, ny) { continue }
-                    /* A bridge joins only wire to wire, or a pin to wire. */
-                    if bridged && a != grid.Block.wire && g.get(nx, ny) != grid.Block.wire { continue }
+                    /* A run of bridges joins conductors only: a gate, LED, or
+                     * source never crosses it. */
+                    if bridged && !conducts(g.get(nx, ny)) { continue }
                     if groups.ids[ny][nx] != NONE { continue }
                     groups.ids[ny][nx] = id
                     stack[top] = ny * grid.WIDTH + nx

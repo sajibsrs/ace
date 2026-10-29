@@ -29,7 +29,8 @@ pub Block: enum u8 {
     /* Shows what the read pins it touches read. */
     led,
     /* Joins the wires on opposite sides: north with south, east with west,
-     * the two pairs kept apart. A run of bridges passes straight through. */
+     * the two pairs kept apart. A run of bridges passes straight through,
+     * joining the wires and pins at its two ends. */
     bridge,
     /* A source that flips itself: low for 1 << span ticks, then high for as many,
      * from the first tick of the simulation. Touching works as for a source. */
