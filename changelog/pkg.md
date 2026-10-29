@@ -58,3 +58,6 @@
   and sources never cross it.
 - `sdl.mod_state` returns the modifier keys held now. binbox Cmd-drag on a
   selection carries a copy and leaves the original in place.
+- binbox's Blocks widget icons are colored by default (each block's dimmer
+  color, the selected one brighter) instead of grey until hovered; the pointer
+  no longer changes them (`render.ace`).

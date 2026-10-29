@@ -354,17 +354,16 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         canvas.fill(ui.Rect { x = pace.x, y = pace.y, w = pace.w * speed.fill(g.stop), h = pace.h }, Color.hex(theme.ACTIVE))
     }
     canvas.flush(r)
-    /* Block buttons are icons alone: the selected one in its block's color, one
-     * under the pointer in its dimmer color, the rest grey. */
+    /* Block buttons are icons alone: the selected one in its block's color, the
+     * rest in its dimmer color; the pointer changes nothing. */
     if unfolded && bar.shown(bar.Widget.blocks, edit, pencil, clocked) {
         for i: usize in 1 .. members(grid.Block).len {
             each: grid.Block = members(grid.Block)[i]
             at: ui.Rect = bar.block_at(side, each)
-            ink: u32 = theme.DIM
-            if at.has(g.mx, g.my) { ink = LOW[each] }
+            ink: u32 = LOW[each]
             if each == g.block { ink = HIGH[each] }
             /* The wire's and bridge's muted board colors vanish on the panel. */
-            if ink != theme.DIM && (each == grid.Block.wire || each == grid.Block.bridge) {
+            if each == grid.Block.wire || each == grid.Block.bridge {
                 which: usize = 0
                 if each == grid.Block.bridge { which = 1 }
                 if each == g.block { which += 2 }
