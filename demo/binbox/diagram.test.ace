@@ -143,8 +143,8 @@ pub toggle_round_trips(t: *test.T) {
     test.equal[grid.Block](t, s.g.get(4, 4), grid.Block.toggle)
 }
 
-/* The shipped toggle diagram is a toggle built from gates: the switch (28,15)
- * flips the LED (34,14) on each rising edge, and the LED holds otherwise. */
+/* The shipped toggle diagram is a toggle built from gates: the switch (29,13)
+ * flips the LED (35,13) on each rising edge, and the LED holds otherwise. */
 pub toggle_file(t: *test.T) {
     data: []u8, ferr: Error = file.read("diagram/toggle.bnbx")
     defer mem.release[u8](&data)
@@ -152,16 +152,16 @@ pub toggle_file(t: *test.T) {
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(35, 14), sim.Level.low)
+    test.equal[sim.Level](t, s.level(35, 13), sim.Level.low)
     for n: int in 1 .. 6 {
-        s.toggle(27, 15, true)
+        s.toggle(29, 13, true)
         for i: int in 0 .. 8 { s.tick() }
         want: sim.Level = sim.Level.low
         if n % 2 == 1 { want = sim.Level.high }
-        test.equal[sim.Level](t, s.level(35, 14), want)
-        s.toggle(27, 15, false)
+        test.equal[sim.Level](t, s.level(35, 13), want)
+        s.toggle(29, 13, false)
         for i: int in 0 .. 8 { s.tick() }
-        test.equal[sim.Level](t, s.level(35, 14), want)
+        test.equal[sim.Level](t, s.level(35, 13), want)
     }
 }
 
