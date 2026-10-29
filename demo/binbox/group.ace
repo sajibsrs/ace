@@ -4,8 +4,8 @@
  * group: wire cells form a net, and cells of one gate type form one gate. A
  * signal travels over a whole net, and a gate acts as one block however many
  * cells it covers. A wire continues straight through a run of bridges to the
- * wire beyond, so a bridge carries two nets that never meet. Every other
- * block has no group.
+ * wire beyond, so a bridge carries two nets that never meet. Each source and
+ * clock cell is a group of its own. Every other block has no group.
  */
 
 import grid: "./grid.ace"
@@ -15,8 +15,13 @@ NONE: const int = -1
 DX: [4]int = [0, 1, 0, -1]
 DY: [4]int = [-1, 0, 1, 0]
 
-/* Whether touching cells of `block` merge into one group. */
+/* Whether cells of `block` belong to a group. */
 pub joins(block: grid.Block): bool {
+    return merges(block) || grid.is_source(block)
+}
+
+/* Whether touching cells of `block` merge into one group. */
+merges(block: grid.Block): bool {
     return block == grid.Block.wire || grid.is_gate(block)
 }
 
@@ -46,7 +51,7 @@ pub Groups.init(g: grid.Grid): Groups {
             groups.ids[y][x] = id
             stack[0] = y * grid.WIDTH + x
             top: int = 1
-            for top > 0 {
+            for top > 0 && merges(block) {
                 top -= 1
                 at: int = stack[top]
                 for d: int in 0 .. 4 {

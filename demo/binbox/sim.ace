@@ -1,13 +1,14 @@
 /* sim — signal levels and the tick.
  *
  * The stored state is each source's switch, each gate's output, and the tick
- * count that sets every clock. Everything else is derived from it. A net's level joins its drivers, the sources and
- * write pins touching it: none is low, agreeing drivers give their level, and
- * disagreeing ones are an error. An read pin or LED reads the sources, nets
- * and write pins it touches, so a source or write pin beside it needs no
- * wire; an read pin feeds every gate it touches, and an write pin drives its
- * gates' output. A tick computes every gate's next output from the current state, so
- * each gate adds one tick of delay and wire adds none.
+ * count that sets every clock. Everything else is derived from it. Gates,
+ * sources, clocks, and LEDs connect only through pins. A write pin drives the
+ * output of the gates, sources, and clocks it touches; a read pin reads the
+ * nets and write pins it touches, and feeds the gates and LEDs it touches. A
+ * net's level joins the write pins touching it: none is low, agreeing drivers
+ * give their level, and disagreeing ones are an error. A tick computes every
+ * gate's next output from the current state, so each gate adds one tick of
+ * delay and wire adds none.
  */
 
 import grid: "./grid.ace"
@@ -20,7 +21,7 @@ DY: [4]int = [-1, 0, 1, 0]
 
 /* Cells on the board. */
 CELLS: const int = 32 * 64
-/* Index into `val` of the cell (x, y): a source's switch or an write pin's drive. */
+/* Index into `val` of the cell (x, y): a source's switch or a write pin's drive. */
 cell(x: int, y: int): int { return CELLS + y * grid.WIDTH + x }
 /* The slot of `val` that is never written, so always low. */
 LOW: const int = 2 * CELLS
@@ -51,9 +52,12 @@ pub Sim: struct {
     /* What terms read: the level of each net by group number, then each source
      * switch and write pin drive by `cell`, then LOW. */
     val: [2 * CELLS + 1]Level = [Level.low : 2 * CELLS + 1],
-    /* Gate number of each group, -1 for a net. */
+    /* Gate number of each group, -1 for a net. Sources and clocks are gates
+     * too, after the `nlogic` that a tick evaluates; their output is their
+     * level in `val`. */
     gate_of: [CELLS]i16 = [-1 : CELLS],
     ngates: int = 0,
+    nlogic: int = 0,
     kinds: [CELLS]grid.Block = [grid.Block.empty : CELLS],
     gout: [CELLS]Level = [Level.low : CELLS],
     /* What each gate's pins read during a tick, see WEIGHT. */
@@ -66,13 +70,17 @@ pub Sim: struct {
     nops: int = 0,
     op_t: [CELLS]i16 = [0 : CELLS],
     op_g: [CELLS][4]i16 = [[0 : 4] : CELLS],
-    /* Sources and gate-driving write pins that touch a wire: the `val` index
-     * they drive from, the nets they join. */
+    /* Driving write pins that reach a wire: the `val` index they drive from,
+     * the nets they join. */
     ndrivers: int = 0,
     drv_t: [CELLS]i16 = [0 : CELLS],
     drv_n: [CELLS][4]i16 = [[0 : 4] : CELLS],
     /* Ticks run since `init`; a clock is high while bit `span` of it is set. */
     time: u64 = 0,
+    /* Sources and clocks: the `val` index of each, and its gate. */
+    nsources: int = 0,
+    src_t: [CELLS]i16 = [0 : CELLS],
+    src_g: [CELLS]i16 = [0 : CELLS],
     /* Clocks: the `val` index each sets, and its span. */
     nclocks: int = 0,
     clk_t: [CELLS]i16 = [0 : CELLS],
@@ -88,7 +96,8 @@ pub Sim: struct {
     tog_g: [CELLS]i16 = [0 : CELLS],
 }
 
-/* The distinct gates beside one cell. */
+/* The distinct gates beside one cell, sources and clocks included for a
+ * write pin. */
 Near: struct {
     ids: [4]int = [0 : 4],
     count: int = 0,
@@ -131,8 +140,8 @@ evaluate(block: grid.Block, t: u64): Level {
     return level(highs == 0)
 }
 
-/* What a pin or LED at (x, y) reads: the sources, nets, and driving output
- * pins beside it, low when there are none. */
+/* What a read pin at (x, y) reads: the nets and driving write pins beside
+ * it, low when there are none. */
 Sim.read(const self, x: int, y: int): Level {
     acc: Level = Level.low
     any: bool = false
@@ -164,32 +173,50 @@ Sim.beside(const self, x: int, y: int, d: int): (int, int) {
     return nx, ny
 }
 
-/* The index of `val` that a pin or LED reads from (x, y), or -1 when the cell
- * is not a source, wire, or write pin touching a gate. */
+/* The index of `val` that a read pin reads from (x, y), or -1 when the cell
+ * is not a wire or a write pin touching a gate, source, or clock. */
 Sim.term(const self, x: int, y: int): int {
     b: grid.Block = self.g.get(x, y)
-    if b == grid.Block.source || b == grid.Block.clock { return cell(x, y) }
     if b == grid.Block.wire { return self.groups.of(x, y) }
     if b == grid.Block.write && self.touches(x, y) { return cell(x, y) }
     return -1
 }
 
-/* Whether (x, y) has a gate beside it. */
+/* Whether `b` is what a write pin drives the output of. */
+outputs(b: grid.Block): bool { return grid.is_gate(b) || grid.is_source(b) }
+
+/* Whether (x, y) has a gate, source, or clock beside it. */
 Sim.touches(const self, x: int, y: int): bool {
     for d: int in 0 .. 4 {
-        if grid.is_gate(self.g.get(x + DX[d], y + DY[d])) { return true }
+        if outputs(self.g.get(x + DX[d], y + DY[d])) { return true }
     }
     return false
 }
 
-/* What the write pin at (x, y) drives, and whether it touches a gate. */
+/* What the LED at (x, y) shows: what the read pins beside it read, low when
+ * there are none, an error when they disagree. */
+Sim.shows(const self, x: int, y: int): Level {
+    acc: Level = Level.low
+    any: bool = false
+    for d: int in 0 .. 4 {
+        if self.g.get(x + DX[d], y + DY[d]) != grid.Block.read { continue }
+        v: Level = self.read(x + DX[d], y + DY[d])
+        if any && acc != v { return Level.error }
+        acc = v
+        any = true
+    }
+    return acc
+}
+
+/* What the write pin at (x, y) drives, and whether it touches a gate, source,
+ * or clock. */
 Sim.drive(const self, x: int, y: int): (Level, bool) {
     acc: Level = Level.low
     any: bool = false
     for d: int in 0 .. 4 {
         nx: int = x + DX[d]
         ny: int = y + DY[d]
-        if !grid.is_gate(self.g.get(nx, ny)) { continue }
+        if !outputs(self.g.get(nx, ny)) { continue }
         v: Level = self.gout[self.gate_of[self.groups.of(nx, ny)]]
         if any && acc != v { return Level.error, true }
         acc = v
@@ -198,13 +225,15 @@ Sim.drive(const self, x: int, y: int): (Level, bool) {
     return acc, any
 }
 
-/* The distinct gates beside (x, y). */
-Sim.near(const self, x: int, y: int): Near {
+/* The distinct gates beside (x, y), and the sources and clocks too when
+ * `sources`. */
+Sim.near(const self, x: int, y: int, sources: bool): Near {
     near: Near = Near {}
     for d: int in 0 .. 4 {
         nx: int = x + DX[d]
         ny: int = y + DY[d]
-        if !grid.is_gate(self.g.get(nx, ny)) { continue }
+        b: grid.Block = self.g.get(nx, ny)
+        if !grid.is_gate(b) && !(sources && grid.is_source(b)) { continue }
         id: int = self.groups.of(nx, ny)
         seen: bool = false
         for k: int in 0 .. near.count { seen = seen || near.ids[k] == id }
@@ -220,6 +249,7 @@ Sim.near(const self, x: int, y: int): Near {
 Sim.compile(self) {
     self.ngates = 0
     self.ntogs = 0
+    self.nsources = 0
     for id: int in 0 .. self.groups.count {
         hx: int, hy: int = self.groups.head(id)
         b: grid.Block = self.g.get(hx, hy)
@@ -237,6 +267,18 @@ Sim.compile(self) {
         }
         self.ngates += 1
     }
+    self.nlogic = self.ngates
+    for id: int in 0 .. self.groups.count {
+        hx: int, hy: int = self.groups.head(id)
+        b: grid.Block = self.g.get(hx, hy)
+        if !grid.is_source(b) { continue }
+        self.gate_of[id] = i16(self.ngates)
+        self.kinds[self.ngates] = b
+        self.src_t[self.nsources] = i16(cell(hx, hy))
+        self.src_g[self.nsources] = i16(self.ngates)
+        self.nsources += 1
+        self.ngates += 1
+    }
     self.npins = 0
     self.nops = 0
     self.ndrivers = 0
@@ -248,8 +290,6 @@ Sim.compile(self) {
                 self.compile_pin(x, y)
             } else if b == grid.Block.write {
                 self.compile_output(x, y)
-            } else if b == grid.Block.source {
-                self.compile_driver(x, y)
             } else if b == grid.Block.clock {
                 self.compile_clock(x, y)
             }
@@ -257,15 +297,13 @@ Sim.compile(self) {
     }
 }
 
-/* Lists the clock at (x, y), sets its level for the current time, and lists it
- * as a driver if it touches a wire. */
+/* Lists the clock at (x, y) and sets its level for the current time. */
 Sim.compile_clock(self, x: int, y: int) {
     k: int = self.nclocks
     self.nclocks += 1
     self.clk_t[k] = i16(cell(x, y))
     self.clk_s[k] = u8(self.g.span(x, y))
     self.val[cell(x, y)] = self.clocked(k)
-    self.compile_driver(x, y)
 }
 
 /* The level clock number `k` has at the current time. */
@@ -275,7 +313,7 @@ Sim.clocked(const self, k: int): Level {
 
 /* Lists the read pin at (x, y) if it feeds a gate. */
 Sim.compile_pin(self, x: int, y: int) {
-    near: Near = self.near(x, y)
+    near: Near = self.near(x, y, false)
     if near.count == 0 { return }
     p: int = self.npins
     self.npins += 1
@@ -303,10 +341,10 @@ Sim.compile_pin(self, x: int, y: int) {
     }
 }
 
-/* Lists the write pin at (x, y) if it touches a gate, and as a driver if it
- * also touches a wire. */
+/* Lists the write pin at (x, y) if it touches a gate, source, or clock, and as
+ * a driver if it also reaches a wire. */
 Sim.compile_output(self, x: int, y: int) {
-    near: Near = self.near(x, y)
+    near: Near = self.near(x, y, true)
     if near.count == 0 { return }
     o: int = self.nops
     self.nops += 1
@@ -317,7 +355,7 @@ Sim.compile_output(self, x: int, y: int) {
     self.compile_driver(x, y)
 }
 
-/* Lists the source or write pin at (x, y) as a driver if it reaches a wire. */
+/* Lists the write pin at (x, y) as a driver if it reaches a wire. */
 Sim.compile_driver(self, x: int, y: int) {
     ids: [4]int = [0 : 4]
     count: int = 0
@@ -336,6 +374,7 @@ Sim.compile_driver(self, x: int, y: int) {
 
 /* Recomputes every net from the switches and gate outputs. */
 Sim.settle(self) {
+    for k: int in 0 .. self.nsources { self.gout[self.src_g[k]] = self.val[self.src_t[k]] }
     for o: int in 0 .. self.nops {
         v: Level = self.gout[self.op_g[o][0]]
         if v != self.gout[self.op_g[o][1]] || v != self.gout[self.op_g[o][2]] ||
@@ -365,7 +404,7 @@ pub Sim.tick(self) {
         w: u64 = WEIGHT[v]
         for k: int in 0 .. 4 { self.tally[self.pin_g[p][k]] += w }
     }
-    for i: int in 0 .. self.ngates { self.gout[i] = evaluate(self.kinds[i], self.tally[i]) }
+    for i: int in 0 .. self.nlogic { self.gout[i] = evaluate(self.kinds[i], self.tally[i]) }
     for k: int in 0 .. self.ntogs { self.flip(int(self.tog_g[k])) }
     self.time += 1
     for k: int in 0 .. self.nclocks { self.val[self.clk_t[k]] = self.clocked(k) }
@@ -409,8 +448,9 @@ pub Sim.toggle(self, x: int, y: int, on: bool): bool {
     return true
 }
 
-/* The level shown at (x, y): a source's switch or a clock's level, a net's level, a gate's
- * output, what an read pin or LED reads, or what an write pin drives. A
+/* The level shown at (x, y): a source's switch or a clock's level, a net's
+ * level, a gate's output, what a read pin reads or an LED shows, or what a
+ * write pin drives. A
  * bridge carries two levels (see Sim.cross) and shows the higher: error
  * over high over low. */
 pub Sim.level(const self, x: int, y: int): Level {
@@ -418,7 +458,8 @@ pub Sim.level(const self, x: int, y: int): Level {
     if b == grid.Block.source || b == grid.Block.clock { return self.val[cell(x, y)] }
     if b == grid.Block.wire { return self.val[self.groups.of(x, y)] }
     if grid.is_gate(b) { return self.gout[self.gate_of[self.groups.of(x, y)]] }
-    if b == grid.Block.read || b == grid.Block.led { return self.read(x, y) }
+    if b == grid.Block.read { return self.read(x, y) }
+    if b == grid.Block.led { return self.shows(x, y) }
     if b == grid.Block.write {
         v: Level, drives: bool = self.drive(x, y)
         return v

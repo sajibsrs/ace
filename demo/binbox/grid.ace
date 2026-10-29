@@ -9,13 +9,14 @@ pub HEIGHT: const int = 32
 
 pub Block: enum u8 {
     empty,
-    /* A 0/1 switch; drives the wires, read pins and LEDs it touches. */
+    /* A 0/1 switch; drives the write pins it touches. */
     source,
     wire,
-    /* A gate's read pin: reads the wires, sources and write pins it touches. */
+    /* A read pin: reads the wires and write pins it touches, and feeds the
+     * gates and LEDs it touches. */
     read,
-    /* A gate's write pin: drives its gates' output onto the wires, input
-     * pins and LEDs it touches. */
+    /* A write pin: drives the output of the gates, sources and clocks it
+     * touches onto the wires and read pins it touches. */
     write,
     and,
     or,
@@ -25,7 +26,7 @@ pub Block: enum u8 {
     /* High on an odd number of high inputs; XNOR on an even number. */
     xor,
     xnor,
-    /* Shows the level of the wires, sources and write pins it touches. */
+    /* Shows what the read pins it touches read. */
     led,
     /* Joins the wires on opposite sides: north with south, east with west,
      * the two pairs kept apart. A run of bridges passes straight through. */
@@ -58,6 +59,12 @@ pub is_gate(block: Block): bool {
     return block == Block.and || block == Block.or || block == Block.not ||
         block == Block.nand || block == Block.nor || block == Block.xor || block == Block.xnor ||
         block == Block.toggle
+}
+
+/* Whether `block` is a source or clock: it drives write pins beside it, like a
+ * gate with no inputs. */
+pub is_source(block: Block): bool {
+    return block == Block.source || block == Block.clock
 }
 
 /* The block at (x, y); off the board it is empty. */

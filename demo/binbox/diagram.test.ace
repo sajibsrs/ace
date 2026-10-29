@@ -116,20 +116,20 @@ pub jk_file(t: *test.T) {
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
-    test.equal[sim.Level](t, s.level(26, 16), sim.Level.low)
-    test.equal[sim.Level](t, s.level(29, 13), sim.Level.low)
+    test.equal[sim.Level](t, s.level(26, 15), sim.Level.low)
+    test.equal[sim.Level](t, s.level(29, 12), sim.Level.low)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(36, 13), sim.Level.low)
-    s.toggle(26, 16, true)
+    test.equal[sim.Level](t, s.level(37, 13), sim.Level.low)
+    s.toggle(26, 15, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(26, 16, false)
+    s.toggle(26, 15, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(36, 13), sim.Level.high)
-    s.toggle(29, 13, true)
+    test.equal[sim.Level](t, s.level(37, 13), sim.Level.high)
+    s.toggle(29, 12, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(29, 13, false)
+    s.toggle(29, 12, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(36, 13), sim.Level.low)
+    test.equal[sim.Level](t, s.level(37, 13), sim.Level.low)
 }
 
 /* A toggle's code is TOGGLE and it survives a round trip. */
@@ -152,16 +152,16 @@ pub toggle_file(t: *test.T) {
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(34, 14), sim.Level.low)
+    test.equal[sim.Level](t, s.level(35, 14), sim.Level.low)
     for n: int in 1 .. 6 {
-        s.toggle(28, 15, true)
+        s.toggle(27, 15, true)
         for i: int in 0 .. 8 { s.tick() }
         want: sim.Level = sim.Level.low
         if n % 2 == 1 { want = sim.Level.high }
-        test.equal[sim.Level](t, s.level(34, 14), want)
-        s.toggle(28, 15, false)
+        test.equal[sim.Level](t, s.level(35, 14), want)
+        s.toggle(27, 15, false)
         for i: int in 0 .. 8 { s.tick() }
-        test.equal[sim.Level](t, s.level(34, 14), want)
+        test.equal[sim.Level](t, s.level(35, 14), want)
     }
 }
 

@@ -20,10 +20,10 @@ it can be started from any directory.
 
 | Key | Block      | What it does |
 |-----|------------|--------------|
-| S   | source     | A 0/1 switch. Click it in Simulate mode to flip it. |
+| S   | source     | A 0/1 switch, driving the write pins it touches. Click it in Simulate mode to flip it. |
 | E   | wire       | Carries a signal over distance. Touching wires form one net. |
-| R   | read       | A gate's read pin: reads what it touches and feeds every gate it touches. |
-| W   | write      | A gate's write pin: drives its gate's value onto what it touches. |
+| R   | read       | A read pin: reads the wires and write pins it touches, and feeds every gate and LED it touches. |
+| W   | write      | A write pin: drives the value of the gates, sources and clocks it touches onto the wires and read pins it touches. |
 | 1   | AND        | High when every input is high. Needs at least 2 inputs. |
 | 2   | OR         | High when any input is high. Needs at least 1 input. |
 | 3   | NOT        | High when its input is low. Needs exactly 1 input. |
@@ -31,7 +31,7 @@ it can be started from any directory.
 | 5   | NOR        | High when no input is high. Needs at least 1 input. |
 | 6   | XOR        | High when an odd number of inputs are high. Needs at least 2 inputs. |
 | 7   | XNOR       | High when an even number of inputs are high. Needs at least 2 inputs. |
-| L   | LED        | Shows the level of what it touches. |
+| L   | LED        | Shows what the read pins it touches read. |
 | B   | bridge     | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
 | K   | clock      | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
 | T   | toggle     | A gate with memory: its output flips on each rising edge of its input, then holds. Its pins are read as for OR; with none it never flips. An error on a pin makes its output an error, and its stored value returns when the error clears. |
@@ -41,15 +41,17 @@ it can be started from any directory.
 - **Blocks have no direction.** A block's role comes from its type and what
   it touches.
 - **Things connect by touching** (north, east, south, west, never diagonally).
-  A source or write pin next to a read pin or LED drives it directly.
-  Wire is only needed to cover distance.
+  A write pin next to a read pin drives it directly. Wire is only needed to
+  cover distance.
+- **Gates, sources, clocks and LEDs connect only through pins.** A write pin
+  carries out the value of the gates, sources and clocks it touches; a read pin
+  carries a value into the gates and LEDs it touches. Anything else touching
+  them does nothing, so they pack against wires and each other freely. An LED
+  with several read pins that disagree shows an error.
 - **A bridge passes wire straight through.** A run of bridges joins the wires
-  at its two ends, so a wire can cross several buses at once. A source, clock,
-  pin, or LED touching a bridge reaches the wire past it; with no wire there,
-  and for a gate, touching a bridge does nothing. It lights when either
-  direction is high.
-- **A gate connects only through its pins.** A wire or source touching a gate
-  directly does nothing; it must reach a read pin.
+  at its two ends, so a wire can cross several buses at once. A pin touching a
+  bridge reaches the wire past it; with no wire there, touching a bridge does
+  nothing. It lights when either direction is high.
 - **Touching cells of one gate type are one gate**, so a gate can be any
   shape, and every input around it counts. Different gate types never
   merge.
@@ -105,21 +107,22 @@ change: `(J and not Q) or (K and Q)`. That is the JK equation
 `Q+ = J·Q' + K'·Q`. J sets Q low to high, K sets it high to low, and a pulse
 that would change nothing (J while set, K while reset) does nothing. It has no
 clock: it reacts as soon as J or K changes. It sits at the board's center
-(columns 26-36, rows 13-18):
+(columns 26-37, rows 12-18):
 
 ```
-. . . S I & I W W W L     K (S) and Q (I) into the upper AND; Q to the LED
-. . . . . O . O . W .
-. . . . . I . T . W .     the upper AND feeds the OR; the toggle's output is Q
-S I & O I | O I . W .     J (S) and NOT Q (I) into the lower AND; OR into the toggle
-. . I . . . . . . W .
-. . O N I W W W W W .     NOT of Q, from the Q wire
+. . . S . . . . . . . .
+. . . O I & I W W W I L   K (S) and Q (I) into the upper AND; Q to the LED
+. . . . . O . O . W . .
+S . . . . I . T . W . .   the upper AND feeds the OR; the toggle's output is Q
+O I & O I | O I . W . .   J (S) and NOT Q (I) into the lower AND; OR into the toggle
+. . I . . . . . . W . .
+. . O N I W W W W W . .   NOT of Q, from the Q wire
 ```
 
 In the drawing, `I` is a read pin and `O` a write pin.
 
-Touching does most of the wiring: each gate's write pin sits against the next
-gate's read pin, so only Q needs wire.
+Touching does most of the wiring: each source and gate's write pin sits against
+the next gate's read pin, so only Q needs wire.
 
 The file is saved with J and K off and Q low. Switch to Simulate (F1), turn on
 auto-ticking (Space), and flip J on and off: the LED turns on and stays on. Flip
@@ -149,7 +152,7 @@ input at power-on.
 - `diagram/ripple-counter.bnbx`: 8-bit ripple counter on a clock. Each bit is a
   toggle (T) and, between bits, a NOT: the toggle flips on every rising edge of
   its input, and its input is the NOT of the bit before (the first bit's input
-  is the clock block), so each bit flips when the one before falls. The LEDs
+  is the clock block, through a write and a read pin), so each bit flips when the one before falls. The LEDs
   show the count, least significant on the left. Needs no reset; the first
   few ticks settle to 0 as the NOTs come up.
 - `diagram/alu.bnbx`: 4-bit add/subtract ALU. Four full-adder slices, least

@@ -3,9 +3,10 @@
  * Build and run from this directory (Homebrew SDL3 on Apple arm64):
  *   ace pkg run
  *
- * A source feeds a gate's read pin (I); the gate's write pin (O) feeds the
- * next read pin or an LED. Each connects by touching, or through wire when
- * apart.
+ * A source's write pin (O) feeds a gate's read pin (I); the gate's write pin
+ * feeds the next read pin, and a read pin feeds an LED. Sources, gates and
+ * LEDs connect only through pins; pins connect by touching, or through wire
+ * when apart.
  *
  * Edit builds the board: left-click places the selected block (drag to
  * paint), right-click (or drag) removes. Simulate simulates it (F1 toggles the
