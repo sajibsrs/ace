@@ -2,8 +2,9 @@
  *
  * A selection is a box of cells (corners inclusive). Picking it up lifts its
  * blocks off the board into `lift`; they are carried by (dx, dy) and put down
- * on the drop. A paste floats the same way, with `held` set because its
- * blocks were never on the board.
+ * when the selection goes. Until then they float above the board, `held`
+ * between drags, so they merge with nothing. A paste floats the same way, its
+ * blocks never on the board.
  */
 
 import math
@@ -36,9 +37,12 @@ pub Selection: struct {
     pub lift: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
     lifton: [32 * 64]bool = [false : 32 * 64],
     liftspan: [32 * 64]int = [0 : 32 * 64],
-    /* Set while `lift` holds blocks that are not on the board (a paste), so a
+    /* Set while `lift` floats between drags (moved blocks, or a paste), so a
      * press inside the selection carries them instead of lifting from the board. */
     pub held: bool = false,
+    /* Whether the floating blocks came off the board, so removing them is an
+     * edit; a paste's never were on it. */
+    lifted: bool = false,
     /* The clipboard: copied blocks, row by row over a `clipw` by `cliph` box,
      * and which sources were on; `clipw` is zero when nothing was copied. */
     clip: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
@@ -55,7 +59,7 @@ pub Selection.carrying(const self): bool {
     return self.drag == Drag.move || self.held
 }
 
-/* Drops the selection; a pasted one lands where it floats. */
+/* Drops the selection; floating blocks land where they are. */
 pub Selection.deselect(self, s: *sim.Sim, h: *history.History) {
     if self.on && self.held && self.drag != Drag.move { self.drop(s, h) }
     self.on = false
@@ -114,14 +118,28 @@ Selection.drop(self, s: *sim.Sim, h: *history.History) {
     self.dy = 0
     self.drag = Drag.none
     self.held = false
+    self.lifted = false
+}
+
+/* Puts the floating blocks back where they were lifted from: the board before
+ * the lift or paste. */
+pub Selection.cancel(self, s: *sim.Sim) {
+    if !self.held { return }
+    *s = self.pre.sim()
+    self.held = false
+    self.lifted = false
+    self.on = false
+    self.drag = Drag.none
 }
 
 /* Removes every selected block. */
 pub Selection.erase(self, s: *sim.Sim, h: *history.History) {
     if !self.on { return }
     if self.held {
-        /* A floating paste is not on the board: it just goes away. */
+        /* Floating blocks are not on the board: they just go away. */
+        if self.lifted { h.record(self.pre) }
         self.held = false
+        self.lifted = false
         self.deselect(s, h)
         return
     }
@@ -137,11 +155,18 @@ pub Selection.erase(self, s: *sim.Sim, h: *history.History) {
 /* Copies the selected blocks, and which sources are on, to the clipboard. */
 pub Selection.copy(self, s: *sim.Sim, h: *history.History) {
     if !self.on { return }
-    /* A floating paste lands first, so the board holds what is copied. */
-    if self.held { self.drop(s, h) }
-    g: grid.Grid = s.g
     self.clipw = self.x1 - self.x0 + 1
     self.cliph = self.y1 - self.y0 + 1
+    if self.held {
+        /* Floating blocks are copied as they float, not merged first. */
+        for i: int in 0 .. self.clipw * self.cliph {
+            self.clip[i] = self.lift[i]
+            self.clipon[i] = self.lifton[i]
+            self.clipspan[i] = self.liftspan[i]
+        }
+        return
+    }
+    g: grid.Grid = s.g
     for y: int in self.y0 .. self.y1 + 1 {
         for x: int in self.x0 .. self.x1 + 1 {
             i: int = (y - self.y0) * self.clipw + x - self.x0
@@ -219,9 +244,24 @@ pub Selection.sweep(self, cx: int, cy: int) {
 }
 
 /* The left button went up: a box becomes the selection (a click on an empty
- * cell selects nothing), a move drops its blocks. */
+ * cell selects nothing), a move leaves its blocks floating where they are; a
+ * click that moved nothing puts them back. */
 pub Selection.release(self, s: *sim.Sim, h: *history.History) {
-    if self.drag == Drag.move { self.drop(s, h) }
+    if self.drag == Drag.move {
+        if !self.held && self.dx == 0 && self.dy == 0 {
+            self.drop(s, h)
+        } else {
+            if !self.held { self.lifted = true }
+            self.x0 += self.dx
+            self.x1 += self.dx
+            self.y0 += self.dy
+            self.y1 += self.dy
+            self.dx = 0
+            self.dy = 0
+            self.held = true
+            self.drag = Drag.none
+        }
+    }
     if self.drag == Drag.box {
         self.x0 = math.min[int](self.ax, self.bx)
         self.x1 = math.max[int](self.ax, self.bx)

@@ -1,0 +1,81 @@
+import test
+import grid: "./grid.ace"
+import sim: "./sim.ace"
+import bar: "./bar.ace"
+import app: "./app.ace"
+
+/* An editor with a wire at (0, 0) and a wire at (3, 0), the first selected
+ * and dragged two cells east, next to the second, then released. */
+moved(): app.App {
+    g: grid.Grid = grid.Grid {}
+    g.place(0, 0, grid.Block.wire)
+    g.place(3, 0, grid.Block.wire)
+    a: app.App = app.App { s = sim.Sim.init(g) }
+    a.use(bar.Tool.select)
+    a.sel.press(&a.s, &a.hist, 0, 0)
+    a.sel.sweep(0, 0)
+    a.sel.release(&a.s, &a.hist)
+    a.sel.press(&a.s, &a.hist, 0, 0)
+    a.sel.sweep(2, 0)
+    a.sel.release(&a.s, &a.hist)
+    return a
+}
+
+/* A moved selection floats while it is selected: its block is off the board,
+ * so it does not join the wire beside it, and lands on the deselect. */
+pub moved_selection_floats_until_deselected(t: *test.T) {
+    a: app.App = moved()
+    t.equal(a.sel.on && a.sel.held, true)
+    test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.empty)
+    test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.empty)
+    /* Carried again, still floating. */
+    a.sel.press(&a.s, &a.hist, 2, 0)
+    a.sel.sweep(1, 0)
+    a.sel.release(&a.s, &a.hist)
+    test.equal[grid.Block](t, a.s.g.get(1, 0), grid.Block.empty)
+    a.sel.press(&a.s, &a.hist, 1, 0)
+    a.sel.sweep(2, 0)
+    a.sel.release(&a.s, &a.hist)
+    a.deselect()
+    test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.wire)
+    /* One undo takes the whole move back. */
+    a.undo()
+    test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.wire)
+    test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.empty)
+}
+
+/* Undo while the moved blocks float puts them back where they started. */
+pub undo_returns_floating_blocks(t: *test.T) {
+    a: app.App = moved()
+    a.undo()
+    t.equal(!a.sel.on, true)
+    test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.wire)
+    test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.empty)
+}
+
+/* Copying floating blocks leaves them floating; erasing them is undoable. */
+pub copy_and_erase_floating_blocks(t: *test.T) {
+    a: app.App = moved()
+    a.copy()
+    t.equal(a.sel.held, true)
+    test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.empty)
+    a.erase()
+    test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.empty)
+    a.undo()
+    test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.wire)
+}
+
+/* A click inside the selection that moves nothing leaves the board as it was. */
+pub click_without_move_keeps_board(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    g.place(0, 0, grid.Block.wire)
+    a: app.App = app.App { s = sim.Sim.init(g) }
+    a.use(bar.Tool.select)
+    a.sel.press(&a.s, &a.hist, 0, 0)
+    a.sel.release(&a.s, &a.hist)
+    a.sel.press(&a.s, &a.hist, 0, 0)
+    a.sel.release(&a.s, &a.hist)
+    t.equal(!a.sel.held, true)
+    test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.wire)
+    t.equal(!a.hist.can_undo(), true)
+}

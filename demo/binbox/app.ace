@@ -179,7 +179,7 @@ pub App.slide_clock(self, x: f32) {
     self.clock = math.max[int](0, math.min[int](grid.SPANS - 1, int((x - at.x) / at.w * f32(grid.SPANS))))
 }
 
-/* Drops the selection; a pasted one lands where it floats. */
+/* Drops the selection; floating blocks land where they are. */
 pub App.deselect(self) {
     self.sel.deselect(&self.s, &self.hist)
 }
@@ -214,11 +214,11 @@ pub App.use(self, pick: bar.Tool) {
     self.deselect()
 }
 
-/* Takes back the last edit. A floating paste is just cancelled. */
+/* Takes back the last edit. Floating blocks just go back: a move to where it
+ * started, a paste away. */
 pub App.undo(self) {
     if self.sel.held {
-        self.sel.held = false
-        self.deselect()
+        self.sel.cancel(&self.s)
         return
     }
     if !self.hist.can_undo() { return }
