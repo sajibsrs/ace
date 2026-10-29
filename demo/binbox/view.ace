@@ -13,7 +13,7 @@ pub CELL: const f32 = 40.0
 /* The most and least zoom, as multiples of 1x, and what one wheel step
  * adds; steps land on multiples of it. A window too small for the least zoom
  * to show the board still fits it. */
-ZOOM_MAX: const f32 = 1.5
+ZOOM_MAX: const f32 = 2.0
 ZOOM_MIN: const f32 = 0.25
 /* The zoom at start. */
 ZOOM_START: const f32 = 0.5

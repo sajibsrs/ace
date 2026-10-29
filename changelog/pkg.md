@@ -50,3 +50,4 @@
 - binbox groups every touching block of one kind: wire, read pins and write
   pins form one net (a run of pins touching no device is an error), and touching
   LEDs, sources and same-span clocks are one block (`group.Groups`, `Sim`).
+- binbox's maximum zoom is 2× (`view.ZOOM_MAX`).
