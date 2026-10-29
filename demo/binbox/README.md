@@ -33,7 +33,7 @@ it can be started from any directory.
 | 7   | XNOR       | High when an even number of inputs are high. Needs at least 2 inputs. |
 | L   | LED        | Shows what the read pins it touches read. |
 | B   | bridge     | Crosses two wires: north joins south, east joins west, the pairs kept apart. |
-| K   | clock      | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
+| C   | clock      | A source that flips itself: low for a span of ticks, then high for as many, counted from the start. With the clock selected (Edit, pencil), the side panel's Clock slider sets the span of clocks placed from then on: 1 (at start), 2, 4, 8, 16, 32, 64 or 128 ticks a half cycle. Clicking a placed clock does nothing; replace it to change its span. |
 | T   | toggle     | A gate with memory: its output flips on each rising edge of its input, then holds. Its pins are read as for OR; with none it never flips. An error on a pin makes its output an error, and its stored value returns when the error clears. |
 
 ## Rules
@@ -82,10 +82,10 @@ it can be started from any directory.
 | Snap button | Make the block being placed (Edit, pencil) snap to the cell under the pointer; off, it follows the pointer freely and a click still places it in that cell. Off at start |
 | Middle drag | Pan the board, in either mode, until any cell, a corner one too, sits at the window's center; the cursor shows a closed hand |
 | Green button / Ctrl+Cmd+F | Full screen; the window is also resizable, and the board refits to it |
-| S E R W 1–7 L B K T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
+| S E R W 1–7 L B C T | Select a block (see Blocks), or click it in the side panel's Blocks widget (Edit with the pencil only) |
 | Chevron at the side panel's top left | Folds the panel to a narrow strip, or unfolds it; the board takes the freed width |
 | Pencil | Tools widget in the side panel: the pencil tool (Edit only); selecting a block returns to it |
-| Select | Tools widget in the side panel: the select tool (Edit only): drag a box over blocks; drag inside the selection to move it: its blocks float, joining nothing, until Escape or a click elsewhere drops them, replacing what they land on; Cmd+drag inside it carries a copy instead and leaves the original (floating blocks are put down first); Delete or Backspace removes it; Escape or a click elsewhere drops it |
+| V / Select | Tools widget in the side panel, or the V key: the select tool (Edit only): drag a box over blocks; drag inside the selection to move it: its blocks float, joining nothing, until Escape or a click elsewhere drops them, replacing what they land on; Cmd+drag inside it carries a copy instead and leaves the original (floating blocks are put down first); Delete or Backspace removes it; Escape or a click elsewhere drops it |
 | Cmd+C / Cmd+X / Cmd+V | Edit only: copy or cut the selection to an in-app clipboard; paste it as a floating selection at the pointer (else the board's center), kept on the board, to drag and drop like a move (Escape or a click elsewhere drops it where it is) |
 | Cmd+Z / Cmd+Shift+Z | Edit only: undo or redo an edit (a pencil drag, a move, paste, cut, delete, New); the last 20 are kept, and Open clears them. Undoing floating blocks cancels them: a move goes back, a paste away |
 | Left click / drag | Edit with the pencil: place the selected block. Simulate: flip a source |

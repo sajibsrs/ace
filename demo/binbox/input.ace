@@ -44,7 +44,7 @@ KEY: [grid.Block]u8 = [
     grid.Block.xnor = '7',
     grid.Block.led = 'l',
     grid.Block.bridge = 'b',
-    grid.Block.clock = 'k',
+    grid.Block.clock = 'c',
     grid.Block.toggle = 't',
 ]
 
@@ -234,6 +234,7 @@ Input.key(self, g: *app.App, e: KeyboardEvent): bool {
         if g.phase == app.Phase.edit { g.switch(app.Phase.run) } else { g.switch(app.Phase.edit) }
     }
     if e.key == Keycode.space && g.phase == app.Phase.run { g.auto = !g.auto }
+    if e.key == Keycode.v { g.use(bar.Tool.select) }
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
         if k == u32(KEY[each]) {
