@@ -15,12 +15,13 @@ sample(): sim.Sim {
     ]
     for i: int in 0 .. 6 { g.place(i, 0, blocks[i]) }
     g.place(15, 15, grid.Block.not)
+    g.place(grid.WIDTH - 1, grid.HEIGHT - 1, grid.Block.not)
     g.place(0, 3, grid.Block.source)
     g.place(0, 5, grid.Block.nand)
     g.place(2, 5, grid.Block.nor)
     g.place(4, 5, grid.Block.xor)
     g.place(6, 5, grid.Block.xnor)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     return s
 }
@@ -38,19 +39,23 @@ pub layout(t: *test.T) {
     t.equal(n, diagram.SIZE)
     t.equal(out[0] == 'B' && out[1] == 'N' && out[2] == 'B' && out[3] == 'X', true)
     t.equal(int(out[4]), int(diagram.VERSION))
-    t.equal(int(out[5]), 64)
-    t.equal(int(out[6]), 32)
-    t.equal(int(out[7]), 0)
+    t.equal(int(out[5]), 0)
+    t.equal(int(out[6]) + int(out[7]) * 256, grid.WIDTH)
+    t.equal(int(out[8]) + int(out[9]) * 256, grid.HEIGHT)
     /* source on, wire, input, AND, output, LED; a source off at (0,3). */
-    t.equal(int(out[8]), 2)
-    t.equal(int(out[9]), 3)
-    t.equal(int(out[13]), 9)
-    t.equal(int(out[8 + 3 * 64]), 1)
-    t.equal(int(out[8 + 15 * 64 + 15]), 8)
-    t.equal(int(out[8 + 5 * 64]), 10)
-    t.equal(int(out[8 + 5 * 64 + 2]), 11)
-    t.equal(int(out[8 + 5 * 64 + 4]), 12)
-    t.equal(int(out[8 + 5 * 64 + 6]), 13)
+    h: int = 10
+    w: int = grid.WIDTH
+    t.equal(int(out[h]), 2)
+    t.equal(int(out[h + 1]), 3)
+    t.equal(int(out[h + 5]), 9)
+    t.equal(int(out[h + 3 * w]), 1)
+    t.equal(int(out[h + 15 * w + 15]), 8)
+    t.equal(int(out[h + 5 * w]), 10)
+    t.equal(int(out[h + 5 * w + 2]), 11)
+    t.equal(int(out[h + 5 * w + 4]), 12)
+    t.equal(int(out[h + 5 * w + 6]), 13)
+    /* The far corner is on the board. */
+    t.equal(int(out[h + (grid.HEIGHT - 1) * w + grid.WIDTH - 1]), 8)
 }
 
 pub round_trip(t: *test.T) {
@@ -87,10 +92,10 @@ pub bad_header(t: *test.T) {
     out[4] = 2
     rejects(t, out[..], diagram.DiagramErr.version)
     out = encoded()
-    out[7] = 1
+    out[5] = 1
     rejects(t, out[..], diagram.DiagramErr.reserved)
     out = encoded()
-    out[5] = 8
+    out[6] = 8
     rejects(t, out[..], diagram.DiagramErr.size)
 }
 
@@ -137,7 +142,7 @@ pub toggle_round_trips(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(4, 4, grid.Block.toggle)
     out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
-    diagram.encode(sim.Sim.init(g), out[..])
+    diagram.encode(sim.Sim.new(g), out[..])
     s: sim.Sim, err: Error = diagram.decode(out[..])
     t.equal(err == null, true)
     test.equal[grid.Block](t, s.g.get(4, 4), grid.Block.toggle)
@@ -171,7 +176,7 @@ pub clock_span_round_trips(t: *test.T) {
     g.place(4, 4, grid.Block.clock)
     g.span(4, 4, 5)
     g.place(6, 4, grid.Block.clock)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
     n: usize, err: Error = diagram.encode(s, out[..])
     t.equal(err == null, true)

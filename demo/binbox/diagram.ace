@@ -1,13 +1,13 @@
 /* diagram — the .bnbx blueprint format.
  *
- * A diagram is an 8-byte header, then one byte per cell in row-major order:
+ * A diagram is a 10-byte header, then one byte per cell in row-major order:
  *
  *   0..4  magic "BNBX"
  *   4     version (VERSION)
- *   5     width
- *   6     height
- *   7     reserved, zero
- *
+ *   5     reserved, zero
+ *   6..8  width, little-endian
+ *   8..10 height, little-endian
+ * *
  * A cell byte's low 7 bits are its code (CODE); the high bit is reserved for
  * flags and must be zero. A source's switch and a clock's span are part of its
  * code; gate outputs are not stored, so a decoded diagram starts with every gate
@@ -19,9 +19,9 @@ import sim: "./sim.ace"
 
 pub EXTENSION: const string = ".bnbx"
 pub VERSION: const u8 = 1
-HEADER: const usize = 8
+HEADER: const usize = 10
 /* Bytes in a diagram of the board. */
-pub SIZE: const usize = 8 + 64 * 32
+pub SIZE: const usize = HEADER + usize(grid.CELLS)
 
 MAGIC: const string = "BNBX"
 
@@ -77,9 +77,11 @@ pub encode(s: sim.Sim, out: []u8): (usize, Error) {
     if out.len < SIZE { return 0, DiagramErr.space }
     for i: usize in 0 .. 4 { out[i] = MAGIC[i] }
     out[4] = VERSION
-    out[5] = u8(grid.WIDTH)
-    out[6] = u8(grid.HEIGHT)
-    out[7] = 0
+    out[5] = 0
+    out[6] = u8(grid.WIDTH & 0xff)
+    out[7] = u8(grid.WIDTH >> 8)
+    out[8] = u8(grid.HEIGHT & 0xff)
+    out[9] = u8(grid.HEIGHT >> 8)
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             block: grid.Block = s.g.get(x, y)
@@ -99,8 +101,8 @@ pub decode(data: []u8): (sim.Sim, Error) {
         if data[i] != MAGIC[i] { return sim.Sim {}, DiagramErr.magic }
     }
     if data[4] != VERSION { return sim.Sim {}, DiagramErr.version }
-    if data[7] != 0 { return sim.Sim {}, DiagramErr.reserved }
-    if int(data[5]) != grid.WIDTH || int(data[6]) != grid.HEIGHT { return sim.Sim {}, DiagramErr.size }
+    if data[5] != 0 { return sim.Sim {}, DiagramErr.reserved }
+    if int(data[6]) + int(data[7]) * 256 != grid.WIDTH || int(data[8]) + int(data[9]) * 256 != grid.HEIGHT { return sim.Sim {}, DiagramErr.size }
     if data.len != SIZE { return sim.Sim {}, DiagramErr.length }
 
     g: grid.Grid = grid.Grid {}
@@ -112,7 +114,7 @@ pub decode(data: []u8): (sim.Sim, Error) {
             if code >= CLOCK { g.span(x, y, int(code - CLOCK)) }
         }
     }
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if data[HEADER + usize(y * grid.WIDTH + x)] == SOURCE_ON { s.toggle(x, y, true) }

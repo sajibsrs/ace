@@ -13,6 +13,7 @@
  * wire adds none.
  */
 
+import mem
 import grid: "./grid.ace"
 import group: "./group.ace"
 
@@ -22,7 +23,7 @@ DX: [4]int = [0, 1, 0, -1]
 DY: [4]int = [-1, 0, 1, 0]
 
 /* Cells on the board. */
-CELLS: const int = 32 * 64
+CELLS: const int = grid.CELLS
 /* Index into `val` of the cell (x, y): a source's switch or a write pin's drive. */
 cell(x: int, y: int): int { return CELLS + y * grid.WIDTH + x }
 /* The slot of `val` that is never written, so always low. */
@@ -41,6 +42,74 @@ JOINED: [8]Level = [
     Level.error, Level.error, Level.error, Level.error,
 ]
 
+/* The per-cell tables of a Sim, on the heap: together they are far larger than
+ * the stack. All zero until `compile` fills them. */
+Tables: struct {
+    /* The `skew` fields stagger the tables by 64 bytes each. Every table is a
+     * multiple of 32 KB, so without them the tables' first slots, which every
+     * tick touches, share cache sets and evict each other: small circuits ran
+     * up to 1.5x slower on this board than on a 64 x 32 one. */
+    /* Output of each gate cell; kept only so gates survive regrouping in
+     * `place`, which flushes `gout` here before and `compile` reloads it. */
+    skew1: [64]u8 = [0 : 64],
+    outs: [grid.HEIGHT][grid.WIDTH]Level = [[Level.low : grid.WIDTH] : grid.HEIGHT],
+    /* What terms read: the level of each net by group number, then each source
+     * switch and write pin drive by `cell`, then LOW. */
+    skew2: [128]u8 = [0 : 128],
+    val: [2 * CELLS + 1]Level = [Level.low : 2 * CELLS + 1],
+    /* Gate number of each group, -1 for a net. Sources and clocks are gates
+     * too, after the `nlogic` that a tick evaluates; their output is their
+     * level in `val`. */
+    skew3: [192]u8 = [0 : 192],
+    gate_of: [CELLS]i32 = [0 : CELLS],
+    skew4: [256]u8 = [0 : 256],
+    kinds: [CELLS]grid.Block = [grid.Block.empty : CELLS],
+    skew5: [320]u8 = [0 : 320],
+    gout: [CELLS]Level = [Level.low : CELLS],
+    /* What each gate's pins read during a tick, see WEIGHT. */
+    skew6: [384]u8 = [0 : 384],
+    tally: [CELLS + 1]u64 = [0 : CELLS + 1],
+    skew7: [448]u8 = [0 : 448],
+    pin_t: [CELLS]i32 = [0 : CELLS],
+    skew8: [512]u8 = [0 : 512],
+    pin_g: [CELLS][4]i32 = [[0 : 4] : CELLS],
+    skew9: [576]u8 = [0 : 576],
+    op_n: [CELLS]i32 = [0 : CELLS],
+    skew10: [640]u8 = [0 : 640],
+    op_g: [CELLS][4]i32 = [[0 : 4] : CELLS],
+    skew11: [704]u8 = [0 : 704],
+    led_t: [CELLS]i32 = [0 : CELLS],
+    skew12: [768]u8 = [0 : 768],
+    led_n: [CELLS][4]i32 = [[0 : 4] : CELLS],
+    /* What each LED group shows, and the bits of the nets feeding it. */
+    skew13: [832]u8 = [0 : 832],
+    shown: [CELLS]Level = [Level.low : CELLS],
+    skew14: [896]u8 = [0 : 896],
+    lacc: [CELLS]u8 = [0 : CELLS],
+    /* Nets holding a run of pins that touches no device: BIT of an error. */
+    skew15: [960]u8 = [0 : 960],
+    bad: [CELLS]u8 = [0 : CELLS],
+    skew16: [1024]u8 = [0 : 1024],
+    src_t: [CELLS]i32 = [0 : CELLS],
+    skew17: [1088]u8 = [0 : 1088],
+    src_g: [CELLS]i32 = [0 : CELLS],
+    skew18: [1152]u8 = [0 : 1152],
+    clk_t: [CELLS]i32 = [0 : CELLS],
+    skew19: [1216]u8 = [0 : 1216],
+    clk_s: [CELLS]u8 = [0 : CELLS],
+    /* Bits of the drivers joined into each net during `settle`. */
+    skew20: [1280]u8 = [0 : 1280],
+    acc: [CELLS]u8 = [0 : CELLS],
+    /* A toggle's memory (bit 0: its Q, bit 1: its input as of the last tick),
+     * kept per cell like `outs` and per gate in `gmem`. */
+    skew21: [1344]u8 = [0 : 1344],
+    mems: [grid.HEIGHT][grid.WIDTH]u8 = [[0 : grid.WIDTH] : grid.HEIGHT],
+    skew22: [1408]u8 = [0 : 1408],
+    gmem: [CELLS]u8 = [0 : CELLS],
+    skew23: [1472]u8 = [0 : 1472],
+    tog_g: [CELLS]i32 = [0 : CELLS],
+}
+
 /* Sim keeps the board compiled into flat lists, built by `compile` whenever
  * the grid changes, so a tick loops over pins and gates instead of cells. Every
  * list slot holds 4 entries, padded by repeating the first (joining is
@@ -48,59 +117,25 @@ JOINED: [8]Level = [
 pub Sim: struct {
     pub g: grid.Grid = grid.Grid {},
     groups: group.Groups = group.Groups {},
-    /* Output of each gate cell; kept only so gates survive regrouping in
-     * `place`, which flushes `gout` here before and `compile` reloads it. */
-    outs: [32][64]Level = [[Level.low : 64] : 32],
-    /* What terms read: the level of each net by group number, then each source
-     * switch and write pin drive by `cell`, then LOW. */
-    val: [2 * CELLS + 1]Level = [Level.low : 2 * CELLS + 1],
-    /* Gate number of each group, -1 for a net. Sources and clocks are gates
-     * too, after the `nlogic` that a tick evaluates; their output is their
-     * level in `val`. */
-    gate_of: [CELLS]i16 = [-1 : CELLS],
     ngates: int = 0,
     nlogic: int = 0,
-    kinds: [CELLS]grid.Block = [grid.Block.empty : CELLS],
-    gout: [CELLS]Level = [Level.low : CELLS],
-    /* What each gate's pins read during a tick, see WEIGHT. */
-    tally: [CELLS + 1]u64 = [0 : CELLS + 1],
     /* Read pins that feed a gate: the net each reads, the gates fed. */
     npins: int = 0,
-    pin_t: [CELLS]i16 = [0 : CELLS],
-    pin_g: [CELLS][4]i16 = [[0 : 4] : CELLS],
     /* Write pins that touch a gate, source, or clock: the gates driving each
      * and the net it drives. */
     nops: int = 0,
-    op_n: [CELLS]i16 = [0 : CELLS],
-    op_g: [CELLS][4]i16 = [[0 : 4] : CELLS],
     /* Read pins that touch an LED: the net each reads, the LEDs it feeds. */
     nleds: int = 0,
-    led_t: [CELLS]i16 = [0 : CELLS],
-    led_n: [CELLS][4]i16 = [[0 : 4] : CELLS],
-    /* What each LED group shows, and the bits of the nets feeding it. */
-    shown: [CELLS]Level = [Level.low : CELLS],
-    lacc: [CELLS]u8 = [0 : CELLS],
-    /* Nets holding a run of pins that touches no device: BIT of an error. */
-    bad: [CELLS]u8 = [0 : CELLS],
     /* Ticks run since `init`; a clock is high while bit `span` of it is set. */
     time: u64 = 0,
     /* Sources and clocks: the `val` index of each group's first cell, and its gate. */
     nsources: int = 0,
-    src_t: [CELLS]i16 = [0 : CELLS],
-    src_g: [CELLS]i16 = [0 : CELLS],
     /* Clocks: the `val` index each sets, and its span. */
     nclocks: int = 0,
-    clk_t: [CELLS]i16 = [0 : CELLS],
-    clk_s: [CELLS]u8 = [0 : CELLS],
-    /* Bits of the drivers joined into each net during `settle`. */
-    acc: [CELLS]u8 = [0 : CELLS],
-    /* A toggle's memory (bit 0: its Q, bit 1: its input as of the last tick),
-     * kept per cell like `outs` and per gate in `gmem`. */
-    mems: [32][64]u8 = [[0 : 64] : 32],
-    gmem: [CELLS]u8 = [0 : CELLS],
     /* The gate numbers of the toggles. */
     ntogs: int = 0,
-    tog_g: [CELLS]i16 = [0 : CELLS],
+    /* The tables, one `Tables` on the heap; copies of a Sim share them, `wipe` releases them. */
+    t: []Tables = null,
 }
 
 /* The distinct gates beside one cell, sources and clocks included for a
@@ -110,13 +145,19 @@ Near: struct {
     count: int = 0,
 }
 
-/* A simulation of `g` with every switch and gate output off. */
-pub Sim.init(g: grid.Grid): Sim {
-    s: Sim = Sim { g = g }
+/* A simulation of `g` with every switch and gate output off. It owns its
+ * tables: release them with `wipe`. */
+pub Sim.new(g: grid.Grid): Sim {
+    s: Sim = Sim { g = g, t = mem.zalloc[Tables](1) }
     s.groups = group.Groups.init(g)
     s.compile()
     s.settle()
     return s
+}
+
+/* Releases the tables; safe on any Sim, and on every copy only once. */
+pub Sim.wipe(self) {
+    mem.release[Tables](&self.t)
 }
 
 level(on: bool): Level {
@@ -169,6 +210,7 @@ Sim.near(const self, x: int, y: int, sources: bool): Near {
 /* Builds the lists from the grid and groups, and loads each gate's output
  * from `outs`. */
 Sim.compile(self) {
+    t: *Tables = &self.t[0]
     self.ngates = 0
     self.ntogs = 0
     self.nsources = 0
@@ -176,15 +218,15 @@ Sim.compile(self) {
         hx: int, hy: int = self.groups.head(id)
         b: grid.Block = self.g.get(hx, hy)
         if !grid.is_gate(b) {
-            self.gate_of[id] = -1
+            t.gate_of[id] = -1
             continue
         }
-        self.gate_of[id] = i16(self.ngates)
-        self.kinds[self.ngates] = b
-        self.gout[self.ngates] = self.outs[hy][hx]
-        self.gmem[self.ngates] = self.mems[hy][hx]
+        t.gate_of[id] = i32(self.ngates)
+        t.kinds[self.ngates] = b
+        t.gout[self.ngates] = t.outs[hy][hx]
+        t.gmem[self.ngates] = t.mems[hy][hx]
         if b == grid.Block.toggle {
-            self.tog_g[self.ntogs] = i16(self.ngates)
+            t.tog_g[self.ntogs] = i32(self.ngates)
             self.ntogs += 1
         }
         self.ngates += 1
@@ -194,10 +236,10 @@ Sim.compile(self) {
         hx: int, hy: int = self.groups.head(id)
         b: grid.Block = self.g.get(hx, hy)
         if !grid.is_source(b) { continue }
-        self.gate_of[id] = i16(self.ngates)
-        self.kinds[self.ngates] = b
-        self.src_t[self.nsources] = i16(cell(hx, hy))
-        self.src_g[self.nsources] = i16(self.ngates)
+        t.gate_of[id] = i32(self.ngates)
+        t.kinds[self.ngates] = b
+        t.src_t[self.nsources] = i32(cell(hx, hy))
+        t.src_g[self.nsources] = i32(self.ngates)
         self.nsources += 1
         self.ngates += 1
     }
@@ -225,9 +267,10 @@ Sim.compile(self) {
 /* Marks each net holding a run of read and write pins that touches no gate,
  * LED, source, or clock: such a run is only wire, which has a block of its own. */
 Sim.compile_unused(self) {
-    for n: int in 0 .. self.groups.count { self.bad[n] = 0 }
-    seen: [32][64]bool = [[false : 64] : 32]
-    stack: [32 * 64]int = [0 : 32 * 64]
+    t: *Tables = &self.t[0]
+    for n: int in 0 .. self.groups.count { t.bad[n] = 0 }
+    seen: [grid.HEIGHT][grid.WIDTH]bool = [[false : grid.WIDTH] : grid.HEIGHT]
+    stack: [grid.CELLS]int = [0 : grid.CELLS]
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if !is_pin(self.g.get(x, y)) || seen[y][x] { continue }
@@ -249,7 +292,7 @@ Sim.compile_unused(self) {
                     top += 1
                 }
             }
-            if !used { self.bad[self.groups.of(x, y)] = BIT[Level.error] }
+            if !used { t.bad[self.groups.of(x, y)] = BIT[Level.error] }
         }
     }
 }
@@ -259,31 +302,34 @@ is_pin(b: grid.Block): bool { return b == grid.Block.read || b == grid.Block.wri
 
 /* Lists the clock at (x, y) and sets its level for the current time. */
 Sim.compile_clock(self, x: int, y: int) {
+    t: *Tables = &self.t[0]
     k: int = self.nclocks
     self.nclocks += 1
-    self.clk_t[k] = i16(cell(x, y))
-    self.clk_s[k] = u8(self.g.span(x, y))
-    self.val[cell(x, y)] = self.clocked(k)
+    t.clk_t[k] = i32(cell(x, y))
+    t.clk_s[k] = u8(self.g.span(x, y))
+    t.val[cell(x, y)] = self.clocked(k)
 }
 
 /* The level clock number `k` has at the current time. */
 Sim.clocked(const self, k: int): Level {
-    return level(((self.time >> u64(self.clk_s[k])) & 1) == 1)
+    t: *Tables = &self.t[0]
+    return level(((self.time >> u64(t.clk_s[k])) & 1) == 1)
 }
 
 /* Lists the read pin at (x, y) if it feeds a gate or an LED. */
 Sim.compile_pin(self, x: int, y: int) {
+    t: *Tables = &self.t[0]
     net: int = self.groups.of(x, y)
     near: Near = self.near(x, y, false)
     if near.count > 0 {
         p: int = self.npins
         self.npins += 1
-        self.pin_t[p] = i16(net)
+        t.pin_t[p] = i32(net)
         for k: int in 0 .. 4 {
             if k < near.count {
-                self.pin_g[p][k] = self.gate_of[near.ids[k]]
+                t.pin_g[p][k] = t.gate_of[near.ids[k]]
             } else {
-                self.pin_g[p][k] = i16(SINK)
+                t.pin_g[p][k] = i32(SINK)
             }
         }
     }
@@ -303,57 +349,60 @@ Sim.compile_pin(self, x: int, y: int) {
     if count == 0 { return }
     l: int = self.nleds
     self.nleds += 1
-    self.led_t[l] = i16(net)
-    for k: int in 0 .. 4 { self.led_n[l][k] = i16(ids[k % count]) }
+    t.led_t[l] = i32(net)
+    for k: int in 0 .. 4 { t.led_n[l][k] = i32(ids[k % count]) }
 }
 
 /* Lists the write pin at (x, y) if it touches a gate, source, or clock. */
 Sim.compile_output(self, x: int, y: int) {
+    t: *Tables = &self.t[0]
     near: Near = self.near(x, y, true)
     if near.count == 0 { return }
     o: int = self.nops
     self.nops += 1
-    self.op_n[o] = i16(self.groups.of(x, y))
+    t.op_n[o] = i32(self.groups.of(x, y))
     for k: int in 0 .. 4 {
-        self.op_g[o][k] = self.gate_of[near.ids[k % near.count]]
+        t.op_g[o][k] = t.gate_of[near.ids[k % near.count]]
     }
 }
 
 /* Recomputes every net and LED from the switches and gate outputs. */
 Sim.settle(self) {
-    for k: int in 0 .. self.nsources { self.gout[self.src_g[k]] = self.val[self.src_t[k]] }
+    t: *Tables = &self.t[0]
+    for k: int in 0 .. self.nsources { t.gout[t.src_g[k]] = t.val[t.src_t[k]] }
     for n: int in 0 .. self.groups.count {
-        self.acc[n] = self.bad[n]
-        self.lacc[n] = 0
+        t.acc[n] = t.bad[n]
+        t.lacc[n] = 0
     }
     for o: int in 0 .. self.nops {
-        v: Level = self.gout[self.op_g[o][0]]
-        if v != self.gout[self.op_g[o][1]] || v != self.gout[self.op_g[o][2]] ||
-            v != self.gout[self.op_g[o][3]] {
+        v: Level = t.gout[t.op_g[o][0]]
+        if v != t.gout[t.op_g[o][1]] || v != t.gout[t.op_g[o][2]] ||
+            v != t.gout[t.op_g[o][3]] {
             v = Level.error
         }
-        self.acc[self.op_n[o]] |= BIT[v]
+        t.acc[t.op_n[o]] |= BIT[v]
     }
-    for n: int in 0 .. self.groups.count { self.val[n] = JOINED[int(self.acc[n])] }
+    for n: int in 0 .. self.groups.count { t.val[n] = JOINED[int(t.acc[n])] }
     for l: int in 0 .. self.nleds {
-        bit: u8 = BIT[self.val[self.led_t[l]]]
-        for k: int in 0 .. 4 { self.lacc[self.led_n[l][k]] |= bit }
+        bit: u8 = BIT[t.val[t.led_t[l]]]
+        for k: int in 0 .. 4 { t.lacc[t.led_n[l][k]] |= bit }
     }
-    for n: int in 0 .. self.groups.count { self.shown[n] = JOINED[int(self.lacc[n])] }
+    for n: int in 0 .. self.groups.count { t.shown[n] = JOINED[int(t.lacc[n])] }
 }
 
 /* Advances one tick: every gate reads the current state and outputs next. */
 pub Sim.tick(self) {
-    for i: int in 0 .. self.ngates { self.tally[i] = 0 }
-    self.tally[SINK] = 0
+    t: *Tables = &self.t[0]
+    for i: int in 0 .. self.ngates { t.tally[i] = 0 }
+    t.tally[SINK] = 0
     for p: int in 0 .. self.npins {
-        w: u64 = WEIGHT[self.val[self.pin_t[p]]]
-        for k: int in 0 .. 4 { self.tally[self.pin_g[p][k]] += w }
+        w: u64 = WEIGHT[t.val[t.pin_t[p]]]
+        for k: int in 0 .. 4 { t.tally[t.pin_g[p][k]] += w }
     }
-    for i: int in 0 .. self.nlogic { self.gout[i] = evaluate(self.kinds[i], self.tally[i]) }
-    for k: int in 0 .. self.ntogs { self.flip(int(self.tog_g[k])) }
+    for i: int in 0 .. self.nlogic { t.gout[i] = evaluate(t.kinds[i], t.tally[i]) }
+    for k: int in 0 .. self.ntogs { self.flip(int(t.tog_g[k])) }
     self.time += 1
-    for k: int in 0 .. self.nclocks { self.val[self.clk_t[k]] = self.clocked(k) }
+    for k: int in 0 .. self.nclocks { t.val[t.clk_t[k]] = self.clocked(k) }
     self.settle()
 }
 
@@ -361,18 +410,19 @@ pub Sim.tick(self) {
  * reads high; Q flips when the input is high now and was low at the last tick.
  * The output is Q, or an error while an read pin reads one (Q is kept). */
 Sim.flip(self, i: int) {
-    t: u64 = self.tally[i]
-    high: bool = (t >> 32) == 0 && ((t >> 16) & 0xFFFF) > 0
-    m: u8 = self.gmem[i] & 1
+    t: *Tables = &self.t[0]
+    seen: u64 = t.tally[i]
+    high: bool = (seen >> 32) == 0 && ((seen >> 16) & 0xFFFF) > 0
+    m: u8 = t.gmem[i] & 1
     if high {
-        if (self.gmem[i] & 2) == 0 { m ^= 1 }
+        if (t.gmem[i] & 2) == 0 { m ^= 1 }
         m |= 2
     }
-    self.gmem[i] = m
-    if (t >> 32) > 0 {
-        self.gout[i] = Level.error
+    t.gmem[i] = m
+    if (seen >> 32) > 0 {
+        t.gout[i] = Level.error
     } else {
-        self.gout[i] = level((m & 1) == 1)
+        t.gout[i] = level((m & 1) == 1)
     }
 }
 
@@ -388,9 +438,10 @@ pub Sim.span(self, x: int, y: int, span: int): bool {
 /* Sets the source at (x, y), and so every source touching it. False when the
  * cell is not a source. */
 pub Sim.toggle(self, x: int, y: int, on: bool): bool {
+    t: *Tables = &self.t[0]
     if self.g.get(x, y) != grid.Block.source { return false }
     hx: int, hy: int = self.groups.head(self.groups.of(x, y))
-    self.val[cell(hx, hy)] = level(on)
+    t.val[cell(hx, hy)] = level(on)
     self.settle()
     return true
 }
@@ -400,6 +451,7 @@ pub Sim.toggle(self, x: int, y: int, on: bool): bool {
  * carries two levels (see Sim.cross) and shows the higher: error over high
  * over low. */
 pub Sim.level(const self, x: int, y: int): Level {
+    t: *Tables = &self.t[0]
     b: grid.Block = self.g.get(x, y)
     if !group.joins(b) {
         if b == grid.Block.bridge {
@@ -412,22 +464,23 @@ pub Sim.level(const self, x: int, y: int): Level {
     id: int = self.groups.of(x, y)
     if grid.is_source(b) {
         hx: int, hy: int = self.groups.head(id)
-        return self.val[cell(hx, hy)]
+        return t.val[cell(hx, hy)]
     }
-    if grid.is_gate(b) { return self.gout[self.gate_of[id]] }
-    if b == grid.Block.led { return self.shown[id] }
-    return self.val[id]
+    if grid.is_gate(b) { return t.gout[t.gate_of[id]] }
+    if b == grid.Block.led { return t.shown[id] }
+    return t.val[id]
 }
 
 /* Copies every gate's output to its cells in `outs`, where it survives a
  * regrouping. */
 Sim.flush(self) {
+    t: *Tables = &self.t[0]
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             id: int = self.groups.of(x, y)
-            if id >= 0 && self.gate_of[id] >= 0 {
-                self.outs[y][x] = self.gout[self.gate_of[id]]
-                self.mems[y][x] = self.gmem[self.gate_of[id]]
+            if id >= 0 && t.gate_of[id] >= 0 {
+                t.outs[y][x] = t.gout[t.gate_of[id]]
+                t.mems[y][x] = t.gmem[t.gate_of[id]]
             }
         }
     }
@@ -436,12 +489,13 @@ Sim.flush(self) {
 /* Puts `block` at (x, y) with its switch and output off, then regroups; a gate
  * or source it merges into keeps its output or switch. False off the board. */
 pub Sim.place(self, x: int, y: int, block: grid.Block): bool {
+    t: *Tables = &self.t[0]
     if !grid.inside(x, y) { return false }
     self.flush()
     self.g.place(x, y, block)
-    self.val[cell(x, y)] = Level.low
-    self.outs[y][x] = Level.low
-    self.mems[y][x] = 0
+    t.val[cell(x, y)] = Level.low
+    t.outs[y][x] = Level.low
+    t.mems[y][x] = 0
     self.regroup()
     return true
 }
@@ -450,24 +504,25 @@ pub Sim.place(self, x: int, y: int, block: grid.Block): bool {
  * takes the output of its group's first cell, and a source group is on when any
  * of its cells was. */
 Sim.regroup(self) {
+    t: *Tables = &self.t[0]
     self.groups = group.Groups.init(self.g)
     for gy: int in 0 .. grid.HEIGHT {
         for gx: int in 0 .. grid.WIDTH {
             b: grid.Block = self.g.get(gx, gy)
             if grid.is_gate(b) {
                 hx: int, hy: int = self.groups.head(self.groups.of(gx, gy))
-                self.outs[gy][gx] = self.outs[hy][hx]
-                self.mems[gy][gx] = self.mems[hy][hx]
+                t.outs[gy][gx] = t.outs[hy][hx]
+                t.mems[gy][gx] = t.mems[hy][hx]
             } else if b == grid.Block.source {
-                self.val[cell(gx, gy)] = Level.low
+                t.val[cell(gx, gy)] = Level.low
             }
         }
     }
     for gy: int in 0 .. grid.HEIGHT {
         for gx: int in 0 .. grid.WIDTH {
-            if self.g.get(gx, gy) != grid.Block.source || self.outs[gy][gx] != Level.high { continue }
+            if self.g.get(gx, gy) != grid.Block.source || t.outs[gy][gx] != Level.high { continue }
             hx: int, hy: int = self.groups.head(self.groups.of(gx, gy))
-            self.val[cell(hx, hy)] = Level.high
+            t.val[cell(hx, hy)] = Level.high
         }
     }
     self.compile()
@@ -478,6 +533,7 @@ Sim.regroup(self) {
  * net of the conductor (wire or pin) past the run of bridges either way, low
  * when neither end is one. */
 Sim.carries(const self, x: int, y: int, d: int): Level {
+    t: *Tables = &self.t[0]
     for k: int in 0 .. 2 {
         nx: int = x + DX[d]
         ny: int = y + DY[d]
@@ -485,7 +541,7 @@ Sim.carries(const self, x: int, y: int, d: int): Level {
             nx += DX[d]
             ny += DY[d]
         }
-        if group.conducts(self.g.get(nx, ny)) { return self.val[self.groups.of(nx, ny)] }
+        if group.conducts(self.g.get(nx, ny)) { return t.val[self.groups.of(nx, ny)] }
         d = (d + 2) % 4
     }
     return Level.low

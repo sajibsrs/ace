@@ -28,7 +28,7 @@ dense_not(): sim.Sim {
             put(&g, 3 + 3 * i, y, grid.Block.write)
         }
     }
-    return sim.Sim.init(g)
+    return sim.Sim.new(g)
 }
 
 // Rows of K, a write pin, then (read, gate, write, wire) cells over OR, NOT, NOR, toggle: gates joined by wire nets.
@@ -48,7 +48,7 @@ dense_mixed(): sim.Sim {
         put(&g, 63, y, grid.Block.wire)
         g.span(0, y, y % 8)
     }
-    return sim.Sim.init(g)
+    return sim.Sim.new(g)
 }
 
 load(path: string): sim.Sim {

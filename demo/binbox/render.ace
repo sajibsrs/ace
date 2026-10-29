@@ -228,7 +228,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
 /* The block carried at (x, y) of the selection, empty off its edge. */
 carried(g: *app.App, x: int, y: int): grid.Block {
     if x < g.sel.x0 || y < g.sel.y0 || x > g.sel.x1 || y > g.sel.y1 { return grid.Block.empty }
-    return g.sel.lift[(y - g.sel.y0) * (g.sel.x1 - g.sel.x0 + 1) + x - g.sel.x0]
+    return g.sel.pad[0].lift[(y - g.sel.y0) * (g.sel.x1 - g.sel.x0 + 1) + x - g.sel.x0]
 }
 
 /* The blocks being carried, `icons` or their fills, at the drag's offset. */

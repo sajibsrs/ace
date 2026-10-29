@@ -38,9 +38,9 @@ same(g: grid.Grid, ax: int, ay: int, bx: int, by: int): bool {
 
 pub Groups: struct {
     /* The group number of each cell, or NONE for a cell in no group. */
-    ids: [32][64]int = [[NONE : 64] : 32],
+    ids: [grid.HEIGHT][grid.WIDTH]int = [[NONE : grid.WIDTH] : grid.HEIGHT],
     /* The first cell of each group, packed as y * WIDTH + x. */
-    heads: [32 * 64]int = [0 : 32 * 64],
+    heads: [grid.CELLS]int = [0 : grid.CELLS],
     /* How many groups there are; numbers run 0 .. count-1. */
     pub count: int = 0,
 }
@@ -49,7 +49,7 @@ pub Groups: struct {
 pub Groups.init(g: grid.Grid): Groups {
     groups: Groups = Groups {}
     /* Cells still to visit, each packed as y * WIDTH + x. */
-    stack: [32 * 64]int = [0 : 32 * 64]
+    stack: [grid.CELLS]int = [0 : grid.CELLS]
 
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {

@@ -67,7 +67,10 @@ main(): int {
     mouse: input.Input = input.Input.new()
     defer mouse.wipe()
 
-    editor: app.App = app.App { s = sim.Sim.init(grid.Grid {}) }
+    editor: app.App = app.App { s = sim.Sim.new(grid.Grid {}) }
+    defer editor.s.wipe()
+    defer editor.hist.wipe()
+    defer editor.sel.wipe()
     if editor.store.locate() != null {
         fmt.println("binbox: cannot find the executable's path")
         return 1

@@ -61,3 +61,8 @@
 - binbox's Blocks widget icons are colored by default (each block's dimmer
   color, the selected one brighter) instead of grey until hovered; the pointer
   no longer changes them (`render.ace`).
+- binbox's board is 256×128. The `.bnbx` header is 10 bytes (16-bit size) and
+  the shipped diagrams sit in the top-left corner. `Sim`, the
+  undo stacks, and `Selection` keep their per-cell tables on the heap
+  (`Sim.new`/`wipe`, `History.wipe`, `Selection.wipe`) since they no longer fit
+  the stack; gate numbers are `i32`.

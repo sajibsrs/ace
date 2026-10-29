@@ -10,7 +10,7 @@ moved(): app.App {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.wire)
     g.place(3, 0, grid.Block.wire)
-    a: app.App = app.App { s = sim.Sim.init(g) }
+    a: app.App = app.App { s = sim.Sim.new(g) }
     a.use(bar.Tool.select)
     a.sel.press(&a.s, &a.hist, 0, 0, false)
     a.sel.sweep(0, 0)
@@ -69,7 +69,7 @@ pub copy_and_erase_floating_blocks(t: *test.T) {
 pub click_without_move_keeps_board(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.wire)
-    a: app.App = app.App { s = sim.Sim.init(g) }
+    a: app.App = app.App { s = sim.Sim.new(g) }
     a.use(bar.Tool.select)
     a.sel.press(&a.s, &a.hist, 0, 0, false)
     a.sel.release(&a.s, &a.hist)
@@ -85,7 +85,7 @@ pub click_without_move_keeps_board(t: *test.T) {
 pub clone_drag_leaves_original(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.wire)
-    a: app.App = app.App { s = sim.Sim.init(g) }
+    a: app.App = app.App { s = sim.Sim.new(g) }
     a.use(bar.Tool.select)
     a.sel.press(&a.s, &a.hist, 0, 0, false)
     a.sel.release(&a.s, &a.hist)

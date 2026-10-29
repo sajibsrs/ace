@@ -188,6 +188,7 @@ pub App.deselect(self) {
  * and the measured rate at 0, the sources as they were then. Auto keeps its
  * state. */
 pub App.reset(self) {
+    self.s.wipe()
     self.s = self.start.sim()
     self.count = 0
     self.owed = 0.0
@@ -236,7 +237,10 @@ pub App.undo(self) {
     if !self.hist.can_undo() { return }
     self.deselect()
     r: history.Snap, ok: bool = self.hist.undo(history.Snap.of(self.s))
-    if ok { self.s = r.sim() }
+    if ok {
+        self.s.wipe()
+        self.s = r.sim()
+    }
 }
 
 /* Brings back the edit Undo took back. */
@@ -244,7 +248,10 @@ pub App.redo(self) {
     if self.sel.held || !self.hist.can_redo() { return }
     self.deselect()
     r: history.Snap, ok: bool = self.hist.redo(history.Snap.of(self.s))
-    if ok { self.s = r.sim() }
+    if ok {
+        self.s.wipe()
+        self.s = r.sim()
+    }
 }
 
 /* Removes every selected block. */
@@ -280,7 +287,8 @@ pub App.paste(self) {
 pub App.clear(self) {
     self.deselect()
     self.hist.record(history.Snap.of(self.s))
-    self.s = sim.Sim.init(grid.Grid {})
+    self.s.wipe()
+    self.s = sim.Sim.new(grid.Grid {})
     self.start = history.Snap.of(self.s)
     self.count = 0
     self.name.len = 0
@@ -338,6 +346,7 @@ pub App.load(self, name: string) {
     }
     self.deselect()
     self.hist.reset()
+    self.s.wipe()
     self.s = s
     self.start = history.Snap.of(self.s)
     self.count = 0

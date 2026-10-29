@@ -30,7 +30,7 @@ two_input(block: grid.Block): sim.Sim {
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read])
     row(&g, 2, 1, [block, grid.Block.write, grid.Block.read, grid.Block.led])
     row(&g, 0, 2, [grid.Block.source, grid.Block.write, grid.Block.read])
-    return sim.Sim.init(g)
+    return sim.Sim.new(g)
 }
 
 result(block: grid.Block, a: bool, b: bool): sim.Level {
@@ -90,7 +90,7 @@ pub xor_is_parity(t: *test.T) {
     for y: int in 0 .. 5 { g.place(3, y, grid.Block.xor) }
     for y: int in [0, 2, 4] { row(&g, 0, y, [grid.Block.source, grid.Block.write, grid.Block.read]) }
     row(&g, 4, 2, [grid.Block.write, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     s.toggle(0, 2, true)
     s.tick()
@@ -103,7 +103,7 @@ pub xor_is_parity(t: *test.T) {
 pub xor_with_one_pin_is_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.xor])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.tick()
     error(t, s, 3, 0)
 }
@@ -130,7 +130,7 @@ pub gate_adds_one_tick(t: *test.T) {
 pub gate_without_output_pin_drives_nothing(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.or, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     s.tick()
     high(t, s, 3, 0)
@@ -145,7 +145,7 @@ pub chained_gates_delay_per_gate(t: *test.T) {
         grid.Block.wire, grid.Block.read, grid.Block.not, grid.Block.write, grid.Block.read,
         grid.Block.led,
     ])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.tick()
     s.tick()
     low(t, s, 10, 0)
@@ -160,7 +160,7 @@ pub chained_gates_delay_per_gate(t: *test.T) {
 pub lone_gate_is_idle(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.not)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.tick()
     low(t, s, 0, 0)
 }
@@ -168,7 +168,7 @@ pub lone_gate_is_idle(t: *test.T) {
 pub and_with_one_pin_is_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.and, grid.Block.write, grid.Block.wire])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.tick()
     error(t, s, 3, 0)
     error(t, s, 5, 0)
@@ -185,7 +185,7 @@ pub merged_gate_counts_all_pins(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.and])
     row(&g, 0, 1, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.and, grid.Block.write, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     s.toggle(0, 1, true)
     s.tick()
@@ -198,7 +198,7 @@ pub contention_is_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.wire, grid.Block.write, grid.Block.source])
     row(&g, 2, 1, [grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     low(t, s, 2, 0)
     s.toggle(0, 0, true)
     error(t, s, 2, 0)
@@ -211,7 +211,7 @@ pub contention_is_an_error(t: *test.T) {
 pub write_pin_joins_its_sources(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.source])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     low(t, s, 1, 0)
     s.toggle(0, 0, true)
     error(t, s, 1, 0)
@@ -224,7 +224,7 @@ pub error_propagates(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.not, grid.Block.write, grid.Block.wire])
     g.place(1, 1, grid.Block.source)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(1, 1, true)
     s.tick()
     error(t, s, 3, 0)
@@ -237,7 +237,7 @@ pub pin_fans_out(t: *test.T) {
     row(&g, 0, 1, [grid.Block.source, grid.Block.write, grid.Block.read])
     g.place(2, 0, grid.Block.or)
     g.place(2, 2, grid.Block.not)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 1, true)
     s.tick()
     high(t, s, 2, 0)
@@ -249,7 +249,7 @@ pub not_loop_oscillates(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.wire, grid.Block.wire, grid.Block.wire])
     row(&g, 0, 1, [grid.Block.read, grid.Block.not, grid.Block.write])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.tick()
     high(t, s, 1, 1)
     s.tick()
@@ -298,7 +298,7 @@ jk(): sim.Sim {
         grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.wire,
     ])
     for y: int in 14 .. 18 { g.place(35, y, grid.Block.wire) }
-    return sim.Sim.init(g)
+    return sim.Sim.new(g)
 }
 
 /* The JK flip-flop as diagram/jk-flip-flop.bnbx stores it. */
@@ -388,7 +388,7 @@ flipper(): sim.Sim {
         grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.toggle,
         grid.Block.write, grid.Block.read, grid.Block.led,
     ])
-    return sim.Sim.init(g)
+    return sim.Sim.new(g)
 }
 
 /* Q flips on each rising edge of the input and holds through a high level and
@@ -417,7 +417,7 @@ pub toggle_flips_on_rising_edge(t: *test.T) {
 pub toggle_without_a_pin_is_idle(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.toggle, grid.Block.write, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     ticks(&s, 4)
     low(t, s, 3, 0)
 }
@@ -431,7 +431,7 @@ pub toggle_keeps_q_through_an_error(t: *test.T) {
         grid.Block.write, grid.Block.read, grid.Block.led,
     ])
     g.place(1, 1, grid.Block.source)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     s.toggle(1, 1, true)
     s.tick()
@@ -471,7 +471,7 @@ pub only_pins_connect(t: *test.T) {
     g.place(0, 1, grid.Block.led)
     row(&g, 0, 3, [grid.Block.source, grid.Block.read, grid.Block.not])
     row(&g, 0, 5, [grid.Block.source, grid.Block.wire, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     s.toggle(0, 3, true)
     s.toggle(0, 5, true)
@@ -493,7 +493,7 @@ pub only_pins_connect(t: *test.T) {
 pub led_joins_its_pins(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.led, grid.Block.read, grid.Block.write, grid.Block.source])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     low(t, s, 3, 0)
     s.toggle(0, 0, true)
     error(t, s, 3, 0)
@@ -511,7 +511,7 @@ pub bridge_crosses_signals(t: *test.T) {
     g.place(2, 3, grid.Block.wire)
     g.place(2, 4, grid.Block.read)
     g.place(2, 5, grid.Block.led)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 2, true)
     high(t, s, 5, 2)
     low(t, s, 2, 5)
@@ -545,7 +545,7 @@ pub bridge_reaches_wire(t: *test.T) {
     /* Source, write, bridge: nothing past it. */
     row(&g, 0, 12, [grid.Block.source, grid.Block.write, grid.Block.bridge])
     g.place(5, 12, grid.Block.read)
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     high(t, s, 6, 0)
     s.tick()
@@ -572,7 +572,7 @@ pub adjacent_pins_short(t: *test.T) {
     row(&g, 0, 1, [grid.Block.xor, grid.Block.write])
     row(&g, 0, 2, [grid.Block.read])
     row(&g, 0, 3, [grid.Block.write, grid.Block.source])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     low(t, s, 2, 0)
     s.toggle(1, 3, true)
     ticks(&s, 1)
@@ -588,7 +588,7 @@ pub adjacent_pins_short(t: *test.T) {
 pub unused_pins_are_an_error(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.wire, grid.Block.read, grid.Block.write])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     error(t, s, 0, 0)
     error(t, s, 1, 0)
     error(t, s, 2, 0)
@@ -598,7 +598,7 @@ pub unused_pins_are_an_error(t: *test.T) {
 pub led_run_lights_together(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.led, grid.Block.led, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     for x: int in 3 .. 6 { high(t, s, x, 0) }
 }
@@ -607,7 +607,7 @@ pub led_run_lights_together(t: *test.T) {
 pub source_run_shares_a_switch(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(1, 0, true)
     high(t, s, 0, 0)
     high(t, s, 4, 0)
@@ -621,7 +621,7 @@ pub adjacent_writes_contend(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.write, grid.Block.source])
     row(&g, 1, 1, [grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     s.toggle(0, 0, true)
     error(t, s, 1, 1)
     s.toggle(3, 0, true)
@@ -634,13 +634,13 @@ clocked(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.clock, grid.Block.write, grid.Block.read, grid.Block.led])
     g.span(0, 0, 3)
-    return sim.Sim.init(g)
+    return sim.Sim.new(g)
 }
 
 pub new_clock_flips_every_tick(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.clock, grid.Block.write, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     low(t, s, 3, 0)
     ticks(&s, 1)
     high(t, s, 3, 0)
@@ -666,7 +666,7 @@ pub clock_flips_every_half_cycle(t: *test.T) {
 pub clock_drives_a_wire(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.clock, grid.Block.write, grid.Block.wire, grid.Block.wire, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     ticks(&s, 1)
     high(t, s, 2, 0)
     high(t, s, 5, 0)
@@ -675,7 +675,7 @@ pub clock_drives_a_wire(t: *test.T) {
 pub span_sets_a_clock_s_half_cycle(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.clock, grid.Block.write, grid.Block.read, grid.Block.led])
-    s: sim.Sim = sim.Sim.init(g)
+    s: sim.Sim = sim.Sim.new(g)
     t.equal(s.span(0, 0, 2), true)
     t.equal(s.g.span(0, 0), 2)
     ticks(&s, 3)

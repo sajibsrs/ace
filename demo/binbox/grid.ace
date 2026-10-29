@@ -4,8 +4,10 @@
  * block. Blocks have no direction: what a block touches decides its role.
  */
 
-pub WIDTH: const int = 64
-pub HEIGHT: const int = 32
+pub WIDTH: const int = 256
+pub HEIGHT: const int = 128
+/* Cells on the board. */
+pub CELLS: const int = WIDTH * HEIGHT
 
 pub Block: enum u8 {
     empty,
@@ -45,9 +47,9 @@ pub Block: enum u8 {
 pub SPANS: const int = 8
 
 pub Grid: struct {
-    cells: [32][64]Block = [[Block.empty : 64] : 32],
+    cells: [HEIGHT][WIDTH]Block = [[Block.empty : WIDTH] : HEIGHT],
     /* Each clock's span; zero for every other cell. */
-    spans: [32][64]u8 = [[0 : 64] : 32],
+    spans: [HEIGHT][WIDTH]u8 = [[0 : WIDTH] : HEIGHT],
 }
 
 /* Whether (x, y) lies on the board. */

@@ -4,6 +4,7 @@
  * with the snapshot they bring back.
  */
 
+import mem
 import grid: "./grid.ace"
 import sim: "./sim.ace"
 
@@ -13,7 +14,7 @@ HISTORY: const int = 20
 /* The board and which sources are on: what Undo and Redo bring back. */
 pub Snap: struct {
     g: grid.Grid = grid.Grid {},
-    on: [32][64]bool = [[false : 64] : 32],
+    on: [grid.HEIGHT][grid.WIDTH]bool = [[false : grid.WIDTH] : grid.HEIGHT],
 }
 
 /* The board of `s` as it is now. */
@@ -29,7 +30,7 @@ pub Snap.of(s: sim.Sim): Snap {
 
 /* A simulation of the snapshot's board, its sources on or off as they were. */
 pub Snap.sim(const self): sim.Sim {
-    s: sim.Sim = sim.Sim.init(self.g)
+    s: sim.Sim = sim.Sim.new(self.g)
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if self.on[y][x] { s.toggle(x, y, true) }
@@ -38,14 +39,15 @@ pub Snap.sim(const self): sim.Sim {
     return s
 }
 
-/* Up to `HISTORY` (the array's length) snapshots, the latest last. */
+/* Up to `HISTORY` snapshots, the latest last, on the heap from the first push. */
 Stack: struct {
-    snaps: [20]Snap = [Snap {} : 20],
+    snaps: []Snap = null,
     n: int = 0,
 }
 
 /* Adds `r`, the oldest falling off when full. */
 Stack.push(self, r: Snap) {
+    if self.snaps == null { self.snaps = mem.zalloc[Snap](usize(HISTORY)) }
     if self.n == HISTORY {
         for i: int in 1 .. HISTORY { self.snaps[i - 1] = self.snaps[i] }
         self.n -= 1
@@ -64,6 +66,12 @@ Stack.pop(self): Snap {
 pub History: struct {
     undone: Stack = Stack {},
     redone: Stack = Stack {},
+}
+
+/* Releases both stacks. */
+pub History.wipe(self) {
+    mem.release[Snap](&self.undone.snaps)
+    mem.release[Snap](&self.redone.snaps)
 }
 
 /* Notes `r`, the board before an edit, so Undo can bring it back; a new edit

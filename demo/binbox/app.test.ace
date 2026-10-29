@@ -12,7 +12,7 @@ import app: "./app.ace"
 /* An editor running Sim at slider stop `stop`, with Auto just turned on:
  * the frame before it, the clock was noted. */
 running(stop: int): app.App {
-    a: app.App = app.App { s = sim.Sim.init(grid.Grid {}) }
+    a: app.App = app.App { s = sim.Sim.new(grid.Grid {}) }
     a.switch(app.Phase.run)
     a.stop = stop
     a.pace()
@@ -74,7 +74,7 @@ pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
     g.place(1, 0, grid.Block.wire)
     g.place(2, 0, grid.Block.not)
     g.place(3, 0, grid.Block.write)
-    a: app.App = app.App { s = sim.Sim.init(g) }
+    a: app.App = app.App { s = sim.Sim.new(g) }
     a.s.toggle(0, 0, true)
     a.switch(app.Phase.run)
     for i: int in 0 .. 5 { a.tick() }
@@ -111,7 +111,7 @@ pub dropper_picks_the_block_under_the_pointer(t: *test.T) {
     g.place(3, 2, grid.Block.xor)
     g.place(4, 2, grid.Block.clock)
     g.span(4, 2, 5)
-    a: app.App = app.App { s = sim.Sim.init(g) }
+    a: app.App = app.App { s = sim.Sim.new(g) }
     a.pick = bar.Tool.select
     a.drop(3, 2)
     t.equal(a.block == grid.Block.xor, true)

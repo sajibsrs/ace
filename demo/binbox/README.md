@@ -1,7 +1,7 @@
 # binbox
 
 A logic-gate sandbox written in Ace, in an SDL3 window. Place square blocks on
-a 64×32 grid, flip switches, and watch signals move through gates, one tick at
+a 256×128 grid, flip switches, and watch signals move through gates, one tick at
 a time.
 
 ## Running
@@ -171,16 +171,16 @@ input at power-on.
 
 ## Diagram format (`.bnbx`)
 
-An 8-byte header, then one byte per cell, row by row:
+A 10-byte header, then one byte per cell, row by row:
 
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | 4 | magic `BNBX` |
 | 4 | 1 | version, `1` |
-| 5 | 1 | width, `64` |
-| 6 | 1 | height, `32` |
-| 7 | 1 | reserved, `0` |
-| 8 | w × h | cell codes |
+| 5 | 1 | reserved, `0` |
+| 6 | 2 | width, `256`, little-endian |
+| 8 | 2 | height, `128`, little-endian |
+| 10 | w × h | cell codes |
 
 | Code | Block | Code | Block |
 |------|-------|------|-------|
