@@ -28,15 +28,19 @@ pub Rect.has(const self, x: f32, y: f32): bool {
     return x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
 }
 
-/* Triangles for one layer, drawn in a single geometry call. Room for a whole
- * 64 x 32 board of cells and the hover outline. */
+/* Triangles for one layer, drawn in a single geometry call, or more when it
+ * fills: a full layer is flushed to `r`, so nothing is dropped. */
 pub Canvas: struct {
     vertices: [16384]Vertex = [Vertex {} : 16384],
     count: usize = 0,
+    r: Renderer = Renderer { handle = null },
 }
 
+/* An empty layer that draws to `r`. */
+pub Canvas.init(r: Renderer): Canvas { return Canvas { r = r } }
+
 pub Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
-    if self.count + 3 > self.vertices.len { return }
+    if self.count + 3 > self.vertices.len { self.flush(self.r) }
     self.vertices[self.count] = Vertex { position = a, color = color }
     self.vertices[self.count + 1] = Vertex { position = b, color = color }
     self.vertices[self.count + 2] = Vertex { position = c, color = color }
@@ -86,7 +90,7 @@ pub Canvas.dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
 }
 
 pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
-    if self.count + 6 > self.vertices.len { return }
+    if self.count + 6 > self.vertices.len { self.flush(self.r) }
     self.vertices[self.count] = a
     self.vertices[self.count + 1] = b
     self.vertices[self.count + 2] = c
@@ -309,6 +313,7 @@ layer: Canvas
 /* `text` with its baseline at window point (x, y). Glyphs sit on whole
  * pixels, so every copy of a letter looks alike. */
 draw(r: Renderer, x: f32, y: f32, text: string, ink: u32) {
+    layer.r = r
     color: Color = Color.hex(ink)
     unit: f32 = TEXT / font.EM
     base: f32 = math.floor(y + 0.5)

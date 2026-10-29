@@ -70,7 +70,7 @@ main(): int {
         fmt.println("binbox: cannot find the executable's path")
         return 1
     }
-    canvas: ui.Canvas = ui.Canvas {}
+    canvas: ui.Canvas = ui.Canvas.init(renderer)
     w: f32 = 0.0
     h: f32 = 0.0
     running: bool = true
