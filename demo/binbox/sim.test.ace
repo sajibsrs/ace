@@ -268,36 +268,36 @@ ticks(s: *sim.Sim, n: int) {
 }
 
 /* A JK flip-flop around one toggle, as diagram/jk-flip-flop.bnbx stores it. The
- * toggle (33,15) flips when its input rises, and the input is (J AND NOT Q) OR
+ * toggle (129,63) flips when its input rises, and the input is (J AND NOT Q) OR
  * (K AND Q): high only when the flip-flop must change. Q (the toggle's output pin
- * (33,14)) runs along row 13 to the pin (36,13) of the LED (37,13), down column
- * 35, and back along row 18. Source J (26,15) feeds the lower AND (28,16)
- * through pins (26,16) and (27,16); the NOT (29,18) reads Q and feeds that AND's
- * other pin (28,17). Source K (29,12) feeds the upper AND (31,13) through pins
- * (29,13) and (30,13), whose other pin (32,13) reads Q. The ANDs' outputs meet
- * at the OR (31,16), which feeds the toggle through the pin (33,16). */
+ * (129,62)) runs along row 61 to the pin (132,61) of the LED (133,61), down column
+ * 131, and back along row 66. Source J (122,63) feeds the lower AND (124,64)
+ * through pins (122,64) and (123,64); the NOT (125,66) reads Q and feeds that AND's
+ * other pin (124,65). Source K (125,60) feeds the upper AND (127,61) through pins
+ * (125,61) and (126,61), whose other pin (128,61) reads Q. The ANDs' outputs meet
+ * at the OR (127,64), which feeds the toggle through the pin (129,64). */
 jk(): sim.Sim {
     g: grid.Grid = grid.Grid {}
-    g.place(29, 12, grid.Block.source)
-    row(&g, 29, 13, [
+    g.place(125, 60, grid.Block.source)
+    row(&g, 125, 61, [
         grid.Block.write, grid.Block.read, grid.Block.and, grid.Block.read,
         grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.read, grid.Block.led,
     ])
-    g.place(31, 14, grid.Block.write)
-    g.place(33, 14, grid.Block.write)
-    g.place(31, 15, grid.Block.read)
-    g.place(33, 15, grid.Block.toggle)
-    g.place(26, 15, grid.Block.source)
-    row(&g, 26, 16, [
+    g.place(127, 62, grid.Block.write)
+    g.place(129, 62, grid.Block.write)
+    g.place(127, 63, grid.Block.read)
+    g.place(129, 63, grid.Block.toggle)
+    g.place(122, 63, grid.Block.source)
+    row(&g, 122, 64, [
         grid.Block.write, grid.Block.read, grid.Block.and, grid.Block.write,
         grid.Block.read, grid.Block.or, grid.Block.write, grid.Block.read,
     ])
-    g.place(28, 17, grid.Block.read)
-    row(&g, 28, 18, [
+    g.place(124, 65, grid.Block.read)
+    row(&g, 124, 66, [
         grid.Block.write, grid.Block.not, grid.Block.read, grid.Block.wire,
         grid.Block.wire, grid.Block.wire, grid.Block.wire, grid.Block.wire,
     ])
-    for y: int in 14 .. 18 { g.place(35, y, grid.Block.wire) }
+    for y: int in 62 .. 66 { g.place(131, y, grid.Block.wire) }
     return sim.Sim.new(g)
 }
 
@@ -320,31 +320,31 @@ pub jk_matches_file(t: *test.T) {
 pub jk_holds_a_bit(t: *test.T) {
     s: sim.Sim = jk()
     ticks(&s, 8)
-    low(t, s, 37, 13)
+    low(t, s, 133, 61)
 
-    s.toggle(26, 15, true)
+    s.toggle(122, 63, true)
     ticks(&s, 8)
-    s.toggle(26, 15, false)
+    s.toggle(122, 63, false)
     ticks(&s, 8)
-    high(t, s, 37, 13)
+    high(t, s, 133, 61)
 
-    s.toggle(26, 15, true)
+    s.toggle(122, 63, true)
     ticks(&s, 8)
-    s.toggle(26, 15, false)
+    s.toggle(122, 63, false)
     ticks(&s, 8)
-    high(t, s, 37, 13)
+    high(t, s, 133, 61)
 
-    s.toggle(29, 12, true)
+    s.toggle(125, 60, true)
     ticks(&s, 8)
-    s.toggle(29, 12, false)
+    s.toggle(125, 60, false)
     ticks(&s, 8)
-    low(t, s, 37, 13)
+    low(t, s, 133, 61)
 
-    s.toggle(29, 12, true)
+    s.toggle(125, 60, true)
     ticks(&s, 8)
-    s.toggle(29, 12, false)
+    s.toggle(125, 60, false)
     ticks(&s, 8)
-    low(t, s, 37, 13)
+    low(t, s, 133, 61)
 }
 
 /* J and K together leave the flip-flop set, from either state: from reset J sets it
@@ -352,36 +352,36 @@ pub jk_holds_a_bit(t: *test.T) {
  * since there is no clock to make J=K=1 toggle on every tick. */
 pub jk_both_inputs(t: *test.T) {
     s: sim.Sim = jk()
-    s.toggle(26, 15, true)
-    s.toggle(29, 12, true)
+    s.toggle(122, 63, true)
+    s.toggle(125, 60, true)
     ticks(&s, 12)
-    high(t, s, 37, 13)
-    s.toggle(26, 15, false)
-    s.toggle(29, 12, false)
+    high(t, s, 133, 61)
+    s.toggle(122, 63, false)
+    s.toggle(125, 60, false)
     ticks(&s, 12)
-    high(t, s, 37, 13)
+    high(t, s, 133, 61)
 }
 
 /* From set, J and K together end set too, after Q dips and returns. */
 pub jk_both_inputs_from_set(t: *test.T) {
     s: sim.Sim = jk()
-    s.toggle(26, 15, true)
+    s.toggle(122, 63, true)
     ticks(&s, 8)
-    s.toggle(26, 15, false)
+    s.toggle(122, 63, false)
     ticks(&s, 8)
-    high(t, s, 37, 13)
-    s.toggle(26, 15, true)
-    s.toggle(29, 12, true)
+    high(t, s, 133, 61)
+    s.toggle(122, 63, true)
+    s.toggle(125, 60, true)
     ticks(&s, 12)
-    high(t, s, 37, 13)
-    s.toggle(26, 15, false)
-    s.toggle(29, 12, false)
+    high(t, s, 133, 61)
+    s.toggle(122, 63, false)
+    s.toggle(125, 60, false)
     ticks(&s, 12)
-    high(t, s, 37, 13)
+    high(t, s, 133, 61)
 }
 
-/* Source (0,0), write pin (1,0), read pin (2,0), toggle (3,0), write pin
- * (4,0), read pin (5,0), LED (6,0). */
+/* Source (96,48), write pin (97,48), read pin (98,48), toggle (99,48), write pin
+ * (100,48), read pin (101,48), LED (102,48). */
 flipper(): sim.Sim {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [
@@ -700,7 +700,7 @@ pub clock_keeps_time_across_a_place(t: *test.T) {
     low(t, s, 3, 0)
 }
 
-/* The shipped ripple counter: its LEDs (row 13) count up by one every 32 ticks,
+/* The shipped ripple counter: its LEDs (row 61) count up by one every 32 ticks,
  * a full clock cycle, which leaves the carry time to settle. */
 pub counter_counts(t: *test.T) {
     data: []u8, err: Error = file.read("diagram/ripple-counter.bnbx")
@@ -712,7 +712,7 @@ pub counter_counts(t: *test.T) {
         ticks(&s, 32)
         v: int = 0
         for i: int in 0 .. 8 {
-            if s.level(19 + 4 * i, 13) == sim.Level.high { v += 1 << i }
+            if s.level(114 + 4 * i, 61) == sim.Level.high { v += 1 << i }
         }
         if k > 1 { t.equal(v, (last + 1) % 256) }
         last = v

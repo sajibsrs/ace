@@ -115,7 +115,7 @@ change: `(J and not Q) or (K and Q)`. That is the JK equation
 `Q+ = J·Q' + K'·Q`. J sets Q low to high, K sets it high to low, and a pulse
 that would change nothing (J while set, K while reset) does nothing. It has no
 clock: it reacts as soon as J or K changes. It sits at the board's center
-(columns 26-37, rows 12-18):
+(columns 122-133, rows 60-66):
 
 ```
 . . . S . . . . . . . .

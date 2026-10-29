@@ -121,20 +121,20 @@ pub jk_file(t: *test.T) {
     t.equal(ferr == null, true)
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
-    test.equal[sim.Level](t, s.level(26, 15), sim.Level.low)
-    test.equal[sim.Level](t, s.level(29, 12), sim.Level.low)
+    test.equal[sim.Level](t, s.level(122, 63), sim.Level.low)
+    test.equal[sim.Level](t, s.level(125, 60), sim.Level.low)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(37, 13), sim.Level.low)
-    s.toggle(26, 15, true)
+    test.equal[sim.Level](t, s.level(133, 61), sim.Level.low)
+    s.toggle(122, 63, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(26, 15, false)
+    s.toggle(122, 63, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(37, 13), sim.Level.high)
-    s.toggle(29, 12, true)
+    test.equal[sim.Level](t, s.level(133, 61), sim.Level.high)
+    s.toggle(125, 60, true)
     for i: int in 0 .. 8 { s.tick() }
-    s.toggle(29, 12, false)
+    s.toggle(125, 60, false)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(37, 13), sim.Level.low)
+    test.equal[sim.Level](t, s.level(133, 61), sim.Level.low)
 }
 
 /* A toggle's code is TOGGLE and it survives a round trip. */
@@ -148,8 +148,8 @@ pub toggle_round_trips(t: *test.T) {
     test.equal[grid.Block](t, s.g.get(4, 4), grid.Block.toggle)
 }
 
-/* The shipped toggle diagram is a toggle built from gates: the switch (29,13)
- * flips the LED (35,13) on each rising edge, and the LED holds otherwise. */
+/* The shipped toggle diagram is a toggle built from gates: the switch (124,62)
+ * flips the LED (130,62) on each rising edge, and the LED holds otherwise. */
 pub toggle_file(t: *test.T) {
     data: []u8, ferr: Error = file.read("diagram/toggle.bnbx")
     defer mem.release[u8](&data)
@@ -157,16 +157,16 @@ pub toggle_file(t: *test.T) {
     s: sim.Sim, err: Error = diagram.decode(data)
     t.equal(err == null, true)
     for i: int in 0 .. 8 { s.tick() }
-    test.equal[sim.Level](t, s.level(35, 13), sim.Level.low)
+    test.equal[sim.Level](t, s.level(130, 62), sim.Level.low)
     for n: int in 1 .. 6 {
-        s.toggle(29, 13, true)
+        s.toggle(124, 62, true)
         for i: int in 0 .. 8 { s.tick() }
         want: sim.Level = sim.Level.low
         if n % 2 == 1 { want = sim.Level.high }
-        test.equal[sim.Level](t, s.level(35, 13), want)
-        s.toggle(29, 13, false)
+        test.equal[sim.Level](t, s.level(130, 62), want)
+        s.toggle(124, 62, false)
         for i: int in 0 .. 8 { s.tick() }
-        test.equal[sim.Level](t, s.level(35, 13), want)
+        test.equal[sim.Level](t, s.level(130, 62), want)
     }
 }
 
