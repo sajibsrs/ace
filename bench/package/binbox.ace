@@ -1,0 +1,116 @@
+// binbox simulation benchmark: ticks per second of sim.Sim on real and dense boards.
+// Run with: ./bench/package/run-binbox.sh
+import file
+import fmt
+import mem
+import time
+import grid: "../../demo/binbox/grid.ace"
+import sim: "../../demo/binbox/sim.ace"
+import diagram: "../../demo/binbox/diagram.ace"
+
+REPS: const int = 7
+// Each rep runs about this many ns of ticks.
+TARGET: const u64 = 200000000
+
+put(g: *grid.Grid, x: int, y: int, b: grid.Block) { g.place(x, y, b) }
+
+// Every other row: a write pin under its K, then (read, NOT, write) triples, 21 NOTs a row, 336 in all,
+// driven directly pin to pin (adjacent rows would merge each column's NOTs into one tall gate).
+dense_not(): sim.Sim {
+    g: grid.Grid = grid.Grid {}
+    for row: int in 0 .. 16 {
+        y: int = row * 2
+        put(&g, 0, y + 1, grid.Block.clock)
+        put(&g, 0, y, grid.Block.write)
+        for i: int in 0 .. 21 {
+            put(&g, 1 + 3 * i, y, grid.Block.read)
+            put(&g, 2 + 3 * i, y, grid.Block.not)
+            put(&g, 3 + 3 * i, y, grid.Block.write)
+        }
+    }
+    return sim.Sim.init(g)
+}
+
+// Rows of K, a write pin, then (read, gate, write, wire) cells over OR, NOT, NOR, toggle: gates joined by wire nets.
+dense_mixed(): sim.Sim {
+    kinds: [4]grid.Block = [grid.Block.or, grid.Block.not, grid.Block.nor, grid.Block.toggle]
+    g: grid.Grid = grid.Grid {}
+    for y: int in 0 .. 32 {
+        put(&g, 0, y, grid.Block.clock)
+        put(&g, 1, y, grid.Block.write)
+        for i: int in 0 .. 15 {
+            put(&g, 2 + 4 * i, y, grid.Block.read)
+            put(&g, 3 + 4 * i, y, kinds[(i + y) % 4])
+            put(&g, 4 + 4 * i, y, grid.Block.write)
+            put(&g, 5 + 4 * i, y, grid.Block.wire)
+        }
+        put(&g, 62, y, grid.Block.wire)
+        put(&g, 63, y, grid.Block.wire)
+        g.span(0, y, y % 8)
+    }
+    return sim.Sim.init(g)
+}
+
+load(path: string): sim.Sim {
+    data: []u8, err: Error = file.read(path)
+    defer mem.release[u8](&data)
+    s: sim.Sim, derr: Error = diagram.decode(data)
+    if err != null || derr != null {
+        fmt.printf("cannot load %s\n", path)
+        return sim.Sim {}
+    }
+    return s
+}
+
+lit(s: *sim.Sim): int {
+    n: int = 0
+    for y: int in 0 .. 32 {
+        for x: int in 0 .. 64 {
+            if s.level(x, y) == sim.Level.high { n += 1 }
+        }
+    }
+    return n
+}
+
+run(name: string, s: *sim.Sim) {
+    // Calibrate, then size reps to TARGET.
+    t0: u64 = time.awake()
+    for i: int in 0 .. 2000 { s.tick() }
+    per: u64 = (time.awake() - t0) / 2000
+    if per == 0 { per = 1 }
+    n: int = int(TARGET / per)
+    rates: [7]u64 = [0 : 7]
+    for r: int in 0 .. REPS {
+        t: u64 = time.awake()
+        for i: int in 0 .. n { s.tick() }
+        rates[r] = (time.awake() - t) * 1000 / u64(n)
+    }
+    // Insertion sort; median is rates[3] in ps per tick.
+    for i: int in 1 .. REPS {
+        v: u64 = rates[i]
+        j: int = i
+        for j > 0 && rates[j - 1] > v {
+            rates[j] = rates[j - 1]
+            j -= 1
+        }
+        rates[j] = v
+    }
+    med: u64 = rates[3]
+    fmt.printf("%s %d %d %d %d\n", name, int(med), int(rates[0]), int(rates[6]), lit(s))
+}
+
+main(): int {
+    a: sim.Sim = load("demo/binbox/diagram/ripple-counter.bnbx")
+    run("ripple-counter", &a)
+    b: sim.Sim = load("demo/binbox/diagram/alu.bnbx")
+    run("alu", &b)
+    c: sim.Sim = load("demo/binbox/diagram/full-adder.bnbx")
+    run("full-adder", &c)
+    d: sim.Sim = load("demo/binbox/diagram/jk-flip-flop.bnbx")
+    run("jk-flip-flop", &d)
+    e: sim.Sim = dense_not()
+    run("dense-not", &e)
+    f: sim.Sim = dense_mixed()
+    run("dense-mixed", &f)
+    return 0
+}

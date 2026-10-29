@@ -14,7 +14,7 @@ reference where one exists.
 | `compiler/` | the compiler's own speed and output size | `run-compile.sh` |
 | `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh`, `run-raytrace.sh`, `run-tree.sh` |
 | `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh` |
-| `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh` |
+| `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh`, `run-binbox.sh` |
 
 ## First-run cost
 
