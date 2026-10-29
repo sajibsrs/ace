@@ -44,14 +44,14 @@ LOW: [grid.Block]u32 = [
     grid.Block.write = 0x804044,
     grid.Block.and = 0xc7a31c,
     grid.Block.or = 0x00b09c,
-    grid.Block.not = 0xd36060,
+    grid.Block.not = 0xbf4c4c,
     grid.Block.nand = 0xd8932b,
     grid.Block.nor = 0x7a77e6,
     grid.Block.xor = 0x947bd6,
     grid.Block.xnor = 0xb871be,
     grid.Block.led = 0x9ca4ae,
     grid.Block.bridge = 0x556373,
-    grid.Block.clock = 0xd2634d,
+    grid.Block.clock = 0x47b377,
     grid.Block.toggle = 0x82a641,
 ]
 
@@ -63,14 +63,14 @@ HIGH: [grid.Block]u32 = [
     grid.Block.write = 0xcc5159,
     grid.Block.and = 0xfbc402,
     grid.Block.or = 0x00d1b4,
-    grid.Block.not = 0xff4d4d,
+    grid.Block.not = 0xf23d3d,
     grid.Block.nand = 0xffad33,
     grid.Block.nor = 0xa6a3ff,
     grid.Block.xor = 0xc39eff,
     grid.Block.xnor = 0xeb86fb,
     grid.Block.led = 0xf3f4f6,
     grid.Block.bridge = 0x737f8c,
-    grid.Block.clock = 0xff5533,
+    grid.Block.clock = 0x40d57e,
     grid.Block.toggle = 0x83cc39,
 ]
 
@@ -208,9 +208,9 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     if hovers(g) {
         at: ui.Rect = g.view.box(g.hx, g.hy)
         if !g.snap { at = ui.Rect { x = g.mx - at.w / 2.0, y = g.my - at.h / 2.0, w = at.w, h = at.h } }
-        /* It floats over the board, half see-through, both its sides always
-         * showing. */
-        if g.depth { extrude(canvas, at, LOW[g.block], GHOST, true, true) }
+        /* It floats over the board, half see-through and half size, centered
+         * on the pointer or the snapped cell, with no sides. */
+        at = ui.Rect { x = at.x + at.w / 4.0, y = at.y + at.h / 4.0, w = at.w / 2.0, h = at.h / 2.0 }
         canvas.fill(at, shade(LOW[g.block], GHOST))
         if g.block != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[g.block], icon_box(at), shade(icon_ink(g.block, sim.Level.low), GHOST)) }
     }
