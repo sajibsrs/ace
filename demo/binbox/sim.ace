@@ -137,13 +137,31 @@ Sim.read(const self, x: int, y: int): Level {
     acc: Level = Level.low
     any: bool = false
     for d: int in 0 .. 4 {
-        t: int = self.term(x + DX[d], y + DY[d])
+        nx: int, ny: int = self.beside(x, y, d)
+        t: int = self.term(nx, ny)
         if t < 0 { continue }
         if any && acc != self.val[t] { return Level.error }
         acc = self.val[t]
         any = true
     }
     return acc
+}
+
+/* The cell beside (x, y) in direction `d`, or the wire past a run of bridges
+ * that starts there, so a block that connects to wire reaches it through
+ * them. */
+Sim.beside(const self, x: int, y: int, d: int): (int, int) {
+    nx: int = x + DX[d]
+    ny: int = y + DY[d]
+    if self.g.get(nx, ny) != grid.Block.bridge { return nx, ny }
+    bx: int = nx
+    by: int = ny
+    for self.g.get(bx, by) == grid.Block.bridge {
+        bx += DX[d]
+        by += DY[d]
+    }
+    if self.g.get(bx, by) == grid.Block.wire { return bx, by }
+    return nx, ny
 }
 
 /* The index of `val` that a pin or LED reads from (x, y), or -1 when the cell
@@ -263,7 +281,8 @@ Sim.compile_pin(self, x: int, y: int) {
     self.npins += 1
     nt: int = 0
     for d: int in 0 .. 4 {
-        t: int = self.term(x + DX[d], y + DY[d])
+        nx: int, ny: int = self.beside(x, y, d)
+        t: int = self.term(nx, ny)
         if t < 0 { continue }
         self.pin_t[p][nt] = i16(t)
         nt += 1
@@ -298,13 +317,12 @@ Sim.compile_output(self, x: int, y: int) {
     self.compile_driver(x, y)
 }
 
-/* Lists the source or write pin at (x, y) as a driver if it touches a wire. */
+/* Lists the source or write pin at (x, y) as a driver if it reaches a wire. */
 Sim.compile_driver(self, x: int, y: int) {
     ids: [4]int = [0 : 4]
     count: int = 0
     for d: int in 0 .. 4 {
-        nx: int = x + DX[d]
-        ny: int = y + DY[d]
+        nx: int, ny: int = self.beside(x, y, d)
         if self.g.get(nx, ny) != grid.Block.wire { continue }
         ids[count] = self.groups.of(nx, ny)
         count += 1

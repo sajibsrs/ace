@@ -488,6 +488,33 @@ pub bridge_crosses_signals(t: *test.T) {
     high(t, s, 2, 4)
 }
 
+/* A source, write pin, read pin, and LED each reach the wire past a bridge
+ * run; with no wire past it, touching a bridge does nothing. */
+pub bridge_reaches_wire(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    /* Source -> bridges -> wire -> LED. */
+    row(&g, 0, 0, [grid.Block.source, grid.Block.bridge, grid.Block.bridge, grid.Block.wire, grid.Block.led])
+    /* Source -> wire -> bridge -> read -> NOT -> write -> bridge -> wire, LED below. */
+    row(&g, 0, 2, [grid.Block.source, grid.Block.wire, grid.Block.bridge, grid.Block.read, grid.Block.not, grid.Block.write, grid.Block.bridge, grid.Block.wire])
+    g.place(7, 3, grid.Block.led)
+    /* Source -> wire -> bridge -> LED. */
+    row(&g, 0, 5, [grid.Block.source, grid.Block.wire, grid.Block.bridge, grid.Block.led])
+    /* Source -> bridge -> LED: no wire. */
+    row(&g, 0, 7, [grid.Block.source, grid.Block.bridge, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 0, true)
+    high(t, s, 4, 0)
+    s.tick()
+    high(t, s, 7, 3)
+    s.toggle(0, 2, true)
+    s.tick()
+    low(t, s, 7, 3)
+    s.toggle(0, 5, true)
+    high(t, s, 3, 5)
+    s.toggle(0, 7, true)
+    low(t, s, 2, 7)
+}
+
 /* A clock at (0, 0) feeding an LED at (1, 0), set to span 3 (8 ticks a half
  * cycle). */
 clocked(): sim.Sim {

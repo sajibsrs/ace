@@ -43,9 +43,11 @@ it can be started from any directory.
 - **Things connect by touching** (north, east, south, west, never diagonally).
   A source or write pin next to a read pin or LED drives it directly.
   Wire is only needed to cover distance.
-- **A bridge joins wire to wire only.** A run of bridges passes straight
-  through, so a wire can cross several buses at once. A source, pin, or gate
-  touching a bridge does nothing. It lights when either direction is high.
+- **A bridge passes wire straight through.** A run of bridges joins the wires
+  at its two ends, so a wire can cross several buses at once. A source, clock,
+  pin, or LED touching a bridge reaches the wire past it; with no wire there,
+  and for a gate, touching a bridge does nothing. It lights when either
+  direction is high.
 - **A gate connects only through its pins.** A wire or source touching a gate
   directly does nothing; it must reach a read pin.
 - **Touching cells of one gate type are one gate**, so a gate can be any
