@@ -41,13 +41,18 @@ it can be started from any directory.
 - **Blocks have no direction.** A block's role comes from its type and what
   it touches.
 - **Things connect by touching** (north, east, south, west, never diagonally).
-  A write pin next to a read pin drives it directly. Wire is only needed to
-  cover distance.
-- **Gates, sources, clocks and LEDs connect only through pins.** A write pin
-  carries out the value of the gates, sources and clocks it touches; a read pin
-  carries a value into the gates and LEDs it touches. Anything else touching
-  them does nothing, so they pack against wires and each other freely. An LED
-  with several read pins that disagree shows an error.
+  Touching cells of one kind are one block, however many cells it covers.
+- **Wire, read pins and write pins are one net.** Touching ones short
+  together, so a write pin drives every read pin and wire in its net. A read
+  pin carries the net into the gates and LEDs it touches; a write pin carries
+  the value of the gates, sources and clocks it touches onto the net. A run of
+  pins that touches no gate, LED, source or clock is only wire, which has its
+  own block, so it makes its net an error.
+- **Gates, sources, clocks and LEDs connect only through pins.** Anything else
+  touching them does nothing, so they pack against wires and each other
+  freely. Touching LEDs are one LED, lit by a read pin beside any of its cells
+  (an error when those pins disagree). Touching sources share one switch, and
+  touching clocks of one span are one clock.
 - **A bridge passes wire straight through.** A run of bridges joins the wires
   at its two ends, so a wire can cross several buses at once. A pin touching a
   bridge reaches the wire past it; with no wire there, touching a bridge does
@@ -194,7 +199,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | File | Contents |
 |------|----------|
 | `grid.ace` | The board: blocks and their placement. |
-| `group.ace` | Groups of touching cells: wire nets and multi-cell gates. |
+| `group.ace` | Groups of touching cells: nets and multi-cell blocks. |
 | `sim.ace` | Levels, drivers and contention, and the tick. |
 | `speed.ace` | The Speed slider's stops as tick rates, and their Hz/kHz/MHz text. |
 | `diagram.ace` | `.bnbx` encode and decode. |

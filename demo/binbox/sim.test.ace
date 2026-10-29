@@ -525,8 +525,9 @@ pub bridge_crosses_signals(t: *test.T) {
     high(t, s, 2, 5)
 }
 
-/* Read and write pins reach the wire past a bridge run; sources and LEDs, and
- * pins with no wire past it, do not. */
+/* Read and write pins reach the wire past a bridge run; sources and LEDs do
+ * not, and a pin with no wire past its bridge touches nothing, so it is an
+ * error. */
 pub bridge_reaches_wire(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     /* Source, write, bridges, wire, read, LED. */
@@ -554,7 +555,72 @@ pub bridge_reaches_wire(t: *test.T) {
     s.toggle(0, 8, true)
     low(t, s, 4, 8)
     s.toggle(0, 10, true)
-    low(t, s, 3, 10)
+    error(t, s, 3, 10)
+}
+
+/* Read pins side by side are one net: the pin touching the gate reads what the
+ * write pin beside the other drives, and a pin touching nothing but wire and
+ * pins is an error. Gate (1, 1) is fed back through (0, 0) and (1, 0). */
+pub adjacent_pins_short(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.read, grid.Block.read, grid.Block.led])
+    row(&g, 0, 1, [grid.Block.xor, grid.Block.write])
+    row(&g, 0, 2, [grid.Block.read])
+    row(&g, 0, 3, [grid.Block.write, grid.Block.source])
+    s: sim.Sim = sim.Sim.init(g)
+    low(t, s, 2, 0)
+    s.toggle(1, 3, true)
+    ticks(&s, 1)
+    high(t, s, 2, 0)
+    ticks(&s, 1)
+    low(t, s, 2, 0)
+    ticks(&s, 1)
+    high(t, s, 2, 0)
+}
+
+/* A run of pins touching no gate, LED, source, or clock is an error and
+ * poisons every wire in its net. */
+pub unused_pins_are_an_error(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.wire, grid.Block.read, grid.Block.write])
+    s: sim.Sim = sim.Sim.init(g)
+    error(t, s, 0, 0)
+    error(t, s, 1, 0)
+    error(t, s, 2, 0)
+}
+
+/* Touching LEDs are one LED, lit by a pin beside any of its cells. */
+pub led_run_lights_together(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.led, grid.Block.led, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 0, true)
+    for x: int in 3 .. 6 { high(t, s, x, 0) }
+}
+
+/* Touching sources share one switch: clicking either flips both. */
+pub source_run_shares_a_switch(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.source, grid.Block.source, grid.Block.write, grid.Block.read, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(1, 0, true)
+    high(t, s, 0, 0)
+    high(t, s, 4, 0)
+    s.place(0, 0, grid.Block.empty)
+    high(t, s, 1, 0)
+    high(t, s, 4, 0)
+}
+
+/* Write pins touching shorts their gates: unequal outputs are an error. */
+pub adjacent_writes_contend(t: *test.T) {
+    g: grid.Grid = grid.Grid {}
+    row(&g, 0, 0, [grid.Block.source, grid.Block.write, grid.Block.write, grid.Block.source])
+    row(&g, 1, 1, [grid.Block.read, grid.Block.led])
+    s: sim.Sim = sim.Sim.init(g)
+    s.toggle(0, 0, true)
+    error(t, s, 1, 1)
+    s.toggle(3, 0, true)
+    high(t, s, 1, 1)
 }
 
 /* A clock at (0, 0) feeding an LED at (3, 0) through pins, set to span 3 (8 ticks a half

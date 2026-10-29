@@ -47,3 +47,6 @@
   Auto ticks for what a frame has left after the last draw and a margin (the
   display's period, 60 Hz until known), and its Speed slider reaches 1 MHz; the
   footer shows the reached rate with three digits while Auto runs.
+- binbox groups every touching block of one kind: wire, read pins and write
+  pins form one net (a run of pins touching no device is an error), and touching
+  LEDs, sources and same-span clocks are one block (`group.Groups`, `Sim`).

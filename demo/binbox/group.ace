@@ -1,11 +1,12 @@
 /* group — connected groups of cells.
  *
- * Touching cells (north, east, south, west) of the same joining block form one
- * group: wire cells form a net, and cells of one gate type form one gate. A
- * signal travels over a whole net, and a gate acts as one block however many
- * cells it covers. A wire continues straight through a run of bridges to the
- * wire beyond, so a bridge carries two nets that never meet. Each source and
- * clock cell is a group of its own. Every other block has no group.
+ * Touching cells (north, east, south, west) of one kind form one group, so a
+ * signal travels over a whole net and a gate, LED, source, or clock acts as
+ * one block however many cells it covers. Wire, read pins, and write pins are
+ * one kind, the conductors, so a net runs through all three. Gates merge by
+ * type and clocks by span. A wire continues straight through a run of bridges
+ * to the wire beyond, so a bridge carries two nets that never meet. A bridge
+ * and an empty cell have no group.
  */
 
 import grid: "./grid.ace"
@@ -17,12 +18,22 @@ DY: [4]int = [-1, 0, 1, 0]
 
 /* Whether cells of `block` belong to a group. */
 pub joins(block: grid.Block): bool {
-    return merges(block) || grid.is_source(block)
+    return block != grid.Block.empty && block != grid.Block.bridge
 }
 
-/* Whether touching cells of `block` merge into one group. */
-merges(block: grid.Block): bool {
-    return block == grid.Block.wire || grid.is_gate(block)
+/* Whether `block` is wire, a read pin, or a write pin. */
+pub conducts(block: grid.Block): bool {
+    return block == grid.Block.wire || block == grid.Block.read || block == grid.Block.write
+}
+
+/* Whether the touching cells (ax, ay) and (bx, by) are one group. */
+same(g: grid.Grid, ax: int, ay: int, bx: int, by: int): bool {
+    a: grid.Block = g.get(ax, ay)
+    b: grid.Block = g.get(bx, by)
+    if conducts(a) && conducts(b) { return true }
+    if a != b { return false }
+    if a == grid.Block.clock { return g.span(ax, ay) == g.span(bx, by) }
+    return true
 }
 
 pub Groups: struct {
@@ -51,17 +62,24 @@ pub Groups.init(g: grid.Grid): Groups {
             groups.ids[y][x] = id
             stack[0] = y * grid.WIDTH + x
             top: int = 1
-            for top > 0 && merges(block) {
+            for top > 0 {
                 top -= 1
                 at: int = stack[top]
+                ax: int = at % grid.WIDTH
+                ay: int = at / grid.WIDTH
+                a: grid.Block = g.get(ax, ay)
                 for d: int in 0 .. 4 {
-                    nx: int = at % grid.WIDTH + DX[d]
-                    ny: int = at / grid.WIDTH + DY[d]
-                    for block == grid.Block.wire && g.get(nx, ny) == grid.Block.bridge {
+                    nx: int = ax + DX[d]
+                    ny: int = ay + DY[d]
+                    bridged: bool = false
+                    for conducts(a) && g.get(nx, ny) == grid.Block.bridge {
                         nx += DX[d]
                         ny += DY[d]
+                        bridged = true
                     }
-                    if !grid.inside(nx, ny) || g.get(nx, ny) != block { continue }
+                    if !grid.inside(nx, ny) || !same(g, ax, ay, nx, ny) { continue }
+                    /* A bridge joins only wire to wire, or a pin to wire. */
+                    if bridged && a != grid.Block.wire && g.get(nx, ny) != grid.Block.wire { continue }
                     if groups.ids[ny][nx] != NONE { continue }
                     groups.ids[ny][nx] = id
                     stack[top] = ny * grid.WIDTH + nx
