@@ -16,7 +16,7 @@ pub CELL: const f32 = 40.0
 ZOOM_MAX: const f32 = 2.0
 ZOOM_MIN: const f32 = 0.25
 /* The zoom at start. */
-ZOOM_START: const f32 = 0.5
+ZOOM_START: const f32 = 1.0
 ZOOM_STEP: const f32 = 0.125
 
 /* Window size, and the board view: a cell's side and the board's top-left

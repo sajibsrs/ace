@@ -58,9 +58,9 @@ LOW: [grid.Block]u32 = [
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
     grid.Block.source = 0x40d57e,
-    grid.Block.wire = 0x8595a6,
-    grid.Block.read = 0x5285cc,
-    grid.Block.write = 0xcc5159,
+    grid.Block.wire = 0x717e8c,
+    grid.Block.read = 0x4874b3,
+    grid.Block.write = 0xb3474e,
     grid.Block.and = 0xfbc402,
     grid.Block.or = 0x00d1b4,
     grid.Block.not = 0xf23d3d,
@@ -69,7 +69,7 @@ HIGH: [grid.Block]u32 = [
     grid.Block.xor = 0xc39eff,
     grid.Block.xnor = 0xeb86fb,
     grid.Block.led = 0xf3f4f6,
-    grid.Block.bridge = 0x737f8c,
+    grid.Block.bridge = 0x5e6873,
     grid.Block.clock = 0x40d57e,
     grid.Block.toggle = 0x83cc39,
 ]
@@ -98,6 +98,10 @@ icon_ink(b: grid.Block, level: sim.Level): u32 {
     if level == sim.Level.high { return mix(HIGH[b], 0x000000, SHADE) }
     return mix(LOW[b], 0x000000, SHADE)
 }
+
+/* Block icons show only above this zoom; at it and below, a block is its
+ * color alone. */
+ICON_ZOOM: const f32 = 0.5
 
 /* How far a block's sides reach down and to the left of its cell, and how
  * far toward black each is shaded; the top face stays on the grid. */
@@ -192,18 +196,21 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
         }
     }
     /* Icons next, then whatever follows the pointer, each over all before it. */
-    for y: int in 0 .. grid.HEIGHT {
-        for x: int in 0 .. grid.WIDTH {
-            b: grid.Block = g.s.g.get(x, y)
-            if b == grid.Block.empty || b == grid.Block.wire || !g.view.shows(x, y, a) { continue }
-            level: sim.Level = sim.Level.low
-            if g.phase == app.Phase.run { level = g.s.level(x, y) }
-            canvas.icon(r, bar.BLOCK_ICON[b], icon_box(g.view.box(x, y)), Color.hex(icon_ink(b, level)))
+    icons: bool = g.view.level() > ICON_ZOOM
+    if icons {
+        for y: int in 0 .. grid.HEIGHT {
+            for x: int in 0 .. grid.WIDTH {
+                b: grid.Block = g.s.g.get(x, y)
+                if b == grid.Block.empty || b == grid.Block.wire || !g.view.shows(x, y, a) { continue }
+                level: sim.Level = sim.Level.low
+                if g.phase == app.Phase.run { level = g.s.level(x, y) }
+                canvas.icon(r, bar.BLOCK_ICON[b], icon_box(g.view.box(x, y)), Color.hex(icon_ink(b, level)))
+            }
         }
     }
     if g.sel.drag == select.Drag.move || g.sel.held {
         draw_lifted(g, canvas, r, false)
-        draw_lifted(g, canvas, r, true)
+        if icons { draw_lifted(g, canvas, r, true) }
     }
     if hovers(g) {
         at: ui.Rect = g.view.box(g.hx, g.hy)
@@ -212,7 +219,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
          * on the pointer or the snapped cell, with no sides. */
         at = ui.Rect { x = at.x + at.w / 4.0, y = at.y + at.h / 4.0, w = at.w / 2.0, h = at.h / 2.0 }
         canvas.fill(at, shade(LOW[g.block], GHOST))
-        if g.block != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[g.block], icon_box(at), shade(icon_ink(g.block, sim.Level.low), GHOST)) }
+        if icons && g.block != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[g.block], icon_box(at), shade(icon_ink(g.block, sim.Level.low), GHOST)) }
     }
     /* The box being drawn, or the selection, carried along while it moves. */
     if g.sel.drag == select.Drag.box {
