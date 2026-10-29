@@ -8,6 +8,7 @@ import (
     Event, EventType, Keycode, MouseButton, MouseButtonEvent, MouseMotionEvent,
     MouseWheelEvent, KeyboardEvent, Cursor, SystemCursor, cursor,
 ) from sdl
+import sdl
 import ui: "./ui.ace"
 import bar: "./bar.ace"
 import grid: "./grid.ace"
@@ -269,7 +270,7 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
                 } else if g.pick == bar.Tool.select && g.phase == app.Phase.edit {
                     if self.held == MouseButton.left {
                         cx: int, cy: int = g.view.cell_at(b.x, b.y)
-                        g.sel.press(&g.s, &g.hist, cx, cy)
+                        g.sel.press(&g.s, &g.hist, cx, cy, (sdl.mod_state() & KMOD_GUI) != 0)
                     }
                     /* Carrying a selection shows the move cursor. */
                     if g.sel.drag == select.Drag.move { cursor(self.grab) }

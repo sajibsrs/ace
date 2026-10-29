@@ -41,8 +41,10 @@ pub Selection: struct {
      * press inside the selection carries them instead of lifting from the board. */
     pub held: bool = false,
     /* Whether the floating blocks came off the board, so removing them is an
-     * edit; a paste's never were on it. */
+     * edit; a paste's never were on it, nor are a clone's. */
     lifted: bool = false,
+    /* Whether the move in progress carries a copy and leaves the board as it is. */
+    cloning: bool = false,
     /* The clipboard: copied blocks, row by row over a `clipw` by `cliph` box,
      * and which sources were on; `clipw` is zero when nothing was copied. */
     clip: [32 * 64]grid.Block = [grid.Block.empty : 32 * 64],
@@ -89,6 +91,22 @@ Selection.lift_up(self, s: *sim.Sim) {
     *s = sim.Sim.init(g)
 }
 
+/* Copies the selected blocks into `lift` as `lift_up` does, leaving the board
+ * as it is, to be carried and dropped as a clone. */
+Selection.clone_up(self, s: *sim.Sim) {
+    g: grid.Grid = s.g
+    w: int = self.x1 - self.x0 + 1
+    for y: int in self.y0 .. self.y1 + 1 {
+        for x: int in self.x0 .. self.x1 + 1 {
+            i: int = (y - self.y0) * w + x - self.x0
+            b: grid.Block = g.get(x, y)
+            self.lift[i] = b
+            self.lifton[i] = b == grid.Block.source && s.level(x, y) == sim.Level.high
+            self.liftspan[i] = g.span(x, y)
+        }
+    }
+}
+
 /* Puts the lifted blocks down `dx`, `dy` cells over: they replace what is
  * there, and empty cells of the selection leave the board as it is. */
 Selection.drop(self, s: *sim.Sim, h: *history.History) {
@@ -119,6 +137,7 @@ Selection.drop(self, s: *sim.Sim, h: *history.History) {
     self.drag = Drag.none
     self.held = false
     self.lifted = false
+    self.cloning = false
 }
 
 /* Puts the floating blocks back where they were lifted from: the board before
@@ -205,9 +224,10 @@ pub Selection.paste(self, s: *sim.Sim, cx: int, cy: int) {
 }
 
 /* A left press on cell (cx, cy), or off the board when `cx` is negative:
- * inside the selection it picks the blocks up, elsewhere it starts a new
- * box. */
-pub Selection.press(self, s: *sim.Sim, h: *history.History, cx: int, cy: int) {
+ * inside the selection it picks the blocks up, or with `clone` a copy of them
+ * (floating blocks are put down first, and the copy is carried on), elsewhere
+ * it starts a new box. */
+pub Selection.press(self, s: *sim.Sim, h: *history.History, cx: int, cy: int, clone: bool) {
     if cx < 0 {
         self.deselect(s, h)
         return
@@ -217,12 +237,14 @@ pub Selection.press(self, s: *sim.Sim, h: *history.History, cx: int, cy: int) {
     self.bx = cx
     self.by = cy
     if self.has(cx, cy) {
+        if clone && self.held { self.drop(s, h) }
         self.drag = Drag.move
         self.dx = 0
         self.dy = 0
+        self.cloning = clone
         if !self.held {
             self.pre = history.Snap.of(*s)
-            self.lift_up(s)
+            if clone { self.clone_up(s) } else { self.lift_up(s) }
         }
     } else {
         self.deselect(s, h)
@@ -251,7 +273,7 @@ pub Selection.release(self, s: *sim.Sim, h: *history.History) {
         if !self.held && self.dx == 0 && self.dy == 0 {
             self.drop(s, h)
         } else {
-            if !self.held { self.lifted = true }
+            if !self.held { self.lifted = !self.cloning }
             self.x0 += self.dx
             self.x1 += self.dx
             self.y0 += self.dy

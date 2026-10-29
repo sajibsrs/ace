@@ -328,6 +328,7 @@ extern "c" {
     c_render_geometry(renderer: *SDL_Renderer, texture: *SDL_Texture, vertices: *Vertex, num_vertices: i32, indices: *i32, num_indices: i32): bool as "SDL_RenderGeometry"
     c_get_ticks(): u64 as "SDL_GetTicks"
     c_get_ticks_ns(): u64 as "SDL_GetTicksNS"
+    c_get_mod_state(): u16 as "SDL_GetModState"
     c_set_render_vsync(renderer: *SDL_Renderer, vsync: i32): bool as "SDL_SetRenderVSync"
     c_set_render_scale(renderer: *SDL_Renderer, x: f32, y: f32): bool as "SDL_SetRenderScale"
     c_render_debug_text(renderer: *SDL_Renderer, x: f32, y: f32, text: *u8): bool as "SDL_RenderDebugText"
@@ -355,6 +356,9 @@ pub ticks(): u64 { return c_get_ticks() }
 
 // Nanoseconds since SDL initialization.
 pub ticks_ns(): u64 { return c_get_ticks_ns() }
+
+// The modifier keys held now, as SDL_KMOD_* bits, the same as KeyboardEvent.mod.
+pub mod_state(): u16 { return c_get_mod_state() }
 
 // SDL returns NUL-terminated text; view it as a string without libc.
 pub error(): string {

@@ -87,7 +87,8 @@ renderer.geometry(triangle[..], corners[..])
 `Renderer.size(): (i32, i32, bool)` reports the current output size in render
 pixels, which follows window resizes. `sdl.ticks()` returns the milliseconds
 since `sdl.init`, for animation, and `sdl.ticks_ns()` the nanoseconds, for
-timing work.
+timing work. `sdl.mod_state()` returns the modifier keys held now, as the
+`SDL_KMOD_*` bits of `KeyboardEvent.mod`, for a mouse press that depends on one.
 
 ## Presentation and text
 
