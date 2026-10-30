@@ -45,7 +45,7 @@ run(output: sys.Fd, want: u32): u32 {
     atomic.store_relaxed(&done, u32(0))
     atomic.store_relaxed(&outcome, u32(0))
     atomic.store_relaxed(&hits, u32(0))
-    t: thread.Thread, err: Error = thread.create(reader, null)
+    t: thread.Thread, err: Error = thread.Thread.create(reader, null)
     if err != null { return 0 }
     for atomic.load_acquire(&done) == 0 && atomic.load_relaxed(&hits) < want {
         pause()
@@ -53,7 +53,7 @@ run(output: sys.Fd, want: u32): u32 {
     }
     byte: [1]u8 = [7]
     if atomic.load_acquire(&done) == 0 { sys.write(output, byte[0..1]) }
-    join_err: Error = thread.join(t)
+    join_err: Error = t.join()
     if join_err != null { return 0 }
     return atomic.load_relaxed(&outcome)
 }

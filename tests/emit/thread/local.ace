@@ -75,16 +75,16 @@ main(): int {
     hits = 1000
     seed = 1
     slots: [4]Slot = blank([4]Slot)
-    threads: [4]thread.Thread = [thread.Thread(0) : 4]
+    threads: [4]thread.Thread = [thread.Thread {} : 4]
     for i: int in 0 .. 4 {
         slots[i] = Slot { id = u64(i + 1), main_mark = &marks[i], result = 0 }
         argument: *u8 = *u8(&slots[i])
-        t: thread.Thread, err: Error = thread.create(work, argument)
+        t: thread.Thread, err: Error = thread.Thread.create(work, argument)
         if err != null { return 1 }
         threads[i] = t
     }
     for i: int in 0 .. 4 {
-        err: Error = thread.join(threads[i])
+        err: Error = threads[i].join()
         if err != null { return 2 }
         if slots[i].result != 1 { return 3 }
     }

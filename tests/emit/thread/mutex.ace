@@ -19,14 +19,14 @@ work(shared: *Shared) {
 main(): int {
     shared: Shared = blank(Shared)
     argument: *u8 = *u8(&shared)
-    threads: [4]thread.Thread = [thread.Thread(0) : 4]
+    threads: [4]thread.Thread = [thread.Thread {} : 4]
     for i: int in 0 .. 4 {
-        t: thread.Thread, err: Error = thread.create(work, argument)
+        t: thread.Thread, err: Error = thread.Thread.create(work, argument)
         if err != null { return 1 }
         threads[i] = t
     }
     for i: int in 0 .. 4 {
-        err: Error = thread.join(threads[i])
+        err: Error = threads[i].join()
         if err != null { return 2 }
     }
     if shared.count != 400000 { return 3 }

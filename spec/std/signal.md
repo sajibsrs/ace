@@ -35,7 +35,7 @@
       `raise(s): Error` sends `s` to the calling thread.
     - A process-directed signal goes to one thread that does not block it; a
       thread-directed one to that thread; blocked everywhere, it stays
-      pending. Masks are per thread and `thread.create` inherits the creator's,
+      pending. Masks are per thread and `Thread.create` inherits the creator's,
       so the idiom is to block in `main` before creating threads, then have
       one thread `wait`. `exec.spawn` starts a child with an empty mask (#24);
       ignored dispositions are inherited.

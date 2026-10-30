@@ -1,0 +1,23 @@
+/* A detached thread runs to the end of its entry with nobody joining it, and
+ * detaching no thread fails without calling the OS. */
+
+// expect-exit: 42
+
+import atomic
+import thread
+
+work(flag: *u32) {
+    atomic.store_release(flag, u32(1))
+}
+
+main(): int {
+    flag: u32 = 0
+    t: thread.Thread, err: Error = thread.Thread.create(work, *u8(&flag))
+    if err != null { return 1 }
+    if t.detach() != null { return 2 }
+    for atomic.load_acquire(&flag) == 0 {}
+
+    none: thread.Thread = thread.Thread {}
+    if none.detach() != thread.DetachErr.not_found { return 3 }
+    return 42
+}

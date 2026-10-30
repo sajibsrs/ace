@@ -24,26 +24,31 @@ square(job: *Job) {
 main(): int {
     job: Job = Job { input = 7, output = 0 }
     argument: *u8 = *u8(&job)
-    worker: thread.Thread, err: Error = thread.create(square, argument)
+    worker: thread.Thread, err: Error = thread.Thread.create(square, argument)
     if err != null { return 1 }
-    jerr: Error = thread.join(worker)
+    jerr: Error = worker.join()
     if jerr != null { return 2 }
     return int(job.output) // 49
 }
 ```
 
-- `Thread` is a joinable thread handle; `Thread(0)` names no thread.
-- `create(entry: extern "c" (*u8): void, argument: *u8):
+- `Thread` is a joinable thread handle; `Thread {}` names no thread.
+- `Thread.create(entry: extern "c" (*u8): void, argument: *u8):
   (Thread, Error)` starts a thread running `entry(argument)` with the
   platform's default attributes. `entry` is an ordinary named function over
   one pointer that returns nothing; the compiler converts it with no wrapper
   (Functions & ABI), so no `extern "c"` appears in user code. Darwin gives
   such a thread a 512 KiB stack, far less than the main thread's 8 MiB, so
   keep large arrays off its stack.
-  Failure returns `Thread(0)`.
-- `join(thread: Thread): Error` waits for the entry to return and releases
-  the thread. Join every created thread exactly once; joining a handle again is programmer error.
-  `Thread(0)` fails with `JoinErr.not_found`.
+  Failure returns `Thread {}`.
+- `Thread.join(self): Error` waits for the entry to return and releases
+  the thread. Join or detach every created thread exactly once; using a
+  handle again is programmer error. `Thread {}` fails with
+  `JoinErr.not_found`.
+- `Thread.detach(self): Error` gives up the handle, and the thread releases
+  itself when its entry returns. Nothing marks that moment, so what its
+  argument points to must outlive it, and process exit ends it without running
+  its deferred calls. `Thread {}` fails with `DetachErr.not_found`.
 
 A thread ends when its entry returns. Ending the process, by returning from
 `main` or calling `sys.exit`, ends every thread with it, and a `fail` or a
@@ -57,6 +62,11 @@ to order them.
 | `retry`      | temporary thread resource limit reached  |
 | `invalid`    | thread attributes are invalid            |
 | `permission` | thread scheduling not permitted          |
+
+| `DetachErr` | Meaning                |
+|-------------|------------------------|
+| `not_found` | no such thread         |
+| `invalid`   | thread is not joinable |
 
 | `JoinErr`   | Meaning                  |
 |-------------|--------------------------|
@@ -142,7 +152,7 @@ put(queue: *Queue) {
   without running their deferred calls, the same hazard as a `longjmp` across
   an Ace frame; returning from the entry already ends the thread. Zig's
   `std.Thread` and Rust's `std::thread` have no exit either.
-- `join` checks `Thread(0)` itself, as `sys.wait` rejects a zero process, so
+- `join` checks the zero `Thread` itself, as `sys.wait` rejects a zero process, so
   a handle from a failed `create` fails cleanly instead of reaching the OS.
 - `Mutex` is `os_unfair_lock`, as Zig's `std.Thread.Mutex` is on Darwin, and
   not `pthread_mutex_t`: the pthread types are 64 and 48 bytes with a nonzero

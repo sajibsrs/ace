@@ -6,24 +6,30 @@
     libSystem's pthread and platform libraries. libSystem serves OS services
     only, never a C convenience implementation, whatever sub-library hosts it
     (C Interop #4). The module allocates nothing.
-    - `Thread: distinct usize` is a joinable thread handle; its canonical zero
+    - `Thread: struct` is a joinable thread handle; its canonical zero
       names no thread.
-    - `create(entry: extern "c" (*u8): void, argument: *u8):
+    - `Thread.create(entry: extern "c" (*u8): void, argument: *u8):
       (Thread, Error)` starts a thread running `entry(argument)` with the
       platform's default attributes (on Darwin a 512 KiB stack). The entry is
       an ordinary named Ace function taking one pointer and returning nothing;
       it converts to the C function type with no wrapper (C Interop #5), and
       there is no captured context or Ace function-value form. The caller
       keeps what `argument` points to alive until the thread is joined.
-      Failure returns `Thread(0)` with `CreateErr` carrying the code
+      Failure returns `Thread {}` with `CreateErr` carrying the code
       `pthread_create` returns.
-    - `join(thread: Thread): Error` blocks until the thread's entry returns,
+    - `Thread.join(self): Error` blocks until the thread's entry returns,
       then releases the thread. The entry returns no result; threads pass
       results through the shared state `argument` points to, which join
       orders. Failure returns `JoinErr` carrying the code `pthread_join`
-      returns; `Thread(0)` fails with `JoinErr.not_found` without calling it.
-      Each created thread is joined exactly once; joining a handle again is
-      programmer error.
+      returns; `Thread {}` fails with `JoinErr.not_found` without calling it.
+      Each created thread is joined or detached exactly once; using a handle
+      again is programmer error.
+    - `Thread.detach(self): Error` gives up the handle; the thread releases
+      itself when its entry returns. What `argument` points to must stay valid
+      until then, and process exit ends the thread without running its
+      deferred calls. Failure returns `DetachErr` carrying the code
+      `pthread_detach` returns; `Thread {}` fails with `DetachErr.not_found`
+      without calling it.
     - A thread ends when its entry returns. There is no thread exit: it would
       skip the deferred calls of the frames it leaves (C Interop #7). Ending
       the process, by returning from `main` or `sys.exit`, ends every thread,

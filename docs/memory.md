@@ -170,8 +170,8 @@ An acquire-or-stronger read that reads the value written by a
 release-or-stronger write, or by a read-modify-write chained after it, orders
 everything before the write ahead of everything after the read. A release fence
 before a relaxed write and an acquire fence after a relaxed read do the same.
-`thread.create` orders everything before it ahead of the entry it starts, and
-an entry's return orders everything before it ahead of the `thread.join` that
+`Thread.create` orders everything before it ahead of the entry it starts, and
+an entry's return orders everything before it ahead of the `Thread.join` that
 returns its result, and a `Mutex.unlock` orders everything before it ahead of
 the next `Mutex.lock` of that mutex. Sequentially consistent operations also
 share one total order.
@@ -221,7 +221,7 @@ Each thread starts with its own copy at the declared initial value, zero or the
 constant initializer, never a copy of the creating thread's value. A use reads
 or writes the running thread's copy. `&hits` is an ordinary pointer to that copy;
 it may be handed to another thread, and the ordinary data-race rules apply. The
-copy ends when its thread's entry returns, before `thread.join` returns, so a
+copy ends when its thread's entry returns, before `Thread.join` returns, so a
 pointer to it dangles from then on. Nothing runs when a copy ends: a thread-local
 that owns memory is released by its thread, for example with a `defer` in the
 entry. The main thread's copies last until the process ends.

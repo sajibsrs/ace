@@ -253,9 +253,9 @@ square(job: *Job) {
 thread_example(): int {
     job: Job = Job { input = 7, output = 0 }
     argument: *u8 = *u8(&job)
-    worker: thread.Thread, err: Error = thread.create(square, argument)
+    worker: thread.Thread, err: Error = thread.Thread.create(square, argument)
     if err != null { return 1 }
-    jerr: Error = thread.join(worker)
+    jerr: Error = worker.join()
     if jerr != null { return 2 }
     return int(job.output) // 49
 }

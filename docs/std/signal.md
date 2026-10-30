@@ -95,7 +95,7 @@ in `main` first and let one thread `wait`:
 set: signal.Set = blank(signal.Set)
 set.add(signal.SIGTERM)
 set.add(signal.SIGINT)
-signal.block(set) // before any thread.create
+signal.block(set) // before any Thread.create
 // ... create workers, then in one thread:
 s: signal.Signal, err: Error = signal.wait(set)
 ```

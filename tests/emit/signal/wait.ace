@@ -27,10 +27,10 @@ main(): int {
     set.add(signal.SIGUSR2)
     signal.block(set)
 
-    t: thread.Thread, err: Error = thread.create(waiter, null)
+    t: thread.Thread, err: Error = thread.Thread.create(waiter, null)
     if err != null { return 1 }
     if signal.send(t, signal.SIGUSR1) != null { return 2 }
-    join_err: Error = thread.join(t)
+    join_err: Error = t.join()
     if join_err != null { return 3 }
     if atomic.load_relaxed(&inherited) != 1 { return 4 }
     if atomic.load_relaxed(&received) != u32(i32(signal.SIGUSR1)) { return 5 }

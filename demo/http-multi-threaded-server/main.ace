@@ -64,9 +64,9 @@ main(): int {
     }
 
     worker: Worker = Worker { listener = listener, router = &router }
-    threads: [WORKERS]thread.Thread = [thread.Thread(0) : WORKERS]
+    threads: [WORKERS]thread.Thread = [thread.Thread {} : WORKERS]
     for i: usize in 0 .. WORKERS {
-        t: thread.Thread, err: Error = thread.create(work, *u8(&worker))
+        t: thread.Thread, err: Error = thread.Thread.create(work, *u8(&worker))
         if err != null {
             fmt.printf("failed to start worker: error %d\n", int(err.code))
             sys.exit(1) // running workers still use the router and listener
@@ -76,7 +76,7 @@ main(): int {
     fmt.printf("listening on 127.0.0.1:8080 with %d workers (Ctrl+C to stop)\n", int(WORKERS))
 
     for i: usize in 0 .. WORKERS {
-        thread.join(threads[i])
+        threads[i].join()
     }
     return 0
 }

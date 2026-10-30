@@ -154,3 +154,6 @@
   issue; x64 atomics wait with the paused x64 work.
 - `thread.create` takes an ordinary named entry `(*T)` returning nothing, and
   `thread.join` returns only `Error`; `extern "c"` entries leave user code.
+- `Thread` is a one-word struct owning `Thread.create`, `join`, and the new
+  `detach` over `pthread_detach`, for threads nobody waits for; a thread is
+  joined or detached exactly once.

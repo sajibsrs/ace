@@ -34,7 +34,7 @@ pass(gate: *Gate) {
 main(): int {
     channel: Channel = blank(Channel)
     argument: *u8 = *u8(&channel)
-    producer: thread.Thread, err: Error = thread.create(produce, argument)
+    producer: thread.Thread, err: Error = thread.Thread.create(produce, argument)
     if err != null { return 1 }
     sum: u64 = 0
     for received: u64 in 0 .. COUNT {
@@ -45,15 +45,15 @@ main(): int {
         channel.changed.wake_one()
         channel.guard.unlock()
     }
-    jerr: Error = thread.join(producer)
+    jerr: Error = producer.join()
     if jerr != null { return 2 }
     if sum != COUNT * (COUNT + 1) / 2 { return 3 }
 
     gate: Gate = blank(Gate)
     gate_argument: *u8 = *u8(&gate)
-    threads: [3]thread.Thread = [thread.Thread(0) : 3]
+    threads: [3]thread.Thread = [thread.Thread {} : 3]
     for i: int in 0 .. 3 {
-        t: thread.Thread, cerr: Error = thread.create(pass, gate_argument)
+        t: thread.Thread, cerr: Error = thread.Thread.create(pass, gate_argument)
         if cerr != null { return 4 }
         threads[i] = t
     }
@@ -68,7 +68,7 @@ main(): int {
     gate.opened.wake_all()
     gate.guard.unlock()
     for i: int in 0 .. 3 {
-        perr: Error = thread.join(threads[i])
+        perr: Error = threads[i].join()
         if perr != null { return 5 }
     }
     return 42

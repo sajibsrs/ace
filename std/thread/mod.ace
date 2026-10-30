@@ -11,24 +11,7 @@ import os: "./os/darwin-arm64.ace"
 pub Thread: type = os.Thread
 pub CreateErr: type = os.CreateErr
 pub JoinErr: type = os.JoinErr
-
-/* Start a thread running `entry(argument)` with the platform's default
- * attributes. The entry is an ordinary named function whose parameter is a
- * pointer; it returns nothing and the thread ends when it returns. The
- * caller keeps what `argument` points to alive until the thread is joined.
- * Failure returns `Thread(0)`.
- */
-pub create(entry: extern "c" (*u8): void, argument: *u8): (Thread, Error) {
-    thread: Thread, err: Error = os.create(entry, argument)
-    return thread, err
-}
-
-/* Wait for `thread`'s entry to return and release the thread. Each created
- * thread is joined exactly once; `Thread(0)` fails with `JoinErr.not_found`.
- */
-pub join(thread: Thread): Error {
-    return os.join(thread)
-}
+pub DetachErr: type = os.DetachErr
 
 /* A mutual-exclusion lock; canonical zero is unlocked. The thread that locks
  * it unlocks it, and it is not recursive. It must not be copied while locked
