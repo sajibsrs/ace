@@ -1,7 +1,7 @@
 /* theme — the bar and panel colors. */
 
 /* Bar and panel colors. */
-pub CHROME: const u32 = 0x181b1f
+pub CHROME: const u32 = 0x22262b
 /* A panel's or widget's header, deeper than the panel under it. */
 pub DEEP: const u32 = 0x0f1215
 /* The board panel's background, and what shows between the panels. */

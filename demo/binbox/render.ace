@@ -265,11 +265,22 @@ hovers(g: *app.App): bool {
     return g.mode == app.Mode.none && g.phase == app.Phase.edit && g.pick == bar.Tool.pencil && g.hx >= 0
 }
 
+/* The width of the window-colored line that separates a bar from the board. */
+BORDER: const f32 = 2.0
+
 draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     foot: ui.Rect = g.view.foot()
-    canvas.fill(g.view.head(), Color.hex(theme.CHROME))
-    canvas.fill(foot, Color.hex(theme.CHROME))
-    canvas.fill(g.view.side(), Color.hex(theme.CHROME))
+    top: ui.Rect = g.view.head()
+    panel: ui.Rect = g.view.side()
+    /* Each bar fills out to the window's edge; the window color shows only as
+     * BORDER-wide lines under the header, above the footer, and left of the
+     * panel. */
+    chrome: Color = Color.hex(theme.CHROME)
+    reach: f32 = bar.GAP - BORDER
+    wide: f32 = top.w + 2.0 * bar.GAP
+    canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = wide, h = top.y + top.h + reach }, chrome)
+    canvas.fill(ui.Rect { x = 0.0, y = foot.y - reach, w = wide, h = foot.h + bar.GAP + reach }, chrome)
+    canvas.fill(ui.Rect { x = panel.x - reach, y = panel.y, w = panel.w + bar.GAP + reach, h = panel.h }, chrome)
     canvas.flush(r)
     run: bool = g.phase == app.Phase.run
     /* The group titles, dim, before the buttons they head. */
@@ -316,7 +327,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     unfolded: bool = !g.view.shut
     clocked: bool = g.block == grid.Block.clock
     /* The panel's header, the fold button in it, and each widget's header. */
-    canvas.fill(ui.Rect { x = side.x, y = side.y, w = side.w, h = bar.BAR }, Color.hex(theme.DEEP))
+    canvas.fill(ui.Rect { x = side.x - (bar.GAP - BORDER), y = side.y, w = side.w + bar.GAP + (bar.GAP - BORDER), h = bar.BAR }, Color.hex(theme.DEEP))
     fold: ui.Rect = bar.fold_at(side)
     if fold.has(g.mx, g.my) { canvas.fill(fold, Color.hex(theme.ACTIVE)) }
     fold_icon: icon.Id = icon.Id.panel_right
@@ -376,6 +387,7 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
                 if each == g.block { which += 2 }
                 ink = PANEL_BRIGHT[which]
             }
+            if each == g.block { canvas.fill(at, Color.hex(theme.ACTIVE)) }
             canvas.icon(r, bar.BLOCK_ICON[each], bar.block_icon_box(at, each), Color.hex(ink))
         }
     }
