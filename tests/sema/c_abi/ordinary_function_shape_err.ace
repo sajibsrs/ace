@@ -1,0 +1,30 @@
+/* An ordinary Ace function converts to an `extern "c"` function type only
+ * when its own shape is C-ABI compatible: a string parameter, a multi-value
+ * return, a function value in a variable or from a call, and a pointer that
+ * is not C's `void *` all stay errors. */
+
+shout(text: string) {}
+
+pair(): (i32, i32) {
+    return 1, 2
+}
+
+wrong(value: *i64) {}
+
+run(entry: extern "c" (*u8): void) {}
+pair_entry(entry: extern "c" (): i32) {}
+word_entry(entry: extern "c" (*i32): void) {}
+
+main(): int {
+    run(shout)
+    pair_entry(pair)
+    word_entry(wrong)
+    local: (*u8): void = null
+    run(local)
+    run(make())
+    return 0
+}
+
+make(): (*u8): void {
+    return null
+}

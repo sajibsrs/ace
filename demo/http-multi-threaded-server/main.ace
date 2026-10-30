@@ -1,0 +1,82 @@
+/* Multi-threaded HTTP/1.1 server proof of concept: one listener bound once,
+ * served by WORKERS threads that each run the blocking `serve` loop with
+ * their own `ServerContext`. The kernel hands every accepted connection to
+ * exactly one waiting thread, so connections are handled concurrently with
+ * no lock. The router is read-only after registration and shared by value.
+ *
+ * Build and run (from this directory):
+ *   ace pkg run
+ *
+ * Listens on 127.0.0.1:8080.
+ */
+
+import fmt
+import http
+import mem
+import net
+import net/tcp
+import sys
+import thread
+
+WORKERS: const usize = 4
+
+Worker: struct {
+    listener: tcp.Listener,
+    router: *http.Router,
+}
+
+handle(request: http.Request): http.Response {
+    if mem.equal(request.target, "/") {
+        return http.Response {
+            status = 200,
+            body = "Hello from Ace threads!\n",
+        }
+    }
+    return http.Response {
+        status = 404,
+        body = "not found\n",
+    }
+}
+
+work(worker: *Worker) {
+    context: http.ServerContext = http.ServerContext.new()
+    defer context.wipe()
+    http.serve(worker.listener, &context, *worker.router)
+}
+
+main(): int {
+    address: net.Addr4, parsed: bool = net.parse4("127.0.0.1:8080")
+    if !parsed { return 1 }
+
+    listener: tcp.Listener, listen_err: Error = tcp.listen(address, 512)
+    defer tcp.close(&listener)
+    if listen_err != null {
+        fmt.printf("failed to listen: error %d\n", int(listen_err.code))
+        return 1
+    }
+
+    router: http.Router = http.Router.new()
+    defer router.wipe()
+    route_err: Error = router.handle(http.GET, "/", handle)
+    if route_err != null {
+        fmt.printf("failed to register route: error %d\n", int(route_err.code))
+        return 1
+    }
+
+    worker: Worker = Worker { listener = listener, router = &router }
+    threads: [WORKERS]thread.Thread = [thread.Thread(0) : WORKERS]
+    for i: usize in 0 .. WORKERS {
+        t: thread.Thread, err: Error = thread.create(work, *u8(&worker))
+        if err != null {
+            fmt.printf("failed to start worker: error %d\n", int(err.code))
+            sys.exit(1) // running workers still use the router and listener
+        }
+        threads[i] = t
+    }
+    fmt.printf("listening on 127.0.0.1:8080 with %d workers (Ctrl+C to stop)\n", int(WORKERS))
+
+    for i: usize in 0 .. WORKERS {
+        thread.join(threads[i])
+    }
+    return 0
+}

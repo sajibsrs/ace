@@ -246,10 +246,8 @@ spawn_example(): int {
 
 Job: struct { input: u64, output: u64 }
 
-extern "c" square(argument: *u8): *u8 {
-    job: *Job = *Job(argument)
+square(job: *Job) {
     job.output = job.input * job.input
-    return argument
 }
 
 thread_example(): int {
@@ -257,7 +255,7 @@ thread_example(): int {
     argument: *u8 = *u8(&job)
     worker: thread.Thread, err: Error = thread.create(square, argument)
     if err != null { return 1 }
-    result: *u8, jerr: Error = thread.join(worker)
+    jerr: Error = thread.join(worker)
     if jerr != null { return 2 }
     return int(job.output) // 49
 }

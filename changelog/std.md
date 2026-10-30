@@ -152,3 +152,5 @@
   (#38); and `ldapr` for an acquire load (about 6% under contention on an M4,
   none uncontended). The untyped-literal overload question moved to its own
   issue; x64 atomics wait with the paused x64 work.
+- `thread.create` takes an ordinary named entry `(*T)` returning nothing, and
+  `thread.join` returns only `Error`; `extern "c"` entries leave user code.

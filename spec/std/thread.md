@@ -8,16 +8,19 @@
     (C Interop #4). The module allocates nothing.
     - `Thread: distinct usize` is a joinable thread handle; its canonical zero
       names no thread.
-    - `create(entry: extern "c" (*u8): *u8, argument: *u8):
+    - `create(entry: extern "c" (*u8): void, argument: *u8):
       (Thread, Error)` starts a thread running `entry(argument)` with the
       platform's default attributes (on Darwin a 512 KiB stack). The entry is
-      an `extern "c"` definition (C Interop #5) handed to the OS as is; there
-      is no wrapper, captured context, or Ace function-value form. Failure
-      returns `Thread(0)` with `CreateErr` carrying the code `pthread_create`
-      returns.
-    - `join(thread: Thread): (*u8, Error)` blocks until the thread's entry
-      returns, then releases the thread and returns the entry's result.
-      Failure returns `null` with `JoinErr` carrying the code `pthread_join`
+      an ordinary named Ace function taking one pointer and returning nothing;
+      it converts to the C function type with no wrapper (C Interop #5), and
+      there is no captured context or Ace function-value form. The caller
+      keeps what `argument` points to alive until the thread is joined.
+      Failure returns `Thread(0)` with `CreateErr` carrying the code
+      `pthread_create` returns.
+    - `join(thread: Thread): Error` blocks until the thread's entry returns,
+      then releases the thread. The entry returns no result; threads pass
+      results through the shared state `argument` points to, which join
+      orders. Failure returns `JoinErr` carrying the code `pthread_join`
       returns; `Thread(0)` fails with `JoinErr.not_found` without calling it.
       Each created thread is joined exactly once; joining a handle again is
       programmer error.

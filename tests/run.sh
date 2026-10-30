@@ -269,6 +269,11 @@ tests/sema/c_abi/const_global_err.ace|13:10: error: const 'limit' cannot give a 
 tests/sema/c_abi/function_pointer_err.ace|7:33: error: C function-pointer parameter type [2]u8 is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|7:40: error: C function-pointer return type string is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|8:29: error: C function-pointer parameter type *Fat is not C-ABI compatible
+tests/sema/c_abi/ordinary_function_shape_err.ace|19:9: error: type mismatch: (string): void given where extern "c" (*u8): void expected (casts are explicit)
+tests/sema/c_abi/ordinary_function_shape_err.ace|20:16: error: type mismatch: (): (i32, i32) given where extern "c" (): i32 expected (casts are explicit)
+tests/sema/c_abi/ordinary_function_shape_err.ace|21:16: error: type mismatch: (*i64): void given where extern "c" (*i32): void expected (casts are explicit)
+tests/sema/c_abi/ordinary_function_shape_err.ace|23:9: error: type mismatch: (*u8): void given where extern "c" (*u8): void expected (casts are explicit)
+tests/sema/c_abi/ordinary_function_shape_err.ace|24:13: error: type mismatch: (*u8): void given where extern "c" (*u8): void expected (casts are explicit)
 tests/sema/defaults/operators_err.ace|7:23: error: '&&' needs bool operands, got bool and integer literal
 tests/sema/defaults/operators_err.ace|8:20: error: '%' needs integer operands of one type, got integer literal and float literal
 tests/sema/defaults/operators_err.ace|9:19: error: cannot negate unsigned u8

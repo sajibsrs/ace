@@ -1,7 +1,6 @@
 /* Four threads, released at once by a gate, each add to one shared counter
- * and write a plain result into their own slot; join returns each entry's
- * result, and its synchronization makes the plain writes visible. A lost
- * update would leave the counter short. */
+ * and write a plain result into their own slot; join's synchronization makes
+ * the plain writes visible. A lost update would leave the counter short. */
 
 // expect-exit: 42
 
@@ -10,14 +9,12 @@ import thread
 
 Slot: struct { gate: *u32, counter: *u64, id: u64, done: u64 }
 
-extern "c" work(argument: *u8): *u8 {
-    slot: *Slot = *Slot(argument)
+work(slot: *Slot) {
     for atomic.load_acquire(slot.gate) == 0 {}
     for step: int in 0 .. 200000 {
         atomic.add_relaxed(slot.counter, u64(1))
     }
     slot.done = slot.id * 10
-    return argument
 }
 
 main(): int {
@@ -37,14 +34,13 @@ main(): int {
     }
     atomic.store_release(&gate, u32(1))
     for i: int in 0 .. 4 {
-        result: *u8, err: Error = thread.join(threads[i])
+        err: Error = thread.join(threads[i])
         if err != null { return 2 }
-        if usize(result) != usize(&slots[i]) { return 3 }
         if slots[i].done != u64(i + 1) * 10 { return 4 }
     }
     if atomic.load(&counter) != 800000 { return 5 }
 
-    none: *u8, err: Error = thread.join(thread.Thread(0))
-    if err != thread.JoinErr.not_found || none != null { return 6 }
+    missing: Error = thread.join(thread.Thread(0))
+    if missing != thread.JoinErr.not_found { return 6 }
     return 42
 }

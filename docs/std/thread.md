@@ -3,9 +3,9 @@
 [Standard library](index.md)
 
 `thread` starts and joins OS threads and provides the `Mutex` and
-`Condition` they share data under. A thread runs an `extern "c"` entry that
-takes and returns one pointer; creating a thread and joining it synchronize
-as described in [Memory](../memory.md#memory-model), so a value the creator
+`Condition` they share data under. A thread runs a named function that
+takes one pointer and returns nothing; creating a thread and joining it
+synchronize as described in [Memory](../memory.md#memory-model), so a value the creator
 writes before `create` is visible to the entry, and one the entry writes
 before returning is visible after `join`. Nothing allocates. On darwin-arm64
 the module calls libSystem's pthread library for threads and its platform
@@ -17,10 +17,8 @@ import thread
 
 Job: struct { input: u64, output: u64 }
 
-extern "c" square(argument: *u8): *u8 {
-    job: *Job = *Job(argument)
+square(job: *Job) {
     job.output = job.input * job.input
-    return argument
 }
 
 main(): int {
@@ -28,21 +26,23 @@ main(): int {
     argument: *u8 = *u8(&job)
     worker: thread.Thread, err: Error = thread.create(square, argument)
     if err != null { return 1 }
-    result: *u8, jerr: Error = thread.join(worker)
+    jerr: Error = thread.join(worker)
     if jerr != null { return 2 }
     return int(job.output) // 49
 }
 ```
 
 - `Thread` is a joinable thread handle; `Thread(0)` names no thread.
-- `create(entry: extern "c" (*u8): *u8, argument: *u8):
+- `create(entry: extern "c" (*u8): void, argument: *u8):
   (Thread, Error)` starts a thread running `entry(argument)` with the
-  platform's default attributes. Darwin gives such a thread a 512 KiB stack,
-  far less than the main thread's 8 MiB, so keep large arrays off its stack.
+  platform's default attributes. `entry` is an ordinary named function over
+  one pointer that returns nothing; the compiler converts it with no wrapper
+  (Functions & ABI), so no `extern "c"` appears in user code. Darwin gives
+  such a thread a 512 KiB stack, far less than the main thread's 8 MiB, so
+  keep large arrays off its stack.
   Failure returns `Thread(0)`.
-- `join(thread: Thread): (*u8, Error)` waits for the entry to return,
-  releases the thread, and returns the entry's result. Join every created
-  thread exactly once; joining a handle again is programmer error.
+- `join(thread: Thread): Error` waits for the entry to return and releases
+  the thread. Join every created thread exactly once; joining a handle again is programmer error.
   `Thread(0)` fails with `JoinErr.not_found`.
 
 A thread ends when its entry returns. Ending the process, by returning from
@@ -131,12 +131,13 @@ put(queue: *Queue) {
 
 ## Design rationale
 
-- The entry is an `extern "c"` definition handed to the OS unchanged, as C11
-  `thrd_create` and POSIX `pthread_create` take it. Accepting an ordinary Ace
-  function value instead, as Zig `std.Thread.spawn` and Odin `thread.create`
-  do, needs an internal wrapper and storage for the function and argument that
-  outlives `create`: either a hidden allocation or a lifetime rule on the
-  caller. That form can be added later without changing this one.
+- The entry is handed to the OS unchanged, as C11 `thrd_create` and POSIX
+  `pthread_create` take it. An ordinary Ace function with a C-compatible shape
+  already follows the platform C convention, so it converts to the C function
+  type with no wrapper, hidden allocation, or lifetime rule (the way Zig's
+  `std.Thread.spawn` hides the thunk). The caller keeps the argument alive until
+  `join`; results travel through that shared state, so the entry returns
+  nothing.
 - There is no thread exit. `pthread_exit` leaves the Ace frames above it
   without running their deferred calls, the same hazard as a `longjmp` across
   an Ace frame; returning from the entry already ends the thread. Zig's

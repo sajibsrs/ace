@@ -66,3 +66,6 @@
   undo stacks, and `Selection` keep their per-cell tables on the heap
   (`Sim.new`/`wipe`, `History.wipe`, `Selection.wipe`) since they no longer fit
   the stack; gate numbers are `i32`.
+- `http.serve(listener, context, router)` serves a caller-bound `tcp.Listener`
+  forever; `serve(endpoint, ...)` binds and calls it. Threads share one
+  listener with a `ServerContext` each (`demo/http-multi-threaded-server`).

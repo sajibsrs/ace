@@ -306,10 +306,23 @@ entry: extern "c" (*u8): *u8 = thread_entry
 empty: extern "c" (): void = null
 ```
 
+A named ordinary Ace function also converts to such a type, implicitly and
+with no wrapper, when its shape is C-ABI compatible: each parameter and the
+return match exactly, except that any data pointer parameter may meet a `*u8`
+(C's `void *`). An overloaded name converts when exactly one overload fits.
+A function value held in a variable or returned by a call, a generic function,
+and any other shape do not convert.
+
+```ace
+twice(box: *Box) { box.value = box.value * 2 }
+
+run(entry: extern "c" (*u8): void, argument: *u8) { entry(argument) }
+
+run(twice, *u8(&box))
+```
+
 Use `extern "c" (): R` for a zero-parameter function returning `R`, and
-`: void` for a function returning no value. Only an exact `extern "c"`
-definition or imported declaration can initialize a non-null value
-of this type; an ordinary Ace function has a distinct convention. Parameters
+`: void` for a function returning no value. Parameters
 and returns must be C-ABI-compatible. C function values are one word, may be
 `null`, and may be compared with `null`. They may also be fields of
 C-compatible structs and pointer targets, so C callback tables and

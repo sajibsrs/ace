@@ -27,10 +27,5 @@ extern "c" {
 extern "c" bad_generic[T](value: T) {
 }
 
-plain(value: *u8): *u8 {
-    return value
-}
-
 bad_callback_param: extern "c" (string): i32 = null
 bad_callback_return: extern "c" (): string = null
-wrong_convention: extern "c" (*u8): *u8 = plain

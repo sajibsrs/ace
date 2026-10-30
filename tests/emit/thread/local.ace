@@ -64,13 +64,11 @@ check(id: u64): u64 {
     return 1
 }
 
-extern "c" work(argument: *u8): *u8 {
-    slot: *Slot = *Slot(argument)
+work(slot: *Slot) {
     slot.result = check(slot.id)
     if seed != slot.id || pair.b != slot.id { slot.result = 0 }
     *slot.main_mark = slot.id * 10
     marks[slot.id - 1] = 99 // this thread's copy only
-    return argument
 }
 
 main(): int {
@@ -86,8 +84,8 @@ main(): int {
         threads[i] = t
     }
     for i: int in 0 .. 4 {
-        result: *u8, err: Error = thread.join(threads[i])
-        if err != null || usize(result) != usize(&slots[i]) { return 2 }
+        err: Error = thread.join(threads[i])
+        if err != null { return 2 }
         if slots[i].result != 1 { return 3 }
     }
     if hits != 1000 || seed != 1 || pair.a != 3 || ring[1] != 0 { return 4 }

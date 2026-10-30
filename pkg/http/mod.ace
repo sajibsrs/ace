@@ -1,5 +1,6 @@
 /* http — HTTP/1.1 framing and owning blocking clients. */
 
+import net/tcp
 import client: "./inc/client.ace"
 import message: "./inc/message.ace"
 import parsing: "./inc/parsing.ace"
@@ -55,4 +56,8 @@ pub get(value: string, context: *ClientContext): (Response, Error) {
 
 pub serve(endpoint: string, context: *ServerContext, router: Router): Error {
     return server.serve(endpoint, context, router)
+}
+
+pub serve(listener: tcp.Listener, context: *ServerContext, router: Router) {
+    server.serve(listener, context, router)
 }

@@ -13,13 +13,12 @@ import thread
 inherited: u32
 received: u32
 
-extern "c" waiter(argument: *u8): *u8 {
+waiter(argument: *u8) {
     set: signal.Set = blank(signal.Set)
     set.add(signal.SIGUSR1)
     if signal.mask().has(signal.SIGUSR1) { atomic.store_relaxed(&inherited, u32(1)) }
     s: signal.Signal, err: Error = signal.wait(set)
     if err == null { atomic.store_relaxed(&received, u32(i32(s))) }
-    return null
 }
 
 main(): int {
@@ -31,7 +30,7 @@ main(): int {
     t: thread.Thread, err: Error = thread.create(waiter, null)
     if err != null { return 1 }
     if signal.send(t, signal.SIGUSR1) != null { return 2 }
-    result: *u8, join_err: Error = thread.join(t)
+    join_err: Error = thread.join(t)
     if join_err != null { return 3 }
     if atomic.load_relaxed(&inherited) != 1 { return 4 }
     if atomic.load_relaxed(&received) != u32(i32(signal.SIGUSR1)) { return 5 }

@@ -62,7 +62,12 @@ Decision: one explicit `extern "c"` boundary in both directions; Ace internals s
    build diagnoses calling null and a release build assumes the callee is
    nonnull. An `extern "c"` definition or imported declaration with
    the exact signature is referenced by its bare name under an explicitly typed
-   destination; an ordinary Ace function never converts to this type. Calls use
+   destination. A named ordinary Ace function also converts, implicitly, when
+   each parameter and the return match exactly and satisfy the whitelist, or
+   the parameter is a data pointer taken as `*u8` (C's `void *`); an overloaded
+   name needs exactly one such overload. It already follows the platform
+   convention, so no wrapper exists. A function value that is not a name, a
+   generic function, and any other shape never convert. Calls use
    the platform C convention in both directions. C function values are
    plain bits (Memory, untyped storage) and are admitted wherever a data
    pointer is: parameters, returns, struct fields, and pointees. There is no address sigil,

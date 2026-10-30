@@ -18,7 +18,7 @@ pub JoinErr: error {
 }
 
 extern "c" {
-    c_create(thread: *Thread, attributes: *u8, entry: extern "c" (*u8): *u8, argument: *u8): i32 as "pthread_create"
+    c_create(thread: *Thread, attributes: *u8, entry: extern "c" (*u8): void, argument: *u8): i32 as "pthread_create"
     c_join(thread: Thread, result: **u8): i32 as "pthread_join"
     c_lock(lock: *u32) as "os_unfair_lock_lock"
     c_unlock(lock: *u32) as "os_unfair_lock_unlock"
@@ -30,7 +30,7 @@ extern "c" {
 /* pthread_create and pthread_join return their error code directly rather
  * than through errno.
  */
-pub create(entry: extern "c" (*u8): *u8, argument: *u8): (Thread, Error) {
+pub create(entry: extern "c" (*u8): void, argument: *u8): (Thread, Error) {
     thread: Thread = Thread(0)
     code: i32 = c_create(&thread, null, entry, argument)
     if code != 0 { return Thread(0), CreateErr(code) }
@@ -38,13 +38,12 @@ pub create(entry: extern "c" (*u8): *u8, argument: *u8): (Thread, Error) {
     return thread, null
 }
 
-pub join(thread: Thread): (*u8, Error) {
-    if thread == Thread(0) { return null, JoinErr.not_found }
-    result: *u8 = null
-    code: i32 = c_join(thread, &result)
-    if code != 0 { return null, JoinErr(code) }
+pub join(thread: Thread): Error {
+    if thread == Thread(0) { return JoinErr.not_found }
+    code: i32 = c_join(thread, null)
+    if code != 0 { return JoinErr(code) }
 
-    return result, null
+    return null
 }
 
 /* An `os_unfair_lock`, whose unlocked value is zero. Unlocking from another

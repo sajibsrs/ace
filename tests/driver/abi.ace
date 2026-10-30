@@ -61,6 +61,7 @@ extern "c" {
     ace_table: [3]i32 = [5 : 3]
     c_call_thread_entry(entry: extern "c" (*u8): *u8, argument: *u8): *u8
     c_get_thread_entry(): extern "c" (*u8): *u8
+    c_call_narrow(entry: extern "c" (i8, u16): i32): i32
 }
 
 extern "c" ace_thread_entry(argument: *u8): *u8 {
@@ -210,6 +211,10 @@ extern "c" triple(value: i32): i32 as "ace_linked_triple" {
 }
 
 extern "c" total: i32 as "ace_linked_total" = 4
+
+ordinary_narrow(signed: i8, wide: u16): i32 {
+    return i32(signed) + i32(wide)
+}
 
 main(): int {
     if c_scalars(-1, 2, 3, 4, 5, 6, 7, 8, 9) != 43 { return 1 }
@@ -367,5 +372,6 @@ main(): int {
        callback_pointer {
         return 51
     }
+    if c_call_narrow(ordinary_narrow) != 65534 { return 52 }
     return 0
 }

@@ -22,7 +22,7 @@ extern "c" on_signal(s: signal.Signal) {
     atomic.add_relaxed(&hits, u32(1))
 }
 
-extern "c" reader(argument: *u8): *u8 {
+reader(argument: *u8) {
     buffer: [1]u8 = [0]
     count: int, err: Error = sys.read(input, buffer[0..1])
     if err == sys.ReadErr.interrupted {
@@ -31,7 +31,6 @@ extern "c" reader(argument: *u8): *u8 {
         atomic.store_relaxed(&outcome, u32(2))
     }
     atomic.store_release(&done, u32(1))
-    return null
 }
 
 pause() {
@@ -54,7 +53,7 @@ run(output: sys.Fd, want: u32): u32 {
     }
     byte: [1]u8 = [7]
     if atomic.load_acquire(&done) == 0 { sys.write(output, byte[0..1]) }
-    result: *u8, join_err: Error = thread.join(t)
+    join_err: Error = thread.join(t)
     if join_err != null { return 0 }
     return atomic.load_relaxed(&outcome)
 }

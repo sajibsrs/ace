@@ -8,14 +8,12 @@ import thread
 
 Shared: struct { guard: thread.Mutex, count: u64 }
 
-extern "c" work(argument: *u8): *u8 {
-    shared: *Shared = *Shared(argument)
+work(shared: *Shared) {
     for step: int in 0 .. 100000 {
         shared.guard.lock()
         shared.count += 1
         shared.guard.unlock()
     }
-    return null
 }
 
 main(): int {
@@ -28,7 +26,7 @@ main(): int {
         threads[i] = t
     }
     for i: int in 0 .. 4 {
-        result: *u8, err: Error = thread.join(threads[i])
+        err: Error = thread.join(threads[i])
         if err != null { return 2 }
     }
     if shared.count != 400000 { return 3 }

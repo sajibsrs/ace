@@ -1646,6 +1646,25 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
     }
 }
 
+/* Whether ordinary function type `t` is callable as C function type `want`:
+   it already follows the platform convention, so no thunk is needed. */
+static int converts_to_c(SType* t, SType* want) {
+    if (want->kind != SK_FUNC || !want->is_c_abi || t->kind != SK_FUNC || t->is_c_abi ||
+        t->nparams != want->nparams)
+        return 0;
+    SType* stack[512];
+    if (!same_type(t->ret, want->ret) || !is_c_abi_type(t->ret, CABI_DIRECT, stack, 0)) return 0;
+    for (int i = 0; i < t->nparams; i++) {
+        SType *have = t->params[i], *need = want->params[i];
+        // a data pointer is one word whatever its pointee; C's `void *` is `*u8` here
+        if (have->kind == SK_PTR && need->kind == SK_PTR && need->base->kind == SK_PRIM &&
+            need->base->prim == P_U8)
+            continue;
+        if (!same_type(have, need) || !is_c_abi_type(have, CABI_DIRECT, stack, 0)) return 0;
+    }
+    return 1;
+}
+
 /*
  * A C global variable (C Interop #6): C's storage under an Ace name, typed at
  * struct-field position. It is a global that is never
@@ -2320,7 +2339,8 @@ static int coerce(Ck* k, Node* e, SType* want) {
         if (head && head->kind == SYM_FUNC && visible_count(head, e) > 1) {
             Sym* found = NULL;
             for (Sym* s = head; s; s = s->overload) {
-                if (ov_hidden(s, e) || s->is_generic || !same_type(s->type, want)) continue;
+                if (ov_hidden(s, e) || s->is_generic) continue;
+                if (!same_type(s->type, want) && !converts_to_c(s->type, want)) continue;
                 if (found) {
                     ck_err(k, e, "ambiguous overloaded function value '%.*s'",
                            (int)e->len, e->str);
@@ -2342,7 +2362,7 @@ static int coerce(Ck* k, Node* e, SType* want) {
                 return 0;
             }
             e->sym = found;
-            e->ty = found->type;
+            e->ty = converts_to_c(found->type, want) ? want : found->type;
             return 1;
         }
     }
@@ -2353,6 +2373,11 @@ static int coerce(Ck* k, Node* e, SType* want) {
     if (!t) t = T_VOID; // a call with no value
     if (same_type(t, want)) return 1;
     if (want->kind == SK_ERR || t->kind == SK_ERR) return 1;
+    if ((e->kind == N_IDENT || e->kind == N_FIELD_E) && e->sym && ((Sym*)e->sym)->kind == SYM_FUNC &&
+        !((Sym*)e->sym)->is_generic && converts_to_c(t, want)) {
+        e->ty = want;
+        return 1;
+    }
     if (t == T_UT_NULL) {
         if (accepts_null(want)) { e->ty = want; return 1; }
         ck_err(k, e, "null is not a value of %s", type_name(want));

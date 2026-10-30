@@ -13,8 +13,7 @@ Channel: struct { guard: thread.Mutex, changed: thread.Condition, full: bool, va
 
 Gate: struct { guard: thread.Mutex, opened: thread.Condition, open: bool, waiting: u64 }
 
-extern "c" produce(argument: *u8): *u8 {
-    channel: *Channel = *Channel(argument)
+produce(channel: *Channel) {
     for value: u64 in 1 .. COUNT + 1 {
         channel.guard.lock()
         for channel.full { channel.changed.wait(&channel.guard) }
@@ -23,16 +22,13 @@ extern "c" produce(argument: *u8): *u8 {
         channel.changed.wake_one()
         channel.guard.unlock()
     }
-    return null
 }
 
-extern "c" pass(argument: *u8): *u8 {
-    gate: *Gate = *Gate(argument)
+pass(gate: *Gate) {
     gate.guard.lock()
     gate.waiting += 1
     for !gate.open { gate.opened.wait(&gate.guard) }
     gate.guard.unlock()
-    return null
 }
 
 main(): int {
@@ -49,7 +45,7 @@ main(): int {
         channel.changed.wake_one()
         channel.guard.unlock()
     }
-    result: *u8, jerr: Error = thread.join(producer)
+    jerr: Error = thread.join(producer)
     if jerr != null { return 2 }
     if sum != COUNT * (COUNT + 1) / 2 { return 3 }
 
@@ -72,7 +68,7 @@ main(): int {
     gate.opened.wake_all()
     gate.guard.unlock()
     for i: int in 0 .. 3 {
-        done: *u8, perr: Error = thread.join(threads[i])
+        perr: Error = thread.join(threads[i])
         if perr != null { return 5 }
     }
     return 42

@@ -196,19 +196,26 @@ listen_endpoint(endpoint: string, backlog: usize): (tcp.Listener, Error) {
 }
 
 /* Blocking, single-connection-at-a-time HTTP/1.1 server: binds `endpoint`
- * with `context.backlog`, then loops forever accepting one connection,
- * reading exactly one request, dispatching it through `router`, writing the
- * response, and closing the connection — no poll queue, no session table.
- * `context` owns the buffers used across every connection, growing them via
- * `mem.grow` as requests demand; wipe it once the server is no longer
- * served. Returns only if the listener itself cannot be
- * created; a per-connection failure just drops that connection and the loop
- * continues.
+ * with `context.backlog`, then serves it as `serve(listener, context, router)`
+ * does. Returns only if the listener itself cannot be created.
  */
 pub serve(endpoint: string, context: *Context, router: Router): Error {
     listener: tcp.Listener, listen_err: Error = listen_endpoint(endpoint, context.backlog)
     defer tcp.close(&listener)
     if listen_err != null { return listen_err }
 
+    serve(listener, context, router)
+    return null
+}
+
+/* Serves an already bound `listener` forever: accepts one connection, reads
+ * exactly one request, dispatches it through `router`, writes the response,
+ * and closes the connection, with no poll queue and no session table.
+ * `context` owns the buffers used across every connection, growing them via
+ * `mem.grow`; a per-connection failure just drops that connection. The
+ * caller owns `listener`. Several threads may serve one listener, each with
+ * its own `context`: the kernel hands each connection to one `accept`.
+ */
+pub serve(listener: tcp.Listener, context: *Context, router: Router) {
     for { serve_one(listener, router, context) }
 }

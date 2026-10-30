@@ -167,6 +167,22 @@ with:
 
 Verify it with any HTTP client, for example `curl http://127.0.0.1:8080/`.
 
+## Multi-threaded HTTP server demo
+
+`serve(listener, context, router)` serves an already bound `tcp.Listener`
+forever, with the same per-connection behavior as `serve(endpoint, ...)`. The
+caller owns the listener. Several threads may serve one listener, each with its
+own `ServerContext` (the buffers are mutable and not shareable): the kernel
+hands every accepted connection to exactly one blocked `accept`.
+`demo/http-multi-threaded-server/main.ace` binds once, starts four `thread`
+workers over that listener, and joins them. One idle connection occupies one
+worker rather than the whole server. Handlers run concurrently, so they must be
+thread-safe; the router is read-only after registration and is shared.
+
+```sh
+cd demo/http-multi-threaded-server && ace pkg run  # listens on 127.0.0.1:8080
+```
+
 ## Known limitations and next improvements
 
 HTTPS/TLS,

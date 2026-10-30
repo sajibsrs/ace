@@ -1980,6 +1980,13 @@ Sema.coerce(self, e: u32, want: u32): bool {
     if t == 0 { t = self.expr_type(e) }
     if self.same_type(t, want) { return true }
     if wk == TypeKind.err || self.ty(t).kind == TypeKind.err { return true }
+    if n.kind == Kind.ident || n.kind == Kind.selector {
+        fs: u32 = self.node_sym(e)
+        if fs != 0 && self.sym(fs).kind == SymKind.func && !self.sym(fs).is_generic && self.converts_to_c(t, want) {
+            self.set_node_ty(e, want)
+            return true
+        }
+    }
     if t == self.t_ut_null {
         if self.accepts_null(want) {
             self.set_node_ty(e, want)
@@ -2040,7 +2047,8 @@ Sema.coerce_overloaded_value(self, e: u32, head: u32, want: u32): bool {
     name: string = self.node(e).text
     found: u32 = 0
     for s: u32 = head; s != 0; s = self.sym(s).overload {
-        if self.ov_hidden(s, e) || self.sym(s).is_generic || !self.same_type(self.sym(s).ty, want) { continue }
+        if self.ov_hidden(s, e) || self.sym(s).is_generic { continue }
+        if !self.same_type(self.sym(s).ty, want) && !self.converts_to_c(self.sym(s).ty, want) { continue }
         if found != 0 {
             self.err(e, ["ambiguous overloaded function value '", name, "'"])
             self.set_node_ty(e, self.t_err)
@@ -2063,7 +2071,7 @@ Sema.coerce_overloaded_value(self, e: u32, head: u32, want: u32): bool {
         return false
     }
     self.set_node_sym(e, found)
-    self.set_node_ty(e, self.sym(found).ty)
+    if self.converts_to_c(self.sym(found).ty, want) { self.set_node_ty(e, want) } else { self.set_node_ty(e, self.sym(found).ty) }
     return true
 }
 
@@ -5047,6 +5055,27 @@ CABI_DIRECT: const u8 = 0
 CABI_FIELD: const u8 = 1
 CABI_POINTEE: const u8 = 2
 CABI_POINTEE_FIELD: const u8 = 3
+
+/* Whether ordinary function type `id` is callable as C function type `want`:
+ * it already follows the platform convention, so no thunk is needed.
+ */
+Sema.converts_to_c(self, id: u32, want: u32): bool {
+    t: SType = self.ty(id)
+    w: SType = self.ty(want)
+    if w.kind != TypeKind.func || !w.is_c_abi || t.kind != TypeKind.func || t.is_c_abi || t.nparams != w.nparams { return false }
+    if !self.same_type(t.ret, w.ret) || !self.is_c_abi_type(t.ret, CABI_DIRECT, 0) { return false }
+    for i: u32 in 0..t.nparams {
+        have: u32 = self.params.get(usize(t.params + i))
+        need: u32 = self.params.get(usize(w.params + i))
+        // a data pointer is one word whatever its pointee; C's `void *` is `*u8` here
+        if self.ty(have).kind == TypeKind.ptr && self.ty(need).kind == TypeKind.ptr {
+            b: SType = self.ty(self.ty(need).base)
+            if b.kind == TypeKind.prim && b.prim == P_U8 { continue }
+        }
+        if !self.same_type(have, need) || !self.is_c_abi_type(have, CABI_DIRECT, 0) { return false }
+    }
+    return true
+}
 
 /* The C-ABI whitelist, positive and position-aware: arrays only nested in
  * aggregates or behind pointers. `cabi` holds the `depth` structs in

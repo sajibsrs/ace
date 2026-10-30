@@ -167,6 +167,8 @@ WrappedHfa c_wrapped_hfa(WrappedHfa value) {
     return value;
 }
 
+int32_t c_call_narrow(int32_t (*entry)(int8_t, uint16_t)) { return entry(-1, 65535); }
+
 void* c_thread_entry(void* argument) { return argument; }
 
 void* c_call_thread_entry(ThreadEntry entry, void* argument) {

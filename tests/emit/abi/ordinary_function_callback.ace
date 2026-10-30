@@ -1,0 +1,44 @@
+/* A named ordinary Ace function with a C-ABI shape converts to an `extern "c"`
+ * function type with no `extern "c"` of its own: a data pointer parameter is
+ * taken as `*u8`, and the call runs the function in debug and release. */
+
+// expect-exit: 42
+
+Box: struct { value: i32 }
+
+twice(box: *Box) {
+    box.value = box.value * 2
+}
+
+halve(box: *Box) {
+    box.value = box.value / 2
+}
+
+halve(value: *i64) {
+    *value = *value / 2
+}
+
+negate(value: i32): i32 {
+    return -value
+}
+
+only_box(entry: extern "c" (*Box): void, box: *Box) {
+    entry(box)
+}
+
+run(entry: extern "c" (*u8): void, argument: *u8) {
+    entry(argument)
+}
+
+apply(entry: extern "c" (i32): i32, value: i32): i32 {
+    return entry(value)
+}
+
+main(): int {
+    box: Box = Box { value = 21 }
+    run(twice, *u8(&box))
+    if apply(negate, 5) != -5 { return 1 }
+    only_box(halve, &box)
+    only_box(twice, &box)
+    return int(box.value)
+}

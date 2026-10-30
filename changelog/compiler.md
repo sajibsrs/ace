@@ -246,3 +246,6 @@
 - Selfhost sema auto-derefs a sequence (`p.len`, `for x in p`) and wraps a
   released `*[]T` in new `*`/placearg nodes relinked into the parent, as the
   compiler does; `wrap_node`, which moved a node to a new id, is gone (#158).
+- A named ordinary Ace function with a C-ABI shape converts implicitly to an
+  `extern "c"` function type; a data-pointer parameter may meet `*u8`. The
+  Ace convention already matches the platform's, so no thunk is emitted.
