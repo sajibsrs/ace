@@ -13,9 +13,9 @@ pub ACTIVE: const u32 = 0x3d4f63
 pub STRIPE: const u32 = 0x252a2f
 /* The Edit button, and the Simulate button: resting, then lit (current
  * phase or under the pointer). */
-pub EDIT: const u32 = 0xbe8226
-pub EDIT_LIT: const u32 = 0xcc8b29
-pub SIM: const u32 = 0x6e8c37
-pub SIM_LIT: const u32 = 0x639a2b
+pub EDIT: const u32 = 0xa84242
+pub EDIT_LIT: const u32 = 0xda4b4b
+pub SIM: const u32 = 0x3d9a66
+pub SIM_LIT: const u32 = 0x41bb77
 pub INK: const u32 = 0xdddddd
 pub DIM: const u32 = 0x888888

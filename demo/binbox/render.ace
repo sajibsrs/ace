@@ -40,38 +40,38 @@ LOW: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
     grid.Block.source = 0x47b377,
     grid.Block.wire = 0x667280,
-    grid.Block.read = 0x3f5a80,
-    grid.Block.write = 0x804044,
-    grid.Block.and = 0xc7a31c,
-    grid.Block.or = 0x00b09c,
-    grid.Block.not = 0xbf4c4c,
-    grid.Block.nand = 0xd8932b,
-    grid.Block.nor = 0x7a77e6,
-    grid.Block.xor = 0x947bd6,
-    grid.Block.xnor = 0xb871be,
+    grid.Block.read = 0x3d577b,
+    grid.Block.write = 0x7c4547,
+    grid.Block.and = 0xc7a730,
+    grid.Block.or = 0x12b09e,
+    grid.Block.not = 0xc14c4c,
+    grid.Block.nand = 0xd89c41,
+    grid.Block.nor = 0x7d7bc7,
+    grid.Block.xor = 0x8972c7,
+    grid.Block.xnor = 0xb36eb9,
     grid.Block.led = 0x9ca4ae,
-    grid.Block.bridge = 0x556373,
-    grid.Block.clock = 0x47b377,
+    grid.Block.bridge = 0x57637d,
+    grid.Block.clock = 0x50b37c,
     grid.Block.toggle = 0x82a641,
 ]
 
 HIGH: [grid.Block]u32 = [
     grid.Block.empty = 0x171b20,
-    grid.Block.source = 0x40d57e,
-    grid.Block.wire = 0x717e8c,
-    grid.Block.read = 0x4874b3,
-    grid.Block.write = 0xb3474e,
-    grid.Block.and = 0xfbc402,
-    grid.Block.or = 0x00d1b4,
-    grid.Block.not = 0xf23d3d,
-    grid.Block.nand = 0xffad33,
-    grid.Block.nor = 0xa6a3ff,
-    grid.Block.xor = 0xc39eff,
-    grid.Block.xnor = 0xeb86fb,
+    grid.Block.source = 0x4ad488,
+    grid.Block.wire = 0x7a8da4,
+    grid.Block.read = 0x4a70a7,
+    grid.Block.write = 0xa75358,
+    grid.Block.and = 0xeac22d,
+    grid.Block.or = 0x0bd0ba,
+    grid.Block.not = 0xf35454,
+    grid.Block.nand = 0xffb340,
+    grid.Block.nor = 0x9391ff,
+    grid.Block.xor = 0xa685fd,
+    grid.Block.xnor = 0xdd7ce5,
     grid.Block.led = 0xf3f4f6,
-    grid.Block.bridge = 0x5e6873,
-    grid.Block.clock = 0x40d57e,
-    grid.Block.toggle = 0x83cc39,
+    grid.Block.bridge = 0x6a7ca5,
+    grid.Block.clock = 0x54d48d,
+    grid.Block.toggle = 0x97c543,
 ]
 
 ERROR: const u32 = 0xb030b0
@@ -90,7 +90,7 @@ mix(from: u32, to: u32, percent: u32): u32 {
 
 /* How far an icon sits from its block's fill, toward black: the icon keeps
  * the block's own hue, so no icon stands out from the rest. */
-SHADE: const u32 = 35
+SHADE: const u32 = 25
 
 /* The color of block `b`'s icon while it shows `level`. */
 icon_ink(b: grid.Block, level: sim.Level): u32 {
