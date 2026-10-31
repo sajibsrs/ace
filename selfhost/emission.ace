@@ -195,11 +195,13 @@ pub object(s: *sema.Sema, debug: bool, root: string, out: string): (bool, string
         if e.unsupported.len > 0 { return false, e.unsupported }
     }
     arm64.runtime(&e.o)
-    if s.errors > errors || e.o.errors > 0 { return false, "" }
+    s.errors += e.o.errors
+    if s.errors > errors { return false, "" }
     dir: string = macho.cwd(&e.names)
     e.o.debug_info(root, dir)
     e.o.debug_line(dir)
     ok: bool = e.o.write(out)
+    s.errors += e.o.errors
     return ok, ""
 }
 

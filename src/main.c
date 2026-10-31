@@ -606,6 +606,7 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
         return 1;
     }
     if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
+        fprintf(stderr, "%s: %d error%s\n", root_package->root_file, d.errors, d.errors == 1 ? "" : "s");
         free(order);
         return 1;
     }
@@ -1272,7 +1273,7 @@ int main(int argc, char** argv) {
                     reject_output_collision(out_name, input, "linked output");
                 }
             }
-            if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) return 1;
+            if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) goto done;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;
             if (opt_link) {
                 ArgList cc = {0};

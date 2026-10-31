@@ -253,3 +253,6 @@
   unit's `Diag` and fails the build. The compiler sent it to a discarded `Diag`
   (printed, exit 0); selfhost checked quietly (dropped, exit 0). Sema keeps the
   unit's `Diag` in `g_diag` for stamping and type building.
+- An error raised during emission or lowering now ends with the closing
+  `path: N error(s)` line in both compilers, as a sema error does; selfhost
+  adds the object writer's errors to `s.errors` to count them.

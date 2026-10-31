@@ -988,6 +988,10 @@ if [ -d tests/emit_errors ]; then
             echo "FAIL: expected diagnostic '$want' from $f"
             cat /tmp/ace_test_errs
             fail=1
+        elif ! tail -1 /tmp/ace_test_errs | grep -qE '^[^ ]+: [0-9]+ errors?$'; then
+            echo "FAIL: no closing error count from $f"
+            cat /tmp/ace_test_errs
+            fail=1
         fi
     done
 fi

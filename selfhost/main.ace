@@ -260,6 +260,7 @@ finish(s: *sema.Sema, path: string, obj: string, debug: bool): int {
     if obj.len > 0 {
         ok: bool, why: string = emission.object(s, debug, path, obj)
         if why.len > 0 { fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", why) }
+        if s.errors > 0 { return summary(path, s.errors) }
         if !ok { return 1 }
         return 0
     }
