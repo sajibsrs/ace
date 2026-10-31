@@ -64,6 +64,11 @@ The readiness surface is:
   A failed update may leave partial kqueue state on Darwin (a Linux epoll
   update is atomic); call `watch` or `unwatch`
   again before relying on that registration.
+- `watch(q, fd, readable, writable, context: *u8): Error` does the same and
+  stores `context`, so an event finds its owner without a table. It is
+  implemented on Darwin. `poll` never dereferences it; the caller keeps it
+  valid while the descriptor is watched. Convert the owner with `*u8(pointer)`
+  and back with `*Owner(event.context)`.
 - `unwatch(q, fd): Error` removes an existing registration. Removing an
   unwatched descriptor is an error.
 - `wait(q, events: []Event, timeout_ns): (usize, Error)` writes a fully initialized
@@ -71,7 +76,9 @@ The readiness surface is:
   is an error. The OS layer uses bounded stack storage, allocates nothing, and
   may return fewer events than the supplied capacity.
 
-An `Event` contains `fd`, `readable`, `writable`, `error`, and `hangup`. At
+An `Event` contains `fd`, `context`, `readable`, `writable`, `error`, and
+`hangup`. A watch with non-null context reports that context and `fd` -1, since
+epoll's data word holds one value and the owner can hold its own descriptor. At
 most one returned event represents each fd; simultaneous conditions are
 combined. Readable may mean that a read will report EOF rather than positive
 bytes. Hangup may coexist with readable buffered data. Error supplies no

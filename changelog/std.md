@@ -157,3 +157,5 @@
 - `Thread` is a one-word struct owning `Thread.create`, `join`, and the new
   `detach` over `pthread_detach`, for threads nobody waits for; a thread is
   joined or detached exactly once.
+- `poll.watch` takes an optional `context` pointer on Darwin; `Event` reports it
+  with `fd` -1, because epoll's data word holds one value.

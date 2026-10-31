@@ -70,5 +70,5 @@
   forever; `serve(endpoint, ...)` binds and calls it. Threads share one
   listener with a `ServerContext` each (`demo/http-multi-threaded-server`).
 - `demo/http-multi-threaded-event-loop-server` runs one `poll` queue per thread
-  over non-blocking `net` sockets, with per-connection parse and write progress
-  in a table indexed by descriptor and a 10-second deadline from accept.
+  over non-blocking `net` sockets, with heap per-connection parse and write
+  progress found through `poll` context and a 10-second deadline from accept.

@@ -26,6 +26,14 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
     return os.watch(q, fd, readable, writable)
 }
 
+/* Like `watch`, and `wait` reports `context` in place of the descriptor: the
+ * event's `fd` is -1. The caller keeps `context` valid while `fd` is watched.
+ */
+@when(_PLATFORM_ == "darwin-arm64")
+pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool, context: *u8): Error {
+    return os.watch(q, fd, readable, writable, context)
+}
+
 pub unwatch(q: Queue, fd: sys.Fd): Error {
     return os.unwatch(q, fd)
 }

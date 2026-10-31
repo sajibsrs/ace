@@ -1,0 +1,54 @@
+/* poll reports a watch's context in place of its descriptor. */
+
+// expect-exit: 0
+
+import poll
+import sys
+
+Peer: struct {
+    name: string,
+    fd: sys.Fd,
+}
+
+extern "c" {
+    c_pipe(fds: *i32): i32 as "pipe"
+    c_write(fd: i32, data: *u8, count: usize): i64 as "write"
+}
+
+main(): int {
+    q: poll.Queue, err: Error = poll.queue()
+    if err != null { return 1 }
+
+    fds: [2]i32 = [0, 0]
+    if c_pipe(&fds[0]) != 0 { return 2 }
+
+    plain: [2]i32 = [0, 0]
+    if c_pipe(&plain[0]) != 0 { return 3 }
+
+    peer: Peer = Peer { name = "peer", fd = sys.Fd(fds[0]) }
+    if poll.watch(q, peer.fd, true, false, *u8(&peer)) != null { return 4 }
+    if poll.watch(q, sys.Fd(plain[0]), true, false) != null { return 5 }
+
+    byte: u8 = 1
+    if c_write(fds[1], &byte, 1) != 1 { return 6 }
+    if c_write(plain[1], &byte, 1) != 1 { return 7 }
+
+    storage: [4]poll.Event = [blank(poll.Event) : 4]
+    count: usize, wait_err: Error = poll.wait(q, storage[..], 1000000000)
+    if wait_err != null || count != 2 { return 8 }
+
+    seen: int = 0
+    for i: usize in 0 .. count {
+        if storage[i].context == null {
+            if storage[i].fd != sys.Fd(plain[0]) { return 9 }
+            seen += 1
+        } else {
+            found: *Peer = *Peer(storage[i].context)
+            if found != &peer || storage[i].fd != sys.Fd(-1) { return 10 }
+            seen += 2
+        }
+        if !storage[i].readable { return 11 }
+    }
+    if seen != 3 { return 12 }
+    return 0
+}

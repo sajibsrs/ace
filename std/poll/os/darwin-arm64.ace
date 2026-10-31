@@ -6,6 +6,7 @@ pub Queue: distinct sys.Fd
 
 pub Event: struct {
     pub fd: sys.Fd,
+    pub context: *u8 = null,
     pub readable: bool,
     pub writable: bool,
     pub error: bool,
@@ -77,14 +78,14 @@ extern "c" {
     ): i32 as "kevent"
 }
 
-kevent_change(fd: sys.Fd, filter: i16, flags: u16): DarwinKevent {
+kevent_change(fd: sys.Fd, filter: i16, flags: u16, context: *u8): DarwinKevent {
     return DarwinKevent {
         ident = usize(i32(fd)),
         filter = filter,
         flags = flags,
         fflags = u32(0),
         data = i64(0),
-        udata = null,
+        udata = context,
     }
 }
 
@@ -96,6 +97,10 @@ pub queue(): (Queue, Error) {
 }
 
 pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
+    return watch(q, fd, readable, writable, null)
+}
+
+pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool, context: *u8): Error {
     if !readable && !writable {
         sys.errno(EINVAL)
         return WatchErr.invalid
@@ -107,12 +112,12 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
 
     if writable { write_flags = EV_ADD | EV_ENABLE }
 
-    if change_filter(q, fd, EVFILT_READ, read_flags) == -1 &&
+    if change_filter(q, fd, EVFILT_READ, read_flags, context) == -1 &&
        !(read_flags == EV_DELETE && sys.errno() == ENOENT) {
         return WatchErr(sys.errno())
     }
 
-    if change_filter(q, fd, EVFILT_WRITE, write_flags) == -1 &&
+    if change_filter(q, fd, EVFILT_WRITE, write_flags, context) == -1 &&
        !(write_flags == EV_DELETE && sys.errno() == ENOENT) {
         return WatchErr(sys.errno())
     }
@@ -121,14 +126,14 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
 
 pub unwatch(q: Queue, fd: sys.Fd): Error {
     removed: bool = false
-    result: i32 = change_filter(q, fd, EVFILT_READ, EV_DELETE)
+    result: i32 = change_filter(q, fd, EVFILT_READ, EV_DELETE, null)
     if result == 0 {
         removed = true
     } else if sys.errno() != ENOENT {
         return UnwatchErr.not_found
     }
 
-    result = change_filter(q, fd, EVFILT_WRITE, EV_DELETE)
+    result = change_filter(q, fd, EVFILT_WRITE, EV_DELETE, null)
     if result == 0 {
         removed = true
     } else if sys.errno() != ENOENT {
@@ -142,8 +147,8 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     return null
 }
 
-change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16): i32 {
-    change: DarwinKevent = kevent_change(fd, filter, flags)
+change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16, context: *u8): i32 {
+    change: DarwinKevent = kevent_change(fd, filter, flags, context)
     return c_kevent(i32(sys.Fd(q)), &change, 1, null, 0, null)
 }
 
@@ -184,6 +189,7 @@ pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
         if slot == written {
             events[slot] = Event {
                 fd = fd,
+                context = raw[index].udata,
                 readable = false,
                 writable = false,
                 error = false,
@@ -199,6 +205,10 @@ pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
         if (raw[index].flags & EV_ERROR) != 0 { events[slot].error = true }
 
         if (raw[index].flags & EV_EOF) != 0 { events[slot].hangup = true }
+    }
+
+    for index: usize in 0 .. written {
+        if events[index].context != null { events[index].fd = sys.Fd(-1) }
     }
     return written, null
 }
