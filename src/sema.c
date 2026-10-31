@@ -2204,7 +2204,9 @@ static int ut_fits_value(Ck* k, Node* e, SType* want) {
     else {
         (void)ut_const(e, &v);
         if (want->kind == SK_ENUM) want = want->base ? want->base : st_prim(P_I32);
-        ck_err(k, e, "integer literal %lld out of range for %s", (long long)v, type_name(want));
+        // a literal is a magnitude, which ut_const's i64 wraps past INT64_MAX
+        if (e->kind == N_INT) ck_err(k, e, "integer literal %llu out of range for %s", (unsigned long long)e->ival, type_name(want));
+        else ck_err(k, e, "integer literal %lld out of range for %s", (long long)v, type_name(want));
     }
     return 0;
 }

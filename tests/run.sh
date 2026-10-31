@@ -490,6 +490,12 @@ tests/sema/constants/char_format_err.ace|1 error
 tests/sema/constants/char_unsigned_format_err.ace|1 error
 tests/sema/constants/format_range_err.ace|3 errors
 FORMAT_ERROR_COUNTS
+# a literal past INT64_MAX prints as written, not wrapped through i64
+if ! "$ACE" tests/sema/constants/format_range_err.ace 2>&1 | grep -qF \
+    "7:24: error: integer literal 9223372036854775808 out of range for int"; then
+    echo "FAIL: format_range_err.ace should print the literal's own value"
+    fail=1
+fi
 
 array_overload_errors=$("$ACE" tests/sema/overloads/array_literal_err.ace 2>&1)
 for want in \

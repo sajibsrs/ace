@@ -250,5 +250,7 @@
   one must survive (`select_signature`, C and selfhost). No rank list:
   `bits.clz(1)` stays an error, `bits.wrmul(rem, 2)` compiles. Character
   constants are `u8` in every position (`ut_fits`); casts use `ut_fits_value`.
+- An out-of-range literal past `INT64_MAX` prints its own value rather than
+  one wrapped through `i64` (`ut_fits_value`, C and selfhost).
 - `*U(pointer)` reinterprets any data pointer, not only plain-bits pointees;
   forging a compiler-created value through one is undefined.

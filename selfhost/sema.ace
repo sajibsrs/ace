@@ -883,6 +883,13 @@ Sema.num64(self, v: i64): string {
     return self.pool.join([buf.text()])
 }
 
+Sema.num64(self, v: u64): string {
+    digits: [24]u8 = blank([24]u8)
+    buf: fmt.Buffer = fmt.Buffer.init(digits[..])
+    buf.printf("%u", v)
+    return self.pool.join([buf.text()])
+}
+
 /* A type as diagnostics and dumps spell it, as C's type_name does. */
 Sema.type_name(self, id: u32): string {
     if id == 0 { return "?" }
@@ -1935,7 +1942,13 @@ Sema.ut_fits_value(self, e: u32, want: u32): bool {
         fit = self.ty(want).base
         if fit == 0 { fit = self.prim(P_I32) }
     }
-    self.err(e, ["integer literal ", self.num64(v), " out of range for ", self.type_name(fit)])
+    // a literal is a magnitude, which ut_const's i64 wraps past its maximum
+    n: Node = self.node(e)
+    if n.kind == Kind.int_lit {
+        self.err(e, ["integer literal ", self.num64(n.ival), " out of range for ", self.type_name(fit)])
+    } else {
+        self.err(e, ["integer literal ", self.num64(v), " out of range for ", self.type_name(fit)])
+    }
     return false
 }
 
