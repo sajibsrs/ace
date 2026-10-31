@@ -32,7 +32,7 @@ gen[T](v: T): T {
     return v
 }
 
-grid(v: [2]i64): i64 {
+grid(v: [2]int): i64 {
     return 0
 }
 

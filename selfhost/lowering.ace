@@ -2173,7 +2173,7 @@ Lw.fn_call_mangle(self, s: u32, call: u32): string {
     return self.fn_mangle(s, cft, targs, nt, sy.spec_args != 0)
 }
 
-PRIM_NAMES: [14]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid"]
+PRIM_NAMES: [16]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid", "int", "uint"]
 
 /* Whether call `x` builds a contract value: `Shape(&value)` (Carved #5). */
 Lw.contract_ctor(self, x: u32): bool {

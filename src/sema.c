@@ -27,7 +27,7 @@
 static SType *T_ERR, *T_VOID, *T_UT_INT, *T_UT_FLOAT, *T_UT_NULL;
 static SType *T_ERROR;
 static SType* T_BYTE_SLICE;
-static SType* PRIMS[14];
+static SType* PRIMS[16];
 static uint32_t next_type_id = 1;
 
 static SType* st_new(uint8_t kind) {
@@ -40,7 +40,7 @@ static SType* st_new(uint8_t kind) {
 static SType* st_prim(int p) { return PRIMS[p]; }
 
 static int is_int(SType* t) {
-    return t->kind == SK_PRIM && ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
+    return t->kind == SK_PRIM && ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE || t->prim >= P_INT);
 }
 static int is_float(SType* t) {
     return t->kind == SK_PRIM && (t->prim == P_F32 || t->prim == P_F64);
@@ -70,7 +70,7 @@ static int is_volatile_scalar(SType* t) {
     if (t->kind == SK_PTR) return 1;
     if (t->kind == SK_ENUM) return t->decl && t->decl->a;
     if (t->kind != SK_PRIM) return 0;
-    return (t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_F32 || t->prim == P_F64 || t->prim == P_USIZE;
+    return (t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_F32 || t->prim == P_F64 || t->prim == P_USIZE || t->prim >= P_INT;
 }
 
 static const char* type_name(SType* t);
@@ -105,6 +105,7 @@ static const char* type_name(SType* t) {
         case P_STRING: return "string";
         case P_USIZE: return "usize";
         case P_TYPEID: return "typeid";
+        case P_INT: return "int"; case P_UINT: return "uint";
         }
         return "?";
     case SK_PTR: {
@@ -190,6 +191,7 @@ static int layout(SType* t) {
         case P_I16: case P_U16: t->size = 2; break;
         case P_I32: case P_U32: case P_F32: t->size = 4; break;
         case P_I64: case P_U64: case P_F64: case P_USIZE: case P_TYPEID:
+        case P_INT: case P_UINT: // platform words on arm64
             t->size = 8; break;
         case P_STRING: t->size = 16; break;
         default: t->size = 1; break;
@@ -970,11 +972,11 @@ static int ut_const(Node* e, int64_t* out) {
             case P_I8: *out = (int8_t)v; return 1;
             case P_I16: *out = (int16_t)v; return 1;
             case P_I32: *out = (int32_t)v; return 1;
-            case P_I64: *out = v; return 1;
+            case P_I64: case P_INT: *out = v; return 1;
             case P_U8: *out = (uint8_t)v; return 1;
             case P_U16: *out = (uint16_t)v; return 1;
             case P_U32: *out = (uint32_t)v; return 1;
-            case P_U64: case P_USIZE: // a value at or above 2^63 has no int64 constant
+            case P_U64: case P_USIZE: case P_UINT: // a value at or above 2^63 has no int64 constant
                 if (v < 0) return 0;
                 *out = v;
                 return 1;
@@ -1200,7 +1202,7 @@ static int staticmap_key_type(SType* t) {
     if (t->kind == SK_ENUM) return 1;
     if (t->kind != SK_PRIM) return 0;
     return t->prim == P_BOOL ||
-           (t->prim >= P_I8 && t->prim <= P_U64) ||
+           (t->prim >= P_I8 && t->prim <= P_U64) || t->prim >= P_INT ||
            t->prim == P_STRING || t->prim == P_USIZE || t->prim == P_TYPEID;
 }
 
@@ -1279,7 +1281,7 @@ static SType* prim_by_name(const char* s, uint32_t len) {
         {"u64", P_U64}, {"f32", P_F32}, {"f64", P_F64}, {"float", P_F64},
         {"string", P_STRING},
         {"usize", P_USIZE}, {"typeid", P_TYPEID},
-        {"int", P_I64}, {"uint", P_U64}, // platform word on arm64
+        {"int", P_INT}, {"uint", P_UINT},
         {"char", P_U8}, // transparent alias: shared identity with u8 (Stdlib #15)
     };
     for (size_t i = 0; i < sizeof M / sizeof M[0]; i++)
@@ -1611,7 +1613,7 @@ static int is_c_abi_type(SType* t, int pos, SType** stack, int nstack) {
         switch (t->prim) {
         case P_I8: case P_I16: case P_I32: case P_I64:
         case P_U8: case P_U16: case P_U32: case P_U64:
-        case P_F32: case P_F64: case P_USIZE: case P_BOOL:
+        case P_F32: case P_F64: case P_USIZE: case P_BOOL: case P_INT: case P_UINT:
             return 1;
         default:
             return 0; // string, typeid
@@ -2010,7 +2012,7 @@ static int atomic_signature(SType* ft, int kind, int order) {
     if (kind == AK_FENCE) return ft->nparams == 0 && !r;
     SType* p = ft->nparams ? ft->params[0] : NULL;
     if (!p || p->kind != SK_PTR || !p->base || p->base->kind != SK_PRIM ||
-        (p->base->prim != P_U32 && p->base->prim != P_U64 && p->base->prim != P_USIZE))
+        (p->base->prim != P_U32 && p->base->prim != P_U64 && p->base->prim != P_USIZE && p->base->prim != P_UINT))
         return 0;
     int word = p->base->prim;
     int nparams = kind == AK_LOAD ? 1 : kind == AK_CAS ? 3 : 2;
@@ -2043,7 +2045,7 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             (ip->prim == P_U8 || ip->prim == P_U16 ||
              ip->prim == P_U32 || ip->prim == P_U64);
         int bit_count = fixed_unsigned && ft->nparams == 1 && r &&
-            r->kind == SK_PRIM && r->prim == P_U64 &&
+            r->kind == SK_PRIM && r->prim == P_UINT &&
             (f->ival == BI_BITS_POP_COUNT ||
              f->ival == BI_BITS_LEAD_ZEROS ||
              f->ival == BI_BITS_TRAIL_ZEROS);
@@ -2051,7 +2053,7 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             r->kind == SK_PRIM && r->prim == ip->prim &&
             f->ival == BI_BITS_BYTE_SWAP;
         int bit_rotate = fixed_unsigned && ft->nparams == 2 && r &&
-            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == P_U64 &&
+            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == P_UINT &&
             r->kind == SK_PRIM && r->prim == ip->prim &&
             (f->ival == BI_BITS_ROTATE_LEFT ||
              f->ival == BI_BITS_ROTATE_RIGHT);
@@ -2170,12 +2172,12 @@ static int ut_fits(Ck* k, Node* e, SType* want) {
     case P_I32:
         if ((e->kind == N_INT && e->ival > INT32_MAX) || v < INT32_MIN || v > INT32_MAX) goto over;
         return 1;
-    case P_I64: if (e->kind == N_INT && e->ival > INT64_MAX) goto over; return 1;
+    case P_I64: case P_INT: if (e->kind == N_INT && e->ival > INT64_MAX) goto over; return 1;
     case P_U8: if (u > 255) goto over; return 1;
     case P_U16: if (u > 65535) goto over; return 1;
     case P_U32: if (u > 4294967295u) goto over; return 1;
     case P_U64: if (v < 0 && e->kind != N_INT) goto over; return 1;
-    case P_USIZE: if (v < 0 && e->kind != N_INT) goto over; return 1;
+    case P_USIZE: case P_UINT: if (v < 0 && e->kind != N_INT) goto over; return 1;
     default: return 1;
     }
 over:
@@ -2187,11 +2189,11 @@ static int enum_backing_type(SType* t) {
     return t && t->kind == SK_PRIM &&
            (t->prim == P_I8 || t->prim == P_I16 || t->prim == P_I32 ||
             t->prim == P_I64 || t->prim == P_U8 || t->prim == P_U16 ||
-            t->prim == P_U32 || t->prim == P_U64);
+            t->prim == P_U32 || t->prim == P_U64 || t->prim >= P_INT);
 }
 
 static int enum_unsigned(SType* t) {
-    return t && t->kind == SK_PRIM && (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 || t->prim == P_U64);
+    return t && t->kind == SK_PRIM && (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 || t->prim == P_U64 || t->prim == P_UINT);
 }
 
 static uint64_t enum_max(SType* t) {
@@ -2199,7 +2201,7 @@ static uint64_t enum_max(SType* t) {
     case P_I8: return INT8_MAX;
     case P_I16: return INT16_MAX;
     case P_I32: return INT32_MAX;
-    case P_I64: return INT64_MAX;
+    case P_I64: case P_INT: return INT64_MAX;
     case P_U8: return UINT8_MAX;
     case P_U16: return UINT16_MAX;
     case P_U32: return UINT32_MAX;
@@ -2642,7 +2644,7 @@ static int is_c_variadic_scalar(SType* t) {
     switch (t->prim) {
     case P_I8: case P_I16: case P_I32: case P_I64:
     case P_U8: case P_U16: case P_U32: case P_U64:
-    case P_F32: case P_F64: case P_USIZE: case P_BOOL:
+    case P_F32: case P_F64: case P_USIZE: case P_BOOL: case P_INT: case P_UINT:
         return 1;
     default:
         return 0;
@@ -2667,7 +2669,7 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
             // codegen receives complete type/symbol annotations.
             SType* t = expr_type(k, raw);
             if (t == T_UT_FLOAT) coerce(k, raw, st_prim(P_F64));
-            else if (t == T_UT_INT) coerce(k, raw, st_prim(P_I64));
+            else if (t == T_UT_INT) coerce(k, raw, st_prim(P_INT));
             t = node_ty(raw);
             if (!is_c_variadic_scalar(t))
                 ck_err(k, raw,
@@ -2785,7 +2787,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         case T_MINUS:
             if (is_float(t)) return t;
             if (is_int(t)) {
-                if (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 || t->prim == P_U64) {
+                if (t->prim == P_U8 || t->prim == P_U16 || t->prim == P_U32 || t->prim == P_U64 || t->prim == P_UINT) {
                     ck_err(k, e, "cannot negate unsigned %s", type_name(t));
                     return T_ERR;
                 }
@@ -2856,11 +2858,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         if (a == T_UT_INT && b != T_UT_INT && b->kind != SK_UT) {
-            if (!ut_fits(k, e->a, is_int(b) ? b : st_prim(P_I64))) return T_ERR;
+            if (!ut_fits(k, e->a, is_int(b) ? b : st_prim(P_INT))) return T_ERR;
             a = b;
             if (!settle_operand(k, e->a, a)) return T_ERR;
         } else if (b == T_UT_INT && a != T_UT_INT && a->kind != SK_UT) {
-            if (!ut_fits(k, e->b, is_int(a) ? a : st_prim(P_I64))) return T_ERR;
+            if (!ut_fits(k, e->b, is_int(a) ? a : st_prim(P_INT))) return T_ERR;
             b = a;
             if (!settle_operand(k, e->b, b)) return T_ERR;
         } else if (a == T_UT_FLOAT && is_float(b)) {
@@ -2886,7 +2888,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         // Two untyped operands compare at their natural type (int or f64);
         // the result is bool, never an untyped constant.
         if (cmp && a == b && (a == T_UT_INT || a == T_UT_FLOAT)) {
-            SType* nat = st_prim(a == T_UT_INT ? P_I64 : P_F64);
+            SType* nat = st_prim(a == T_UT_INT ? P_INT : P_F64);
             if (!coerce(k, e->a, nat) || !coerce(k, e->b, nat)) return T_ERR;
             return st_prim(P_BOOL);
         }
@@ -2947,7 +2949,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* range = NULL;
         if (lo == T_UT_INT && hi == T_UT_INT) {
-            range = st_prim(P_I64);
+            range = st_prim(P_INT);
             e->a->ty = range;
             e->b->ty = range;
         } else if (is_int(lo) && same_type(lo, hi)) {
@@ -2980,7 +2982,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
                 want = u;
             }
         }
-        if (!want) want = st_prim(ut == T_UT_FLOAT ? P_F64 : P_I64);
+        if (!want) want = st_prim(ut == T_UT_FLOAT ? P_F64 : P_INT);
         for (int i = 0; i < e->nkids; i++) {
             SType* u = node_ty(e->kids[i]);
             if ((u == T_UT_INT && is_int(want)) || (u == T_UT_FLOAT && is_float(want))) {
@@ -3378,7 +3380,7 @@ static SType* overload_leaf_type(Ck* k, Node* arg, int* rank);
 
 /* A constant's kind (1 integer, 2 character, 3 float) to its natural type. */
 static SType* const_rank_type(int rank) {
-    return st_prim(rank == 3 ? P_F64 : rank == 2 ? P_U8 : P_I64);
+    return st_prim(rank == 3 ? P_F64 : rank == 2 ? P_U8 : P_INT);
 }
 
 /* Rebuild t with its type depth levels down replaced by leaf. */
@@ -3788,7 +3790,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         }
         for (int i = 0; i < 2; i++) {
             Node* arg = call->kids[i];
-            coerce(k, arg, st_prim(P_I64));
+            coerce(k, arg, st_prim(P_INT));
         }
         return T_BYTE_SLICE;
     }
@@ -3800,7 +3802,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         Node* data = call->kids[0];
         Node* size = call->kids[1];
         coerce(k, data, T_BYTE_SLICE);
-        coerce(k, size, st_prim(P_I64));
+        coerce(k, size, st_prim(P_INT));
         return T_BYTE_SLICE;
     }
 
@@ -3846,7 +3848,7 @@ static SType* check_memory_call(Ck* k, Node* call, Sym* fn, int intrinsic) {
         SType* want_type = intrinsic == BI_MEM_FILL && i == 1 ? st_prim(P_U8) : T_BYTE_SLICE;
         coerce(k, arg, want_type);
     }
-    return intrinsic == BI_MEM_COMPARE ? st_prim(P_I64) : T_VOID;
+    return intrinsic == BI_MEM_COMPARE ? st_prim(P_INT) : T_VOID;
 }
 
 /*
@@ -3988,19 +3990,23 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
     }
     SType* want = NULL;
     switch (kind) {
-    case PF_SIGNED: want = st_prim(P_I64); *expected = "int"; break;
+    case PF_SIGNED:
+        if (same_type(t, st_prim(P_I64))) {
+            *out = t;
+            return 1;
+        }
+        want = st_prim(P_INT); *expected = "int or i64"; break;
     case PF_UNSIGNED: case PF_BINARY: case PF_OCTAL:
     case PF_HEX_LOWER: case PF_HEX_UPPER:
         if (t == T_UT_INT) {
-            if (!ut_fits(k, arg, st_prim(P_U64))) return 0;
-            arg->ty = t = st_prim(P_U64);
+            if (!ut_fits(k, arg, st_prim(P_UINT))) return 0;
+            arg->ty = t = st_prim(P_UINT);
         }
-        if (same_type(t, st_prim(P_U64)) || same_type(t, st_prim(P_USIZE))) {
+        *expected = "uint, u64, or usize";
+        if (same_type(t, st_prim(P_UINT)) || same_type(t, st_prim(P_U64)) || same_type(t, st_prim(P_USIZE))) {
             *out = t;
-            *expected = "uint or usize";
             return 1;
         }
-        *expected = "uint or usize";
         return 0;
     case PF_FIXED: case PF_SCIENTIFIC: case PF_GENERAL:
         if (t == T_UT_FLOAT) {
@@ -4744,12 +4750,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if ((from == T_UT_FLOAT || from == T_UT_INT) &&
                     (is_float(want) || (want->kind == SK_DISTINCT && is_float(want->base))) &&
                     (call->kids[0]->kind == N_UNARY || call->kids[0]->kind == N_BINARY) &&
-                    !coerce(k, call->kids[0], from == T_UT_FLOAT ? want : st_prim(P_I64)))
+                    !coerce(k, call->kids[0], from == T_UT_FLOAT ? want : st_prim(P_INT)))
                     return T_ERR;
                 callee->sym = ts; // named-type cast marker
                 callee->ty = want; // primitive cast marker
                 if (from == T_UT_INT &&
-                    !ut_fits(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_I64)) : want))
+                    !ut_fits(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_INT)) : want))
                     return T_ERR;
                 int64_t cv;
                 if (want->kind == SK_ENUM && !enum_open(want) && ut_const(call->kids[0], &cv) && !enum_member_value(want, cv)) {
@@ -5499,7 +5505,7 @@ static int case_const(Node* e, int64_t* out) {
 /* A constant's position in the switch value type's order, so a signed type's
  * negatives sort below its non-negatives under one unsigned comparison. */
 static uint64_t case_key(SType* t, int64_t v) {
-    int sig = t->kind == SK_PRIM && t->prim >= P_I8 && t->prim <= P_I64;
+    int sig = t->kind == SK_PRIM && ((t->prim >= P_I8 && t->prim <= P_I64) || t->prim == P_INT);
     return sig ? (uint64_t)v ^ 0x8000000000000000ull : (uint64_t)v;
 }
 
@@ -8178,7 +8184,7 @@ static void sema_enter(Ck* k, Node* file, Diag* d) {
         T_UT_INT = st_new(SK_UT);
         T_UT_FLOAT = st_new(SK_UT);
         T_UT_NULL = st_new(SK_UT);
-        for (int i = 0; i < 14; i++) {
+        for (int i = 0; i < 16; i++) {
             PRIMS[i] = st_new(SK_PRIM);
             PRIMS[i]->prim = (uint8_t)i;
             layout(PRIMS[i]);

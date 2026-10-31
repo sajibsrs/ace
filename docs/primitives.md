@@ -9,11 +9,13 @@ when the context is unambiguous.
 The implemented signed integer types are `i8`, `i16`, `i32`, and `i64`. The
 implemented unsigned types are `u8`, `u16`, `u32`, and `u64`.
 
-`int` and `uint` are platform-word aliases. On the current AArch64 target:
+`int` and `uint` are the platform words, 64-bit on the current AArch64 target.
+Each is its own type on every target, so an `i64` value needs a cast to become
+an `int`, even where the sizes match.
 
 ```ace
-signed_word: int = 13       // same type as i64
-unsigned_word: uint = 13    // same type as u64
+signed_word: int = 13
+unsigned_word: uint = 13
 small: i8 = 13
 byte_value: u8 = 255
 ```

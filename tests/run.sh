@@ -179,7 +179,7 @@ tests/sema/errors/construct_arity_err.ace|4:23: error: error-domain construction
 tests/sema/mutability/call_array_err.ace|7:7: error: not an assignable target
 tests/sema/discard/typed_err.ace|6:5: error: '_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'
 tests/sema/discard/mixed_typed_err.ace|7:5: error: '_' in a binding list takes no type; write it bare, as in '_, found: bool = f()'
-tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]i64
+tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]int
 tests/sema/shadowing/module_member_err.ace|5:12: note: local 'mem' hides the imported module 'mem'
 tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
@@ -190,7 +190,7 @@ tests/sema/inline/intrinsic_err.ace|'inline' cannot mark intrinsic declaration '
 tests/sema/inline/main_err.ace|the entry function cannot be 'inline'
 tests/sema/inline/recursion_err.ace|inline function 'count' reaches itself through inline calls
 tests/sema/inline/mutual_err.ace|inline function 'even' reaches itself through inline calls
-tests/sema/names/module_type_name_err.ace|6:32: error: type mismatch: net.SocketType given where i64 expected
+tests/sema/names/module_type_name_err.ace|6:32: error: type mismatch: net.SocketType given where int expected
 INLINE_RULES
 
 # local escape (spec Memory #29): each direct return or outer store of a view
@@ -238,7 +238,7 @@ tests/modules/field_private/main.ace|12:35: error: field 'secret' of 'geo.Inner'
 tests/modules/field_private/main.ace|14:34: error: field 'n' of 'geo.Hidden' is private
 tests/modules/field_private/main.ace|14:46: error: field 'secret' of 'geo.Inner' is private
 tests/sema/associated/nongeneric_owner_args_err.ace|8:23: error: 'P' is not generic and takes no type arguments
-tests/sema/associated/type_param_nonstruct_err.ace|4:18: error: 'T' is i64, which has no associated functions
+tests/sema/associated/type_param_nonstruct_err.ace|4:18: error: 'T' is int, which has no associated functions
 tests/sema/names/function_type_err.ace|3:1: error: 'N' names a type; a value may not share its name
 tests/sema/names/global_type_err.ace|3:1: error: 'Point' names a type; a value may not share its name
 tests/sema/names/local_type_err.ace|4:5: error: 'Point' names a type; a value may not share its name
@@ -249,7 +249,7 @@ tests/sema/fields/qualified_method_err.ace|11:27: error: methods are called on a
 tests/sema/fields/not_callable_err.ace|7:23: error: field 'value' of type i64 is not callable
 tests/sema/fields/method_value_err.ace|11:23: error: 'get' is not a field of Counter; methods are not values
 tests/sema/fields/arg_count_err.ace|7:26: error: wrong number of arguments: 2 given, 1 expected
-tests/sema/functions/void_value_mismatch_err.ace|(i64): void given where (i64): i64 expected
+tests/sema/functions/void_value_mismatch_err.ace|(int): void given where (int): int expected
 tests/sema/functions/void_type_argument_err.ace|3:16: error: 'void' (as T) is allowed only as a function type's return or a type argument
 tests/sema/generics/void_field_err.ace|3:25: error: 'void' (as T) is allowed only
 tests/sema/generics/void_local_err.ace|4:13: error: 'void' (as R) is allowed only
@@ -261,7 +261,7 @@ tests/sema/generics/instantiation_site_err.ace|28:19: note: in 'Box[string].get'
 tests/sema/generics/instantiation_site_err.ace|29:29: note: in 'Box[string].make' instantiated here
 tests/sema/generics/type_arity_err.ace|4:1: error: generic type expects 1 type arguments, got 2
 tests/sema/generics/alias_recursive_err.ace|3:1: error: generic alias 'Loop' has a recursive expansion
-tests/sema/generics/alias_recursive_err.ace|5:21: note: in 'Loop[i64]' instantiated here
+tests/sema/generics/alias_recursive_err.ace|5:21: note: in 'Loop[int]' instantiated here
 tests/sema/generics/field_stamp_note_err.ace|6:27: note: in 'Inner[[4]u8]' instantiated here
 tests/sema/generics/field_stamp_note_err.ace|8:25: note: in 'Outer[[4]u8]' instantiated here
 tests/sema/c_abi/const_global_err.ace|12:5: error: cannot assign to const 'limit'
@@ -294,15 +294,15 @@ tests/sema/defaults/literals_err.ace|11:28: error: too many fields: Point has 2
 tests/sema/defaults/literals_err.ace|12:20: error: missing fields: Point has 2, literal has 1
 tests/sema/defaults/literals_err.ace|13:21: error: missing field 'b' in Pair literal
 tests/sema/defaults/literals_err.ace|14:17: error: bare struct literal needs its type from context
-tests/sema/defaults/literals_err.ace|15:22: error: i64 does not take a literal
+tests/sema/defaults/literals_err.ace|15:22: error: int does not take a literal
 tests/sema/defaults/literals_err.ace|16:21: error: array length is 2, literal has 3 elements
-tests/sema/defaults/literals_err.ace|17:23: error: array repetition count is 3, expected 2 for [2]i64
-tests/sema/defaults/literals_err.ace|18:26: error: [Color]i64 takes a keyed literal ([Color.member = value, ...]), not a positional one
-tests/sema/defaults/literals_err.ace|19:22: error: keys apply only to an enum-indexed array, not [2]i64
+tests/sema/defaults/literals_err.ace|17:23: error: array repetition count is 3, expected 2 for [2]int
+tests/sema/defaults/literals_err.ace|18:26: error: [Color]int takes a keyed literal ([Color.member = value, ...]), not a positional one
+tests/sema/defaults/literals_err.ace|19:22: error: keys apply only to an enum-indexed array, not [2]int
 tests/sema/defaults/literals_err.ace|20:53: error: member Color.red is keyed twice
-tests/sema/defaults/literals_err.ace|21:28: error: keyed literal of [Color]i64 is missing member Color.green
-tests/sema/defaults/literals_err.ace|22:30: error: a key of [Color]i64 is a Color member, not integer literal
-tests/sema/defaults/literals_err.ace|22:37: error: a key of [Color]i64 is a Color member, not integer literal
+tests/sema/defaults/literals_err.ace|21:28: error: keyed literal of [Color]int is missing member Color.green
+tests/sema/defaults/literals_err.ace|22:30: error: a key of [Color]int is a Color member, not integer literal
+tests/sema/defaults/literals_err.ace|22:37: error: a key of [Color]int is a Color member, not integer literal
 tests/sema/defaults/literals_err.ace|23:25: error: tuple has 3 values where 2 expected
 tests/sema/defaults/casts_err.ace|11:20: error: cannot cast string to i32
 tests/sema/defaults/casts_err.ace|12:19: error: a cast takes exactly one argument
@@ -321,8 +321,8 @@ tests/sema/defaults/casts_err.ace|24:20: error: '_' discards a value and cannot 
 tests/sema/defaults/casts_err.ace|25:26: error: constant does not fit Mode.low unsigned 4-bit field
 tests/sema/defaults/casts_err.ace|26:25: error: bits literals require named fields
 tests/sema/defaults/casts_err.ace|27:23: error: bits type Mode has no accessible field 'wide'
-tests/sema/defaults/views_err.ace|13:24: error: null is not a value of i64
-tests/sema/defaults/views_err.ace|14:21: error: keyed array literal needs an [E]T context, not []i64
+tests/sema/defaults/views_err.ace|13:24: error: null is not a value of int
+tests/sema/defaults/views_err.ace|14:21: error: keyed array literal needs an [E]T context, not []int
 tests/sema/defaults/views_err.ace|15:21: error: bare struct literal needs its type from context
 tests/sema/defaults/views_err.ace|16:20: error: array literal needs its array type from context
 tests/sema/defaults/views_err.ace|17:22: error: overlapping struct Word has no literal; declare it and assign a member
@@ -381,7 +381,8 @@ tests/sema/functions/body_statements_err.ace|128:5: error: untyped literal expre
 tests/sema/functions/body_statements_err.ace|132:20: error: volatile access is allowed only on a complete bits value
 tests/sema/functions/body_statements_err.ace|136:17: error: volatile access requires an eligible scalar place, got Point
 tests/sema/generics/void_memory_err.ace|'void' names no value and cannot be a memory element type
-tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where i64 expected
+tests/sema/functions/return_no_value_err.ace|7:16: error: type mismatch: no value given where int expected
+tests/sema/functions/word_mix_err.ace|5:18: error: type mismatch: int given where i64 expected
 tests/sema/types/predeclared_name_err.ace|3:1: error: 'bool' is a predeclared type name and cannot be redeclared
 tests/sema/types/predeclared_name_err.ace|5:1: error: 'void' is a predeclared type name and cannot be redeclared
 FUNCTION_TYPE_RULES
@@ -530,8 +531,8 @@ done
 # a binary expression is positioned at its operator
 binary_position=$("$ACE" tests/sema/operators/binary_position_err.ace 2>&1)
 for want in \
-    "5:26: error: type mismatch: i32 given where i64 expected" \
-    "10:16: error: type mismatch: i32 + i64"; do
+    "5:26: error: type mismatch: i32 given where int expected" \
+    "10:16: error: type mismatch: i32 + int"; do
     if ! printf '%s\n' "$binary_position" | grep -qF "$want"; then
         echo "FAIL: binary expression should report: $want"
         fail=1
@@ -762,9 +763,9 @@ for want in \
 done
 printf_type_errors=$("$ACE" tests/sema/printf/types_err.ace 2>&1)
 for want in \
-    "requires int, got i32" \
-    "requires uint or usize, got u16" \
-    "requires uint or usize, got Meters" \
+    "requires int or i64, got i32" \
+    "requires uint, u64, or usize, got u16" \
+    "requires uint, u64, or usize, got Meters" \
     "requires f32 or f64, got integer literal" \
     "19:31: error: fmt.printf argument 1 for conversion at decoded byte 0 requires f32 or f64, got integer literal" \
     "20:31: error: fmt.printf argument 1 for conversion at decoded byte 0 requires f32 or f64, got i32" \
@@ -836,7 +837,7 @@ done
 slice_literal_errors=$("$ACE" tests/sema/arrays/slice_literal_err.ace 2>&1)
 for want in \
     "12:24: error: keyed array literal needs an [E]T context, not []string" \
-    "13:24: error: type mismatch: string given where i64 expected" \
+    "13:24: error: type mismatch: string given where int expected" \
     "14:16: error: ambiguous call to overloaded function 'pick'"; do
     if ! printf '%s\n' "$slice_literal_errors" | grep -qF "$want"; then
         echo "FAIL: missing slice literal diagnostic '$want'"
@@ -847,7 +848,7 @@ done
 mem_typed_errors=$("$ACE" tests/sema/memory/typed_err.ace 2>&1)
 for want in \
     "type mismatch: []usize given where []i32 expected" \
-    "type mismatch: i64 given where usize expected" \
+    "type mismatch: int given where usize expected" \
     "unknown type 'Missing'" \
     "mem.release[T] takes the allocation variable's address: mem.release[T](&data)" \
     "mem.release[T] requires a []usize allocation variable" \
@@ -920,7 +921,7 @@ if ! printf '%s\n' "$spec_mismatch_error" | grep -qF \
 fi
 duplicate_spec_error=$("$ACE" tests/sema/specialization/duplicate_err.ace 2>&1)
 if ! printf '%s\n' "$duplicate_spec_error" | grep -qF \
-    "duplicate specialization 'pick[i64]' — one exact type-argument tuple per generic overload"; then
+    "duplicate specialization 'pick[int]' — one exact type-argument tuple per generic overload"; then
     echo "FAIL: missing duplicate-specialization diagnostic"
     fail=1
 fi

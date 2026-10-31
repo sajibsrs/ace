@@ -96,6 +96,14 @@ pub print(value: uint): int {
     return total
 }
 
+pub print(value: i64): int {
+    return print(int(value))
+}
+
+pub print(value: u64): int {
+    return print(uint(value))
+}
+
 pub print(value: usize): int {
     storage: [20]u8
     digits: []u8 = storage[0..20]
@@ -434,6 +442,14 @@ pub println(value: int): int {
 
 pub println(value: uint): int {
     return finish_line(print(value))
+}
+
+pub println(value: i64): int {
+    return println(int(value))
+}
+
+pub println(value: u64): int {
+    return println(uint(value))
 }
 
 pub println(value: usize): int {

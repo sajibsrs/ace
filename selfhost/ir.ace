@@ -430,11 +430,11 @@ pub type_of(s: sema.Sema, t: u32): int {
         sema.P_I8 { return int(IT_I8) }
         sema.P_I16 { return int(IT_I16) }
         sema.P_I32 { return int(IT_I32) }
-        sema.P_I64 { return int(IT_I64) }
+        sema.P_I64, sema.P_INT { return int(IT_I64) }
         sema.P_U8 { return int(IT_U8) }
         sema.P_U16 { return int(IT_U16) }
         sema.P_U32 { return int(IT_U32) }
-        sema.P_U64, sema.P_USIZE, sema.P_TYPEID { return int(IT_U64) }
+        sema.P_U64, sema.P_USIZE, sema.P_TYPEID, sema.P_UINT { return int(IT_U64) }
         sema.P_F32 { return int(IT_F32) }
         sema.P_F64 { return int(IT_F64) }
         default { return -1 }

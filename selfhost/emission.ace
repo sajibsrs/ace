@@ -249,12 +249,12 @@ Em.signed(self, t: u32): bool {
     if u == 0 { return true }
     x: sema.SType = self.ty(u)
     if x.kind == TypeKind.enum || x.kind == TypeKind.bits { return self.signed(x.base) }
-    return x.kind == TypeKind.prim && x.prim >= sema.P_I8 && x.prim <= sema.P_I64
+    return x.kind == TypeKind.prim && ((x.prim >= sema.P_I8 && x.prim <= sema.P_I64) || x.prim == sema.P_INT)
 }
 
 Em.int_prim(self, t: u32): bool {
     u: u32 = self.unwrap(t)
-    return u != 0 && self.ty(u).kind == TypeKind.prim && ((self.ty(u).prim >= sema.P_I8 && self.ty(u).prim <= sema.P_U64) || self.ty(u).prim == sema.P_USIZE)
+    return u != 0 && self.ty(u).kind == TypeKind.prim && ((self.ty(u).prim >= sema.P_I8 && self.ty(u).prim <= sema.P_U64) || self.ty(u).prim == sema.P_USIZE || self.ty(u).prim >= sema.P_INT)
 }
 
 Em.float_prim(self, t: u32): bool {
@@ -583,7 +583,7 @@ Em.const_int(self, v: u32): (bool, u64) {
         if t == 0 { return false, 0 }
         tk: TypeKind = self.ty(t).kind
         p: u8 = self.ty(t).prim
-        if tk != TypeKind.ut && (tk != TypeKind.prim || !(p <= sema.P_U64 || p == sema.P_USIZE)) { return false, 0 }
+        if tk != TypeKind.ut && (tk != TypeKind.prim || !(p <= sema.P_U64 || p == sema.P_USIZE || p >= sema.P_INT)) { return false, 0 }
         inner = xn.ival
     }
     if neg { return true, 0 - inner }

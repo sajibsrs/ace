@@ -36,7 +36,7 @@ amb[T](v: T): i64 {
     return 0
 }
 
-amb[T](v: i64): i64 {
+amb[T](v: int): i64 {
     return 1
 }
 
@@ -56,6 +56,6 @@ Calls: struct {
     wrong: i64 = pick[u8]("x"),
     missing: i64 = only[i64](1),
     count: i64 = pick[i64, i64](1),
-    ambiguous: i64 = amb[i64](1),
+    ambiguous: i64 = amb[int](1),
     overloaded: i64 = take[i64](two),
 }

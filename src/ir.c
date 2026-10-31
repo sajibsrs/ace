@@ -133,11 +133,11 @@ int ir_type_of(SType* t) {
     case P_I8: return IT_I8;
     case P_I16: return IT_I16;
     case P_I32: return IT_I32;
-    case P_I64: return IT_I64;
+    case P_I64: case P_INT: return IT_I64;
     case P_U8: return IT_U8;
     case P_U16: return IT_U16;
     case P_U32: return IT_U32;
-    case P_U64: case P_USIZE: case P_TYPEID: return IT_U64;
+    case P_U64: case P_USIZE: case P_TYPEID: case P_UINT: return IT_U64;
     case P_F32: return IT_F32;
     case P_F64: return IT_F64;
     default: return -1;

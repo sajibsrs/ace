@@ -188,17 +188,20 @@ them.
 Transparent aliases do not distinguish overloads. In particular, `char`/`u8`
 and `string`/`[]char`/`[]u8` variations are duplicate declarations.
 
-On the current AArch64 target, `int` and `i64` are the same type, so these cannot
-be separate overloads.
+`int`, `i32`, and `i64` are three types on every target, so these are separate
+overloads wherever they compile.
 
 ```ace
-// Duplicate signatures on AArch64:
 format(value: int): int {
     return value
 }
 
+format(value: i32): int {
+    return int(value)
+}
+
 format(value: i64): int {
-    return value
+    return int(value)
 }
 ```
 

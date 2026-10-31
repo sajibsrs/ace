@@ -184,7 +184,7 @@ static int ty_is_signed(SType* t) {
     if (t->kind == SK_ENUM || t->kind == SK_BITS) return ty_is_signed(t->base);
     if (t->kind != SK_PRIM) return 0;
     switch (t->prim) {
-    case P_I8: case P_I16: case P_I32: case P_I64: return 1;
+    case P_I8: case P_I16: case P_I32: case P_I64: case P_INT: return 1;
     default: return 0;
     }
 }
@@ -283,6 +283,7 @@ static int const_int(Node* v, uint64_t* out) {
     switch (t->prim) {
     case P_BOOL: case P_I8: case P_I16: case P_I32: case P_I64:
     case P_U8: case P_U16: case P_U32: case P_U64: case P_USIZE:
+    case P_INT: case P_UINT:
         break;
     default:
         return 0;
@@ -541,7 +542,8 @@ static void mangle_type(Buf* b, SType* t) {
                         t->prim == P_U32 ? "u32" : t->prim == P_U64 ? "u64" :
                         t->prim == P_F32 ? "f32" : t->prim == P_F64 ? "f64" :
                         t->prim == P_STRING ? "string" :
-                        t->prim == P_USIZE ? "usize" : "typeid";
+                        t->prim == P_USIZE ? "usize" :
+                        t->prim == P_INT ? "int" : t->prim == P_UINT ? "uint" : "typeid";
         buf_write(b, n, strlen(n));
         return;
     }
@@ -720,7 +722,7 @@ static int fold_int_target(SType* t) {
     if (!t) return 0;
     if (t->kind == SK_ENUM || t->kind == SK_BITS) return 1;
     if (t->kind == SK_DISTINCT) return fold_int_target(t->base);
-    return t->kind == SK_PRIM && ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
+    return t->kind == SK_PRIM && ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE || t->prim >= P_INT);
 }
 
 static int fold_float_target(SType* t) {
@@ -746,7 +748,7 @@ typedef unsigned __int128 UWide;
 static int fold_int_prim(SType* t) {
     t = unwrap(t);
     return t && t->kind == SK_PRIM &&
-        ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE);
+        ((t->prim >= P_I8 && t->prim <= P_U64) || t->prim == P_USIZE || t->prim >= P_INT);
 }
 
 static int fold_float_prim(SType* t) {

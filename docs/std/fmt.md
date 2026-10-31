@@ -27,7 +27,8 @@ main(): int {
 - `print(value: int): int` — signed decimal, complete `int` range including
   `INT_MIN`, formatted through a fixed 20-byte stack buffer.
 - `print(value: uint): int` — unsigned platform-word decimal, zero through
-  `UINT_MAX`. Values typed `u64` select it directly.
+  `UINT_MAX`.
+- `print(value: i64): int` and `print(value: u64): int` — as `int` and `uint`.
 - `print(value: usize): int` — unsigned decimal for lengths, sizes, and
   indices, zero through `USIZE_MAX`.
 - `print(value: f32): int` and `print(value: f64): int` — shortest
@@ -108,11 +109,11 @@ pack, type tag, reflection, allocation, or C variadic call.
 
 The initial conversions are deliberately small:
 
-- `%d` accepts `int` and writes signed decimal.
-- `%u` accepts `uint` or `usize` and writes unsigned decimal.
-- `%b` and `%o` accept `uint` or `usize` and write binary or octal digits
+- `%d` accepts `int` or `i64` and writes signed decimal.
+- `%u` accepts `uint`, `u64`, or `usize` and writes unsigned decimal.
+- `%b` and `%o` accept `uint`, `u64`, or `usize` and write binary or octal digits
   without a prefix or leading zeroes. Zero is written as `0`.
-- `%x` and `%X` accept `uint` or `usize` and write hexadecimal digits in the
+- `%x` and `%X` accept `uint`, `u64`, or `usize` and write hexadecimal digits in the
   selected case, without a prefix.
 - `%f` accepts `f32` or `f64` and writes fixed decimal with six fractional
   digits by default. `%.Nf` writes exactly `N` fractional digits for

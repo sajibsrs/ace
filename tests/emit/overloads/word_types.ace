@@ -1,0 +1,46 @@
+/* `int`, `uint`, and their fixed widths are distinct types. */
+
+// expect-exit: 42
+
+import atomic
+import map
+
+pick(value: int): int {
+    return 1
+}
+
+pick(value: i32): int {
+    return 2
+}
+
+pick(value: i64): int {
+    return 4
+}
+
+pick(value: uint): int {
+    return 8
+}
+
+pick(value: u32): int {
+    return 16
+}
+
+pick(value: u64): int {
+    return 32
+}
+
+main(): int {
+    if pick(1) != 1 || pick(i32(1)) != 2 || pick(i64(1)) != 4 { return 1 }
+    if pick(uint(1)) != 8 || pick(u32(1)) != 16 || pick(u64(1)) != 32 { return 2 }
+
+    words: map.Map[int, int], error: Error = map.Map[int, int].new(8)
+    defer words.wipe()
+    if error != null { return 3 }
+    fixed: map.Map[i64, int], fixed_error: Error = map.Map[i64, int].new(8)
+    defer fixed.wipe()
+    if fixed_error != null { return 4 }
+
+    count: uint = 41
+    if atomic.add(&count, uint(1)) != 41 { return 5 }
+    return int(count)
+}

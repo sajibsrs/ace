@@ -43,7 +43,7 @@ FIB: const u64 = 0x9e3779b97f4a7c15
  * where a multiplicative hash mixes in every key bit.
  */
 inline home(h: u64, n: usize): usize {
-    return usize(h >> (bits.clz(u64(n)) + 1))
+    return usize(h >> u64(bits.clz(u64(n)) + 1))
 }
 
 /* Finalizer that spreads every bit of a string's FNV-1a hash across the top
@@ -69,6 +69,14 @@ inline hash[i32](key: i32): u64 {
 }
 
 inline hash[i64](key: i64): u64 {
+    return bits.wrmul(u64(key), FIB)
+}
+
+inline hash[int](key: int): u64 {
+    return bits.wrmul(u64(key), FIB)
+}
+
+inline hash[uint](key: uint): u64 {
     return bits.wrmul(u64(key), FIB)
 }
 
@@ -117,6 +125,14 @@ inline same[i32](a: i32, b: i32): bool {
 }
 
 inline same[i64](a: i64, b: i64): bool {
+    return a == b
+}
+
+inline same[int](a: int, b: int): bool {
+    return a == b
+}
+
+inline same[uint](a: uint, b: uint): bool {
     return a == b
 }
 

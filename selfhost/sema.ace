@@ -247,8 +247,8 @@ pub Sema.new(l: module.Loader): Sema {
     fail(s.types.push(SType { kind = TypeKind.err }))
     s.t_err = s.new_type(SType { kind = TypeKind.err })
     s.prims = u32(s.types.len)
-    for i: u8 in 0..14 { _ = s.new_type(SType { kind = TypeKind.prim, prim = i }) }
-    for i: u32 in 0..14 { _ = s.layout(s.prims + i) }
+    for i: u8 in 0..16 { _ = s.new_type(SType { kind = TypeKind.prim, prim = i }) }
+    for i: u32 in 0..16 { _ = s.layout(s.prims + i) }
     s.t_void = s.new_type(SType { kind = TypeKind.void })
     s.t_byte_slice = s.new_type(SType { kind = TypeKind.slice, base = s.prims + u32(P_U8) })
     _ = s.layout(s.t_byte_slice)
@@ -800,13 +800,16 @@ pub P_F64: const u8 = 10
 pub P_STRING: const u8 = 11
 pub P_USIZE: const u8 = 12
 pub P_TYPEID: const u8 = 13
+pub P_INT: const u8 = 14
+pub P_UINT: const u8 = 15
 
-PRIM_SPELLINGS: [14]string = [
+PRIM_SPELLINGS: [16]string = [
     "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid",
+    "int", "uint",
 ]
 
-/* `int`/`uint` are the arm64 platform word; `char` shares u8's identity. */
-PRIM_OF_NAME: [18]u8 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 4, 8, 5]
+/* `char` shares u8's identity. */
+PRIM_OF_NAME: [18]u8 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 14, 15, 5]
 
 MAX_RESOLVING: const u32 = 256
 MAX_PARAMS: const u32 = 64
@@ -973,7 +976,7 @@ Sema.layout(self, id: u32): bool {
                 1, 5, 0 { t.size = 1 }
                 2, 6 { t.size = 2 }
                 3, 7, 9 { t.size = 4 }
-                4, 8, 10, 12, 13 { t.size = 8 }
+                4, 8, 10, 12, 13, 14, 15 { t.size = 8 }
                 11 { t.size = 16 }
                 default { t.size = 1 }
             }
@@ -1624,7 +1627,7 @@ Sema.unported(self, what: string): u32 {
 
 Sema.is_int(self, t: u32): bool {
     x: SType = self.ty(t)
-    return x.kind == TypeKind.prim && ((x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_USIZE)
+    return x.kind == TypeKind.prim && ((x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_USIZE || x.prim >= P_INT)
 }
 
 Sema.is_float(self, t: u32): bool {
@@ -1734,11 +1737,11 @@ Sema.conversion_const(const self, p: u8, x: u32): (i64, bool) {
     if p == P_I8 { return i64(i8(v)), true }
     if p == P_I16 { return i64(i16(v)), true }
     if p == P_I32 { return i64(i32(v)), true }
-    if p == P_I64 { return v, true }
+    if p == P_I64 || p == P_INT { return v, true }
     if p == P_U8 { return i64(u8(v)), true }
     if p == P_U16 { return i64(u16(v)), true }
     if p == P_U32 { return i64(u32(v)), true }
-    if (p == P_U64 || p == P_USIZE) && v >= 0 { return v, true }
+    if (p == P_U64 || p == P_USIZE || p == P_UINT) && v >= 0 { return v, true }
     return 0, false
 }
 
@@ -1885,11 +1888,11 @@ Sema.ut_fits(self, e: u32, want: u32): bool {
         1 { over = (lit && n.ival > 127) || v < -128 || v > 127 }
         2 { over = (lit && n.ival > 32767) || v < -32768 || v > 32767 }
         3 { over = (lit && n.ival > 2147483647) || v < -2147483648 || v > 2147483647 }
-        4 { over = lit && n.ival > 9223372036854775807 }
+        4, 14 { over = lit && n.ival > 9223372036854775807 }
         5 { over = u > 255 }
         6 { over = u > 65535 }
         7 { over = u > 4294967295 }
-        8, 12 { over = v < 0 && !lit }
+        8, 12, 15 { over = v < 0 && !lit }
         default {}
     }
     if !over { return true }
@@ -2414,7 +2417,7 @@ Sema.check_unary(self, e: u32): u32 {
             if self.is_float(t) { return t }
             if self.is_int(t) {
                 p: u8 = self.ty(t).prim
-                if p >= P_U8 && p <= P_U64 {
+                if (p >= P_U8 && p <= P_U64) || p == P_UINT {
                     self.err(e, ["cannot negate unsigned ", self.type_name(t)])
                     return self.t_err
                 }
@@ -2484,13 +2487,13 @@ Sema.check_binary(self, e: u32): u32 {
     ut_b: bool = self.ty(b).kind == TypeKind.ut
     if a == self.t_ut_int && b != self.t_ut_int && !ut_b {
         fit: u32 = b
-        if !self.is_int(b) { fit = self.prim(P_I64) }
+        if !self.is_int(b) { fit = self.prim(P_INT) }
         if !self.ut_fits(n.a, fit) { return self.t_err }
         a = b
         if !self.settle_operand(n.a, a) { return self.t_err }
     } else if b == self.t_ut_int && a != self.t_ut_int && !ut_a {
         fit: u32 = a
-        if !self.is_int(a) { fit = self.prim(P_I64) }
+        if !self.is_int(a) { fit = self.prim(P_INT) }
         if !self.ut_fits(n.b, fit) { return self.t_err }
         b = a
         if !self.settle_operand(n.b, b) { return self.t_err }
@@ -2514,7 +2517,7 @@ Sema.check_binary(self, e: u32): u32 {
     cmp: bool = equality || op == lexer.Token.lt || op == lexer.Token.le || op == lexer.Token.gt || op == lexer.Token.ge
     // two untyped operands compare at their natural type; the result is bool
     if cmp && a == b && (a == self.t_ut_int || a == self.t_ut_float) {
-        nat: u32 = self.prim(P_I64)
+        nat: u32 = self.prim(P_INT)
         if a == self.t_ut_float { nat = self.prim(P_F64) }
         if !self.coerce(n.a, nat) || !self.coerce(n.b, nat) { return self.t_err }
         return self.prim(P_BOOL)
@@ -2569,7 +2572,7 @@ Sema.check_cmpchain(self, e: u32): u32 {
         }
     }
     if want == 0 {
-        want = self.prim(P_I64)
+        want = self.prim(P_INT)
         if ut == self.t_ut_float { want = self.prim(P_F64) }
     }
     for i: u32 in 0..n.nkids {
@@ -3192,7 +3195,7 @@ Sema.check_memory_call(self, call: u32, f: u32, bi: u64): u32 {
             return self.t_err
         }
         for i: u32 in 0..2 {
-            _ = self.coerce(self.kid(call, i), self.prim(P_I64))
+            _ = self.coerce(self.kid(call, i), self.prim(P_INT))
         }
         return self.t_byte_slice
     }
@@ -3202,7 +3205,7 @@ Sema.check_memory_call(self, call: u32, f: u32, bi: u64): u32 {
             return self.t_err
         }
         _ = self.coerce(self.kid(call, 0), self.t_byte_slice)
-        _ = self.coerce(self.kid(call, 1), self.prim(P_I64))
+        _ = self.coerce(self.kid(call, 1), self.prim(P_INT))
         return self.t_byte_slice
     }
     if bi == BI_MEM_RELEASE {
@@ -3242,7 +3245,7 @@ Sema.check_memory_call(self, call: u32, f: u32, bi: u64): u32 {
         if bi == BI_MEM_FILL && i == 1 { wt = self.prim(P_U8) }
         _ = self.coerce(self.kid(call, i), wt)
     }
-    if bi == BI_MEM_COMPARE { return self.prim(P_I64) }
+    if bi == BI_MEM_COMPARE { return self.prim(P_INT) }
     return self.t_void
 }
 
@@ -3407,16 +3410,17 @@ Sema.format_arg_type(self, arg: u32, kind: u8): (u32, string, bool) {
     want: u32 = 0
     expected: string = "value"
     if kind == PF_SIGNED {
-        want = self.prim(P_I64)
-        expected = "int"
+        if self.same_type(t, self.prim(P_I64)) { return t, expected, false }
+        want = self.prim(P_INT)
+        expected = "int or i64"
     } else if kind == PF_UNSIGNED || kind == PF_BINARY || kind == PF_OCTAL || kind == PF_HEX_LOWER || kind == PF_HEX_UPPER {
-        expected = "uint or usize"
+        expected = "uint, u64, or usize"
         if t == self.t_ut_int {
-            if !self.ut_fits(arg, self.prim(P_U64)) { return 0, expected, false }
-            t = self.prim(P_U64)
+            if !self.ut_fits(arg, self.prim(P_UINT)) { return 0, expected, false }
+            t = self.prim(P_UINT)
             self.set_node_ty(arg, t)
         }
-        if self.same_type(t, self.prim(P_U64)) || self.same_type(t, self.prim(P_USIZE)) { return t, expected, false }
+        if self.same_type(t, self.prim(P_UINT)) || self.same_type(t, self.prim(P_U64)) || self.same_type(t, self.prim(P_USIZE)) { return t, expected, false }
         return 0, expected, false
     } else if kind == PF_FIXED || kind == PF_SCIENTIFIC || kind == PF_GENERAL {
         expected = "f32 or f64"
@@ -4352,7 +4356,7 @@ Sema.check_cast(self, call: u32, p: u32, ts: u32): u32 {
     ak: Kind = self.node(arg).kind
     // a compound untyped constant under a float cast: float math at the target, integer math as int
     if (from == self.t_ut_float || from == self.t_ut_int) && (self.is_float(want) || (w.kind == TypeKind.distinct && self.is_float(w.base))) && (ak == Kind.unary || ak == Kind.binary) {
-        at: u32 = self.prim(P_I64)
+        at: u32 = self.prim(P_INT)
         if from == self.t_ut_float { at = want }
         if !self.coerce(arg, at) { return self.t_err }
     }
@@ -4362,7 +4366,7 @@ Sema.check_cast(self, call: u32, p: u32, ts: u32): u32 {
         fit: u32 = want
         if w.kind == TypeKind.distinct {
             fit = w.base
-            if !self.is_int(w.base) { fit = self.prim(P_I64) }
+            if !self.is_int(w.base) { fit = self.prim(P_INT) }
         }
         if !self.ut_fits(arg, fit) { return self.t_err }
     }
@@ -4631,7 +4635,7 @@ Sema.check_keyed_arraylit(self, lit: u32, want: u32) {
     e: SType = self.ty(w.key)
     for i: u32 in 0..e.nfields {
         m: SField = self.field(e, i)
-        if !seen.get(m.value) {
+        if !seen.get(int(m.value)) {
             self.err(lit, ["keyed literal of ", self.type_name(want), " is missing member ", self.type_name(w.key), ".", m.name])
         }
     }
@@ -4682,7 +4686,7 @@ Sema.staticmap_key_type(self, id: u32): bool {
     x: SType = self.ty(t)
     if x.kind == TypeKind.enum { return true }
     if x.kind != TypeKind.prim { return false }
-    return x.prim == P_BOOL || (x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_STRING || x.prim == P_USIZE || x.prim == P_TYPEID
+    return x.prim == P_BOOL || (x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_STRING || x.prim == P_USIZE || x.prim == P_TYPEID || x.prim >= P_INT
 }
 
 /* A StaticMap's brace literal: allowed key type, complete value layout,
@@ -5511,14 +5515,14 @@ Sema.check_enum(self, decl: u32, id: u32) {
     base: u32 = self.prim(P_I32)
     if d.a != 0 { base = self.build_type(d.a) }
     b: SType = self.ty(base)
-    if !(b.kind == TypeKind.prim && b.prim >= P_I8 && b.prim <= P_U64) {
+    if !(b.kind == TypeKind.prim && ((b.prim >= P_I8 && b.prim <= P_U64) || b.prim >= P_INT)) {
         at: u32 = d.a
         if at == 0 { at = decl }
         self.err(at, ["enum backing type must be i8, i16, i32, i64, u8, u16, u32, or u64"])
         base = self.prim(P_I32)
     }
     p: u8 = self.ty(base).prim
-    unsigned: bool = p >= P_U8
+    unsigned: bool = p >= P_U8 && p != P_INT
     t: SType = self.ty(id)
     t.base = base
     t.nfields = d.nkids
@@ -5692,7 +5696,7 @@ Sema.arraylit_same(self, a: u32, b: u32, depth: u32): bool {
 Sema.const_rank_type(self, rank: u32): u32 {
     if rank == 3 { return self.prim(P_F64) }
     if rank == 2 { return self.prim(P_U8) }
-    return self.prim(P_I64)
+    return self.prim(P_INT)
 }
 
 /* `t` with its type `depth` levels down replaced by `leaf`. */
@@ -5951,7 +5955,7 @@ Sema.check_args(self, call: u32, ft: u32, variadic: bool) {
         }
         // a variadic extra has no declared type: untyped constants default
         at: u32 = self.expr_type(raw)
-        if at == self.t_ut_float { _ = self.coerce(raw, self.prim(P_F64)) } else if at == self.t_ut_int { _ = self.coerce(raw, self.prim(P_I64)) }
+        if at == self.t_ut_float { _ = self.coerce(raw, self.prim(P_F64)) } else if at == self.t_ut_int { _ = self.coerce(raw, self.prim(P_INT)) }
         at = self.node_ty(raw)
         if !self.is_c_variadic_scalar(at) {
             self.err(raw, ["variadic argument has type ", self.type_name(at), ", which is not supported at the C boundary"])
@@ -5966,7 +5970,7 @@ Sema.is_c_variadic_scalar(self, t: u32): bool {
     switch x.kind {
         TypeKind.distinct { return self.is_c_variadic_scalar(x.base) }
         TypeKind.ptr { return true }
-        TypeKind.prim { return x.prim <= P_F64 || x.prim == P_USIZE }
+        TypeKind.prim { return x.prim <= P_F64 || x.prim == P_USIZE || x.prim >= P_INT }
         default { return false }
     }
 }
@@ -6417,7 +6421,7 @@ Sema.case_const(self, e: u32): (i64, bool) {
  */
 Sema.case_key(self, t: u32, v: i64): u64 {
     x: SType = self.ty(t)
-    if x.kind == TypeKind.prim && x.prim >= P_I8 && x.prim <= P_I64 { return u64(v) ^ 0x8000000000000000 }
+    if x.kind == TypeKind.prim && ((x.prim >= P_I8 && x.prim <= P_I64) || x.prim == P_INT) { return u64(v) ^ 0x8000000000000000 }
     return u64(v)
 }
 
@@ -6993,7 +6997,7 @@ Sema.is_volatile_scalar(self, t: u32): bool {
         TypeKind.distinct { return self.is_volatile_scalar(x.base) }
         TypeKind.bits, TypeKind.ptr { return true }
         TypeKind.enum { return x.decl != 0 && self.node(x.decl).a != 0 }
-        TypeKind.prim { return (x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_F32 || x.prim == P_F64 || x.prim == P_USIZE }
+        TypeKind.prim { return (x.prim >= P_I8 && x.prim <= P_U64) || x.prim == P_F32 || x.prim == P_F64 || x.prim == P_USIZE || x.prim >= P_INT }
         default { return false }
     }
 }
@@ -7148,7 +7152,7 @@ Sema.check_range(self, e: u32): u32 {
     }
     range: u32 = 0
     if lo == self.t_ut_int && hi == self.t_ut_int {
-        range = self.prim(P_I64)
+        range = self.prim(P_INT)
         self.set_node_ty(n.a, range)
         self.set_node_ty(n.b, range)
     } else if self.is_int(lo) && self.same_type(lo, hi) {
@@ -8934,7 +8938,7 @@ Sema.atomic_fits(self, ft: u32, kind: u64, order: u64): bool {
     pt: SType = self.ty(p)
     if pt.kind != TypeKind.ptr || pt.base == 0 { return false }
     w: u32 = pt.base
-    if !self.is_prim(w, P_U32) && !self.is_prim(w, P_U64) && !self.is_prim(w, P_USIZE) { return false }
+    if !self.is_prim(w, P_U32) && !self.is_prim(w, P_U64) && !self.is_prim(w, P_USIZE) && !self.is_prim(w, P_UINT) { return false }
     np: u32 = 2
     if kind == 0 { np = 1 } else if kind == 8 { np = 3 }
     if t.nparams != np { return false }
@@ -8967,10 +8971,10 @@ Sema.intrinsic_fits(self, ft: u32, id: u64): bool {
     if id == BI_INTERNAL_LOAD_U64 {
         return np == 2 && self.is_prim(p0, P_STRING) && self.is_prim(p1, P_USIZE) && r != 0 && self.is_prim(r, P_U64)
     }
-    if id >= BI_BITS_POP_COUNT && id <= BI_BITS_TRAIL_ZEROS { return fixed && np == 1 && r != 0 && self.is_prim(r, P_U64) }
+    if id >= BI_BITS_POP_COUNT && id <= BI_BITS_TRAIL_ZEROS { return fixed && np == 1 && r != 0 && self.is_prim(r, P_UINT) }
     if id == BI_BITS_BYTE_SWAP { return fixed && np == 1 && self.same_prim(r, p0) }
     if id == BI_BITS_ROTATE_LEFT || id == BI_BITS_ROTATE_RIGHT {
-        return fixed && np == 2 && self.is_prim(p1, P_U64) && self.same_prim(r, p0)
+        return fixed && np == 2 && self.is_prim(p1, P_UINT) && self.same_prim(r, p0)
     }
     if id >= BI_BITS_WRAP_ADD && id <= BI_BITS_WRAP_MUL { return fixed && np == 2 && self.same_prim(p1, p0) && self.same_prim(r, p0) }
     if id == BI_BITS_MUL_WIDE {

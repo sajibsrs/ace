@@ -2,7 +2,10 @@
 Decision: fully explicit types; no inference.
 Predeclared types: `bool`, `i8`/`i16`/`i32`/`i64`,
 `u8`/`u16`/`u32`/`u64`, `f32`/`f64`, `float`, `string`, `usize`,
-`typeid`, and the platform words `int`/`uint` (i64/u64 on Apple arm64).
+`typeid`, and the platform words `int`/`uint` (64-bit on Apple arm64). Each
+is its own type on every target, never an alias of a fixed width: `int` is not
+`i32` or `i64`, and `uint` is not `u32` or `u64`, whatever their sizes.
+Converting between them is an explicit cast, and they overload separately.
 These names, `char`, `StaticMap`, `Error`, and `void` (Syntax & Parsing #5)
 cannot be redeclared as types.
 `float` is a transparent alias of `f64`: the spellings have the same type

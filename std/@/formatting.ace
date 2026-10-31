@@ -478,6 +478,14 @@ pub piece[uint](sink: *Sink, value: uint, width: usize, pad: u8) {
     sink.padded(storage[0..n], width, pad)
 }
 
+pub piece[i64](sink: *Sink, value: i64, width: usize, pad: u8) {
+    piece[int](sink, int(value), width, pad)
+}
+
+pub piece[u64](sink: *Sink, value: u64, width: usize, pad: u8) {
+    piece[uint](sink, uint(value), width, pad)
+}
+
 pub piece[usize](sink: *Sink, value: usize, width: usize, pad: u8) {
     storage: [20]u8
     n: usize, ok: bool = decimal_digits(u64(value), storage[0..20])
@@ -492,6 +500,10 @@ pub piece_radix[uint](sink: *Sink, value: uint, base: u8, uppercase: bool, width
     storage: [64]u8
     n: usize, ok: bool = radix(u64(value), base, uppercase, storage[0..64])
     sink.padded(storage[0..n], width, pad)
+}
+
+pub piece_radix[u64](sink: *Sink, value: u64, base: u8, uppercase: bool, width: usize, pad: u8) {
+    piece_radix[uint](sink, uint(value), base, uppercase, width, pad)
 }
 
 pub piece_radix[usize](sink: *Sink, value: usize, base: u8, uppercase: bool, width: usize, pad: u8) {

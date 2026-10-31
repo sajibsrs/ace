@@ -72,7 +72,7 @@ deep(): int {
     fill: [40]i64 = [0 : 40]
     m: Mixed = { word = 3, inner = { pad = 1, small = -2, half = 4 },
                  ratio = 1.0, scale = 2.0, count = 5 }
-    fill[0] = int(m.inner.small)
+    fill[0] = i64(m.inner.small)
     return int(fill[0]) + int(m.word) + int(m.count)
 }
 

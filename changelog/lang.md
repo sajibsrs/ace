@@ -1,5 +1,10 @@
 # Language
 
+- `int` and `uint` are distinct types on every target, no longer aliases of
+  `i64` and `u64`: casts cross between them and overloads keep them apart
+  (`P_INT`, `P_UINT`). `Map`, `atomic`, `fmt.print`, and `printf` keep
+  accepting all four. C and selfhost.
+
 - A `bool` casts to any integer type as exactly 0 or 1, in constants too; no
   integer casts to `bool` (#162).
 - A global initializer folds `.len` of a string literal or of a global `const`

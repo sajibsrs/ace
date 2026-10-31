@@ -1,0 +1,7 @@
+/* A platform word never meets a fixed width without a cast. */
+
+main(): int {
+    word: int = 1
+    fixed: i64 = word
+    return word
+}
