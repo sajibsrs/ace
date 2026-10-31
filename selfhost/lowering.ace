@@ -3486,9 +3486,7 @@ Lw.format_call(self, x: u32, fi: u32, to_fd: int, res: *Agg, want_res: bool): in
             p += 1
         }
         g.scalar(self.konst(self.need_type(self.s.param(ft, p)), u64(part.width)))
-        zero: u64 = 0
-        if part.zero { zero = 1 }
-        g.scalar(self.konst(self.need_type(self.s.param(ft, p + 1)), zero))
+        g.scalar(self.konst(self.need_type(self.s.param(ft, p + 1)), u64(part.pad)))
         _ = self.format_helper_call(part.helper, g, ir.IT_VOID)
     }
     g.clear()

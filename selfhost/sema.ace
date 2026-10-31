@@ -3363,7 +3363,7 @@ pub FormatPart: struct {
     pub len: u32 = 0,                   // a text part's decoded byte count
     pub precision: u32 = 6,
     pub width: u32 = 0,                 // minimum byte width, 0 for none
-    pub zero: bool = false,             // '0' flag: zero padding after any sign
+    pub pad: u8 = 0,                    // 1 for the '0' flag, 2 for '-'
     pub helper: u32 = 0,                // the piece writer sema selected
 }
 
@@ -3525,7 +3525,16 @@ Sema.check_format_call(self, call: u32, f: u32, bi: u64): u32 {
             continue
         }
         zero: bool = false
+        left: bool = false
         width: u64 = 0
+        if text[i] == '-' {
+            left = true
+            i += 1
+            if i >= text.len || text[i] < '1' || text[i] > '9' {
+                self.err(format_arg, [who, " left-align flag needs a width at decoded byte ", self.num(conv_off)])
+                return self.t_err
+            }
+        }
         if text[i] == '0' {
             zero = true
             i += 1
@@ -3574,7 +3583,7 @@ Sema.check_format_call(self, call: u32, f: u32, bi: u64): u32 {
                 return self.t_err
             }
         } else if text[i] == '*' || text[i] == '+' || text[i] == '-' || text[i] == '#' || text[i] == ' ' {
-            self.err(format_arg, [who, " flags other than '0', '*', and positional arguments are not supported (decoded byte ", self.num(conv_off), ")"])
+            self.err(format_arg, [who, " flags other than '0', '-', '*', and positional arguments are not supported (decoded byte ", self.num(conv_off), ")"])
             return self.t_err
         }
         kind: u8 = PF_TEXT
@@ -3603,7 +3612,10 @@ Sema.check_format_call(self, call: u32, f: u32, bi: u64): u32 {
             self.err(format_arg, [who, " zero padding is supported only for numeric conversions (decoded byte ", self.num(conv_off), ")"])
             return self.t_err
         }
-        fail(parts.push(FormatPart { kind = kind, off = conv_off, arg = next_arg, precision = precision, width = u32(width), zero = zero }))
+        pad: u8 = 0
+        if zero { pad = 1 }
+        if left { pad = 2 }
+        fail(parts.push(FormatPart { kind = kind, off = conv_off, arg = next_arg, precision = precision, width = u32(width), pad = pad }))
         next_arg += 1
         i += 1
         literal = i

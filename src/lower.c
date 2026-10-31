@@ -1765,7 +1765,7 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
             arg_scalar(l, &g, konst(l, need_type(l, ft->params[p++]), part->precision));
         }
         arg_scalar(l, &g, konst(l, need_type(l, ft->params[p++]), part->width));
-        arg_scalar(l, &g, konst(l, need_type(l, ft->params[p]), part->zero));
+        arg_scalar(l, &g, konst(l, need_type(l, ft->params[p]), part->pad));
         format_helper_call(l, h, &g, IT_VOID);
     }
     args_init(&g);

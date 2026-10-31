@@ -389,19 +389,28 @@ pub Sink.fill(self, byte: u8, count: usize) {
     }
 }
 
-/* text widened to at least width bytes: spaces before it, or with zero,
- * zeroes between any leading '-' and the digits. The non-finite spellings
- * "nan" and "inf" (the only texts starting with 'n' or 'i' after the sign)
- * still take spaces.
+/* The padding a conversion's flag asks for: none, `0`, or `-`. */
+PAD_ZERO: const u8 = 1
+PAD_LEFT: const u8 = 2
+
+/* text widened to at least width bytes: spaces before it, or with PAD_LEFT
+ * after it, or with PAD_ZERO, zeroes between any leading '-' and the digits.
+ * The non-finite spellings "nan" and "inf" (the only texts starting with 'n'
+ * or 'i' after the sign) still take spaces.
  */
-Sink.padded(self, text: []u8, width: usize, zero: bool) {
+Sink.padded(self, text: []u8, width: usize, pad: u8) {
     if text.len >= width {
         self.put(text)
         return
     }
     fill: usize = width - text.len
 
-    if zero {
+    if pad == PAD_LEFT {
+        self.put(text)
+        self.fill(u8(32), fill)
+        return
+    }
+    if pad == PAD_ZERO {
         start: usize = 0
 
         if text.len > 0 && text[0] == u8(45) { start = 1 }
@@ -420,116 +429,116 @@ Sink.padded(self, text: []u8, width: usize, zero: bool) {
 /*
  * The piece writers the compiler's checked format lowering calls, one per
  * format piece: exact-type specializations, selected by the argument's type,
- * each taking the conversion's width (0 for none) and zero flag.
+ * each taking the conversion's width (0 for none) and padding.
  */
-pub piece[T](sink: *Sink, value: T, width: usize, zero: bool) specialized
+pub piece[T](sink: *Sink, value: T, width: usize, pad: u8) specialized
 
-pub piece_radix[T](sink: *Sink, value: T, radix: u8, uppercase: bool, width: usize, zero: bool) specialized
+pub piece_radix[T](sink: *Sink, value: T, radix: u8, uppercase: bool, width: usize, pad: u8) specialized
 
-pub piece_precision[T](sink: *Sink, value: T, precision: usize, width: usize, zero: bool) specialized
+pub piece_precision[T](sink: *Sink, value: T, precision: usize, width: usize, pad: u8) specialized
 
-pub piece_scientific[T](sink: *Sink, value: T, precision: usize, width: usize, zero: bool) specialized
+pub piece_scientific[T](sink: *Sink, value: T, precision: usize, width: usize, pad: u8) specialized
 
-pub piece_general[T](sink: *Sink, value: T, precision: usize, width: usize, zero: bool) specialized
+pub piece_general[T](sink: *Sink, value: T, precision: usize, width: usize, pad: u8) specialized
 
-pub piece[string](sink: *Sink, text: string, width: usize, zero: bool) {
+pub piece[string](sink: *Sink, text: string, width: usize, pad: u8) {
     if width == 0 {
         sink.put(text)
         return
     }
-    sink.padded(text, width, false)
+    sink.padded(text, width, pad)
 }
 
-pub piece[u8](sink: *Sink, value: u8, width: usize, zero: bool) {
+pub piece[u8](sink: *Sink, value: u8, width: usize, pad: u8) {
     if width == 0 {
         sink.byte(value)
         return
     }
     out: [1]u8 = [value]
-    sink.padded(out[0..1], width, false)
+    sink.padded(out[0..1], width, pad)
 }
 
-pub piece[int](sink: *Sink, value: int, width: usize, zero: bool) {
+pub piece[int](sink: *Sink, value: int, width: usize, pad: u8) {
     storage: [20]u8
     n: usize, ok: bool = signed(value, storage[0..20])
     if width == 0 {
         sink.put(storage[0..n])
         return
     }
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece[uint](sink: *Sink, value: uint, width: usize, zero: bool) {
+pub piece[uint](sink: *Sink, value: uint, width: usize, pad: u8) {
     storage: [20]u8
     n: usize, ok: bool = decimal_digits(u64(value), storage[0..20])
     if width == 0 {
         sink.put(storage[0..n])
         return
     }
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece[usize](sink: *Sink, value: usize, width: usize, zero: bool) {
+pub piece[usize](sink: *Sink, value: usize, width: usize, pad: u8) {
     storage: [20]u8
     n: usize, ok: bool = decimal_digits(u64(value), storage[0..20])
     if width == 0 {
         sink.put(storage[0..n])
         return
     }
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece_radix[uint](sink: *Sink, value: uint, base: u8, uppercase: bool, width: usize, zero: bool) {
+pub piece_radix[uint](sink: *Sink, value: uint, base: u8, uppercase: bool, width: usize, pad: u8) {
     storage: [64]u8
     n: usize, ok: bool = radix(u64(value), base, uppercase, storage[0..64])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece_radix[usize](sink: *Sink, value: usize, base: u8, uppercase: bool, width: usize, zero: bool) {
+pub piece_radix[usize](sink: *Sink, value: usize, base: u8, uppercase: bool, width: usize, pad: u8) {
     storage: [64]u8
     n: usize, ok: bool = radix(u64(value), base, uppercase, storage[0..64])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-piece_fixed(sink: *Sink, value: decimal.Decimal, digits: []u8, precision: usize, width: usize, zero: bool) {
+piece_fixed(sink: *Sink, value: decimal.Decimal, digits: []u8, precision: usize, width: usize, pad: u8) {
     storage: [640]u8
     n: usize, ok: bool = fixed(value, digits, precision, storage[0..640])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece_precision[f64](sink: *Sink, value: f64, precision: usize, width: usize, zero: bool) {
+pub piece_precision[f64](sink: *Sink, value: f64, precision: usize, width: usize, pad: u8) {
     digits: [640]u8
     view: []u8 = digits[0..640]
     converted: decimal.Decimal = decimal.fixed64(value, precision, view)
-    piece_fixed(sink, converted, view, precision, width, zero)
+    piece_fixed(sink, converted, view, precision, width, pad)
 }
 
-pub piece_precision[f32](sink: *Sink, value: f32, precision: usize, width: usize, zero: bool) {
+pub piece_precision[f32](sink: *Sink, value: f32, precision: usize, width: usize, pad: u8) {
     digits: [640]u8
     view: []u8 = digits[0..640]
     converted: decimal.Decimal = decimal.fixed32(value, precision, view)
-    piece_fixed(sink, converted, view, precision, width, zero)
+    piece_fixed(sink, converted, view, precision, width, pad)
 }
 
-pub piece_scientific[f64](sink: *Sink, value: f64, precision: usize, width: usize, zero: bool) {
+pub piece_scientific[f64](sink: *Sink, value: f64, precision: usize, width: usize, pad: u8) {
     digits: [640]u8
     view: []u8 = digits[0..640]
     converted: decimal.Decimal = decimal.significant64(value, precision + 1, view)
     storage: [640]u8
     n: usize, ok: bool = scientific(converted, view, precision, false, storage[0..640])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece_scientific[f32](sink: *Sink, value: f32, precision: usize, width: usize, zero: bool) {
+pub piece_scientific[f32](sink: *Sink, value: f32, precision: usize, width: usize, pad: u8) {
     digits: [640]u8
     view: []u8 = digits[0..640]
     converted: decimal.Decimal = decimal.significant32(value, precision + 1, view)
     storage: [640]u8
     n: usize, ok: bool = scientific(converted, view, precision, false, storage[0..640])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece_general[f64](sink: *Sink, value: f64, precision: usize, width: usize, zero: bool) {
+pub piece_general[f64](sink: *Sink, value: f64, precision: usize, width: usize, pad: u8) {
     count: usize = precision
 
     if count == 0 { count = 1 }
@@ -538,10 +547,10 @@ pub piece_general[f64](sink: *Sink, value: f64, precision: usize, width: usize, 
     converted: decimal.Decimal = decimal.significant64(value, count, view)
     storage: [640]u8
     n: usize, ok: bool = general(converted, view, count, storage[0..640])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }
 
-pub piece_general[f32](sink: *Sink, value: f32, precision: usize, width: usize, zero: bool) {
+pub piece_general[f32](sink: *Sink, value: f32, precision: usize, width: usize, pad: u8) {
     count: usize = precision
 
     if count == 0 { count = 1 }
@@ -550,5 +559,5 @@ pub piece_general[f32](sink: *Sink, value: f32, precision: usize, width: usize, 
     converted: decimal.Decimal = decimal.significant32(value, count, view)
     storage: [640]u8
     n: usize, ok: bool = general(converted, view, count, storage[0..640])
-    sink.padded(storage[0..n], width, zero)
+    sink.padded(storage[0..n], width, pad)
 }

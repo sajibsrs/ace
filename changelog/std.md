@@ -165,3 +165,5 @@
   joined or detached exactly once.
 - `poll.watch` takes an optional `context` pointer on Darwin; `Event` reports it
   with `fd` -1, because epoll's data word holds one value.
+- `fmt.printf` gains the `-` flag, spaces after the text on any conversion
+  (`%-16s`); a piece writer's zero flag becomes a `pad` byte.

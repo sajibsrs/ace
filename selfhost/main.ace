@@ -645,13 +645,6 @@ package_edit(start: string, name: string, version: string, add: bool): int {
     return 1
 }
 
-/* `text` padded with spaces to `width`, as C's %-*s, in `pool`. */
-padded(pool: *path.Pool, text: string, width: usize): string {
-    out: string = text
-    for out.len < width { out = pool.join([out, " "]) }
-    return out
-}
-
 /* `ace pkg list`: the resolved graph, dependencies first. */
 package_list(args: []string, start: string): int {
     if args.len != 0 {
@@ -683,7 +676,7 @@ package_list(args: []string, start: string): int {
         }
         kind: string = "lib"
         if p.is_exe { kind = "exe" }
-        fmt.printf("%s %s %s %s\n", padded(&pool, p.name, 16), padded(&pool, kind, 4), padded(&pool, relation, 10), p.dir)
+        fmt.printf("%-16s %-4s %-10s %s\n", p.name, kind, relation, p.dir)
     }
     return 0
 }

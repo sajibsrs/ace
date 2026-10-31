@@ -258,7 +258,7 @@ typedef struct Package Package;
 typedef struct {
     uint8_t  kind;
     uint16_t precision;
-    uint8_t  zero;       // '0' flag: zero padding after any sign
+    uint8_t  pad;        // 1 for the '0' flag, zero padding after any sign; 2 for '-'
     uint32_t width;      // minimum byte width, 0 for none
     uint32_t off, len;   // decoded static-format byte span for PF_TEXT
     int      arg;        // call->kids index; zero for text/percent

@@ -740,8 +740,9 @@ for want in \
     "format must be a string literal or static-literal const global" \
     "incomplete fmt.printf conversion" \
     "unsupported fmt.printf conversion '%q'" \
-    "flags other than '0', '*', and positional arguments are not supported" \
+    "flags other than '0', '-', '*', and positional arguments are not supported" \
     "zero flag needs a width" \
+    "left-align flag needs a width" \
     "width 1000001 exceeds the limit 1000000" \
     "zero padding is supported only for numeric conversions" \
     "precision needs decimal digits" \

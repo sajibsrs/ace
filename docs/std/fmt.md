@@ -100,7 +100,7 @@ per-shape generics in the internal `std/@/formatting.ace` — `piece[T]` for
 text, bytes, and decimal integers, `piece_precision[T]`,
 `piece_scientific[T]`, and `piece_general[T]` for `%f`, `%e`, and `%g`,
 and `piece_radix[T]` for binary, octal, and hexadecimal, each taking the
-sink, the value, the conversion's extras, its width, and its zero flag —
+sink, the value, the conversion's extras, its width, and its padding —
 selected by the format interpreter's concrete argument type (see
 [Functions](../function.md#generic-specialization)). Runtime-created or
 runtime-selected formats are rejected. There is no runtime parser, argument
@@ -146,8 +146,9 @@ the piece with spaces on the left to at least that many bytes, from 1 through
 1000000. A `0` flag before the width (`%05d`, `%08x`, `%064b`, `%06.2f`) pads
 numeric conversions with zeroes after any sign instead: `-0042`. `nan` and
 `inf` still take spaces, and `%s`/`%c` reject the flag. A longer value is
-never truncated. Write a base prefix as literal text (`0x%08x`). Left
-alignment, sign and alternate-form flags, dynamic `*`, and positional
+never truncated. A `-` flag (`%-16s`, `%-5d`) pads with spaces after the text
+on any conversion, and takes the place of `0`. Write a base prefix as literal
+text (`0x%08x`). Sign and alternate-form flags, dynamic `*`, and positional
 arguments are not implemented; the precision on `%f`, `%e`, and `%g` is the
 only other modifier, from 0 through 324.
 

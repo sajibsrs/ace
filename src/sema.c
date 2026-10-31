@@ -3946,7 +3946,7 @@ static SType* check_memory_generic_call(Ck* k, Node* call, Sym* fn, SType* elem,
  * lookup (Generics #10): the writer shapes are 'specialized' generics —
  * piece[T], piece_radix[T], and the float writers piece_precision[T]
  * (%f), piece_scientific[T] (%e), and piece_general[T] (%g), each taking the sink,
- * the value, its conversion's extras, width, and zero flag — and the format
+ * the value, its conversion's extras, width, and padding — and the format
  * interpreter's concrete argument type selects the specialization whose
  * type-argument tuple equals it. With nargs == 0 it finds the plain function
  * (the call's sink opener or closer, beside the public function).
@@ -4103,8 +4103,16 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             continue;
         }
 
-        int zero = 0;
+        int zero = 0, left = 0;
         uint64_t width = 0;
+        if (format->str[i] == '-') {
+            left = 1;
+            i++;
+            if (i >= format->len || format->str[i] < '1' || format->str[i] > '9') {
+                ck_err(k, format_arg, "%s left-align flag needs a width at decoded byte %u", who, conv_off);
+                return T_ERR;
+            }
+        }
         if (format->str[i] == '0') {
             zero = 1;
             i++;
@@ -4159,7 +4167,7 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
                    format->str[i] == '-' || format->str[i] == '#' ||
                    format->str[i] == ' ') {
             ck_err(k, format_arg,
-                   "%s flags other than '0', '*', and positional arguments are not supported (decoded byte %u)", who,
+                   "%s flags other than '0', '-', '*', and positional arguments are not supported (decoded byte %u)", who,
                    conv_off);
             return T_ERR;
         }
@@ -4193,7 +4201,7 @@ static SType* check_format_call(Ck* k, Node* call, Sym* fn, const FormatCall* fc
             return T_ERR;
         }
         printf_add_part(plan, &cap, (PrintfPart){ .kind = (uint8_t)kind,
-            .precision = precision, .width = (uint32_t)width, .zero = (uint8_t)zero,
+            .precision = precision, .width = (uint32_t)width, .pad = (uint8_t)(left ? 2 : zero),
             .off = conv_off, .arg = next_arg++ });
         i++;
         literal = i;
