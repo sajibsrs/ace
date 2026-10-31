@@ -4650,11 +4650,6 @@ static SType* check_call_raw(Ck* k, Node* call) {
         SType* from = expr_type(k, call->kids[0]);
         if (from->kind == SK_ERR) return T_ERR;
         if (from->kind == SK_PTR) {
-            if (!plain_bits(from->base) || !plain_bits(want->base)) {
-                ck_err(k, call, "pointer reinterpretation requires plain-bits pointees, got %s to %s",
-                       type_name(from), type_name(want));
-                return T_ERR;
-            }
             if (want->base->align <= from->base->align) call->flags |= F_BOUNDS_PROVEN;
             callee->ty = want;
             return want;

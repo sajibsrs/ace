@@ -62,7 +62,7 @@ main(): int {
     if !renderer.color(sdl.Color {}) || !renderer.clear() { return 6 }
     if !renderer.geometry(triangle[..], null) { return 7 }
 
-    surface: *SDL_Surface = read_pixels(bitcast(*u8, renderer.handle), null)
+    surface: *SDL_Surface = read_pixels(*u8(renderer.handle), null)
     defer destroy_surface(surface)
     if surface == null { return 8 }
     if red(surface, 2, 2) != 255 { return 9 }

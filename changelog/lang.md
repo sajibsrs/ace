@@ -238,3 +238,5 @@
 - A `const` C global (`extern "c" { limit: const i32 }`) is a const binding
   like an Ace `const` global: assignment and writable views are rejected
   (C and selfhost, #158).
+- `*U(pointer)` reinterprets any data pointer, not only plain-bits pointees;
+  forging a compiler-created value through one is undefined.

@@ -36,7 +36,7 @@ Decision: manual management through one fixed process-wide allocator strategy (C
    slices, strings, contracts, and other callable or multiword values do not
    participate.
    `*U(pointer)` reinterprets a data pointer `*T` as the same address viewing
-   `U` (untyped storage, below). Both `T` and `U` must be plain bits. `null` stays `null`. When `alignof(U)` exceeds
+   `U` (untyped storage, below). `null` stays `null`. When `alignof(U)` exceeds
    `alignof(T)`, the address alignment rule above applies; otherwise the
    conversion is proven aligned and emits nothing. `*T(address)` from `usize`
    remains unrestricted as the raw-address boundary.
@@ -85,8 +85,8 @@ Carved (untyped storage):
   plain-bits type is a value, except that a `bool` read from reinterpreted
   storage is trusted to be `0` or `1` (Type System #12). Tagged unions, `Error`,
   error domains, `typeid`, contracts, Ace function values, slices, strings, and
-  tuples are not plain bits: their values are created only by the language, and
-  reinterpretation never produces one.
+  tuples are not plain bits: their values are created only by the language.
+  Storing bytes through a reinterpreted pointer that forge one is undefined.
 - `bitcast(U, value)` is a reserved builtin copying the bits of `value` as `U`,
   in native byte order. `value` must be typed (an untyped constant is converted
   first), both types plain bits of equal size, and the source type free of

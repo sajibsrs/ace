@@ -3681,8 +3681,8 @@ Sema.check_format_call(self, call: u32, f: u32, bi: u64): u32 {
     return r
 }
 
-/* `*T(x)`: a data pointer from a usize address, or another data pointer's
- * plain bits reinterpreted without widening permission.
+/* `*T(x)`: a data pointer from a usize address, or another data pointer
+ * reinterpreted without widening permission.
  */
 Sema.check_pointer_cast(self, call: u32): u32 {
     n: Node = self.node(call)
@@ -3702,10 +3702,6 @@ Sema.check_pointer_cast(self, call: u32): u32 {
     f: SType = self.ty(from)
     if f.kind == TypeKind.err { return self.t_err }
     if f.kind == TypeKind.ptr {
-        if !self.plain_bits(f.base) || !self.plain_bits(base) {
-            self.err(call, ["pointer reinterpretation requires plain-bits pointees, got ", self.type_name(from), " to ", self.type_name(want)])
-            return self.t_err
-        }
         if self.ty(base).align <= self.ty(f.base).align { self.set_node_proof(call, self.node_proof(call) | PROOF_BOUNDS) } // aligned already
         self.set_node_ty(n.a, want)
         return want

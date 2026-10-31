@@ -248,7 +248,7 @@ authority. Debug output diagnoses dynamic nonzero misalignment, while a
 locally known misaligned address is always a compile error.
 
 The same spelling reinterprets another data pointer, viewing the same address
-as a different plain-bits type:
+as any other complete type, so a pointer to any struct can pass through `*u8`:
 
 ```ace
 event: Event
@@ -652,8 +652,9 @@ Why the rules in `spec/memory.md` are shaped as they are.
 - Untyped storage: the machine has no typed memory, and Ace already states
   aliasing explicitly, so type-based disjointness would buy nothing Ace relies
   on while making every foreign union, record header, and device layout
-  undefined. Restricting reinterpretation to plain bits keeps compiler-created
-  values unforgeable, so the facts passes rely on for them need no debug check.
+  undefined. Pointer casts admit every pointee because `*T(usize)` and `bitcast`
+  already did; forging a compiler-created value through one is undefined, so
+  the facts passes rely on need no debug check.
 - Volatile access: access-site marking exposes each observable operation without
   a contagious qualifier system and remains independent of byte layout.
 - Volatile access implementation: ordinary and volatile

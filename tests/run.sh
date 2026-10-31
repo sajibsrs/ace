@@ -735,12 +735,6 @@ if [ "$(printf '%s\n' "$bitcast_errors" | grep -c 'error:')" -ne 7 ]; then
     fail=1
 fi
 
-reinterpret_errors=$("$ACE" tests/sema/pointers/reinterpret_err.ace 2>&1)
-if [ "$(printf '%s\n' "$reinterpret_errors" | grep -c 'pointer reinterpretation')" -ne 8 ]; then
-    echo "FAIL: pointer reinterpretation diagnostics"
-    fail=1
-fi
-
 printf_format_errors=$("$ACE" tests/sema/printf/formats_err.ace 2>&1)
 for want in \
     "format must be a string literal or static-literal const global" \
