@@ -11,6 +11,9 @@ has_error(err: Error, domain: typeid): bool {
 }
 
 main(): int {
+    bad_queue: Error = poll.unwatch(poll.Queue(999), sys.Fd(0))
+    if bad_queue != poll.UnwatchErr.descriptor { return 99 }
+
     q: poll.Queue, err: Error = poll.queue()
 
     if err != null || q == -1 { return 1 }

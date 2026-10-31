@@ -130,7 +130,7 @@ pub unwatch(q: Queue, fd: sys.Fd): Error {
     if result == 0 {
         removed = true
     } else if sys.errno() != ENOENT {
-        return UnwatchErr.not_found
+        return UnwatchErr(sys.errno())
     }
 
     result = change_filter(q, fd, EVFILT_WRITE, EV_DELETE, null)

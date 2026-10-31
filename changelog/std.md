@@ -1,5 +1,7 @@
 # Standard library
 
+- `poll.unwatch` on Darwin reports a read-filter failure by its own errno
+  rather than `not_found` (#168).
 - `tcp` handles work with `poll` (#165): `watch` overloads for listeners and
   `context`, `unwatch`, the `interest(&conn, value)` setter, and
   `AcceptErr.pending` from `accept_nonblock`. `progress_send` takes the unsent

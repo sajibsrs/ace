@@ -106,7 +106,7 @@ history.
 - A function that only builds or releases memory is named for it:
   `Type.new(...)` (free form `x_new`) when the value owns heap memory that
   must be released, whoever allocates it (`mem` or a C library); a matching
-  `Type.wipe(mut self)` (`x_wipe`) releases it. `Type.init(...)` (`x_init`)
+  `Type.wipe(self)` (`x_wipe`) releases it. `Type.init(...)` (`x_init`)
   when there is nothing to release, as for a value over caller storage. A
   function that does work on its input keeps its verb (`parse`, `compile`).
   A type that has a `wipe` owns memory, and all its constructors agree on
