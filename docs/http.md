@@ -183,6 +183,34 @@ thread-safe; the router is read-only after registration and is shared.
 cd demo/http-multi-threaded-server && ace pkg run  # listens on 127.0.0.1:8080
 ```
 
+## Multi-threaded event-loop HTTP server demo
+
+`demo/http-multi-threaded-event-loop-server/main.ace` keeps the demo above's
+one listener and four threads, but each thread runs its own `poll` queue over
+non-blocking sockets, so an idle or slow client holds a table slot rather than
+a worker. It uses `RequestParser`, `Router.dispatch`, and `Response.format`
+directly, with no new `http` API.
+
+- Each `Connection` holds explicit progress: parser, bytes received, bytes
+  sent. It moves from reading to writing to closed, with one request per
+  connection (`Connection: close`).
+- `poll.Event` carries a descriptor and no user pointer, so a worker indexes its
+  connection table by descriptor. A slot keeps its buffers for the next
+  connection, so allocation stops once the slots have grown.
+- All workers watch the shared listener and accept once per readiness event.
+  Level-triggered readiness spreads a backlog across workers, and one worker
+  owns each connection, so connection state needs no lock. Darwin's
+  `SO_REUSEPORT` does not balance connections between listeners.
+- A connection is closed 10 seconds after accept, however much it has sent, so
+  a client trickling bytes cannot hold a slot forever. Requests over 64 KiB are
+  dropped.
+- Handlers run on the event loop: one that blocks stalls that worker's
+  connections.
+
+```sh
+cd demo/http-multi-threaded-event-loop-server && ace pkg run  # listens on 127.0.0.1:8080
+```
+
 ## Known limitations and next improvements
 
 HTTPS/TLS,

@@ -1,0 +1,389 @@
+/* Multi-threaded event-loop HTTP/1.1 server: WORKERS threads each wait on
+ * their own poll queue over non-blocking sockets, so an idle or slow client
+ * holds a table slot rather than a thread. Each connection is an explicit
+ * state machine: it reads and parses until a request completes, then writes
+ * the response, then closes. Allocation happens only in `mem.grow`.
+ *
+ * Every worker watches the one shared listener and accepts one connection per
+ * readiness event. A connection stays on the worker that accepted it, so its
+ * state needs no lock; the queue is level-triggered, so connections left in
+ * the backlog wake the next wait, on any worker. Handlers run on the event
+ * loop and must not block.
+ *
+ * Build and run (from this directory):
+ *   ace pkg run
+ *
+ * Listens on 127.0.0.1:8080.
+ */
+
+import fmt
+import http
+import mem
+import net
+import poll
+import sys
+import thread
+import time
+
+WORKERS: const usize = 4
+BACKLOG: const usize = 512
+EVENTS: const usize = 64
+MAX_REQUEST: const usize = 65536
+NS_PER_SECOND: const u64 = 1000000000
+TIMEOUT: const u64 = 10 * NS_PER_SECOND // from accept to the last response byte
+
+Server: struct {
+    listener: net.Socket,
+    router: *http.Router,
+}
+
+/* One client's progress. A slot's buffers outlive its connection, so a later
+ * connection on the same descriptor reuses them.
+ */
+Connection: struct {
+    open: bool,
+    writing: bool,
+    deadline: u64,
+    parser: http.RequestParser,
+    input: []u8,
+    occupied: usize,
+    headers: []http.Header,
+    body: []u8,
+    output: []u8,
+    pending: usize,
+    sent: usize,
+}
+
+/* One thread's event loop. `connections` is indexed by descriptor, since
+ * `poll.Event` reports a descriptor and carries no user pointer.
+ */
+Worker: struct {
+    queue: poll.Queue,
+    server: *Server,
+    connections: []Connection,
+}
+
+Worker.wipe(self) {
+    for i: usize in 0 .. self.connections.len {
+        connection: *Connection = &self.connections[i]
+        if connection.open { sys.close(sys.Fd(i32(i))) }
+
+        mem.release[u8](&connection.input)
+        mem.release[http.Header](&connection.headers)
+        mem.release[u8](&connection.body)
+        mem.release[u8](&connection.output)
+    }
+    mem.release[Connection](&self.connections)
+}
+
+fresh_parser(): http.RequestParser {
+    return http.RequestParser {
+        phase = http.RequestPhase.request,
+        framing = http.RequestFraming.undecided,
+    }
+}
+
+handle(request: http.Request): http.Response {
+    if mem.equal(request.target, "/") {
+        return http.Response {
+            status = 200,
+            body = "Hello from Ace event loops!\n",
+        }
+    }
+    return http.Response {
+        status = 404,
+        body = "not found\n",
+    }
+}
+
+/* Closing the descriptor also removes it from the queue. */
+finish(connection: *Connection, socket: net.Socket) {
+    connection.open = false
+    sys.close(socket)
+}
+
+/* Formats `response` with `Connection: close` into the connection's output. */
+format(connection: *Connection, response: http.Response): bool {
+    count: usize = response.headers.len + 1
+    if count > connection.headers.len {
+        grown: []http.Header, ok: bool = mem.grow[http.Header](connection.headers, count)
+        if !ok { return false }
+
+        connection.headers = grown
+    }
+    mem.copy[http.Header](connection.headers[0 .. response.headers.len], response.headers)
+    connection.headers[response.headers.len] = http.Header {
+        name = "Connection",
+        value = "close",
+    }
+    outgoing: http.Response = response
+    outgoing.headers = connection.headers[..count]
+
+    written: usize, err: Error = outgoing.format(connection.output[..])
+    for err == http.FormatErr.capacity {
+        grown: []u8, ok: bool = mem.grow[u8](connection.output, connection.output.len + 1)
+        if !ok { return false }
+
+        connection.output = grown
+        written, err = outgoing.format(connection.output[..])
+    }
+    connection.pending = written
+    return err == null
+}
+
+/* Grows the storage the parser asked for; false drops the connection. */
+grow_parsed(connection: *Connection, kind: http.RequestCapacity): bool {
+    if kind == http.RequestCapacity.headers {
+        grown: []http.Header, ok: bool = mem.grow[http.Header](connection.headers, connection.headers.len + 1)
+        if ok { connection.headers = grown }
+        return ok
+    }
+    parser: *http.RequestParser = &connection.parser
+    needed: usize = parser.body_count + (connection.occupied - parser.input_offset)
+    if parser.framing == http.RequestFraming.content_length {
+        needed = parser.content_length
+    } else if parser.framing == http.RequestFraming.chunked {
+        needed = parser.body_count + parser.chunk_remaining
+    }
+    if needed > MAX_REQUEST { return false }
+
+    grown: []u8, ok: bool = mem.grow[u8](connection.body, needed)
+    if ok { connection.body = grown }
+    return ok
+}
+
+/* Parses the bytes received so far. A complete request moves the connection
+ * to writing; false drops it.
+ */
+advance(worker: *Worker, connection: *Connection): bool {
+    for {
+        result: http.RequestResult = connection.parser.parse(
+            connection.input[..connection.occupied],
+            connection.headers[..],
+            connection.body[..],
+            false,
+        )
+        switch result {
+            http.RequestResult.complete(request: http.Request) {
+                connection.writing = true
+                return format(connection, worker.server.router.dispatch(request))
+            }
+            http.RequestResult.progress(value: http.RequestProgress) {
+                return true
+            }
+            http.RequestResult.capacity(kind: http.RequestCapacity) {
+                if !grow_parsed(connection, kind) { return false }
+            }
+            default {
+                return false
+            }
+        }
+    }
+}
+
+/* Reads until the socket would block or a request completes. */
+read_ready(worker: *Worker, connection: *Connection, socket: net.Socket) {
+    for !connection.writing {
+        if connection.occupied == connection.input.len {
+            if connection.input.len >= MAX_REQUEST {
+                finish(connection, socket)
+                return
+            }
+            grown: []u8, ok: bool = mem.grow[u8](connection.input, connection.input.len + 1)
+            if !ok {
+                finish(connection, socket)
+                return
+            }
+            connection.input = grown
+
+            /* Parsed views point into the old input, so parse again from
+             * the start. */
+            connection.parser = fresh_parser()
+        }
+        count: int, err: Error = net.receive(socket, connection.input[connection.occupied..])
+        if err != null {
+            if err.domain == typeid(net.ReceiveErr) {
+                if err.code == sys.EINTR { continue }
+                if err.code == sys.EAGAIN { return }
+            }
+            finish(connection, socket)
+            return
+        }
+        if count == 0 {
+            finish(connection, socket)
+            return
+        }
+        connection.occupied += usize(count)
+
+        if !advance(worker, connection) {
+            finish(connection, socket)
+            return
+        }
+    }
+    write_ready(worker, connection, socket)
+}
+
+/* Writes until the response is out, then closes, or until the socket would
+ * block, then waits for it to become writable.
+ */
+write_ready(worker: *Worker, connection: *Connection, socket: net.Socket) {
+    for connection.sent < connection.pending {
+        count: int, err: Error = net.send(socket, connection.output[connection.sent .. connection.pending])
+        if err != null {
+            if err.domain == typeid(net.SendErr) {
+                if err.code == sys.EINTR { continue }
+                if err.code == sys.EAGAIN {
+                    if poll.watch(worker.queue, socket, false, true) != null { finish(connection, socket) }
+                    return
+                }
+            }
+            finish(connection, socket)
+            return
+        }
+        connection.sent += usize(count)
+    }
+    finish(connection, socket)
+}
+
+/* Starts `socket`'s connection in the slot its descriptor indexes. */
+open(worker: *Worker, socket: net.Socket): bool {
+    slot: usize = usize(i32(socket))
+    if slot >= worker.connections.len {
+        used: usize = worker.connections.len
+        grown: []Connection, ok: bool = mem.grow[Connection](worker.connections, slot + 1)
+        if !ok { return false }
+
+        worker.connections = grown
+        for i: usize in used .. grown.len { grown[i] = blank(Connection) }
+    }
+    if net.nonblock(socket, true) != null { return false }
+    if poll.watch(worker.queue, socket, true, false) != null { return false }
+
+    connection: *Connection = &worker.connections[slot]
+    connection.open = true
+    connection.writing = false
+    connection.deadline = time.elapsed() + TIMEOUT
+    connection.parser = fresh_parser()
+    connection.occupied = 0
+    connection.pending = 0
+    connection.sent = 0
+    return true
+}
+
+accept_ready(worker: *Worker) {
+    socket: net.Socket, _, err: Error = net.accept(worker.server.listener)
+    if err != null { return } // another worker won it, or the client left
+
+    if !open(worker, socket) { sys.close(socket) }
+}
+
+/* Closes every connection past its deadline. */
+expire(worker: *Worker) {
+    now: u64 = time.elapsed()
+    for i: usize in 0 .. worker.connections.len {
+        connection: *Connection = &worker.connections[i]
+        if connection.open && now >= connection.deadline {
+            finish(connection, net.Socket(i32(i)))
+        }
+    }
+}
+
+work(server: *Server) {
+    queue: poll.Queue, queue_err: Error = poll.queue()
+    if queue_err != null {
+        fmt.printf("failed to create queue: error %d\n", int(queue_err.code))
+        sys.exit(1)
+    }
+    defer sys.close(sys.Fd(queue))
+
+    worker: Worker = Worker { queue = queue, server = server, connections = null }
+    defer worker.wipe()
+
+    watch_err: Error = poll.watch(queue, server.listener, true, false)
+    if watch_err != null {
+        fmt.printf("failed to watch listener: error %d\n", int(watch_err.code))
+        sys.exit(1)
+    }
+
+    events: [EVENTS]poll.Event = [blank(poll.Event) : EVENTS]
+    next_expiry: u64 = time.elapsed() + NS_PER_SECOND
+    for {
+        count: usize, wait_err: Error = poll.wait(queue, events[..], NS_PER_SECOND)
+        if wait_err == poll.WaitErr.interrupted { continue }
+        if wait_err != null {
+            fmt.printf("failed to wait: error %d\n", int(wait_err.code))
+            sys.exit(1)
+        }
+
+        for i: usize in 0 .. count {
+            socket: net.Socket = events[i].fd
+            if socket == server.listener {
+                accept_ready(&worker)
+                continue
+            }
+            slot: usize = usize(i32(socket))
+            if slot >= worker.connections.len { continue }
+
+            connection: *Connection = &worker.connections[slot]
+            if !connection.open { continue }
+
+            if connection.writing {
+                write_ready(&worker, connection, socket)
+            } else {
+                read_ready(&worker, connection, socket)
+            }
+        }
+
+        if time.elapsed() >= next_expiry {
+            expire(&worker)
+            next_expiry = time.elapsed() + NS_PER_SECOND
+        }
+    }
+}
+
+listen(address: net.Addr4): (net.Socket, Error) {
+    socket: net.Socket, err: Error = net.socket(net.SocketType.tcp)
+    if err != null { return socket, err }
+
+    err = net.nonblock(socket, true)
+    if err == null { err = net.reuseaddr(socket, true) }
+    if err == null { err = net.bind(socket, address) }
+    if err == null { err = net.listen(socket, BACKLOG) }
+    return socket, err
+}
+
+main(): int {
+    address: net.Addr4, parsed: bool = net.parse4("127.0.0.1:8080")
+    if !parsed { return 1 }
+
+    listener: net.Socket, listen_err: Error = listen(address)
+    if listen_err != null {
+        fmt.printf("failed to listen: error %d\n", int(listen_err.code))
+        return 1
+    }
+
+    router: http.Router = http.Router.new()
+    defer router.wipe()
+    route_err: Error = router.handle(http.GET, "/", handle)
+    if route_err != null {
+        fmt.printf("failed to register route: error %d\n", int(route_err.code))
+        return 1
+    }
+
+    server: Server = Server { listener = listener, router = &router }
+    threads: [WORKERS]thread.Thread = [thread.Thread {} : WORKERS]
+    for i: usize in 0 .. WORKERS {
+        t: thread.Thread, err: Error = thread.Thread.create(work, *u8(&server))
+        if err != null {
+            fmt.printf("failed to start worker: error %d\n", int(err.code))
+            sys.exit(1) // running workers still use the router and listener
+        }
+        threads[i] = t
+    }
+    fmt.printf("listening on 127.0.0.1:8080 with %d workers (Ctrl+C to stop)\n", int(WORKERS))
+
+    for i: usize in 0 .. WORKERS {
+        threads[i].join()
+    }
+    return 0
+}
