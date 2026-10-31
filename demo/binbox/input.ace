@@ -19,14 +19,7 @@ import app: "./app.ace"
 
 /* SDL keycodes the binding leaves unnamed. */
 KEY_DELETE: const u32 = 0x7f
-KEY_HOME: const u32 = 0x4000_004a
-KEY_END: const u32 = 0x4000_004d
 KEY_F1: const u32 = 0x4000_003a
-
-/* SDL_KMOD_SHIFT: either side's key. */
-KMOD_SHIFT: const u16 = 0x0003
-/* SDL_KMOD_GUI: either side's Command (Windows) key. */
-KMOD_GUI: const u16 = 0x0c00
 
 /* The key that selects each block, lowercase as SDL reports it; 0 for none. */
 KEY: [grid.Block]u8 = [
@@ -105,7 +98,11 @@ Input.paint(self, g: *app.App, x: int, y: int, button: MouseButton, press: bool)
 /* A press at window point (x, y). True when the bar or a panel took it, so it
  * paints nothing. */
 Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
-    if g.mode == app.Mode.save_as || g.sel.drag == select.Drag.move { return true }
+    if g.mode == app.Mode.save_as {
+        if button == MouseButton.left { g.ctx.pressed = true }
+        return true
+    }
+    if g.sel.drag == select.Drag.move { return true }
     if g.mode == app.Mode.open {
         if button == MouseButton.left { g.ctx.pressed = true } else { g.mode = app.Mode.none }
         return true
@@ -119,58 +116,25 @@ Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
     return true
 }
 
-/* A key typed into the Save-as box. */
-Input.type(self, g: *app.App, e: KeyboardEvent) {
-    k: u32 = u32(e.key)
-    shift: bool = (e.mod & KMOD_SHIFT) != 0
-    if e.key == Keycode.escape {
-        g.mode = app.Mode.none
-    } else if e.key == Keycode.enter {
-        if g.draft.len == 0 { return }
-        g.mode = app.Mode.none
-        g.write()
-    } else if e.key == Keycode.backspace {
-        g.draft.back()
-    } else if k == KEY_DELETE {
-        g.draft.forward()
-    } else if e.key == Keycode.left {
-        if g.draft.at > 0 { g.draft.at -= 1 }
-    } else if e.key == Keycode.right {
-        if g.draft.at < g.draft.len { g.draft.at += 1 }
-    } else if k == KEY_HOME {
-        g.draft.at = 0
-    } else if k == KEY_END {
-        g.draft.at = g.draft.len
-    } else if k == u32('-') && shift {
-        g.draft.add('_')
-    } else if !shift && ((k >= u32('a') && k <= u32('z')) || (k >= u32('0') && k <= u32('9')) || k == u32('-')) {
-        g.draft.add(u8(k))
-    }
-}
-
-/* A key press; false to quit. A held key repeats only in the Save-as box. */
-Input.key(self, g: *app.App, e: KeyboardEvent): bool {
-    if g.mode == app.Mode.save_as {
-        self.type(g, e)
-        return true
-    }
+/* A key no widget consumed; false to quit. */
+Input.key(self, g: *app.App, e: ui.Key): bool {
     if g.sel.drag == select.Drag.move { return true }
-    if (e.mod & KMOD_GUI) != 0 && e.key == Keycode.q { return false }
+    if (e.mod & ui.MOD_GUI) != 0 && e.code == Keycode.q { return false }
     if e.repeat { return true }
-    if (e.mod & KMOD_GUI) != 0 && (e.key == Keycode.c || e.key == Keycode.x || e.key == Keycode.v || e.key == Keycode.z) {
+    if (e.mod & ui.MOD_GUI) != 0 && (e.code == Keycode.c || e.code == Keycode.x || e.code == Keycode.v || e.code == Keycode.z) {
         if g.phase != app.Phase.edit || g.mode != app.Mode.none { return true }
-        if e.key == Keycode.z && (e.mod & KMOD_SHIFT) != 0 { g.redo() } else if e.key == Keycode.z { g.undo() }
-        if e.key == Keycode.c { g.copy() }
-        if e.key == Keycode.x { g.cut() }
-        if e.key == Keycode.v { g.paste() }
+        if e.code == Keycode.z && (e.mod & ui.MOD_SHIFT) != 0 { g.redo() } else if e.code == Keycode.z { g.undo() }
+        if e.code == Keycode.c { g.copy() }
+        if e.code == Keycode.x { g.cut() }
+        if e.code == Keycode.v { g.paste() }
         return true
     }
-    if (e.mod & KMOD_GUI) != 0 {
-        if e.key == Keycode.s { g.save() }
-        if e.key == Keycode.o { g.browse() }
+    if (e.mod & ui.MOD_GUI) != 0 {
+        if e.code == Keycode.s { g.save() }
+        if e.code == Keycode.o { g.browse() }
         return true
     }
-    if e.key == Keycode.escape {
+    if e.code == Keycode.escape {
         if g.mode != app.Mode.none {
             g.mode = app.Mode.none
         } else {
@@ -178,14 +142,14 @@ Input.key(self, g: *app.App, e: KeyboardEvent): bool {
         }
         return true
     }
-    k: u32 = u32(e.key)
-    if (e.key == Keycode.backspace || k == KEY_DELETE) && g.pick == bar.Tool.select && g.mode == app.Mode.none { g.erase() }
+    k: u32 = u32(e.code)
+    if (e.code == Keycode.backspace || k == KEY_DELETE) && g.pick == bar.Tool.select && g.mode == app.Mode.none { g.erase() }
     if k == KEY_F1 {
         if g.phase == app.Phase.edit { g.switch(app.Phase.run) } else { g.switch(app.Phase.edit) }
     }
-    if e.key == Keycode.space && g.phase == app.Phase.run { g.auto = !g.auto }
-    if e.key == Keycode.v { g.use(bar.Tool.select) }
-    if e.key == Keycode.i { g.use(bar.Tool.dropper) }
+    if e.code == Keycode.space && g.phase == app.Phase.run { g.auto = !g.auto }
+    if e.code == Keycode.v { g.use(bar.Tool.select) }
+    if e.code == Keycode.i { g.use(bar.Tool.dropper) }
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
         if k == u32(KEY[each]) {
@@ -203,9 +167,9 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
         running = false
     }
     key: KeyboardEvent, is_key: bool = event.key()
-    if is_key && key.down {
-        running = running && self.key(g, key)
-    }
+    if is_key && key.down { g.ctx.add_key(key.key, key.mod, key.repeat) }
+    text: string, is_text: bool = event.text_input()
+    if is_text { g.ctx.add_text(text) }
     b: MouseButtonEvent, is_button: bool = event.mouse_button()
     if is_button {
         if !b.down && b.button == MouseButton.left {
@@ -221,7 +185,7 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
                 } else if g.pick == bar.Tool.select && g.phase == app.Phase.edit {
                     if self.held == MouseButton.left {
                         cx: int, cy: int = g.view.cell_at(b.x, b.y)
-                        g.sel.press(&g.s, &g.hist, cx, cy, (sdl.mod_state() & KMOD_GUI) != 0)
+                        g.sel.press(&g.s, &g.hist, cx, cy, (sdl.mod_state() & ui.MOD_GUI) != 0)
                     }
                     /* Carrying a selection shows the move cursor. */
                     if g.sel.drag == select.Drag.move { cursor(self.grab) }
@@ -260,11 +224,21 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
             self.paint(g, x, y, self.held, false)
         }
     }
-    /* The wheel zooms the board about the pointer, in either phase. */
     wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()
-    if is_wheel && g.mode == app.Mode.none {
-        g.view.zoom(wh.y, wh.mouse_x, wh.mouse_y)
-        x: int, y: int = g.view.cell_at(wh.mouse_x, wh.mouse_y)
+    if is_wheel { g.ctx.scroll += wh.y }
+    return running
+}
+
+/* What the frame's widgets left of its keys and wheel; false to quit. */
+pub Input.shortcuts(self, g: *app.App): bool {
+    running: bool = true
+    for i: usize in 0 .. g.ctx.key_count {
+        if !g.ctx.keys[i].used { running = self.key(g, g.ctx.keys[i]) && running }
+    }
+    /* The wheel zooms the board about the pointer, in either phase. */
+    if g.ctx.scroll != 0.0 && g.mode == app.Mode.none {
+        g.view.zoom(g.ctx.scroll, g.mx, g.my)
+        x: int, y: int = g.view.cell_at(g.mx, g.my)
         g.hx = x
         g.hy = y
     }

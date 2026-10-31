@@ -32,6 +32,9 @@ pub View: struct {
     oy: f32 = 0.0,
 }
 
+/* The window's height. */
+pub View.height(const self): f32 { return self.h }
+
 /* The side panel's width: its fold button alone when folded. */
 pub View.width(const self): f32 {
     if self.shut { return bar.FOLDED }

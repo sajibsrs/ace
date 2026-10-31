@@ -7,3 +7,4 @@ root: main.ace
 
 [dependency]
 ui: 0.1.0
+sdl: 0.1.0

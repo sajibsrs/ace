@@ -1,4 +1,8 @@
 import ui
+import Keycode from sdl
+
+/* No window: drawing only fills the layer. */
+canvas: ui.Canvas
 
 main(): int {
     row: ui.Rect = ui.Rect { x = 10.0, y = 20.0, w = 100.0, h = 30.0 }
@@ -25,5 +29,67 @@ main(): int {
     if ctx.track(1, hit).held { return 9 }
     ctx.blocked = true
     if ctx.track(1, hit).hover { return 10 }
+
+    /* A key is consumed once, with exactly its modifiers, either side's. */
+    io: ui.Ctx = ui.Ctx { canvas = &canvas, x = 5.0, y = 5.0 }
+    io.add_key(Keycode.s, 0x0400, false)
+    if io.key_pressed(Keycode.s, 0) || io.key_pressed(Keycode.a, ui.MOD_GUI) { return 11 }
+    if !io.key_pressed(Keycode.s, ui.MOD_GUI) || io.key_pressed(Keycode.s, ui.MOD_GUI) { return 12 }
+    io.end()
+    if io.key_count != 0 { return 13 }
+
+    /* A click focuses a field, which takes keys and allowed text ahead of
+     * shortcuts; a press elsewhere drops focus. */
+    bytes: [4]u8 = [0 : 4]
+    len: usize = 0
+    at: usize = 0
+    look: ui.ButtonStyle = ui.ButtonStyle {}
+    io.add_text("a")
+    io.pressed = true
+    res: ui.Response = io.text_field(3, hit, bytes[..], &len, &at, "ab", look)
+    if io.focus != 3 || !res.changed || len != 1 || at != 1 { return 14 }
+    io.end()
+    io.add_key(Keycode.left, 0, false)
+    io.add_text("bZ")
+    res = io.text_field(3, hit, bytes[..], &len, &at, "ab", look)
+    if len != 2 || at != 1 || bytes[0] != 'b' || bytes[1] != 'a' { return 15 }
+    if !io.keys[0].used || io.typed().len != 0 { return 16 }
+    io.end()
+    io.add_key(Keycode.backspace, 0, false)
+    io.add_key(Keycode.enter, 0, false)
+    res = io.text_field(3, hit, bytes[..], &len, &at, "ab", look)
+    if !res.submit || !res.changed || len != 1 || at != 0 || bytes[0] != 'a' { return 17 }
+    if io.key_pressed(Keycode.enter, 0) { return 18 }
+    io.end()
+    /* A key read first stays with its reader. */
+    io.add_key(Keycode.escape, 0, false)
+    if !io.key_pressed(Keycode.escape, 0) { return 19 }
+    io.end()
+    io.x = 50.0
+    io.pressed = true
+    io.text_field(3, hit, bytes[..], &len, &at, "", look)
+    if io.focus != 0 { return 20 }
+    io.end()
+    /* Unfocused, keys and text pass by. */
+    io.add_key(Keycode.a, 0, false)
+    io.add_text("a")
+    io.text_field(3, hit, bytes[..], &len, &at, "", look)
+    if len != 1 || io.keys[0].used || io.typed().len != 1 { return 21 }
+    io.end()
+
+    /* A list consumes the wheel only under the pointer and when overflowing. */
+    top_: f32 = 0.0
+    io.x = 5.0
+    io.scroll = -2.0
+    if !io.scroll_area(hit, 100.0, &top_, 20.0, look).changed || top_ != 40.0 || io.scroll != 0.0 { return 22 }
+    io.scroll = -9.0
+    io.scroll_area(hit, 100.0, &top_, 20.0, look)
+    if top_ != 90.0 { return 23 }
+    io.scroll = 1.0
+    io.scroll_area(hit, 5.0, &top_, 20.0, look)
+    if top_ != 0.0 || io.scroll != 1.0 { return 24 }
+    io.x = 50.0
+    io.scroll_area(hit, 100.0, &top_, 20.0, look)
+    if top_ != 0.0 || io.scroll != 1.0 { return 25 }
     return 0
 }

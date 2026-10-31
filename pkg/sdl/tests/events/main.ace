@@ -38,6 +38,15 @@ main(): int {
     quit_key: sdl.KeyboardEvent, quit_is_key: bool = quit.key()
     if quit_is_key { return 8 }
 
+    typed: sdl.Event
+    typed.padding = [0 : 128]
+    typed.input.type = sdl.EventType.text_input
+    typed.input.text = &"ab"[0]
+    text: string, is_text: bool = typed.text_input()
+    if !is_text || text.len != 2 || text[1] != 'b' { return 9 }
+    _none: string, none_is_text: bool = quit.text_input()
+    if none_is_text { return 9 }
+
     got: sdl.Event
     for got.poll() {
         key: sdl.KeyboardEvent, is_key: bool = got.key()

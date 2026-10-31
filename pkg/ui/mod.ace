@@ -2,11 +2,11 @@
  *
  * A Canvas holds a layer of triangles, shapes and text alike, in draw order;
  * flushing submits it in one geometry call. Rects are cut into layout, and a
- * Ctx's controls draw themselves and return what the pointer did.
+ * Ctx's controls draw themselves, take the frame's input, and report it.
  */
 
 import math
-import Renderer, Vertex, Point, Color from sdl
+import Renderer, Vertex, Point, Color, Keycode from sdl
 import font: "./inc/font.ace"
 
 /* Text size, in pixels per em. */
@@ -434,13 +434,17 @@ pub Canvas.left(self, box: Rect, pad: f32, text: string, ink: u32) {
     self.print(box.x + pad, baseline(box), text, ink)
 }
 
-/* What the pointer did to a widget. `hover` and `held` last while true; `press`
- * and `click` hold for one frame. */
-pub Events: struct {
+/* What input did to a widget. `hover` and `held` last while true; the rest
+ * hold for one frame. */
+pub Response: struct {
     pub hover: bool = false,
     pub press: bool = false,
     pub held: bool = false,
     pub click: bool = false,
+    /* The widget's value moved. */
+    pub changed: bool = false,
+    /* Enter in a text field. */
+    pub submit: bool = false,
 }
 
 pub ButtonStyle: struct {
@@ -455,8 +459,41 @@ pub ButtonStyle: struct {
     pub gap: f32 = 0.0,
 }
 
-/* The frame's pointer. `pressed` and `released` are the left button's edges
- * since the last `end`; a press something else took is not reported. */
+/* Modifier groups, each either side's key, as SDL_KMOD_* bits. */
+pub MOD_SHIFT: const u16 = 0x0003
+pub MOD_CTRL: const u16 = 0x00c0
+pub MOD_ALT: const u16 = 0x0300
+pub MOD_GUI: const u16 = 0x0c00
+
+/* SDL keycodes the binding leaves unnamed. */
+KEY_DELETE: const u32 = 0x7f
+KEY_HOME: const u32 = 0x4000_004a
+KEY_END: const u32 = 0x4000_004d
+
+/* Keys and bytes of text one frame holds; more are dropped. */
+KEYS_MAX: const usize = 16
+TEXT_MAX: const usize = 64
+
+/* The text field's caret. */
+CARET_W: const f32 = 2.0
+CARET_PAD: const f32 = 6.0
+
+/* The scroll bar, inside the area's right edge. */
+THUMB_W: const f32 = 4.0
+THUMB_MIN: const f32 = 16.0
+
+/* A key pressed this frame. `used` is set once a widget consumed it. */
+pub Key: struct {
+    pub code: Keycode = Keycode.unknown,
+    pub mod: u16 = 0,
+    pub repeat: bool = false,
+    pub used: bool = false,
+}
+
+/* The frame's input. `pressed` and `released` are the left button's edges
+ * since the last `end`; a press something else took is not reported. `scroll`
+ * is the wheel's delta, positive away from the user. A widget that uses an
+ * input consumes it, so what runs after it, shortcuts included, sees none. */
 pub Ctx: struct {
     pub canvas: *Canvas = null,
     pub x: f32 = 0.0,
@@ -465,7 +502,54 @@ pub Ctx: struct {
     pub released: bool = false,
     /* A dialog is up, and this is not it: nothing is under the pointer. */
     pub blocked: bool = false,
+    pub scroll: f32 = 0.0,
+    /* The widget that takes the keyboard; 0 for none. */
+    pub focus: u32 = 0,
+    pub keys: [KEYS_MAX]Key = [Key {} : KEYS_MAX],
+    pub key_count: usize = 0,
+    text: [TEXT_MAX]u8 = [0 : TEXT_MAX],
+    text_len: usize = 0,
     active: u32 = 0,
+}
+
+/* Records a key pressed this frame. */
+pub Ctx.add_key(self, code: Keycode, mod: u16, repeat: bool) {
+    if self.key_count == KEYS_MAX { return }
+    self.keys[self.key_count] = Key { code = code, mod = mod, repeat = repeat }
+    self.key_count += 1
+}
+
+/* Records text typed this frame. */
+pub Ctx.add_text(self, text: string) {
+    for i: usize in 0 .. text.len {
+        if self.text_len == TEXT_MAX { return }
+        self.text[self.text_len] = text[i]
+        self.text_len += 1
+    }
+}
+
+/* The text typed this frame that no widget consumed. */
+pub Ctx.typed(self): string {
+    return string(self.text[0..self.text_len])
+}
+
+/* Whether `a` and `b` hold the same modifier groups, either side's key. */
+same_mod(a: u16, b: u16): bool {
+    return ((a & MOD_SHIFT) != 0) == ((b & MOD_SHIFT) != 0) &&
+        ((a & MOD_CTRL) != 0) == ((b & MOD_CTRL) != 0) &&
+        ((a & MOD_ALT) != 0) == ((b & MOD_ALT) != 0) &&
+        ((a & MOD_GUI) != 0) == ((b & MOD_GUI) != 0)
+}
+
+/* Consumes a press of `code` with exactly the modifier groups in `mod`, and
+ * says whether there was one. */
+pub Ctx.key_pressed(self, code: Keycode, mod: u16): bool {
+    for i: usize in 0 .. self.key_count {
+        if self.keys[i].used || self.keys[i].code != code || !same_mod(self.keys[i].mod, mod) { continue }
+        self.keys[i].used = true
+        return true
+    }
+    return false
 }
 
 /* Ends the frame's input; `id`s are nonzero. */
@@ -473,34 +557,37 @@ pub Ctx.end(self) {
     if self.released { self.active = 0 }
     self.pressed = false
     self.released = false
+    self.scroll = 0.0
+    self.key_count = 0
+    self.text_len = 0
 }
 
 /* What the pointer did to the widget `id` at `box`. A click is a release on
  * the widget that took the press. */
-pub Ctx.track(self, id: u32, box: Rect): Events {
+pub Ctx.track(self, id: u32, box: Rect): Response {
     over: bool = !self.blocked && box.has(self.x, self.y)
-    events: Events = Events { hover = over }
+    res: Response = Response { hover = over }
     if over && self.pressed {
         self.active = id
-        events.press = true
+        res.press = true
     }
-    events.held = self.active == id
-    events.click = events.held && over && self.released
-    return events
+    res.held = self.active == id
+    res.click = res.held && over && self.released
+    return res
 }
 
-/* The fill `style` gives a widget in the state `events` reports. */
-shade(events: Events, style: ButtonStyle): u32 {
-    if events.held { return style.press }
-    if events.hover { return style.hover }
+/* The fill `style` gives a widget in the state `res` reports. */
+shade(res: Response, style: ButtonStyle): u32 {
+    if res.held { return style.press }
+    if res.hover { return style.hover }
     return style.rest
 }
 
 /* An icon and a label in `box`, or the icon alone, centered, when the label
  * is empty. */
-pub Ctx.button(self, id: u32, box: Rect, shape: Icon, label: string, style: ButtonStyle): Events {
-    events: Events = self.track(id, box)
-    self.canvas.round(box, style.radius, Color.hex(shade(events, style)))
+pub Ctx.button(self, id: u32, box: Rect, shape: Icon, label: string, style: ButtonStyle): Response {
+    res: Response = self.track(id, box)
+    self.canvas.round(box, style.radius, Color.hex(shade(res, style)))
     ink: Color = Color.hex(style.ink)
     if label.len == 0 {
         self.canvas.icon(shape, box.center(style.side), ink)
@@ -508,23 +595,122 @@ pub Ctx.button(self, id: u32, box: Rect, shape: Icon, label: string, style: Butt
         self.canvas.icon(shape, box.lead(style.pad, style.side), ink)
         self.canvas.left(box, style.pad + style.side + style.gap, label, style.ink)
     }
-    return events
+    return res
 }
 
 /* A bar filled to `fill` (0 to 1) with `label` centered; `held` lasts for a
  * drag begun on it. */
-pub Ctx.slider(self, id: u32, box: Rect, fill: f32, label: string, style: ButtonStyle): Events {
-    events: Events = self.track(id, box)
+pub Ctx.slider(self, id: u32, box: Rect, fill: f32, label: string, style: ButtonStyle): Response {
+    res: Response = self.track(id, box)
     self.canvas.round(box, style.radius, Color.hex(style.rest))
     self.canvas.round(Rect { x = box.x, y = box.y, w = box.w * fill, h = box.h }, style.radius, Color.hex(style.hover))
     self.canvas.center(box, label, style.ink)
-    return events
+    return res
 }
 
 /* A list row: `text` `pad` in, filled by `style`. */
-pub Ctx.row(self, id: u32, box: Rect, pad: f32, text: string, style: ButtonStyle): Events {
-    events: Events = self.track(id, box)
-    self.canvas.fill(box, Color.hex(shade(events, style)))
+pub Ctx.row(self, id: u32, box: Rect, pad: f32, text: string, style: ButtonStyle): Response {
+    res: Response = self.track(id, box)
+    self.canvas.fill(box, Color.hex(shade(res, style)))
     self.canvas.left(box, pad, text, style.ink)
-    return events
+    return res
+}
+
+/* Removes the byte at `i` of the first `len` bytes of `value`. */
+cut(value: []u8, len: *usize, i: usize) {
+    for j: usize in i .. *len - 1 { value[j] = value[j + 1] }
+    *len -= 1
+}
+
+/* A one-line field over `value`, of which the first `len` bytes are in use,
+ * with its caret before byte `at`. A click takes focus, a press elsewhere drops
+ * it. Focused, it consumes every key and the frame's text, so read a key meant
+ * for its owner first; a frame's keys apply before its text. It adds only the
+ * printable ASCII bytes in `allow`, or any when `allow` is empty. */
+pub Ctx.text_field(self, id: u32, box: Rect, value: []u8, len: *usize, at: *usize, allow: string, style: ButtonStyle): Response {
+    res: Response = self.track(id, box)
+    if res.press {
+        self.focus = id
+    } else if self.pressed && self.focus == id {
+        self.focus = 0
+    }
+    if self.focus == id {
+        for i: usize in 0 .. self.key_count {
+            if self.keys[i].used { continue }
+            self.keys[i].used = true
+            code: Keycode = self.keys[i].code
+            k: u32 = u32(code)
+            if code == Keycode.enter {
+                res.submit = true
+            } else if code == Keycode.backspace {
+                if *at > 0 {
+                    cut(value, len, *at - 1)
+                    *at -= 1
+                    res.changed = true
+                }
+            } else if k == KEY_DELETE {
+                if *at < *len {
+                    cut(value, len, *at)
+                    res.changed = true
+                }
+            } else if code == Keycode.left {
+                if *at > 0 { *at -= 1 }
+            } else if code == Keycode.right {
+                if *at < *len { *at += 1 }
+            } else if k == KEY_HOME {
+                *at = 0
+            } else if k == KEY_END {
+                *at = *len
+            }
+        }
+        for i: usize in 0 .. self.text_len {
+            c: u8 = self.text[i]
+            if c < 0x20 || c > 0x7e || *len == value.len || !allowed(allow, c) { continue }
+            for j: usize = *len; j > *at; j -= 1 { value[j] = value[j - 1] }
+            value[*at] = c
+            *len += 1
+            *at += 1
+            res.changed = true
+        }
+        self.text_len = 0
+    }
+    self.canvas.round(box, style.radius, Color.hex(style.rest))
+    self.canvas.left(box, style.pad, string(value[0..*len]), style.ink)
+    if self.focus == id {
+        caret: f32 = box.x + style.pad + f32(*at) * GLYPH
+        self.canvas.fill(Rect { x = caret - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, Color.hex(style.ink))
+    }
+    return res
+}
+
+/* Whether `allow` lets `c` in. */
+allowed(allow: string, c: u8): bool {
+    if allow.len == 0 { return true }
+    for i: usize in 0 .. allow.len {
+        if allow[i] == c { return true }
+    }
+    return false
+}
+
+/* Scrolling over `content` pixels seen through `box`, from `offset`, kept in
+ * range. Under the pointer and overflowing, it consumes the wheel, `step`
+ * pixels a notch, and `changed` reports a move. The caller draws what the
+ * offset shows, whole rows fitting `box`; nothing is clipped. Call it before
+ * the rows, on whose press it does not compete. */
+pub Ctx.scroll_area(self, box: Rect, content: f32, offset: *f32, step: f32, style: ButtonStyle): Response {
+    res: Response = Response { hover = !self.blocked && box.has(self.x, self.y) }
+    most: f32 = math.max[f32](content - box.h, 0.0)
+    before: f32 = *offset
+    if res.hover && most > 0.0 {
+        *offset -= self.scroll * step
+        self.scroll = 0.0
+    }
+    *offset = math.max[f32](math.min[f32](*offset, most), 0.0)
+    res.changed = *offset != before
+    if most > 0.0 {
+        h: f32 = math.max[f32](box.h * box.h / content, THUMB_MIN)
+        y: f32 = box.y + (box.h - h) * *offset / most
+        self.canvas.round(Rect { x = box.x + box.w - THUMB_W, y = y, w = THUMB_W, h = h }, THUMB_W / 2.0, Color.hex(style.ink))
+    }
+    return res
 }

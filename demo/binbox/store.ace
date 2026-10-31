@@ -28,7 +28,7 @@ before(a: string, b: string): bool {
 /* A name typed or chosen for a diagram, without folder or extension, with
  * the cursor before byte `at`. */
 pub Name: struct {
-    bytes: [32]u8 = [0 : 32],
+    pub bytes: [32]u8 = [0 : 32],
     pub len: usize = 0,
     pub at: usize = 0,
 }
@@ -44,23 +44,6 @@ pub Name.add(self, c: u8) {
     self.bytes[self.at] = c
     self.len += 1
     self.at += 1
-}
-
-/* Removes the byte at `i`, before the cursor or after it. */
-Name.cut(self, i: usize) {
-    for j: usize in i .. self.len - 1 { self.bytes[j] = self.bytes[j + 1] }
-    self.len -= 1
-    if self.at > i { self.at -= 1 }
-}
-
-/* Backspace: removes the byte before the cursor. */
-pub Name.back(self) {
-    if self.at > 0 { self.cut(self.at - 1) }
-}
-
-/* Delete: removes the byte after the cursor. */
-pub Name.forward(self) {
-    if self.at < self.len { self.cut(self.at) }
 }
 
 /* Replaces the name with `text`, the cursor at its end. */

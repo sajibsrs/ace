@@ -56,6 +56,8 @@ main(): int {
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
     window.maximize()
+    window.start_text_input()
+    defer window.stop_text_input()
 
     renderer: Renderer = Renderer.new(window)
     defer renderer.wipe()
@@ -97,6 +99,9 @@ main(): int {
         editor.pace()
         drawing: u64 = time.elapsed()
         render.draw(&editor, &canvas, renderer, &bloom)
+        /* Widgets had first claim on the frame's keys and wheel. */
+        running = mouse.shortcuts(&editor) && running
+        editor.ctx.end()
         editor.drawn = time.elapsed() - drawing
         renderer.present()
     }

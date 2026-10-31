@@ -86,3 +86,7 @@
 - `pkg/ui` holds binbox's drawing layer and controls: `Canvas` (rounded boxes,
   icons, baked text), `Rect` cuts, and an immediate-mode `Ctx` whose `button`,
   `slider` and `row` return `Events`. binbox keeps its icons and app widgets.
+- `pkg/ui` renames `Events` to `Response`; `Ctx` gains frame input (`scroll`,
+  keys, text), `focus`, consuming `key_pressed`, `text_field` and `scroll_area`.
+  `pkg/sdl` gains text-input events; binbox's Save-as box and Open list use
+  these, and its shortcuts run after widgets on what they left.

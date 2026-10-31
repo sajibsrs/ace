@@ -317,8 +317,7 @@ pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     }
     if g.mode == app.Mode.save_as {
         ask: dialog.SaveDialog = dialog.SaveDialog { g = g }
-        ask.draw(canvas)
+        ask.draw(&g.ctx)
     }
     canvas.flush(r)
-    g.ctx.end()
 }

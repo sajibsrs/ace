@@ -15,10 +15,8 @@ pub HEADING_PAD: const f32 = 8.0
 pub DIALOG_PAD: const f32 = 12.0
 pub TEXT_PAD: const f32 = 8.0
 
-/* The Save-as dialog: its title and field, and the caret inside the field. */
+/* The Save-as dialog: its title and field. */
 pub DIALOG_TITLE_Y: const f32 = 4.0
 pub DIALOG_TITLE_H: const f32 = 24.0
 pub FIELD_Y: const f32 = 32.0
 pub FIELD_H: const f32 = 28.0
-pub CARET_W: const f32 = 2.0
-pub CARET_PAD: const f32 = 6.0

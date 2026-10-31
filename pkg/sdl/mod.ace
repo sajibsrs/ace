@@ -29,6 +29,7 @@ pub EventType: enum u32 {
     window_close_requested = 0x210,
     key_down = 0x300,
     key_up = 0x301,
+    text_input = 0x303,
     mouse_motion = 0x400,
     mouse_button_down = 0x401,
     mouse_button_up = 0x402,
@@ -174,6 +175,15 @@ pub KeyboardEvent: struct {
     pub repeat: bool,
 }
 
+// SDL_TextInputEvent. text is UTF-8 that SDL owns; it lasts until the next poll.
+pub TextInputEvent: struct {
+    pub type: EventType,
+    pub reserved: u32,
+    pub timestamp: u64,
+    pub window_id: u32,
+    pub text: *u8,
+}
+
 // SDL_BUTTON_* indices; the enum is open for further buttons.
 pub MouseButton: enum u8 { none, left, middle, right, x1, x2, _ }
 
@@ -233,6 +243,9 @@ pub Event: struct {
 
     @offset(0)
     pub keyboard: KeyboardEvent,
+
+    @offset(0)
+    pub input: TextInputEvent,
 
     @offset(0)
     pub quit: QuitEvent,
@@ -298,6 +311,7 @@ static_assert(sizeof(KeyboardEvent) == 40 && alignof(KeyboardEvent) == 8)
 static_assert(offsetof(KeyboardEvent, key) == 28)
 static_assert(offsetof(KeyboardEvent, mod) == 32)
 static_assert(offsetof(KeyboardEvent, down) == 36)
+static_assert(sizeof(TextInputEvent) == 32 && offsetof(TextInputEvent, text) == 24)
 static_assert(sizeof(MouseMotionEvent) == 48 && offsetof(MouseMotionEvent, state) == 24)
 static_assert(offsetof(MouseMotionEvent, x) == 28 && offsetof(MouseMotionEvent, yrel) == 40)
 static_assert(sizeof(MouseButtonEvent) == 40 && offsetof(MouseButtonEvent, button) == 24)
@@ -317,6 +331,8 @@ extern "c" {
     c_create_window(title: *u8, w: i32, h: i32, flags: u64): *SDL_Window as "SDL_CreateWindow"
     c_destroy_window(window: *SDL_Window) as "SDL_DestroyWindow"
     c_set_window_title(window: *SDL_Window, title: *u8): bool as "SDL_SetWindowTitle"
+    c_start_text_input(window: *SDL_Window): bool as "SDL_StartTextInput"
+    c_stop_text_input(window: *SDL_Window): bool as "SDL_StopTextInput"
     c_get_display_for_window(window: *SDL_Window): u32 as "SDL_GetDisplayForWindow"
     c_get_current_display_mode(display: u32): *DisplayMode as "SDL_GetCurrentDisplayMode"
     c_minimize_window(window: *SDL_Window): bool as "SDL_MinimizeWindow"
@@ -374,13 +390,14 @@ pub ticks_ns(): u64 { return c_get_ticks_ns() }
 pub mod_state(): u16 { return c_get_mod_state() }
 
 // SDL returns NUL-terminated text; view it as a string without libc.
-pub error(): string {
-    p: *u8 = c_get_error()
+view(p: *u8): string {
     if p == null { return "" }
     n: usize = 0
     for *(p + n) != 0 { n += 1 }
     return string([]u8(p, n))
 }
+
+pub error(): string { return view(c_get_error()) }
 
 // Fill this event with the next pending one; false when none is left.
 pub Event.poll(self): bool { return c_poll_event(&self) }
@@ -399,6 +416,12 @@ pub Event.mouse_motion(const self): (MouseMotionEvent, bool) {
 // The mouse-button member, and whether type says it holds one.
 pub Event.mouse_button(const self): (MouseButtonEvent, bool) {
     return self.button, self.type == EventType.mouse_button_down || self.type == EventType.mouse_button_up
+}
+
+// The text-input member's text, and whether type says it holds one.
+pub Event.text_input(const self): (string, bool) {
+    if self.type != EventType.text_input { return "", false }
+    return view(self.input.text), true
 }
 
 // The mouse-wheel member, and whether type says it holds one.
@@ -438,6 +461,10 @@ pub Window.refresh(const self): f32 {
     if mode == null { return 0.0 }
     return mode.refresh_rate
 }
+
+// Turns text-input events on or off for the window; they start off.
+pub Window.start_text_input(self): bool { return c_start_text_input(self.handle) }
+pub Window.stop_text_input(self): bool { return c_stop_text_input(self.handle) }
 
 pub Window.ok(const self): bool { return self.handle != null }
 pub Window.wipe(self) {

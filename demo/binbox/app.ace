@@ -58,6 +58,8 @@ pub App: struct {
     pub name: store.Name = store.Name {},
     /* The name being typed in the Save-as box. */
     pub draft: store.Name = store.Name {},
+    /* How far the Open list is scrolled, in pixels. */
+    pub scroll: f32 = 0.0,
     pub store: store.Store = store.Store {},
     /* The last file result, shown in the status line. */
     notes: [96]u8 = [0 : 96],
@@ -334,6 +336,7 @@ pub App.browse(self) {
     }
     err: Error = self.store.scan()
     if err != null { self.failed("cannot list", self.store.where(), err) }
+    self.scroll = 0.0
     self.mode = Mode.open
 }
 

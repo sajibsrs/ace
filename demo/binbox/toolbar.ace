@@ -79,8 +79,8 @@ pub Toolbar.draw(self, ctx: *ui.Ctx) {
             shown = icon.Id.edit
             label = bar.EDIT_LABEL
         }
-        events: ui.Events = ctx.button(u32(each) + 1, at, bar.shape(shown), label, self.style(each, on))
-        if events.click { self.act(each) }
+        res: ui.Response = ctx.button(u32(each) + 1, at, bar.shape(shown), label, self.style(each, on))
+        if res.click { self.act(each) }
     }
     title: string = g.name.text()
     if title.len == 0 { title = "untitled" }

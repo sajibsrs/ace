@@ -105,8 +105,8 @@ it can be started from any directory.
 | Escape | Close the list or name box, otherwise drop the selection |
 | Cmd+Q | Quit |
 
-The Save-as box takes `a`–`z`, `0`–`9`, `-` and `_` (Shift+`-`); Enter saves,
-Escape cancels.
+The Save-as box takes `a`–`z`, `0`–`9`, `-` and `_`; Enter saves, Escape
+cancels. The Open list scrolls with the wheel when it overflows the window.
 
 ## Example: JK flip-flop
 
@@ -214,13 +214,13 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `select.ace` | The select tool's box, carried blocks, and clipboard. |
 | `store.ace` | The diagram folder, names, and the Open list. |
 | `app.ace` | `App`: the simulation, the selection, the file, and the commands that change them. |
-| `input.ace` | SDL events to `App` commands. |
+| `input.ace` | SDL events to `ui.Ctx` frame input, and shortcuts from what widgets leave. |
 | `render.ace` | Draws the board, bars, and panels; in Simulate, high blocks bloom: blurred together offscreen and added over the board. |
 | `theme.ace` | The bar and panel colors, and block names and colors. |
 | `toolbar.ace` | The bar across the top: its buttons and what they do. |
 | `sidebar.ace` | The side panel: fold button and widgets. |
 | `footer.ace` | The status line. |
-| `dialog.ace` | The Open list and the Save-as box. |
+| `dialog.ace` | The Open list and the Save-as box, over `pkg/ui` controls. |
 | `pkg/ui` | Drawing, text, cuts and controls: `Canvas`, `Rect`, `Ctx`, and the font. |
 | `style.ace` | The spacing the bars, panels and dialogs share. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |

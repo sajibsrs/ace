@@ -258,6 +258,14 @@ pub LIST_PAD: const f32 = 8.0
 pub LIST_TOP: const f32 = 4.0
 pub LIST_BOTTOM: const f32 = 12.0
 
+/* The rows of `count` the Open list shows in a window `h` high, at least one. */
+pub shown(count: usize, h: f32): usize {
+    room: f32 = (h - (GAP + BAR) - LIST_TOP - LIST_BOTTOM) / ROW
+    if room < 1.0 { return 1 }
+    if f32(count) < room { return count }
+    return usize(room)
+}
+
 /* The Open list's panel, around `rows` rows. */
 pub list(rows: usize): ui.Rect {
     at: ui.Rect = place(Button.open)
