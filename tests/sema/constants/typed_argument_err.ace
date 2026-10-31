@@ -1,0 +1,7 @@
+// A sole candidate gives a constant its type, not a typed value.
+log(x: u32): u32 { return x }
+
+main(): int {
+    b: u16 = 1
+    return int(log(b))
+}

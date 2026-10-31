@@ -2,5 +2,5 @@ import atomic
 
 main(): int {
     p: *u64 = null
-    return int(atomic.add(p, u64(1)))
+    return int(atomic.add(p, 1))
 }

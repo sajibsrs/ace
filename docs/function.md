@@ -173,10 +173,23 @@ main(): int {
 }
 ```
 
-Overload resolution performs no implicit conversions or ranking. In an overload
-call, an uncast integer constant selects `int`, a character constant (or
-an operation on one, such as `'a' + 1`) `u8`, and a floating constant `f64`.
-Use an explicit cast to select another numeric type. An array literal
+Overload resolution never converts a typed value and ranks no types. Typed
+arguments must match exactly, which removes candidates. Among those left, a
+constant prefers a candidate with its default type: `int` for an integer
+constant, `u8` for a character constant (or an operation on one, such as
+`'a' + 1`), and `f64` for a floating constant. With no such candidate it takes
+the one it fits, by kind and value. Every argument must agree on a single
+candidate; otherwise the call is an error and a cast selects:
+
+```ace
+bits.wrmul(rem, 2)     // rem: u64 selects the u64 overload, and 2 fits it
+atomic.add(&count, 1)  // count: u32 likewise
+bits.clz(1)            // error: four widths fit and none is the default
+bits.clz(u64(1))       // the cast selects
+```
+
+An integer constant never fits a float, and a character constant fits only
+`u8`. An array literal
 selects by its element type; one mixing character and integer constants
 takes `u8`, so `f(['\r', '\n', 0])` selects `f(xs: []u8)`, and a value that
 does not fit (`['a', 300]`) is an error, never truncated. An empty literal
@@ -209,8 +222,8 @@ Overloads are resolved during compilation. The emitted call targets a
 signature-mangled function directly; overloads add no runtime dispatch, tag,
 boxing, or allocation.
 
-Type-owned methods use the same exact overload rule. The receiver type
-participates in selection, parameters must match exactly, and the return
+Type-owned methods use the same overload rule. The receiver type participates
+in selection, typed parameters must match exactly, and the return
 type must match after selection. Return type alone never creates or selects an
 overload. Methods must be called; they are not first-class function values.
 
@@ -877,6 +890,13 @@ Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and
   results it is an `@` attribute like `@align` rather than a keyword like
   `inline`. With `mem.grow` cold, `bench/std` array-push went from 1.35x to
   1.0x of C.
+- Names & Scoping #6 (constants in overload sets): a constant has no type to
+  match, so requiring its default type would force `bits.wrmul(rem, u64(2))`
+  or an extra overload per width, while a fallback list as in C++'s conversion
+  ranks would let `bits.clz(1)` pick a width and return a count nobody asked
+  for. Taking the sole candidate a constant fits does neither: the typed
+  arguments decide, as a Go constant takes its parameter's type, and a choice
+  among widths stays an error the cast resolves. It adds no run-time cost.
 - Names & Scoping #8 (parameter selection): a parameter states the expected
   function type as explicitly as a typed local does, and it already types an
   untyped constant or `null`, so it selects an overload the same way, as C++

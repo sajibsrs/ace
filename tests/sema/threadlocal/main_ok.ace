@@ -28,7 +28,7 @@ bump(): u64 {
     next = &pair
     next.a = 5
     ring[count & 7] = count
-    atomic.add_relaxed(&ticks, u32(1))
+    atomic.add_relaxed(&ticks, 1)
     if last != null && name.len == 6 && ratio > 0.0 && limit < 0 { wide.lanes[0] = 1 }
     return count + pair.b
 }

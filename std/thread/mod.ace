@@ -52,12 +52,12 @@ pub Condition.wait(self, mutex: *Mutex) {
 
 /* Wake one waiting thread, if any. */
 pub Condition.wake_one(self) {
-    atomic.add_relaxed(&self.sequence, u32(1))
+    atomic.add_relaxed(&self.sequence, 1)
     os.wake_one(&self.sequence)
 }
 
 /* Wake every waiting thread. */
 pub Condition.wake_all(self) {
-    atomic.add_relaxed(&self.sequence, u32(1))
+    atomic.add_relaxed(&self.sequence, 1)
     os.wake_all(&self.sequence)
 }

@@ -1,0 +1,6 @@
+// An enum's values are its backing type; enums are not exempt.
+Key: enum u32 { none, a = 'a' }
+
+main(): int {
+    return int(u32(Key.a))
+}

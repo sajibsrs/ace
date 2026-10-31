@@ -16,12 +16,12 @@ import atomic
 count: u32
 
 bump(): u32 {
-    return atomic.add(&count, u32(1)) // the previous value
+    return atomic.add(&count, 1) // the previous value
 }
 ```
 
-An untyped integer literal does not choose between the overloads, so values are
-spelled `u32(1)`. `uint` uses the `u64` overload on Apple arm64; `usize` has
+The pointer selects the overload and an untyped integer literal takes its type.
+`uint` uses the `u64` overload on Apple arm64; `usize` has
 its own overloads, so a pointer-sized word needs no conversion.
 
 ## Orderings

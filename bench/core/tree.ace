@@ -101,7 +101,7 @@ Tree.func_name(self, i: u32): string {
     n: u32 = i
     count: usize = 0
     for {
-        digits[count] = u8('0' + n % 10)
+        digits[count] = u8(u32('0') + n % 10)
         count += 1
         n /= 10
         if n == 0 { break }

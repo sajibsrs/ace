@@ -45,7 +45,7 @@ main(): int {
     if !captured("out\nerr\n") { return 3 }
 
     // Working directory.
-    fd, err = sys.open(PATH, sys.O_WRONLY | sys.O_TRUNC, u32(0))
+    fd, err = sys.open(PATH, sys.O_WRONLY | sys.O_TRUNC, 0)
     if err != null { return 4 }
     options = blank(exec.SpawnOptions)
     options.dir = "/"

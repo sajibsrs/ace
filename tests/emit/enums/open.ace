@@ -6,7 +6,7 @@
 
 import mem
 
-Key: enum u32 { unknown, a = 'a', b = 'b', _ }
+Key: enum u32 { unknown, a = u32('a'), b = u32('b'), _ }
 Empty: enum u8 { _ }
 
 convert(n: u32): Key {
@@ -15,7 +15,7 @@ convert(n: u32): Key {
 
 main(): int {
     slash: Key = convert(u32('/'))
-    if u32(slash) != '/' { return 1 }
+    if u32(slash) != u32('/') { return 1 }
     constant: Key = Key(7)
     implicit: Key = 9
     if u32(constant) != 7 || u32(implicit) != 9 { return 2 }
@@ -27,7 +27,7 @@ main(): int {
     if seen != 2 { return 3 }
     if !mem.equal(slash.name, "") || !mem.equal(constant.name, "") { return 4 }
     if !mem.equal(Key.b.name, "b") || !mem.equal(Key.unknown.name, "unknown") { return 5 }
-    if convert('a') != Key.a || !mem.equal(convert('a').name, "a") { return 6 }
+    if convert(u32('a')) != Key.a || !mem.equal(convert(u32('a')).name, "a") { return 6 }
     e: Empty = Empty(3)
     if u8(e) != 3 || !mem.equal(e.name, "") { return 7 }
     return 0

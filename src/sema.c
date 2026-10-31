@@ -2149,40 +2149,74 @@ static void resolve_func_set(Ck* k, Sym* head) {
 
 // --- literal fit -------------------------------------------------------------------
 
-static int ut_fits(Ck* k, Node* e, SType* want) {
+/*
+ * Whether untyped constant expression e has character kind: a character
+ * literal, or an operation on one (a shift by its left operand), as in Go.
+ */
+static int const_is_char(Node* e) {
+    switch (e->kind) {
+    case N_CHAR: return 1;
+    case N_UNARY: return e->a && const_is_char(e->a);
+    case N_BINARY:
+        if (e->op == T_SHL || e->op == T_SHR) return const_is_char(e->a);
+        return const_is_char(e->a) || const_is_char(e->b);
+    case N_COND: return const_is_char(e->b) || const_is_char(e->c);
+    default: return 0;
+    }
+}
+
+/* The integer a constant materializes at: a distinct's or enum's own base. */
+static SType* const_base(SType* want) {
+    while (want && (want->kind == SK_DISTINCT || want->kind == SK_ENUM))
+        want = want->base ? want->base : st_prim(P_I32);
+    return want;
+}
+
+// Whether a constant's value is in want's range, as ut_fits but silent.
+static int ut_in_range(Node* e, SType* want) {
     if (is_float(want)) {
         double d = e->kind == N_FLOAT ? e->fval : e->kind == N_INT ? (double)e->ival : 0.0;
-        if (want->prim == P_F32 && (d > 3.402823466e38 || d < -3.402823466e38)) {
-            ck_err(k, e, "float literal out of range for f32");
-            return 0;
-        }
-        return 1;
+        return want->prim != P_F32 || (d <= 3.402823466e38 && d >= -3.402823466e38);
     }
     int64_t v;
     if (!ut_const(e, &v)) return 1;
     uint64_t u = (uint64_t)v;
     if (want->kind == SK_ENUM) want = want->base ? want->base : st_prim(P_I32);
     switch (want->prim) {
-    case P_I8:
-        if ((e->kind == N_INT && e->ival > 127) || v < -128 || v > 127) goto over;
-        return 1;
-    case P_I16:
-        if ((e->kind == N_INT && e->ival > 32767) || v < -32768 || v > 32767) goto over;
-        return 1;
-    case P_I32:
-        if ((e->kind == N_INT && e->ival > INT32_MAX) || v < INT32_MIN || v > INT32_MAX) goto over;
-        return 1;
-    case P_I64: case P_INT: if (e->kind == N_INT && e->ival > INT64_MAX) goto over; return 1;
-    case P_U8: if (u > 255) goto over; return 1;
-    case P_U16: if (u > 65535) goto over; return 1;
-    case P_U32: if (u > 4294967295u) goto over; return 1;
-    case P_U64: if (v < 0 && e->kind != N_INT) goto over; return 1;
-    case P_USIZE: case P_UINT: if (v < 0 && e->kind != N_INT) goto over; return 1;
+    case P_I8: return !(e->kind == N_INT && e->ival > 127) && v >= -128 && v <= 127;
+    case P_I16: return !(e->kind == N_INT && e->ival > 32767) && v >= -32768 && v <= 32767;
+    case P_I32: return !(e->kind == N_INT && e->ival > INT32_MAX) && v >= INT32_MIN && v <= INT32_MAX;
+    case P_I64: case P_INT: return !(e->kind == N_INT && e->ival > INT64_MAX);
+    case P_U8: return u <= 255;
+    case P_U16: return u <= 65535;
+    case P_U32: return u <= 4294967295u;
+    case P_U64: case P_USIZE: case P_UINT: return v >= 0 || e->kind == N_INT;
     default: return 1;
     }
-over:
-    ck_err(k, e, "integer literal %lld out of range for %s", (long long)v, type_name(want));
+}
+
+/* A value check, for a cast, which states the conversion: a constant's kind
+ * does not limit its target. */
+static int ut_fits_value(Ck* k, Node* e, SType* want) {
+    if (ut_in_range(e, want)) return 1;
+    int64_t v = 0;
+    if (is_float(want)) ck_err(k, e, "float literal out of range for f32");
+    else {
+        (void)ut_const(e, &v);
+        if (want->kind == SK_ENUM) want = want->base ? want->base : st_prim(P_I32);
+        ck_err(k, e, "integer literal %lld out of range for %s", (long long)v, type_name(want));
+    }
     return 0;
+}
+
+/* A constant meeting want implicitly: a character constant is u8 alone. */
+static int ut_fits(Ck* k, Node* e, SType* want) {
+    SType* base = const_base(want);
+    if (const_is_char(e) && !(base->kind == SK_PRIM && base->prim == P_U8)) {
+        ck_err(k, e, "character constant is u8, not %s (casts are explicit)", type_name(want));
+        return 0;
+    }
+    return ut_fits_value(k, e, want);
 }
 
 static int enum_backing_type(SType* t) {
@@ -2447,6 +2481,12 @@ static int settle_operand(Ck* k, Node* e, SType* want) {
     return 1;
 }
 
+// What constant e beside non-integer operand t is checked against: int, or for
+// a character constant t's own base, so a u8-backed operand takes it directly.
+static SType* operand_fit_type(Node* e, SType* t) {
+    return const_is_char(e) ? const_base(t) : st_prim(P_INT);
+}
+
 // --- lvalues ------------------------------------------------------------------------
 
 static SType* check_lvalue_raw(Ck* k, Node* e, int write) {
@@ -2669,7 +2709,7 @@ static void check_args(Ck* k, Node* call, SType* ft, int is_variadic) {
             // codegen receives complete type/symbol annotations.
             SType* t = expr_type(k, raw);
             if (t == T_UT_FLOAT) coerce(k, raw, st_prim(P_F64));
-            else if (t == T_UT_INT) coerce(k, raw, st_prim(P_INT));
+            else if (t == T_UT_INT) coerce(k, raw, st_prim(const_is_char(raw) ? P_U8 : P_INT));
             t = node_ty(raw);
             if (!is_c_variadic_scalar(t))
                 ck_err(k, raw,
@@ -2858,11 +2898,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         if (a == T_UT_INT && b != T_UT_INT && b->kind != SK_UT) {
-            if (!ut_fits(k, e->a, is_int(b) ? b : st_prim(P_INT))) return T_ERR;
+            if (!ut_fits(k, e->a, is_int(b) ? b : operand_fit_type(e->a, b))) return T_ERR;
             a = b;
             if (!settle_operand(k, e->a, a)) return T_ERR;
         } else if (b == T_UT_INT && a != T_UT_INT && a->kind != SK_UT) {
-            if (!ut_fits(k, e->b, is_int(a) ? a : st_prim(P_INT))) return T_ERR;
+            if (!ut_fits(k, e->b, is_int(a) ? a : operand_fit_type(e->b, a))) return T_ERR;
             b = a;
             if (!settle_operand(k, e->b, b)) return T_ERR;
         } else if (a == T_UT_FLOAT && is_float(b)) {
@@ -2885,10 +2925,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             return T_ERR;
         }
         int cmp = op == T_EQEQ || op == T_BANGEQ || op == T_LT || op == T_LE || op == T_GT || op == T_GE;
-        // Two untyped operands compare at their natural type (int or f64);
-        // the result is bool, never an untyped constant.
+        // Two untyped operands compare at their natural type (int, f64, or u8
+        // for a character constant); the result is bool, never an untyped
+        // constant.
         if (cmp && a == b && (a == T_UT_INT || a == T_UT_FLOAT)) {
-            SType* nat = st_prim(a == T_UT_INT ? P_INT : P_F64);
+            SType* nat = st_prim(a == T_UT_FLOAT ? P_F64 : const_is_char(e) ? P_U8 : P_INT);
             if (!coerce(k, e->a, nat) || !coerce(k, e->b, nat)) return T_ERR;
             return st_prim(P_BOOL);
         }
@@ -2949,7 +2990,7 @@ static SType* expr_type_raw(Ck* k, Node* e) {
         }
         SType* range = NULL;
         if (lo == T_UT_INT && hi == T_UT_INT) {
-            range = st_prim(P_INT);
+            range = st_prim(const_is_char(e->a) || const_is_char(e->b) ? P_U8 : P_INT);
             e->a->ty = range;
             e->b->ty = range;
         } else if (is_int(lo) && same_type(lo, hi)) {
@@ -2970,19 +3011,21 @@ static SType* expr_type_raw(Ck* k, Node* e) {
     }
     case N_CMPCHAIN: {
         // One operand type for the whole chain: the first typed operand's, or
-        // the natural int/f64 when every operand is an untyped constant.
+        // the natural int/f64/u8 when every operand is an untyped constant.
         SType* want = NULL;
         SType* ut = NULL;
+        int chars = 0;
         for (int i = 0; i < e->nkids; i++) {
             SType* u = expr_type(k, e->kids[i]);
             if (u->kind == SK_ERR) return T_ERR;
             if (u == T_UT_INT || u == T_UT_FLOAT) {
                 if (!ut) ut = u;
+                chars |= const_is_char(e->kids[i]);
             } else if (!want) {
                 want = u;
             }
         }
-        if (!want) want = st_prim(ut == T_UT_FLOAT ? P_F64 : P_INT);
+        if (!want) want = st_prim(ut == T_UT_FLOAT ? P_F64 : chars ? P_U8 : P_INT);
         for (int i = 0; i < e->nkids; i++) {
             SType* u = node_ty(e->kids[i]);
             if ((u == T_UT_INT && is_int(want)) || (u == T_UT_FLOAT && is_float(want))) {
@@ -3454,21 +3497,6 @@ static SType* overload_arg_type(Ck* k, Node* arg) {
     return overload_leaf_type(k, raw, &rank);
 }
 
-/*
- * Whether untyped constant expression e has character kind: a character
- * literal, or an operation on one (a shift by its left operand), as in Go.
- */
-static int const_is_char(Node* e) {
-    switch (e->kind) {
-    case N_CHAR: return 1;
-    case N_UNARY: return e->a && const_is_char(e->a);
-    case N_BINARY:
-        if (e->op == T_SHL || e->op == T_SHR) return const_is_char(e->a);
-        return const_is_char(e->a) || const_is_char(e->b);
-    default: return 0;
-    }
-}
-
 /* A non-literal argument's overload candidate; *rank as overload_arraylit_cand. */
 static SType* overload_leaf_type(Ck* k, Node* raw, int* rank) {
     *rank = 0;
@@ -3529,9 +3557,76 @@ static int call_exact_match(Node* call, Sym* s, SType** actual) {
     return s && !s->is_generic && !s->is_extern && call_exact_ft(call, s->type, actual);
 }
 
+/*
+ * Whether constant argument raw, of kind rank, could take param's type as a
+ * sole candidate's parameter would give it: the same kind, its value in range,
+ * a closed enum's value a member. An integer constant never becomes a float,
+ * and a character constant is u8 alone.
+ */
+static int const_fits_param(Node* raw, int rank, SType* param) {
+    SType* base = const_base(param);
+    if (!base) return 0;
+    if (rank == 3) return is_float(base) && param->kind != SK_ENUM && ut_in_range(raw, base);
+    if (!is_int(base) || (rank == 2 && base->prim != P_U8)) return 0;
+    int64_t v;
+    if (param->kind == SK_ENUM && !enum_open(param) && ut_const(raw, &v) && !enum_member_value(param, v)) return 0;
+    return ut_in_range(raw, base);
+}
+
+/* A leaf argument's constant kind, as overload_leaf_type, which has run. */
+static int const_arg_rank(Node* arg) {
+    Node* raw = arg->kind == N_PLACEARG ? arg->a : arg;
+    if (raw->kind == N_ARRAYLIT || (raw->kind == N_STRUCTLIT && !raw->a) || !raw->ty) return 0;
+    if (raw->ty == T_UT_FLOAT) return 3;
+    return raw->ty == T_UT_INT ? (const_is_char(raw) ? 2 : 1) : 0;
+}
+
+/*
+ * Selects among n candidate signatures, whose first skip parameters are not
+ * call arguments (Names & Scoping #6). Every typed argument must match exactly
+ * and every constant fit. Then for each constant argument, where some remaining
+ * candidate has the constant's natural type, only those stay. Several
+ * survivors are ambiguous; the result is a candidate's index or -1.
+ */
+static int select_signature(Node* call, SType** actual, SType** fts, int n, int skip, int* ambiguous) {
+    char* live = (char*)arena_alloc((size_t)(n ? n : 1));
+    char* lost = (char*)arena_alloc((size_t)(n ? n : 1));
+    int nargs = call->nkids;
+    for (int c = 0; c < n; c++) {
+        lost[c] = 0;
+        live[c] = fts[c] && fts[c]->kind == SK_FUNC && fts[c]->nparams == nargs + skip;
+        for (int i = 0; live[c] && i < nargs; i++) {
+            Node* arg = call->kids[i];
+            SType* param = fts[c]->params[i + skip];
+            int rank = const_arg_rank(arg);
+            live[c] = exact_arg_type(arg, actual[i], param) ||
+                      (rank && const_fits_param(arg->kind == N_PLACEARG ? arg->a : arg, rank, param));
+        }
+    }
+    for (int i = 0; i < nargs; i++) {
+        if (!const_arg_rank(call->kids[i])) continue;
+        int natural = 0;
+        for (int c = 0; c < n; c++)
+            if (live[c]) natural |= exact_arg_type(call->kids[i], actual[i], fts[c]->params[i + skip]);
+        if (!natural) continue;
+        for (int c = 0; c < n; c++)
+            if (live[c] && !exact_arg_type(call->kids[i], actual[i], fts[c]->params[i + skip])) lost[c] = 1;
+    }
+    int found = -1;
+    for (int c = 0; c < n; c++) {
+        if (!live[c] || lost[c]) continue;
+        if (found >= 0) {
+            *ambiguous = 1;
+            return -1;
+        }
+        found = c;
+    }
+    return found;
+}
+
 // Select a non-generic direct-call overload: a sole declaration retains Ace's
-// ordinary expected-literal typing; a real overload set uses exact types and
-// int/f64 literal defaults.
+// ordinary expected-literal typing; a real overload set goes through
+// select_signature.
 static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* ambiguous) {
     *ambiguous = 0;
     if (!head || head->kind != SYM_FUNC) return NULL;
@@ -3539,18 +3634,21 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* am
     SType** actual = (SType**)arena_alloc((size_t)(nactual ? nactual : 1) * sizeof(SType*));
     for (int i = 0; i < nactual; i++) actual[i] = overload_arg_type(k, call->kids[i]);
 
-    Sym* found = NULL;
-    int nongeneric = 0;
+    int nongeneric = 0, ncand = 0;
+    for (Sym* s = head; s; s = s->overload) ncand++;
+    Sym** cands = (Sym**)arena_alloc((size_t)ncand * sizeof(Sym*));
+    SType** fts = (SType**)arena_alloc((size_t)ncand * sizeof(SType*));
+    ncand = 0;
     for (Sym* s = head; s; s = s->overload) {
         if (s->is_generic || ov_hidden(s, at)) continue;
         nongeneric++;
-        if (!call_exact_match(call, s, actual)) continue;
-        if (found) {
-            *ambiguous = 1;
-            return NULL;
-        }
-        found = s;
+        if (s->is_extern) continue;
+        cands[ncand] = s;
+        fts[ncand++] = s->type;
     }
+    int pick = select_signature(call, actual, fts, ncand, 0, ambiguous);
+    if (*ambiguous) return NULL;
+    Sym* found = pick >= 0 ? cands[pick] : NULL;
     if (!found && nongeneric == 1) {
         for (Sym* s = head; s; s = s->overload) if (!s->is_generic && !ov_hidden(s, at)) found = s;
         // the sole visible overload keeps literal typing as if the hidden
@@ -3562,6 +3660,34 @@ static Sym* select_call_overload(Ck* k, Node* call, Sym* head, Node* at, int* am
                 return NULL;
     }
     return found;
+}
+
+/* The method of head's set that receiver type b's call selects; its signature
+ * under b's type arguments in *out_ft when asked for. A sole method keeps
+ * ordinary expected-literal typing. */
+static Sym* select_method(Ck* k, Node* call, Sym* head, SType* b, SType** out_ft, int* ambiguous) {
+    int nf = 0;
+    for (Sym* f = head; f; f = f->overload) nf++;
+    Sym** cands = (Sym**)arena_alloc((size_t)(nf ? nf : 1) * sizeof(Sym*));
+    SType** fts = (SType**)arena_alloc((size_t)(nf ? nf : 1) * sizeof(SType*));
+    SType** actual = (SType**)arena_alloc((size_t)(call->nkids ? call->nkids : 1) * sizeof(SType*));
+    nf = 0;
+    for (Sym* f = head; f; f = f->overload) {
+        SType* ft = f->is_generic && b->nargs ? build_func_type(k, f->decl, b->args, b->nargs) : f->type;
+        if (!ft || (f->is_generic && !b->nargs) || ft->nparams != call->nkids + 1 ||
+            !same_type(ft->params[0], b)) continue;
+        cands[nf] = f;
+        fts[nf++] = ft;
+    }
+    if (!nf) return NULL;
+    int pick = 0;
+    if (nf > 1 || overload_count(head) > 1) {
+        for (int i = 0; i < call->nkids; i++) actual[i] = overload_arg_type(k, call->kids[i]);
+        pick = select_signature(call, actual, fts, nf, 1, ambiguous);
+    }
+    if (pick < 0) return NULL;
+    if (out_ft) *out_ft = fts[pick];
+    return cands[pick];
 }
 
 static void finish_direct_call(Ck* k, Node* call, Sym* s) {
@@ -3979,6 +4105,8 @@ static void printf_add_part(PrintfPlan* plan, int* cap, PrintfPart part) {
     plan->parts[plan->nparts++] = part;
 }
 
+// 1 with the type arg prints as in *out, 0 when it does not fit *expected, or
+// -1 when its error is already reported.
 static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const char** expected, const char* who) {
     int errors = k->d->errors;
     SType* t = expr_type(k, arg);
@@ -3998,11 +4126,11 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
         want = st_prim(P_INT); *expected = "int or i64"; break;
     case PF_UNSIGNED: case PF_BINARY: case PF_OCTAL:
     case PF_HEX_LOWER: case PF_HEX_UPPER:
+        *expected = "uint, u64, or usize";
         if (t == T_UT_INT) {
-            if (!ut_fits(k, arg, st_prim(P_UINT))) return 0;
+            if (!ut_fits(k, arg, st_prim(P_UINT))) return -1;
             arg->ty = t = st_prim(P_UINT);
         }
-        *expected = "uint, u64, or usize";
         if (same_type(t, st_prim(P_UINT)) || same_type(t, st_prim(P_U64)) || same_type(t, st_prim(P_USIZE))) {
             *out = t;
             return 1;
@@ -4010,7 +4138,7 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
         return 0;
     case PF_FIXED: case PF_SCIENTIFIC: case PF_GENERAL:
         if (t == T_UT_FLOAT) {
-            if (!ut_fits(k, arg, st_prim(P_F64))) return 0;
+            if (!ut_fits(k, arg, st_prim(P_F64))) return -1;
             arg->ty = t = st_prim(P_F64);
         }
         if (same_type(t, st_prim(P_F32)) || same_type(t, st_prim(P_F64))) {
@@ -4025,7 +4153,7 @@ static int printf_expected_type(Ck* k, Node* arg, int kind, SType** out, const c
     default: return 0;
     }
     if (t == T_UT_INT && is_int(want)) {
-        if (!ut_fits(k, arg, want)) return 0;
+        if (!ut_fits(k, arg, want)) return -1;
         arg->ty = t = want;
     }
     if (same_type(t, want)) {
@@ -4311,26 +4439,11 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
         if (!rt || rt->kind != SK_PTR) reject_const_view(k, call, callee->a); // as a writable method's receiver
         return check_format_call(k, call, head, &PRINTF_BUF_CALL);
     }
-    int supplied = call->nkids + 1;
-    Sym* found = NULL;
-    for (Sym* f = head; f; f = f->overload) {
-        SType* ft = f->is_generic && b->nargs
-            ? build_func_type(k, f->decl, b->args, b->nargs)
-            : f->type;
-        if (!ft || (f->is_generic && !b->nargs) || ft->nparams != supplied ||
-            !same_type(ft->params[0], b)) continue;
-        int exact = 1;
-        for (int i = 1; i < ft->nparams; i++) {
-            Node* arg = call->kids[i - 1];
-            SType* at = overload_arg_type(k, arg);
-            if (!exact_arg_type(arg, at, ft->params[i])) exact = 0;
-        }
-        if (!exact && overload_count(head) > 1) continue;
-        if (found) {
-            ck_err(k, call, "ambiguous method call '%.*s'", (int)callee->len, callee->str);
-            return T_ERR;
-        }
-        found = f;
+    int ambiguous = 0;
+    Sym* found = select_method(k, call, head, b, NULL, &ambiguous);
+    if (ambiguous) {
+        ck_err(k, call, "ambiguous method call '%.*s'", (int)callee->len, callee->str);
+        return T_ERR;
     }
     /* A directly owned method wins. Otherwise, one explicitly embedded
      * field may promote an exact method by rewriting the receiver to the
@@ -4346,26 +4459,14 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
             uint32_t ekey_len;
             const char* ekey = method_key(eb->decl, callee->str, callee->len, &ekey_len);
             Sym* ehead = lookup_val(k, ekey, ekey_len);
-            for (Sym* f = ehead; f; f = f->overload) {
-                SType* ft = f->is_generic && eb->nargs
-                    ? build_func_type(k, f->decl, eb->args, eb->nargs)
-                    : f->type;
-                if (!ft || (f->is_generic && !eb->nargs) ||
-                    ft->nparams != call->nkids + 1 ||
-                    !same_type(ft->params[0], eb)) continue;
-                int exact = 1;
-                for (int i = 1; i < ft->nparams; i++) {
-                    Node* arg = call->kids[i - 1];
-                    SType* at = overload_arg_type(k, arg);
-                    if (!exact_arg_type(arg, at, ft->params[i]))
-                        exact = 0;
-                }
-                if (!exact && overload_count(ehead) > 1) continue;
-                if (promoted) {
-                    ck_err(k, call, "ambiguous promoted method call '%.*s'",
-                           (int)callee->len, callee->str);
-                    return T_ERR;
-                }
+            SType* ft = NULL;
+            Sym* f = select_method(k, call, ehead, eb, &ft, &ambiguous);
+            if (ambiguous || (f && promoted)) {
+                ck_err(k, call, "ambiguous promoted method call '%.*s'",
+                       (int)callee->len, callee->str);
+                return T_ERR;
+            }
+            if (f) {
                 promoted = f;
                 promoted_ft = ft;
                 promoted_field = fd;
@@ -4421,21 +4522,27 @@ static SType* check_method_call(Ck* k, Node* call, SType* b) {
 static SType* check_generic_assoc_call(Ck* k, Node* call, SType* owner, Sym* head) {
     Node* callee = call->a;
     Sym* found = NULL;
+    int nf = 0, ambiguous = 0;
+    for (Sym* f = head; f; f = f->overload) nf++;
+    Sym** cands = (Sym**)arena_alloc((size_t)(nf ? nf : 1) * sizeof(Sym*));
+    SType** fts = (SType**)arena_alloc((size_t)(nf ? nf : 1) * sizeof(SType*));
+    SType** actual = (SType**)arena_alloc((size_t)(call->nkids ? call->nkids : 1) * sizeof(SType*));
+    nf = 0;
     for (Sym* f = head; f; f = f->overload) {
         SType* ft = f->is_generic ? build_func_type(k, f->decl, owner->args, owner->nargs) : f->type;
         if (!ft || ft->nparams != call->nkids) continue;
-        int exact = 1;
-        for (int i = 0; i < ft->nparams; i++) {
-            Node* arg = call->kids[i];
-            SType* at = overload_arg_type(k, arg);
-            if (!exact_arg_type(arg, at, ft->params[i])) exact = 0;
-        }
-        if (!exact && overload_count(head) > 1) continue;
-        if (found) {
+        cands[nf] = f;
+        fts[nf++] = ft;
+    }
+    if (nf) for (int i = 0; i < call->nkids; i++) actual[i] = overload_arg_type(k, call->kids[i]);
+    if (nf == 1 && overload_count(head) < 2) found = cands[0];
+    else if (nf) {
+        int pick = select_signature(call, actual, fts, nf, 0, &ambiguous);
+        if (ambiguous) {
             ck_err(k, call, "ambiguous associated-function call '%.*s'", (int)callee->len, callee->str);
             return T_ERR;
         }
-        found = f;
+        if (pick >= 0) found = cands[pick];
     }
     if (found) {
         // instantiate_generic_func_args (not build_func_type) memoizes the
@@ -4750,12 +4857,12 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 if ((from == T_UT_FLOAT || from == T_UT_INT) &&
                     (is_float(want) || (want->kind == SK_DISTINCT && is_float(want->base))) &&
                     (call->kids[0]->kind == N_UNARY || call->kids[0]->kind == N_BINARY) &&
-                    !coerce(k, call->kids[0], from == T_UT_FLOAT ? want : st_prim(P_INT)))
+                    !coerce(k, call->kids[0], from == T_UT_FLOAT ? want : st_prim(const_is_char(call->kids[0]) ? P_U8 : P_INT)))
                     return T_ERR;
                 callee->sym = ts; // named-type cast marker
                 callee->ty = want; // primitive cast marker
                 if (from == T_UT_INT &&
-                    !ut_fits(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_INT)) : want))
+                    !ut_fits_value(k, call->kids[0], want->kind == SK_ENUM ? want : want->kind == SK_DISTINCT ? (is_int(want->base) ? want->base : st_prim(P_INT)) : want))
                     return T_ERR;
                 int64_t cv;
                 if (want->kind == SK_ENUM && !enum_open(want) && ut_const(call->kids[0], &cv) && !enum_member_value(want, cv)) {

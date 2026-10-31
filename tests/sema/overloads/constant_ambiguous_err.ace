@@ -1,0 +1,7 @@
+// Several candidates fit and none has the constant's default type: the
+// result would depend on a width nobody wrote.
+import bits
+
+main(): int {
+    return int(bits.clz(1))
+}

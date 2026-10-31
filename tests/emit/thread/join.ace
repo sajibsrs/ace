@@ -12,7 +12,7 @@ Slot: struct { gate: *u32, counter: *u64, id: u64, done: u64 }
 work(slot: *Slot) {
     for atomic.load_acquire(slot.gate) == 0 {}
     for step: int in 0 .. 200000 {
-        atomic.add_relaxed(slot.counter, u64(1))
+        atomic.add_relaxed(slot.counter, 1)
     }
     slot.done = slot.id * 10
 }
@@ -27,12 +27,12 @@ main(): int {
         argument: *u8 = *u8(&slots[i])
         t: thread.Thread, err: Error = thread.Thread.create(work, argument)
         if err != null {
-            atomic.store_release(&gate, u32(1)) // let the threads already started finish
+            atomic.store_release(&gate, 1) // let the threads already started finish
             return 1
         }
         threads[i] = t
     }
-    atomic.store_release(&gate, u32(1))
+    atomic.store_release(&gate, 1)
     for i: int in 0 .. 4 {
         err: Error = threads[i].join()
         if err != null { return 2 }

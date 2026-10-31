@@ -59,8 +59,8 @@ nonzero divisor cannot fail, so debug output omits its guards; zero and a
 signed `-1` divisor keep the ordinary divide and checks.
 
 Integer literals are untyped constants until used. They must fit the destination
-type. In overload selection, an uncast integer literal uses the natural `int`
-candidate and a character literal `u8`; cast explicitly to select another overload.
+type. In overload selection an uncast integer literal prefers `int`, and otherwise
+takes the one candidate it fits; see [Overloads](function.md#overloads).
 
 ```ace
 small: i32 = 13
@@ -84,8 +84,9 @@ default_width: float = 1.5
 converted: f64 = f64(single)
 ```
 
-Floating literals are untyped until context materializes them. In overload
-selection, an uncast floating literal uses `f64`. Arithmetic supports `+`, `-`,
+Floating literals are untyped until context materializes them. An integer literal
+never becomes a float: `x: f64 = 1` is an error. In overload selection, an uncast
+floating literal prefers `f64`. Arithmetic supports `+`, `-`,
 `*`, and `/`, with the ordinary comparisons. `%`, `%=`, and the bitwise and
 shift operators take integers only.
 
@@ -117,8 +118,10 @@ two-word view representation. Use `string` for complete text, `[]char` for
 character-oriented parsing or partial textual framing, and `[]u8` for raw
 bytes. These intent spellings cannot distinguish overloads.
 
-A character literal is an untyped constant holding exactly one byte and can
-materialize into a fitting integer type. The escapes are `\n`, `\t`, `\r`, `\0`,
+A character literal holds exactly one byte and is `u8` in every position, as is
+a constant computed from one (`'a' + 1`). Any other type takes it through a
+cast: `n: int = 'a'` is an error, `n: int = int('a')` is not, and the same goes
+for an operand beside a `u32`, an `enum u32` value, or a `%d` argument. The escapes are `\n`, `\t`, `\r`, `\0`,
 `\\`, `\"`, `\'`, and `\xNN`; a direct multibyte source character or a `\u{...}`
 escape in a character literal is invalid.
 
@@ -223,13 +226,19 @@ from an ordinary zero value.
   typed declaration.
 - Strings provide byte storage, indexing, and slicing, but higher-level Unicode
   operations are not implemented in the standard library yet.
-- A character literal cannot yet initialize a floating-point target, and untyped
-  literals materialize only where the existing coercion rules admit them.
+- Untyped literals materialize only where the existing coercion rules admit
+  them.
 
 The examples are covered by `tests/sema/docs/primitive_ok.ace`.
 
 ## Design rationale
 
+- A character constant is `u8` everywhere, as Rust's `b'a'` is, rather than an
+  integer constant of no fixed type as in Go, where `var n int = 'a'` compiles.
+  Ace has no implicit conversion between typed values, and a byte that silently
+  arrives as a `u32` would be one in all but name. The cast costs nothing at run
+  time and states the widening. Integer constants stay contextual because they
+  carry no type of their own to convert from.
 - `\u{H...}` follows Rust, Swift, and Zig: one braced form covers the whole
   range, where C, Go, and Python need both `\uXXXX` and `\UXXXXXXXX`, and the
   brace ends the escape so a following hex digit cannot be misread. It writes

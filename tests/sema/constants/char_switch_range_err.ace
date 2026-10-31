@@ -1,0 +1,8 @@
+main(): int {
+    n: int = 97
+    switch n {
+        'a' .. 'z' { return 1 }
+        default { return 0 }
+    }
+    return 0
+}

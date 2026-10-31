@@ -93,9 +93,9 @@ main(): int {
        bitcast(u64, math.pow(negative_infinity, -2.5)) != u64(0) ||
        bitcast(u64, math.pow(negative_zero, 0.3)) != u64(0) ||
        bitcast(u64, math.pow(negative_infinity, 4503599627370497.5)) != u64(0x7FF0000000000000) ||
-       bitcast(u32, math.pow(bitcast(f32, u32(0x80000000)), f32(0.5))) != u32(0) ||
-       bitcast(u32, math.pow(-f32(infinity), f32(0.5))) != u32(0x7F800000) ||
-       bitcast(u32, math.pow(bitcast(f32, u32(0x80000000)), f32(-1.5))) != u32(0x7F800000) ||
+       bitcast(u32, math.pow(bitcast(f32, u32(0x80000000)), 0.5)) != u32(0) ||
+       bitcast(u32, math.pow(-f32(infinity), 0.5)) != u32(0x7F800000) ||
+       bitcast(u32, math.pow(bitcast(f32, u32(0x80000000)), -1.5)) != u32(0x7F800000) ||
        !math.isnan(math.pow(-1.0, 0.5)) || !math.isnan(math.pow(-1.0, 1.5)) ||
        !math.isnan(math.pow(f32(-1.0), f32(0.5))) {
         return 16
@@ -180,8 +180,8 @@ main(): int {
        bitcast(u32, math.pow(f32(1.0), f32(3.0e38))) != u32(0x3F800000) ||
        bitcast(u32, math.pow(f32(1.0000001), f32(3.0e38))) != u32(0x7F800000) ||
        bitcast(u32, math.pow(f32(0.99999988), f32(3.0e38))) != u32(0) ||
-       bitcast(u32, math.pow(huge, f32(1.0))) != u32(0x7F7FFFFF) ||
-       bitcast(u32, math.pow(tiny, f32(1.0))) != u32(1) ||
+       bitcast(u32, math.pow(huge, 1.0)) != u32(0x7F7FFFFF) ||
+       bitcast(u32, math.pow(tiny, 1.0)) != u32(1) ||
        bitcast(u32, math.pow(f32(4.0), f32(0.5))) != u32(0x40000000) ||
        bitcast(u32, math.pow(f32(0.5), f32(10.0))) != u32(0x3A800000) ||
        bitcast(u32, math.pow(f32(-3.0), f32(3.0))) != u32(0xC1D80000) ||

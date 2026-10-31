@@ -6,12 +6,12 @@ spin(p: *u32, n: u32): u32 {
     seen: u32 = 0
     i: u32 = 0
     for i < n {
-        seen = atomic.add_relaxed(p, u32(1))
+        seen = atomic.add_relaxed(p, 1)
         atomic.fence_release()
         i = i + 1
     }
     atomic.store_release(p, seen)
-    old: u32, ok: bool = atomic.cas(p, seen, u32(0))
+    old: u32, ok: bool = atomic.cas(p, seen, 0)
     if ok { return atomic.load_acquire(p) }
     return old
 }

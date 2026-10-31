@@ -15,7 +15,7 @@ import signal
 stop: u32
 
 extern "c" on_term(s: signal.Signal) {
-    atomic.store_relaxed(&stop, u32(1))
+    atomic.store_relaxed(&stop, 1)
 }
 
 main(): int {

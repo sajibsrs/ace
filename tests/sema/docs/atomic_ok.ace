@@ -4,13 +4,13 @@ import atomic
 count: u32
 
 bump(): u32 {
-    return atomic.add(&count, u32(1))
+    return atomic.add(&count, 1)
 }
 
 claim(flag: *u32): bool {
     seen: u32 = 0
     won: bool = false
-    seen, won = atomic.cas_acq_rel(flag, u32(0), u32(1))
+    seen, won = atomic.cas_acq_rel(flag, 0, 1)
     return won
 }
 

@@ -1,0 +1,7 @@
+// A negative constant fits neither unsigned candidate.
+pick(a: u16): int { return 1 }
+pick(a: u32): int { return 2 }
+
+main(): int {
+    return pick(-1)
+}

@@ -64,7 +64,7 @@ fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
             if op == ir.IR_DIV { return ir.wrap(t, a / b), true }
             return ir.wrap(t, a % b), true
         }
-        ir.IR_NEG { return ir.wrap(t, bits.wrsub(u64(0), a)), true }
+        ir.IR_NEG { return ir.wrap(t, bits.wrsub(0, a)), true }
         ir.IR_NOT {
             if t == ir.IT_BOOL { return a ^ 1, true }
             return ir.wrap(t, ~a), true
@@ -405,7 +405,7 @@ same_arg(fn: Func, a: int, b: int): bool {
 }
 
 mix(h: u64, v: u64): u64 {
-    return h ^ bits.wradd(bits.wradd(bits.wradd(v, u64(0x9E3779B97F4A7C15)), h << 6), h >> 2)
+    return h ^ bits.wradd(bits.wradd(bits.wradd(v, 0x9E3779B97F4A7C15), h << 6), h >> 2)
 }
 
 arg_hash(fn: Func, a: int): u64 {

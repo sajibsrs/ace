@@ -542,7 +542,7 @@ pub ioctl(fd: Fd, request: uint, data: []u8): Error {
 }
 
 pub open(path: string, flags: i32): (Fd, Error) {
-    fd: Fd, err: Error = open(path, flags, u32(0))
+    fd: Fd, err: Error = open(path, flags, 0)
     return fd, err
 }
 

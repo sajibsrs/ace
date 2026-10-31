@@ -16,7 +16,7 @@ received: u32
 waiter(argument: *u8) {
     set: signal.Set = blank(signal.Set)
     set.add(signal.SIGUSR1)
-    if signal.mask().has(signal.SIGUSR1) { atomic.store_relaxed(&inherited, u32(1)) }
+    if signal.mask().has(signal.SIGUSR1) { atomic.store_relaxed(&inherited, 1) }
     s: signal.Signal, err: Error = signal.wait(set)
     if err == null { atomic.store_relaxed(&received, u32(i32(s))) }
 }

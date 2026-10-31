@@ -22,7 +22,7 @@ shared_anon(): i32 { return 0x21 }
 work(gate: *u32, added: *u64, claimed: *u64): int {
     for atomic.load_acquire(gate) == 0 {}
     for step: int in 0 .. 200000 {
-        atomic.add_relaxed(added, u64(1))
+        atomic.add_relaxed(added, 1)
     }
     for step: int in 0 .. 50000 {
         seen: u64 = atomic.load_relaxed(claimed)
@@ -45,13 +45,13 @@ main(): int {
     for worker: int in 0 .. 4 {
         process: sys.Process, fork_err: Error = sys.fork()
         if fork_err != null || process == -1 {
-            atomic.store_release(gate, u32(1)) // let the workers already started finish
+            atomic.store_release(gate, 1) // let the workers already started finish
             return 2
         }
         if process == 0 { sys.exit(work(gate, added, claimed)) }
         children[worker] = process
     }
-    atomic.store_release(gate, u32(1))
+    atomic.store_release(gate, 1)
     for worker: int in 0 .. 4 {
         status: sys.ProcessStatus, wait_err: Error = sys.wait(children[worker])
         if wait_err != null || !status.exited || status.code != 0 { return 3 }

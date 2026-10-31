@@ -1,0 +1,8 @@
+// Overloading chooses a function; it never converts a typed value.
+pick(a: u32): int { return 1 }
+pick(a: u64): int { return 2 }
+
+main(): int {
+    narrow: u16 = 1
+    return pick(narrow)
+}

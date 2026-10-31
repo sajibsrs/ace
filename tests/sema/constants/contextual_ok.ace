@@ -1,0 +1,11 @@
+// Constants stay contextual in every position.
+log(x: u32): u32 { return x }
+half(x: f32): f32 { return x }
+
+main(): int {
+    a: u32 = 1
+    b: f32 = 1.5
+    c: u64 = 1 + 2
+    _ = half(0.5)
+    return int(log(1)) - 1 + int(a) - 1 + int(b) - 1 + int(c) - 3
+}

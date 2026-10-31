@@ -1,0 +1,32 @@
+/* A typed argument selects, the constant's default type wins next, and
+ * otherwise the sole candidate that fits; a cast still picks by hand. */
+
+// expect-exit: 0
+
+import bits
+
+width(a: int): int { return 1 }
+width(a: u32): int { return 2 }
+mixed(a: f32): int { return 1 }
+mixed(a: u32): int { return 2 }
+byte(a: u8): int { return 1 }
+byte(a: u32): int { return 2 }
+fit(a: u16): int { return 1 }
+fit(a: i8): int { return 2 }
+tail(a: u8, b: u16): int { return 1 }
+tail(a: u8, b: u8): int { return 2 }
+typed(a: u32, b: u64): int { return 1 }
+typed(a: u16, b: u64): int { return 2 }
+
+main(): int {
+    if width(1) != 1 || width(u32(1)) != 2 { return 1 }
+    if mixed(1) != 2 || mixed(1.5) != 1 { return 2 }
+    if byte('a') != 1 || byte(300) != 2 { return 3 }
+    if fit(300) != 1 { return 4 }
+    if tail(1, 300) != 1 { return 5 }
+    n: u16 = 1
+    if typed(n, 1) != 2 { return 6 }
+    rem: u64 = 3
+    if bits.wrmul(rem, 2) != 6 { return 7 }
+    return 0
+}

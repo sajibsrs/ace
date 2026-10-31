@@ -191,9 +191,9 @@ Input.type(self, g: *app.App, e: KeyboardEvent) {
         g.draft.at = 0
     } else if k == KEY_END {
         g.draft.at = g.draft.len
-    } else if k == '-' && shift {
+    } else if k == u32('-') && shift {
         g.draft.add('_')
-    } else if !shift && ((k >= 'a' && k <= 'z') || (k >= '0' && k <= '9') || k == '-') {
+    } else if !shift && ((k >= u32('a') && k <= u32('z')) || (k >= u32('0') && k <= u32('9')) || k == u32('-')) {
         g.draft.add(u8(k))
     }
 }

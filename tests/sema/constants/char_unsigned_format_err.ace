@@ -1,0 +1,6 @@
+import fmt
+
+main(): int {
+    fmt.printf("%x\n", 'a')
+    return 0
+}

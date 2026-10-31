@@ -1,0 +1,9 @@
+// A constant that does not fit its conversion reports that once.
+import fmt
+
+main(): int {
+    fmt.printf("%x\n", -1)
+    fmt.printf("%c\n", 300)
+    fmt.printf("%d\n", 9223372036854775808)
+    return 0
+}

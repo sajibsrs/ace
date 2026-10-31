@@ -41,6 +41,6 @@ main(): int {
     if fixed_error != null { return 4 }
 
     count: uint = 41
-    if atomic.add(&count, uint(1)) != 41 { return 5 }
+    if atomic.add(&count, 1) != 41 { return 5 }
     return int(count)
 }

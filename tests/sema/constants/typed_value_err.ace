@@ -1,0 +1,6 @@
+// A typed value never converts implicitly, whatever the width.
+main(): int {
+    b: u16 = 1
+    a: u32 = b
+    return int(a)
+}

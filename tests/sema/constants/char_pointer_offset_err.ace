@@ -1,0 +1,6 @@
+main(): int {
+    a: [2]u8 = [1, 2]
+    p: *u8 = &a[0]
+    p = p + 'a'
+    return 0
+}

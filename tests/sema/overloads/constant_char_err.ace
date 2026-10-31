@@ -1,0 +1,7 @@
+// A character constant is u8 alone: a wider integer candidate does not fit it.
+pick(a: int): int { return 1 }
+pick(a: u32): int { return 2 }
+
+main(): int {
+    return pick('a')
+}

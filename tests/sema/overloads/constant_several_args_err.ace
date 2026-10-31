@@ -1,0 +1,7 @@
+// Each candidate loses one argument to the other's default type.
+pick(a: int, b: u32): int { return 1 }
+pick(a: u32, b: int): int { return 2 }
+
+main(): int {
+    return pick(1, 2)
+}

@@ -10,7 +10,7 @@ import signal
 hits: u32
 
 extern "c" on_signal(s: signal.Signal) {
-    atomic.add_relaxed(&hits, u32(1))
+    atomic.add_relaxed(&hits, 1)
 }
 
 main(): int {

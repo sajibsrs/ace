@@ -46,7 +46,7 @@ operators abort on overflow in debug builds; these never do, in any build mode:
 
 ```ace
 h: u32 = u32(2166136261)
-h = bits.wrmul(h ^ u32(byte), u32(16777619)) // FNV-1a step
+h = bits.wrmul(h ^ u32(byte), 16777619) // FNV-1a step
 tail: u8 = bits.wradd(u8(250), u8(10))       // 4
 ```
 

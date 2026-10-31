@@ -443,6 +443,27 @@ tests/sema/types/composite_name_err.ace|(i32, bool) given where (i64, bool) expe
 tests/sema/types/composite_name_err.ace|*Point given where *i32 expected
 tests/sema/overloads/value_param_callee_err.ace|overloaded function 'twice' needs an explicit function-value type: 'run' is overloaded
 tests/sema/overloads/value_param_mismatch_err.ace|no overload of 'twice' has the required function type
+tests/sema/overloads/constant_ambiguous_err.ace|ambiguous call to overloaded function 'bits.clz'
+tests/sema/overloads/constant_several_args_err.ace|no matching overload 'pick'
+tests/sema/overloads/constant_range_err.ace|no matching overload 'pick'
+tests/sema/overloads/constant_int_to_float_err.ace|no matching overload 'pick'
+tests/sema/overloads/constant_char_err.ace|no matching overload 'pick'
+tests/sema/overloads/typed_no_convert_err.ace|no matching overload 'pick'
+tests/sema/overloads/typed_mismatch_constant_err.ace|no matching overload 'pick'
+tests/sema/constants/typed_value_err.ace|type mismatch: u16 given where u32 expected
+tests/sema/constants/typed_argument_err.ace|type mismatch: u16 given where u32 expected
+tests/sema/constants/int_to_float_err.ace|type mismatch: integer literal given where f64 expected
+tests/sema/constants/char_int_err.ace|character constant is u8, not int
+tests/sema/constants/char_derived_err.ace|character constant is u8, not int
+tests/sema/constants/char_operand_err.ace|character constant is u8, not u32
+tests/sema/constants/char_float_operand_err.ace|character constant is u8, not f64
+tests/sema/constants/char_pointer_offset_err.ace|character constant is u8, not usize
+tests/sema/constants/char_enum_value_err.ace|character constant is u8, not u32
+tests/sema/constants/char_switch_err.ace|character constant is u8, not int
+tests/sema/constants/char_switch_range_err.ace|character constant is u8, not int
+tests/sema/constants/char_format_err.ace|character constant is u8, not int
+tests/sema/constants/char_unsigned_format_err.ace|character constant is u8, not uint
+tests/sema/constants/char_cond_err.ace|character constant is u8, not int
 GENERIC_VALUE_RULES
 
 # tuple literal members meet their declared member types (spec Syntax #11)
@@ -458,6 +479,18 @@ for want in \
 done
 
 # an array literal selects an overload by its candidate element type (spec Names #6)
+# a format argument's constant error is its only error
+while IFS='|' read -r f want; do
+    if ! "$ACE" "$f" 2>&1 | grep -qF ": $want"; then
+        echo "FAIL: $f should report exactly: $want"
+        fail=1
+    fi
+done <<'FORMAT_ERROR_COUNTS'
+tests/sema/constants/char_format_err.ace|1 error
+tests/sema/constants/char_unsigned_format_err.ace|1 error
+tests/sema/constants/format_range_err.ace|3 errors
+FORMAT_ERROR_COUNTS
+
 array_overload_errors=$("$ACE" tests/sema/overloads/array_literal_err.ace 2>&1)
 for want in \
     "10:18: error: no matching overload 'take'" \

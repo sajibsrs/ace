@@ -75,7 +75,7 @@ pub small_buffer(t: *test.T) {
     out: [diagram.SIZE - 1]u8 = [0 : diagram.SIZE - 1]
     n: usize, err: Error = diagram.encode(sample(), out[..])
     t.equal(err == diagram.DiagramErr.space, true)
-    t.equal(n, usize(0))
+    t.equal(n, 0)
 }
 
 /* Decoding `data` fails with `want`. */

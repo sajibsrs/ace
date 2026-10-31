@@ -1,0 +1,7 @@
+// %d reads an integer; a character constant is u8 and says so with a cast.
+import fmt
+
+main(): int {
+    fmt.printf("%d\n", 'a')
+    return 0
+}

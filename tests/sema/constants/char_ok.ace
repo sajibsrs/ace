@@ -1,0 +1,28 @@
+// Character constants are u8 everywhere; a cast reaches any other type.
+import fmt
+
+Tag: enum u8 { none, a = 'a', b = 'b' }
+Wide: enum u32 { none, a = u32('a') }
+Byte: distinct u8
+
+main(): int {
+    n: int = int('z')
+    m: int = int('a' + 1)
+    x: f64 = f64('a')
+    w: u32 = u32('a')
+    b: u8 = 'a' + 1
+    both: bool = 'a' < 'b'
+    chain: bool = 'a' < 'b' < 'c'
+    t: Tag = Tag.a
+    if t == 'a' { n = 0 }
+    d: Byte = 'x'
+    if d == 'x' { n = 0 }
+    for c: u8 in 'a' .. 'd' { b = c }
+    switch b {
+        'a', 'b' .. 'e' { n = 0 }
+        default { n = 1 }
+    }
+    if w == u32('a') && both && chain && x > 0.0 { n = m - m }
+    fmt.printf("%c%d\n", 'q', int('q'))
+    return n
+}

@@ -1,0 +1,6 @@
+// A character constant beside a typed operand does not take that operand's type.
+main(): int {
+    n: u32 = 97
+    if n == 'a' { return 1 }
+    return 0
+}

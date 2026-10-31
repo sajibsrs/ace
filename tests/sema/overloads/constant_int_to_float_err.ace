@@ -1,0 +1,7 @@
+// An integer constant is never a float, even when floats are all there is.
+pick(a: f32): int { return 1 }
+pick(a: f64): int { return 2 }
+
+main(): int {
+    return pick(1)
+}

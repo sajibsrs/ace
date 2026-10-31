@@ -1,0 +1,5 @@
+// A character constant is u8; a wider type needs a cast.
+main(): int {
+    n: int = 'a'
+    return n
+}

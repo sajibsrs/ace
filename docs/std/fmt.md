@@ -140,7 +140,8 @@ The initial conversions are deliberately small:
 Transparent aliases work as their target type. Distinct types and narrower
 integers must be converted explicitly. A literal receives the conversion's
 natural type: `int`, `uint`, `f64`, or `u8`; write `usize(...)` when that is
-the intended unsigned type.
+the intended unsigned type. A character constant is `u8`, so `%d` takes
+`int('a')`.
 
 A literal width between `%` and the conversion (`%5d`, `%6.2f`, `%12e`, `%4s`) pads
 the piece with spaces on the left to at least that many bytes, from 1 through

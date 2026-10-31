@@ -1,0 +1,8 @@
+// A constant's fit does not excuse a typed argument that matches no candidate.
+pick(a: u32, b: u8): int { return 1 }
+pick(a: u64, b: u8): int { return 2 }
+
+main(): int {
+    narrow: u16 = 1
+    return pick(narrow, 2)
+}

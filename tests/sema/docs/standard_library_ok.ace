@@ -63,7 +63,7 @@ exponential_examples(value: f64, single: f32): f64 {
 }
 
 power_examples(value: f64, single: f32): f64 {
-    return math.pow(2.0, value) + f64(math.pow(single, f32(0.5)))
+    return math.pow(2.0, value) + f64(math.pow(single, 0.5))
 }
 
 trigonometry_examples(angle: f64, single: f32): f64 {

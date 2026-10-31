@@ -1,0 +1,26 @@
+// Constants meet overload sets: a typed argument selects, then the default
+// type, then the sole candidate that fits.
+import atomic
+import bits
+import test
+
+Color: enum { red, green }
+
+either(a: u16, b: u32): int { return 1 }
+either(a: u16, b: u16): int { return 2 }
+shade(a: Color): int { return 1 }
+shade(a: string): int { return 2 }
+
+check(t: *test.T, n: usize) {
+    t.equal(n, 0)
+}
+
+main(): int {
+    rem: u64 = 3
+    _ = bits.wrmul(rem, 2)
+    c: u32 = 0
+    _ = atomic.add(&c, 1)
+    _ = either(1, 70000)
+    _ = shade(1)
+    return 0
+}

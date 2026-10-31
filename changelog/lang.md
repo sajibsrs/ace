@@ -245,5 +245,10 @@
 - A `const` C global (`extern "c" { limit: const i32 }`) is a const binding
   like an Ace `const` global: assignment and writable views are rejected
   (C and selfhost, #158).
+- Constants meet overload sets by rule: typed arguments match exactly, a
+  constant prefers its default type, else the candidates it fits stay, and
+  one must survive (`select_signature`, C and selfhost). No rank list:
+  `bits.clz(1)` stays an error, `bits.wrmul(rem, 2)` compiles. Character
+  constants are `u8` in every position (`ut_fits`); casts use `ut_fits_value`.
 - `*U(pointer)` reinterprets any data pointer, not only plain-bits pointees;
   forging a compiler-created value through one is undefined.

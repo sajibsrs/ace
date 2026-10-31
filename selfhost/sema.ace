@@ -1771,7 +1771,7 @@ Sema.ut_const(const self, e: u32): (i64, bool) {
         Kind.unary {
             v: i64, ok: bool = self.ut_const(n.a)
             if !ok { return 0, false }
-            if n.op == lexer.Token.minus { return i64(bits.wrsub(u64(0), u64(v))), true } // unsigned negate: defined at i64 min
+            if n.op == lexer.Token.minus { return i64(bits.wrsub(0, u64(v))), true } // unsigned negate: defined at i64 min
             if n.op == lexer.Token.tilde { return ~v, true }
             return 0, false
         }
@@ -1862,17 +1862,41 @@ Sema.compile_time_expr(self, e: u32): bool {
     }
 }
 
-/* Whether untyped constant `e` fits `want`, reporting when not. */
-Sema.ut_fits(self, e: u32, want: u32): bool {
+/* Whether untyped constant expression `e` has character kind: a character
+ * literal, or an operation on one (a shift by its left operand), as in Go.
+ */
+Sema.const_is_char(self, e: u32): bool {
+    n: Node = self.node(e)
+    switch n.kind {
+        Kind.char_lit { return true }
+        Kind.unary { return n.a != 0 && self.const_is_char(n.a) }
+        Kind.binary {
+            if n.op == lexer.Token.shl || n.op == lexer.Token.shr { return self.const_is_char(n.a) }
+            return self.const_is_char(n.a) || self.const_is_char(n.b)
+        }
+        Kind.cond { return self.const_is_char(n.b) || self.const_is_char(n.c) }
+        default { return false }
+    }
+}
+
+/* The integer a constant materializes at: a distinct's or enum's own base. */
+Sema.const_base(self, want: u32): u32 {
+    t: u32 = want
+    for t != 0 && (self.ty(t).kind == TypeKind.distinct || self.ty(t).kind == TypeKind.enum) {
+        b: u32 = self.ty(t).base
+        if b == 0 { b = self.prim(P_I32) }
+        t = b
+    }
+    return t
+}
+
+/* Whether a constant's value is in `want`'s range, as ut_fits but silent. */
+Sema.ut_in_range(self, e: u32, want: u32): bool {
     n: Node = self.node(e)
     if self.is_float(want) {
         d: f64 = 0.0
         if n.kind == Kind.float_lit { d = n.fval } else if n.kind == Kind.int_lit { d = f64(n.ival) }
-        if self.ty(want).prim == P_F32 && (d > 3.402823466e38 || d < -3.402823466e38) {
-            self.err(e, ["float literal out of range for f32"])
-            return false
-        }
-        return true
+        return self.ty(want).prim != P_F32 || (d <= 3.402823466e38 && d >= -3.402823466e38)
     }
     v: i64, ok: bool = self.ut_const(e)
     if !ok { return true }
@@ -1883,21 +1907,55 @@ Sema.ut_fits(self, e: u32, want: u32): bool {
     }
     lit: bool = n.kind == Kind.int_lit
     u: u64 = u64(v)
-    over: bool = false
     switch self.ty(fit).prim {
-        1 { over = (lit && n.ival > 127) || v < -128 || v > 127 }
-        2 { over = (lit && n.ival > 32767) || v < -32768 || v > 32767 }
-        3 { over = (lit && n.ival > 2147483647) || v < -2147483648 || v > 2147483647 }
-        4, 14 { over = lit && n.ival > 9223372036854775807 }
-        5 { over = u > 255 }
-        6 { over = u > 65535 }
-        7 { over = u > 4294967295 }
-        8, 12, 15 { over = v < 0 && !lit }
-        default {}
+        1 { return !((lit && n.ival > 127) || v < -128 || v > 127) }
+        2 { return !((lit && n.ival > 32767) || v < -32768 || v > 32767) }
+        3 { return !((lit && n.ival > 2147483647) || v < -2147483648 || v > 2147483647) }
+        4, 14 { return !(lit && n.ival > 9223372036854775807) }
+        5 { return u <= 255 }
+        6 { return u <= 65535 }
+        7 { return u <= 4294967295 }
+        8, 12, 15 { return !(v < 0 && !lit) }
+        default { return true }
     }
-    if !over { return true }
+}
+
+/* A value check, for a cast, which states the conversion: a constant's kind
+ * does not limit its target.
+ */
+Sema.ut_fits_value(self, e: u32, want: u32): bool {
+    if self.ut_in_range(e, want) { return true }
+    if self.is_float(want) {
+        self.err(e, ["float literal out of range for f32"])
+        return false
+    }
+    v: i64, _ = self.ut_const(e)
+    fit: u32 = want
+    if self.ty(want).kind == TypeKind.enum {
+        fit = self.ty(want).base
+        if fit == 0 { fit = self.prim(P_I32) }
+    }
     self.err(e, ["integer literal ", self.num64(v), " out of range for ", self.type_name(fit)])
     return false
+}
+
+/* A constant meeting `want` implicitly: a character constant is u8 alone. */
+Sema.ut_fits(self, e: u32, want: u32): bool {
+    base: u32 = self.const_base(want)
+    if self.const_is_char(e) && !self.is_prim(base, P_U8) {
+        self.err(e, ["character constant is u8, not ", self.type_name(want), " (casts are explicit)"])
+        return false
+    }
+    return self.ut_fits_value(e, want)
+}
+
+/* What constant `e` beside non-integer operand `t` is checked against: int,
+ * or for a character constant t's own base, so a u8-backed operand takes it
+ * directly.
+ */
+Sema.operand_fit_type(self, e: u32, t: u32): u32 {
+    if self.const_is_char(e) { return self.const_base(t) }
+    return self.prim(P_INT)
 }
 
 /* An untyped operand beside a typed one takes its type: a plain or negated
@@ -2487,13 +2545,13 @@ Sema.check_binary(self, e: u32): u32 {
     ut_b: bool = self.ty(b).kind == TypeKind.ut
     if a == self.t_ut_int && b != self.t_ut_int && !ut_b {
         fit: u32 = b
-        if !self.is_int(b) { fit = self.prim(P_INT) }
+        if !self.is_int(b) { fit = self.operand_fit_type(n.a, b) }
         if !self.ut_fits(n.a, fit) { return self.t_err }
         a = b
         if !self.settle_operand(n.a, a) { return self.t_err }
     } else if b == self.t_ut_int && a != self.t_ut_int && !ut_a {
         fit: u32 = a
-        if !self.is_int(a) { fit = self.prim(P_INT) }
+        if !self.is_int(a) { fit = self.operand_fit_type(n.b, a) }
         if !self.ut_fits(n.b, fit) { return self.t_err }
         b = a
         if !self.settle_operand(n.b, b) { return self.t_err }
@@ -2515,10 +2573,11 @@ Sema.check_binary(self, e: u32): u32 {
     }
     equality: bool = op == lexer.Token.eq_eq || op == lexer.Token.bang_eq
     cmp: bool = equality || op == lexer.Token.lt || op == lexer.Token.le || op == lexer.Token.gt || op == lexer.Token.ge
-    // two untyped operands compare at their natural type; the result is bool
+    // two untyped operands compare at their natural type (int, f64, or u8 for
+    // a character constant); the result is bool
     if cmp && a == b && (a == self.t_ut_int || a == self.t_ut_float) {
         nat: u32 = self.prim(P_INT)
-        if a == self.t_ut_float { nat = self.prim(P_F64) }
+        if a == self.t_ut_float { nat = self.prim(P_F64) } else if self.const_is_char(e) { nat = self.prim(P_U8) }
         if !self.coerce(n.a, nat) || !self.coerce(n.b, nat) { return self.t_err }
         return self.prim(P_BOOL)
     }
@@ -2556,24 +2615,26 @@ Sema.check_binary(self, e: u32): u32 {
 }
 
 /* One operand type for the whole chain: the first typed operand's, or the
- * natural int/f64 when every operand is an untyped constant.
+ * natural int/f64/u8 when every operand is an untyped constant.
  */
 Sema.check_cmpchain(self, e: u32): u32 {
     n: Node = self.node(e)
     want: u32 = 0
     ut: u32 = 0
+    chars: bool = false
     for i: u32 in 0..n.nkids {
         u: u32 = self.expr_type(self.kid(e, i))
         if self.ty(u).kind == TypeKind.err { return self.t_err }
         if u == self.t_ut_int || u == self.t_ut_float {
             if ut == 0 { ut = u }
+            chars = chars || self.const_is_char(self.kid(e, i))
         } else if want == 0 {
             want = u
         }
     }
     if want == 0 {
         want = self.prim(P_INT)
-        if ut == self.t_ut_float { want = self.prim(P_F64) }
+        if ut == self.t_ut_float { want = self.prim(P_F64) } else if chars { want = self.prim(P_U8) }
     }
     for i: u32 in 0..n.nkids {
         k: u32 = self.kid(e, i)
@@ -2832,13 +2893,16 @@ Sema.check_member_call(self, call: u32): u32 {
     return self.check_method_call(call, b)
 }
 
-/* The method of `m`'s set matching `call` on receiver type `b` exactly, or a
- * sole candidate; `amb` when two match. A generic owner's candidates are
- * matched under its type arguments.
+/* The method of `head`'s set that `call` on receiver type `b` selects; `amb`
+ * when several survive. A sole method keeps ordinary expected-literal typing.
+ * A generic owner's candidates are matched under its type arguments.
  */
 Sema.method_match(self, call: u32, head: u32, b: u32): (u32, bool) {
     n: Node = self.node(call)
-    found: u32 = 0
+    cands: array.Array[u32] = array.Array[u32] {}
+    defer cands.wipe()
+    sigs: array.Array[u32] = array.Array[u32] {}
+    defer sigs.wipe()
     for f: u32 = head; f != 0; f = self.sym(f).overload {
         x: Sym = *self.sym(f)
         sig: u32 = x.ty
@@ -2848,18 +2912,14 @@ Sema.method_match(self, call: u32, head: u32, b: u32): (u32, bool) {
         }
         ft: SType = self.ty(sig)
         if ft.nparams != n.nkids + 1 || !self.same_type(self.params.get(usize(ft.params)), b) { continue }
-        exact: bool = true
-        for i: u32 in 1..ft.nparams {
-            arg: u32 = self.kid(call, i - 1)
-            at: u32 = self.overload_arg_type(arg)
-            p: u32 = self.params.get(usize(ft.params + i))
-            if !self.exact_arg_type(arg, at, p) { exact = false }
-        }
-        if !exact && self.overload_count(head) > 1 { continue }
-        if found != 0 { return 0, true }
-        found = f
+        fail(cands.push(f))
+        fail(sigs.push(sig))
     }
-    return found, false
+    if cands.len == 0 { return 0, false }
+    if cands.len == 1 && self.overload_count(head) < 2 { return cands.get(0), false }
+    pick: int, amb: bool = self.select_args(call, sigs.view(), 1)
+    if pick < 0 { return 0, amb }
+    return cands.get(usize(pick)), false
 }
 
 /* A method call on struct type `b`. */
@@ -2989,26 +3049,27 @@ Sema.check_generic_assoc_call(self, call: u32, owner: u32, head: u32): u32 {
     callee: Node = self.node(n.a)
     o: SType = self.ty(owner)
     found: u32 = 0
+    cands: array.Array[u32] = array.Array[u32] {}
+    defer cands.wipe()
+    sigs: array.Array[u32] = array.Array[u32] {}
+    defer sigs.wipe()
     for f: u32 = head; f != 0; f = self.sym(f).overload {
         x: Sym = *self.sym(f)
         sig: u32 = x.ty
         if x.is_generic { sig = self.build_func_type(x.decl, true, o.args, o.nargs) }
-        if sig == 0 { continue }
-        ft: SType = self.ty(sig)
-        if ft.nparams != n.nkids { continue }
-        exact: bool = true
-        for i: u32 in 0..ft.nparams {
-            arg: u32 = self.kid(call, i)
-            at: u32 = self.overload_arg_type(arg)
-            p: u32 = self.params.get(usize(ft.params + i))
-            if !self.exact_arg_type(arg, at, p) { exact = false }
-        }
-        if !exact && self.overload_count(head) > 1 { continue }
-        if found != 0 {
+        if sig == 0 || self.ty(sig).nparams != n.nkids { continue }
+        fail(cands.push(f))
+        fail(sigs.push(sig))
+    }
+    if cands.len == 1 && self.overload_count(head) < 2 {
+        found = cands.get(0)
+    } else if cands.len > 0 {
+        pick: int, amb: bool = self.select_args(call, sigs.view(), 0)
+        if amb {
             self.err(call, ["ambiguous associated-function call '", callee.text, "'"])
             return self.t_err
         }
-        found = f
+        if pick >= 0 { found = cands.get(usize(pick)) }
     }
     if found == 0 {
         if self.overloaded_arg_err(call, head, callee.text) { return self.t_err }
@@ -3400,13 +3461,17 @@ Sema.format_helper(self, prefix: string, who: string, name: string, arg: u32, at
 }
 
 /* The type argument `arg` of a `kind` conversion prints as, or 0 when it
- * does not fit, with the expected type's name; `skip` when it has no value.
+ * does not fit, with the expected type's name; `reported` when its error is
+ * already given.
  */
-Sema.format_arg_type(self, arg: u32, kind: u8): (u32, string, bool) {
+Sema.format_arg_type(self, arg: u32, kind: u8, who: string): (u32, string, bool) {
     errors: int = self.errors
     t: u32 = self.expr_type(arg)
     // a value-less argument (a panic call) is poison without an error of its own
-    if self.ty(t).kind == TypeKind.err && self.errors == errors { return 0, "", true }
+    if self.ty(t).kind == TypeKind.err && self.errors == errors {
+        self.err(arg, [who, " argument has no value"])
+        return 0, "", true
+    }
     want: u32 = 0
     expected: string = "value"
     if kind == PF_SIGNED {
@@ -3416,7 +3481,7 @@ Sema.format_arg_type(self, arg: u32, kind: u8): (u32, string, bool) {
     } else if kind == PF_UNSIGNED || kind == PF_BINARY || kind == PF_OCTAL || kind == PF_HEX_LOWER || kind == PF_HEX_UPPER {
         expected = "uint, u64, or usize"
         if t == self.t_ut_int {
-            if !self.ut_fits(arg, self.prim(P_UINT)) { return 0, expected, false }
+            if !self.ut_fits(arg, self.prim(P_UINT)) { return 0, expected, true }
             t = self.prim(P_UINT)
             self.set_node_ty(arg, t)
         }
@@ -3425,7 +3490,7 @@ Sema.format_arg_type(self, arg: u32, kind: u8): (u32, string, bool) {
     } else if kind == PF_FIXED || kind == PF_SCIENTIFIC || kind == PF_GENERAL {
         expected = "f32 or f64"
         if t == self.t_ut_float {
-            if !self.ut_fits(arg, self.prim(P_F64)) { return 0, expected, false }
+            if !self.ut_fits(arg, self.prim(P_F64)) { return 0, expected, true }
             t = self.prim(P_F64)
             self.set_node_ty(arg, t)
         }
@@ -3441,7 +3506,7 @@ Sema.format_arg_type(self, arg: u32, kind: u8): (u32, string, bool) {
         return 0, expected, false
     }
     if t == self.t_ut_int && self.is_int(want) {
-        if !self.ut_fits(arg, want) { return 0, expected, false }
+        if !self.ut_fits(arg, want) { return 0, expected, true }
         t = want
         self.set_node_ty(arg, t)
     }
@@ -3656,11 +3721,8 @@ Sema.check_format_call(self, call: u32, f: u32, bi: u64): u32 {
         p: FormatPart = parts.get(k)
         if p.kind == PF_TEXT || p.kind == PF_LITERAL_BYTE || p.arg >= n.nkids { continue }
         arg: u32 = self.kid(call, p.arg)
-        actual: u32, expected: string, skip: bool = self.format_arg_type(arg, p.kind)
-        if skip {
-            self.err(arg, [who, " argument has no value"])
-            continue
-        }
+        actual: u32, expected: string, reported: bool = self.format_arg_type(arg, p.kind, who)
+        if reported { continue }
         if actual == 0 {
             got: u32 = self.node_ty(arg)
             gotname: string = "unknown"
@@ -4357,7 +4419,7 @@ Sema.check_cast(self, call: u32, p: u32, ts: u32): u32 {
     // a compound untyped constant under a float cast: float math at the target, integer math as int
     if (from == self.t_ut_float || from == self.t_ut_int) && (self.is_float(want) || (w.kind == TypeKind.distinct && self.is_float(w.base))) && (ak == Kind.unary || ak == Kind.binary) {
         at: u32 = self.prim(P_INT)
-        if from == self.t_ut_float { at = want }
+        if from == self.t_ut_float { at = want } else if self.const_is_char(arg) { at = self.prim(P_U8) }
         if !self.coerce(arg, at) { return self.t_err }
     }
     self.set_node_sym(n.a, ts) // the named-type cast marker
@@ -4368,7 +4430,7 @@ Sema.check_cast(self, call: u32, p: u32, ts: u32): u32 {
             fit = w.base
             if !self.is_int(w.base) { fit = self.prim(P_INT) }
         }
-        if !self.ut_fits(arg, fit) { return self.t_err }
+        if !self.ut_fits_value(arg, fit) { return self.t_err }
     }
     if w.kind == TypeKind.enum {
         cv: i64, known: bool = self.ut_const(arg)
@@ -5535,7 +5597,7 @@ Sema.check_enum(self, decl: u32, id: u32) {
         value: i64 = 0
         valid: bool = true
         next: i64 = 0
-        if i > 0 { next = i64(bits.wradd(u64(previous), u64(1))) }
+        if i > 0 { next = i64(bits.wradd(u64(previous), 1)) }
         if m.a != 0 {
             _ = self.expr_type(m.a)
             v: i64, ok: bool = self.ut_const(m.a)
@@ -5792,22 +5854,6 @@ Sema.overload_arg_type(self, arg: u32): u32 {
     return t
 }
 
-/* Whether untyped constant expression `e` has character kind: a character
- * literal, or an operation on one (a shift by its left operand), as in Go.
- */
-Sema.const_is_char(self, e: u32): bool {
-    n: Node = self.node(e)
-    switch n.kind {
-        Kind.char_lit { return true }
-        Kind.unary { return n.a != 0 && self.const_is_char(n.a) }
-        Kind.binary {
-            if n.op == lexer.Token.shl || n.op == lexer.Token.shr { return self.const_is_char(n.a) }
-            return self.const_is_char(n.a) || self.const_is_char(n.b)
-        }
-        default { return false }
-    }
-}
-
 /* A non-literal argument's overload candidate and constant kind, as
  * overload_arraylit_cand's.
  */
@@ -5883,10 +5929,99 @@ Sema.call_exact_match(self, call: u32, s: u32, actual: []u32): bool {
     return !x.is_generic && !x.is_extern && self.call_fits(call, x.ty, actual)
 }
 
+/* Whether constant argument `raw`, of kind `rank`, could take `param`'s type
+ * as a sole candidate's parameter would give it: the same kind, its value in
+ * range, a closed enum's value a member. An integer constant never becomes a
+ * float, and a character constant is u8 alone.
+ */
+Sema.const_fits_param(self, raw: u32, rank: u32, param: u32): bool {
+    base: u32 = self.const_base(param)
+    if base == 0 { return false }
+    p: SType = self.ty(param)
+    if rank == 3 { return self.is_float(base) && p.kind != TypeKind.enum && self.ut_in_range(raw, base) }
+    if !self.is_int(base) || (rank == 2 && !self.is_prim(base, P_U8)) { return false }
+    if p.kind == TypeKind.enum && !self.enum_open(param) {
+        v: i64, known: bool = self.ut_const(raw)
+        if known && !self.enum_member_value(param, v) { return false }
+    }
+    return self.ut_in_range(raw, base)
+}
+
+/* A leaf argument's constant kind, as overload_leaf_type, which has run. */
+Sema.const_arg_rank(self, arg: u32): u32 {
+    raw: u32 = arg
+    if self.node(arg).kind == Kind.placearg { raw = self.node(arg).a }
+    n: Node = self.node(raw)
+    if n.kind == Kind.arraylit || (n.kind == Kind.structlit && n.a == 0) { return 0 }
+    t: u32 = self.node_ty(raw)
+    if t == self.t_ut_float { return 3 }
+    if t != self.t_ut_int { return 0 }
+    if self.const_is_char(raw) { return 2 }
+    return 1
+}
+
+/* Selects among signatures `sigs`, whose first `skip` parameters are not call
+ * arguments (Names & Scoping #6). Every typed argument must match exactly and
+ * every constant fit. Then for each constant argument, where some remaining
+ * candidate has the constant's natural type, only those stay. Several
+ * survivors are ambiguous; the result is a candidate's index or -1.
+ */
+Sema.select_signature(self, call: u32, actual: []u32, sigs: []u32, skip: u32): (int, bool) {
+    nargs: u32 = self.node(call).nkids
+    live: array.Array[bool] = array.Array[bool] {}
+    defer live.wipe()
+    for c: usize in 0..sigs.len {
+        ok: bool = sigs[c] != 0 && self.ty(sigs[c]).kind == TypeKind.func && self.ty(sigs[c]).nparams == nargs + skip
+        for i: u32 = 0; ok && i < nargs; i += 1 {
+            arg: u32 = self.kid(call, i)
+            p: u32 = self.params.get(usize(self.ty(sigs[c]).params + i + skip))
+            ok = self.exact_arg_type(arg, actual[i], p)
+            rank: u32 = self.const_arg_rank(arg)
+            if !ok && rank != 0 {
+                raw: u32 = arg
+                if self.node(arg).kind == Kind.placearg { raw = self.node(arg).a }
+                ok = self.const_fits_param(raw, rank, p)
+            }
+        }
+        fail(live.push(ok))
+    }
+    alive: []bool = live.view()
+    lost: array.Array[bool] = array.Array[bool] {}
+    defer lost.wipe()
+    for c: usize in 0..sigs.len { fail(lost.push(false)) }
+    gone: []bool = lost.view()
+    for i: u32 in 0..nargs {
+        arg: u32 = self.kid(call, i)
+        if self.const_arg_rank(arg) == 0 { continue }
+        natural: bool = false
+        for c: usize in 0..sigs.len {
+            if alive[c] && self.exact_arg_type(arg, actual[i], self.params.get(usize(self.ty(sigs[c]).params + i + skip))) { natural = true }
+        }
+        if !natural { continue }
+        for c: usize in 0..sigs.len {
+            if alive[c] && !self.exact_arg_type(arg, actual[i], self.params.get(usize(self.ty(sigs[c]).params + i + skip))) { gone[c] = true }
+        }
+    }
+    found: int = -1
+    for c: usize in 0..sigs.len {
+        if !alive[c] || gone[c] { continue }
+        if found >= 0 { return -1, true }
+        found = int(c)
+    }
+    return found, false
+}
+
+/* select_signature over the call's own arguments. */
+Sema.select_args(self, call: u32, sigs: []u32, skip: u32): (int, bool) {
+    actual: array.Array[u32] = array.Array[u32] {}
+    defer actual.wipe()
+    for i: u32 in 0..self.node(call).nkids { fail(actual.push(self.overload_arg_type(self.kid(call, i)))) }
+    return self.select_signature(call, actual.view(), sigs, skip)
+}
+
 /* A non-generic direct-call overload of `head`'s set visible from `at`, and
  * whether the call is ambiguous: a sole declaration keeps Ace's ordinary
- * expected-literal typing; a real overload set uses exact types and int/f64
- * literal defaults.
+ * expected-literal typing; a real overload set goes through select_signature.
  */
 Sema.select_call_overload(self, call: u32, head: u32, at: u32): (u32, bool) {
     if head == 0 || self.sym(head).kind != SymKind.func { return 0, false }
@@ -5895,13 +6030,20 @@ Sema.select_call_overload(self, call: u32, head: u32, at: u32): (u32, bool) {
     for i: u32 in 0..self.node(call).nkids { fail(actual.push(self.overload_arg_type(self.kid(call, i)))) }
     found: u32 = 0
     nongeneric: u32 = 0
+    cands: array.Array[u32] = array.Array[u32] {}
+    defer cands.wipe()
+    sigs: array.Array[u32] = array.Array[u32] {}
+    defer sigs.wipe()
     for s: u32 = head; s != 0; s = self.sym(s).overload {
         if self.sym(s).is_generic || self.ov_hidden(s, at) { continue }
         nongeneric += 1
-        if !self.call_exact_match(call, s, actual.view()) { continue }
-        if found != 0 { return 0, true }
-        found = s
+        if self.sym(s).is_extern { continue }
+        fail(cands.push(s))
+        fail(sigs.push(self.sym(s).ty))
     }
+    pick: int, amb: bool = self.select_signature(call, actual.view(), sigs.view(), 0)
+    if amb { return 0, true }
+    if pick >= 0 { found = cands.get(usize(pick)) }
     if found == 0 && nongeneric == 1 {
         for s: u32 = head; s != 0; s = self.sym(s).overload {
             if !self.sym(s).is_generic && !self.ov_hidden(s, at) { found = s }
@@ -5955,7 +6097,11 @@ Sema.check_args(self, call: u32, ft: u32, variadic: bool) {
         }
         // a variadic extra has no declared type: untyped constants default
         at: u32 = self.expr_type(raw)
-        if at == self.t_ut_float { _ = self.coerce(raw, self.prim(P_F64)) } else if at == self.t_ut_int { _ = self.coerce(raw, self.prim(P_INT)) }
+        if at == self.t_ut_float { _ = self.coerce(raw, self.prim(P_F64)) } else if at == self.t_ut_int {
+            nat: u32 = self.prim(P_INT)
+            if self.const_is_char(raw) { nat = self.prim(P_U8) }
+            _ = self.coerce(raw, nat)
+        }
         at = self.node_ty(raw)
         if !self.is_c_variadic_scalar(at) {
             self.err(raw, ["variadic argument has type ", self.type_name(at), ", which is not supported at the C boundary"])
@@ -6959,7 +7105,7 @@ Sema.check_bits_const(self, owner: u32, index: u32, rhs: u32) {
     f: SField = self.field(self.ty(owner), index)
     ok: bool = false
     if f.bit_signed {
-        lo: i64 = i64(bits.wrsub(u64(0), u64(1) << u64(f.bit_width - 1)))
+        lo: i64 = i64(bits.wrsub(0, u64(1) << u64(f.bit_width - 1)))
         hi: i64 = i64((u64(1) << u64(f.bit_width - 1)) - 1)
         if f.bit_width == 64 {
             lo = i64(u64(1) << 63)
@@ -7153,6 +7299,7 @@ Sema.check_range(self, e: u32): u32 {
     range: u32 = 0
     if lo == self.t_ut_int && hi == self.t_ut_int {
         range = self.prim(P_INT)
+        if self.const_is_char(n.a) || self.const_is_char(n.b) { range = self.prim(P_U8) }
         self.set_node_ty(n.a, range)
         self.set_node_ty(n.b, range)
     } else if self.is_int(lo) && self.same_type(lo, hi) {
