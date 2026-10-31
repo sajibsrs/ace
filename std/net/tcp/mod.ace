@@ -297,6 +297,12 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
 /* A no-op returning null on an inactive handle, so a deferred close may
  * precede the constructor's error check.
  */
+/* Ends this side's sending; receiving continues until the peer closes. */
+@when(_PLATFORM_ == "darwin-arm64")
+pub close_write(connection: Conn): Error {
+    return net.close_write(connection.socket)
+}
+
 pub close(listener: *Listener): Error {
     if !listener.active { return null }
     err: Error = sys.close(listener.socket)

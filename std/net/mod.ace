@@ -16,6 +16,8 @@ pub ReuseportErr: type = os.ReuseportErr
 pub NonblockErr: type = os.NonblockErr
 pub BindErr: type = os.BindErr
 pub ListenErr: type = os.ListenErr
+@when(_PLATFORM_ == "darwin-arm64")
+pub CloseWriteErr: type = os.CloseWriteErr
 pub AcceptErr: type = os.AcceptErr
 pub ConnectErr: type = os.ConnectErr
 pub PendingErrorErr: type = os.PendingErrorErr
@@ -65,6 +67,12 @@ pub parse4(endpoint: string): (Addr4, bool) {
 pub socket(socket_type: SocketType): (Socket, Error) {
     result: Socket, err: Error = os.socket(socket_type)
     return result, err
+}
+
+/* Ends this side's sending; receiving continues until the peer closes. */
+@when(_PLATFORM_ == "darwin-arm64")
+pub close_write(sock: Socket): Error {
+    return os.close_write(sock)
 }
 
 pub reuseaddr(sock: Socket, enabled: bool): Error {

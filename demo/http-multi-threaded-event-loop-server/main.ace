@@ -1,8 +1,9 @@
 /* Multi-threaded event-loop HTTP/1.1 server: WORKERS threads each wait on
  * their own poll queue over non-blocking sockets, so an idle or slow client
  * holds a heap `Connection` rather than a thread. Each connection is an explicit
- * state machine: it reads and parses until a request completes, then writes
- * the response, then closes. Each connection allocates its own state, found
+ * state machine around `http.ServerConnection`: it reads until requests
+ * complete, writes each response, and stays open for the next request unless
+ * either side asked to close. Each connection allocates its own state, found
  * through its `poll` context, and releases it on close.
  *
  * Every worker watches the one shared listener and accepts one connection per
@@ -31,7 +32,9 @@ BACKLOG: const usize = 512
 EVENTS: const usize = 64
 MAX_REQUEST: const usize = 65536
 NS_PER_SECOND: const u64 = 1000000000
-TIMEOUT: const u64 = 10 * NS_PER_SECOND // from accept to the last response byte
+IDLE_TIMEOUT: const u64 = 5 * NS_PER_SECOND // waiting for a next request
+REQUEST_TIMEOUT: const u64 = 10 * NS_PER_SECOND // first request byte to last response byte
+LINGER_TIMEOUT: const u64 = NS_PER_SECOND // after the final response, until the client closes
 
 Server: struct {
     listener: net.Socket,
@@ -47,15 +50,9 @@ Connection: struct {
     previous: *Connection,
     next: *Connection,
     writing: bool,
+    lingering: bool,
     deadline: u64,
-    parser: http.RequestParser,
-    input: []u8,
-    occupied: usize,
-    headers: []http.Header,
-    body: []u8,
-    output: []u8,
-    pending: usize,
-    sent: usize,
+    http: http.ServerConnection,
 }
 
 /* One thread's event loop. */
@@ -67,13 +64,6 @@ Worker: struct {
 
 Worker.wipe(self) {
     for self.first != null { finish(&self, self.first) }
-}
-
-fresh_parser(): http.RequestParser {
-    return http.RequestParser {
-        phase = http.RequestPhase.request,
-        framing = http.RequestFraming.undecided,
-    }
 }
 
 handle(request: http.Request): http.Response {
@@ -101,155 +91,126 @@ finish(worker: *Worker, connection: *Connection) {
     if connection.next != null { connection.next.previous = connection.previous }
 
     sys.close(connection.socket)
-    mem.release[u8](&connection.input)
-    mem.release[http.Header](&connection.headers)
-    mem.release[u8](&connection.body)
-    mem.release[u8](&connection.output)
+    connection.http.wipe()
     storage: []Connection = connection.storage
     mem.release[Connection](&storage)
 }
 
-/* Formats `response` with `Connection: close` into the connection's output. */
-format(connection: *Connection, response: http.Response): bool {
-    count: usize = response.headers.len + 1
-    if count > connection.headers.len {
-        grown: []http.Header, ok: bool = mem.grow[http.Header](connection.headers, count)
-        if !ok { return false }
-
-        connection.headers = grown
-    }
-    mem.copy[http.Header](connection.headers[0 .. response.headers.len], response.headers)
-    connection.headers[response.headers.len] = http.Header {
-        name = "Connection",
-        value = "close",
-    }
-    outgoing: http.Response = response
-    outgoing.headers = connection.headers[..count]
-
-    written: usize, err: Error = outgoing.format(connection.output[..])
-    for err == http.FormatErr.capacity {
-        grown: []u8, ok: bool = mem.grow[u8](connection.output, connection.output.len + 1)
-        if !ok { return false }
-
-        connection.output = grown
-        written, err = outgoing.format(connection.output[..])
-    }
-    connection.pending = written
-    return err == null
+/* Waits for the socket to become readable or writable, not both. */
+watch(worker: *Worker, connection: *Connection, writing: bool): bool {
+    connection.writing = writing
+    return poll.watch(worker.queue, connection.socket, !writing, writing, *u8(connection)) == null
 }
 
-/* Grows the storage the parser asked for; false drops the connection. */
-grow_parsed(connection: *Connection, kind: http.RequestCapacity): bool {
-    if kind == http.RequestCapacity.headers {
-        grown: []http.Header, ok: bool = mem.grow[http.Header](connection.headers, connection.headers.len + 1)
-        if ok { connection.headers = grown }
-        return ok
-    }
-    parser: *http.RequestParser = &connection.parser
-    needed: usize = parser.body_count + (connection.occupied - parser.input_offset)
-    if parser.framing == http.RequestFraming.content_length {
-        needed = parser.content_length
-    } else if parser.framing == http.RequestFraming.chunked {
-        needed = parser.body_count + parser.chunk_remaining
-    }
-    if needed > MAX_REQUEST { return false }
-
-    grown: []u8, ok: bool = mem.grow[u8](connection.body, needed)
-    if ok { connection.body = grown }
-    return ok
-}
-
-/* Parses the bytes received so far. A complete request moves the connection
- * to writing; false drops it.
+/* Half-closes and discards input until the client closes, so closing with
+ * unread bytes cannot reset the connection before it reads the response.
  */
-advance(worker: *Worker, connection: *Connection): bool {
+linger(worker: *Worker, connection: *Connection) {
+    if net.close_write(connection.socket) != null || !watch(worker, connection, false) {
+        finish(worker, connection)
+        return
+    }
+    connection.lingering = true
+    connection.deadline = time.elapsed() + LINGER_TIMEOUT
+}
+
+/* Writes the pending response. True means it is out and the connection is
+ * ready for its next request; otherwise it was finished or waits to write.
+ */
+flush(worker: *Worker, connection: *Connection): bool {
     for {
-        result: http.RequestResult = connection.parser.parse(
-            connection.input[..connection.occupied],
-            connection.headers[..],
-            connection.body[..],
-            false,
-        )
-        switch result {
-            http.RequestResult.complete(request: http.Request) {
-                connection.writing = true
-                return format(connection, worker.server.router.dispatch(request))
-            }
-            http.RequestResult.progress(value: http.RequestProgress) {
-                return true
-            }
-            http.RequestResult.capacity(kind: http.RequestCapacity) {
-                if !grow_parsed(connection, kind) { return false }
-            }
-            default {
-                return false
-            }
-        }
-    }
-}
+        output: []u8 = connection.http.output()
+        if output.len == 0 { break }
 
-/* Reads until the socket would block or a request completes. */
-read_ready(worker: *Worker, connection: *Connection) {
-    for !connection.writing {
-        if connection.occupied == connection.input.len {
-            if connection.input.len >= MAX_REQUEST {
-                finish(worker, connection)
-                return
-            }
-            grown: []u8, ok: bool = mem.grow[u8](connection.input, connection.input.len + 1)
-            if !ok {
-                finish(worker, connection)
-                return
-            }
-            connection.input = grown
-
-            /* Parsed views point into the old input, so parse again from
-             * the start. */
-            connection.parser = fresh_parser()
-        }
-        count: int, err: Error = net.receive(connection.socket, connection.input[connection.occupied..])
-        if err != null {
-            if err.domain == typeid(net.ReceiveErr) {
-                if err.code == sys.EINTR { continue }
-                if err.code == sys.EAGAIN { return }
-            }
-            finish(worker, connection)
-            return
-        }
-        if count == 0 {
-            finish(worker, connection)
-            return
-        }
-        connection.occupied += usize(count)
-
-        if !advance(worker, connection) {
-            finish(worker, connection)
-            return
-        }
-    }
-    write_ready(worker, connection)
-}
-
-/* Writes until the response is out, then closes, or until the socket would
- * block, then waits for it to become writable.
- */
-write_ready(worker: *Worker, connection: *Connection) {
-    for connection.sent < connection.pending {
-        count: int, err: Error = net.send(connection.socket, connection.output[connection.sent .. connection.pending])
+        count: int, err: Error = net.send(connection.socket, output)
         if err != null {
             if err.domain == typeid(net.SendErr) {
                 if err.code == sys.EINTR { continue }
                 if err.code == sys.EAGAIN {
-                    if poll.watch(worker.queue, connection.socket, false, true, *u8(connection)) != null { finish(worker, connection) }
-                    return
+                    if !connection.writing && !watch(worker, connection, true) { finish(worker, connection) }
+                    return false
                 }
             }
             finish(worker, connection)
-            return
+            return false
         }
-        connection.sent += usize(count)
+        connection.http.sent(usize(count))
     }
-    finish(worker, connection)
+    if !connection.http.persistent() {
+        linger(worker, connection)
+        return false
+    }
+    if connection.writing && !watch(worker, connection, false) {
+        finish(worker, connection)
+        return false
+    }
+    timeout: u64 = REQUEST_TIMEOUT
+    if connection.http.idle() { timeout = IDLE_TIMEOUT }
+
+    connection.deadline = time.elapsed() + timeout
+    return true
+}
+
+/* Answers every request already received, then waits for more input. */
+drain(worker: *Worker, connection: *Connection) {
+    for {
+        switch connection.http.next() {
+            http.ServerStep.request(request: http.Request) {
+                response: http.Response = worker.server.router.dispatch(request)
+                if connection.http.respond(request, response) != null {
+                    finish(worker, connection)
+                    return
+                }
+                if !flush(worker, connection) { return }
+            }
+            http.ServerStep.send {
+                if !flush(worker, connection) { return }
+            }
+            http.ServerStep.need_input {
+                return
+            }
+            http.ServerStep.failed {
+                finish(worker, connection)
+                return
+            }
+        }
+    }
+}
+
+/* Receives once; the level-triggered queue reports any bytes left, so one
+ * busy connection takes turns with the others.
+ */
+read_ready(worker: *Worker, connection: *Connection) {
+    discard: [512]u8 = [u8(0) : 512]
+    room: []u8 = discard[..]
+    if !connection.lingering { room = connection.http.room() }
+    if room == null {
+        finish(worker, connection)
+        return
+    }
+    count: int, err: Error = net.receive(connection.socket, room)
+    for err != null && err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
+        count, err = net.receive(connection.socket, room)
+    }
+    if err != null {
+        if err.domain == typeid(net.ReceiveErr) && err.code == sys.EAGAIN { return }
+
+        finish(worker, connection)
+        return
+    }
+    if count == 0 {
+        finish(worker, connection)
+        return
+    }
+    if connection.lingering { return }
+    if connection.http.idle() { connection.deadline = time.elapsed() + REQUEST_TIMEOUT }
+
+    connection.http.received(usize(count))
+    drain(worker, connection)
+}
+
+write_ready(worker: *Worker, connection: *Connection) {
+    if flush(worker, connection) { drain(worker, connection) }
 }
 
 /* Starts a connection on `socket`, linked into the worker's list. */
@@ -266,8 +227,8 @@ open(worker: *Worker, socket: net.Socket): bool {
     }
     connection.storage = storage
     connection.socket = socket
-    connection.deadline = time.elapsed() + TIMEOUT
-    connection.parser = fresh_parser()
+    connection.deadline = time.elapsed() + IDLE_TIMEOUT
+    connection.http = http.ServerConnection.new(MAX_REQUEST)
     connection.next = worker.first
     if worker.first != null { worker.first.previous = connection }
 

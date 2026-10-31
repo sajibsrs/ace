@@ -63,6 +63,12 @@ pub ListenErr: error {
     45: unsupported = "socket does not support listening",
 }
 
+pub CloseWriteErr: error {
+    9: descriptor = "invalid socket descriptor",
+    38: not_socket = "descriptor is not a socket",
+    57: not_connected = "socket is not connected",
+}
+
 pub AcceptErr: error {
     4: interrupted = "accept was interrupted",
     9: descriptor = "invalid listener descriptor",
@@ -166,6 +172,7 @@ SOL_SOCKET: const i32 = 0xffff
 SO_REUSEADDR: const i32 = 0x0004
 SO_REUSEPORT: const i32 = 0x0200
 SO_ERROR: const i32 = 0x1007
+SHUT_WR: const i32 = 1
 MSG_NOSIGNAL: const i32 = 0x00080000
 F_GETFL: const i32 = 3
 F_SETFL: const i32 = 4
@@ -181,6 +188,7 @@ extern "c" {
     c_getsockopt(socket: i32, level: i32, option: i32, value: *i32, length: *u32): i32 as "getsockopt"
     c_bind(socket: i32, address: *DarwinAddr4, length: u32): i32 as "bind"
     c_listen(socket: i32, backlog: i32): i32 as "listen"
+    c_shutdown(socket: i32, how: i32): i32 as "shutdown"
     c_accept(socket: i32, address: *DarwinAddr4, length: *u32): i32 as "accept"
     c_connect(socket: i32, address: *DarwinAddr4, length: u32): i32 as "connect"
     c_getsockname(socket: i32, address: *DarwinAddr4, length: *u32): i32 as "getsockname"
@@ -271,6 +279,12 @@ pub listen(sock: Socket, backlog: usize): Error {
     }
 
     if c_listen(i32(sock), i32(backlog)) == -1 { return ListenErr(sys.errno()) }
+    return null
+}
+
+/* Ends this side's sending; receiving continues until the peer closes. */
+pub close_write(sock: Socket): Error {
+    if c_shutdown(i32(sock), SHUT_WR) == -1 { return CloseWriteErr(sys.errno()) }
     return null
 }
 

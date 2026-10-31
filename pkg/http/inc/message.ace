@@ -1,5 +1,6 @@
 /* HTTP message types and serialization. */
 
+import ascii
 import mem
 import str
 
@@ -32,6 +33,7 @@ pub Header: struct {
 pub Request: struct {
     pub method: string,
     pub target: string,
+    pub version_minor: u8 = 1,
     pub headers: []Header = null,
     pub body: []u8 = null,
 }
@@ -93,11 +95,40 @@ pub status(code: u16): string {
     return phrase
 }
 
+/* Reports whether a `Connection` field in `headers` lists `token`. The field
+ * is a comma-separated, case-insensitive list and may repeat.
+ */
+pub has_connection_token(headers: []Header, token: string): bool {
+    for i: usize in 0 .. headers.len {
+        if !ascii.equal(headers[i].name, "connection", false) { continue }
+
+        value: string = headers[i].value
+        start: usize = 0
+        for at: usize in 0 .. value.len + 1 {
+            if at < value.len && value[at] != ',' { continue }
+            if ascii.equal(str.trim(value[start..at]), token, false) { return true }
+
+            start = at + 1
+        }
+    }
+    return false
+}
+
+/* Reports whether the client lets the connection stay open after this
+ * request: `close` always ends it; otherwise HTTP/1.1 persists by default and
+ * HTTP/1.0 only on an explicit `keep-alive`.
+ */
+pub Request.keep_alive(const self): bool {
+    if has_connection_token(self.headers, "close") { return false }
+    return self.version_minor >= 1 || has_connection_token(self.headers, "keep-alive")
+}
+
 /* Serializes this request into caller-owned storage. Returns the byte count on
  * success; on `FormatErr`, `output` is unchanged. Output must not overlap
  * the request's method, target, headers, or body.
  */
 pub Request.format(self, output: []u8): (usize, Error) {
+    if self.version_minor > 1 { return 0, FormatErr.version }
     if self.method.len == 0 { return 0, FormatErr.method }
     for i: usize in 0 .. self.method.len {
         if !tchar(self.method[i]) { return 0, FormatErr.method }
@@ -134,7 +165,9 @@ pub Request.format(self, output: []u8): (usize, Error) {
     if !ok { return 0, FormatErr.capacity }
 
     at: usize = 0
-    written: usize, fit: bool = str.concat([self.method, " ", self.target, " HTTP/1.1\r\n"], output[at..])
+    version: string = " HTTP/1.1\r\n"
+    if self.version_minor == 0 { version = " HTTP/1.0\r\n" }
+    written: usize, fit: bool = str.concat([self.method, " ", self.target, version], output[at..])
     if !fit { return 0, FormatErr.capacity }
 
     at += written

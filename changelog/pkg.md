@@ -72,3 +72,11 @@
 - `demo/http-multi-threaded-event-loop-server` runs one `poll` queue per thread
   over non-blocking `net` sockets, with heap per-connection parse and write
   progress found through `poll` context and a 10-second deadline from accept.
+- `http.ServerConnection` is sans-I/O per-client state: parsing, response
+  framing, and pipelined leftovers. `Request` gained `version_minor` and
+  `keep_alive()`, the parser skips empty lines before a request, and `serve`
+  now uses it, so it writes `Content-Length`, honors HEAD, and no longer drops a
+  response whose handler set `Connection`. The event-loop demo keeps connections
+  alive, with a 5-second idle timeout and a 10-second per-request deadline.
+  `ServerConnection` answers `Expect: 100-continue`; `net.close_write` and
+  `tcp.close_write` half-close, and servers linger before closing.

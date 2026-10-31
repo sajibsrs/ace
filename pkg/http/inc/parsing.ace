@@ -59,6 +59,7 @@ pub RequestParser: struct {
     pub method_count: usize = 0,
     pub target_start: usize = 0,
     pub target_count: usize = 0,
+    pub version_minor: u8 = 0,
     pub phase: RequestPhase,
     pub framing: RequestFraming,
 }
@@ -396,10 +397,11 @@ RequestParser.framing_failure(self): RequestResult {
     return RequestResult.framing
 }
 
-request_complete_result(method: string, target: string, headers: []Header, body: []u8): RequestResult {
+request_complete_result(method: string, target: string, version_minor: u8, headers: []Header, body: []u8): RequestResult {
     return RequestResult.complete(Request {
         method = method,
         target = target,
+        version_minor = version_minor,
         headers = headers,
         body = body,
     })
@@ -419,6 +421,11 @@ pub RequestParser.parse(self, input: string, headers: []Header, body: []u8, eof:
             }
             if status == LineStatus.malformed { return self.syntax_failure() }
 
+            /* Empty lines may precede a request on a reused connection. */
+            if self.line_stop == self.line_start {
+                self.consume_line()
+                continue parse_loop
+            }
             first: usize = self.line_stop
             second: usize = self.line_stop
             for i: usize in self.line_start .. self.line_stop {
@@ -444,7 +451,13 @@ pub RequestParser.parse(self, input: string, headers: []Header, body: []u8, eof:
                 if target[i] <= 32 || target[i] == 127 { return self.syntax_failure() }
             }
             version: string = input[second + 1..self.line_stop]
-            if !mem.equal(version, "HTTP/1.0") && !mem.equal(version, "HTTP/1.1") { return self.syntax_failure() }
+            if mem.equal(version, "HTTP/1.0") {
+                self.version_minor = 0
+            } else if mem.equal(version, "HTTP/1.1") {
+                self.version_minor = 1
+            } else {
+                return self.syntax_failure()
+            }
             self.method_start = self.line_start
             self.method_count = first - self.line_start
             self.target_start = first + 1
@@ -641,6 +654,7 @@ pub RequestParser.parse(self, input: string, headers: []Header, body: []u8, eof:
             return request_complete_result(
                 input[self.method_start..self.method_start + self.method_count],
                 input[self.target_start..self.target_start + self.target_count],
+                self.version_minor,
                 headers[..self.header_count],
                 body[..self.body_count],
             )

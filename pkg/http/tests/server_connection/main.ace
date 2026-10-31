@@ -1,0 +1,160 @@
+import http
+import mem
+import str
+
+/* Feeds `text` to `connection` as if received from a socket. */
+feed(connection: *http.ServerConnection, text: string) {
+    at: usize = 0
+    for at < text.len {
+        room: []u8 = connection.room()
+        count: usize = text.len - at
+        if count > room.len { count = room.len }
+        mem.copy(room[..count], text[at .. at + count])
+        connection.received(count)
+        at += count
+    }
+}
+
+/* Answers the next request with `response`; returns the bytes and whether a
+ * request was ready, marking the whole response sent.
+ */
+answer(connection: *http.ServerConnection, response: http.Response, out: []u8): (string, bool) {
+    switch connection.next() {
+        http.ServerStep.request(request: http.Request) {
+            if connection.respond(request, response) != null { return "", false }
+
+            output: []u8 = connection.output()
+            mem.copy(out[..output.len], output)
+            count: usize = output.len
+            connection.sent(1)
+            connection.sent(count - 1)
+            return out[..count], true
+        }
+        default {
+            return "", false
+        }
+    }
+}
+
+has(text: string, part: string): bool {
+    _, found: bool = str.find(text, part)
+    return found
+}
+
+version_of(text: string): (u8, bool) {
+    connection: http.ServerConnection = http.ServerConnection.new(4096)
+    defer connection.wipe()
+    feed(&connection, text)
+    switch connection.next() {
+        http.ServerStep.request(request: http.Request) {
+            return request.version_minor, request.keep_alive()
+        }
+        default {
+            return u8(9), false
+        }
+    }
+}
+
+main(): int {
+    minor: u8, keep: bool = version_of("GET / HTTP/1.1\r\n\r\n")
+    if minor != 1 || !keep { return 1 }
+
+    minor, keep = version_of("GET / HTTP/1.0\r\n\r\n")
+    if minor != 0 || keep { return 2 }
+
+    minor, keep = version_of("GET / HTTP/1.0\r\nConnection: Keep-Alive\r\n\r\n")
+    if minor != 0 || !keep { return 3 }
+
+    minor, keep = version_of("GET / HTTP/1.1\r\nConnection: foo, CLOSE\r\n\r\n")
+    if minor != 1 || keep { return 4 }
+
+    minor, keep = version_of("GET / HTTP/1.1\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n")
+    if keep { return 5 }
+
+    minor, keep = version_of("\r\nGET / HTTP/1.1\r\n\r\n")
+    if minor != 1 || !keep { return 6 }
+
+    storage: [512]u8 = [u8(0) : 512]
+    hello: http.Response = http.Response { body = "hello" }
+
+    /* Pipelined requests, then a split one continuing the leftover. */
+    pipe: http.ServerConnection = http.ServerConnection.new(4096)
+    defer pipe.wipe()
+    feed(&pipe, "GET /a HTTP/1.1\r\n\r\nPOST /b HTTP/1.1\r\nContent-Length: 2\r\n\r\nhiGET /c")
+    text: string, ok: bool = answer(&pipe, hello, storage[..])
+    if !ok || !has(text, "Content-Length: 5\r\n") || !has(text, "\r\n\r\nhello") || has(text, "Connection") { return 10 }
+    if !pipe.persistent() || pipe.idle() { return 11 }
+
+    text, ok = answer(&pipe, hello, storage[..])
+    if !ok { return 12 }
+
+    switch pipe.next() {
+        http.ServerStep.need_input {}
+        default { return 13 }
+    }
+    feed(&pipe, " HTTP/1.1\r\nConnection: close\r\n\r\n")
+    text, ok = answer(&pipe, hello, storage[..])
+    if !ok || !has(text, "Connection: close\r\n") || pipe.persistent() { return 14 }
+
+    /* HEAD keeps the length and drops the body; 204 has neither. */
+    head: http.ServerConnection = http.ServerConnection.new(4096)
+    defer head.wipe()
+    feed(&head, "HEAD / HTTP/1.1\r\n\r\nGET / HTTP/1.1\r\n\r\n")
+    text, ok = answer(&head, hello, storage[..])
+    if !ok || !has(text, "Content-Length: 5\r\n") || has(text, "hello") { return 20 }
+
+    text, ok = answer(&head, http.Response { status = 204, body = "x" }, storage[..])
+    if !ok || has(text, "Content-Length") { return 21 }
+    if !head.idle() { return 22 }
+
+    /* HTTP/1.0 keep-alive is confirmed; a handler's close wins over it. */
+    old: http.ServerConnection = http.ServerConnection.new(4096)
+    defer old.wipe()
+    feed(&old, "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n")
+    text, ok = answer(&old, hello, storage[..])
+    if !ok || !has(text, "Connection: keep-alive\r\n") { return 30 }
+
+    fields: [1]http.Header = [http.Header { name = "connection", value = "close" }]
+    feed(&old, "GET / HTTP/1.1\r\n\r\n")
+    text, ok = answer(&old, http.Response { headers = fields[..] }, storage[..])
+    if !ok || !has(text, "Connection: close\r\n") || old.persistent() { return 31 }
+
+    /* Transfer-Encoding is refused, and `limit` bounds a request. */
+    refused: http.ServerConnection = http.ServerConnection.new(4096)
+    defer refused.wipe()
+    feed(&refused, "GET / HTTP/1.1\r\n\r\n")
+    fields[0] = http.Header { name = "Transfer-Encoding", value = "chunked" }
+    switch refused.next() {
+        http.ServerStep.request(request: http.Request) {
+            if refused.respond(request, http.Response { headers = fields[..] }) != http.ServerErr.framing { return 40 }
+        }
+        default { return 41 }
+    }
+    /* The interim response comes once, before the body, and keeps state. */
+    expect: http.ServerConnection = http.ServerConnection.new(4096)
+    defer expect.wipe()
+    feed(&expect, "POST / HTTP/1.1\r\nContent-Length: 2\r\nExpect: 100-continue\r\n\r\n")
+    switch expect.next() {
+        http.ServerStep.send {}
+        default { return 50 }
+    }
+    if !mem.equal(expect.output(), "HTTP/1.1 100 Continue\r\n\r\n") { return 51 }
+
+    expect.sent(expect.output().len)
+    switch expect.next() {
+        http.ServerStep.need_input {}
+        default { return 52 }
+    }
+    feed(&expect, "hi")
+    text, ok = answer(&expect, hello, storage[..])
+    if !ok || !has(text, "200 OK") || !expect.persistent() { return 53 }
+
+    small: http.ServerConnection = http.ServerConnection.new(8)
+    defer small.wipe()
+    room: []u8 = small.room()
+    for room != null {
+        small.received(room.len)
+        room = small.room()
+    }
+    return 0
+}

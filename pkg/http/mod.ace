@@ -34,6 +34,9 @@ pub RedirectPolicy: type = redirection.RedirectPolicy
 pub ClientContext: type = client.Context
 pub Router: type = routing.Router
 pub ServerContext: type = server.Context
+pub ServerConnection: type = server.ServerConnection
+pub ServerStep: type = server.ServerStep
+pub ServerErr: type = server.ServerErr
 
 pub CONNECT: const string = message.CONNECT
 pub DELETE: const string = message.DELETE

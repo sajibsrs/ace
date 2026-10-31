@@ -3,15 +3,22 @@
 import ascii
 import mem
 import net
+import poll
+import str
 import sys
+import time
 import net/tcp
 import message: "./message.ace"
 import parsing: "./parsing.ace"
 import routing: "./router.ace"
 
-ServerErr: error {
+pub ServerErr: error {
     1: capacity = "malformed or unresolvable endpoint",
+    2: memory = "response storage could not grow",
+    3: framing = "response sets Transfer-Encoding",
 }
+
+LINGER_NS: const u64 = 500000000
 
 Header: type = message.Header
 Request: type = message.Request
@@ -25,149 +32,356 @@ RequestCapacity: type = parsing.RequestCapacity
 RequestResult: type = parsing.RequestResult
 RequestProgress: type = parsing.RequestProgress
 
-/* Owns the buffers a `serve` loop reads requests into and writes responses
- * from, growing each one via `mem.grow` as connections demand, plus the
- * listen backlog `serve` binds with. Buffers start empty; there is no size
- * cap.
+pub ServerStep: union {
+    need_input,
+    send,
+    request: Request,
+    failed,
+}
+
+/* One client connection's HTTP state over any byte transport: it parses
+ * requests, frames responses, and keeps pipelined bytes, and performs no I/O.
+ * Receive into `room`, report with `received`, and call `next` until it needs
+ * input, sending `output` on `send`. Answer each request with `respond`, send `output`, and report with
+ * `sent`. Buffers grow on demand; a request larger than `limit` bytes fails.
+ * Request views stay valid until `respond`'s response is completely sent.
  */
-pub Context: struct {
+pub ServerConnection: struct {
+    parser: RequestParser,
+    limit: usize,
     input: []u8 = null,
+    occupied: usize = 0,
     headers: []Header = null,
     body: []u8 = null,
-    output: []u8 = null,
-    backlog: usize = 512,
+    fields: []Header = null,
+    reply: []u8 = null,
+    reply_count: usize = 0,
+    reply_sent: usize = 0,
+    keep: bool = false,
+    interim: bool = false,
+    continued: bool = false,
 }
 
-pub Context.new(): Context {
-    return Context {}
-}
-
-/* Releases buffer storage. Call once the context is no longer served. */
-pub Context.wipe(self) {
-    mem.release[u8](&self.input)
-    mem.release[Header](&self.headers)
-    mem.release[u8](&self.body)
-    mem.release[u8](&self.output)
-}
-
-/* Reads exactly one complete request from `conn` into `context`, growing its
- * `input`/`headers`/`body` buffers via `mem.grow` as the request demands.
- * The second result is false on EOF, mid-read disconnect, allocation
- * failure, or parse failure — in every such case the caller responds to
- * nothing and just returns.
- */
-read_request(conn: tcp.Conn, context: *Context): (Request, bool) {
-    parser: RequestParser = RequestParser {
+fresh_parser(): RequestParser {
+    return RequestParser {
         phase = RequestPhase.request,
         framing = RequestFraming.undecided,
     }
-    occupied: usize = 0
-    parse_pending: bool = false
+}
 
-    for {
-        if !parse_pending {
-            if occupied == context.input.len {
-                grown: []u8, ok: bool = mem.grow[u8](context.input, context.input.len + 1)
-                if !ok { return blank(Request), false }
+pub ServerConnection.new(limit: usize): ServerConnection {
+    return ServerConnection { parser = fresh_parser(), limit = limit }
+}
 
-                context.input = grown
+/* Releases buffer storage. */
+pub ServerConnection.wipe(self) {
+    mem.release[u8](&self.input)
+    mem.release[Header](&self.headers)
+    mem.release[u8](&self.body)
+    mem.release[Header](&self.fields)
+    mem.release[u8](&self.reply)
+}
 
-                /* Header and target views point into input. Reparse the
-                 * retained bytes after a moving reallocation before
-                 * exposing any views. */
-                parser = RequestParser {
-                    phase = RequestPhase.request,
-                    framing = RequestFraming.undecided,
-                }
-            }
+/* Starts another client, keeping the buffers. */
+ServerConnection.reset(self) {
+    self.parser = fresh_parser()
+    self.occupied = 0
+    self.reply_count = 0
+    self.reply_sent = 0
+    self.keep = false
+    self.interim = false
+    self.continued = false
+}
 
-            received: int, recv_err: Error = tcp.receive(conn, context.input[occupied..])
-            if recv_err != null {
-                if recv_err.domain == typeid(net.ReceiveErr) && recv_err.code == sys.EINTR { continue }
-                return blank(Request), false
-            }
-            if received == 0 { return blank(Request), false }
+/* Returns storage to receive into, or null past `limit` or without memory. */
+pub ServerConnection.room(self): []u8 {
+    if self.occupied == self.input.len {
+        if self.input.len >= self.limit { return null }
 
-            occupied += usize(received)
+        grown: []u8, ok: bool = mem.grow[u8](self.input, self.input.len + 1)
+        if !ok { return null }
+
+        self.input = grown
+
+        /* Parsed views point into the old input, so parse again from the
+         * start. */
+        self.parser = fresh_parser()
+    }
+    return self.input[self.occupied..]
+}
+
+/* Records `count` bytes received into `room`. */
+pub ServerConnection.received(self, count: usize) {
+    self.occupied += count
+}
+
+/* Grows the storage the parser asked for; false fails the connection. */
+ServerConnection.grow(self, kind: RequestCapacity): bool {
+    if kind == RequestCapacity.headers {
+        grown: []Header, ok: bool = mem.grow[Header](self.headers, self.headers.len + 1)
+        if ok { self.headers = grown }
+        return ok
+    }
+    needed: usize = self.parser.body_count + (self.occupied - self.parser.input_offset)
+    if self.parser.framing == RequestFraming.content_length {
+        needed = self.parser.content_length
+    } else if self.parser.framing == RequestFraming.chunked {
+        needed = self.parser.body_count + self.parser.chunk_remaining
+    }
+    if needed > self.limit { return false }
+
+    grown: []u8, ok: bool = mem.grow[u8](self.body, needed)
+    if ok { self.body = grown }
+    return ok
+}
+
+/* Reports whether the client waits for `100 Continue` before its body. */
+ServerConnection.awaits_continue(const self): bool {
+    if self.continued || self.parser.version_minor != 1 { return false }
+    if self.parser.phase == RequestPhase.request || self.parser.phase == RequestPhase.headers { return false }
+
+    for i: usize in 0 .. self.parser.header_count {
+        header: Header = self.headers[i]
+        if ascii.equal(header.name, "expect", false) && ascii.equal(header.value, "100-continue", false) {
+            return true
         }
-        parse_pending = false
+    }
+    return false
+}
 
-        result: RequestResult = parser.parse(
-            context.input[..occupied],
-            context.headers[..],
-            context.body[..],
+/* Queues the interim response; a persistent state lets it be sent. */
+ServerConnection.queue_continue(self): bool {
+    text: string = "HTTP/1.1 100 Continue\r\n\r\n"
+    if text.len > self.reply.len {
+        grown: []u8, ok: bool = mem.grow[u8](self.reply, text.len)
+        if !ok { return false }
+
+        self.reply = grown
+    }
+    mem.copy(self.reply[..text.len], text)
+    self.reply_count = text.len
+    self.reply_sent = 0
+    self.interim = true
+    self.continued = true
+    self.keep = true
+    return true
+}
+
+/* Parses the bytes held so far, including pipelined ones. */
+pub ServerConnection.next(self): ServerStep {
+    for {
+        result: RequestResult = self.parser.parse(
+            self.input[..self.occupied],
+            self.headers[..],
+            self.body[..],
             false,
         )
         switch result {
             RequestResult.complete(request: Request) {
-                return request, true
+                return ServerStep.request(request)
             }
-            RequestResult.progress(value: RequestProgress) {}
-            RequestResult.capacity(capacity_type: RequestCapacity) {
-                if capacity_type == RequestCapacity.headers {
-                    grown: []Header, ok: bool = mem.grow[Header](context.headers, context.headers.len + 1)
-                    if !ok { return blank(Request), false }
+            RequestResult.progress(value: RequestProgress) {
+                if !self.awaits_continue() { return ServerStep.need_input }
+                if !self.queue_continue() { return ServerStep.failed }
 
-                    context.headers = grown
-                } else {
-                    needed: usize = parser.body_count + (occupied - parser.input_offset)
-                    if parser.framing == RequestFraming.content_length {
-                        needed = parser.content_length
-                    } else if parser.framing == RequestFraming.chunked {
-                        needed = parser.body_count + parser.chunk_remaining
-                    }
-                    grown: []u8, ok: bool = mem.grow[u8](context.body, needed)
-                    if !ok { return blank(Request), false }
-
-                    context.body = grown
-                }
-                parse_pending = true
+                return ServerStep.send
+            }
+            RequestResult.capacity(kind: RequestCapacity) {
+                if !self.grow(kind) { return ServerStep.failed }
             }
             default {
-                return blank(Request), false
+                return ServerStep.failed
             }
         }
     }
 }
 
-/* Writes `response` with a synthesized `Connection: close` (a handler-
- * supplied one is dropped along with the connection either way), growing
- * `context.headers`/`context.output` via `mem.grow` as needed. A format
- * failure other than a capacity shortfall just skips the write; the caller
- * closes the connection regardless.
+/* Formats `response` for `output`, closing after it unless `keep` and both
+ * sides allow persistence.
  */
-respond_close(conn: tcp.Conn, response: Response, context: *Context) {
+ServerConnection.format(self, request: Request, response: Response, keep: bool): Error {
+    bodiless: bool = response.status < 200 || response.status == 204 || response.status == 304
+    head: bool = mem.equal(request.method, message.HEAD)
+    needed: usize = response.headers.len + 2
+    if needed > self.fields.len {
+        grown: []Header, ok: bool = mem.grow[Header](self.fields, needed)
+        if !ok { return ServerErr.memory }
+
+        self.fields = grown
+    }
+    self.keep = keep && request.keep_alive() &&
+        !message.has_connection_token(response.headers, "close")
+
+    count: usize = 0
+    has_length: bool = false
     for i: usize in 0 .. response.headers.len {
-        if ascii.equal(response.headers[i].name, "connection", false) { return }
-    }
-    needed: usize = response.headers.len + 1
-    if needed > context.headers.len {
-        grown: []Header, ok: bool = mem.grow[Header](context.headers, needed)
-        if !ok { return }
+        name: string = response.headers[i].name
+        if ascii.equal(name, "transfer-encoding", false) { return ServerErr.framing }
+        if ascii.equal(name, "connection", false) { continue }
+        if ascii.equal(name, "content-length", false) {
+            if bodiless || !head { continue }
 
-        context.headers = grown
+            has_length = true
+        }
+        self.fields[count] = response.headers[i]
+        count += 1
     }
-    mem.copy[Header](context.headers[0 .. response.headers.len], response.headers)
-    context.headers[response.headers.len] = Header {
-        name = "Connection",
-        value = "close",
+    digits: [20]u8 = [u8(0) : 20]
+    if !bodiless && !has_length {
+        length: usize, _ = str.format(digits[..], response.body.len)
+        self.fields[count] = Header { name = "Content-Length", value = digits[..length] }
+        count += 1
     }
-    outgoing: Response = Response {
-        version_minor = response.version_minor,
-        status = response.status,
-        reason = response.reason,
-        headers = context.headers[..needed],
-        body = response.body,
+    if !self.keep {
+        self.fields[count] = Header { name = "Connection", value = "close" }
+        count += 1
+    } else if request.version_minor == 0 {
+        self.fields[count] = Header { name = "Connection", value = "keep-alive" }
+        count += 1
     }
-    count: usize, format_err: Error = outgoing.format(context.output[..])
-    for format_err == FormatErr.capacity {
-        grown: []u8, ok: bool = mem.grow[u8](context.output, context.output.len + 1)
-        if !ok { return }
 
-        context.output = grown
-        count, format_err = outgoing.format(context.output[..])
+    outgoing: Response = response
+    outgoing.headers = self.fields[..count]
+    if bodiless || head { outgoing.body = null }
+
+    written: usize, err: Error = outgoing.format(self.reply[..])
+    for err == FormatErr.capacity {
+        grown: []u8, ok: bool = mem.grow[u8](self.reply, self.reply.len + 1)
+        if !ok { return ServerErr.memory }
+
+        self.reply = grown
+        written, err = outgoing.format(self.reply[..])
     }
-    if format_err == null { tcp.send_all(conn, context.output[..count]) }
+    self.reply_count = written
+    self.reply_sent = 0
+    return err
+}
+
+/* Formats the answer to `request`: synthesizes `Content-Length` and
+ * `Connection`, and omits the body where HTTP forbids one. A handler's
+ * `Connection: close` ends the connection and its `Transfer-Encoding` is an
+ * error. An error sends nothing, so the caller closes.
+ */
+pub ServerConnection.respond(self, request: Request, response: Response): Error {
+    return self.format(request, response, true)
+}
+
+/* Returns the response bytes not yet sent. */
+pub ServerConnection.output(const self): []u8 {
+    return self.reply[self.reply_sent .. self.reply_count]
+}
+
+/* Records `count` bytes of `output` as sent. Sending the last byte of a
+ * persistent response prepares the next request, keeping pipelined bytes.
+ */
+pub ServerConnection.sent(self, count: usize) {
+    self.reply_sent += count
+    if self.reply_sent < self.reply_count || !self.keep { return }
+
+    self.reply_count = 0
+    self.reply_sent = 0
+    if self.interim {
+        self.interim = false
+        return
+    }
+
+    left: usize = self.occupied - self.parser.input_offset
+    mem.move(self.input[..left], self.input[self.parser.input_offset .. self.occupied])
+    self.occupied = left
+    self.parser = fresh_parser()
+    self.continued = false
+}
+
+/* Reports whether the connection stays open after the current response. */
+pub ServerConnection.persistent(const self): bool {
+    return self.keep
+}
+
+/* Reports whether no part of a next request has arrived or is in progress. */
+pub ServerConnection.idle(const self): bool {
+    return self.occupied == 0 && self.reply_count == 0
+}
+
+/* Owns the storage a `serve` loop reuses across connections, plus the listen
+ * backlog `serve` binds with. Buffers start empty; there is no size cap.
+ */
+pub Context: struct {
+    connection: ServerConnection,
+    backlog: usize = 512,
+}
+
+pub Context.new(): Context {
+    return Context { connection = ServerConnection.new(usize(0) - 1) }
+}
+
+/* Releases buffer storage. Call once the context is no longer served. */
+pub Context.wipe(self) {
+    self.connection.wipe()
+}
+
+/* Reads one complete request from `conn`. The second result is false on EOF,
+ * disconnect, allocation failure, or parse failure.
+ */
+read_request(conn: tcp.Conn, connection: *ServerConnection): (Request, bool) {
+    for {
+        switch connection.next() {
+            ServerStep.request(request: Request) {
+                return request, true
+            }
+            ServerStep.failed {
+                return blank(Request), false
+            }
+            ServerStep.send {
+                _, send_err: Error = tcp.send_all(conn, connection.output())
+                if send_err != null { return blank(Request), false }
+
+                connection.sent(connection.output().len)
+                continue
+            }
+            ServerStep.need_input {}
+        }
+        room: []u8 = connection.room()
+        if room == null { return blank(Request), false }
+
+        received: int, err: Error = tcp.receive(conn, room)
+        if err != null {
+            if err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR { continue }
+            return blank(Request), false
+        }
+        if received == 0 { return blank(Request), false }
+
+        connection.received(usize(received))
+    }
+}
+
+/* For a client that sent more than its request: half-closes `conn` and
+ * discards input until the client closes or
+ * LINGER_NS passes, so closing with unread bytes cannot reset the connection
+ * before the client reads the response.
+ */
+linger(conn: tcp.Conn) {
+    if tcp.close_write(conn) != null { return }
+
+    queue: poll.Queue, err: Error = poll.queue()
+    if err != null { return }
+    defer sys.close(sys.Fd(queue))
+
+    if tcp.watch(queue, conn) != null { return }
+
+    deadline: u64 = time.elapsed() + LINGER_NS
+    events: [1]poll.Event = [blank(poll.Event) : 1]
+    discard: [512]u8 = [u8(0) : 512]
+    for {
+        now: u64 = time.elapsed()
+        if now >= deadline { return }
+
+        count: usize, wait_err: Error = poll.wait(queue, events[..], deadline - now)
+        if wait_err == poll.WaitErr.interrupted { continue }
+        if wait_err != null || count == 0 { return }
+
+        received: int, receive_err: Error = tcp.receive(conn, discard[..])
+        if receive_err != null || received == 0 { return }
+    }
 }
 
 /* Accepts one connection from `listener`, reads exactly one request from it,
@@ -178,10 +392,14 @@ serve_one(listener: tcp.Listener, router: Router, context: *Context) {
     defer tcp.close(&conn)
     if accept_err != null { return }
 
-    request: Request, ok: bool = read_request(conn, context)
+    context.connection.reset()
+    request: Request, ok: bool = read_request(conn, &context.connection)
     if !ok { return }
 
-    respond_close(conn, router.dispatch(request), context)
+    if context.connection.format(request, router.dispatch(request), false) == null {
+        tcp.send_all(conn, context.connection.output())
+        if context.connection.occupied > context.connection.parser.input_offset { linger(conn) }
+    }
 }
 
 /* Resolves and binds `endpoint` with the given listen backlog, ready for a

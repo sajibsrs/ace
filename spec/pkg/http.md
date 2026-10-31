@@ -53,7 +53,7 @@ shared rules are in `spec/std/README.md`.
       arbitrary receive fragmentation, returns zero-copy header/value views
       into caller-owned stable input storage, and reports one explicit progress,
       completion, capacity, syntax, or framing result per call.
-      The public message surface is `Request { method, target, headers, body }`
+      The public message surface is `Request { method, target, version_minor = 1, headers, body }`
       and `Response { version_minor = 1, status = 200, reason = null, headers =
       null, body = null }`. Request keeps its essential method and target
       required; response construction may name only the fields it overrides.
@@ -79,7 +79,10 @@ shared rules are in `spec/std/README.md`.
       occupied prefix extended with newly received bytes on every call. The
       parser retains no buffer pointer, while the caller preserves previously
       written header and body storage until completion. Reinitialize the parser
-      value before starting another message.
+      value before starting another message. Empty lines before a request
+      line are skipped. `Request.keep_alive()` is false when a `Connection`
+      field lists `close`; otherwise it is true for HTTP/1.1, and for HTTP/1.0
+      only when a `Connection` field lists `keep-alive`.
     - Initial request framing supports `Content-Length`, `Transfer-Encoding:
       chunked`, and an empty body when neither is present. Initial response
       framing additionally supports explicit no-body responses and
@@ -162,18 +165,29 @@ shared rules are in `spec/std/README.md`.
       `serve` returns only if the listener itself cannot be created; any
       per-connection failure
       (parse error, allocation failure, mid-write disconnect) just drops
-      that connection and the loop continues. Response serialization adds
-      exactly one `Connection: close` field and drops a handler-supplied
-      `Connection` field along with the connection, while ordinary
-      `Request.format` and `Response.format` continue to synthesize no
-      headers. There is no concurrency — one connection is handled at a
-      time — so this overload suits demos and local testing rather than
-      serving concurrent traffic. A caller-driven nonblocking server core
-      existed at one point but was implemented without a carve; it was
-      removed pending a fresh carve of how much server mechanism belongs in
-      the language versus a framework built on top (issue #67).
-      Concurrency, persistent connections, and TLS server mode remain
-      additive or deferred to that future carve.
+      that connection and the loop continues. Each connection serves one
+      request and ends with `Connection: close`, since a serial loop cannot
+      leave a persistent client idle. A client that sent bytes past its request
+      is half-closed first and its input discarded for at most 500 ms. There is no concurrency.
+    - `ServerConnection` is one client's sans-I/O server state.
+      `ServerConnection.new(limit)` bounds a request's input and body;
+      `wipe` releases its growing buffers. `room(): []u8` and `received(count)`
+      supply input, and `room` returns null past `limit` or without memory.
+      `next(): ServerStep` yields `request(Request)`, `need_input`, `failed`, or
+      `send` when an HTTP/1.1 `Expect: 100-continue` body is pending and `output`
+      holds the interim response.
+      `respond(request, response): Error` formats into `output(): []u8`, and
+      `sent(count)` records progress; the final byte of a persistent response
+      moves pipelined bytes to the start of input and resets the parser.
+      `persistent()` and `idle()` report state. `respond` drops handler
+      `Connection` fields and writes `Connection: close` when either side
+      lists `close` or the request does not persist, or `Connection:
+      keep-alive` for a persistent HTTP/1.0 request. It writes `Content-Length`,
+      keeping a HEAD handler's own value, except for 1xx, 204, and 304, and
+      omits the body for those and HEAD. A handler `Transfer-Encoding` fails
+      with `ServerErr.framing` and a growth failure with `ServerErr.memory`.
+      The caller owns sockets, polling, and timeouts. Server concurrency
+      beyond this and TLS server mode remain deferred (issue #67).
     - `http` is plaintext-only; HTTPS/TLS support was removed (see the TLS
       client transport, issue #65) and is not part of the current
       surface. `Url` parsing still accepts an `https://` scheme for syntax
