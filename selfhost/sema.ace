@@ -1366,15 +1366,12 @@ pub Sema.inst(self, it: u32): (u32, u32, u32) {
 }
 
 /* Re-annotates generic function `f`'s body under the run `args` of `nargs`
- * type arguments (C's sema_stamp_body). The stamp was checked already, so it
- * reports nothing.
+ * type arguments (C's sema_stamp_body). The stamp was checked already; an
+ * error here counts like any other.
  */
 pub Sema.stamp_body(self, f: u32, args: u32, nargs: u32) {
     tp: u32 = self.node(f).c
     if tp == 0 || self.node(tp).nkids != nargs || (self.node(f).flags & parser.F_SPECIALIZED) != 0 { return }
-    quiet: bool = self.quiet
-    errors: int = self.quiet_errors
-    self.quiet = true
     first: usize = self.types.len
     saved: u32 = self.sub
     self.sub = u32(self.tnames.len)
@@ -1398,8 +1395,6 @@ pub Sema.stamp_body(self, f: u32, args: u32, nargs: u32) {
     self.ttypes.truncate(usize(self.sub))
     self.sub = saved
     self.layout_from(first) // the types it made, as layout_all did the rest
-    self.quiet = quiet
-    self.quiet_errors = errors
 }
 
 /* Node `n` and everything under it, each node once, with its side tables;

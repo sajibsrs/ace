@@ -1,0 +1,7 @@
+pick[T](x: T): T {
+    return x
+}
+
+main(): int {
+    return pick[int](0)
+}

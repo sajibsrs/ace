@@ -1721,6 +1721,7 @@ static int spec_conforms(SType* sub, SType* ft) {
  * conformance; duplicates for one exact tuple on one overload are errors.
  */
 static Scope* g_file_scope; // survives sema_check for stamping and type building
+static Diag*  g_diag;       // the unit's, for errors in stamping and type building
 static int is_root_node(Diag* d, Node* n);
 static void check_inline_decl(Ck* k, Node* f);
 static void check_cold_decl(Ck* k, Node* f);
@@ -7721,8 +7722,6 @@ static void check_signing(Ck* k, Node* signing) {
 
 // --- emitter support ---------------------------------------------------------------
 
-static Diag g_dummy_diag = {"(stamp)", 0}; // re-stamps are pre-checked: silent
-
 uint32_t sema_size(SType* t) { layout(t); return t->size; }
 uint32_t sema_align(SType* t) { layout(t); return t->align; }
 
@@ -7738,7 +7737,7 @@ uint32_t sema_union_payload_off(SType* t) {
 
 SType* sema_build_type(Node* t) {
     Ck k = {0};
-    k.d = &g_dummy_diag;
+    k.d = g_diag;
     k.scope = g_file_scope;
     return build_type(&k, t);
 }
@@ -7752,7 +7751,7 @@ SType* sema_stamp_body(Node* f, SType** args, int nargs) {
     if (!tp || tp->nkids != nargs) return NULL;
     if (f->flags & F_SPECIALIZED) return NULL; // no default body: nothing to stamp
     Ck k = {0};
-    k.d = &g_dummy_diag;
+    k.d = g_diag;
     Sym* gs = (Sym*)f->sym;
     k.scope = gs && gs->decl_scope ? gs->decl_scope : g_file_scope;
     k.tnames = (const char**)arena_alloc((size_t)nargs * sizeof(char*));
@@ -8171,6 +8170,7 @@ static void sema_enter(Ck* k, Node* file, Diag* d) {
     memset(&file_scope, 0, sizeof file_scope);
     memset(&import_scope, 0, sizeof import_scope);
     g_file_scope = &file_scope;
+    g_diag = d;
     g_root_path = d->path;
     g_unit = file;
     if (!PRIMS[0]) {

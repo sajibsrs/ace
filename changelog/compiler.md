@@ -249,3 +249,7 @@
 - A named ordinary Ace function with a C-ABI shape converts implicitly to an
   `extern "c"` function type; a data-pointer parameter may meet `*u8`. The
   Ace convention already matches the platform's, so no thunk is emitted.
+- An error raised while lowering re-checks a generic body now counts in the
+  unit's `Diag` and fails the build. The compiler sent it to a discarded `Diag`
+  (printed, exit 0); selfhost checked quietly (dropped, exit 0). Sema keeps the
+  unit's `Diag` in `g_diag` for stamping and type building.

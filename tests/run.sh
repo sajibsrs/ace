@@ -1598,6 +1598,21 @@ elif ! cc -o /tmp/ace_vector tests/vector_ir.c /tmp/ace_vector.o 2>/tmp/ace_test
     fail=1
 fi
 
+# an error in lowering's re-check of a generic body (tests/restamp_error.c)
+# fails the build
+rm -f /tmp/ace_restamp_error.o
+if ! cc -std=c11 -D_DEFAULT_SOURCE -O1 -o /tmp/ace_restamp_error tests/restamp_error.c $(ls src/*.c | grep -v src/main.c) \
+        2>/tmp/ace_test_errs; then
+    echo "FAIL: re-stamp error test did not build"
+    cat /tmp/ace_test_errs
+    fail=1
+elif ! /tmp/ace_restamp_error tests/restamp_error.ace /tmp/ace_restamp_error.o >/tmp/ace_test_errs 2>&1 ||
+     ! grep -q "unknown name 'gone'" /tmp/ace_test_errs; then
+    echo "FAIL: re-stamp error did not fail the build"
+    cat /tmp/ace_test_errs
+    fail=1
+fi
+
 # ELF object writer (tests/elf_object.c): a hand-encoded object links with
 # the system cc and runs, on a linux-x64 host only
 if [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ]; then
