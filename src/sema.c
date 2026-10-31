@@ -704,6 +704,7 @@ static int castable(SType* f, SType* t) {
     if (f->kind == SK_DISTINCT) return castable(f->base, t);
     if (f->kind == SK_ENUM) return is_int(t);
     if (t->kind == SK_ENUM) return is_int(f);
+    if (f == st_prim(P_BOOL)) return is_int(t);
     if (f->kind == SK_PTR && t->kind == SK_PTR) return 1;
     // string/[]char/[]u8 aliases share a descriptor; fixed arrays still reach
     // that view only through explicit slicing.

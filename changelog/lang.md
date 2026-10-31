@@ -1,5 +1,7 @@
 # Language
 
+- A `bool` casts to any integer type as exactly 0 or 1, in constants too; no
+  integer casts to `bool` (#162).
 - A global initializer folds `.len` of a string literal or of a global `const`
   string or array, so `N: const usize = S.len` and `f32(S.len) * GLYPH` are
   constants. `fold_int` reads the length from the literal, the array type, or

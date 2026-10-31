@@ -797,7 +797,7 @@ static int fold_int(Em* e, Node* v, SType* t, Wide* out) {
     Wide a, b;
     int r;
     switch (v->kind) {
-    case N_INT: case N_CHAR:
+    case N_INT: case N_CHAR: case N_BOOL:
         *out = v->ival;
         return fold_fits(t, *out);
     case N_IDENT: {

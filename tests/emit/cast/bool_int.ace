@@ -1,0 +1,30 @@
+/* A bool casts to any integer as 0 or 1, in constants too. */
+
+// expect-exit: 0
+
+Meters: distinct i32
+
+Flags: struct {
+    on: bool,
+    off: bool,
+}
+
+CONSTANT: const int = int(true) + int(false)
+
+count(values: []int, limit: int): int {
+    total: int = 0
+    for i: usize in 0 .. values.len { total += int(values[i] > limit) }
+    return total
+}
+
+main(): int {
+    values: [4]int = [1, 5, 9, -3]
+    if count(values[..], 2) != 2 { return 1 }
+
+    flags: Flags = Flags { on = true, off = false }
+    if u8(flags.on) != u8(1) || i64(flags.off) != i64(0) { return 2 }
+    if u16(values[0] == 1) != u16(1) { return 3 }
+    if Meters(flags.on) != Meters(1) { return 4 }
+    if CONSTANT != 1 { return 5 }
+    return 0
+}

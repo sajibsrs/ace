@@ -113,6 +113,10 @@ distance: Meters = Meters(12.5)
 raw: f64 = f64(distance)
 ```
 
+A `bool` casts to any integer type as exactly 0 or 1, so a comparison can
+become a count or a table index without a branch: `total += int(a > b)`. No
+integer casts to `bool`; write `n != 0`.
+
 ## Pointers
 
 `*T` is a pointer and may be null; writes through it reach its pointee.

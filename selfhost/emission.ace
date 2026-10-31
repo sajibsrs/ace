@@ -363,7 +363,7 @@ Em.seq_len(self, base: u32): (bool, u64) {
 
 Em.fold_int(self, v: u32, t: u32): (int, u64) {
     n: Node = self.s.node(v)
-    if n.kind == Kind.int_lit || n.kind == Kind.char_lit {
+    if n.kind == Kind.int_lit || n.kind == Kind.char_lit || n.kind == Kind.bool {
         if self.lit_fits(t, n.ival) { return 1, n.ival }
         return 0, 0
     }

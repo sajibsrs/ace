@@ -1696,6 +1696,7 @@ Sema.castable(self, f: u32, t: u32): bool {
     if a.kind == TypeKind.distinct { return self.castable(a.base, t) }
     if a.kind == TypeKind.enum { return self.is_int(t) }
     if b.kind == TypeKind.enum { return self.is_int(f) }
+    if self.is_prim(f, P_BOOL) { return self.is_int(t) }
     if a.kind == TypeKind.ptr && b.kind == TypeKind.ptr { return true }
     // string/[]char/[]u8 share a descriptor; arrays reach it only by slicing
     if self.is_prim(t, P_STRING) && a.kind == TypeKind.slice && a.base == self.prim(P_U8) { return true }
