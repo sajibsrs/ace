@@ -1,0 +1,10 @@
+name: ui
+version: 0.1.0
+ace: 0.1
+type: lib
+root: mod.ace
+description: Immediate-mode drawing, layout cuts, and controls over SDL
+author: Sajidur Rahman <sajibsrs@gmail.com>
+
+[dependency]
+sdl: 0.1.0

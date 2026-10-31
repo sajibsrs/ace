@@ -208,7 +208,6 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `sim.ace` | Levels, drivers and contention, and the tick. |
 | `speed.ace` | The Speed slider's stops as tick rates, and their Hz/kHz/MHz text. |
 | `diagram.ace` | `.bnbx` encode and decode. |
-| `ui.ace` | Rectangles, layered drawing, and text helpers (text size 16 px). |
 | `bar.ace` | Where the toolbar and the side panel's Tools, Blocks, Simulate and Info widgets sit, and what is in them. |
 | `view.ace` | The window size and the board's zoom and pan. |
 | `history.ace` | Undo and Redo snapshots. |
@@ -217,8 +216,13 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `app.ace` | `App`: the simulation, the selection, the file, and the commands that change them. |
 | `input.ace` | SDL events to `App` commands. |
 | `render.ace` | Draws the board, bars, and panels; in Simulate, high blocks bloom: blurred together offscreen and added over the board. |
-| `theme.ace` | The bar and panel colors. |
+| `theme.ace` | The bar and panel colors, and block names and colors. |
+| `toolbar.ace` | The bar across the top: its buttons and what they do. |
+| `sidebar.ace` | The side panel: fold button and widgets. |
+| `footer.ace` | The status line. |
+| `dialog.ace` | The Open list and the Save-as box. |
+| `pkg/ui` | Drawing, text, cuts and controls: `Canvas`, `Rect`, `Ctx`, and the font. |
+| `style.ace` | The spacing the bars, panels and dialogs share. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
-| `font.ace` | The text font (Lilex SemiBold, monospaced, printable ASCII), generated from `font/Lilex-SemiBold.ttf` by `python3 -I font/bake.py`; do not edit by hand. License in `font/LICENSE.txt`. |
 | `main.ace` | The SDL window and the event loop. |
 | `*.test.ace` | Tests for each module, run with `ace test .`. |

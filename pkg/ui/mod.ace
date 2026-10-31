@@ -1,14 +1,13 @@
-/* ui — drawing primitives for the editor's board, bar and panels.
+/* ui — immediate-mode drawing and controls over pkg/sdl.
  *
- * A frame draws in layers: fill a Canvas with rectangles, flush it in one
- * geometry call, then draw text over it. A panel that overlays the board is a
- * later layer, so it covers the board's text too.
+ * A Canvas holds a layer of triangles, shapes and text alike, in draw order;
+ * flushing submits it in one geometry call. Rects are cut into layout, and a
+ * Ctx's controls draw themselves and return what the pointer did.
  */
 
 import math
 import Renderer, Vertex, Point, Color from sdl
-import icon: "./icon.ace"
-import font: "./font.ace"
+import font: "./inc/font.ace"
 
 /* Text size, in pixels per em. */
 pub TEXT: const f32 = 16.0
@@ -26,6 +25,50 @@ pub Rect: struct {
 /* Whether window point (x, y) lies in the rectangle. */
 pub Rect.has(const self, x: f32, y: f32): bool {
     return x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
+}
+
+/* Space kept inside each edge of a rectangle. */
+pub Insets: struct {
+    pub top: f32 = 0.0,
+    pub right: f32 = 0.0,
+    pub bottom: f32 = 0.0,
+    pub left: f32 = 0.0,
+}
+
+/* The same space on every edge. */
+pub Insets.all(n: f32): Insets {
+    return Insets { top = n, right = n, bottom = n, left = n }
+}
+
+/* The rectangle left inside `by`. */
+pub Rect.inset(const self, by: Insets): Rect {
+    return Rect { x = self.x + by.left, y = self.y + by.top, w = self.w - by.left - by.right, h = self.h - by.top - by.bottom }
+}
+
+/* Removes a strip `w` wide from the left and returns it. */
+pub Rect.take_left(self, w: f32): Rect {
+    strip: Rect = Rect { x = self.x, y = self.y, w = w, h = self.h }
+    self.x += w
+    self.w -= w
+    return strip
+}
+
+/* Removes a strip `h` high from the top and returns it. */
+pub Rect.take_top(self, h: f32): Rect {
+    strip: Rect = Rect { x = self.x, y = self.y, w = self.w, h = h }
+    self.y += h
+    self.h -= h
+    return strip
+}
+
+/* A square of `side` centered in the rectangle. */
+pub Rect.center(const self, side: f32): Rect {
+    return Rect { x = self.x + (self.w - side) / 2.0, y = self.y + (self.h - side) / 2.0, w = side, h = side }
+}
+
+/* A square of `side`, `pad` in from the left and centered vertically. */
+pub Rect.lead(const self, pad: f32, side: f32): Rect {
+    return Rect { x = self.x + pad, y = self.y + (self.h - side) / 2.0, w = side, h = side }
 }
 
 /* Triangles for one layer, drawn in a single geometry call, or more when it
@@ -87,6 +130,52 @@ pub Canvas.dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
         }
         y += step
     }
+}
+
+/* Each corner's arc, a quarter turn in ROUND_STEPS even steps. */
+ROUND_STEPS: const usize = 5
+ROUND_POINTS: const usize = 4 * ROUND_STEPS
+ROUND_C: [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
+ROUND_S: [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
+
+/* `box` with corners of `radius`, its edge fading out over one pixel. */
+pub Canvas.round(self, box: Rect, radius: f32, color: Color) {
+    if box.w <= 0.0 || box.h <= 0.0 { return }
+    rad: f32 = math.min[f32](radius, math.min[f32](box.w, box.h) / 2.0)
+    if rad <= 0.5 {
+        self.fill(box, color)
+        return
+    }
+    n: usize = ROUND_POINTS
+    if self.count + 9 * n > self.vertices.len { self.flush(self.r) }
+    clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
+    inner: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    outer: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    x0: f32 = box.x + rad
+    y0: f32 = box.y + rad
+    x1: f32 = box.x + box.w - rad
+    y1: f32 = box.y + box.h - rad
+    /* Clockwise on screen from the top-left corner's left end. */
+    for k: usize in 0 .. ROUND_STEPS {
+        c: f32 = ROUND_C[k]
+        s: f32 = ROUND_S[k]
+        self.arc(inner[..], outer[..], k, x0, y0, -c, -s, rad)
+        self.arc(inner[..], outer[..], k + ROUND_STEPS, x1, y0, s, -c, rad)
+        self.arc(inner[..], outer[..], k + 2 * ROUND_STEPS, x1, y1, c, s, rad)
+        self.arc(inner[..], outer[..], k + 3 * ROUND_STEPS, x0, y1, -s, c, rad)
+    }
+    for k: usize in 1 .. n - 1 { self.triangle(inner[0], inner[k], inner[k + 1], color) }
+    for k: usize in 0 .. n {
+        j: usize = (k + 1) % n
+        self.quad(Vertex { position = inner[k], color = color }, Vertex { position = inner[j], color = color },
+            Vertex { position = outer[j], color = clear }, Vertex { position = outer[k], color = clear })
+    }
+}
+
+/* Point `k` of a rounded box, around (x, y) along direction (dx, dy). */
+Canvas.arc(self, inner: []Point, outer: []Point, k: usize, x: f32, y: f32, dx: f32, dy: f32, rad: f32) {
+    inner[k] = Point { x = x + dx * (rad - 0.5), y = y + dy * (rad - 0.5) }
+    outer[k] = Point { x = x + dx * (rad + 0.5), y = y + dy * (rad + 0.5) }
 }
 
 pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
@@ -182,16 +271,22 @@ pub Canvas.stroke(self, r: Renderer, pts: []Point, closed: bool, thick: f32, col
         Vertex { position = Point { x = a[last].x + d1.x, y = a[last].y + d1.y }, color = clear })
 }
 
-/* `which` drawn in the largest square that fits `box`, centered: bold lines
- * and filled polygons whose edges fade out over one pixel. Flushes `r`
- * whenever the layer fills. */
-pub Canvas.icon(self, r: Renderer, which: icon.Id, box: Rect, color: Color) {
+/* An icon: where its shapes start in baked `points`. */
+pub Icon: struct {
+    pub points: []f32 = [],
+    pub start: usize = 0,
+}
+
+/* `shape` drawn in the largest square that fits `box`, centered: bold lines
+ * and filled polygons whose edges fade out over one pixel. Flushes whenever
+ * the layer fills. */
+pub Canvas.icon(self, shape: Icon, box: Rect, color: Color) {
     side: f32 = box.w
     if box.h < side { side = box.h }
     unit: f32 = side / 24.0
     ox: f32 = box.x + (box.w - side) / 2.0
     oy: f32 = box.y + (box.h - side) / 2.0
-    self.shapes(r, icon.POINTS[0..], usize(icon.START[which]), ox, oy, unit, color)
+    self.shapes(self.r, shape.points, shape.start, ox, oy, unit, color)
 }
 
 /* The shapes of `data` from index `i` to its -9 end mark, each point scaled
@@ -306,14 +401,12 @@ pub Canvas.flush(self, r: Renderer) {
     self.count = 0
 }
 
-/* The layer text is built in: each string fills it and flushes it, so it lands
- * over everything flushed before it. */
-layer: Canvas
+/* `rgb` as a vertex color. */
+pub color(rgb: u32): Color { return Color.hex(rgb) }
 
-/* `text` with its baseline at window point (x, y). Glyphs sit on whole
- * pixels, so every copy of a letter looks alike. */
-draw(r: Renderer, x: f32, y: f32, text: string, ink: u32) {
-    layer.r = r
+/* `text` with its baseline at window point (x, y), in this layer. Glyphs sit
+ * on whole pixels, so every copy of a letter looks alike. */
+Canvas.print(self, x: f32, y: f32, text: string, ink: u32) {
     color: Color = Color.hex(ink)
     unit: f32 = TEXT / font.EM
     base: f32 = math.floor(y + 0.5)
@@ -321,10 +414,9 @@ draw(r: Renderer, x: f32, y: f32, text: string, ink: u32) {
         c: usize = usize(text[k])
         if c < font.FIRST || c > font.LAST { continue }
         pen: f32 = math.floor(x + GLYPH * f32(k) + 0.5)
-        if layer.count + 3000 > layer.vertices.len { layer.flush(r) }
-        layer.shapes(r, font.POINTS[0..], usize(font.START[c - font.FIRST]), pen, base, unit, color)
+        if self.count + 3000 > self.vertices.len { self.flush(self.r) }
+        self.shapes(self.r, font.POINTS[0..], usize(font.START[c - font.FIRST]), pen, base, unit, color)
     }
-    layer.flush(r)
 }
 
 /* The baseline that centers capital letters in `box`. */
@@ -332,12 +424,107 @@ baseline(box: Rect): f32 {
     return box.y + (box.h + font.CAP * TEXT / font.EM) / 2.0
 }
 
-/* `text` centered in `box`. */
-pub center(r: Renderer, box: Rect, text: string, ink: u32) {
-    draw(r, box.x + (box.w - GLYPH * f32(text.len)) / 2.0, baseline(box), text, ink)
+/* `text` centered in `box`, in this layer. */
+pub Canvas.center(self, box: Rect, text: string, ink: u32) {
+    self.print(box.x + (box.w - GLYPH * f32(text.len)) / 2.0, baseline(box), text, ink)
 }
 
-/* `text` left-aligned in `box`, `pad` pixels in, centered vertically. */
-pub left(r: Renderer, box: Rect, pad: f32, text: string, ink: u32) {
-    draw(r, box.x + pad, baseline(box), text, ink)
+/* `text` left-aligned in `box`, `pad` pixels in, in this layer. */
+pub Canvas.left(self, box: Rect, pad: f32, text: string, ink: u32) {
+    self.print(box.x + pad, baseline(box), text, ink)
+}
+
+/* What the pointer did to a widget. `hover` and `held` last while true; `press`
+ * and `click` hold for one frame. */
+pub Events: struct {
+    pub hover: bool = false,
+    pub press: bool = false,
+    pub held: bool = false,
+    pub click: bool = false,
+}
+
+pub ButtonStyle: struct {
+    pub radius: f32 = 0.0,
+    pub rest: u32 = 0,
+    pub hover: u32 = 0,
+    pub press: u32 = 0,
+    pub ink: u32 = 0,
+    /* The inset before the icon, the icon's side, and the gap to the label. */
+    pub pad: f32 = 0.0,
+    pub side: f32 = 0.0,
+    pub gap: f32 = 0.0,
+}
+
+/* The frame's pointer. `pressed` and `released` are the left button's edges
+ * since the last `end`; a press something else took is not reported. */
+pub Ctx: struct {
+    pub canvas: *Canvas = null,
+    pub x: f32 = 0.0,
+    pub y: f32 = 0.0,
+    pub pressed: bool = false,
+    pub released: bool = false,
+    /* A dialog is up, and this is not it: nothing is under the pointer. */
+    pub blocked: bool = false,
+    active: u32 = 0,
+}
+
+/* Ends the frame's input; `id`s are nonzero. */
+pub Ctx.end(self) {
+    if self.released { self.active = 0 }
+    self.pressed = false
+    self.released = false
+}
+
+/* What the pointer did to the widget `id` at `box`. A click is a release on
+ * the widget that took the press. */
+pub Ctx.track(self, id: u32, box: Rect): Events {
+    over: bool = !self.blocked && box.has(self.x, self.y)
+    events: Events = Events { hover = over }
+    if over && self.pressed {
+        self.active = id
+        events.press = true
+    }
+    events.held = self.active == id
+    events.click = events.held && over && self.released
+    return events
+}
+
+/* The fill `style` gives a widget in the state `events` reports. */
+shade(events: Events, style: ButtonStyle): u32 {
+    if events.held { return style.press }
+    if events.hover { return style.hover }
+    return style.rest
+}
+
+/* An icon and a label in `box`, or the icon alone, centered, when the label
+ * is empty. */
+pub Ctx.button(self, id: u32, box: Rect, shape: Icon, label: string, style: ButtonStyle): Events {
+    events: Events = self.track(id, box)
+    self.canvas.round(box, style.radius, Color.hex(shade(events, style)))
+    ink: Color = Color.hex(style.ink)
+    if label.len == 0 {
+        self.canvas.icon(shape, box.center(style.side), ink)
+    } else {
+        self.canvas.icon(shape, box.lead(style.pad, style.side), ink)
+        self.canvas.left(box, style.pad + style.side + style.gap, label, style.ink)
+    }
+    return events
+}
+
+/* A bar filled to `fill` (0 to 1) with `label` centered; `held` lasts for a
+ * drag begun on it. */
+pub Ctx.slider(self, id: u32, box: Rect, fill: f32, label: string, style: ButtonStyle): Events {
+    events: Events = self.track(id, box)
+    self.canvas.round(box, style.radius, Color.hex(style.rest))
+    self.canvas.round(Rect { x = box.x, y = box.y, w = box.w * fill, h = box.h }, style.radius, Color.hex(style.hover))
+    self.canvas.center(box, label, style.ink)
+    return events
+}
+
+/* A list row: `text` `pad` in, filled by `style`. */
+pub Ctx.row(self, id: u32, box: Rect, pad: f32, text: string, style: ButtonStyle): Events {
+    events: Events = self.track(id, box)
+    self.canvas.fill(box, Color.hex(shade(events, style)))
+    self.canvas.left(box, pad, text, style.ink)
+    return events
 }

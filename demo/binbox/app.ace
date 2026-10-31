@@ -8,7 +8,7 @@
 import fmt
 import math
 import time
-import ui: "./ui.ace"
+import ui
 import bar: "./bar.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
@@ -68,6 +68,8 @@ pub App: struct {
     pub hx: int = -1,
     pub hy: int = -1,
     pub view: view.View = view.View {},
+    /* The pointer as the widgets see it. */
+    pub ctx: ui.Ctx = ui.Ctx {},
     /* The tool in use, and the select tool's selection. */
     pub pick: bar.Tool = bar.Tool.pencil,
     pub sel: select.Selection = select.Selection {},
@@ -168,14 +170,12 @@ pub App.pace(self) {
 }
 
 /* Moves the speed slider to window x. */
-pub App.slide(self, x: f32) {
-    at: ui.Rect = bar.speed(self.view.side())
+pub App.slide(self, x: f32, at: ui.Rect) {
     self.stop = speed.stop_at((x - at.x) / at.w)
 }
 
 /* Moves the clock span slider to window x. */
-pub App.slide_clock(self, x: f32) {
-    at: ui.Rect = bar.clock_at(self.view.side())
+pub App.slide_clock(self, x: f32, at: ui.Rect) {
     self.clock = math.max[int](0, math.min[int](grid.SPANS - 1, int((x - at.x) / at.w * f32(grid.SPANS))))
 }
 

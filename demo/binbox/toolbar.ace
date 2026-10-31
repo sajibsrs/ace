@@ -1,0 +1,89 @@
+/* toolbar — the bar across the window's top. */
+
+import fmt
+import bar: "./bar.ace"
+import theme: "./theme.ace"
+import ui
+import icon: "./icon.ace"
+import app: "./app.ace"
+import style: "./style.ace"
+
+pub Toolbar: struct {
+    pub g: *app.App = null,
+}
+
+/* The buttons' look: `on` keeps one lit, as an open list or a set toggle does. */
+Toolbar.style(self, each: bar.Button, on: bool): ui.ButtonStyle {
+    look: ui.ButtonStyle = ui.ButtonStyle {
+        radius = style.RADIUS, rest = theme.BUTTON, hover = theme.ACTIVE, press = theme.PRESS, ink = theme.INK,
+        pad = bar.PAD, side = bar.GLYPH_SIDE, gap = bar.LABEL_GAP,
+    }
+    if on { look.rest = theme.ACTIVE }
+    /* The mode button names the mode a press switches to. */
+    if each == bar.Button.mode {
+        look.rest = theme.SIM
+        look.hover = theme.SIM_LIT
+        look.press = theme.SIM
+        if self.g.phase == app.Phase.run {
+            look.rest = theme.EDIT
+            look.hover = theme.EDIT_LIT
+            look.press = theme.EDIT
+        }
+    }
+    return look
+}
+
+/* What a click on `each` does. */
+Toolbar.act(self, each: bar.Button) {
+    g: *app.App = self.g
+    a: ui.Rect = g.view.area()
+    /* The zoom buttons zoom about the board area's center. */
+    mx: f32 = a.x + a.w / 2.0
+    my: f32 = a.y + a.h / 2.0
+    if each == bar.Button.new { g.clear() }
+    if each == bar.Button.open { g.browse() }
+    if each == bar.Button.save { g.save() }
+    if each == bar.Button.save_as { g.ask() }
+    if each == bar.Button.mode {
+        if g.phase == app.Phase.edit { g.switch(app.Phase.run) } else { g.switch(app.Phase.edit) }
+    }
+    if each == bar.Button.zoom_out { g.view.zoom(-1.0, mx, my) }
+    if each == bar.Button.zoom_in { g.view.zoom(1.0, mx, my) }
+    if each == bar.Button.depth { g.depth = !g.depth }
+    if each == bar.Button.snap { g.snap = !g.snap }
+}
+
+pub Toolbar.draw(self, ctx: *ui.Ctx) {
+    g: *app.App = self.g
+    canvas: *ui.Canvas = ctx.canvas
+    for i: usize in 0 .. members(bar.Button).len {
+        each: bar.Button = members(bar.Button)[i]
+        at: ui.Rect = bar.place(each)
+        if bar.heading(each).len > 0 {
+            canvas.left(at, -bar.title_w(each), bar.heading(each), theme.DIM)
+        }
+        /* The zoom readout is not a button. */
+        if each == bar.Button.zoom_level {
+            canvas.round(at, style.RADIUS, ui.color(theme.DEEP))
+            level: [16]u8
+            zoom: fmt.Buffer = fmt.Buffer.init(level[..])
+            zoom.printf("%.3g", g.view.level())
+            canvas.center(at, zoom.text(), theme.INK)
+            continue
+        }
+        on: bool = (each == bar.Button.open && g.mode == app.Mode.open) ||
+            (each == bar.Button.depth && g.depth) || (each == bar.Button.snap && g.snap)
+        shown: icon.Id = bar.ICON[each]
+        label: string = bar.LABEL[each]
+        if each == bar.Button.mode && g.phase == app.Phase.run {
+            shown = icon.Id.edit
+            label = bar.EDIT_LABEL
+        }
+        events: ui.Events = ctx.button(u32(each) + 1, at, bar.shape(shown), label, self.style(each, on))
+        if events.click { self.act(each) }
+    }
+    title: string = g.name.text()
+    if title.len == 0 { title = "untitled" }
+    head: ui.Rect = g.view.head()
+    canvas.left(head, head.w - bar.EDGE - ui.GLYPH * f32(title.len), title, theme.INK)
+}

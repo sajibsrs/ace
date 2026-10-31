@@ -1,4 +1,6 @@
-/* theme — the bar and panel colors. */
+/* theme — the bar and panel colors, and each block's name and colors. */
+
+import grid: "./grid.ace"
 
 /* Bar and panel colors. */
 pub CHROME: const u32 = 0x22262b
@@ -9,6 +11,8 @@ pub PANEL: const u32 = 0x101214
 pub WINDOW: const u32 = 0x0a0b0c
 pub BUTTON: const u32 = 0x2c3238
 pub ACTIVE: const u32 = 0x3d4f63
+/* A control while it is held down. */
+pub PRESS: const u32 = 0x4e6680
 /* Every other row of a list, a shade darker than BUTTON. */
 pub STRIPE: const u32 = 0x252a2f
 /* The Edit button, and the Simulate button: resting, then lit (current
@@ -19,3 +23,68 @@ pub SIM: const u32 = 0x3d9a66
 pub SIM_LIT: const u32 = 0x41bb77
 pub INK: const u32 = 0xdddddd
 pub DIM: const u32 = 0x888888
+
+/* An empty cell's gap, which lets the grid show. */
+pub CELL_GAP: const f32 = 1.0
+
+pub NAME: [grid.Block]string = [
+    grid.Block.empty = "empty",
+    grid.Block.source = "source",
+    grid.Block.wire = "wire",
+    grid.Block.read = "read",
+    grid.Block.write = "write",
+    grid.Block.and = "AND",
+    grid.Block.or = "OR",
+    grid.Block.not = "NOT",
+    grid.Block.nand = "NAND",
+    grid.Block.nor = "NOR",
+    grid.Block.xor = "XOR",
+    grid.Block.xnor = "XNOR",
+    grid.Block.led = "LED",
+    grid.Block.bridge = "bridge",
+    grid.Block.clock = "clock",
+    grid.Block.toggle = "toggle",
+]
+
+/* Low and high colors of each block; any block on an error is ERROR. */
+pub LOW: [grid.Block]u32 = [
+    grid.Block.empty = 0x171b20,
+    grid.Block.source = 0x47b377,
+    grid.Block.wire = 0x667280,
+    grid.Block.read = 0x3d577b,
+    grid.Block.write = 0x7c4547,
+    grid.Block.and = 0xc7a730,
+    grid.Block.or = 0x12b09e,
+    grid.Block.not = 0xc14c4c,
+    grid.Block.nand = 0xd89c41,
+    grid.Block.nor = 0x7d7bc7,
+    grid.Block.xor = 0x8972c7,
+    grid.Block.xnor = 0xb36eb9,
+    grid.Block.led = 0x9ca4ae,
+    grid.Block.bridge = 0x57637d,
+    grid.Block.clock = 0x50b37c,
+    grid.Block.toggle = 0x82a641,
+]
+
+pub HIGH: [grid.Block]u32 = [
+    grid.Block.empty = 0x171b20,
+    grid.Block.source = 0x4ad488,
+    grid.Block.wire = 0x7a8da4,
+    grid.Block.read = 0x4a70a7,
+    grid.Block.write = 0xa75358,
+    grid.Block.and = 0xeac22d,
+    grid.Block.or = 0x0bd0ba,
+    grid.Block.not = 0xf35454,
+    grid.Block.nand = 0xffb340,
+    grid.Block.nor = 0x9391ff,
+    grid.Block.xor = 0xa685fd,
+    grid.Block.xnor = 0xdd7ce5,
+    grid.Block.led = 0xf3f4f6,
+    grid.Block.bridge = 0x6a7ca5,
+    grid.Block.clock = 0x54d48d,
+    grid.Block.toggle = 0x97c543,
+]
+
+/* The panel icon colors of the wire and the bridge: under the pointer (wire,
+ * bridge), then selected (wire, bridge). */
+pub PANEL_BRIGHT: [4]u32 = [0x3f86d6, 0x8a5fd6, 0x59a8ff, 0xa87bff]

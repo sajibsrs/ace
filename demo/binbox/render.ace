@@ -2,83 +2,21 @@
  * panels, over a Canvas flushed in layers.
  */
 
-import fmt
 import math
 import Renderer, Texture, Point, Color, BLEND_NONE, BLEND_ADD from sdl
 import bar: "./bar.ace"
 import theme: "./theme.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
-import speed: "./speed.ace"
-import diagram: "./diagram.ace"
-import ui: "./ui.ace"
-import icon: "./icon.ace"
+import ui
 import app: "./app.ace"
 import select: "./select.ace"
-
-NAME: [grid.Block]string = [
-    grid.Block.empty = "empty",
-    grid.Block.source = "source",
-    grid.Block.wire = "wire",
-    grid.Block.read = "read",
-    grid.Block.write = "write",
-    grid.Block.and = "AND",
-    grid.Block.or = "OR",
-    grid.Block.not = "NOT",
-    grid.Block.nand = "NAND",
-    grid.Block.nor = "NOR",
-    grid.Block.xor = "XOR",
-    grid.Block.xnor = "XNOR",
-    grid.Block.led = "LED",
-    grid.Block.bridge = "bridge",
-    grid.Block.clock = "clock",
-    grid.Block.toggle = "toggle",
-]
-
-/* Low and high colors of each block; any block on an error is ERROR. */
-LOW: [grid.Block]u32 = [
-    grid.Block.empty = 0x171b20,
-    grid.Block.source = 0x47b377,
-    grid.Block.wire = 0x667280,
-    grid.Block.read = 0x3d577b,
-    grid.Block.write = 0x7c4547,
-    grid.Block.and = 0xc7a730,
-    grid.Block.or = 0x12b09e,
-    grid.Block.not = 0xc14c4c,
-    grid.Block.nand = 0xd89c41,
-    grid.Block.nor = 0x7d7bc7,
-    grid.Block.xor = 0x8972c7,
-    grid.Block.xnor = 0xb36eb9,
-    grid.Block.led = 0x9ca4ae,
-    grid.Block.bridge = 0x57637d,
-    grid.Block.clock = 0x50b37c,
-    grid.Block.toggle = 0x82a641,
-]
-
-HIGH: [grid.Block]u32 = [
-    grid.Block.empty = 0x171b20,
-    grid.Block.source = 0x4ad488,
-    grid.Block.wire = 0x7a8da4,
-    grid.Block.read = 0x4a70a7,
-    grid.Block.write = 0xa75358,
-    grid.Block.and = 0xeac22d,
-    grid.Block.or = 0x0bd0ba,
-    grid.Block.not = 0xf35454,
-    grid.Block.nand = 0xffb340,
-    grid.Block.nor = 0x9391ff,
-    grid.Block.xor = 0xa685fd,
-    grid.Block.xnor = 0xdd7ce5,
-    grid.Block.led = 0xf3f4f6,
-    grid.Block.bridge = 0x6a7ca5,
-    grid.Block.clock = 0x54d48d,
-    grid.Block.toggle = 0x97c543,
-]
+import toolbar: "./toolbar.ace"
+import sidebar: "./sidebar.ace"
+import footer: "./footer.ace"
+import dialog: "./dialog.ace"
 
 ERROR: const u32 = 0xb030b0
-
-/* The panel icon colors of the wire and the bridge: under the pointer (wire,
- * bridge), then selected (wire, bridge). */
-PANEL_BRIGHT: [4]u32 = [0x3f86d6, 0x8a5fd6, 0x59a8ff, 0xa87bff]
 
 /* `from` moved `percent` of the way to `to`, channel by channel. */
 mix(from: u32, to: u32, percent: u32): u32 {
@@ -95,8 +33,8 @@ SHADE: const u32 = 25
 /* The color of block `b`'s icon while it shows `level`. */
 icon_ink(b: grid.Block, level: sim.Level): u32 {
     if level == sim.Level.error { return mix(ERROR, 0x000000, SHADE) }
-    if level == sim.Level.high { return mix(HIGH[b], 0x000000, SHADE) }
-    return mix(LOW[b], 0x000000, SHADE)
+    if level == sim.Level.high { return mix(theme.HIGH[b], 0x000000, SHADE) }
+    return mix(theme.LOW[b], 0x000000, SHADE)
 }
 
 /* Block icons show only above this zoom; at it and below, a block is its
@@ -147,14 +85,14 @@ face(g: *app.App, b: grid.Block, x: int, y: int): u32 {
     v: sim.Level = sim.Level.low
     if g.phase == app.Phase.run { v = g.s.level(x, y) }
     if v == sim.Level.error && b != grid.Block.empty { return ERROR }
-    if v == sim.Level.high { return HIGH[b] }
-    return LOW[b]
+    if v == sim.Level.high { return theme.HIGH[b] }
+    return theme.LOW[b]
 }
 
 /* An icon's box inside `cell`, with a margin. */
 icon_box(cell: ui.Rect): ui.Rect {
     m: f32 = cell.w * 0.12
-    return ui.Rect { x = cell.x + m, y = cell.y + m, w = cell.w - 2.0 * m, h = cell.h - 2.0 * m }
+    return cell.inset(ui.Insets.all(m))
 }
 
 /* Whether the board has no block at (x, y), off the board included. */
@@ -208,7 +146,7 @@ draw_bloom(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom, a: ui.Re
         for x: int in 0 .. grid.WIDTH {
             b: grid.Block = g.s.g.get(x, y)
             if b == grid.Block.empty || g.s.level(x, y) != sim.Level.high || !g.view.shows(x, y, a) { continue }
-            canvas.fill(g.view.box(x, y), Color.hex(HIGH[b]))
+            canvas.fill(g.view.box(x, y), Color.hex(theme.HIGH[b]))
             lit = true
         }
     }
@@ -249,7 +187,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
             box: ui.Rect = g.view.box(x, y)
             b: grid.Block = g.s.g.get(x, y)
             if b == grid.Block.empty {
-                canvas.fill(ui.Rect { x = box.x + 1.0, y = box.y + 1.0, w = box.w - 2.0, h = box.h - 2.0 }, Color.hex(LOW[b]))
+                canvas.fill(box.inset(ui.Insets.all(theme.CELL_GAP)), Color.hex(theme.LOW[b]))
             }
         }
     }
@@ -276,7 +214,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
                 if b == grid.Block.empty || b == grid.Block.wire || !g.view.shows(x, y, a) { continue }
                 level: sim.Level = sim.Level.low
                 if g.phase == app.Phase.run { level = g.s.level(x, y) }
-                canvas.icon(r, bar.BLOCK_ICON[b], icon_box(g.view.box(x, y)), Color.hex(icon_ink(b, level)))
+                canvas.icon(bar.shape(bar.BLOCK_ICON[b]), icon_box(g.view.box(x, y)), Color.hex(icon_ink(b, level)))
             }
         }
     }
@@ -292,8 +230,8 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
         /* It floats over the board, half see-through and half size, centered
          * on the pointer or the snapped cell, with no sides. */
         at = ui.Rect { x = at.x + at.w / 4.0, y = at.y + at.h / 4.0, w = at.w / 2.0, h = at.h / 2.0 }
-        canvas.fill(at, shade(LOW[g.block], GHOST))
-        if icons && g.block != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[g.block], icon_box(at), shade(icon_ink(g.block, sim.Level.low), GHOST)) }
+        canvas.fill(at, shade(theme.LOW[g.block], GHOST))
+        if icons && g.block != grid.Block.wire { canvas.icon(bar.shape(bar.BLOCK_ICON[g.block]), icon_box(at), shade(icon_ink(g.block, sim.Level.low), GHOST)) }
     }
     /* The box being drawn, or the selection, carried along while it moves. */
     if g.sel.drag == select.Drag.box {
@@ -322,11 +260,11 @@ draw_lifted(g: *app.App, canvas: *ui.Canvas, r: Renderer, icons: bool) {
                 if b == grid.Block.empty { continue }
                 cell: ui.Rect = g.view.box(x + g.sel.dx, y + g.sel.dy)
                 if icons {
-                    if pass == 0 && b != grid.Block.wire { canvas.icon(r, bar.BLOCK_ICON[b], icon_box(cell), Color.hex(icon_ink(b, sim.Level.low))) }
+                    if pass == 0 && b != grid.Block.wire { canvas.icon(bar.shape(bar.BLOCK_ICON[b]), icon_box(cell), Color.hex(icon_ink(b, sim.Level.low))) }
                 } else if pass == 0 {
-                    if g.depth { extrude(canvas, cell, LOW[b], 1.0, carried(g, x - 1, y) == grid.Block.empty, carried(g, x, y + 1) == grid.Block.empty) }
+                    if g.depth { extrude(canvas, cell, theme.LOW[b], 1.0, carried(g, x - 1, y) == grid.Block.empty, carried(g, x, y + 1) == grid.Block.empty) }
                 } else {
-                    canvas.fill(cell, Color.hex(LOW[b]))
+                    canvas.fill(cell, Color.hex(theme.LOW[b]))
                 }
             }
         }
@@ -339,279 +277,48 @@ hovers(g: *app.App): bool {
     return g.mode == app.Mode.none && g.phase == app.Phase.edit && g.pick == bar.Tool.pencil && g.hx >= 0
 }
 
-/* The width of the window-colored line that separates a bar from the board. */
-BORDER: const f32 = 2.0
-
 draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     foot: ui.Rect = g.view.foot()
     top: ui.Rect = g.view.head()
     panel: ui.Rect = g.view.side()
     /* Each bar fills out to the window's edge; the window color shows only as
-     * BORDER-wide lines under the header, above the footer, and left of the
+     * bar.BORDER-wide lines under the header, above the footer, and left of the
      * panel. */
     chrome: Color = Color.hex(theme.CHROME)
-    reach: f32 = bar.GAP - BORDER
+    reach: f32 = bar.GAP - bar.BORDER
     wide: f32 = top.w + 2.0 * bar.GAP
     canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = wide, h = top.y + top.h + reach }, chrome)
     canvas.fill(ui.Rect { x = 0.0, y = foot.y - reach, w = wide, h = foot.h + bar.GAP + reach }, chrome)
     canvas.fill(ui.Rect { x = panel.x - reach, y = panel.y, w = panel.w + bar.GAP + reach, h = panel.h }, chrome)
     canvas.flush(r)
-    run: bool = g.phase == app.Phase.run
-    /* The group titles, dim, before the buttons they head. */
-    for i: usize in 0 .. members(bar.Button).len {
-        each: bar.Button = members(bar.Button)[i]
-        if bar.heading(each).len == 0 { continue }
-        at: ui.Rect = bar.place(each)
-        ui.left(r, at, -(f32(bar.heading(each).len) * ui.GLYPH + 6.0), bar.heading(each), theme.DIM)
-    }
-    for i: usize in 0 .. members(bar.Button).len {
-        each: bar.Button = members(bar.Button)[i]
-        at: ui.Rect = bar.place(each)
-        /* The zoom readout is not a button: it shows the level, drawn below. */
-        if each == bar.Button.zoom_level {
-            canvas.fill(at, Color.hex(theme.DEEP))
-            continue
-        }
-        lit: bool = at.has(g.mx, g.my)
-        rgb: u32 = theme.BUTTON
-        if lit || (each == bar.Button.open && g.mode == app.Mode.open) { rgb = theme.ACTIVE }
-        if each == bar.Button.depth && g.depth { rgb = theme.ACTIVE }
-        if each == bar.Button.snap && g.snap { rgb = theme.ACTIVE }
-        /* The mode button names the mode a press switches to: Simulate in
-         * green while editing, Edit in blue while simulating; brighter under
-         * the pointer. */
-        if each == bar.Button.mode {
-            rgb = theme.SIM
-            if g.phase == app.Phase.run { rgb = theme.EDIT }
-            if lit && g.phase == app.Phase.edit { rgb = theme.SIM_LIT }
-            if lit && g.phase == app.Phase.run { rgb = theme.EDIT_LIT }
-        }
-        canvas.fill(at, Color.hex(rgb))
-        ink: u32 = theme.INK
-        /* A lone icon is centred in its square, the size of a labelled one. */
-        inset: f32 = bar.PAD
-        if bar.LABEL[each].len == 0 { inset = (at.w - bar.GLYPH_SIDE) / 2.0 }
-        shown: icon.Id = bar.ICON[each]
-        if each == bar.Button.mode && g.phase == app.Phase.run { shown = icon.Id.edit }
-        canvas.icon(r, shown, ui.Rect { x = at.x + inset, y = at.y + (at.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(ink))
-    }
-    side: ui.Rect = g.view.side()
-    edit: bool = g.phase == app.Phase.edit
-    pencil: bool = g.pick == bar.Tool.pencil
-    unfolded: bool = !g.view.shut
-    clocked: bool = g.block == grid.Block.clock
-    /* The panel's header, the fold button in it, and each widget's header. */
-    canvas.fill(ui.Rect { x = side.x - (bar.GAP - BORDER), y = side.y, w = side.w + bar.GAP + (bar.GAP - BORDER), h = bar.BAR }, Color.hex(theme.DEEP))
-    fold: ui.Rect = bar.fold_at(side)
-    if fold.has(g.mx, g.my) { canvas.fill(fold, Color.hex(theme.ACTIVE)) }
-    fold_icon: icon.Id = icon.Id.panel_right
-    if g.view.shut { fold_icon = icon.Id.panel_left }
-    canvas.icon(r, fold_icon, ui.Rect { x = fold.x + (fold.w - bar.GLYPH_SIDE) / 2.0, y = fold.y + (fold.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
-    for i: usize in 0 .. members(bar.Widget).len {
-        each: bar.Widget = members(bar.Widget)[i]
-        if unfolded && bar.shown(each, edit, pencil, clocked) { canvas.fill(bar.head_at(side, bar.top(side, each, edit, pencil, clocked)), Color.hex(theme.DEEP)) }
-    }
-    if unfolded && bar.shown(bar.Widget.tools, edit, pencil, clocked) {
-        for i: usize in 0 .. members(bar.Tool).len {
-            each: bar.Tool = members(bar.Tool)[i]
-            at: ui.Rect = bar.pick_at(side, each)
-            rgb: u32 = theme.BUTTON
-            if at.has(g.mx, g.my) || each == g.pick { rgb = theme.ACTIVE }
-            canvas.fill(at, Color.hex(rgb))
-            canvas.icon(r, bar.STRIP_ICON[each], ui.Rect { x = at.x + bar.TOOL_PAD, y = at.y + bar.TOOL_PAD, w = at.w - 2.0 * bar.TOOL_PAD, h = at.h - 2.0 * bar.TOOL_PAD }, Color.hex(theme.INK))
-        }
-    }
-    /* The simulation widget: Step, Play/Pause (auto-ticking, lit while on), Reset, and the
-     * speed slider filled up to its stop. */
-    if unfolded && bar.shown(bar.Widget.sim, edit, pencil, clocked) {
-        step: ui.Rect = bar.step_at(side)
-        auto: ui.Rect = bar.auto_at(side)
-        rgb: u32 = theme.BUTTON
-        if step.has(g.mx, g.my) { rgb = theme.ACTIVE }
-        canvas.fill(step, Color.hex(rgb))
-        rgb = theme.BUTTON
-        if auto.has(g.mx, g.my) || g.auto { rgb = theme.ACTIVE }
-        canvas.fill(auto, Color.hex(rgb))
-        reset: ui.Rect = bar.reset_at(side)
-        rgb = theme.BUTTON
-        if reset.has(g.mx, g.my) { rgb = theme.ACTIVE }
-        canvas.fill(reset, Color.hex(rgb))
-        canvas.icon(r, icon.Id.reset, ui.Rect { x = reset.x + bar.PAD, y = reset.y + (reset.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
-        canvas.icon(r, icon.Id.step, ui.Rect { x = step.x + bar.PAD, y = step.y + (step.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
-        shown: icon.Id = icon.Id.run
-        if g.auto { shown = icon.Id.pause }
-        canvas.icon(r, shown, ui.Rect { x = auto.x + bar.PAD, y = auto.y + (auto.h - bar.GLYPH_SIDE) / 2.0, w = bar.GLYPH_SIDE, h = bar.GLYPH_SIDE }, Color.hex(theme.INK))
-        pace: ui.Rect = bar.speed(side)
-        canvas.fill(pace, Color.hex(theme.BUTTON))
-        canvas.fill(ui.Rect { x = pace.x, y = pace.y, w = pace.w * speed.fill(g.stop), h = pace.h }, Color.hex(theme.ACTIVE))
-    }
+    bar_top: toolbar.Toolbar = toolbar.Toolbar { g = g }
+    bar_top.draw(&g.ctx)
+    panel_side: sidebar.Sidebar = sidebar.Sidebar { g = g }
+    panel_side.draw(&g.ctx)
+    status: footer.Footer = footer.Footer { g = g }
+    status.draw(canvas)
     canvas.flush(r)
-    /* Block buttons are icons alone: the selected one in its block's color, the
-     * rest in its dimmer color; the pointer changes nothing. */
-    if unfolded && bar.shown(bar.Widget.blocks, edit, pencil, clocked) {
-        for i: usize in 1 .. members(grid.Block).len {
-            each: grid.Block = members(grid.Block)[i]
-            at: ui.Rect = bar.block_at(side, each)
-            ink: u32 = LOW[each]
-            if each == g.block { ink = HIGH[each] }
-            /* The wire's and bridge's muted board colors vanish on the panel. */
-            if each == grid.Block.wire || each == grid.Block.bridge {
-                which: usize = 0
-                if each == grid.Block.bridge { which = 1 }
-                if each == g.block { which += 2 }
-                ink = PANEL_BRIGHT[which]
-            }
-            if each == g.block { canvas.fill(at, Color.hex(theme.ACTIVE)) }
-            canvas.icon(r, bar.BLOCK_ICON[each], bar.block_icon_box(at, each), Color.hex(ink))
-        }
-    }
-    /* The clock widget's slider, filled up to its span. */
-    if unfolded && bar.shown(bar.Widget.clock, edit, pencil, clocked) {
-        span: ui.Rect = bar.clock_at(side)
-        canvas.fill(span, Color.hex(theme.BUTTON))
-        canvas.fill(ui.Rect { x = span.x, y = span.y, w = span.w * f32(g.clock + 1) / f32(grid.SPANS), h = span.h }, Color.hex(theme.ACTIVE))
-    }
-    canvas.flush(r)
-
-    level: [16]u8
-    zoom: fmt.Buffer = fmt.Buffer.init(level[..])
-    zoom.printf("%.3g", g.view.level())
-    ui.center(r, bar.place(bar.Button.zoom_level), zoom.text(), theme.INK)
-    for i: usize in 0 .. members(bar.Button).len {
-        each: bar.Button = members(bar.Button)[i]
-        label: string = bar.LABEL[each]
-        if each == bar.Button.mode && g.phase == app.Phase.run { label = bar.EDIT_LABEL }
-        ui.left(r, bar.place(each), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, label, theme.INK)
-    }
-    if unfolded && bar.shown(bar.Widget.clock, edit, pencil, clocked) {
-        half: [16]u8
-        ticks: fmt.Buffer = fmt.Buffer.init(half[..])
-        if g.clock == 0 {
-            ticks.printf("1 tick")
-        } else {
-            ticks.printf("%d ticks", 1 << g.clock)
-        }
-        ui.center(r, bar.clock_at(side), ticks.text(), theme.INK)
-    }
-    if unfolded && bar.shown(bar.Widget.sim, edit, pencil, clocked) {
-        pace: ui.Rect = bar.speed(side)
-        ui.left(r, bar.step_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.STEP_LABEL, theme.INK)
-        play: string = bar.PLAY_LABEL
-        if g.auto { play = bar.PAUSE_LABEL }
-        ui.left(r, bar.auto_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, play, theme.INK)
-        ui.left(r, bar.reset_at(side), bar.PAD + bar.GLYPH_SIDE + bar.LABEL_GAP, bar.RESET_LABEL, theme.INK)
-        ui.left(r, ui.Rect { x = side.x, y = pace.y - bar.SPEED_GAP - bar.LINE, w = side.w, h = bar.LINE }, bar.INSET, bar.SPEED, theme.DIM)
-        rated: [16]u8
-        setting: fmt.Buffer = fmt.Buffer.init(rated[..])
-        speed.show(&setting, speed.hz(g.stop))
-        ui.center(r, pace, setting.text(), theme.INK)
-    }
-    for i: usize in 0 .. members(bar.Widget).len {
-        each: bar.Widget = members(bar.Widget)[i]
-        if !unfolded || !bar.shown(each, edit, pencil, clocked) { continue }
-        ui.left(r, bar.head_at(side, bar.top(side, each, edit, pencil, clocked)), 6.0, bar.TITLE[each], theme.DIM)
-    }
-    heading: string = bar.PANEL_TITLE
-    if !edit { heading = bar.PANEL_TITLE_RUN }
-    if unfolded { ui.left(r, ui.Rect { x = side.x + bar.BAR, y = side.y, w = side.w - bar.BAR, h = bar.BAR }, 4.0, heading, theme.INK) }
-    /* The info widget: the cell under the cursor, its block and level, and the
-     * board's size. */
-    lines: [96]u8
-    info: fmt.Buffer = fmt.Buffer.init(lines[..])
-    row: ui.Rect = ui.Rect { x = side.x, y = bar.top(side, bar.Widget.info, edit, pencil, clocked) + bar.TITLE_H + bar.BODY_GAP, w = side.w, h = bar.LINE }
-    if !unfolded { row.y = -100.0 }
-    if g.hx >= 0 { info.printf("X %d, Y %d", g.hx, g.hy) } else { info.printf("X -, Y -") }
-    ui.left(r, row, bar.INSET, info.text(), theme.DIM)
-    row.y += bar.LINE
-    info = fmt.Buffer.init(lines[..])
-    if g.hx >= 0 {
-        here: grid.Block = g.s.g.get(g.hx, g.hy)
-        info.printf("Block %s", NAME[here])
-        if !edit && here != grid.Block.empty {
-            level: sim.Level = g.s.level(g.hx, g.hy)
-            if level == sim.Level.high { info.printf(" high") }
-            if level == sim.Level.low { info.printf(" low") }
-            if level == sim.Level.error { info.printf(" error") }
-        }
-    } else {
-        info.printf("Block -")
-    }
-    ui.left(r, row, bar.INSET, info.text(), theme.DIM)
-    row.y += bar.LINE
-    info = fmt.Buffer.init(lines[..])
-    info.printf("Grid %d x %d", grid.WIDTH, grid.HEIGHT)
-    ui.left(r, row, bar.INSET, info.text(), theme.DIM)
-    title: string = g.name.text()
-    if title.len == 0 { title = "untitled" }
-    storage: [128]u8
-    status: fmt.Buffer = fmt.Buffer.init(storage[..])
-    if g.phase == app.Phase.edit {
-        if g.pick == bar.Tool.select {
-            status.printf("select")
-        } else if g.pick == bar.Tool.dropper {
-            status.printf("dropper")
-        } else {
-            status.printf("%s", NAME[g.block])
-        }
-    } else {
-        status.printf("tick %d", g.count)
-        /* The rate reached, which falls short of the setting when the frames cannot keep up. */
-        if g.auto && g.rate > 0.0 {
-            status.printf(" | ")
-            speed.show(&status, g.rate)
-        }
-    }
-    ui.left(r, foot, bar.EDGE, status.text(), theme.INK)
-    head: ui.Rect = g.view.head()
-    ui.left(r, head, head.w - bar.EDGE - ui.GLYPH * f32(title.len), title, theme.INK)
-    note: string = g.status()
-    ui.left(r, foot, foot.w - bar.EDGE - ui.GLYPH * f32(note.len), note, theme.DIM)
-}
-
-draw_list(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
-    rows: usize = g.store.list.count
-    if rows == 0 { rows = 1 }
-    canvas.fill(bar.list(rows), Color.hex(theme.BUTTON))
-    for i: usize in 0 .. rows {
-        rgb: u32 = theme.BUTTON
-        if i % 2 == 1 { rgb = theme.STRIPE }
-        if i < g.store.list.count && bar.row(i).has(g.mx, g.my) { rgb = theme.ACTIVE }
-        canvas.fill(bar.row(i), Color.hex(rgb))
-    }
-    canvas.flush(r)
-
-    if g.store.list.count == 0 { ui.left(r, bar.row(0), bar.LIST_PAD + 8.0, "no diagrams in diagram/", theme.DIM) }
-    for i: usize in 0 .. g.store.list.count {
-        ui.left(r, bar.row(i), bar.LIST_PAD + 8.0, g.store.list.names[i], theme.INK)
-    }
-}
-
-draw_ask(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
-    panel: ui.Rect = g.view.panel()
-    field: ui.Rect = ui.Rect { x = panel.x + 12.0, y = panel.y + 32.0, w = panel.w - 24.0, h = 28.0 }
-    canvas.fill(panel, Color.hex(theme.BUTTON))
-    canvas.outline(panel, 1.0, Color.hex(theme.DIM))
-    canvas.fill(field, Color.hex(theme.CHROME))
-    /* The cursor: a bar before byte `at`. */
-    caret: f32 = field.x + 8.0 + f32(g.draft.at) * ui.GLYPH
-    canvas.fill(ui.Rect { x = caret - 1.0, y = field.y + 6.0, w = 2.0, h = field.h - 12.0 }, Color.hex(theme.INK))
-    canvas.flush(r)
-
-    title: ui.Rect = ui.Rect { x = panel.x, y = panel.y + 4.0, w = panel.w, h = 24.0 }
-    ui.left(r, title, 12.0, "Save as     Enter saves, Esc cancels", theme.INK)
-    storage: [64]u8
-    b: fmt.Buffer = fmt.Buffer.init(storage[..])
-    b.printf("%s", g.draft.text())
-    ui.left(r, field, 8.0, b.text(), theme.INK)
-    /* The extension, dimmed: it is added, not typed. */
-    ui.left(r, field, 8.0 + ui.GLYPH * f32(g.draft.len), diagram.EXTENSION, theme.DIM)
 }
 
 pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
+    /* A dialog takes the pointer from what lies under it. */
+    listing: bool = g.mode == app.Mode.open
+    g.ctx.blocked = g.mode != app.Mode.none
+    g.ctx.canvas = canvas
+    g.ctx.x = g.mx
+    g.ctx.y = g.my
     r.color(Color.hex(theme.WINDOW))
     r.clear()
     draw_board(g, canvas, r, bloom)
     draw_bars(g, canvas, r)
-    if g.mode == app.Mode.open { draw_list(g, canvas, r) }
-    if g.mode == app.Mode.save_as { draw_ask(g, canvas, r) }
+    if g.mode == app.Mode.open {
+        list: dialog.OpenList = dialog.OpenList { g = g }
+        list.draw(&g.ctx, listing)
+    }
+    if g.mode == app.Mode.save_as {
+        ask: dialog.SaveDialog = dialog.SaveDialog { g = g }
+        ask.draw(canvas)
+    }
+    canvas.flush(r)
+    g.ctx.end()
 }

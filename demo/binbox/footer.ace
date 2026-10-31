@@ -1,0 +1,38 @@
+/* footer — the status line: the tool or tick count, and the last note. */
+
+import fmt
+import bar: "./bar.ace"
+import theme: "./theme.ace"
+import speed: "./speed.ace"
+import ui
+import app: "./app.ace"
+
+pub Footer: struct {
+    pub g: *app.App = null,
+}
+
+pub Footer.draw(self, canvas: *ui.Canvas) {
+    g: *app.App = self.g
+    foot: ui.Rect = g.view.foot()
+    storage: [128]u8
+    status: fmt.Buffer = fmt.Buffer.init(storage[..])
+    if g.phase == app.Phase.edit {
+        if g.pick == bar.Tool.select {
+            status.printf("select")
+        } else if g.pick == bar.Tool.dropper {
+            status.printf("dropper")
+        } else {
+            status.printf("%s", theme.NAME[g.block])
+        }
+    } else {
+        status.printf("tick %d", g.count)
+        /* The rate reached, which falls short of the setting when the frames cannot keep up. */
+        if g.auto && g.rate > 0.0 {
+            status.printf(" | ")
+            speed.show(&status, g.rate)
+        }
+    }
+    canvas.left(foot, bar.EDGE, status.text(), theme.INK)
+    note: string = g.status()
+    canvas.left(foot, foot.w - bar.EDGE - ui.GLYPH * f32(note.len), note, theme.DIM)
+}

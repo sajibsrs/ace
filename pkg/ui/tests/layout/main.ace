@@ -1,0 +1,29 @@
+import ui
+
+main(): int {
+    row: ui.Rect = ui.Rect { x = 10.0, y = 20.0, w = 100.0, h = 30.0 }
+    left: ui.Rect = row.take_left(40.0)
+    if left.x != 10.0 || left.w != 40.0 || left.h != 30.0 { return 1 }
+    if row.x != 50.0 || row.w != 60.0 { return 2 }
+    top: ui.Rect = row.take_top(10.0)
+    if top.y != 20.0 || top.h != 10.0 || row.y != 30.0 || row.h != 20.0 { return 3 }
+    inner: ui.Rect = row.inset(ui.Insets.all(2.0))
+    if inner.x != 52.0 || inner.y != 32.0 || inner.w != 56.0 || inner.h != 16.0 { return 4 }
+    box: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }.center(4.0)
+    if box.x != 3.0 || box.y != 3.0 || box.w != 4.0 { return 5 }
+
+    /* A click is a press and a release on the same widget. */
+    ctx: ui.Ctx = ui.Ctx { x = 5.0, y = 5.0, pressed = true }
+    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
+    miss: ui.Rect = ui.Rect { x = 20.0, w = 10.0, h = 10.0 }
+    if !ctx.track(1, hit).press || ctx.track(2, miss).press { return 6 }
+    ctx.end()
+    if !ctx.track(1, hit).held || ctx.track(1, hit).click { return 7 }
+    ctx.released = true
+    if !ctx.track(1, hit).click { return 8 }
+    ctx.end()
+    if ctx.track(1, hit).held { return 9 }
+    ctx.blocked = true
+    if ctx.track(1, hit).hover { return 10 }
+    return 0
+}

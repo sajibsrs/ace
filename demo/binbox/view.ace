@@ -5,7 +5,7 @@
 
 import math
 import grid: "./grid.ace"
-import ui: "./ui.ace"
+import ui
 import bar: "./bar.ace"
 
 /* A cell's side at 1x; the window is created 16 x 16 cells at 1x. */

@@ -44,6 +44,8 @@ must be corrected.
   the text.
 - [`sdl`](sdl.md) — a minimal SDL3 binding: a window, a renderer, and a
   classic event-polling loop over the host's SDL3.
+- [`ui`](ui.md) — immediate-mode drawing, layout cuts and controls over
+  `sdl`, with a built-in font.
 
 ## Tooling
 

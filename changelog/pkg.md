@@ -83,3 +83,6 @@
 - `pkg/sdl` gains render-target `Texture` (`new`, `blend`, `alpha`),
   `Renderer.target`, `Renderer.copy` and `BLEND_ADD`; binbox uses them for
   bloom, blurring high blocks through halved textures and adding them back.
+- `pkg/ui` holds binbox's drawing layer and controls: `Canvas` (rounded boxes,
+  icons, baked text), `Rect` cuts, and an immediate-mode `Ctx` whose `button`,
+  `slider` and `row` return `Events`. binbox keeps its icons and app widgets.

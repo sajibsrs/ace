@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bakes printable ASCII from Lilex-SemiBold.ttf into ../font.ace.
+"""Bakes printable ASCII from Lilex-SemiBold.ttf into ../inc/font.ace.
 
 Each glyph's outlines flatten to polygons the program fills with a one pixel
 anti-aliased fringe, as it does icons: contours nest even-odd, a contour
@@ -9,7 +9,7 @@ EM = 64 per em, y down, the baseline at 0, so a glyph at `size` pixels scales
 by size / EM. POINTS holds, per glyph, polygons in the icon table's layout
 (-2 or -4, see icon/bake.py), then -9.
 
-    python3 -I font/bake.py        (from demo/binbox)
+    python3 -I font/bake.py        (from pkg/ui)
 
 The font is reader-checked only for what Lilex uses: TrueType outlines, simple
 and offset-only composite glyphs, a format 4 or 12 Unicode map.
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-OUT = HERE.parent / "font.ace"
+OUT = HERE.parent / "inc" / "font.ace"
 FONT = HERE / "Lilex-SemiBold.ttf"
 FIRST, LAST = 32, 126
 EM = 64.0

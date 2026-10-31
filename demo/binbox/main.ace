@@ -37,7 +37,7 @@ import (
 import bar: "./bar.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
-import ui: "./ui.ace"
+import ui
 import app: "./app.ace"
 import input: "./input.ace"
 import render: "./render.ace"

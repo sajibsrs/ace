@@ -1,6 +1,6 @@
 import time
 import test
-import ui: "./ui.ace"
+import ui
 import bar: "./bar.ace"
 import grid: "./grid.ace"
 import sim: "./sim.ace"
@@ -94,13 +94,13 @@ pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
 
 pub clock_slider_picks_a_span(t: *test.T) {
     a: app.App = app.App {}
-    at: ui.Rect = bar.clock_at(a.view.side())
+    at: ui.Rect = ui.Rect { x = 100.0, w = 180.0, h = 22.0 }
     t.equal(a.clock, 0)
-    a.slide_clock(at.x + at.w - 1.0)
+    a.slide_clock(at.x + at.w - 1.0, at)
     t.equal(a.clock, grid.SPANS - 1)
-    a.slide_clock(at.x - 50.0)
+    a.slide_clock(at.x - 50.0, at)
     t.equal(a.clock, 0)
-    a.slide_clock(at.x + at.w / 2.0 + 1.0)
+    a.slide_clock(at.x + at.w / 2.0 + 1.0, at)
     t.equal(a.clock, grid.SPANS / 2)
 }
 

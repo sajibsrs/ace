@@ -21,7 +21,7 @@ answer. Keep its diagram descriptions current whenever a diagram changes.
   `transform`, and fills polygons even-odd: a subpath of a filled `<path>`
   inside another is a hole (bridged by the baker; one hole per bridge, nested
   islands inside a hole are separate polygons), so rings and cutouts are one
-  path, not overlapping pieces. A polygon holds at most `SHAPE_MAX` (48) points
+  path, not overlapping pieces. A polygon holds at most the baker's `SHAPE_MAX` (48) points
   including each hole's points and 2 per bridge. Untracked SVGs cannot be restored by git: keep a copy
   before redrawing, and show drafts for approval before baking.
   Show drafts cheaply: write each as a plain `.svg` in the scratchpad and send
