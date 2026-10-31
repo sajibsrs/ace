@@ -76,6 +76,8 @@ main(): int {
         return 1
     }
     canvas: ui.Canvas = ui.Canvas.init(renderer)
+    bloom: render.Bloom = blank(render.Bloom)
+    defer bloom.wipe()
     w: f32 = 0.0
     h: f32 = 0.0
     running: bool = true
@@ -94,7 +96,7 @@ main(): int {
         editor.refresh(window.refresh())
         editor.pace()
         drawing: u64 = time.elapsed()
-        render.draw(&editor, &canvas, renderer)
+        render.draw(&editor, &canvas, renderer, &bloom)
         editor.drawn = time.elapsed() - drawing
         renderer.present()
     }

@@ -4,6 +4,8 @@ A logic-gate sandbox written in Ace, in an SDL3 window. Place square blocks on
 a 256×128 grid, flip switches, and watch signals move through gates, one tick at
 a time.
 
+![An 8-stage ripple counter in binbox](screenshot.png)
+
 ## Running
 
 Needs Homebrew SDL3 on Apple arm64. From this directory:
@@ -214,7 +216,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `store.ace` | The diagram folder, names, and the Open list. |
 | `app.ace` | `App`: the simulation, the selection, the file, and the commands that change them. |
 | `input.ace` | SDL events to `App` commands. |
-| `render.ace` | Draws the board, bars, and panels. |
+| `render.ace` | Draws the board, bars, and panels; in Simulate, high blocks bloom: blurred together offscreen and added over the board. |
 | `theme.ace` | The bar and panel colors. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
 | `font.ace` | The text font (Lilex SemiBold, monospaced, printable ASCII), generated from `font/Lilex-SemiBold.ttf` by `python3 -I font/bake.py`; do not edit by hand. License in `font/LICENSE.txt`. |

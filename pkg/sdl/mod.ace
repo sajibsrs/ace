@@ -98,9 +98,15 @@ pub VSYNC_ADAPTIVE: const i32 = -1
 pub GPU_DRIVER: const string = "gpu"
 
 // Blend modes for Renderer.blend (SDL_BlendMode): none overwrites, alpha mixes
-// the source over the target by its alpha.
+// the source over the target by its alpha, add sums the source, scaled by its
+// alpha, onto the target. Texture.blend takes the same modes.
 pub BLEND_NONE: const u32 = 0
 pub BLEND_ALPHA: const u32 = 1
+pub BLEND_ADD: const u32 = 2
+
+// SDL_PIXELFORMAT_RGBA64_FLOAT and SDL_TEXTUREACCESS_TARGET.
+FORMAT_RGBA64_FLOAT: const u32 = 0x1a204008
+ACCESS_TARGET: const i32 = 2
 
 // Longest text, in bytes, that Window.new, a render driver name, and
 // Renderer.debug_text accept.
@@ -123,6 +129,7 @@ pub Window: struct { pub handle: *SDL_Window }
 pub Renderer: struct { pub handle: *SDL_Renderer }
 pub RenderState: struct { pub handle: *SDL_GPURenderState }
 pub Cursor: struct { pub handle: *SDL_Cursor }
+pub Texture: struct { pub handle: *SDL_Texture }
 
 // SDL_SystemCursor: the platform's own cursor shapes. macOS draws `move` as
 // a closed hand.
@@ -326,6 +333,12 @@ extern "c" {
     c_render_present(renderer: *SDL_Renderer): bool as "SDL_RenderPresent"
     c_get_current_render_output_size(renderer: *SDL_Renderer, w: *i32, h: *i32): bool as "SDL_GetCurrentRenderOutputSize"
     c_render_geometry(renderer: *SDL_Renderer, texture: *SDL_Texture, vertices: *Vertex, num_vertices: i32, indices: *i32, num_indices: i32): bool as "SDL_RenderGeometry"
+    c_create_texture(renderer: *SDL_Renderer, format: u32, access: i32, w: i32, h: i32): *SDL_Texture as "SDL_CreateTexture"
+    c_destroy_texture(texture: *SDL_Texture) as "SDL_DestroyTexture"
+    c_set_texture_blend_mode(texture: *SDL_Texture, mode: u32): bool as "SDL_SetTextureBlendMode"
+    c_set_texture_alpha_mod_float(texture: *SDL_Texture, alpha: f32): bool as "SDL_SetTextureAlphaModFloat"
+    c_set_render_target(renderer: *SDL_Renderer, texture: *SDL_Texture): bool as "SDL_SetRenderTarget"
+    c_render_texture(renderer: *SDL_Renderer, texture: *SDL_Texture, src: *f32, dst: *f32): bool as "SDL_RenderTexture"
     c_get_ticks(): u64 as "SDL_GetTicks"
     c_get_ticks_ns(): u64 as "SDL_GetTicksNS"
     c_get_mod_state(): u16 as "SDL_GetModState"
@@ -519,6 +532,39 @@ pub Renderer.geometry(self, vertices: []Vertex, indices: []i32): bool {
         return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), null, 0)
     }
     return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), &indices[0], i32(indices.len))
+}
+
+// A w x h floating-point texture to draw into with Renderer.target; it samples
+// linearly when stretched.
+pub Texture.new(renderer: Renderer, w: i32, h: i32): Texture {
+    return Texture { handle = c_create_texture(renderer.handle, FORMAT_RGBA64_FLOAT, ACCESS_TARGET, w, h) }
+}
+
+pub Texture.ok(const self): bool { return self.handle != null }
+pub Texture.wipe(self) {
+    if self.handle != null { c_destroy_texture(self.handle) }
+    self.handle = null
+}
+
+// How the texture blends onto the target when drawn.
+pub Texture.blend(self, mode: u32): bool {
+    return c_set_texture_blend_mode(self.handle, mode)
+}
+
+// Scale the texture's alpha by `alpha` when drawn.
+pub Texture.alpha(self, alpha: f32): bool {
+    return c_set_texture_alpha_mod_float(self.handle, alpha)
+}
+
+// Send later draws to `texture`; blank(Texture) returns them to the window.
+// Each target keeps its own clip.
+pub Renderer.target(self, texture: Texture): bool {
+    return c_set_render_target(self.handle, texture.handle)
+}
+
+// Draw all of `texture` stretched over the whole target.
+pub Renderer.copy(self, texture: Texture): bool {
+    return c_render_texture(self.handle, texture.handle, null, null)
 }
 
 // Present in step with the display: 1 waits for every refresh, 2 for every

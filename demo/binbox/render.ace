@@ -4,7 +4,7 @@
 
 import fmt
 import math
-import Renderer, Point, Color from sdl
+import Renderer, Texture, Point, Color, BLEND_NONE, BLEND_ADD from sdl
 import bar: "./bar.ace"
 import theme: "./theme.ace"
 import grid: "./grid.ace"
@@ -163,7 +163,79 @@ bare(g: *app.App, x: int, y: int): bool {
     return g.s.g.get(x, y) == grid.Block.empty
 }
 
-draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
+/* The sizes bloom blurs through: full, then halved down to 1/32. */
+PASSES: const usize = 6
+/* How strongly the blurred image lights the board. */
+GLOW: const f32 = 0.08
+
+/* The offscreen images of bloom, sized to the window. */
+pub Bloom: struct {
+    pass: [PASSES]Texture,
+    w: i32,
+    h: i32,
+}
+
+pub Bloom.wipe(self) {
+    for i: usize in 0 .. PASSES { self.pass[i].wipe() }
+}
+
+/* Makes the images match a w x h window; false when it cannot. */
+Bloom.fit(self, r: Renderer, w: i32, h: i32): bool {
+    if w != self.w || h != self.h {
+        self.wipe()
+        self.w = w
+        self.h = h
+        for i: usize in 0 .. PASSES {
+            self.pass[i] = Texture.new(r, math.max[i32](w >> i32(i), 1), math.max[i32](h >> i32(i), 1))
+            if !self.pass[i].ok() { return false }
+        }
+    }
+    return self.pass[PASSES - 1].ok()
+}
+
+/* Lights the board with its high blocks, blurred as one image so neighbors
+ * melt together: halved down the passes, then each added back up into the
+ * next larger one, which is smoother than one stretch to full size. The
+ * images start opaque black, so only GLOW scales what is added. */
+draw_bloom(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom, a: ui.Rect) {
+    w: i32, h: i32, sized: bool = r.size()
+    if !sized || !bloom.fit(r, w, h) { return }
+    r.target(bloom.pass[0])
+    r.color(Color {})
+    r.clear()
+    lit: bool = false
+    for y: int in 0 .. grid.HEIGHT {
+        for x: int in 0 .. grid.WIDTH {
+            b: grid.Block = g.s.g.get(x, y)
+            if b == grid.Block.empty || g.s.level(x, y) != sim.Level.high || !g.view.shows(x, y, a) { continue }
+            canvas.fill(g.view.box(x, y), Color.hex(HIGH[b]))
+            lit = true
+        }
+    }
+    canvas.flush(r)
+    if lit {
+        for i: usize in 1 .. PASSES {
+            r.target(bloom.pass[i])
+            bloom.pass[i - 1].blend(BLEND_NONE)
+            r.copy(bloom.pass[i - 1])
+        }
+        for i: usize in 1 .. PASSES - 1 {
+            at: usize = PASSES - 1 - i
+            r.target(bloom.pass[at])
+            bloom.pass[at + 1].blend(BLEND_ADD)
+            r.copy(bloom.pass[at + 1])
+        }
+    }
+    r.target(blank(Texture))
+    if lit {
+        bloom.pass[1].blend(BLEND_ADD)
+        bloom.pass[1].alpha(GLOW)
+        r.copy(bloom.pass[1])
+        bloom.pass[1].alpha(1.0)
+    }
+}
+
+draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     a: ui.Rect = g.view.area()
     /* The board's panel; nothing below is drawn outside it. */
     canvas.fill(a, Color.hex(theme.PANEL))
@@ -208,6 +280,8 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
             }
         }
     }
+    canvas.flush(r)
+    if g.phase == app.Phase.run { draw_bloom(g, canvas, r, bloom, a) }
     if g.sel.drag == select.Drag.move || g.sel.held {
         draw_lifted(g, canvas, r, false)
         if icons { draw_lifted(g, canvas, r, true) }
@@ -533,10 +607,10 @@ draw_ask(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     ui.left(r, field, 8.0 + ui.GLYPH * f32(g.draft.len), diagram.EXTENSION, theme.DIM)
 }
 
-pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
+pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     r.color(Color.hex(theme.WINDOW))
     r.clear()
-    draw_board(g, canvas, r)
+    draw_board(g, canvas, r, bloom)
     draw_bars(g, canvas, r)
     if g.mode == app.Mode.open { draw_list(g, canvas, r) }
     if g.mode == app.Mode.save_as { draw_ask(g, canvas, r) }

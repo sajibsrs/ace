@@ -80,3 +80,6 @@
   alive, with a 5-second idle timeout and a 10-second per-request deadline.
   `ServerConnection` answers `Expect: 100-continue`; `net.close_write` and
   `tcp.close_write` half-close, and servers linger before closing.
+- `pkg/sdl` gains render-target `Texture` (`new`, `blend`, `alpha`),
+  `Renderer.target`, `Renderer.copy` and `BLEND_ADD`; binbox uses them for
+  bloom, blurring high blocks through halved textures and adding them back.
