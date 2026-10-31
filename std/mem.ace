@@ -44,6 +44,27 @@ pub release[T](data: *[]T) {
     data = null
 }
 
+/* One `T` reached by pointer, uninitialized like `alloc[T]`, or null on the
+ * same failures. Release it with the pointer form below.
+ */
+
+pub new[T](): *T {
+    data: []T = alloc[T](1)
+    if data == null { return null }
+    return &data[0]
+}
+
+/* Releases what `new[T]` returned and nulls the caller's pointer; a null
+ * pointer is a no-op.
+ */
+
+pub release[T](data: **T) {
+    if *data == null { return }
+    whole: []T = []T(*data, usize(1))
+    release[T](&whole)
+    *data = null
+}
+
 /* Usable size in bytes of a live allocation, at least the requested length
  * and allocator-defined beyond it. `data` must be the base slice a raw
  * `alloc`/`realloc` returned; null and non-allocation pointers report 0. The

@@ -5849,7 +5849,13 @@ Sema.overloaded_arg_err(self, call: u32, head: u32, name: string): bool {
 
 Sema.exact_arg_type(self, arg: u32, actual: u32, param: u32): bool {
     raw: u32 = arg
-    if self.node(arg).kind == Kind.placearg { raw = self.node(arg).a }
+    if self.node(arg).kind == Kind.placearg {
+        raw = self.node(arg).a
+        // a re-check sees a rewritten &place: the place's type, not its address's
+        if actual != 0 && param != 0 && self.ty(param).kind == TypeKind.ptr && self.same_type(actual, self.ty(param).base) {
+            return true
+        }
+    }
     r: Node = self.node(raw)
     if r.kind == Kind.arraylit {
         if actual == 0 { return false }
@@ -6150,12 +6156,14 @@ Sema.check_generic_call(self, call: u32): u32 {
     }
     chosen: u32 = 0
     sole: u32 = 0
+    release: u32 = 0
     eligible: u32 = 0
     for s: u32 = head; s != 0; s = self.sym(s).overload {
         d: u32 = self.sym(s).decl
         if self.ov_hidden(s, call) || !self.sym(s).is_generic || self.node(d).c == 0 || self.node(self.node(d).c).nkids != nargs { continue }
         eligible += 1
         sole = s
+        if self.node(d).ival == BI_MEM_RELEASE_T { release = s }
         cand: u32 = self.candidate_func_type(d, targs, nargs)
         if cand == 0 || !self.call_fits(call, cand, actual.view()) { continue }
         if chosen != 0 {
@@ -6165,6 +6173,7 @@ Sema.check_generic_call(self, call: u32): u32 {
         chosen = s
     }
     if chosen == 0 && eligible == 1 { chosen = sole }
+    if chosen == 0 { chosen = release } // its checks report a mismatched release
     if chosen == 0 {
         if eligible > 1 && self.overloaded_arg_err(call, head, name) { return self.t_err }
         self.err(call, ["no matching generic overload '", name, "' for these arguments"])

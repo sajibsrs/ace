@@ -1,0 +1,10 @@
+import mem
+
+main(): int {
+    item: *int = mem.new[int]()
+    if item == null { return 2 }
+    alias: *int = item
+    mem.release[int](&item)
+    mem.release[int](&alias)
+    return 0
+}

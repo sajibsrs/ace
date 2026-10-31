@@ -1,5 +1,9 @@
 # Standard library
 
+- `mem.new[T]()` and `mem.release[T](&pointer)` allocate and release one value
+  by pointer, as plain Ace over `[]T(pointer, 1)` (#171). A view exact to a live
+  allocation is now its authoritative descriptor. Overload matching accepts a
+  re-checked `&place` argument. The event-loop demo drops its stored slice.
 - `poll.unwatch` on Darwin reports a read-filter failure by its own errno
   rather than `not_found` (#168).
 - `tcp` handles work with `poll` (#165): `watch` overloads for listeners and

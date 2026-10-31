@@ -1,0 +1,7 @@
+import mem
+
+main(): int {
+    item: *int = mem.new[int]()
+    if item == null { return 2 }
+    return 0
+}

@@ -1451,7 +1451,7 @@ if ! "$ACE" --debug -o /tmp/ace_checked_features/allocator_valid \
     echo "FAIL: valid checked allocator fixture"
     fail=1
 fi
-for f in double_release truncated_release leak; do
+for f in double_release truncated_release leak single_double_release single_leak; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/allocator_$f" \
          "tests/checked_allocator/$f.ace" >/dev/null 2>$T/errs ||
        "/tmp/ace_checked_features/allocator_$f" >/dev/null 2>$T/errs ||

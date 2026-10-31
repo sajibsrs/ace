@@ -3502,6 +3502,9 @@ static int overloaded_arg_err(Ck* k, Node* call, Sym* head, const char* name, ui
 
 static int exact_arg_type(Node* arg, SType* actual, SType* param) {
     Node* raw = arg->kind == N_PLACEARG ? arg->a : arg;
+    // a re-check sees a rewritten &place: the place's type, not its address's
+    if (arg->kind == N_PLACEARG && param && param->kind == SK_PTR && same_type(actual, param->base))
+        return 1;
     if (raw->kind == N_ARRAYLIT) {
         if (!actual) return 0;
         return arraylit_fits(raw, actual, param);
@@ -5170,12 +5173,14 @@ static SType* check_call_raw(Ck* k, Node* call) {
             }
             Sym* chosen = NULL;
             Sym* sole = NULL;
+            Sym* release = NULL;
             int eligible = 0;
             for (Sym* s = head; s; s = s->overload) {
                 if (ov_hidden(s, call) || !s->is_generic || !s->decl->c || s->decl->c->nkids != nargs)
                     continue;
                 eligible++;
                 sole = s;
+                if (s->decl->ival == BI_MEM_RELEASE_T) release = s;
                 SType* candidate = candidate_func_type(k, s->decl, targs, nargs);
                 if (!candidate || !call_exact_ft(call, candidate, actual)) continue;
                 if (chosen) {
@@ -5186,6 +5191,7 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 chosen = s;
             }
             if (!chosen && eligible == 1) chosen = sole;
+            if (!chosen) chosen = release; // its checks report a mismatched release
             if (!chosen) {
                 if (eligible > 1 &&
                     overloaded_arg_err(k, call, head, callee->a->str, callee->a->len))

@@ -46,7 +46,6 @@ Server: struct {
  * worker links it into a list so expiry can reach idle connections.
  */
 Connection: struct {
-    storage: []Connection,
     conn: tcp.Conn,
     previous: *Connection,
     next: *Connection,
@@ -94,8 +93,7 @@ finish(worker: *Worker, connection: *Connection) {
 
     tcp.close(&connection.conn)
     connection.http.wipe()
-    storage: []Connection = connection.storage
-    mem.release[Connection](&storage)
+    mem.release[Connection](&connection)
 }
 
 /* Waits for the socket to become readable or writable, not both. */
@@ -216,19 +214,22 @@ write_ready(worker: *Worker, connection: *Connection) {
 
 /* Starts a connection on `conn`, linked into the worker's list. */
 open(worker: *Worker, conn: tcp.Conn): bool {
-    storage: []Connection = mem.zalloc[Connection](1)
-    if storage == null { return false }
+    connection: *Connection = mem.new[Connection]()
+    if connection == null { return false }
 
-    connection: *Connection = &storage[0]
     if tcp.watch(worker.queue, conn, *u8(connection)) != null {
-        mem.release[Connection](&storage)
+        mem.release[Connection](&connection)
         return false
     }
-    connection.storage = storage
-    connection.conn = conn
-    connection.deadline = time.elapsed() + IDLE_TIMEOUT
-    connection.http = http.ServerConnection.new(MAX_REQUEST)
-    connection.next = worker.first
+    *connection = Connection {
+        conn = conn,
+        previous = null,
+        next = worker.first,
+        writing = false,
+        lingering = false,
+        deadline = time.elapsed() + IDLE_TIMEOUT,
+        http = http.ServerConnection.new(MAX_REQUEST),
+    }
     if worker.first != null { worker.first.previous = connection }
 
     worker.first = connection

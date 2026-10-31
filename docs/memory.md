@@ -275,9 +275,10 @@ assumes these local preconditions and emits only the descriptor construction.
 A non-null pointer with count zero remains a non-null empty view.
 
 This operation asserts a view extent only. It does not validate mapping,
-lifetime, allocation membership, or actual accessibility, and it does not make
-the slice authoritative for `mem.realloc` or `mem.release`. No reverse
-possibly-empty-slice-to-pointer conversion is provided.
+lifetime, allocation membership, or actual accessibility. Only a view with
+exactly a live allocation's base pointer and element count is authoritative for
+`mem.realloc` or `mem.release`. No reverse possibly-empty-slice-to-pointer
+conversion is provided.
 
 ## Raw allocation
 
@@ -358,6 +359,18 @@ mem.alloc[T](count: usize): []T
 mem.zalloc[T](count: usize): []T
 mem.realloc[T](data: []T, new_count: usize): []T
 mem.release[T](data: *[]T)
+mem.new[T](): *T
+mem.release[T](data: **T)
+```
+
+`mem.new[T]` allocates one uninitialized `T` reached by pointer, so a value that
+frees itself needs no stored slice. Both are ordinary Ace over the typed forms:
+
+```ace
+item: *Item = mem.new[Item]()
+if item == null { return false }
+*item = Item { tag = 1 }
+mem.release[Item](&item)
 ```
 
 The type argument is always spelled out — generic instantiation stays

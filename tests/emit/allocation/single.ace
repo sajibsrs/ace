@@ -1,0 +1,33 @@
+// expect-exit: 0
+
+import mem
+
+Item: struct { tag: u32, weight: u64 }
+
+Empty: struct {}
+
+main(): int {
+    item: *Item = mem.new[Item]()
+
+    if item == null { return 1 }
+    *item = Item { tag = 3, weight = 40 }
+    if item.tag != 3 || item.weight != 40 { return 2 }
+
+    mem.release[Item](&item)
+    if item != null { return 3 }
+    mem.release[Item](&item) // null is a no-op
+
+    if mem.new[Empty]() != null { return 4 }
+
+    // Both overloads stay reachable for a pointer element type.
+    value: int = 0
+    slots: []*int = mem.alloc[*int](1)
+    if slots == null { return 5 }
+    slots[0] = &value
+    mem.release[*int](&slots)
+
+    boxed: **int = mem.new[*int]()
+    if boxed == null { return 6 }
+    mem.release[*int](&boxed)
+    return 0
+}

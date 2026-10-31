@@ -594,7 +594,11 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
         if !exported { return 0 }
         if mem.equal(name, "alloc") { return pick(n, BI_MEM_ALLOC_T, BI_MEM_ALLOC) }
         if mem.equal(name, "realloc") { return pick(n, BI_MEM_REALLOC_T, BI_MEM_REALLOC) }
-        if mem.equal(name, "release") { return pick(n, BI_MEM_RELEASE_T, BI_MEM_RELEASE) }
+        if mem.equal(name, "release") {
+            // release[T](data: **T) is ordinary Ace over the slice form.
+            if n.c != 0 && p.node(p.node(p.node(p.kid(id, 0)).a).a).kind == Kind.ptr { return 0 }
+            return pick(n, BI_MEM_RELEASE_T, BI_MEM_RELEASE)
+        }
         if mem.equal(name, "zalloc") { return pick(n, BI_MEM_ZALLOC_T, 0) }
         if mem.equal(name, "copy") { return pick(n, BI_MEM_COPY_T, BI_MEM_COPY) }
         if mem.equal(name, "move") { return pick(n, BI_MEM_MOVE_T, BI_MEM_MOVE) }

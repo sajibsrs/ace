@@ -445,7 +445,11 @@ static void mark_mem_intrinsics(Loader* L, Module* m) {
         // the raw byte forms; both stay compiler-backed with no emitted body.
         if (text_is(n->str, n->len, "alloc")) n->ival = n->c ? BI_MEM_ALLOC_T : BI_MEM_ALLOC;
         else if (text_is(n->str, n->len, "realloc")) n->ival = n->c ? BI_MEM_REALLOC_T : BI_MEM_REALLOC;
-        else if (text_is(n->str, n->len, "release")) n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
+        else if (text_is(n->str, n->len, "release")) {
+            // release[T](data: **T) is ordinary Ace over the slice form.
+            if (n->c && n->kids[0]->a->a->kind == N_PTR) continue;
+            n->ival = n->c ? BI_MEM_RELEASE_T : BI_MEM_RELEASE;
+        }
         else if (text_is(n->str, n->len, "zalloc") && n->c) n->ival = BI_MEM_ZALLOC_T;
         else if (text_is(n->str, n->len, "copy")) n->ival = n->c ? BI_MEM_COPY_T : BI_MEM_COPY;
         else if (text_is(n->str, n->len, "move")) n->ival = n->c ? BI_MEM_MOVE_T : BI_MEM_MOVE;
