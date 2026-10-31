@@ -100,23 +100,31 @@ map would-block to `none`, and update interest mechanically. Positive receive
 suspends read interest until the caller attempts another receive, providing
 backpressure without retaining its buffer.
 
-`progress_send` retains only a cumulative offset. Until a source is completely
-flushed, the caller must pass the same complete slice and unchanged backing
-bytes on every call; re-slicing would advance twice. Completion resets the
-offset and removes write interest. This stable-source rule is a programmer
-precondition because `Conn` intentionally retains no buffer pointer or
-length. Empty receive and send views perform no syscall: empty receive suspends
-read and returns `none`; empty send resets its offset, removes write, and returns
-`sent(0)`.
+`progress_send` makes one attempt on the slice it is given and keeps no
+position. After `sent(n)`, the caller passes the unsent suffix, as
+`progress_receive` passes its free suffix. Sending the whole slice removes write
+interest and a partial send enables it. Empty receive and send views perform no
+syscall: empty receive suspends read and returns `none`; empty send removes
+write and returns `sent(0)`.
 
 `watch(q, connection)` registers the connection with a `poll.Queue` under
-exactly its current interest; call it again after each progress operation that
-changes `interest(connection)`.
+exactly its current interest; call it again after each change to
+`interest(connection)`. `interest(&connection, value)` sets that interest
+directly, for a loop that waits in one direction at a time. `watch(q, listener)`
+registers a listener for read readiness. On Darwin, `watch(q, handle, context)`
+makes `poll.wait` report `context`, so an event finds its owner without a
+descriptor table; the caller keeps it valid while watched. `unwatch(q, handle)`
+removes a registration without closing.
 
-Do not call `send_all` while a progress send is unfinished; blocking and
-progress send modes may be switched only between complete sources. Progress
-operations take a connection from `connect_nonblock` or `accept_nonblock`; one
-from blocking `accept` keeps its descriptor private, so it cannot be switched.
+`listen_nonblock` and `accept_nonblock` serve event loops. `accept_nonblock`
+returns `AcceptErr.pending` when no connection is available (would-block,
+interrupted, or aborted), so a loop just waits again. Any other failure is
+unchanged. A level-triggered loop must treat one, such as running out of
+descriptors, by unwatching the listener for a while, because its backlog keeps
+it readable.
+
+Progress operations take a connection from `connect_nonblock` or
+`accept_nonblock`.
 
 ## Design rationale
 

@@ -1,5 +1,9 @@
 # Standard library
 
+- `tcp` handles work with `poll` (#165): `watch` overloads for listeners and
+  `context`, `unwatch`, the `interest(&conn, value)` setter, and
+  `AcceptErr.pending` from `accept_nonblock`. `progress_send` takes the unsent
+  suffix and `Conn` drops `send_offset`. The event-loop demo uses `tcp`.
 - `test.equal[E](mut t, got, want)` checks enum values, printing members by
   `.name` on a mismatch.
 - `fmt.print` and `fmt.println` take `bool`, writing `true` or `false`;

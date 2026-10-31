@@ -1,0 +1,106 @@
+/* Listener and connection watches with context, unwatch, the interest setter,
+ * `AcceptErr.pending`, and caller-tracked partial sends.
+ */
+
+// expect-exit: 0
+
+import mem
+import net
+import poll
+import sys
+import net/tcp
+
+SIZE: const usize = 4194304
+
+wait_one(q: poll.Queue): (poll.Event, usize) {
+    events: [1]poll.Event = [blank(poll.Event)]
+    count: usize, err: Error = poll.wait(q, events[..], 2000000000)
+    for err == poll.WaitErr.interrupted {
+        count, err = poll.wait(q, events[..], 2000000000)
+    }
+    if err != null { return events[0], 0 }
+    return events[0], count
+}
+
+main(): int {
+    address: net.Addr4 = net.Addr4 { ip = [127, 0, 0, 1], port = 0 }
+    listener: tcp.Listener, listen_err: Error = tcp.listen_nonblock(address, 8)
+    defer tcp.close(&listener)
+    if listen_err != null { return 1 }
+
+    empty: tcp.Conn, _, pending: Error = tcp.accept_nonblock(listener)
+    if pending != tcp.AcceptErr.pending { return 2 }
+
+    q: poll.Queue, queue_err: Error = poll.queue()
+    if queue_err != null { return 3 }
+    defer sys.close(sys.Fd(q))
+
+    tag: [2]u8 = [u8(0) : 2]
+    if tcp.watch(q, listener, &tag[0]) != null { return 4 }
+
+    bound: net.Addr4, local_err: Error = tcp.local(listener)
+    if local_err != null { return 5 }
+
+    client: tcp.Conn, connect_err: Error = tcp.connect(bound)
+    defer tcp.close(&client)
+    if connect_err != null { return 6 }
+
+    ready: poll.Event, count: usize = wait_one(q)
+    if count != 1 || ready.context != &tag[0] || !ready.readable { return 7 }
+    if tcp.unwatch(q, listener) != null { return 8 }
+
+    server: tcp.Conn, _, accept_err: Error = tcp.accept_nonblock(listener)
+    defer tcp.close(&server)
+    if accept_err != null { return 9 }
+
+    storage: []u8 = mem.zalloc[u8](SIZE)
+    defer mem.release[u8](&storage)
+    if storage == null { return 10 }
+
+    /* The client does not read, so the send buffer fills and leaves a suffix. */
+    sent: usize = 0
+    blocked: bool = false
+    for !blocked && sent < storage.len {
+        switch tcp.progress_send(&server, storage[sent..]) {
+            tcp.Event.sent(amount: usize) { sent += amount }
+            tcp.Event.none { blocked = true }
+            default { return 11 }
+        }
+    }
+    if !blocked || sent == 0 { return 12 }
+    if tcp.interest(server) != tcp.Interest.both { return 13 }
+
+    tcp.interest(&server, tcp.Interest.write)
+    if tcp.interest(server) != tcp.Interest.write { return 14 }
+    if tcp.watch(q, server, &tag[1]) != null { return 15 }
+
+    /* Finish from the suffix while the client drains; context tells them apart. */
+    if tcp.watch(q, client, &tag[0]) != null { return 16 }
+
+    buffer: [65536]u8 = [u8(0) : 65536]
+    received: usize = 0
+    for received < storage.len {
+        ready, count = wait_one(q)
+        if count != 1 { return 17 }
+
+        if ready.context == &tag[0] {
+            amount: int, receive_err: Error = tcp.receive(client, buffer[..])
+            if receive_err != null || amount <= 0 { return 18 }
+            received += usize(amount)
+            continue
+        }
+        if ready.context != &tag[1] || !ready.writable { return 21 }
+
+        switch tcp.progress_send(&server, storage[sent..]) {
+            tcp.Event.sent(amount: usize) {
+                sent += amount
+                if sent == storage.len && tcp.unwatch(q, server) != null { return 22 }
+            }
+            tcp.Event.none {}
+            default { return 23 }
+        }
+    }
+    if sent != storage.len { return 19 }
+    if tcp.interest(server) != tcp.Interest.none { return 20 }
+    return 0
+}

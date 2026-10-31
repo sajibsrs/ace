@@ -1,4 +1,4 @@
-/* tcp — pure-Ace blocking IPv4 TCP composition over net. */
+/* tcp — pure-Ace blocking and nonblocking IPv4 TCP composition over net. */
 
 import net
 import poll
@@ -22,7 +22,6 @@ pub Interest: enum {
 pub Conn: struct {
     socket: net.Socket = net.Socket(0),
     interest: Interest = Interest.none,
-    send_offset: usize = 0,
     active: bool = false,
 }
 
@@ -33,6 +32,11 @@ pub Event: union {
     connected,
     disconnected,
     failed: Error,
+}
+
+/* `pending`: nothing to accept yet, wait for the next readiness event. */
+pub AcceptErr: error {
+    0: pending = "no connection is ready to accept",
 }
 
 pub ReceiveAllErr: error {
@@ -159,7 +163,12 @@ pub accept(listener: Listener): (Conn, net.Addr4, Error) {
 
 pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
-    if err != null { return Conn {}, address, err }
+    if err != null {
+        if err == net.AcceptErr.would_block || err == net.AcceptErr.interrupted || err == net.AcceptErr.aborted {
+            return Conn {}, address, AcceptErr.pending
+        }
+        return Conn {}, address, err
+    }
 
     err = net.nonblock(sock, true)
     if err != null {
@@ -180,8 +189,45 @@ pub watch(q: poll.Queue, connection: Conn): Error {
     )
 }
 
+/* Like `watch`, and `poll.wait` reports `context` in place of the descriptor.
+ * The caller keeps `context` valid while the connection is watched.
+ */
+@when(_PLATFORM_ == "darwin-arm64")
+pub watch(q: poll.Queue, connection: Conn, context: *u8): Error {
+    return poll.watch(
+        q,
+        connection.socket,
+        connection.interest == Interest.read || connection.interest == Interest.both,
+        connection.interest == Interest.write || connection.interest == Interest.both,
+        context,
+    )
+}
+
+/* Registers the listener's descriptor for read readiness. */
+pub watch(q: poll.Queue, listener: Listener): Error {
+    return poll.watch(q, listener.socket, true, false)
+}
+
+@when(_PLATFORM_ == "darwin-arm64")
+pub watch(q: poll.Queue, listener: Listener, context: *u8): Error {
+    return poll.watch(q, listener.socket, true, false, context)
+}
+
+pub unwatch(q: poll.Queue, connection: Conn): Error {
+    return poll.unwatch(q, connection.socket)
+}
+
+pub unwatch(q: poll.Queue, listener: Listener): Error {
+    return poll.unwatch(q, listener.socket)
+}
+
 pub interest(conn: Conn): Interest {
     return conn.interest
+}
+
+/* Sets the interest the next `watch` registers. */
+pub interest(conn: *Conn, value: Interest) {
+    conn.interest = value
 }
 
 pub progress_connect(conn: *Conn): Event {
@@ -224,12 +270,11 @@ pub progress_receive(conn: *Conn, dest: []u8): Event {
 
 pub progress_send(conn: *Conn, src: []u8): Event {
     if src.len == 0 {
-        conn.send_offset = usize(0)
         conn.interest = with_write(conn.interest, false)
         return Event.sent(usize(0))
     }
     send_attempt: {
-        count: int, err: Error = net.send(conn.socket, src[conn.send_offset..])
+        count: int, err: Error = net.send(conn.socket, src)
         if err != null {
             if err.domain == typeid(net.SendErr) && err.code == sys.EINTR { continue send_attempt }
             if err.domain == typeid(net.SendErr) && (err.code == sys.EAGAIN || err.code == sys.EWOULDBLOCK) {
@@ -245,9 +290,7 @@ pub progress_send(conn: *Conn, src: []u8): Event {
             return Event.none
         }
 
-        conn.send_offset += usize(count)
-        if conn.send_offset == src.len {
-            conn.send_offset = usize(0)
+        if usize(count) == src.len {
             conn.interest = with_write(conn.interest, false)
         } else {
             conn.interest = with_write(conn.interest, true)

@@ -80,7 +80,7 @@ client(port: u16): int {
     request: string = "stage2 echo"
     sent: usize = 0
     for sent < request.len {
-        progress: tcp.Event = tcp.progress_send(&connection, request)
+        progress: tcp.Event = tcp.progress_send(&connection, request[sent..])
         advanced: bool = false
         switch progress {
             tcp.Event.sent(count: usize) {
@@ -229,7 +229,7 @@ main(): int {
     flushed: usize = 0
     source: []u8 = storage[0..]
     for flushed < source.len {
-        send_amount: usize, send_advanced: bool = sent_count(tcp.progress_send(&connection, source))
+        send_amount: usize, send_advanced: bool = sent_count(tcp.progress_send(&connection, source[flushed..]))
         if send_advanced {
             flushed += send_amount
         } else {

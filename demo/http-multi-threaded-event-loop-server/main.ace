@@ -22,6 +22,7 @@ import fmt
 import http
 import mem
 import net
+import net/tcp
 import poll
 import sys
 import thread
@@ -37,7 +38,7 @@ REQUEST_TIMEOUT: const u64 = 10 * NS_PER_SECOND // first request byte to last re
 LINGER_TIMEOUT: const u64 = NS_PER_SECOND // after the final response, until the client closes
 
 Server: struct {
-    listener: net.Socket,
+    listener: tcp.Listener,
     router: *http.Router,
 }
 
@@ -46,7 +47,7 @@ Server: struct {
  */
 Connection: struct {
     storage: []Connection,
-    socket: net.Socket,
+    conn: tcp.Conn,
     previous: *Connection,
     next: *Connection,
     writing: bool,
@@ -60,6 +61,7 @@ Worker: struct {
     queue: poll.Queue,
     server: *Server,
     first: *Connection,
+    accepting: bool,
 }
 
 Worker.wipe(self) {
@@ -90,7 +92,7 @@ finish(worker: *Worker, connection: *Connection) {
     }
     if connection.next != null { connection.next.previous = connection.previous }
 
-    sys.close(connection.socket)
+    tcp.close(&connection.conn)
     connection.http.wipe()
     storage: []Connection = connection.storage
     mem.release[Connection](&storage)
@@ -99,14 +101,18 @@ finish(worker: *Worker, connection: *Connection) {
 /* Waits for the socket to become readable or writable, not both. */
 watch(worker: *Worker, connection: *Connection, writing: bool): bool {
     connection.writing = writing
-    return poll.watch(worker.queue, connection.socket, !writing, writing, *u8(connection)) == null
+    interest: tcp.Interest = tcp.Interest.read
+    if writing { interest = tcp.Interest.write }
+
+    tcp.interest(&connection.conn, interest)
+    return tcp.watch(worker.queue, connection.conn, *u8(connection)) == null
 }
 
 /* Half-closes and discards input until the client closes, so closing with
  * unread bytes cannot reset the connection before it reads the response.
  */
 linger(worker: *Worker, connection: *Connection) {
-    if net.close_write(connection.socket) != null || !watch(worker, connection, false) {
+    if tcp.close_write(connection.conn) != null || !watch(worker, connection, false) {
         finish(worker, connection)
         return
     }
@@ -122,19 +128,19 @@ flush(worker: *Worker, connection: *Connection): bool {
         output: []u8 = connection.http.output()
         if output.len == 0 { break }
 
-        count: int, err: Error = net.send(connection.socket, output)
-        if err != null {
-            if err.domain == typeid(net.SendErr) {
-                if err.code == sys.EINTR { continue }
-                if err.code == sys.EAGAIN {
-                    if !connection.writing && !watch(worker, connection, true) { finish(worker, connection) }
-                    return false
-                }
+        switch tcp.progress_send(&connection.conn, output) {
+            tcp.Event.sent(count: usize) {
+                connection.http.sent(count)
             }
-            finish(worker, connection)
-            return false
+            tcp.Event.none {
+                if !connection.writing && !watch(worker, connection, true) { finish(worker, connection) }
+                return false
+            }
+            default {
+                finish(worker, connection)
+                return false
+            }
         }
-        connection.http.sent(usize(count))
     }
     if !connection.http.persistent() {
         linger(worker, connection)
@@ -188,45 +194,38 @@ read_ready(worker: *Worker, connection: *Connection) {
         finish(worker, connection)
         return
     }
-    count: int, err: Error = net.receive(connection.socket, room)
-    for err != null && err.domain == typeid(net.ReceiveErr) && err.code == sys.EINTR {
-        count, err = net.receive(connection.socket, room)
-    }
-    if err != null {
-        if err.domain == typeid(net.ReceiveErr) && err.code == sys.EAGAIN { return }
+    switch tcp.progress_receive(&connection.conn, room) {
+        tcp.Event.data(count: usize) {
+            if connection.lingering { return }
+            if connection.http.idle() { connection.deadline = time.elapsed() + REQUEST_TIMEOUT }
 
-        finish(worker, connection)
-        return
+            connection.http.received(count)
+            drain(worker, connection)
+        }
+        tcp.Event.none {
+        }
+        default {
+            finish(worker, connection)
+        }
     }
-    if count == 0 {
-        finish(worker, connection)
-        return
-    }
-    if connection.lingering { return }
-    if connection.http.idle() { connection.deadline = time.elapsed() + REQUEST_TIMEOUT }
-
-    connection.http.received(usize(count))
-    drain(worker, connection)
 }
 
 write_ready(worker: *Worker, connection: *Connection) {
     if flush(worker, connection) { drain(worker, connection) }
 }
 
-/* Starts a connection on `socket`, linked into the worker's list. */
-open(worker: *Worker, socket: net.Socket): bool {
-    if net.nonblock(socket, true) != null { return false }
-
+/* Starts a connection on `conn`, linked into the worker's list. */
+open(worker: *Worker, conn: tcp.Conn): bool {
     storage: []Connection = mem.zalloc[Connection](1)
     if storage == null { return false }
 
     connection: *Connection = &storage[0]
-    if poll.watch(worker.queue, socket, true, false, *u8(connection)) != null {
+    if tcp.watch(worker.queue, conn, *u8(connection)) != null {
         mem.release[Connection](&storage)
         return false
     }
     connection.storage = storage
-    connection.socket = socket
+    connection.conn = conn
     connection.deadline = time.elapsed() + IDLE_TIMEOUT
     connection.http = http.ServerConnection.new(MAX_REQUEST)
     connection.next = worker.first
@@ -236,11 +235,18 @@ open(worker: *Worker, socket: net.Socket): bool {
     return true
 }
 
+/* A failure other than `pending`, such as running out of descriptors, leaves
+ * the listener readable, so it stops being watched until the next expiry tick
+ * rather than spinning this level-triggered loop.
+ */
 accept_ready(worker: *Worker) {
-    socket: net.Socket, _, err: Error = net.accept(worker.server.listener)
-    if err != null { return } // another worker won it, or the client left
-
-    if !open(worker, socket) { sys.close(socket) }
+    conn: tcp.Conn, _, err: Error = tcp.accept_nonblock(worker.server.listener)
+    if err == tcp.AcceptErr.pending { return } // another worker won it, or the client left
+    if err != null {
+        worker.accepting = tcp.unwatch(worker.queue, worker.server.listener) != null
+        return
+    }
+    if !open(worker, conn) { tcp.close(&conn) }
 }
 
 /* Closes every connection past its deadline. */
@@ -263,10 +269,10 @@ work(server: *Server) {
     }
     defer sys.close(sys.Fd(queue))
 
-    worker: Worker = Worker { queue = queue, server = server, first = null }
+    worker: Worker = Worker { queue = queue, server = server, first = null, accepting = true }
     defer worker.wipe()
 
-    watch_err: Error = poll.watch(queue, server.listener, true, false)
+    watch_err: Error = tcp.watch(queue, server.listener)
     if watch_err != null {
         fmt.printf("failed to watch listener: error %d\n", int(watch_err.code))
         sys.exit(1)
@@ -298,27 +304,18 @@ work(server: *Server) {
 
         if time.elapsed() >= next_expiry {
             expire(&worker)
+            if !worker.accepting { worker.accepting = tcp.watch(queue, server.listener) == null }
+
             next_expiry = time.elapsed() + NS_PER_SECOND
         }
     }
-}
-
-listen(address: net.Addr4): (net.Socket, Error) {
-    socket: net.Socket, err: Error = net.socket(net.SocketType.tcp)
-    if err != null { return socket, err }
-
-    err = net.nonblock(socket, true)
-    if err == null { err = net.reuseaddr(socket, true) }
-    if err == null { err = net.bind(socket, address) }
-    if err == null { err = net.listen(socket, BACKLOG) }
-    return socket, err
 }
 
 main(): int {
     address: net.Addr4, parsed: bool = net.parse4("127.0.0.1:8080")
     if !parsed { return 1 }
 
-    listener: net.Socket, listen_err: Error = listen(address)
+    listener: tcp.Listener, listen_err: Error = tcp.listen_nonblock(address, BACKLOG)
     if listen_err != null {
         fmt.printf("failed to listen: error %d\n", int(listen_err.code))
         return 1
