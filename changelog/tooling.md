@@ -209,3 +209,7 @@
 - selfhost keeps each auto-inline verdict per declaration (1 stays a call, size
   + 2 expands), as `lower.c`'s `auto_inline_seen` does, replacing the
   call-chain re-measure: `--release -c` on itself ~2%.
+- selfhost gains `pkg init|build|run|check|add|remove|list` and `test` (#159), ported from
+  `main.c` with `Graph.collect_links`; a test file's main is parsed from the
+  same snippet, spliced with `adopt`/`relink`. `check.sh` diffs them against
+  `ace`; `--report` stays refused.

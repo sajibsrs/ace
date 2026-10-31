@@ -712,3 +712,164 @@ pub Graph.resolve(self, dir: string): (usize, bool) {
     root: usize, ok: bool = self.load(dir, true, "", 0)
     return root, ok && self.errors == 0
 }
+
+link_identity(value: string): string {
+    i: usize = value.len
+    for i > 0 && value[i - 1] != '/' { i -= 1 }
+    return value[i..]
+}
+
+/* The transitive union of every package's [link] inputs for `cc`, dependencies
+ * first: a framework once, and a file name once at its first position, at the
+ * root's path when it declares one, else the dependencies' one agreed path.
+ * False after reporting a conflict or a missing file.
+ */
+pub Graph.collect_links(self, args: *array.Array[string]): bool {
+    seen: array.Array[string] = array.Array[string] {}
+    defer seen.wipe()
+    frameworks: array.Array[string] = array.Array[string] {}
+    defer frameworks.wipe()
+    failed: bool = false
+    order: []usize = self.order.view()
+    if order.len == 0 { return true }
+    root: Package = self.pkgs.get(order[order.len - 1])
+    for pi: usize in order {
+        for link: Link in self.pkgs.get(pi).links.view() {
+            if link.framework {
+                if listed(frameworks.view(), link.value) { continue }
+                fail(frameworks.push(link.value))
+                fail(args.push("-framework"))
+                fail(args.push(link.value))
+                continue
+            }
+            identity: string = link_identity(link.value)
+            if listed(seen.view(), identity) { continue }
+            fail(seen.push(identity))
+
+            chosen: Link = link
+            chosen_dir: string = root.dir
+            by_root: bool = false
+            for r: Link in root.links.view() {
+                if !by_root && !r.framework && mem.equal(link_identity(r.value), identity) {
+                    chosen = r
+                    by_root = true
+                }
+            }
+            conflict: bool = false
+            if !by_root {
+                have: bool = false
+                for j: usize in 0..order.len - 1 {
+                    dep: Package = self.pkgs.get(order[j])
+                    for q: Link in dep.links.view() {
+                        if q.framework || !mem.equal(link_identity(q.value), identity) { continue }
+                        if !have {
+                            have = true
+                            chosen = q
+                            chosen_dir = dep.dir
+                        } else if !mem.equal(chosen.value, q.value) {
+                            fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] path '%s' conflicts with %s/ace.pkg:%d's '%s'; the root package can choose one with its own path\n", dep.dir, q.line, q.value, chosen_dir, chosen.line, chosen.value)
+                            self.errors += 1
+                            conflict = true
+                            failed = true
+                        }
+                    }
+                }
+            }
+            if conflict { continue }
+            info: sys.FileInfo, err: Error = sys.stat(chosen.value)
+            if err != null || info.file_type != sys.FileType.regular {
+                fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] path '%s' is not a file\n", chosen_dir, chosen.line, chosen.value)
+                self.errors += 1
+                failed = true
+                continue
+            }
+            fail(args.push(chosen.value))
+        }
+    }
+    return !failed
+}
+
+listed(items: []string, text: string): bool {
+    for item: string in items {
+        if mem.equal(item, text) { return true }
+    }
+    return false
+}
+
+/* The offset after the line starting at `at`, and where its text ends. */
+line_end(text: string, at: usize): (usize, usize) {
+    n: usize, found: bool = str.find(text[at..], '\n')
+    if found { return at + n + 1, at + n }
+    return text.len, text.len
+}
+
+/* The manifest `text` with `name: version` first in its [dependency] section,
+ * one appended when absent, in `pool`. One blank line precedes an appended
+ * section, so add and remove round trip.
+ */
+pub added_dep(pool: *path.Pool, text: string, name: string, version: string): string {
+    entry: string = pool.join([name, ": ", version, "\n"])
+    at: usize = 0
+    for at < text.len {
+        next: usize, eol: usize = line_end(text, at)
+        if mem.equal(trim(text[at..eol]), "[dependency]") {
+            return pool.join([text[..next], entry, text[next..]])
+        }
+        at = next
+    }
+    content: usize = text.len
+    for content > 0 && text[content - 1] == '\n' { content -= 1 }
+    sep: string = ""
+    if content > 0 { sep = "\n\n" }
+    return pool.join([text[..content], sep, "[dependency]\n", entry])
+}
+
+/* The manifest `text` without dependency `name`, and whether it was there; a
+ * section left empty goes too, with the blank line `added_dep` put before it.
+ */
+pub removed_dep(pool: *path.Pool, text: string, name: string): (string, bool) {
+    in_deps: bool = false
+    has_header: bool = false
+    header: usize = 0
+    header_end: usize = 0
+    has_entry: bool = false
+    entry: usize = 0
+    entry_end: usize = 0
+    others: bool = false
+    at: usize = 0
+    for at < text.len {
+        start: usize = at
+        next: usize, eol: usize = line_end(text, at)
+        at = next
+        t: string = trim(text[start..eol])
+        if t.len == 0 || (t.len >= 2 && t[0] == '/' && t[1] == '/') { continue }
+        if mem.equal(t, "[dependency]") {
+            in_deps = true
+            has_header = true
+            header = start
+            header_end = next
+            continue
+        }
+        if t[0] == '[' {
+            in_deps = false
+            continue
+        }
+        if !in_deps { continue }
+        colon: usize, found: bool = str.find(t, ':')
+        if !found { continue }
+        if !has_entry && mem.equal(trim(t[..colon]), name) {
+            has_entry = true
+            entry = start
+            entry_end = next
+        } else {
+            others = true
+        }
+    }
+    if !has_entry { return "", false }
+    if has_header && !others {
+        cut: usize = header
+        if cut >= 2 && text[cut - 1] == '\n' && text[cut - 2] == '\n' { cut -= 1 }
+        return pool.join([text[..cut], text[header_end..entry], text[entry_end..]]), true
+    }
+    return pool.join([text[..entry], text[entry_end..]]), true
+}

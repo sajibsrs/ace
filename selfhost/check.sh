@@ -10,6 +10,7 @@
 # and its object files against `ace --debug -c` and `ace --release -c`,
 # then its package graph against `ace --pkg-graph`
 # and its cross-package imports against `ace --pkg-check` over every repository ace.pkg, then times
+# the `pkg check|build|run` and `test` commands' output against `ace`, then
 # the lexers on the largest files. Run from anywhere.
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -283,6 +284,47 @@ echo "objects (debug and release): $((ototal - obad))/$ototal identical"
 echo "graph: $((ptotal - gbad))/$ptotal packages identical"
 echo "packages: $((ptotal - pbad))/$ptotal packages agree ($psema fail only in sema)"
 
+cbad2=0
+ctotal=0
+compare_command() {
+    d=$1
+    shift
+    ctotal=$((ctotal + 1))
+    a=$(cd "$d" && "$root/ace" "$@" 2>&1 </dev/null; echo "rc=$?")
+    b=$(cd "$d" && "$self" "$@" 2>&1 </dev/null; echo "rc=$?")
+    if [ "$a" != "$b" ]; then
+        cbad2=$((cbad2 + 1))
+        echo "commands: $d: $* differs"
+    fi
+}
+for f in $(git ls-files 'tests/package_cli/*ace.pkg' 'tests/test_package/*ace.pkg'); do
+    d=$(dirname "$f")
+    compare_command "$d" pkg check
+    compare_command "$d" pkg build
+    compare_command "$d" pkg list
+    if grep -q '^type: exe' "$f"; then compare_command "$d" pkg run --debug -- a b; fi
+done
+# add and remove edit manifests, so each compiler works on its own copy.
+cp -R tests/package_cli "$tmp/cli_a"
+cp -R tests/package_cli "$tmp/cli_b"
+for f in $(cd tests/package_cli && git ls-files '*ace.pkg' | grep -v '/pkg/'); do
+    d=$(dirname "$f")
+    for edit in "add greeter 0.1.0" "add greeter 9.9.9" "add missing 1.0.0" "remove greeter" "remove greeter" "remove missing"; do
+        ctotal=$((ctotal + 1))
+        a=$(cd "$tmp/cli_a/$d" && "$root/ace" pkg $edit 2>&1; echo "rc=$?")
+        b=$(cd "$tmp/cli_b/$d" && "$self" pkg $edit 2>&1; echo "rc=$?")
+        if [ "$(echo "$a" | sed "s#/cli_a/#/#g")" != "$(echo "$b" | sed "s#/cli_b/#/#g")" ] || ! cmp -s "$tmp/cli_a/$f" "$tmp/cli_b/$f"; then
+            cbad2=$((cbad2 + 1))
+            echo "commands: $d: pkg $edit differs"
+        fi
+    done
+done
+for t in tests/test/pass.test.ace tests/test tests/test/fixtures/main.test.ace tests/test/fixtures/signature.test.ace tests/test/fixtures/empty.test.ace; do
+    compare_command . test "$t"
+done
+compare_command tests/test_package/app test src
+echo "commands: $((ctotal - cbad2))/$ctotal agree"
+
 echo "timing, ${runs:=200} runs per file (ms per run): file  ace --tokens  ace-self"
 for f in $(ls -S $files | head -5); do
     a=$(python3 -c 'import subprocess,sys,time
@@ -295,4 +337,4 @@ for _ in range(int(sys.argv[1])): subprocess.run(sys.argv[2:],stdout=subprocess.
 print("%.2f"%((time.perf_counter()-t)*1000/int(sys.argv[1])))' "$runs" "$tmp/ace-self" "$f")
     echo "$f $(wc -c <"$f" | tr -d ' ')B  $a  $b"
 done
-[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ] && [ "$sbad" -eq 0 ] && [ "$cbad" -eq 0 ] && [ "$ebad" -eq 0 ] && [ "$gbad" -eq 0 ] && [ "$pbad" -eq 0 ]
+[ "$bad" -eq 0 ] && [ "$abad" -eq 0 ] && [ "$mbad" -eq 0 ] && [ "$rbad" -eq 0 ] && [ "$sbad" -eq 0 ] && [ "$cbad" -eq 0 ] && [ "$ebad" -eq 0 ] && [ "$gbad" -eq 0 ] && [ "$pbad" -eq 0 ] && [ "$cbad2" -eq 0 ]

@@ -89,6 +89,9 @@ pub Loader: struct {
     stack: array.Array[usize],              // loading now, for cycles
     pub formatting: string = "",            // std/@/formatting's prefix, "" until loaded
     graph: package.Graph,                   // the package graph, empty outside one; not owned
+    pub want_main: bool = false,            // the root is a test file: generate its main
+    test_main: bool = false,                // `generated` holds that main
+    generated: parser.Parser,               // owns that main's nodes' text
     pub bytes: usize = 0,                   // source bytes read, as `ace --report` counts them
     pub tokens: usize = 0,                  // tokens lexed, EOF excluded
 }
@@ -97,7 +100,7 @@ pub Loader: struct {
  * so std/.
  */
 pub Loader.new(target: string): (Loader, bool) {
-    l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {}, graph = blank(package.Graph) }
+    l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {}, graph = blank(package.Graph), generated = blank(parser.Parser) }
     exe: string, ok: bool = path.executable_dir(&l.pool)
     if !ok {
         fmt.printf(sys.stderr, "ace: cannot locate the ace executable to find std/\n")
@@ -122,6 +125,7 @@ pub Loader.wipe(self) {
     self.order.wipe()
     self.prefixes.wipe()
     self.stack.wipe()
+    if self.test_main { self.generated.wipe() }
     self.pool.wipe()
 }
 
@@ -143,6 +147,62 @@ pub Loader.resolve_package(self, graph: package.Graph, root: usize): bool {
     return self.resolve_root(p.root_file, true, root)
 }
 
+/* A test file at `root_path` inside package `root` of `graph`; as `resolve`. */
+pub Loader.resolve_in(self, graph: package.Graph, root: usize, root_path: string): bool {
+    self.graph = graph
+    self.roots = path.Roots.init(&self.pool, path.dir(root_path))
+    return self.resolve_root(root_path, true, root)
+}
+
+/* Splices `import @test: test` and a main running module `mi`'s pub functions
+ * into its tree, each table entry at its function's position so a wrong
+ * signature is reported at the declaration; false after reporting why not.
+ */
+Loader.generate_main(self, mi: usize): bool {
+    runner: const string = "ace_test_runner_"
+    top: Node = self.node(mi, self.top(mi))
+    shown: string = self.mods.get(mi).path
+    tests: array.Array[Node] = array.Array[Node] {}
+    defer tests.wipe()
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    fail(parts.push(self.pool.join(["import ", runner, ": test\nmain(): int { return ", runner, ".run([\n"])))
+    for k: u32 in 0..top.nkids {
+        n: Node = self.node(mi, self.kid(mi, self.top(mi), k))
+        if n.kind != Kind.func || (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 { continue }
+        if mem.equal(n.text, "main") {
+            self.err(mi, n, ["a test file may not define main; ace test generates it"])
+        } else if (n.flags & parser.F_PUB) != 0 {
+            fail(tests.push(n))
+            fail(parts.push(self.pool.join(["(\"", n.text, "\", ", n.text, "),\n"])))
+        }
+    }
+    if self.errors > 0 { return false }
+    if tests.len == 0 {
+        fmt.printf(sys.stderr, "%s: error: no pub test functions\n", shown)
+        self.errors += 1
+        return false
+    }
+    fail(parts.push("]) }\n"))
+    g: parser.Parser, lex_errors: int = parser.Parser.new(self.pool.join(parts.view()), shown)
+    g.retarget(runner, "@test", tests.view())
+    self.errors += lex_errors
+    gf: u32 = g.parse(self.target)
+    gen0: u32 = g.kid(gf, 0)
+    gen1: u32 = g.kid(gf, 1)
+    self.generated = g
+    self.test_main = true
+    mods: []Module = self.mods.view()
+    off: u32 = mods[mi].parser.adopt(g)
+    ids: array.Array[u32] = array.Array[u32] {}
+    defer ids.wipe()
+    fail(ids.push(gen0 + off))
+    for k: u32 in 0..top.nkids { fail(ids.push(self.kid(mi, self.top(mi), k))) }
+    fail(ids.push(gen1 + off))
+    mods[mi].parser.relink(self.top(mi), ids.view())
+    return self.errors == 0
+}
+
 Loader.resolve_root(self, root_path: string, in_package: bool, pkg: usize): bool {
     canon: string, found: bool = path.canonical(&self.pool, root_path)
     if !found { canon = root_path }
@@ -151,6 +211,7 @@ Loader.resolve_root(self, root_path: string, in_package: bool, pkg: usize): bool
     mods: []Module = self.mods.view()
     mods[mi].in_package = in_package
     mods[mi].package = pkg
+    if self.want_main && !self.generate_main(mi) { return false }
     // The root is on the stack so a self-import or root cycle shows its chain.
     fail(self.stack.push(mi))
     self.resolve_file(mi, true)

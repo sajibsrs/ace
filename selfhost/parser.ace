@@ -182,6 +182,21 @@ pub Parser.new(src: string, path: string): (Parser, int) {
     return p, int(lx.errors().len)
 }
 
+/* Renames every identifier `placeholder` to `name`, which no source can spell,
+ * and gives the tokens of line 3 + i the position of `at[i]`, before `parse`.
+ */
+pub Parser.retarget(self, placeholder: string, name: string, at: []Node) {
+    for i: usize in 0..self.ntok {
+        line: usize = usize(self.toks[i].line)
+        if self.kinds[i] == Token.ident && mem.equal(self.toks[i].text, placeholder) {
+            self.toks[i].text = name
+        } else if line >= 3 && line < 3 + at.len {
+            self.toks[i].line = at[line - 3].line
+            self.toks[i].col = at[line - 3].col
+        }
+    }
+}
+
 /* The tokens lexed, EOF excluded. */
 pub Parser.tokens(self): usize {
     return self.ntok - 1

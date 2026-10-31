@@ -10,6 +10,7 @@
  * with [--debug|--release] -o NAME links it through cc as `ace -o` does.
  * --pkg-graph=DIR prints a package's dependency graph and --pkg-check=DIR resolves its imports
  * through it, as `ace` does, optionally for another --target=T.
+ * `pkg init|build|run|check` and `test` are the C driver's commands.
  */
 
 import array
@@ -17,6 +18,8 @@ import exec
 import file
 import fmt
 import mem
+import sort
+import str
 import sys
 
 import lexer: "./lexer.ace"
@@ -40,6 +43,8 @@ TARGET: const string = "darwin-arm64"
 TARGET: const string = "linux-x64"
 
 main(): int {
+    if sys.argc() >= 2 && mem.equal(sys.arg(1), "pkg") { return package_main() }
+    if sys.argc() >= 2 && mem.equal(sys.arg(1), "test") { return test_main() }
     for i: usize in 1 .. sys.argc() {
         if mem.equal(sys.arg(i), "-o") { return build() }
     }
@@ -229,6 +234,13 @@ check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): i
     if !l.resolve(path) { return summary(path, l.errors) }
     s: sema.Sema = sema.Sema.new(l)
     defer s.wipe()
+    rc: int = checked(&s, path, full)
+    if rc != 0 || (!lower && obj.len == 0) { return rc }
+    return finish(&s, path, obj, debug)
+}
+
+/* Runs every sema stage over `s`; 0, or 1 after reporting. */
+checked(s: *sema.Sema, path: string, full: bool): int {
     s.enter() // as C's sema_check, every stage runs whatever came before
     s.complete()
     s.promoted_collisions()
@@ -239,11 +251,14 @@ check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): i
         fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", s.unsupported)
         return 1
     }
-    if s.errors > 0 { return summary(path, s.errors) }
-    if !lower && obj.len == 0 { return 0 }
+    return summary(path, s.errors)
+}
+
+/* Writes checked `s` to the object file `obj`, or prints its IR without one. */
+finish(s: *sema.Sema, path: string, obj: string, debug: bool): int {
     s.layout_all()
     if obj.len > 0 {
-        ok: bool, why: string = emission.object(&s, debug, path, obj)
+        ok: bool, why: string = emission.object(s, debug, path, obj)
         if why.len > 0 { fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", why) }
         if !ok { return 1 }
         return 0
@@ -251,7 +266,7 @@ check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): i
     storage: []u8 = mem.alloc[u8](65536)
     defer mem.release[u8](&storage)
     out: Out = Out.init(sys.stdout, storage)
-    ok: bool = lowering.dump_file(&out, &s, debug)
+    ok: bool = lowering.dump_file(&out, s, debug)
     out.flush()
     if !ok { return 1 }
     return 0
@@ -316,6 +331,19 @@ distinct_output(output: string, input: string, kind: string): bool {
     if !same_path(output, input) { return true }
     fmt.printf(sys.stderr, "ace: %s '%s' would overwrite input '%s'\n", kind, output, input)
     return false
+}
+
+/* Waits for `child`; its exit status, or 1 for a signal or wait failure. */
+wait_for(child: sys.Process, what: string): int {
+    status: sys.ProcessStatus, err: Error = sys.wait(child)
+    for err != null && err.code == sys.EINTR { status, err = sys.wait(child) }
+    if err != null {
+        fmt.printf(sys.stderr, "ace: cannot wait for '%s': %s\n", what, err.message)
+        return 1
+    }
+    if status.exited { return status.code }
+    fmt.printf(sys.stderr, "ace: '%s' terminated by signal %d\n", what, status.signal)
+    return 1
 }
 
 /* Runs `cc` over `argv` and waits for it, reporting a failure as C does. */
@@ -443,5 +471,578 @@ build(): int {
     fail(argv.push("-o"))
     fail(argv.push(out))
     if !run_linker(argv.view()) { return 1 }
+    return 0
+}
+
+// --- ace pkg ------------------------------------------------------------------
+
+NO_PACKAGE: const string = "ace: no ace.pkg found in the working directory or any parent\n"
+
+package_usage(): int {
+    fmt.printf(sys.stderr, "usage: ace pkg init <exe|lib> [DIR]\n       ace pkg build [--debug|--release] [--target=TARGET]\n       ace pkg run   [--debug|--release] [--target=TARGET] [-- ARGS...]\n       ace pkg check\n       ace pkg add NAME VERSION\n       ace pkg remove NAME\n       ace pkg list\n  --dir=DIR  start the ace.pkg walk-up in DIR (every command but init)\n")
+    return 2
+}
+
+/* The nearest directory from `start` upward holding an ace.pkg. */
+package_root(pool: *path.Pool, start: string): (string, bool) {
+    dir: string, ok: bool = path.canonical(pool, start)
+    if !ok { return "", false }
+    for {
+        info: sys.FileInfo, err: Error = sys.stat(pool.join([dir, "/ace.pkg"]))
+        if err == null && info.file_type == sys.FileType.regular { return dir, true }
+        if mem.equal(dir, "/") { return "", false }
+        dir = path.dir(dir)
+    }
+    return "", false
+}
+
+/* mkdir -p: an existing directory is fine. */
+make_dirs(pool: *path.Pool, dir: string): Error {
+    if path.is_dir(dir) { return null }
+    parent: string = path.dir(dir)
+    if !mem.equal(parent, dir) && !mem.equal(parent, ".") {
+        err: Error = make_dirs(pool, parent)
+        if err != null { return err }
+    }
+    err: Error = sys.mkdir(dir)
+    if err != null && !path.is_dir(dir) { return err }
+    return null
+}
+
+/* `ace pkg ...`. --dir=DIR, looked for before a `--`, starts the walk-up in
+ * DIR; std has no chdir, so `start` is passed down and `run` spawns there.
+ */
+package_main(): int {
+    args: array.Array[string] = array.Array[string] {}
+    defer args.wipe()
+    start: string = ""
+    i: usize = 2
+    for i < sys.argc() {
+        a: string = sys.arg(i)
+        i += 1
+        if args.len > 0 && mem.equal(a, "--") {
+            fail(args.push(a))
+            for i < sys.argc() {
+                fail(args.push(sys.arg(i)))
+                i += 1
+            }
+        } else if str.has(a, "--dir=", false) && args.len > 0 {
+            if start.len > 0 {
+                fmt.printf(sys.stderr, "ace: --dir given more than once\n")
+                return 2
+            }
+            if a.len == 6 {
+                fmt.printf(sys.stderr, "ace: --dir requires a directory\n")
+                return 2
+            }
+            start = a[6..]
+        } else {
+            fail(args.push(a))
+        }
+    }
+    if args.len == 0 { return package_usage() }
+    command: string = args.get(0)
+    rest: []string = args.view()[1..]
+    if start.len > 0 {
+        if mem.equal(command, "init") {
+            fmt.printf(sys.stderr, "ace: pkg init takes its directory as [DIR], not --dir\n")
+            return 2
+        }
+        info: sys.FileInfo, err: Error = sys.stat(start)
+        if err != null {
+            fmt.printf(sys.stderr, "ace: cannot enter '%s': %s\n", start, err.message)
+            return 1
+        }
+        if info.file_type != sys.FileType.directory {
+            fmt.printf(sys.stderr, "ace: cannot enter '%s': Not a directory\n", start)
+            return 1
+        }
+    }
+    if mem.equal(command, "init") { return package_init(rest) }
+    if mem.equal(command, "build") {
+        pool: path.Pool = blank(path.Pool)
+        defer pool.wipe()
+        rc: int, bin: string = package_build(&pool, rest, start, false, false)
+        return rc
+    }
+    if mem.equal(command, "run") { return package_run(rest, start) }
+    if mem.equal(command, "check") {
+        if rest.len != 0 {
+            fmt.printf(sys.stderr, "ace: pkg check takes no arguments\n")
+            return 2
+        }
+        pool: path.Pool = blank(path.Pool)
+        defer pool.wipe()
+        rc: int, bin: string = package_build(&pool, rest, start, false, true)
+        return rc
+    }
+    if mem.equal(command, "add") {
+        if rest.len != 2 { return package_usage() }
+        return package_edit(start, rest[0], rest[1], true)
+    }
+    if mem.equal(command, "remove") {
+        if rest.len != 1 { return package_usage() }
+        return package_edit(start, rest[0], "", false)
+    }
+    if mem.equal(command, "list") { return package_list(rest, start) }
+    fmt.printf(sys.stderr, "ace: unknown pkg subcommand '%s'\n", command)
+    return package_usage()
+}
+
+/* Whether the package at `dir` resolves; its errors go to stderr. */
+package_resolves(dir: string): bool {
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return false }
+    g: package.Graph = package.Graph.init(TARGET, l.std_dir)
+    defer g.wipe()
+    root: usize, ok: bool = g.resolve(dir)
+    return ok
+}
+
+/* `ace pkg add` and `remove`: rewrites the manifest, then re-resolves the graph
+ * and restores the original bytes on any error.
+ */
+package_edit(start: string, name: string, version: string, add: bool): int {
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    from: string = start
+    if from.len == 0 { from = "." }
+    dir: string, found_root: bool = package_root(&pool, from)
+    if !found_root {
+        fmt.printf(sys.stderr, NO_PACKAGE)
+        return 1
+    }
+    manifest: string = pool.join([dir, "/ace.pkg"])
+    text: []u8, rerr: Error = file.read(manifest)
+    defer mem.release[u8](&text)
+    if rerr != null {
+        fmt.printf(sys.stderr, "ace: cannot open '%s'\n", manifest)
+        return 1
+    }
+    edited: string = ""
+    verb: string = "added"
+    if add {
+        edited = package.added_dep(&pool, text, name, version)
+    } else {
+        verb = "removed"
+        out: string, found: bool = package.removed_dep(&pool, text, name)
+        if !found {
+            fmt.printf(sys.stderr, "ace: '%s' is not a dependency of '%s'\n", name, dir)
+            return 1
+        }
+        edited = out
+    }
+    werr: Error = file.write(manifest, edited)
+    if werr != null {
+        fmt.printf(sys.stderr, "ace: cannot write '%s': %s\n", manifest, werr.message)
+        return 1
+    }
+    if package_resolves(dir) { return 0 }
+    rs: Error = file.write(manifest, text)
+    if rs != null { fmt.printf(sys.stderr, "ace: cannot restore '%s': %s\n", manifest, rs.message) }
+    fmt.printf(sys.stderr, "ace: '%s' was not %s; the manifest was left unchanged\n", name, verb)
+    return 1
+}
+
+/* `text` padded with spaces to `width`, as C's %-*s, in `pool`. */
+padded(pool: *path.Pool, text: string, width: usize): string {
+    out: string = text
+    for out.len < width { out = pool.join([out, " "]) }
+    return out
+}
+
+/* `ace pkg list`: the resolved graph, dependencies first. */
+package_list(args: []string, start: string): int {
+    if args.len != 0 {
+        fmt.printf(sys.stderr, "ace: pkg list takes no arguments\n")
+        return 2
+    }
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    from: string = start
+    if from.len == 0 { from = "." }
+    dir: string, found_root: bool = package_root(&pool, from)
+    if !found_root {
+        fmt.printf(sys.stderr, NO_PACKAGE)
+        return 1
+    }
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return 1 }
+    g: package.Graph = package.Graph.init(TARGET, l.std_dir)
+    defer g.wipe()
+    root: usize, ok: bool = g.resolve(dir)
+    if !ok { return summary(dir, g.errors) }
+    for pi: usize in g.order.view() {
+        p: package.Package = g.pkgs.get(pi)
+        relation: string = "transitive"
+        if pi == root { relation = "root" }
+        for d: package.Dep in g.pkgs.get(root).deps.view() {
+            if d.package == pi && pi != root { relation = "direct" }
+        }
+        kind: string = "lib"
+        if p.is_exe { kind = "exe" }
+        fmt.printf("%s %s %s %s\n", padded(&pool, p.name, 16), padded(&pool, kind, 4), padded(&pool, relation, 10), p.dir)
+    }
+    return 0
+}
+
+/* Checks, and unless `check_only` builds, the package found from `start`; the
+ * status and, for an exe, its binary in `pool`.
+ */
+package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool, check_only: bool): (int, string) {
+    debug: bool = false
+    mode_seen: bool = false
+    target: string = TARGET
+    for a: string in args {
+        if mem.equal(a, "--debug") || mem.equal(a, "--release") {
+            if mode_seen && debug != mem.equal(a, "--debug") {
+                fmt.printf(sys.stderr, "ace: --debug and --release are mutually exclusive\n")
+                return 2, ""
+            }
+            mode_seen = true
+            debug = mem.equal(a, "--debug")
+        } else if mem.equal(a, "--report") {
+            fmt.printf(sys.stderr, "ace: selfhost does not yet support --report\n")
+            return 1, ""
+        } else if str.has(a, "--target=", false) {
+            if a.len == 9 {
+                fmt.printf(sys.stderr, "ace: --target requires a target name\n")
+                return 2, ""
+            }
+            target = a[9..]
+        } else {
+            fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
+            return 2, ""
+        }
+    }
+    if !mem.equal(target, "darwin-arm64") && !mem.equal(target, "linux-x64") {
+        fmt.printf(sys.stderr, "ace: unsupported target '%s' (supported: darwin-arm64, linux-x64)\n", target)
+        return 2, ""
+    }
+    if !mem.equal(target, TARGET) {
+        fmt.printf(sys.stderr, "ace: selfhost does not yet support --target=%s\n", target)
+        return 1, ""
+    }
+    from: string = start
+    if from.len == 0 { from = "." }
+    dir: string, found_root: bool = package_root(pool, from)
+    if !found_root {
+        fmt.printf(sys.stderr, NO_PACKAGE)
+        return 1, ""
+    }
+    l: module.Loader, found: bool = module.Loader.new(target)
+    defer l.wipe()
+    if !found { return 1, "" }
+    g: package.Graph = package.Graph.init(target, l.std_dir)
+    defer g.wipe()
+    root: usize, ok: bool = g.resolve(dir)
+    if !ok { return summary(dir, g.errors), "" }
+    p: package.Package = g.pkgs.get(root)
+    if !l.resolve_package(g, root) { return summary(p.root_file, l.errors), "" }
+    s: sema.Sema = sema.Sema.new(l)
+    defer s.wipe()
+    rc: int = checked(&s, p.root_file, true)
+    if rc != 0 || check_only { return rc, "" }
+    if require_exe && !p.is_exe {
+        fmt.printf(sys.stderr, "ace: 'run' requires an exe package; '%s' is type 'lib'\n", p.name)
+        return 2, ""
+    }
+    build_dir: string = pool.join([p.dir, "/build"])
+    merr: Error = make_dirs(pool, build_dir)
+    if merr != null {
+        fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", build_dir, merr.message)
+        return 1, ""
+    }
+    if !p.is_exe { return 0, "" } // lib: checked, build/ ensured, nothing to link
+    bin: string = pool.join([build_dir, "/", p.name])
+    obj: string = pool.join([bin, ".o"])
+    if finish(&s, p.root_file, obj, debug) != 0 { return 1, "" }
+    return link_package(&g, obj, bin), bin
+}
+
+/* Links `obj` to `bin` with the graph's [link] inputs. */
+link_package(g: *package.Graph, obj: string, bin: string): int {
+    argv: array.Array[string] = array.Array[string] {}
+    defer argv.wipe()
+    fail(argv.push("cc"))
+    fail(argv.push(obj))
+    if !g.collect_links(&argv) { return 1 }
+    fail(argv.push("-o"))
+    fail(argv.push(bin))
+    if !run_linker(argv.view()) { return 1 }
+    return 0
+}
+
+/* `ace pkg run`: everything after the first `--` is the program's own argv. */
+package_run(args: []string, start: string): int {
+    flags: usize = 0
+    for flags < args.len && !mem.equal(args[flags], "--") { flags += 1 }
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    rc: int, bin: string = package_build(&pool, args[..flags], start, true, false)
+    if rc != 0 { return rc }
+    argv: array.Array[string] = array.Array[string] {}
+    defer argv.wipe()
+    fail(argv.push(bin))
+    if flags < args.len {
+        for a: string in args[flags + 1..] { fail(argv.push(a)) }
+    }
+    options: exec.SpawnOptions = blank(exec.SpawnOptions)
+    options.dir = start
+    child: sys.Process, err: Error = exec.spawn(argv.view(), options)
+    if err != null {
+        fmt.printf(sys.stderr, "ace: cannot launch '%s': %s\n", bin, err.message)
+        return 1
+    }
+    return wait_for(child, bin)
+}
+
+/* `ace pkg init <exe|lib> [DIR]`: refuses to overwrite anything, and an
+ * invalid name leaves no directory behind.
+ */
+package_init(args: []string): int {
+    if args.len < 1 || args.len > 2 { return package_usage() }
+    is_exe: bool = mem.equal(args[0], "exe")
+    if !is_exe && !mem.equal(args[0], "lib") {
+        fmt.printf(sys.stderr, "ace: pkg init type must be 'exe' or 'lib'\n")
+        return 2
+    }
+    dir_arg: string = "."
+    if args.len == 2 { dir_arg = args[1] }
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    resolved: string = dir_arg
+    if mem.equal(dir_arg, ".") {
+        cwd: string, ok: bool = path.canonical(&pool, ".")
+        if !ok {
+            fmt.printf(sys.stderr, "ace: cannot resolve the working directory\n")
+            return 1
+        }
+        resolved = cwd
+    }
+    for resolved.len > 1 && resolved[resolved.len - 1] == '/' { resolved = resolved[..resolved.len - 1] }
+    base: string = resolved
+    for i: usize in 0..resolved.len {
+        if resolved[i] == '/' { base = resolved[i + 1..] }
+    }
+    if !package.valid_name(base) {
+        fmt.printf(sys.stderr, "ace: directory name '%s' is not a valid package name (must be a lowercase identifier); rename the directory or pass a different DIR\n", base)
+        return 2
+    }
+    merr: Error = make_dirs(&pool, resolved)
+    if merr != null {
+        fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", dir_arg, merr.message)
+        return 1
+    }
+    canon: string, ok: bool = path.canonical(&pool, resolved)
+    if !ok {
+        fmt.printf(sys.stderr, "ace: cannot resolve '%s'\n", dir_arg)
+        return 1
+    }
+    root_rel: string = "src/mod.ace"
+    kind: string = "lib"
+    root_body: string = ""
+    if is_exe {
+        root_rel = "src/main.ace"
+        kind = "exe"
+        root_body = "main(): int {\n    return 0\n}\n"
+    }
+    manifest: string = pool.join([canon, "/ace.pkg"])
+    root_path: string = pool.join([canon, "/", root_rel])
+    for existing: string in [manifest, root_path] {
+        info: sys.FileInfo, err: Error = sys.stat(existing)
+        if err == null {
+            fmt.printf(sys.stderr, "ace: '%s' already exists\n", existing)
+            return 1
+        }
+    }
+    src_dir: string = pool.join([canon, "/src"])
+    derr: Error = make_dirs(&pool, src_dir)
+    if derr != null {
+        fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", src_dir, derr.message)
+        return 1
+    }
+    body: string = pool.join(["name: ", base, "\nversion: 0.1.0\nace: 0.1\ntype: ", kind, "\nroot: ", root_rel, "\ndescription:\nauthor:\nlicense:\nrepository:\n"])
+    for item: (string, string) in [(manifest, body), (root_path, root_body)] {
+        target: string, data: string = item
+        err: Error = file.write(target, data)
+        if err != null {
+            fmt.printf(sys.stderr, "ace: cannot write '%s': %s\n", target, err.message)
+            return 1
+        }
+    }
+    return 0
+}
+
+// --- ace test -----------------------------------------------------------------
+
+/* Compiles one test file with its generated main and links it to `bin`. A file
+ * inside a package resolves that package's dependencies and links their
+ * native inputs, as `ace pkg build` does.
+ */
+test_build(file_path: string, debug: bool, bin: string): int {
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return 1 }
+    l.want_main = true
+    g: package.Graph = package.Graph.init(TARGET, l.std_dir)
+    defer g.wipe()
+    dir: string, in_package: bool = package_root(&pool, path.dir(file_path))
+    resolved: bool = false
+    if in_package {
+        root: usize, ok: bool = g.resolve(dir)
+        if !ok { return summary(dir, g.errors) }
+        resolved = l.resolve_in(g, root, file_path)
+    } else {
+        resolved = l.resolve(file_path)
+    }
+    if !resolved { return summary(file_path, l.errors) }
+    s: sema.Sema = sema.Sema.new(l)
+    defer s.wipe()
+    if checked(&s, file_path, true) != 0 { return 1 }
+    obj: string = pool.join([bin, ".o"])
+    if finish(&s, file_path, obj, debug) != 0 { return 1 }
+    return link_package(&g, obj, bin)
+}
+
+/* Collects the *.test.ace files under `dir`, skipping fixtures/ and dot
+ * directories.
+ */
+test_collect(pool: *path.Pool, dir: string, out: *array.Array[string]): int {
+    handle: sys.Dir, err: Error = sys.opendir(dir)
+    if err != null {
+        fmt.printf(sys.stderr, "ace: cannot open directory '%s': %s\n", dir, err.message)
+        return 1
+    }
+    defer sys.closedir(&handle)
+    buf: [1024]u8
+    for {
+        n: usize, kind: sys.FileType, done: bool, rerr: Error = sys.readdir(&handle, buf[0..1024])
+        if rerr != null || done { break }
+        name: string = pool.copy(buf[..n])
+        if name[0] == '.' { continue }
+        child: string = pool.join([dir, "/", name])
+        if path.is_dir(child) {
+            if !mem.equal(name, "fixtures") && test_collect(pool, child, out) != 0 { return 1 }
+        } else if str.has(name, ".test.ace", true) {
+            fail(out.push(child))
+        }
+    }
+    return 0
+}
+
+path_before(a: string, b: string): bool {
+    return str.compare(a, b) < 0
+}
+
+/* `v` in lowercase hexadecimal, in `pool`. */
+hex(pool: *path.Pool, v: u64): string {
+    digits: [16]u8
+    i: usize = 16
+    for {
+        i -= 1
+        digits[i] = "0123456789abcdef"[usize(v & 15)]
+        v >>= 4
+        if v == 0 { break }
+    }
+    return pool.copy(digits[i..16])
+}
+
+/* `ace test [--debug | --release] PATH...`: builds each *.test.ace (a file, or
+ * every one under a directory) into its own binary and runs it.
+ */
+test_main(): int {
+    debug: bool = false
+    mode_seen: bool = false
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    files: array.Array[string] = array.Array[string] {}
+    defer files.wipe()
+    for i: usize in 2 .. sys.argc() {
+        a: string = sys.arg(i)
+        if mem.equal(a, "--debug") || mem.equal(a, "--release") {
+            if mode_seen && debug != mem.equal(a, "--debug") {
+                fmt.printf(sys.stderr, "ace: --debug and --release are mutually exclusive\n")
+                return 2
+            }
+            mode_seen = true
+            debug = mem.equal(a, "--debug")
+        } else if a.len > 1 && a[0] == '-' {
+            fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
+            return 2
+        } else {
+            info: sys.FileInfo, err: Error = sys.stat(a)
+            if err != null {
+                fmt.printf(sys.stderr, "ace: cannot open '%s'\n", a)
+                return 2
+            }
+            first: usize = files.len
+            if info.file_type == sys.FileType.directory {
+                if test_collect(&pool, a, &files) != 0 { return 1 }
+            } else if str.has(a, ".test.ace", true) {
+                fail(files.push(a))
+            } else {
+                fmt.printf(sys.stderr, "ace: '%s' is not a *.test.ace file or a directory\n", a)
+                return 2
+            }
+            sort.unstable[string](files.view()[first..], path_before)
+        }
+    }
+    if files.len == 0 {
+        fmt.printf(sys.stderr, "usage: ace test [--debug | --release] PATH...\n")
+        return 2
+    }
+
+    tmp: string = "/tmp"
+    for i: usize in 0 .. sys.envc() {
+        e: string = sys.env(i)
+        if e.len > 7 && str.has(e, "TMPDIR=", false) { tmp = e[7..] }
+    }
+    // std has no mkdtemp or rmdir: the build files carry a random name instead.
+    seed: [8]u8
+    rerr: Error = sys.random(seed[0..8])
+    if rerr != null {
+        fmt.printf(sys.stderr, "ace: cannot create a build name: %s\n", rerr.message)
+        return 1
+    }
+    name: string = ""
+    for b: u8 in seed[0..8] { name = pool.join([name, hex(&pool, u64(b))]) }
+    work: string = pool.join([tmp, "/ace-test-", name, "-t"])
+
+    failed: usize = 0
+    for i: usize in 0 .. files.len {
+        test_path: string = files.get(i)
+        bin: string = pool.join([work, hex(&pool, u64(i))])
+        obj: string = pool.join([bin, ".o"])
+        fmt.printf("== %s\n", test_path)
+        // Each build runs in a child: compiler state stays per file.
+        pid: sys.Process, err: Error = sys.fork()
+        if err != null {
+            fmt.printf(sys.stderr, "ace: cannot fork: %s\n", err.message)
+            return 1
+        }
+        if int(pid) == 0 { sys.exit(test_build(test_path, debug, bin)) }
+        rc: int = wait_for(pid, test_path)
+        if rc == 0 {
+            child: sys.Process, serr: Error = exec.spawn([bin])
+            if serr != null {
+                fmt.printf(sys.stderr, "ace: cannot launch '%s': %s\n", bin, serr.message)
+                rc = 1
+            } else {
+                rc = wait_for(child, test_path)
+            }
+        }
+        if rc != 0 { failed += 1 }
+        sys.unlink(bin)
+        sys.unlink(obj)
+    }
+    noun: string = "modules"
+    if files.len == 1 { noun = "module" }
+    fmt.printf("%u %s, %u failed\n", uint(files.len), noun, uint(failed))
+    if failed > 0 { return 1 }
     return 0
 }
