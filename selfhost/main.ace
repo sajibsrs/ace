@@ -94,7 +94,7 @@ main(): int {
         defer pool.wipe()
         obj: string = ""
         if object { obj = pool.join([stem(path), ".o"]) }
-        return check_bodies(path, full || lower || object, lower, obj, debug, false)
+        return check_bodies(path, full || lower || object, lower, obj, debug, "")
     }
     src: []u8, rerr: Error = file.read(path)
     defer mem.release[u8](&src)
@@ -226,9 +226,9 @@ stem(name: string): string {
  * end-of-file checks as `ace` does, and with `lower` prints its functions'
  * IR as `ace --ir` does, or `ace --debug --ir` with `debug`, or with a
  * nonempty `obj` writes its object file there as `ace -c` does, refusing a
- * main with `archive`; 1 on any error.
+ * main with a nonempty `library`, the output's name; 1 on any error.
  */
-check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool, archive: bool): int {
+check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool, library: string): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer l.wipe()
     if !found { return 1 }
@@ -237,7 +237,7 @@ check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool, ar
     defer s.wipe()
     rc: int = checked(&s, path, full)
     if rc != 0 || (!lower && obj.len == 0) { return rc }
-    if archive && !l.reject_archive_main() { return summary(path, l.errors) }
+    if library.len > 0 && !l.reject_library_main(library) { return summary(path, l.errors) }
     return finish(&s, path, obj, debug)
 }
 
@@ -373,6 +373,13 @@ run_linker(argv: []string): bool {
     return true
 }
 
+/* Asks `cc` for the dylib `out`, found through the rpath of whatever loads it. */
+push_shared(argv: *array.Array[string], pool: *path.Pool, out: string) {
+    fail(argv.push("-dynamiclib"))
+    fail(argv.push("-install_name"))
+    fail(argv.push(pool.join(["@rpath/", path.base(out)])))
+}
+
 /* Packs `obj` as the static archive `out`; ar updates an archive in place, so
  * a previous output goes first.
  */
@@ -417,6 +424,7 @@ build(): int {
     debug: bool = false
     mode_seen: bool = false
     archive: bool = false
+    shared: bool = false
     root: string = ""
     out: string = ""
     links: array.Array[string] = array.Array[string] {}
@@ -435,6 +443,8 @@ build(): int {
             debug = mem.equal(a, "--debug")
         } else if mem.equal(a, "--archive") {
             archive = true
+        } else if mem.equal(a, "--shared") {
+            shared = true
         } else if mem.equal(a, "-o") {
             value: string, ok: bool = option_value(&i, "-o", "an output name")
             if !ok { return 2 }
@@ -493,6 +503,14 @@ build(): int {
         fmt.printf(sys.stderr, "ace: --archive links nothing, so it takes no link inputs\n")
         return 2
     }
+    if archive && shared {
+        fmt.printf(sys.stderr, "ace: --archive and --shared are mutually exclusive\n")
+        return 2
+    }
+    if shared && !str.has(out, ".dylib", true) {
+        fmt.printf(sys.stderr, "ace: --shared requires -o NAME.dylib\n")
+        return 2
+    }
     pool: path.Pool = blank(path.Pool)
     defer pool.wipe()
     obj: string = pool.join([out, ".o"])
@@ -501,15 +519,16 @@ build(): int {
         if !distinct_output(obj, input, "generated object") || !distinct_output(out, input, "linked output") { return 2 }
     }
     if archive {
-        if check_bodies(root, true, false, obj, debug, true) != 0 { return 1 }
+        if check_bodies(root, true, false, obj, debug, "an archive") != 0 { return 1 }
         if !write_archive(out, obj) { return 1 }
         return 0
     }
-    if check_bodies(root, true, false, obj, debug, false) != 0 { return 1 }
+    if check_bodies(root, true, false, obj, debug, shared ? "a shared library" : "") != 0 { return 1 }
 
     argv: array.Array[string] = array.Array[string] {}
     defer argv.wipe()
     fail(argv.push("cc"))
+    if shared { push_shared(&argv, &pool, out) }
     fail(argv.push(obj))
     for link: string in links.view() { fail(argv.push(link)) }
     fail(argv.push("-o"))
@@ -734,6 +753,7 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
     mode_seen: bool = false
     target: string = TARGET
     flag_archive: bool = false
+    flag_shared: bool = false
     for a: string in args {
         if mem.equal(a, "--debug") || mem.equal(a, "--release") {
             if mode_seen && debug != mem.equal(a, "--debug") {
@@ -744,6 +764,8 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
             debug = mem.equal(a, "--debug")
         } else if mem.equal(a, "--archive") {
             flag_archive = true
+        } else if mem.equal(a, "--shared") {
+            flag_shared = true
         } else if mem.equal(a, "--report") {
             fmt.printf(sys.stderr, "ace: selfhost does not yet support --report\n")
             return 1, ""
@@ -757,6 +779,10 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
             fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
             return 2, ""
         }
+    }
+    if flag_archive && flag_shared {
+        fmt.printf(sys.stderr, "ace: --archive and --shared are mutually exclusive\n")
+        return 2, ""
     }
     if !mem.equal(target, "darwin-arm64") && !mem.equal(target, "linux-x64") {
         fmt.printf(sys.stderr, "ace: unsupported target '%s' (supported: darwin-arm64, linux-x64)\n", target)
@@ -794,20 +820,28 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
         fmt.printf(sys.stderr, "ace: --archive requires a lib package; '%s' is type 'exe'\n", p.name)
         return 2, ""
     }
-    archive: bool = flag_archive || p.is_archive
+    if flag_shared && p.is_exe {
+        fmt.printf(sys.stderr, "ace: --shared requires a lib package; '%s' is type 'exe'\n", p.name)
+        return 2, ""
+    }
+    // A flag replaces the manifest's output for this build.
+    archive: bool = flag_archive || (p.is_archive && !flag_shared)
+    shared: bool = flag_shared || (p.is_shared && !flag_archive)
     build_dir: string = pool.join([p.dir, "/build/bin"])
     merr: Error = make_dirs(pool, build_dir)
     if merr != null {
         fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", build_dir, merr.message)
         return 1, ""
     }
-    if !p.is_exe && !archive { return 0, "" } // lib: checked, build/ ensured, nothing to link
+    if !p.is_exe && !archive && !shared { return 0, "" } // lib: checked, build/ ensured, nothing to link
     bin: string = pool.join([build_dir, "/", p.name])
     obj: string = pool.join([bin, ".o"])
-    if archive && !l.reject_archive_main() { return summary(p.root_file, l.errors), "" }
+    if archive && !l.reject_library_main("an archive") { return summary(p.root_file, l.errors), "" }
+    if shared && !l.reject_library_main("a shared library") { return summary(p.root_file, l.errors), "" }
     if finish(&s, p.root_file, obj, debug) != 0 { return 1, "" }
     if archive { return archive_package(pool, &g, obj, build_dir, p.name), "" }
-    return link_package(&g, obj, bin), bin
+    if shared { return link_package(pool, &g, obj, pool.join([build_dir, "/lib", p.name, ".dylib"]), true), "" }
+    return link_package(pool, &g, obj, bin, false), bin
 }
 
 /* Packs `obj` as `lib<name>.a` with the graph's [link] inputs beside it in
@@ -835,11 +869,12 @@ archive_package(pool: *path.Pool, g: *package.Graph, obj: string, dir: string, n
     return 0
 }
 
-/* Links `obj` to `bin` with the graph's [link] inputs. */
-link_package(g: *package.Graph, obj: string, bin: string): int {
+/* Links `obj` to `bin`, a dylib with `shared`, with the graph's [link] inputs. */
+link_package(pool: *path.Pool, g: *package.Graph, obj: string, bin: string, shared: bool): int {
     argv: array.Array[string] = array.Array[string] {}
     defer argv.wipe()
     fail(argv.push("cc"))
+    if shared { push_shared(&argv, pool, bin) }
     fail(argv.push(obj))
     if !g.collect_links(&argv) { return 1 }
     fail(argv.push("-o"))
@@ -1065,7 +1100,7 @@ test_build(file_path: string, debug: bool, bin: string, dir: string): int {
     if checked(&s, file_path, true) != 0 { return 1 }
     obj: string = pool.join([bin, ".o"])
     if finish(&s, file_path, obj, debug) != 0 { return 1 }
-    rc: int = link_package(&g, obj, bin)
+    rc: int = link_package(&pool, &g, obj, bin, false)
     if rc == 0 && dir.len > 0 { test_record(&pool, bin, debug, &l, &g) }
     return rc
 }

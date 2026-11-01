@@ -1,0 +1,9 @@
+internal: i32 = 2
+
+extern "c" {
+    ace_shared_total: i32 = 0
+}
+
+extern "c" ace_shared(): i32 {
+    return ace_shared_total + internal
+}

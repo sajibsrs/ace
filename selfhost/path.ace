@@ -85,6 +85,15 @@ pub dir(path: string): string {
     return path[..i - 1]
 }
 
+/* The last component of `path` as a view into it: "dir/file.ace" is
+ * "file.ace".
+ */
+pub base(path: string): string {
+    i: usize = path.len
+    for i > 0 && path[i - 1] != '/' { i -= 1 }
+    return path[i..]
+}
+
 /* True only for descendants, with a path-component boundary after `base`. */
 pub beneath(path: string, base: string): bool {
     return path.len > base.len && mem.equal(path[..base.len], base) && path[base.len] == '/'

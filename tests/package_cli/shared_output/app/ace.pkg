@@ -1,0 +1,14 @@
+// `output: shared` emits the lib's dylib from a plain `pkg build`; the
+// dependency's code is inside it and its framework is recorded in it.
+// expect-host: Darwin
+// expect-shared:
+
+name: shared_output
+version: 0.1.0
+ace: 0.1
+type: lib
+root: src/mod.ace
+output: shared
+
+[dependency]
+greeter: 0.1.0

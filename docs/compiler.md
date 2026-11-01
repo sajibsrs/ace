@@ -141,6 +141,9 @@ extra object/archive input, including an existing symlink or hard-link alias.
 `--archive -o NAME.a` emits a static archive of the one object instead of
 linking, for a C consumer ([Static archives](package.md#static-archives)). It
 requires a name ending in `.a`, rejects `-c` and link inputs, and refuses a root
+defining `main`. `--shared -o NAME.dylib` links a shared library instead
+([Shared libraries](package.md#shared-libraries)); it requires a name ending in
+`.dylib`, rejects `-c` and `--archive`, accepts link inputs, and refuses a root
 defining `main`. There is no raw linker escape such as `-Wl,...`; if a future need is proven, one
 will be added explicitly rather than through arbitrary flags.
 

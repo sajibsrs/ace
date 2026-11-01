@@ -47,7 +47,7 @@ static const char* host_target(void) {
 
 static void usage(void) {
     fprintf(stderr, "usage: ace [--debug | --release] [--tokens] [--ast] [--ir] [--report]\n"
-                    "           [--target=TARGET] [-c] [--archive] [-o NAME] <file.ace>\n"
+                    "           [--target=TARGET] [-c] [--archive | --shared] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
@@ -64,6 +64,7 @@ static void usage(void) {
                     "  -o NAME         emit + link via the system cc; NAME ending in\n"
                     "                  .ace compiles that file, naming the output after it\n"
                     "  --archive       with -o NAME.a, emit a static archive instead of linking\n"
+                    "  --shared        with -o NAME.dylib, link a shared library\n"
                     "  <file>.o/.a     extra linker inputs, passed to cc in order\n"
                     "  -L DIR          linker library search path\n"
                     "  -l NAME         linker named library\n"
@@ -72,10 +73,12 @@ static void usage(void) {
                     "  --pkg-check=DIR full semantic check of the ace.pkg package at DIR,\n"
                     "                  with cross-package imports resolved, no codegen\n"
                     "  ace pkg init <exe|lib> [DIR]  create a minimal package skeleton\n"
-                    "  ace pkg build [--debug|--release] [--target=TARGET] [--report] [--archive]\n"
+                    "  ace pkg build [--debug|--release] [--target=TARGET] [--report]\n"
+                    "                [--archive | --shared]\n"
                     "                compile (and, for an exe, link) the package found by\n"
                     "                walking up from the working directory to the nearest ace.pkg;\n"
-                    "                --archive also emits a lib's static archive\n"
+                    "                --archive also emits a lib's static archive, --shared\n"
+                    "                its shared library\n"
                     "  ace pkg CMD --dir=DIR  any pkg command but init, walking up from DIR\n"
                     "  ace pkg run   [--debug|--release] [--target=TARGET] [--report] [-- ARGS...]\n"
                     "                build, then execute the exe (exe-only), passing it ARGS\n"
@@ -190,12 +193,25 @@ static int is_main_func(Node* n) {
     return n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
 }
 
-// An archive is linked into a program that brings its own main.
-static void reject_archive_main(Node* file, Diag* d) {
+// Link a dylib, found through the rpath of whatever loads it.
+static void arg_push_shared(ArgList* cc, const char* out) {
+    const char* slash = strrchr(out, '/');
+    const char* base = slash ? slash + 1 : out;
+    size_t cap = strlen("@rpath/") + strlen(base) + 1;
+    char* install_name = malloc(cap);
+    if (!install_name) exit(1);
+    snprintf(install_name, cap, "@rpath/%s", base);
+    arg_push(cc, "-dynamiclib");
+    arg_push(cc, "-install_name");
+    arg_push(cc, install_name);
+}
+
+// An archive or shared library serves a program that brings its own main.
+static void reject_library_main(Node* file, Diag* d, const char* what) {
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
         if (!is_main_func(n)) continue;
-        fprintf(stderr, "%s:%d:%d: error: an archive may not define main\n", d->path, n->line, n->col);
+        fprintf(stderr, "%s:%d:%d: error: %s may not define main\n", d->path, n->line, n->col, what);
         d->errors++;
     }
 }
@@ -290,7 +306,7 @@ static void obj_path(char* out, size_t cap, const char* src) {
 static void package_usage(void) {
     fprintf(stderr, "usage: ace pkg init <exe|lib> [DIR]\n"
                     "       ace pkg build [--debug|--release] [--target=TARGET]\n"
-                    "                     [--report] [--archive]\n"
+                    "                     [--report] [--archive | --shared]\n"
                     "       ace pkg run   [--debug|--release] [--target=TARGET]\n"
                     "                     [--report] [-- ARGS...]\n"
                     "       ace pkg check\n"
@@ -305,7 +321,8 @@ static void package_usage(void) {
                     "  build  compile (and for an exe, link) the package found by walking\n"
                     "         up from the working directory to the nearest ace.pkg; for a\n"
                     "         lib, --archive or `output: archive` emits build/bin/lib<name>.a\n"
-                    "         and its link inputs, build/bin/lib<name>.link\n"
+                    "         and its link inputs, build/bin/lib<name>.link; --shared or\n"
+                    "         `output: shared` emits build/bin/lib<name>.dylib\n"
                     "  run    build, then execute the exe (exe-only)\n"
                     "  check  full semantic check of the package, no codegen\n"
                     "  test   build and run the files directly in the manifest's test\n"
@@ -605,7 +622,7 @@ static int package_cmd_check(int argc, char** argv) {
 // for an exe, out_bin receives the linked executable's path.
 static int package_build_or_run(int argc, char** argv, int require_exe,
                                 char* out_bin, size_t out_bin_cap) {
-    int mode_seen = 0, show_report = 0, opt_archive = 0;
+    int mode_seen = 0, show_report = 0, opt_archive = 0, opt_shared = 0;
     EmitMode emit_mode = EMIT_RELEASE;
     const char* target = host_target();
     for (int i = 0; i < argc; i++) {
@@ -622,6 +639,8 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
             show_report = 1;
         } else if (strcmp(a, "--archive") == 0) {
             opt_archive = 1;
+        } else if (strcmp(a, "--shared") == 0) {
+            opt_shared = 1;
         } else if (strncmp(a, "--target=", 9) == 0) {
             if (a[9] == 0) cli_error("--target requires a target name");
             target = a + 9;
@@ -630,6 +649,7 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
             return 2;
         }
     }
+    if (opt_archive && opt_shared) cli_error("--archive and --shared are mutually exclusive");
     if (!target_select(target)) return 2;
     const char* dir = find_package_root();
     if (!dir) {
@@ -660,7 +680,14 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
         free(order);
         return 2;
     }
-    int archive = opt_archive || root_package->is_archive;
+    if (opt_shared && root_package->is_exe) {
+        fprintf(stderr, "ace: --shared requires a lib package; '%s' is type 'exe'\n", root_package->name);
+        free(order);
+        return 2;
+    }
+    // A flag replaces the manifest's output for this build.
+    int archive = opt_archive || (root_package->is_archive && !opt_shared);
+    int shared = opt_shared || (root_package->is_shared && !opt_archive);
 
     char build_dir[4096];
     snprintf(build_dir, sizeof build_dir, "%s/build/bin", root_package->dir);
@@ -669,19 +696,20 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
         free(order);
         return 1;
     }
-    if (!root_package->is_exe && !archive) { // lib: checked, build/bin/ ensured, nothing to link
+    if (!root_package->is_exe && !archive && !shared) { // lib: checked, build/bin/ ensured, nothing to link
         free(order);
         return 0;
     }
     char obj[4096], link_file[4096];
     if ((size_t)snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name) >= sizeof obj ||
-        (size_t)snprintf(out_bin, out_bin_cap, archive ? "%s/lib%s.a" : "%s/%s", build_dir, root_package->name) >= out_bin_cap ||
+        (size_t)snprintf(out_bin, out_bin_cap, archive ? "%s/lib%s.a" : shared ? "%s/lib%s.dylib" : "%s/%s", build_dir, root_package->name) >= out_bin_cap ||
         (size_t)snprintf(link_file, sizeof link_file, "%s/lib%s.link", build_dir, root_package->name) >= sizeof link_file) {
         fprintf(stderr, "ace: build path '%s/%s' is too long\n", build_dir, root_package->name);
         free(order);
         return 1;
     }
-    if (archive) reject_archive_main(file, &d);
+    if (archive) reject_library_main(file, &d, "an archive");
+    if (shared) reject_library_main(file, &d, "a shared library");
     if (d.errors > 0 || emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", root_package->root_file, d.errors, d.errors == 1 ? "" : "s");
         free(order);
@@ -705,6 +733,7 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
     } else {
         ArgList cc = {0};
         arg_push(&cc, "cc");
+        if (shared) arg_push_shared(&cc, out_bin);
         arg_push(&cc, obj);
         for (int i = 0; i < nlinkargs; i++) arg_push(&cc, link_args[i]);
         free(link_args);
@@ -1358,7 +1387,7 @@ static int package_cmd_test(int argc, char** argv) {
 int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "test") == 0) return test_main(argc - 2, argv + 2);
-    int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_symbols = 0, check_bodies = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0, opt_archive = 0;
+    int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_symbols = 0, check_bodies = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0, opt_archive = 0, opt_shared = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_RELEASE;
     const char* path = NULL;
@@ -1406,6 +1435,7 @@ int main(int argc, char** argv) {
             package_check_dir = opt_value(&i, argc, argv, "--pkg-check", "a directory");
         else if (strcmp(a, "-c") == 0) opt_c = 1;
         else if (strcmp(a, "--archive") == 0) opt_archive = 1;
+        else if (strcmp(a, "--shared") == 0) opt_shared = 1;
         else if (strcmp(a, "-o") == 0) {
             out_name = opt_value(&i, argc, argv, "-o", "an output name");
             opt_link = 1;
@@ -1486,6 +1516,11 @@ int main(int argc, char** argv) {
         if (opt_c) cli_error("--archive cannot be used with -c");
         if (!out_name || !has_suffix(out_name, ".a")) cli_error("--archive requires -o NAME.a");
         if (link_args.len > 0) cli_error("--archive links nothing, so it takes no link inputs");
+        if (opt_shared) cli_error("--archive and --shared are mutually exclusive");
+    }
+    if (opt_shared) {
+        if (opt_c) cli_error("--shared cannot be used with -c");
+        if (!out_name || !has_suffix(out_name, ".dylib")) cli_error("--shared requires -o NAME.dylib");
     }
 
     uint64_t started = show_report ? monotonic_ns() : 0;
@@ -1564,7 +1599,8 @@ int main(int argc, char** argv) {
                     reject_output_collision(out_name, input, "linked output");
                 }
             }
-            if (opt_archive) reject_archive_main(file, &d);
+            if (opt_archive) reject_library_main(file, &d, "an archive");
+            if (opt_shared) reject_library_main(file, &d, "a shared library");
             if (d.errors > 0) goto done;
             if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) goto done;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;
@@ -1573,6 +1609,7 @@ int main(int argc, char** argv) {
             } else if (opt_link) {
                 ArgList cc = {0};
                 arg_push(&cc, "cc");
+                if (opt_shared) arg_push_shared(&cc, out_name);
                 arg_push(&cc, obj);
                 for (size_t k = 0; k < link_args.len; k++) arg_push(&cc, link_args.items[k]);
                 arg_push(&cc, "-o");

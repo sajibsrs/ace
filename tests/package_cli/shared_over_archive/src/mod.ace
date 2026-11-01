@@ -1,0 +1,3 @@
+extern "c" shared_over_archive_value(): i32 {
+    return 0
+}

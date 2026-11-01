@@ -1,0 +1,3 @@
+extern "c" shared_flag_value(): i32 {
+    return 0
+}

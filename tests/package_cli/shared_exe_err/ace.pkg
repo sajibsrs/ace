@@ -1,0 +1,8 @@
+// expect-build-err: output 'shared' requires type 'lib'
+
+name: shared_exe_err
+version: 0.1.0
+ace: 0.1
+type: exe
+root: src/main.ace
+output: shared

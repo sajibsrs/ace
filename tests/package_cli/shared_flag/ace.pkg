@@ -1,0 +1,8 @@
+// --shared asks for the dylib from a lib that does not declare one.
+// expect-shared: --shared --debug
+
+name: shared_flag
+version: 0.1.0
+ace: 0.1
+type: lib
+root: src/mod.ace

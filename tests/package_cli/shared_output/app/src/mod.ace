@@ -1,0 +1,5 @@
+import greeter
+
+extern "c" shared_output_value(): int {
+    return greeter.greet()
+}

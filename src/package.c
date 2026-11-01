@@ -457,14 +457,15 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         package_err(L, manifest, rm.type_line, "type '%s' must be 'exe' or 'lib'", rm.type);
         ok = 0;
     }
-    int is_archive = 0;
+    int is_archive = 0, is_shared = 0;
     if (rm.output) {
         is_archive = text_is(rm.output, (uint32_t)strlen(rm.output), "archive");
-        if (!is_archive) {
-            package_err(L, manifest, rm.output_line, "output '%s' must be 'archive'", rm.output);
+        is_shared = text_is(rm.output, (uint32_t)strlen(rm.output), "shared");
+        if (!is_archive && !is_shared) {
+            package_err(L, manifest, rm.output_line, "output '%s' must be 'archive' or 'shared'", rm.output);
             ok = 0;
         } else if (is_exe) {
-            package_err(L, manifest, rm.output_line, "output 'archive' requires type 'lib'");
+            package_err(L, manifest, rm.output_line, "output '%s' requires type 'lib'", rm.output);
             ok = 0;
         }
     }
@@ -560,6 +561,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     package->ace_major = amaj; package->ace_minor = amin;
     package->is_exe = is_exe;
     package->is_archive = is_archive;
+    package->is_shared = is_shared;
     package->root_file = root_canon;
     package->test_dir = test_canon;
     package->test_rel = rm.test ? arena_string(rm.test) : NULL;

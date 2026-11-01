@@ -1,0 +1,9 @@
+// A flag replaces the manifest's output for one build.
+// expect-shared: --shared
+
+name: shared_over_archive
+version: 0.1.0
+ace: 0.1
+type: lib
+root: src/mod.ace
+output: archive

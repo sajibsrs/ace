@@ -32,8 +32,8 @@ semantic check with cross-package imports resolved, no codegen — the
 manifest-aware counterpart to plain `ace file.ace`'s default mode. `build`
 resolves the dependency graph and fully checks the root file; for a `lib`
 package that is the entire result, plus ensuring `build/bin/` exists, since
-libraries ship as source; see [Static archives](#static-archives) for a C
-consumer. For an `exe` package, `build` additionally compiles and links into
+libraries ship as source; see [Static archives](#static-archives) and
+[Shared libraries](#shared-libraries) for a C consumer. For an `exe` package, `build` additionally compiles and links into
 `build/bin/<package-name>`, accepting the same `--debug`/`--release`/
 `--target=`/`--report` flags as plain compilation. `run` is
 exe-only — it errors on a `lib` package — and otherwise builds, then
@@ -115,6 +115,34 @@ private to each object. Two Ace archives in one C program each carry their own
 copy of `std` and of any shared dependency, and an `extern "c"` export they
 share collides at link.
 
+## Shared libraries
+
+A `lib` emits a dylib for a C consumer with `output: shared` in its manifest,
+or for one build with `ace pkg build --shared`, which replaces a declared
+`output: archive`. `--archive` replaces `output: shared` the same way, and the
+two flags are mutually exclusive.
+
+The build writes `build/bin/libcodec.dylib`, holding the code of the whole
+graph, `std` included. Only `extern "c"` definitions are exported. The graph's
+[link inputs](#native-link-inputs) go into the link, so the dylib records them
+and no `.link` file is written.
+
+The install name is `@rpath/libcodec.dylib`, so the program using it states
+where to look:
+
+```sh
+cc app.c build/bin/libcodec.dylib -Wl,-rpath,@executable_path/lib -o app
+```
+
+A dylib's root may not define `main`, and `--shared` on an `exe` is an error,
+as is `output: shared`. `extern "c"` signatures carry only C-ABI types, so
+`string`, tuples, and `Error` do not cross; a library reports failure in C
+terms. A debug-build panic aborts the whole process. Nothing runs at load,
+because global initializers are constants. The library and its host each hold
+their own copy of `std` and of any shared dependency, with separate globals;
+allocation goes through the platform allocator, so memory may be released on
+either side. An Ace consumer still depends on the package as source.
+
 ## Native link inputs
 
 A `[link]` section names inputs for an `exe`'s final link, one per line:
@@ -156,6 +184,11 @@ that, two dependencies declaring one file name at different paths are an
 error naming both. The linked file must exist.
 
 ## Design rationale
+
+`--shared` is the spelling of gcc and clang and of Go's `c-shared`, and it names
+what is asked for rather than one platform's file format. The `@rpath` install
+name follows Xcode's default: it leaves placement to the program, where an
+absolute name would pin the library to the directory it was built in.
 
 The request exists both as a manifest field and a flag. The field states that
 a package ships this way, so every plain build does the same thing; the flag

@@ -1,8 +1,8 @@
-// expect-build-err: output 'shared' must be 'archive'
+// expect-build-err: output 'dylib' must be 'archive' or 'shared'
 
 name: archive_value_err
 version: 0.1.0
 ace: 0.1
 type: lib
 root: src/mod.ace
-output: shared
+output: dylib

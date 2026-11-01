@@ -43,6 +43,7 @@ pub Package: struct {
     pub ace_minor: int,
     pub is_exe: bool,
     pub is_archive: bool = false,           // a lib declaring `output: archive`
+    pub is_shared: bool = false,            // a lib declaring `output: shared`
     pub root_file: string,                  // canonical path to the root .ace file
     pub test_dir: string,                   // canonical test directory, "" if absent
     pub test_rel: string,                   // the manifest's spelling of it, "" if absent
@@ -571,15 +572,17 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
         ok = false
     }
     is_archive: bool = false
+    is_shared: bool = false
     if rm.output.line != 0 {
         is_archive = mem.equal(rm.output.value, "archive")
-        if !is_archive {
+        is_shared = mem.equal(rm.output.value, "shared")
+        if !is_archive && !is_shared {
             self.at(manifest, rm.output.line)
-            fmt.printf(sys.stderr, "output '%s' must be 'archive'\n", rm.output.value)
+            fmt.printf(sys.stderr, "output '%s' must be 'archive' or 'shared'\n", rm.output.value)
             ok = false
         } else if is_exe {
             self.at(manifest, rm.output.line)
-            fmt.printf(sys.stderr, "output 'archive' requires type 'lib'\n")
+            fmt.printf(sys.stderr, "output '%s' requires type 'lib'\n", rm.output.value)
             ok = false
         }
     }
@@ -673,7 +676,7 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
     pi: usize = self.pkgs.len
     fail(self.pkgs.push(Package {
         dir = canon, name = rm.name.value, ver_major = vmaj, ver_minor = vmin, ver_patch = vpat,
-        ace_major = amaj, ace_minor = amin, is_exe = is_exe, is_archive = is_archive, root_file = root_canon, test_dir = test_canon, test_rel = rm.test.value,
+        ace_major = amaj, ace_minor = amin, is_exe = is_exe, is_archive = is_archive, is_shared = is_shared, root_file = root_canon, test_dir = test_canon, test_rel = rm.test.value,
         description = rm.description.value, author = rm.author.value,
         license = rm.license.value, repository = rm.repository.value,
         deps = array.Array[Dep] {}, links = array.Array[Link] {},

@@ -2512,6 +2512,43 @@ if [ -d tests/driver ]; then
         printf '%s\n' "$out"
         fail=1
     fi
+    # --shared links a dylib that C loads and whose internals stay private;
+    # each misuse is refused.
+    if ! "$ACE" --debug --shared -o /tmp/ace_driver/libshared.dylib tests/driver/shared.ace; then
+        echo "FAIL: --shared should emit a shared library"
+        fail=1
+    fi
+    if [ "$(nm -gU /tmp/ace_driver/libshared.dylib | awk '{print $3}' | tr '\n' ' ')" != "_ace_shared _ace_shared_total " ]; then
+        echo "FAIL: --shared should export only extern \"c\" definitions"
+        nm -gU /tmp/ace_driver/libshared.dylib
+        fail=1
+    fi
+    if ! otool -D /tmp/ace_driver/libshared.dylib | grep -qFx '@rpath/libshared.dylib'; then
+        echo "FAIL: --shared should set an @rpath install name"
+        fail=1
+    fi
+    printf 'extern int ace_shared_total;\nint ace_shared(void);\nint main(void) { ace_shared_total = 40; return ace_shared(); }\n' \
+        > /tmp/ace_driver/shared_user.c
+    cc /tmp/ace_driver/shared_user.c /tmp/ace_driver/libshared.dylib -Wl,-rpath,/tmp/ace_driver -o /tmp/ace_driver/shared_user
+    /tmp/ace_driver/shared_user
+    got=$?
+    if [ "$got" -ne 42 ]; then
+        echo "FAIL: running against the emitted dylib exited $got, want 42"
+        fail=1
+    fi
+    for bad in "--shared -c" "--shared -o /tmp/ace_driver/no_suffix" \
+               "--archive --shared -o /tmp/ace_driver/both.a"; do
+        if "$ACE" $bad tests/driver/shared.ace 2>/dev/null; then
+            echo "FAIL: '$bad' should be refused"
+            fail=1
+        fi
+    done
+    out=$("$ACE" --shared -o /tmp/ace_driver/main.dylib tests/driver/main_obj.ace 2>&1)
+    if ! printf '%s\n' "$out" | grep -qF "a shared library may not define main"; then
+        echo "FAIL: --shared should refuse a root defining main"
+        printf '%s\n' "$out"
+        fail=1
+    fi
     # Apple frameworks exist on a Darwin host only
     if [ "$(uname -s)" = Darwin ]; then
         out=$("$ACE" --debug -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
@@ -2934,6 +2971,8 @@ if [ -d tests/package_cli ]; then
         build_err=$(sed -n 's/^\/\/ *expect-build-err:[[:space:]]*//p' "$f")
         has_archive=$(sed -n 's/^\/\/ *expect-archive:.*/yes/p' "$f")
         archive_args=$(sed -n 's/^\/\/ *expect-archive:[[:space:]]*//p' "$f")
+        has_shared=$(sed -n 's/^\/\/ *expect-shared:.*/yes/p' "$f")
+        shared_args=$(sed -n 's/^\/\/ *expect-shared:[[:space:]]*//p' "$f")
         run_err=$(sed -n 's/^\/\/ *expect-run-err:[[:space:]]*//p' "$f")
         check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
         pkg_add_args=$(sed -n 's/^\/\/ *pkg-add-args:[[:space:]]*//p' "$f")
@@ -3095,6 +3134,23 @@ EOF
                 fail=1
             fi
         fi
+        if [ -n "$has_shared" ]; then
+            shared="$dir/build/bin/lib$name.dylib"
+            rm -f "$shared" "$dir/build/bin/consumer"
+            if ! (cd "$dir" && "$ACE" pkg build $shared_args) >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL (pkg build should emit a shared library): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            elif ! otool -D "$shared" | grep -qFx "@rpath/lib$name.dylib"; then
+                echo "FAIL: $dir should emit lib$name.dylib with an @rpath install name"
+                fail=1
+            elif ! (cc "$dir/consumer.c" "$shared" "-Wl,-rpath,$dir/build/bin" \
+                       -o "$dir/build/bin/consumer" && "$dir/build/bin/consumer") >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL: $dir consumer did not link and run against the shared library"
+                cat /tmp/ace_test_errs
+                fail=1
+            fi
+        fi
         if [ -n "$run_err" ]; then
             run_out=$(cd "$dir" && "$ACE" pkg run --debug 2>&1)
             got=$?
@@ -3122,7 +3178,7 @@ EOF
         if [ -n "$pkg_add_args" ]; then
             (cd "$dir" && "$ACE" pkg remove "$add_name") >/dev/null 2>&1
         fi
-        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$has_archive" ] && [ -z "$run_err" ] &&
+        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$has_archive" ] && [ -z "$has_shared" ] && [ -z "$run_err" ] &&
            [ -z "$check_ok" ] && [ -z "$add_err" ] && [ -z "$remove_ok" ] && [ -z "$remove_err" ] &&
            [ -z "$list_has" ]; then
             echo "FAIL: $f has no expect-*/pkg-add-args marker comment"

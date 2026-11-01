@@ -1,5 +1,9 @@
 # Tooling
 
+- A `lib` emits a darwin dylib (#21) with `output: shared` or `ace pkg build
+  --shared`, and one source with `ace --shared -o NAME.dylib`: `cc -dynamiclib`
+  links the one object with its `[link]` inputs under an `@rpath` install name.
+  The C driver and selfhost agree; only `extern "c"` symbols are exported.
 - A `lib` emits a static archive (#174) with `output: archive` or `ace pkg
   build --archive`, and one source with `ace --archive -o NAME.a`: `ar` packs
   the one object, and `lib<name>.link` beside it carries the `[link]` inputs.
