@@ -49,7 +49,7 @@ pub Groups: struct {
 pub Groups.init(g: grid.Grid): Groups {
     groups: Groups = Groups {}
     /* Cells still to visit, each packed as y * WIDTH + x. */
-    stack: [grid.CELLS]int = [0 : grid.CELLS]
+    stack: [grid.CELLS]int
 
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {

@@ -1,4 +1,4 @@
-/* Slicing a local initializes the elements the slice covers. */
+/* Slicing an array reads nothing. */
 
 Span: struct { start: usize, end: usize }
 

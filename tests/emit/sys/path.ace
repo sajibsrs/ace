@@ -36,8 +36,8 @@ main(): int {
     target_info: sys.FileInfo, target_err: Error = sys.stat(LINK_PATH)
     if target_err != null || target_info.file_type == sys.FileType.symlink { return 4 }
 
-    plain: [4096]u8 = blank([4096]u8)
-    dotted: [4096]u8 = blank([4096]u8)
+    plain: [4096]u8
+    dotted: [4096]u8
     n: usize, err: Error = sys.canonical(FILE_PATH, plain[0..4096])
     if err != null || n == 0 || plain[0] != '/' { return 5 }
     m: usize, derr: Error = sys.canonical(DOTTED_PATH, dotted[0..4096])
@@ -46,11 +46,11 @@ main(): int {
     _, missing_err: Error = sys.canonical(MISSING_PATH, dotted[0..4096])
     if missing_err == null || missing_err.domain != typeid(sys.CanonicalErr) { return 7 }
 
-    small: [4]u8 = blank([4]u8)
+    small: [4]u8
     _, small_err: Error = sys.canonical(FILE_PATH, small[0..4])
     if small_err != sys.CanonicalErr.capacity { return 8 }
 
-    exe: [4096]u8 = blank([4096]u8)
+    exe: [4096]u8
     e: usize, exe_err: Error = sys.executable(exe[0..4096])
     if exe_err != null || e == 0 { return 9 }
     exe_info: sys.FileInfo, exe_stat_err: Error = sys.lstat(exe[..e])

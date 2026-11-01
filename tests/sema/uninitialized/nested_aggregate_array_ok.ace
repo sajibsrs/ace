@@ -1,4 +1,4 @@
-/* A whole nested aggregate read requires every constant-index subobject. */
+/* A write below an element initializes the whole outer array. */
 
 Box[T]: struct { value: T }
 

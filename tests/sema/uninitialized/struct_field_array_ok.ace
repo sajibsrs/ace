@@ -1,0 +1,9 @@
+/* A field array is untracked too, and Box needs no other field written. */
+
+Box: struct { values: [2]int }
+
+main(): int {
+    box: Box
+    box.values[0] = 1
+    return box.values[1]
+}

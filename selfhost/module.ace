@@ -352,7 +352,7 @@ Loader.assign_prefix(self, canon: string): string {
         for p > 0 && canon[p - 1] != '/' { p -= 1 }
         if p < s - 1 { name = canon[p..s - 1] }
     }
-    storage: [512]u8 = blank([512]u8)
+    storage: [512]u8
     n: int = 0
     for {
         n += 1
@@ -808,7 +808,7 @@ Loader.import_target(self, mi: usize, imp: Node): (string, bool, bool, usize) {
         return target, true, in_package, pkg
     }
     // Bare, aliased, or selective import: a dependency, else the standard library.
-    segs: [64]string = blank([64]string)
+    segs: [64]string
     n: usize = 0
     s: u32 = imp.c
     for s != 0 {
@@ -851,7 +851,7 @@ Loader.relative_target(self, mi: usize, imp: Node, raw: string): (string, bool) 
         return self.pool.join([dir, "/", raw]), true
     }
     // No .ace suffix: a nested-module path from the importer's directory.
-    segs: [64]string = blank([64]string)
+    segs: [64]string
     n: usize = 0
     rest: string = raw
     for {

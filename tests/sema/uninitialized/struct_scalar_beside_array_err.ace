@@ -1,0 +1,11 @@
+/* An array field does not excuse the scalar beside it. */
+
+Box: struct { n: int, values: [2]int }
+
+take(box: Box): int { return box.n }
+
+main(): int {
+    box: Box
+    box.values[0] = 1
+    return take(box)
+}

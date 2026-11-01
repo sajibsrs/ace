@@ -23,7 +23,8 @@ values.
 Locals are mutable by default. `const` is an explicit type modifier and requires
 an initializer. Assignment copies the value. A bare local declaration reserves
 uninitialized stack storage; it does not emit a zero fill. The compiler rejects
-every direct read until the local is definitely initialized.
+every direct read until the local is definitely initialized, except an array,
+which is raw storage.
 
 A global `const` initializer must be a compile-time constant. A
 constructor-shaped cast folds when the argument's family matches the target:
@@ -381,9 +382,8 @@ still follow the unchecked path.
 ## Definite initialization
 
 A local without `= value` is uninitialized storage, not an implicitly zeroed
-value. Whole assignment initializes it. Struct fields and constant array
-indexes can be initialized separately; using the whole aggregate requires all
-of its parts to be initialized.
+value. Whole assignment initializes it. Struct fields can be initialized
+separately; using the whole struct requires all of its parts to be initialized.
 
 ```ace
 Point: struct { x: int, y: int }
@@ -400,30 +400,27 @@ After a branch, an initialization fact survives only if every continuing path
 establishes it. A loop alone cannot establish initialization after the loop,
 because it may execute zero times.
 
-A view of a local is checked once, where it is created. Creating a view
-(`&path`, `array[lo..hi]`, a method call on it) reads nothing and initializes
-a constant path, or the elements between a slice's constant bounds; you
-promise the storage is written before it is read. A buffer filled by dynamic
-index is therefore filled through one full-range view:
+An array, whether a local or a struct field, is raw storage and is never
+tracked, like memory from `mem.alloc`. It can be read from its declaration, and
+an element you did not write reads as garbage. When you want zeros, write them:
+`table: [256]u8 = [0 : 256]` or `blank([256]u8)`.
 
 ```ace
-fill_prefix(bytes: []u8): usize {
-    bytes[0] = u8(97)
-    return 1
-}
-
-main(): int {
-    storage: [16]u8
-    bytes: []u8 = storage[0..16] // storage is now initialized
-    count: usize = fill_prefix(bytes)
-    return int(string(bytes[0..count]).len)
-}
+w: [64]u32
+for i: usize in 0..64 { w[i] = 0 }
+x: u32 = w[3]
 ```
 
-When every element is written by a loop, start from a zeroed array
-(`table: [256]u8 = [0 : 256]`): the fill is one `memset`, small beside the loop
-itself. Heap storage from `mem.alloc` is uninitialized and needs no fill.
+### Design rationale
 
+Sema cannot prove cheaply that a loop covers every element, and a zero fill by
+default would be hidden work, paid even by a buffer a callee is about to
+overwrite. So an array promises nothing and costs nothing, as in C, and the
+rule stays true for everything it does track. Scalars and struct fields are
+proven; stack and heap buffers are trusted alike.
+
+Taking a view of a local (`&path`, a method call on it) reads nothing and
+initializes that path; you promise the storage is written before it is read.
 Nothing is tracked through a view afterwards: pointer aliases, inline
 assembly, and extern code are programmer-trusted boundaries with no hidden
 alias analysis.
@@ -637,8 +634,7 @@ An index is exactly `E`: an integer or another enum is a type error. No bounds
 check is emitted in either mode, because a debug build already checks every
 conversion into `E`. `.len` is the member count; `for c: Color, s: string in
 NAME` binds the index as `Color`; a slice `NAME[Color.green..]` takes `E` bounds
-and yields `[]string`. Writing every member by its constant index initializes
-the array, as for constant integer indexes.
+and yields `[]string`.
 
 ## Compile-time static lookup maps
 

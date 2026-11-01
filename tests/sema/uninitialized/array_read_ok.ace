@@ -1,0 +1,6 @@
+/* An array can be read from its declaration. */
+
+main(): int {
+    w: [4]int
+    return w[0]
+}

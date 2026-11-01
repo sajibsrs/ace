@@ -97,7 +97,7 @@ Tree.func_name(self, i: u32): string {
     start: usize = self.used
     self.pool[self.used] = 'f'
     self.used += 1
-    digits: [10]u8 = blank([10]u8)
+    digits: [10]u8
     n: u32 = i
     count: usize = 0
     for {
@@ -140,7 +140,7 @@ Tree.expr(self, depth: u32, locals: u32, f: u32): u32 {
 
 Tree.block(self, depth: u32, locals: u32, f: u32): u32 {
     count: u32 = u32(2 + self.next(4))
-    ids: [8]u32 = blank([8]u32)
+    ids: [8]u32
     scope: u32 = locals
     for i: u32 in 0..count {
         pick: u64 = self.next(10)

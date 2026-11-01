@@ -913,13 +913,6 @@ if [ "$identity_mismatches" -ne 2 ]; then
     echo "FAIL: expected distinct and generic aggregate identity diagnostics"
     fail=1
 fi
-nested_uninitialized=$("$ACE" \
-    tests/sema/uninitialized/nested_aggregate_array_err.ace 2>&1)
-if ! printf '%s\n' "$nested_uninitialized" | grep -qF \
-    "'values' was not fully initialized before use"; then
-    echo "FAIL: missing nested aggregate initialization diagnostic"
-    fail=1
-fi
 aggregate_bounds=$("$ACE" tests/sema/sequences/aggregate_bounds_err.ace 2>&1)
 if ! printf '%s\n' "$aggregate_bounds" | grep -qF \
     "slice upper bound 3 exceeds source length 2"; then

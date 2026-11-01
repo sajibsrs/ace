@@ -1,4 +1,4 @@
-/* A slice initializes only the elements it covers: spans[3] stays uninitialized. */
+/* An array is never tracked: spans[3] compiles and reads garbage. */
 
 Span: struct { start: usize, end: usize }
 

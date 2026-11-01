@@ -270,7 +270,7 @@ Sim.compile_unused(self) {
     t: *Tables = &self.t[0]
     for n: int in 0 .. self.groups.count { t.bad[n] = 0 }
     seen: [grid.HEIGHT][grid.WIDTH]bool = [[false : grid.WIDTH] : grid.HEIGHT]
-    stack: [grid.CELLS]int = [0 : grid.CELLS]
+    stack: [grid.CELLS]int
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             if !is_pin(self.g.get(x, y)) || seen[y][x] { continue }
@@ -333,7 +333,7 @@ Sim.compile_pin(self, x: int, y: int) {
             }
         }
     }
-    ids: [4]int = [0 : 4]
+    ids: [4]int
     count: int = 0
     for d: int in 0 .. 4 {
         nx: int = x + DX[d]

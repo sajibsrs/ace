@@ -26,7 +26,7 @@ Follow `spec/` for exact rules; do not propose or assume away these decisions:
   it); a receiver's reach the caller. `noalias` states non-overlap.
 - Every type has an all-bits-zero representation. Zero pointers and handles are
   `null`; there is no optional type operator. Globals are zeroed; locals require
-  definite initialization.
+  definite initialization, except arrays, which are raw storage; zeros are explicit.
 - Composition and explicit contract values replace inheritance.
 - Declarations use `name: type`; functions are keywordless with trailing
   returns; function values use signature types.

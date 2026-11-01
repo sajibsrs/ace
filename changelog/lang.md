@@ -1,5 +1,10 @@
 # Language
 
+- Definite initialization no longer tracks arrays, local or field: an array is
+  raw storage, readable from its declaration, as heap memory is, and zeros are
+  explicit. `init_state_full` counts an array as full and `init_path` stops at
+  one. C and selfhost.
+
 - `int` and `uint` are distinct types on every target, no longer aliases of
   `i64` and `u64`: casts cross between them and overloads keep them apart
   (`P_INT`, `P_UINT`). `Map`, `atomic`, `fmt.print`, and `printf` keep

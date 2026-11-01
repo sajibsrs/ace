@@ -182,7 +182,7 @@ uint_component(s: string): (int, bool) {
 
 /* Exactly "major.minor.patch": three nonnegative integers, two dots. */
 parse_version(s: string): (int, int, int, bool) {
-    parts: [4]string = blank([4]string)
+    parts: [4]string
     n: usize, fit: bool = str.split(s, '.', parts[0..4])
     if !fit || n != 3 { return 0, 0, 0, false }
     a: int, oka: bool = uint_component(parts[0])
@@ -193,7 +193,7 @@ parse_version(s: string): (int, int, int, bool) {
 
 /* Exactly "major.minor": two nonnegative integers, one dot. */
 parse_ace_version(s: string): (int, int, bool) {
-    parts: [3]string = blank([3]string)
+    parts: [3]string
     n: usize, fit: bool = str.split(s, '.', parts[0..3])
     if !fit || n != 2 { return 0, 0, false }
     a: int, oka: bool = uint_component(parts[0])
@@ -292,7 +292,7 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
     ok: bool = true
     section: int = 0
     dep_first: usize = 0                    // the current section's first entry
-    seen: [32]string = blank([32]string)    // headers so far, as "kind:qualifier"
+    seen: [32]string    // headers so far, as "kind:qualifier"
     nseen: usize = 0
     rest: string = src
     for rest.len > 0 {

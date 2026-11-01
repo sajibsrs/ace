@@ -297,8 +297,8 @@ Canvas.shapes(self, r: Renderer, data: []f32, at: usize, ox: f32, oy: f32, unit:
     inner: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
     outer: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
     /* The corner neighbors a fringe follows, and the bridge edges it skips. */
-    prev: [SHAPE_MAX]usize = [0 : SHAPE_MAX]
-    next: [SHAPE_MAX]usize = [0 : SHAPE_MAX]
+    prev: [SHAPE_MAX]usize
+    next: [SHAPE_MAX]usize
     bridge: [SHAPE_MAX]bool = [false : SHAPE_MAX]
     i: usize = at
     for data[i] != -9.0 {

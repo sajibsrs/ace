@@ -694,7 +694,7 @@ pub allocate(a: *Ra, fn: Func, t: RaTarget) {
             }
         }
     }
-    owner: [64]int = blank([64]int)
+    owner: [64]int
     for r: usize in 0..64 { owner[r] = -1 }
     active: array.Array[int] = array.Array[int] {}
     defer active.wipe()
@@ -728,7 +728,7 @@ pub allocate(a: *Ra, fn: Func, t: RaTarget) {
             caller = t.caller_fp
             callee = t.callee_fp
         }
-        want: [8]int = blank([8]int) // preferred registers, best first
+        want: [8]int // preferred registers, best first
         nwant: usize = 0
         if x.op == ir.IR_PHI {
             for q: u32 in 0..x.nargs {

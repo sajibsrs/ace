@@ -79,7 +79,7 @@ run(name: string, s: *sim.Sim) {
     per: u64 = (time.awake() - t0) / 2000
     if per == 0 { per = 1 }
     n: int = int(TARGET / per)
-    rates: [7]u64 = [0 : 7]
+    rates: [7]u64
     for r: int in 0 .. REPS {
         t: u64 = time.awake()
         for i: int in 0 .. n { s.tick() }

@@ -1,0 +1,15 @@
+/* An array filled by a loop reads back; a partial fill compiles. */
+
+// expect-exit: 0
+
+main(): int {
+    w: [64]u32
+    for i: usize in 0..64 { w[i] = u32(i) }
+    sum: u32 = 0
+    for i: usize in 0..64 { sum += w[i] }
+    if sum != 2016 { return 1 }
+
+    partial: [8]int
+    partial[0] = 42
+    return partial[0] - 42
+}

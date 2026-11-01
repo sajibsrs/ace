@@ -421,7 +421,7 @@ Sema.args_name(self, args: u32, nargs: u32): string {
 
 /* `v` in decimal, pool-owned. */
 Sema.num(self, v: u32): string {
-    digits: [10]u8 = blank([10]u8)
+    digits: [10]u8
     buf: fmt.Buffer = fmt.Buffer.init(digits[..])
     buf.printf("%u", uint(v))
     return self.pool.join([buf.text()])
@@ -877,14 +877,14 @@ Sema.prim_by_name(const self, name: string): u32 {
 
 /* `v` in decimal, pool-owned. */
 Sema.num64(self, v: i64): string {
-    digits: [24]u8 = blank([24]u8)
+    digits: [24]u8
     buf: fmt.Buffer = fmt.Buffer.init(digits[..])
     buf.printf("%d", int(v))
     return self.pool.join([buf.text()])
 }
 
 Sema.num64(self, v: u64): string {
-    digits: [24]u8 = blank([24]u8)
+    digits: [24]u8
     buf: fmt.Buffer = fmt.Buffer.init(digits[..])
     buf.printf("%u", v)
     return self.pool.join([buf.text()])
@@ -3799,7 +3799,7 @@ Sema.check_pointer_cast(self, call: u32): u32 {
     }
     address: u64, known: bool = self.usize_const(arg)
     if known && address != 0 && address % u64(self.ty(base).align) != 0 {
-        digits: [24]u8 = blank([24]u8)
+        digits: [24]u8
         buf: fmt.Buffer = fmt.Buffer.init(digits[..])
         buf.printf("0x%x", uint(address))
         self.err(arg, ["address ", buf.text(), " is not aligned for ", self.type_name(base)])
@@ -7920,8 +7920,7 @@ pub Sema.check_bodies(self) {
 // --- definite initialization ----------------------------------------------------
 
 /* A storage state and, as a part, its key and next sibling: the initialized
- * struct fields or constant array elements under `parts`, or all of it
- * `full`. States are indexes in InitCk.states; 0 is none.
+ * struct fields under `parts`, or all of it `full`. States are indexes in InitCk.states; 0 is none.
  */
 InitState: struct {
     key: u64 = 0,
@@ -7981,8 +7980,7 @@ InitExitPath: struct {
 InitPath: struct {
     root: u32 = 0,
     n: u32 = 0,
-    dynamic_index: bool = false,
-    overlay: bool = false,              // reached an overlapping struct: tracked whole from there
+    overlay: bool = false,              // reached an overlapping struct or an array: tracked whole from there
     keys: [64]u64,
     types: [65]u32,
 }
@@ -8022,7 +8020,7 @@ Sema.init_aggregate(self, t: u32): bool {
     s: u32 = self.init_shape(t)
     if s == 0 { return false }
     k: TypeKind = self.ty(s).kind
-    return k == TypeKind.struct || k == TypeKind.array || k == TypeKind.tuple
+    return k == TypeKind.struct || k == TypeKind.tuple
 }
 
 Sema.init_st(self, s: u32): *InitState { return &self.ik.states.view()[usize(s)] }
@@ -8043,40 +8041,31 @@ Sema.init_part(self, s: u32, key: u64, create: bool): u32 {
     return p
 }
 
-Sema.init_part_count(self, t: u32): u64 {
-    s: u32 = self.init_shape(t)
-    if s == 0 { return 0 }
-    x: SType = self.ty(s)
-    if x.kind == TypeKind.struct || x.kind == TypeKind.tuple { return u64(x.nfields) }
-    if x.kind == TypeKind.array { return x.count }
-    return 0
-}
-
 Sema.init_part_type(self, t: u32, key: u64): u32 {
     s: u32 = self.init_shape(t)
     if s == 0 { return 0 }
     x: SType = self.ty(s)
     if (x.kind == TypeKind.struct || x.kind == TypeKind.tuple) && key < u64(x.nfields) { return self.field(x, u32(key)).ty }
-    if x.kind == TypeKind.array && key < x.count { return x.base }
     return 0
 }
 
-/* Whether state `s` of type `t` is full, folding complete parts into it. */
+/* Whether state `s` of type `t` is full, folding complete parts into it. An
+ * array is raw storage, never tracked: it counts as full from its declaration.
+ */
 Sema.init_state_full(self, s: u32, t: u32): bool {
     if self.init_st(s).full { return true }
+    shape: u32 = self.init_shape(t)
+    if shape != 0 && self.ty(shape).kind == TypeKind.array { return true }
     if !self.init_aggregate(t) { return false }
-    count: u64 = self.init_part_count(t)
-    have: u64 = 0
-    for p: u32 = self.init_st(s).parts; p != 0; p = self.init_st(p).next {
-        pt: u32 = self.init_part_type(t, self.init_st(p).key)
-        if pt != 0 && self.init_state_full(p, pt) { have += 1 }
+    x: SType = self.ty(shape)
+    for i: u32 in 0..x.nfields {
+        p: u32 = self.init_part(s, u64(i), false)
+        if p == 0 { p = self.init_new(InitState {}) }
+        if !self.init_state_full(p, self.field(x, i).ty) { return false }
     }
-    if have == count {
-        self.init_st(s).full = true
-        self.init_st(s).parts = 0
-        return true
-    }
-    return false
+    self.init_st(s).full = true
+    self.init_st(s).parts = 0
+    return true
 }
 
 /* A deep copy of state `s`, keyed `key`. */
@@ -8227,13 +8216,6 @@ Sema.init_field_index(self, t: u32, e: u32): i64 {
     return -1
 }
 
-Sema.init_const_index(self, e: u32): (u64, bool) {
-    if self.node(e).kind == Kind.selector { return self.static_key_int(e) } // [E]T: a member
-    v: i64, ok: bool = self.ut_const(e)
-    if !ok || v < 0 { return 0, false }
-    return u64(v), true
-}
-
 /* Fills `p` with expression `e`'s direct storage path; false for none. */
 Sema.init_path(self, e: u32, p: *InitPath): bool {
     if e == 0 || p.n >= 64 { return false }
@@ -8265,14 +8247,7 @@ Sema.init_path(self, e: u32, p: *InitPath): bool {
         if p.overlay { return true }
         bt: u32 = self.init_shape(p.types[p.n])
         if bt == 0 || self.ty(bt).kind != TypeKind.array { return false }
-        ix: u64, ok: bool = self.init_const_index(n.b)
-        if !ok || ix >= self.ty(bt).count {
-            p.dynamic_index = true
-            return true
-        }
-        p.keys[p.n] = ix
-        p.types[p.n + 1] = self.ty(bt).base
-        p.n += 1
+        p.overlay = true
         return true
     }
     return false
@@ -8305,13 +8280,10 @@ Sema.init_require_path(self, e: u32): bool {
     if !self.init_path(e, &p) { return false }
     v: u32 = self.init_var(p.root, false)
     if v == 0 { return true }
-    if p.dynamic_index {
-        if !self.init_state_full(self.init_v(v).state, self.sym(p.root).ty) { self.init_diag(e, p, self.sym(p.root).ty) }
-        return true
-    }
     s: u32 = self.init_path_state(v, p, p.n, false)
+    if s == 0 { s = self.init_new(InitState {}) }
     want: u32 = p.types[p.n]
-    if s == 0 || !self.init_state_full(s, want) { self.init_diag(e, p, want) }
+    if !self.init_state_full(s, want) { self.init_diag(e, p, want) }
     return true
 }
 
@@ -8330,41 +8302,8 @@ Sema.init_mark(self, p: InitPath) {
 
 Sema.init_mark_path(self, e: u32) {
     p: InitPath = blank(InitPath)
-    if !self.init_path(e, &p) || p.dynamic_index { return }
+    if !self.init_path(e, &p) { return }
     self.init_mark(p)
-}
-
-/* A view of a local array reads nothing and initializes the elements it
- * certainly covers: those between constant bounds.
- */
-Sema.init_array_view(self, e: u32) {
-    n: Node = self.node(e)
-    bt: u32 = self.init_shape(self.node_ty(n.a))
-    lo: u64 = 0
-    hi: u64 = self.ty(bt).count
-    if n.b != 0 {
-        v: u64, ok: bool = self.init_const_index(n.b)
-        if !ok { return }
-        lo = v
-    }
-    if n.c != 0 {
-        v: u64, ok: bool = self.init_const_index(n.c)
-        if !ok { return }
-        hi = v
-    }
-    p: InitPath = blank(InitPath)
-    if !self.init_path(n.a, &p) || p.dynamic_index { return }
-    if p.overlay || (lo == 0 && hi == self.ty(bt).count) {
-        self.init_mark(p)
-        return
-    }
-    if p.n >= 64 || hi > self.ty(bt).count { return }
-    p.types[p.n + 1] = self.ty(bt).base
-    p.n += 1
-    for i: u64 = lo; i < hi; i += 1 {
-        p.keys[p.n - 1] = i
-        self.init_mark(p)
-    }
 }
 
 /* What computing place `e`'s address reads. */
@@ -8428,7 +8367,6 @@ Sema.init_expr(self, e: u32) {
                 self.init_expr(n.a)
             } else {
                 self.init_addr_parts(n.a)
-                self.init_array_view(e)
             }
         }
         Kind.unary {

@@ -74,7 +74,7 @@ work(slot: *Slot) {
 main(): int {
     hits = 1000
     seed = 1
-    slots: [4]Slot = blank([4]Slot)
+    slots: [4]Slot
     threads: [4]thread.Thread = [thread.Thread {} : 4]
     for i: int in 0 .. 4 {
         slots[i] = Slot { id = u64(i + 1), main_mark = &marks[i], result = 0 }

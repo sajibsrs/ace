@@ -1,6 +1,6 @@
 #!/bin/sh
 # Differential check of definite initialization. Generates random functions
-# that mix partial struct and array writes with every branch form (if/else if/
+# that mix partial struct writes with every branch form (if/else if/
 # else, switch with and without default, loops, labeled blocks, break label,
 # early return) and requires two compilers to report byte-identical
 # diagnostics. Run a change against a build of HEAD:
@@ -109,12 +109,11 @@ function stmt(depth, labels, pad,   r, p, kind, name, i, n, open) {
 
 BEGIN {
     srand(seed * 1000003 + n)
-    nwrites = split("x = c|y = c + 1|p.a = c|p.b = 2|p = P{a = 1, b = 2}|arr[0] = 1|arr[1] = c|arr[2] = 3|arr = [0 : 3]|q.p.a = 1|q.p = P{a = 1, b = c}|q.n = 4", writes, "|")
-    nreads = split("sink = x|sink = y|sink = p.a|sink = p.b|sink = arr[1]|sink = p.a + p.b|sink = q.p.a|sink = q.n|take(p)|take_arr(arr)|take_q(q)", reads, "|")
+    nwrites = split("x = c|y = c + 1|p.a = c|p.b = 2|p = P{a = 1, b = 2}|q.p.a = 1|q.p = P{a = 1, b = c}|q.n = 4", writes, "|")
+    nreads = split("sink = x|sink = y|sink = p.a|sink = p.b|sink = p.a + p.b|sink = q.p.a|sink = q.n|take(p)|take_q(q)", reads, "|")
     print "P: struct { a: int, b: int }\n"
     print "Q: struct { p: P, n: int }\n"
     print "take(p: P) {}\n"
-    print "take_arr(a: [3]int) {}\n"
     print "take_q(q: Q) {}\n"
     print "f(c: int): int {"
     print "    sink: int = 0"
@@ -122,7 +121,6 @@ BEGIN {
     print "    y: int"
     print "    p: P"
     print "    q: Q"
-    print "    arr: [3]int"
     block(4, "", 1)
     print "    return sink"
     print "}\n"

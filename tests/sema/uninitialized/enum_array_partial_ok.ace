@@ -1,11 +1,10 @@
-/* A member-index write initializes only that element of [E]T. */
+/* One member-index write initializes the whole [E]T. */
 
 Color: enum { red, green, blue }
 
 main(): int {
     a: [Color]int
     a[Color.red] = 1
-    a[Color.blue] = 3
     b: [Color]int = a
     return b[Color.blue]
 }

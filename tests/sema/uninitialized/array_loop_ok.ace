@@ -1,0 +1,20 @@
+/* A loop body that writes an array initializes it after the loop. */
+
+main(): int {
+    w: [64]u32
+    for i: usize in 0..64 { w[i] = 0 }
+    x: u32 = w[3]
+
+    grid: [2][2]int
+    for i: usize in 0..2 {
+        for j: usize in 0..2 { grid[i][j] = 1 }
+    }
+
+    counted: [4]int
+    for i: usize = 0; i < 4; i += 1 { counted[i] = 2 }
+
+    both: [2]int
+    n: usize = 1
+    if n > 0 { both[n] = 1 } else { both[0] = 2 }
+    return int(x) + grid[1][1] + counted[3] + both[0]
+}

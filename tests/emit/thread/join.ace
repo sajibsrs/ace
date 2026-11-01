@@ -20,7 +20,7 @@ work(slot: *Slot) {
 main(): int {
     gate: u32 = 0
     counter: u64 = 0
-    slots: [4]Slot = blank([4]Slot)
+    slots: [4]Slot
     threads: [4]thread.Thread = [thread.Thread {} : 4]
     for i: int in 0 .. 4 {
         slots[i] = Slot { gate = &gate, counter = &counter, id = u64(i + 1), done = 0 }

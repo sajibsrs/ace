@@ -6530,7 +6530,7 @@ typedef struct InitExit InitExit;
 
 struct InitState {
     uint8_t full;
-    InitPart* parts; // initialized struct fields / constant array elements
+    InitPart* parts; // initialized struct fields
 };
 
 struct InitPart {
@@ -6591,8 +6591,7 @@ typedef struct {
     uint64_t key[64];
     SType* type[65];
     int n;
-    int dynamic_index;
-    int overlay; // reached an overlapping struct: tracked whole from there
+    int overlay; // reached an overlapping struct or an array: tracked whole from there
 } InitPath;
 
 static SType* init_shape(SType* t) {
@@ -6602,7 +6601,7 @@ static SType* init_shape(SType* t) {
 
 static int init_aggregate(SType* t) {
     t = init_shape(t);
-    return t && (t->kind == SK_STRUCT || t->kind == SK_ARRAY || t->kind == SK_TUPLE);
+    return t && (t->kind == SK_STRUCT || t->kind == SK_TUPLE);
 }
 
 static InitPart* init_part(InitState* s, uint64_t key, int create) {
@@ -6616,38 +6615,27 @@ static InitPart* init_part(InitState* s, uint64_t key, int create) {
     return p;
 }
 
-static int init_state_full(InitState* s, SType* t);
-
-static uint64_t init_part_count(SType* t) {
-    t = init_shape(t);
-    if (!t) return 0;
-    if (t->kind == SK_STRUCT || t->kind == SK_TUPLE) return (uint64_t)t->nfields;
-    if (t->kind == SK_ARRAY) return t->count;
-    return 0;
-}
-
 static SType* init_part_type(SType* t, uint64_t key) {
     t = init_shape(t);
     if (!t) return NULL;
     if ((t->kind == SK_STRUCT || t->kind == SK_TUPLE) && key < (uint64_t)t->nfields) return t->fields[key].t;
-    if (t->kind == SK_ARRAY && key < t->count) return t->base;
     return NULL;
 }
 
+// An array is raw storage, never tracked: it counts as full from its declaration.
 static int init_state_full(InitState* s, SType* t) {
     if (s->full) return 1;
+    t = init_shape(t);
+    if (t && t->kind == SK_ARRAY) return 1;
     if (!init_aggregate(t)) return 0;
-    uint64_t count = init_part_count(t), have = 0;
-    for (InitPart* p = s->parts; p; p = p->next) {
-        SType* pt = init_part_type(t, p->key);
-        if (pt && init_state_full(&p->state, pt)) have++;
+    for (int i = 0; i < t->nfields; i++) {
+        InitPart* p = init_part(s, (uint64_t)i, 0);
+        InitState none = {0};
+        if (!init_state_full(p ? &p->state : &none, t->fields[i].t)) return 0;
     }
-    if (have == count) {
-        s->full = 1;
-        s->parts = NULL;
-        return 1;
-    }
-    return 0;
+    s->full = 1;
+    s->parts = NULL;
+    return 1;
 }
 
 static InitState init_clone(InitState* s) {
@@ -6785,14 +6773,6 @@ static int init_field_index(SType* t, Node* e) {
     return -1;
 }
 
-static int init_const_index(Node* e, uint64_t* out) {
-    int64_t v;
-    if (e->kind == N_FIELD_E) return static_key_int(e, out); // [E]T: a member
-    if (!ut_const(e, &v) || v < 0) return 0;
-    *out = (uint64_t)v;
-    return 1;
-}
-
 static int init_path(Node* e, InitPath* p) {
     if (!e || p->n >= 64) return 0;
     if (e->kind == N_IDENT) {
@@ -6822,14 +6802,7 @@ static int init_path(Node* e, InitPath* p) {
         if (p->overlay) return 1;
         SType* bt = init_shape(p->type[p->n]);
         if (!bt || bt->kind != SK_ARRAY) return 0;
-        uint64_t ix;
-        if (!init_const_index(e->b, &ix) || ix >= bt->count) {
-            p->dynamic_index = 1;
-            return 1;
-        }
-        p->key[p->n] = ix;
-        p->type[p->n + 1] = bt->base;
-        p->n++;
+        p->overlay = 1;
         return 1;
     }
     return 0;
@@ -6863,13 +6836,10 @@ static int init_require_path(InitCk* k, Node* e) {
     if (!init_path(e, &p)) return 0;
     InitVar* v = init_var(k, p.root, 0);
     if (!v) return 1;
-    if (p.dynamic_index) {
-        if (!init_state_full(&v->state, p.root->type)) init_diag(k, e, &p, p.root->type);
-        return 1;
-    }
     InitState* s = init_path_state(v, &p, 0);
+    InitState none = {0};
     SType* want = p.type[p.n];
-    if (!s || !init_state_full(s, want)) init_diag(k, e, &p, want);
+    if (!init_state_full(s ? s : &none, want)) init_diag(k, e, &p, want);
     return 1;
 }
 
@@ -6890,30 +6860,8 @@ static void init_mark(InitCk* k, InitPath* p) {
 
 static void init_mark_path(InitCk* k, Node* e) {
     InitPath p = {0};
-    if (!init_path(e, &p) || p.dynamic_index) return;
+    if (!init_path(e, &p)) return;
     init_mark(k, &p);
-}
-
-// A view of a local array reads nothing and initializes the elements it
-// certainly covers: those between constant bounds.
-static void init_array_view(InitCk* k, Node* e) {
-    SType* bt = init_shape(node_ty(e->a));
-    uint64_t lo = 0, hi = bt->count;
-    if (e->b && !init_const_index(e->b, &lo)) return;
-    if (e->c && !init_const_index(e->c, &hi)) return;
-    InitPath p = {0};
-    if (!init_path(e->a, &p) || p.dynamic_index) return;
-    if (p.overlay || (lo == 0 && hi == bt->count)) {
-        init_mark(k, &p);
-        return;
-    }
-    if (p.n >= 64 || hi > bt->count) return;
-    p.type[p.n + 1] = bt->base;
-    p.n++;
-    for (uint64_t i = lo; i < hi; i++) {
-        p.key[p.n - 1] = i;
-        init_mark(k, &p);
-    }
 }
 
 static void init_expr(InitCk* k, Node* e);
@@ -6982,7 +6930,6 @@ static void init_expr(InitCk* k, Node* e) {
             init_expr(k, e->a);
         } else {
             init_addr_parts(k, e->a);
-            init_array_view(k, e);
         }
         return;
     }

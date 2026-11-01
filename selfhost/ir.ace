@@ -756,8 +756,8 @@ vector_ok(fn: Func, id: int): bool {
 
 /* Structural invariants; false after reporting the first violation. */
 pub verify(s: sema.Sema, fn: Func): bool {
-    b1: [24]u8 = blank([24]u8)
-    b2: [24]u8 = blank([24]u8)
+    b1: [24]u8
+    b2: [24]u8
     if fn.blocks.len == 0 { return bad(s, fn, ["no blocks"]) }
     if fn.block(0).preds.len > 0 { return bad(s, fn, ["entry block b0 has ", num(&b1, int(fn.block(0).preds.len)), " predecessors"]) }
     pos: array.Array[int] = array.Array[int] {} // index within its block
@@ -850,7 +850,7 @@ print_sym(out: *Out, s: sema.Sema, sym: u32) {
  * form, as a float stays visibly one.
  */
 print_float(out: *Out, t: u8, imm: u64) {
-    buf: [48]u8 = blank([48]u8)
+    buf: [48]u8
     n: usize = 0
     if t == IT_F32 {
         n, _ = str.format(buf[..], bitcast(f32, u32(imm)))
@@ -863,7 +863,7 @@ print_float(out: *Out, t: u8, imm: u64) {
         return
     }
     // the digits and the decimal exponent of the first
-    digits: [24]u8 = blank([24]u8)
+    digits: [24]u8
     nd: int = 0
     point: int = 0
     seen_point: bool = false
