@@ -92,8 +92,9 @@ output: archive
 
 The build writes two files to `build/bin/`:
 
-- `libcodec.a`: one object holding the code of the whole graph, `std` included.
-  Only `extern "c"` definitions are global symbols; everything else is local.
+- `libcodec.a`: one object holding what the `extern "c"` definitions and
+  C-exported globals reach, across the whole graph, `std` included. Only
+  `extern "c"` definitions are global symbols; everything else is local.
 - `libcodec.link`: the graph's [link inputs](#native-link-inputs), one linker
   argument per line in link order, with `-framework` and its name on separate
   lines. It is empty when there are none, so a consumer can always read it.
@@ -109,11 +110,12 @@ That form splits on spaces; a build system that may see a path with spaces
 reads the file line by line. The same input rules apply as for an `exe`,
 including overrides and conflicts. `--archive` on an `exe` is an error, as is
 `output: archive`, and an archive's root may not define `main`: the program
-linking it brings its own. A dependency's `output` has no effect. An Ace
+linking it brings its own. Its graph must define an `extern "c"` function or
+C-exported global, since it would otherwise be empty. A dependency's `output` has no effect. An Ace
 consumer still depends on the package as source, since mangled Ace symbols are
 private to each object. Two Ace archives in one C program each carry their own
-copy of `std` and of any shared dependency, and an `extern "c"` export they
-share collides at link.
+copy of what they reach of `std` and of any shared dependency, and an
+`extern "c"` export they share collides at link.
 
 ## Shared libraries
 
@@ -134,13 +136,14 @@ where to look:
 cc app.c build/bin/libcodec.dylib -Wl,-rpath,@executable_path/lib -o app
 ```
 
-A dylib's root may not define `main`, and `--shared` on an `exe` is an error,
-as is `output: shared`. `extern "c"` signatures carry only C-ABI types, so
+A dylib's root may not define `main`, its graph must define an `extern "c"`
+function or C-exported global, and `--shared` on an `exe` is an error, as is
+`output: shared`. `extern "c"` signatures carry only C-ABI types, so
 `string`, tuples, and `Error` do not cross; a library reports failure in C
 terms. A debug-build panic aborts the whole process. Nothing runs at load,
 because global initializers are constants. The library and its host each hold
-their own copy of `std` and of any shared dependency, with separate globals;
-allocation goes through the platform allocator, so memory may be released on
+their own copy of what they reach of `std` and of any shared dependency, with
+separate globals; allocation goes through the platform allocator, so memory may be released on
 either side. An Ace consumer still depends on the package as source.
 
 ## Native link inputs
@@ -197,6 +200,13 @@ beside the archive, like a `pkg-config` `.pc` file, keeps the exact-path rule:
 Mach-O's `LC_LINKER_OPTION` autolinking (used by Clang and Swift) carries only
 `-l` and `-framework`, and merging inputs into the archive cannot take a
 dylib or framework.
+
+An archive or dylib is a closed set whose only entries are its C exports, so
+those replace `main` as the reachability roots, as Go's `c-archive` and
+`c-shared` trim to `//export` functions. Ace trims in the compiler because the
+linker cannot: its objects do not set `MH_SUBSECTIONS_VIA_SYMBOLS`, so
+`-dead_strip` keeps the whole object. Plain `-c` keeps everything, since its
+object may be used in other ways.
 
 Why the rules in `spec/modules-packages.md` are shaped as they are.
 

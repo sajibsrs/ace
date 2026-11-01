@@ -1,0 +1,7 @@
+extern "c" {
+    from_c(): i32
+}
+
+helper(): i32 {
+    return from_c()
+}

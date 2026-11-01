@@ -77,10 +77,10 @@ Em.compile(self, k: usize) {
 }
 
 /* Writes the object file for checked program s to `out`; `root` is its path
- * as given. Returns whether it was written, or the construct selfhost does
- * not yet compile.
+ * as given, and a `library` holds only what its C exports reach. Returns
+ * whether it was written, or the construct selfhost does not yet compile.
  */
-pub object(s: *sema.Sema, debug: bool, root: string, out: string): (bool, string) {
+pub object(s: *sema.Sema, debug: bool, root: string, out: string, library: bool): (bool, string) {
     e: Em = Em { s = s, o = macho.Obj.new(debug), debug = debug, fns = array.Array[EmitFn] {}, names = blank(path.Pool) }
     defer e.o.wipe()
     defer e.fns.wipe()
@@ -90,7 +90,8 @@ pub object(s: *sema.Sema, debug: bool, root: string, out: string): (bool, string
     // Collect every compilable function under its link symbol, then compile
     // only those reachable from main and the C exports: a referenced symbol
     // that is still undefined names the next function to compile. An object
-    // without main may be called from anywhere, so it compiles every one.
+    // without main may be called from anywhere, so it compiles every one,
+    // unless it is a library, whose only entries are its C exports.
     by_name: map.Map[string, usize] = map.Map[string, usize] {}
     defer by_name.wipe()
     // Globals likewise: only those a compiled function, an emitted global's
@@ -144,7 +145,7 @@ pub object(s: *sema.Sema, debug: bool, root: string, out: string): (bool, string
             fail(e.fns.push(EmitFn { n = d, global = global, name = nm }))
         } else if n.kind == Kind.var {
             // deferred like functions: emitted once referenced, unless C-exported
-            // or the object has no main
+            // or the whole object is kept
             binder: u32 = s.kid(d, 0)
             vs: u32 = s.var_sym(d)
             if vs == 0 { continue }
@@ -168,11 +169,12 @@ pub object(s: *sema.Sema, debug: bool, root: string, out: string): (bool, string
             }
         }
     }
+    whole: bool = main_at < 0 && !library
     for k: usize in 0..e.fns.len {
-        if main_at < 0 || e.fns.get(k).global { e.compile(k) }
+        if whole || e.fns.get(k).global { e.compile(k) }
         if e.unsupported.len > 0 { return false, e.unsupported }
     }
-    if main_at < 0 {
+    if whole {
         for k: usize in 0..vars.len {
             if vars.get(k) != 0 {
                 e.global(vars.get(k))

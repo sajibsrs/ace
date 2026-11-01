@@ -331,10 +331,11 @@ int resolve_imports(Node* file, Diag* d,
                     CompileReport* report, Package* root_package);
 
 // Direct AArch64 codegen (stage four): walks the sema-checked AST and writes
-// a Mach-O arm64 object. Returns 0 on success. Sets emit_has_main.
+// a Mach-O arm64 object, with `library` holding only what its C exports reach.
+// Returns 0 on success. Sets emit_has_main.
 typedef enum { EMIT_DEBUG, EMIT_RELEASE } EmitMode;
 
-int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode);
+int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode, int library);
 extern int emit_has_main;
 // The build target (main.c): "darwin-arm64" writes a Mach-O arm64 object,
 // "linux-x64" an ELF x64 one.

@@ -228,3 +228,8 @@
 - `ace pkg test` reuses binaries in `build/.test` while the content hashes in each
   `.dep` record match: compiler, sources, manifests, link files; tests always run.
 - `ace pkg build` writes to `build/bin/<package-name>` and `ace pkg test` to `build/test`, so a package's name can't collide with test output.
+- `--archive`, `--shared`, and `output: archive|shared` compile only what the C
+  exports reach, since their object has no other entries (#178): `__text` of a
+  one-export lib over `pkg/json` 76,156 to 24,140 bytes, over `pkg/regex` 72,892
+  to 21,292. Plain `-c` still compiles everything; a library with no C export is
+  an error, as it would be empty.

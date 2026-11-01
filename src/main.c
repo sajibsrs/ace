@@ -206,14 +206,21 @@ static void arg_push_shared(ArgList* cc, const char* out) {
     arg_push(cc, install_name);
 }
 
-// An archive or shared library serves a program that brings its own main.
-static void reject_library_main(Node* file, Diag* d, const char* what) {
+// An archive or shared library serves a program that brings its own main, and
+// its C exports are its only entries.
+static void check_library_entries(Node* file, Diag* d, const char* what) {
+    int exports = 0, mains = 0;
     for (int i = 0; i < file->nkids; i++) {
         Node* n = file->kids[i];
+        if ((n->kind == N_FUNC || n->kind == N_VAR) && (n->flags & F_EXPO)) exports++;
         if (!is_main_func(n)) continue;
         fprintf(stderr, "%s:%d:%d: error: %s may not define main\n", d->path, n->line, n->col, what);
         d->errors++;
+        mains++;
     }
+    if (exports || mains) return;
+    fprintf(stderr, "%s:1:1: error: %s needs a C export\n", d->path, what);
+    d->errors++;
 }
 
 static uint64_t monotonic_ns(void) {
@@ -708,9 +715,9 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
         free(order);
         return 1;
     }
-    if (archive) reject_library_main(file, &d, "an archive");
-    if (shared) reject_library_main(file, &d, "a shared library");
-    if (d.errors > 0 || emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
+    if (archive) check_library_entries(file, &d, "an archive");
+    if (shared) check_library_entries(file, &d, "a shared library");
+    if (d.errors > 0 || emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode, archive || shared) != 0 || d.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", root_package->root_file, d.errors, d.errors == 1 ? "" : "s");
         free(order);
         return 1;
@@ -1124,7 +1131,7 @@ static int test_build(const char* path, const char* target, EmitMode mode, const
         if (d.errors == 0) {
             char obj[4096];
             snprintf(obj, sizeof obj, "%s.o", bin);
-            if (emit_object(file, &d, obj, NULL, mode) != 0 && d.errors == 0) d.errors++;
+            if (emit_object(file, &d, obj, NULL, mode, 0) != 0 && d.errors == 0) d.errors++;
             if (d.errors == 0) {
                 ArgList cc = {0};
                 arg_push(&cc, "cc");
@@ -1599,10 +1606,10 @@ int main(int argc, char** argv) {
                     reject_output_collision(out_name, input, "linked output");
                 }
             }
-            if (opt_archive) reject_library_main(file, &d, "an archive");
-            if (opt_shared) reject_library_main(file, &d, "a shared library");
+            if (opt_archive) check_library_entries(file, &d, "an archive");
+            if (opt_shared) check_library_entries(file, &d, "a shared library");
             if (d.errors > 0) goto done;
-            if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) goto done;
+            if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode, opt_archive || opt_shared) != 0 || d.errors > 0) goto done;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;
             if (opt_archive) {
                 if (write_archive(out_name, obj) != 0) return 1;

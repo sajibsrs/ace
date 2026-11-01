@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
     if (d.errors != 0) return 2; // the program itself must be valid
     for (int i = 0; i < file->nkids; i++)
         if (file->kids[i]->kind == N_FUNC && file->kids[i]->c) rename_uses(file->kids[i]->b);
-    if (emit_object(file, &d, argv[2], NULL, EMIT_DEBUG) == 0) {
+    if (emit_object(file, &d, argv[2], NULL, EMIT_DEBUG, 0) == 0) {
         printf("re-stamp error did not fail the build\n");
         return 1;
     }

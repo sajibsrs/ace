@@ -223,17 +223,24 @@ Loader.resolve_root(self, root_path: string, in_package: bool, pkg: usize): bool
 
 // --- accessors ----------------------------------------------------------------
 
-/* Reports a main in the root module, which `what`, an archive or shared
- * library, may not define: the program using it brings its own; false after
- * reporting.
+/* Reports what `what`, an archive or shared library, may not be: a main, as
+ * the program using it brings its own, or a program without a C export, since
+ * those are its only entries; false after reporting.
  */
-pub Loader.reject_library_main(self, what: string): bool {
+pub Loader.check_library_entries(self, what: string): bool {
     top: Node = self.node(0, self.top(0))
+    exports: bool = false
+    mains: bool = false
     for k: u32 in 0..top.nkids {
         n: Node = self.node(0, self.kid(0, self.top(0), k))
+        if (n.kind == Kind.func || n.kind == Kind.var) && (n.flags & parser.F_EXPO) != 0 { exports = true }
         if n.kind != Kind.func || (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 { continue }
-        if mem.equal(n.text, "main") { self.err(0, n, [what, " may not define main"]) }
+        if mem.equal(n.text, "main") {
+            self.err(0, n, [what, " may not define main"])
+            mains = true
+        }
     }
+    if !exports && !mains { self.err_at(0, 1, 1, [what, " needs a C export"]) }
     return self.errors == 0
 }
 

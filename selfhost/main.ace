@@ -237,8 +237,8 @@ check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool, li
     defer s.wipe()
     rc: int = checked(&s, path, full)
     if rc != 0 || (!lower && obj.len == 0) { return rc }
-    if library.len > 0 && !l.reject_library_main(library) { return summary(path, l.errors) }
-    return finish(&s, path, obj, debug)
+    if library.len > 0 && !l.check_library_entries(library) { return summary(path, l.errors) }
+    return finish(&s, path, obj, debug, library.len > 0)
 }
 
 /* Runs every sema stage over `s`; 0, or 1 after reporting. */
@@ -256,11 +256,13 @@ checked(s: *sema.Sema, path: string, full: bool): int {
     return summary(path, s.errors)
 }
 
-/* Writes checked `s` to the object file `obj`, or prints its IR without one. */
-finish(s: *sema.Sema, path: string, obj: string, debug: bool): int {
+/* Writes checked `s` to the object file `obj`, a `library` trimmed to what its
+ * C exports reach, or prints its IR without one.
+ */
+finish(s: *sema.Sema, path: string, obj: string, debug: bool, library: bool): int {
     s.layout_all()
     if obj.len > 0 {
-        ok: bool, why: string = emission.object(s, debug, path, obj)
+        ok: bool, why: string = emission.object(s, debug, path, obj, library)
         if why.len > 0 { fmt.printf(sys.stderr, "ace: selfhost does not yet support %s\n", why) }
         if s.errors > 0 { return summary(path, s.errors) }
         if !ok { return 1 }
@@ -836,9 +838,9 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
     if !p.is_exe && !archive && !shared { return 0, "" } // lib: checked, build/ ensured, nothing to link
     bin: string = pool.join([build_dir, "/", p.name])
     obj: string = pool.join([bin, ".o"])
-    if archive && !l.reject_library_main("an archive") { return summary(p.root_file, l.errors), "" }
-    if shared && !l.reject_library_main("a shared library") { return summary(p.root_file, l.errors), "" }
-    if finish(&s, p.root_file, obj, debug) != 0 { return 1, "" }
+    if archive && !l.check_library_entries("an archive") { return summary(p.root_file, l.errors), "" }
+    if shared && !l.check_library_entries("a shared library") { return summary(p.root_file, l.errors), "" }
+    if finish(&s, p.root_file, obj, debug, archive || shared) != 0 { return 1, "" }
     if archive { return archive_package(pool, &g, obj, build_dir, p.name), "" }
     if shared { return link_package(pool, &g, obj, pool.join([build_dir, "/lib", p.name, ".dylib"]), true), "" }
     return link_package(pool, &g, obj, bin, false), bin
@@ -1099,7 +1101,7 @@ test_build(file_path: string, debug: bool, bin: string, dir: string): int {
     defer s.wipe()
     if checked(&s, file_path, true) != 0 { return 1 }
     obj: string = pool.join([bin, ".o"])
-    if finish(&s, file_path, obj, debug) != 0 { return 1 }
+    if finish(&s, file_path, obj, debug, false) != 0 { return 1 }
     rc: int = link_package(&pool, &g, obj, bin, false)
     if rc == 0 && dir.len > 0 { test_record(&pool, bin, debug, &l, &g) }
     return rc

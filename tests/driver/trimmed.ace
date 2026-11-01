@@ -1,0 +1,33 @@
+import fmt
+
+Counter: contract {
+    count(const self): i32
+}
+
+Fixed: struct {
+    n: i32,
+}
+
+Fixed signs Counter
+
+Fixed.count(const self): i32 {
+    return self.n + 2
+}
+
+trimmed_reached: i32 = 40
+
+trimmed_unreached: i32 = 9
+
+through_contract(c: Counter): i32 {
+    return c.count()
+}
+
+trimmed_never_called(): i32 {
+    fmt.println("unreached")
+    return trimmed_unreached
+}
+
+extern "c" ace_trimmed(): i32 {
+    f: Fixed = Fixed { n = trimmed_reached }
+    return through_contract(Counter(&f))
+}

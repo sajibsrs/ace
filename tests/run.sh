@@ -2549,6 +2549,36 @@ if [ -d tests/driver ]; then
         printf '%s\n' "$out"
         fail=1
     fi
+    # A library holds what its C exports reach: a contract's method and a read
+    # global stay, an unused function, global, and import do not.
+    "$ACE" --archive -o /tmp/ace_driver/libtrimmed.a tests/driver/trimmed.ace &&
+        "$ACE" --shared -o /tmp/ace_driver/libtrimmed.dylib tests/driver/trimmed.ace
+    trimmed_rc=$?
+    if [ "$trimmed_rc" -ne 0 ] || nm /tmp/ace_driver/libtrimmed.a | grep -qE 'unreached|never_called|println' ||
+       ! nm /tmp/ace_driver/libtrimmed.a | grep -q 'trimmed_reached' ||
+       nm -u /tmp/ace_driver/libtrimmed.dylib | grep -q '_write'; then
+        echo "FAIL: --archive and --shared should trim to what the C exports reach"
+        nm /tmp/ace_driver/libtrimmed.a
+        fail=1
+    fi
+    printf 'int ace_trimmed(void);\nint main(void) { return ace_trimmed(); }\n' > /tmp/ace_driver/trimmed_user.c
+    for lib in libtrimmed.a libtrimmed.dylib; do
+        cc /tmp/ace_driver/trimmed_user.c "/tmp/ace_driver/$lib" -Wl,-rpath,/tmp/ace_driver -o /tmp/ace_driver/trimmed_user
+        /tmp/ace_driver/trimmed_user
+        got=$?
+        if [ "$got" != 42 ]; then
+            echo "FAIL: running against the trimmed $lib exited $got, want 42"
+            fail=1
+        fi
+    done
+    for form in "--archive -o /tmp/ace_driver/none.a|an archive" "--shared -o /tmp/ace_driver/none.dylib|a shared library"; do
+        out=$("$ACE" ${form%%|*} tests/driver/no_export.ace 2>&1)
+        if ! printf '%s\n' "$out" | grep -qF "${form##*|} needs a C export"; then
+            echo "FAIL: '${form%%|*}' should refuse a library with no C export"
+            printf '%s\n' "$out"
+            fail=1
+        fi
+    done
     # Apple frameworks exist on a Darwin host only
     if [ "$(uname -s)" = Darwin ]; then
         out=$("$ACE" --debug -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \

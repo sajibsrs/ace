@@ -2209,7 +2209,7 @@ static void compile_fn(Em* e, Node* file, EmitMode mode, EmitFn* f, int is_main)
     if (compile_ir(e, f->n, ir, why, f->name, f->global) && is_main) emit_has_main = 1;
 }
 
-int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode) {
+int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report, EmitMode mode, int library) {
     Em e;
     memset(&e, 0, sizeof e);
     obj_init(&e.o, d, mode);
@@ -2218,7 +2218,8 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
     // Collect every compilable function under its link symbol, then compile
     // only those reachable from main and the C exports: a referenced symbol
     // that is still undefined names the next function to compile. An object
-    // without main may be called from anywhere, so it compiles every one.
+    // without main may be called from anywhere, so it compiles every one,
+    // unless it is a library, whose only entries are its C exports.
     EmitFn* fns = NULL;
     int nfns = 0, cfns = 0, main_at = -1;
     SymTab by_name;
@@ -2286,7 +2287,7 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
         }
         case N_VAR: {
             // deferred like functions: emitted once referenced, unless C-exported
-            // or the object has no main (both checked below)
+            // or the whole object is kept (both checked below)
             Node* binder = n->kids[0];
             if (!node_sym(binder)) break;
             if (nvars == cvars) {
@@ -2318,9 +2319,10 @@ int emit_object(Node* file, Diag* d, const char* out_path, CompileReport* report
             break; // types/imports/externs: no code
         }
     }
+    int whole = main_at < 0 && !library;
     for (int i = 0; i < nfns; i++)
-        if (main_at < 0 || fns[i].global) compile_fn(&e, file, mode, &fns[i], i == main_at);
-    if (main_at < 0)
+        if (whole || fns[i].global) compile_fn(&e, file, mode, &fns[i], i == main_at);
+    if (whole)
         for (int i = 0; i < nvars; i++)
             if (vars[i]) { emit_global(&e, vars[i]); vars[i] = NULL; }
     for (size_t k = 0; k < e.o.syms.n; k++) {
