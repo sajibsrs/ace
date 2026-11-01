@@ -873,6 +873,93 @@ package_init(args: []string): int {
 
 // --- ace test -----------------------------------------------------------------
 
+/* The running compiler's real path, "" when unknown. */
+test_compiler(pool: *path.Pool): string {
+    buf: [4096]u8
+    n: usize, err: Error = sys.executable(buf[0..4096])
+    if err != null { return "" }
+    return pool.join([buf[..n]])
+}
+
+/* FNV-1a of the file at `name`, and whether it could be read. */
+test_hash_file(name: string): (u64, bool) {
+    data: []u8, err: Error = file.read(name)
+    if err != null { return 0, false }
+    defer mem.release[u8](&data)
+    h: u64 = 0xcbf29ce484222325
+    for b: u8 in data { h = (h ^ u64(b)) * 0x100000001b3 }
+    return h, true
+}
+
+test_mode_name(debug: bool): string {
+    if debug { return "debug" }
+    return "release"
+}
+
+/* True when `bin` exists and record `dep`, a mode line and then a hash and path
+ * per input, matches `debug` and every input. */
+test_current(pool: *path.Pool, dep: string, bin: string, debug: bool): bool {
+    _, serr: Error = sys.stat(bin)
+    if serr != null { return false }
+    text: []u8, err: Error = file.read(dep)
+    if err != null { return false }
+    defer mem.release[u8](&text)
+    start: usize = 0
+    first: bool = true
+    for i: usize in 0 .. text.len {
+        if text[i] != '\n' { continue }
+        row: string = text[start..i]
+        start = i + 1
+        if first {
+            if !mem.equal(row, test_mode_name(debug)) { return false }
+            first = false
+            continue
+        }
+        space: usize = 0
+        for space < row.len && row[space] != ' ' { space += 1 }
+        if space == row.len { return false }
+        h: u64, ok: bool = test_hash_file(row[space + 1..])
+        if !ok || !mem.equal(row[..space], hex(pool, h)) { return false }
+    }
+    return !first
+}
+
+/* Appends `name`'s record row; false when it cannot be read. */
+test_record_input(pool: *path.Pool, rows: *string, name: string): bool {
+    h: u64, ok: bool = test_hash_file(name)
+    if !ok { return false }
+    *rows = pool.join([*rows, hex(pool, h), " ", name, "\n"])
+    return true
+}
+
+/* Writes the record of a finished build, by rename so a partial one never
+ * counts. Failing only costs the next run a rebuild. */
+test_record(pool: *path.Pool, bin: string, debug: bool, l: *module.Loader, g: *package.Graph) {
+    compiler: string = test_compiler(pool)
+    if compiler.len == 0 { return }
+    rows: string = pool.join([test_mode_name(debug), "\n"])
+    if !test_record_input(pool, &rows, compiler) { return }
+    for i: usize in 0 .. g.pkgs.len {
+        if !test_record_input(pool, &rows, pool.join([g.pkgs.view()[i].dir, "/ace.pkg"])) { return }
+    }
+    for i: usize in 0 .. l.mods.len {
+        if !test_record_input(pool, &rows, l.mods.view()[i].canon) { return }
+    }
+    links: array.Array[string] = array.Array[string] {}
+    defer links.wipe()
+    if !g.collect_links(&links) { return }
+    for a: string in links.view() {
+        _, err: Error = sys.stat(a)
+        if err == null && !path.is_dir(a) {
+            if !test_record_input(pool, &rows, a) { return }
+        }
+    }
+    dep: string = pool.join([bin, ".dep"])
+    tmp: string = pool.join([dep, ".tmp"])
+    if file.write(tmp, rows) != null { return }
+    if sys.rename(tmp, dep) != null { sys.unlink(tmp) }
+}
+
 /* Compiles one test file with its generated main and links it to `bin`. With a
  * package directory, resolves that package's dependencies and links their
  * native inputs.
@@ -900,7 +987,9 @@ test_build(file_path: string, debug: bool, bin: string, dir: string): int {
     if checked(&s, file_path, true) != 0 { return 1 }
     obj: string = pool.join([bin, ".o"])
     if finish(&s, file_path, obj, debug) != 0 { return 1 }
-    return link_package(&g, obj, bin)
+    rc: int = link_package(&g, obj, bin)
+    if rc == 0 && dir.len > 0 { test_record(&pool, bin, debug, &l, &g) }
+    return rc
 }
 
 /* Collects the .ace files directly in `dir`, skipping dot files. Subdirectories
@@ -944,7 +1033,9 @@ hex(pool: *path.Pool, v: u64): string {
 
 /* Builds each of `files` into its own binary and runs it in `base`, which
  * they are relative to ("" for the working directory). `dir` is the package
- * directory of a package test.
+ * directory of a package test, which keeps its binaries in build/.test beside
+ * .dep records of their inputs and reuses the current ones: dotted because
+ * build/<package-name> is the package's own output.
  */
 test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: string): int {
     tmp: string = "/tmp"
@@ -962,6 +1053,16 @@ test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: stri
     name: string = ""
     for b: u8 in seed[0..8] { name = pool.join([name, hex(pool, u64(b))]) }
     work: string = pool.join([tmp, "/ace-test-", name, "-t"])
+    if dir.len > 0 {
+        sys.mkdir(pool.join([dir, "/build"]))
+        work = pool.join([dir, "/build/.test"])
+        sys.mkdir(work)
+        _, merr: Error = sys.stat(work)
+        if merr != null {
+            fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", work, merr.message)
+            return 1
+        }
+    }
 
     failed: usize = 0
     for i: usize in 0 .. files.len {
@@ -969,16 +1070,26 @@ test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: stri
         real: string = test_path
         if base.len > 0 { real = pool.join([base, "/", test_path]) }
         bin: string = pool.join([work, hex(pool, u64(i))])
-        obj: string = pool.join([bin, ".o"])
-        fmt.printf("== %s\n", test_path)
-        // Each build runs in a child: compiler state stays per file.
-        pid: sys.Process, err: Error = sys.fork()
-        if err != null {
-            fmt.printf(sys.stderr, "ace: cannot fork: %s\n", err.message)
-            return 1
+        if dir.len > 0 {
+            slash: usize = test_path.len
+            for slash > 0 && test_path[slash - 1] != '/' { slash -= 1 }
+            bin = pool.join([work, "/", test_path[slash .. test_path.len - 4]])
         }
-        if int(pid) == 0 { sys.exit(test_build(real, debug, bin, dir)) }
-        rc: int = wait_for(pid, test_path)
+        obj: string = pool.join([bin, ".o"])
+        dep: string = pool.join([bin, ".dep"])
+        fmt.printf("== %s\n", test_path)
+        rc: int = 0
+        if dir.len == 0 || !test_current(pool, dep, bin, debug) {
+            sys.unlink(dep)
+            // Each build runs in a child: compiler state stays per file.
+            pid: sys.Process, err: Error = sys.fork()
+            if err != null {
+                fmt.printf(sys.stderr, "ace: cannot fork: %s\n", err.message)
+                return 1
+            }
+            if int(pid) == 0 { sys.exit(test_build(real, debug, bin, dir)) }
+            rc = wait_for(pid, test_path)
+        }
         if rc == 0 {
             options: exec.SpawnOptions = blank(exec.SpawnOptions)
             options.dir = base
@@ -991,8 +1102,8 @@ test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: stri
             }
         }
         if rc != 0 { failed += 1 }
-        sys.unlink(bin)
         sys.unlink(obj)
+        if dir.len == 0 { sys.unlink(bin) }
     }
     noun: string = "modules"
     if files.len == 1 { noun = "module" }

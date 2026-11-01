@@ -259,10 +259,25 @@ static const char* std_display_path(Loader* L, const char* canon) {
 
 static int resolve_file(Loader* L, Node* file, const char* src_path, int is_root);
 
+static const char** loaded_files;
+static int nloaded, cloaded;
+
+// The source files loaded so far, for a build's record of its inputs.
+const char** module_loaded_files(int* n) {
+    *n = nloaded;
+    return loaded_files;
+}
+
 static Node* load_module(Loader* L, const char* path) {
     const char* stable = arena_string(path);
     Source src;
     if (source_load(&src, stable) != 0) return NULL; // message already printed
+    if (nloaded == cloaded) {
+        cloaded = cloaded ? cloaded * 2 : 32;
+        loaded_files = realloc(loaded_files, (size_t)cloaded * sizeof(char*));
+        if (!loaded_files) { fprintf(stderr, "ace: out of memory\n"); exit(1); }
+    }
+    loaded_files[nloaded++] = stable;
     if (L->report) {
         L->report->source_files++;
         L->report->source_bytes += src.len;

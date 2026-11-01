@@ -43,6 +43,13 @@ failed to build or run. Every non-method `pub` function is a test, in
 declaration order: one with another signature is a type error at its
 declaration. A test file may not define `main` and must have a test.
 
+`ace pkg test` keeps its binaries in `build/.test`, each with a `.dep` record
+of the build mode and a content hash of every input: the compiler, the test
+file, loaded modules, package manifests, and link files. An unchanged binary is
+reused and only runs, so editing one test rebuilds only the files that use it.
+Tests themselves always run, since a result can depend on time or the
+environment. `ace test` reads no manifest and keeps nothing.
+
 Every check takes the location to report as its last two arguments, written
 `@file, @line`. These name where they are written, so a helper takes
 `file: string, line: int` and forwards its caller's values.

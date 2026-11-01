@@ -325,6 +325,7 @@ int sema_check_bodies(Node* file, Diag* d); // sema_check without end-of-file ch
 // owning `file` (Package System v1), or NULL for a plain manifest-free
 // compile; it gates dependency-alias bare imports and same-package relative
 // import containment.
+const char** module_loaded_files(int* n);
 int resolve_imports(Node* file, Diag* d,
                     const char* target,
                     CompileReport* report, Package* root_package);

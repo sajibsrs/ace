@@ -217,3 +217,5 @@
   runs the files directly in the manifest's `test: DIR` from the package root;
   `ace test [--dir=DIR] PATH...` reads no manifest. Subdirectories hold helpers,
   private to the package's test directory; test files stay unimportable.
+- `ace pkg test` reuses binaries in `build/.test` while the content hashes in each
+  `.dep` record match: compiler, sources, manifests, link files; tests always run.

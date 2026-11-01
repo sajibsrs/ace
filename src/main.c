@@ -12,6 +12,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 extern char** environ;
 
@@ -889,6 +892,116 @@ static int test_synthesize_main(Node* file, Diag* d, const char* target) {
     return 0;
 }
 
+// --- test build reuse ---------------------------------------------------------
+//
+// A package test keeps its binary at build/.test/<file> beside a .dep record:
+// the build mode, then a content hash and path per input. The binary is reused
+// only while every input hashes the same. The directory is dotted because
+// build/<package-name> is the package's own output.
+
+static char test_compiler[4096];
+
+// Record the running compiler's real path, before any chdir.
+static void test_find_compiler(void) {
+    char raw[4096] = {0};
+#ifdef __APPLE__
+    uint32_t size = sizeof raw;
+    if (_NSGetExecutablePath(raw, &size) != 0) raw[0] = 0;
+#else
+    ssize_t n = readlink("/proc/self/exe", raw, sizeof raw - 1);
+    if (n < 0) raw[0] = 0;
+#endif
+    if (!raw[0] || !realpath(raw, test_compiler)) test_compiler[0] = 0;
+}
+
+// FNV-1a of the file at `path`; 0 when it cannot be read.
+static int test_hash_file(const char* path, uint64_t* out) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    uint64_t h = 0xcbf29ce484222325ull;
+    unsigned char buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
+        for (size_t i = 0; i < n; i++) h = (h ^ buf[i]) * 0x100000001b3ull;
+    }
+    int ok = !ferror(f);
+    fclose(f);
+    *out = h;
+    return ok;
+}
+
+// The compiler hashes once per process: it is the largest input of every test.
+static int test_hash_input(const char* path, uint64_t* out) {
+    static uint64_t compiler;
+    static int known;
+    if (strcmp(path, test_compiler) != 0) return test_hash_file(path, out);
+    if (!known) {
+        if (!test_hash_file(path, &compiler)) return 0;
+        known = 1;
+    }
+    *out = compiler;
+    return 1;
+}
+
+static const char* test_mode_name(EmitMode mode) {
+    return mode == EMIT_DEBUG ? "debug" : "release";
+}
+
+// True when `bin` exists and record `dep` matches `mode` and every input.
+static int test_current(const char* dep, const char* bin, EmitMode mode) {
+    if (!test_compiler[0] || access(bin, X_OK) != 0) return 0;
+    FILE* f = fopen(dep, "r");
+    if (!f) return 0;
+    char line[4200];
+    int ok = fgets(line, sizeof line, f) != NULL;
+    if (ok) {
+        line[strcspn(line, "\n")] = 0;
+        ok = strcmp(line, test_mode_name(mode)) == 0;
+    }
+    while (ok && fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\n")] = 0;
+        char* space = strchr(line, ' ');
+        uint64_t have;
+        ok = space && test_hash_input(space + 1, &have) && strtoull(line, NULL, 16) == have;
+    }
+    fclose(f);
+    return ok;
+}
+
+static int test_record_input(FILE* f, const char* path) {
+    uint64_t h;
+    if (!test_hash_input(path, &h)) return 0;
+    fprintf(f, "%016llx %s\n", (unsigned long long)h, path);
+    return 1;
+}
+
+// Write the record of a finished build, by rename so a partial one never
+// counts. Failing only costs the next run a rebuild.
+static void test_record(const char* dep, const char* path, EmitMode mode, Package** order, int norder,
+                        char** link_args, int nlinkargs) {
+    if (!test_compiler[0]) return;
+    char tmp[4300];
+    snprintf(tmp, sizeof tmp, "%s.tmp", dep);
+    FILE* f = fopen(tmp, "w");
+    if (!f) return;
+    fprintf(f, "%s\n", test_mode_name(mode));
+    int ok = test_record_input(f, test_compiler) && test_record_input(f, path);
+    for (int i = 0; ok && i < norder; i++) {
+        char manifest[4200];
+        snprintf(manifest, sizeof manifest, "%s/ace.pkg", order[i]->dir);
+        ok = test_record_input(f, manifest);
+    }
+    int nfiles;
+    const char** files = module_loaded_files(&nfiles);
+    for (int i = 0; ok && i < nfiles; i++) ok = test_record_input(f, files[i]);
+    for (int i = 0; ok && i < nlinkargs; i++) {
+        struct stat st;
+        if (stat(link_args[i], &st) == 0 && S_ISREG(st.st_mode)) ok = test_record_input(f, link_args[i]);
+    }
+    if (fclose(f) != 0) ok = 0;
+    if (!ok || rename(tmp, dep) != 0) unlink(tmp);
+}
+
 // Compile one test file with its generated main and link it to `bin`. A
 // package test resolves `pkg`'s dependencies and links their native inputs.
 static int test_build(const char* path, const char* target, EmitMode mode, const char* bin,
@@ -924,6 +1037,11 @@ static int test_build(const char* path, const char* target, EmitMode mode, const
                 int rc = run_linker(&cc);
                 free(cc.items);
                 if (rc != 0) return 1;
+                if (pkg) {
+                    char dep[4300];
+                    snprintf(dep, sizeof dep, "%s.dep", bin);
+                    test_record(dep, path, mode, order, norder, link_args, nlinkargs);
+                }
             }
         }
     }
@@ -978,31 +1096,49 @@ static void test_collect(const char* dir, ArgList* out) {
 }
 
 // Build each of `files` into its own binary and run it in the working directory.
+// A package keeps its binaries and reuses the current ones.
 static int test_run(ArgList* files, const char* target, EmitMode mode, Package* pkg, Package** order, int norder) {
-    const char* tmp = getenv("TMPDIR");
     char work[4096];
-    snprintf(work, sizeof work, "%s/ace-test-XXXXXX", tmp && tmp[0] ? tmp : "/tmp");
-    if (!mkdtemp(work)) {
-        fprintf(stderr, "ace: cannot create a build directory: %s\n", strerror(errno));
-        return 1;
+    if (pkg) {
+        snprintf(work, sizeof work, "build/.test");
+        if (mkdir_p(work) != 0) {
+            fprintf(stderr, "ace: cannot create '%s': %s\n", work, strerror(errno));
+            return 1;
+        }
+    } else {
+        const char* tmp = getenv("TMPDIR");
+        snprintf(work, sizeof work, "%s/ace-test-XXXXXX", tmp && tmp[0] ? tmp : "/tmp");
+        if (!mkdtemp(work)) {
+            fprintf(stderr, "ace: cannot create a build directory: %s\n", strerror(errno));
+            return 1;
+        }
     }
 
     size_t failed = 0;
     for (size_t i = 0; i < files->len; i++) {
         const char* path = files->items[i];
-        char bin[4200], obj[4300];
-        snprintf(bin, sizeof bin, "%s/t%zu", work, i);
+        char bin[4200], obj[4300], dep[4300];
+        const char* slash = strrchr(path, '/');
+        const char* base = slash ? slash + 1 : path;
+        if (pkg) snprintf(bin, sizeof bin, "%s/%.*s", work, (int)strlen(base) - 4, base);
+        else snprintf(bin, sizeof bin, "%s/t%zu", work, i);
         snprintf(obj, sizeof obj, "%s.o", bin);
+        snprintf(dep, sizeof dep, "%s.dep", bin);
         printf("== %s\n", path);
         fflush(stdout);
-        // Each build runs in a child: compiler state stays per file.
-        pid_t pid = fork();
-        if (pid < 0) {
-            fprintf(stderr, "ace: cannot fork: %s\n", strerror(errno));
-            return 1;
+        pid_t pid;
+        int rc = 0;
+        if (!pkg || !test_current(dep, bin, mode)) {
+            unlink(dep);
+            // Each build runs in a child: compiler state stays per file.
+            pid = fork();
+            if (pid < 0) {
+                fprintf(stderr, "ace: cannot fork: %s\n", strerror(errno));
+                return 1;
+            }
+            if (pid == 0) _exit(test_build(path, target, mode, bin, pkg, order, norder));
+            rc = test_wait(pid, path);
         }
-        if (pid == 0) _exit(test_build(path, target, mode, bin, pkg, order, norder));
-        int rc = test_wait(pid, path);
         if (rc == 0) {
             char* args[] = {bin, NULL};
             int spawn_rc = posix_spawn(&pid, bin, NULL, NULL, args, environ);
@@ -1014,10 +1150,10 @@ static int test_run(ArgList* files, const char* target, EmitMode mode, Package* 
             }
         }
         if (rc != 0) failed++;
-        unlink(bin);
         unlink(obj);
+        if (!pkg) unlink(bin);
     }
-    rmdir(work);
+    if (!pkg) rmdir(work);
     printf("%zu module%s, %zu failed\n", files->len, files->len == 1 ? "" : "s", failed);
     return failed > 0 ? 1 : 0;
 }
@@ -1090,6 +1226,7 @@ static int test_main(int argc, char** argv) {
 // ace pkg test [--debug | --release] [FILE]: the files directly in the
 // manifest's test directory, or the one FILE among them, run in the package root.
 static int package_cmd_test(int argc, char** argv) {
+    test_find_compiler();
     int mode_seen = 0;
     EmitMode mode = EMIT_RELEASE;
     const char* one = NULL;

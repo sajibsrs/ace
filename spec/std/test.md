@@ -14,6 +14,11 @@
       per file, runs it, and exits 1 if any build or run failed. A `pub`
       function of another signature is a type error at its declaration; a
       user `main`, or a file with no `pub` function, is a compile error.
+    - `ace pkg test` keeps each binary at `build/.test/<stem>` with a `.dep`
+      record of the build mode and a content hash of every input: the compiler,
+      the test file, loaded modules, package manifests, and link files. A
+      matching binary is reused; tests always run. `ace test` builds in a
+      temporary directory and keeps nothing.
     - `ace test` resolves only `std` and relative imports.
     - In a package, importing a file directly in the test directory is a
       compile error, and a helper beneath it is importable only from inside

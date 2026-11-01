@@ -1764,6 +1764,16 @@ if [ -d tests/emit ]; then
         echo "FAIL: ace test with a failing module must exit nonzero"
         fail=1
     fi
+    # Reuse: a second run skips the build; an edited input rebuilds it.
+    cache_dir=tests/test_package/app
+    rm -rf "$cache_dir/build/.test"
+    "$ACE" pkg test --dir="$cache_dir" >/dev/null
+    cache_inode=$(ls -i "$cache_dir/build/.test/greet")
+    "$ACE" pkg test --dir="$cache_dir" >/dev/null
+    if [ "$cache_inode" != "$(ls -i "$cache_dir/build/.test/greet")" ]; then
+        echo "FAIL: ace pkg test rebuilt an unchanged test"
+        fail=1
+    fi
     test_dir_expected=$(printf '%s\n' '== tests/test/fail.ace' 'ok   good' \
         '    fail.ace:14: got -3, want 4' '    fail.ace:15: got 5, want 6' \
         '    fail.ace:16: got 0, want 1' '    fail.ace:17: got false, want true' \
