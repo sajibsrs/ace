@@ -28,6 +28,7 @@ spin(a: *app.App, ns: u64) {
 
 pub slice_leaves_room_for_drawing(t: *test.T) {
     a: app.App = app.App {}
+    defer a.wipe()
     t.equal(a.slice() == 14600000, true, @file, @line)
     a.drawn = 5000000
     t.equal(a.slice() == 9600000, true, @file, @line)
@@ -44,6 +45,7 @@ pub slice_leaves_room_for_drawing(t: *test.T) {
 pub fixed_rate_is_kept(t: *test.T) {
     /* Stop 18 is 100 Hz. */
     a: app.App = running(18)
+    defer a.wipe()
     spin(&a, 700000000)
     t.equal(a.count >= 50 && a.count <= 90, true, @file, @line)
     t.equal(a.rate >= 90.0 && a.rate <= 110.0, true, @file, @line)
@@ -52,6 +54,7 @@ pub fixed_rate_is_kept(t: *test.T) {
 pub high_rate_is_kept(t: *test.T) {
     /* Stop 45 is 100 kHz. */
     a: app.App = running(45)
+    defer a.wipe()
     spin(&a, 700000000)
     /* 100 kHz for 0.7 s; the empty board ticks faster than that. */
     t.equal(a.count > 30000 && a.count <= 75000, true, @file, @line)
@@ -60,6 +63,7 @@ pub high_rate_is_kept(t: *test.T) {
 
 pub pausing_stops_ticks_and_clears_the_rate(t: *test.T) {
     a: app.App = running(speed.STOPS - 1)
+    defer a.wipe()
     spin(&a, 600000000)
     a.auto = false
     count: int = a.count
@@ -75,6 +79,7 @@ pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
     g.place(2, 0, grid.Block.not)
     g.place(3, 0, grid.Block.write)
     a: app.App = app.App { s = sim.Sim.new(g) }
+    defer a.wipe()
     a.s.toggle(0, 0, true)
     a.switch(app.Phase.run)
     for i: int in 0 .. 5 { a.tick() }
@@ -94,6 +99,7 @@ pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
 
 pub clock_slider_picks_a_span(t: *test.T) {
     a: app.App = app.App {}
+    defer a.wipe()
     at: ui.Rect = ui.Rect { x = 100.0, w = 180.0, h = 22.0 }
     t.equal(a.clock, 0, @file, @line)
     a.slide_clock(at.x + at.w - 1.0, at)
@@ -112,6 +118,7 @@ pub dropper_picks_the_block_under_the_pointer(t: *test.T) {
     g.place(4, 2, grid.Block.clock)
     g.span(4, 2, 5)
     a: app.App = app.App { s = sim.Sim.new(g) }
+    defer a.wipe()
     a.pick = bar.Tool.select
     a.drop(3, 2)
     t.equal(a.block == grid.Block.xor, true, @file, @line)

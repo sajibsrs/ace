@@ -80,6 +80,13 @@ pub App: struct {
     start: history.Snap = history.Snap {},
 }
 
+/* Releases the simulation, the history and the selection's scratch memory. */
+pub App.wipe(self) {
+    self.s.wipe()
+    self.hist.wipe()
+    self.sel.wipe()
+}
+
 /* A buffer that replaces the status note. */
 App.say(self): fmt.Buffer {
     return fmt.Buffer.init(self.notes[..])

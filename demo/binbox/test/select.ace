@@ -25,6 +25,7 @@ moved(): app.App {
  * so it does not join the wire beside it, and lands on the deselect. */
 pub moved_selection_floats_until_deselected(t: *test.T) {
     a: app.App = moved()
+    defer a.wipe()
     t.equal(a.sel.on && a.sel.held, true, @file, @line)
     test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.empty, @file, @line)
     test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.empty, @file, @line)
@@ -47,6 +48,7 @@ pub moved_selection_floats_until_deselected(t: *test.T) {
 /* Undo while the moved blocks float puts them back where they started. */
 pub undo_returns_floating_blocks(t: *test.T) {
     a: app.App = moved()
+    defer a.wipe()
     a.undo()
     t.equal(!a.sel.on, true, @file, @line)
     test.equal[grid.Block](t, a.s.g.get(0, 0), grid.Block.wire, @file, @line)
@@ -56,6 +58,7 @@ pub undo_returns_floating_blocks(t: *test.T) {
 /* Copying floating blocks leaves them floating; erasing them is undoable. */
 pub copy_and_erase_floating_blocks(t: *test.T) {
     a: app.App = moved()
+    defer a.wipe()
     a.copy()
     t.equal(a.sel.held, true, @file, @line)
     test.equal[grid.Block](t, a.s.g.get(2, 0), grid.Block.empty, @file, @line)
@@ -70,6 +73,7 @@ pub click_without_move_keeps_board(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.wire)
     a: app.App = app.App { s = sim.Sim.new(g) }
+    defer a.wipe()
     a.use(bar.Tool.select)
     a.sel.press(&a.s, &a.hist, 0, 0, false)
     a.sel.release(&a.s, &a.hist)
@@ -86,6 +90,7 @@ pub clone_drag_leaves_original(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(0, 0, grid.Block.wire)
     a: app.App = app.App { s = sim.Sim.new(g) }
+    defer a.wipe()
     a.use(bar.Tool.select)
     a.sel.press(&a.s, &a.hist, 0, 0, false)
     a.sel.release(&a.s, &a.hist)
@@ -106,6 +111,7 @@ pub clone_drag_leaves_original(t: *test.T) {
 /* A clone drag on floating blocks puts them down and carries a copy on. */
 pub clone_drag_stamps_floating_blocks(t: *test.T) {
     a: app.App = moved()
+    defer a.wipe()
     a.sel.press(&a.s, &a.hist, 2, 0, true)
     a.sel.sweep(5, 0)
     a.sel.release(&a.s, &a.hist)

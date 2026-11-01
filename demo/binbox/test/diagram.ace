@@ -28,13 +28,17 @@ sample(): sim.Sim {
 
 encoded(): [diagram.SIZE]u8 {
     out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
-    diagram.encode(sample(), out[..])
+    s: sim.Sim = sample()
+    defer s.wipe()
+    diagram.encode(s, out[..])
     return out
 }
 
 pub layout(t: *test.T) {
     out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
-    n: usize, err: Error = diagram.encode(sample(), out[..])
+    built: sim.Sim = sample()
+    defer built.wipe()
+    n: usize, err: Error = diagram.encode(built, out[..])
     t.equal(err == null, true, @file, @line)
     t.equal(n, diagram.SIZE, @file, @line)
     t.equal(out[0] == 'B' && out[1] == 'N' && out[2] == 'B' && out[3] == 'X', true, @file, @line)
@@ -61,8 +65,10 @@ pub layout(t: *test.T) {
 pub round_trip(t: *test.T) {
     out: [diagram.SIZE]u8 = encoded()
     s: sim.Sim, err: Error = diagram.decode(out[..])
+    defer s.wipe()
     t.equal(err == null, true, @file, @line)
     want: sim.Sim = sample()
+    defer want.wipe()
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
             test.equal[grid.Block](t, s.g.get(x, y), want.g.get(x, y), @file, @line)
@@ -73,7 +79,9 @@ pub round_trip(t: *test.T) {
 
 pub small_buffer(t: *test.T) {
     out: [diagram.SIZE - 1]u8 = [0 : diagram.SIZE - 1]
-    n: usize, err: Error = diagram.encode(sample(), out[..])
+    built: sim.Sim = sample()
+    defer built.wipe()
+    n: usize, err: Error = diagram.encode(built, out[..])
     t.equal(err == diagram.DiagramErr.space, true, @file, @line)
     t.equal(n, 0, @file, @line)
 }
@@ -81,6 +89,7 @@ pub small_buffer(t: *test.T) {
 /* Decoding `data` fails with `want`. */
 rejects(t: *test.T, data: []u8, want: Error, file: string, line: int) {
     s: sim.Sim, err: Error = diagram.decode(data)
+    defer s.wipe()
     t.equal(err == want, true, file, line)
 }
 
@@ -120,6 +129,7 @@ pub jk_file(t: *test.T) {
     defer mem.release[u8](&data)
     t.equal(ferr == null, true, @file, @line)
     s: sim.Sim, err: Error = diagram.decode(data)
+    defer s.wipe()
     t.equal(err == null, true, @file, @line)
     test.equal[sim.Level](t, s.level(122, 63), sim.Level.low, @file, @line)
     test.equal[sim.Level](t, s.level(125, 60), sim.Level.low, @file, @line)
@@ -142,8 +152,11 @@ pub toggle_round_trips(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     g.place(4, 4, grid.Block.toggle)
     out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
-    diagram.encode(sim.Sim.new(g), out[..])
+    built: sim.Sim = sim.Sim.new(g)
+    defer built.wipe()
+    diagram.encode(built, out[..])
     s: sim.Sim, err: Error = diagram.decode(out[..])
+    defer s.wipe()
     t.equal(err == null, true, @file, @line)
     test.equal[grid.Block](t, s.g.get(4, 4), grid.Block.toggle, @file, @line)
 }
@@ -155,6 +168,7 @@ pub toggle_file(t: *test.T) {
     defer mem.release[u8](&data)
     t.equal(ferr == null, true, @file, @line)
     s: sim.Sim, err: Error = diagram.decode(data)
+    defer s.wipe()
     t.equal(err == null, true, @file, @line)
     for i: int in 0 .. 8 { s.tick() }
     test.equal[sim.Level](t, s.level(130, 62), sim.Level.low, @file, @line)
@@ -177,10 +191,12 @@ pub clock_span_round_trips(t: *test.T) {
     g.span(4, 4, 5)
     g.place(6, 4, grid.Block.clock)
     s: sim.Sim = sim.Sim.new(g)
+    defer s.wipe()
     out: [diagram.SIZE]u8 = [0 : diagram.SIZE]
     n: usize, err: Error = diagram.encode(s, out[..])
     t.equal(err == null, true, @file, @line)
     back: sim.Sim, derr: Error = diagram.decode(out[..])
+    defer back.wipe()
     t.equal(derr == null, true, @file, @line)
     t.equal(back.g.get(4, 4) == grid.Block.clock, true, @file, @line)
     t.equal(back.g.span(4, 4), 5, @file, @line)
