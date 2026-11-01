@@ -47,7 +47,7 @@ static const char* host_target(void) {
 
 static void usage(void) {
     fprintf(stderr, "usage: ace [--debug | --release] [--tokens] [--ast] [--ir] [--report]\n"
-                    "           [--target=TARGET] [-c] [-o NAME] <file.ace>\n"
+                    "           [--target=TARGET] [-c] [--archive] [-o NAME] <file.ace>\n"
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
@@ -63,6 +63,7 @@ static void usage(void) {
                     "  -c              emit the target's object <base>.o (Mach-O or ELF)\n"
                     "  -o NAME         emit + link via the system cc; NAME ending in\n"
                     "                  .ace compiles that file, naming the output after it\n"
+                    "  --archive       with -o NAME.a, emit a static archive instead of linking\n"
                     "  <file>.o/.a     extra linker inputs, passed to cc in order\n"
                     "  -L DIR          linker library search path\n"
                     "  -l NAME         linker named library\n"
@@ -71,9 +72,10 @@ static void usage(void) {
                     "  --pkg-check=DIR full semantic check of the ace.pkg package at DIR,\n"
                     "                  with cross-package imports resolved, no codegen\n"
                     "  ace pkg init <exe|lib> [DIR]  create a minimal package skeleton\n"
-                    "  ace pkg build [--debug|--release] [--target=TARGET] [--report]\n"
+                    "  ace pkg build [--debug|--release] [--target=TARGET] [--report] [--archive]\n"
                     "                compile (and, for an exe, link) the package found by\n"
-                    "                walking up from the working directory to the nearest ace.pkg\n"
+                    "                walking up from the working directory to the nearest ace.pkg;\n"
+                    "                --archive also emits a lib's static archive\n"
                     "  ace pkg CMD --dir=DIR  any pkg command but init, walking up from DIR\n"
                     "  ace pkg run   [--debug|--release] [--target=TARGET] [--report] [-- ARGS...]\n"
                     "                build, then execute the exe (exe-only), passing it ARGS\n"
@@ -135,31 +137,67 @@ static void reject_output_collision(const char* output, const char* input, const
     exit(2);
 }
 
-// Launch the linker as an argument vector — no shell between ace and cc.
-static int run_linker(ArgList* cc) {
+// Launch a tool as an argument vector — no shell between ace and it.
+static int run_tool(ArgList* args, const char* what) {
     pid_t pid;
-    int rc = posix_spawnp(&pid, cc->items[0], NULL, NULL, cc->items, environ);
+    int rc = posix_spawnp(&pid, args->items[0], NULL, NULL, args->items, environ);
     if (rc != 0) {
-        fprintf(stderr, "ace: cannot launch cc: %s\n", strerror(rc));
+        fprintf(stderr, "ace: cannot launch %s: %s\n", args->items[0], strerror(rc));
         return -1;
     }
     int status = 0;
     while (waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
-            fprintf(stderr, "ace: cannot wait for cc: %s\n", strerror(errno));
+            fprintf(stderr, "ace: cannot wait for %s: %s\n", args->items[0], strerror(errno));
             return -1;
         }
     }
     if (WIFEXITED(status)) {
         int code = WEXITSTATUS(status);
         if (code != 0) {
-            fprintf(stderr, "ace: linker exited with status %d\n", code);
+            fprintf(stderr, "ace: %s exited with status %d\n", what, code);
             return -1;
         }
         return 0;
     }
-    fprintf(stderr, "ace: linker terminated by signal %d\n", WTERMSIG(status));
+    fprintf(stderr, "ace: %s terminated by signal %d\n", what, WTERMSIG(status));
     return -1;
+}
+
+static int run_linker(ArgList* cc) {
+    return run_tool(cc, "linker");
+}
+
+// Pack obj as the static archive out. ar updates an archive in place, so a
+// previous output goes first; nothing of it may survive into this one.
+static int write_archive(const char* out, const char* obj) {
+    if (unlink(out) != 0 && errno != ENOENT) {
+        fprintf(stderr, "ace: cannot replace '%s': %s\n", out, strerror(errno));
+        return -1;
+    }
+    ArgList ar = {0};
+    arg_push(&ar, "ar");
+    arg_push(&ar, "rcs");
+    arg_push(&ar, (char*)out);
+    arg_push(&ar, (char*)obj);
+    arg_push(&ar, NULL);
+    int rc = run_tool(&ar, "ar");
+    free(ar.items);
+    return rc;
+}
+
+static int is_main_func(Node* n) {
+    return n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
+}
+
+// An archive is linked into a program that brings its own main.
+static void reject_archive_main(Node* file, Diag* d) {
+    for (int i = 0; i < file->nkids; i++) {
+        Node* n = file->kids[i];
+        if (!is_main_func(n)) continue;
+        fprintf(stderr, "%s:%d:%d: error: an archive may not define main\n", d->path, n->line, n->col);
+        d->errors++;
+    }
 }
 
 static uint64_t monotonic_ns(void) {
@@ -252,7 +290,7 @@ static void obj_path(char* out, size_t cap, const char* src) {
 static void package_usage(void) {
     fprintf(stderr, "usage: ace pkg init <exe|lib> [DIR]\n"
                     "       ace pkg build [--debug|--release] [--target=TARGET]\n"
-                    "                     [--report]\n"
+                    "                     [--report] [--archive]\n"
                     "       ace pkg run   [--debug|--release] [--target=TARGET]\n"
                     "                     [--report] [-- ARGS...]\n"
                     "       ace pkg check\n"
@@ -265,7 +303,9 @@ static void package_usage(void) {
                     "  init   create a minimal exe or lib package skeleton, without\n"
                     "         overwriting an existing ace.pkg or root file\n"
                     "  build  compile (and for an exe, link) the package found by walking\n"
-                    "         up from the working directory to the nearest ace.pkg\n"
+                    "         up from the working directory to the nearest ace.pkg; for a\n"
+                    "         lib, --archive or `output: archive` emits build/bin/lib<name>.a\n"
+                    "         and its link inputs, build/bin/lib<name>.link\n"
                     "  run    build, then execute the exe (exe-only)\n"
                     "  check  full semantic check of the package, no codegen\n"
                     "  test   build and run the files directly in the manifest's test\n"
@@ -330,6 +370,26 @@ static int package_write_file(const char* path, const char* data, size_t len) {
     }
     fclose(f);
     return 0;
+}
+
+// One linker argument per line, in link order, for whoever links the archive.
+static int write_link_file(const char* path, char** args, int nargs) {
+    for (int i = 0; i < nargs; i++) {
+        if (strchr(args[i], '\n')) {
+            fprintf(stderr, "ace: link input '%s' cannot be written to '%s': it contains a newline\n", args[i], path);
+            return 1;
+        }
+    }
+    FILE* f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "ace: cannot create '%s': %s\n", path, strerror(errno));
+        return 1;
+    }
+    int failed = 0;
+    for (int i = 0; i < nargs; i++) failed |= fprintf(f, "%s\n", args[i]) < 0;
+    failed |= fclose(f) != 0;
+    if (failed) fprintf(stderr, "ace: cannot write '%s': %s\n", path, strerror(errno));
+    return failed;
 }
 
 // Resolve the dependency graph at dir and fully check its root
@@ -545,7 +605,7 @@ static int package_cmd_check(int argc, char** argv) {
 // for an exe, out_bin receives the linked executable's path.
 static int package_build_or_run(int argc, char** argv, int require_exe,
                                 char* out_bin, size_t out_bin_cap) {
-    int mode_seen = 0, show_report = 0;
+    int mode_seen = 0, show_report = 0, opt_archive = 0;
     EmitMode emit_mode = EMIT_RELEASE;
     const char* target = host_target();
     for (int i = 0; i < argc; i++) {
@@ -560,6 +620,8 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
             emit_mode = EMIT_RELEASE;
         } else if (strcmp(a, "--report") == 0) {
             show_report = 1;
+        } else if (strcmp(a, "--archive") == 0) {
+            opt_archive = 1;
         } else if (strncmp(a, "--target=", 9) == 0) {
             if (a[9] == 0) cli_error("--target requires a target name");
             target = a + 9;
@@ -593,6 +655,13 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
         return 2;
     }
 
+    if (opt_archive && root_package->is_exe) {
+        fprintf(stderr, "ace: --archive requires a lib package; '%s' is type 'exe'\n", root_package->name);
+        free(order);
+        return 2;
+    }
+    int archive = opt_archive || root_package->is_archive;
+
     char build_dir[4096];
     snprintf(build_dir, sizeof build_dir, "%s/build/bin", root_package->dir);
     if (mkdir_p(build_dir) != 0) {
@@ -600,18 +669,20 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
         free(order);
         return 1;
     }
-    if (!root_package->is_exe) { // lib: checked, build/bin/ ensured, nothing to link
+    if (!root_package->is_exe && !archive) { // lib: checked, build/bin/ ensured, nothing to link
         free(order);
         return 0;
     }
-    char obj[4096];
+    char obj[4096], link_file[4096];
     if ((size_t)snprintf(obj, sizeof obj, "%s/%s.o", build_dir, root_package->name) >= sizeof obj ||
-        (size_t)snprintf(out_bin, out_bin_cap, "%s/%s", build_dir, root_package->name) >= out_bin_cap) {
+        (size_t)snprintf(out_bin, out_bin_cap, archive ? "%s/lib%s.a" : "%s/%s", build_dir, root_package->name) >= out_bin_cap ||
+        (size_t)snprintf(link_file, sizeof link_file, "%s/lib%s.link", build_dir, root_package->name) >= sizeof link_file) {
         fprintf(stderr, "ace: build path '%s/%s' is too long\n", build_dir, root_package->name);
         free(order);
         return 1;
     }
-    if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
+    if (archive) reject_archive_main(file, &d);
+    if (d.errors > 0 || emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) {
         fprintf(stderr, "%s: %d error%s\n", root_package->root_file, d.errors, d.errors == 1 ? "" : "s");
         free(order);
         return 1;
@@ -626,17 +697,24 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
     free(order);
     if (d.errors > 0) return 1;
 
-    ArgList cc = {0};
-    arg_push(&cc, "cc");
-    arg_push(&cc, obj);
-    for (int i = 0; i < nlinkargs; i++) arg_push(&cc, link_args[i]);
-    free(link_args);
-    arg_push(&cc, "-o");
-    arg_push(&cc, out_bin);
-    arg_push(&cc, NULL);
-    int link_rc = run_linker(&cc);
-    free(cc.items);
-    if (link_rc != 0) return 1;
+    if (archive) {
+        // An archive records no dependencies: its link inputs travel beside it.
+        int failed = write_archive(out_bin, obj) != 0 || write_link_file(link_file, link_args, nlinkargs) != 0;
+        free(link_args);
+        if (failed) return 1;
+    } else {
+        ArgList cc = {0};
+        arg_push(&cc, "cc");
+        arg_push(&cc, obj);
+        for (int i = 0; i < nlinkargs; i++) arg_push(&cc, link_args[i]);
+        free(link_args);
+        arg_push(&cc, "-o");
+        arg_push(&cc, out_bin);
+        arg_push(&cc, NULL);
+        int link_rc = run_linker(&cc);
+        free(cc.items);
+        if (link_rc != 0) return 1;
+    }
 
     if (show_report) {
         report.compile_ns = compile_done >= started ? compile_done - started : 0;
@@ -815,10 +893,6 @@ static int package_main(int argc, char** argv) {
 
 static int is_test_func(Node* n) {
     return n->kind == N_FUNC && (n->flags & F_PUB) && !(n->flags & (F_METHOD | F_ASSOC));
-}
-
-static int is_main_func(Node* n) {
-    return n->kind == N_FUNC && !(n->flags & (F_METHOD | F_ASSOC)) && n->len == 4 && memcmp(n->str, "main", 4) == 0;
 }
 
 // Splice `import <runner>: test` and `main(): int { return <runner>.run([...]) }`
@@ -1284,7 +1358,7 @@ static int package_cmd_test(int argc, char** argv) {
 int main(int argc, char** argv) {
     if (argc >= 2 && strcmp(argv[1], "pkg") == 0) return package_main(argc - 2, argv + 2);
     if (argc >= 2 && strcmp(argv[1], "test") == 0) return test_main(argc - 2, argv + 2);
-    int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_symbols = 0, check_bodies = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0;
+    int dump_tok = 0, dump_ast = 0, dump_resolved = 0, dump_symbols = 0, check_bodies = 0, dump_ir = 0, show_report = 0, opt_c = 0, opt_link = 0, opt_archive = 0;
     int mode_seen = 0;
     EmitMode emit_mode = EMIT_RELEASE;
     const char* path = NULL;
@@ -1331,6 +1405,7 @@ int main(int argc, char** argv) {
         else if (strcmp(a, "--pkg-check") == 0)
             package_check_dir = opt_value(&i, argc, argv, "--pkg-check", "a directory");
         else if (strcmp(a, "-c") == 0) opt_c = 1;
+        else if (strcmp(a, "--archive") == 0) opt_archive = 1;
         else if (strcmp(a, "-o") == 0) {
             out_name = opt_value(&i, argc, argv, "-o", "an output name");
             opt_link = 1;
@@ -1407,6 +1482,11 @@ int main(int argc, char** argv) {
     if (!path) usage();
     if (link_args.len > 0 && opt_c) cli_error("additional link inputs cannot be used with -c");
     if (link_args.len > 0 && !out_name) cli_error("link inputs require -o");
+    if (opt_archive) {
+        if (opt_c) cli_error("--archive cannot be used with -c");
+        if (!out_name || !has_suffix(out_name, ".a")) cli_error("--archive requires -o NAME.a");
+        if (link_args.len > 0) cli_error("--archive links nothing, so it takes no link inputs");
+    }
 
     uint64_t started = show_report ? monotonic_ns() : 0;
     CompileReport report = {0};
@@ -1484,9 +1564,13 @@ int main(int argc, char** argv) {
                     reject_output_collision(out_name, input, "linked output");
                 }
             }
+            if (opt_archive) reject_archive_main(file, &d);
+            if (d.errors > 0) goto done;
             if (emit_object(file, &d, obj, show_report ? &report : NULL, emit_mode) != 0 || d.errors > 0) goto done;
             uint64_t compile_done = show_report ? monotonic_ns() : 0;
-            if (opt_link) {
+            if (opt_archive) {
+                if (write_archive(out_name, obj) != 0) return 1;
+            } else if (opt_link) {
                 ArgList cc = {0};
                 arg_push(&cc, "cc");
                 arg_push(&cc, obj);

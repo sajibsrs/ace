@@ -22,7 +22,7 @@ documentation once selfhost is complete.
 | Optimize | `optimizer.ace` | `--ir`, `--release --ir` | `src/optimizer.c` |
 | Allocate registers | `regalloc.ace` | (none; checked through `-c`) | `src/regalloc.c` |
 | Code and object | `arm64.ace`, `emission.ace`, `macho.ace` | `-c`, `--debug -c` | `src/arm64.c`, `src/emit.c`, `src/macho.c` |
-| Link | `main.ace` | `-o NAME`, with `.o`/`.a`, `-L`, `-l`, `-framework` | `src/main.c` |
+| Link | `main.ace` | `-o NAME`, with `.o`/`.a`, `-L`, `-l`, `-framework`; `--archive` | `src/main.c` |
 
 `--symbols` prints the scopes once every top-level name is entered
 (Compiler #5), every type is complete, every function signature is

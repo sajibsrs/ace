@@ -1,0 +1,14 @@
+// `output: archive` emits the lib's archive from a plain `pkg build`; the
+// dependency's code is inside it and its framework travels in the .link file.
+// expect-host: Darwin
+// expect-archive:
+
+name: archive_output
+version: 0.1.0
+ace: 0.1
+type: lib
+root: src/mod.ace
+output: archive
+
+[dependency]
+greeter: 0.1.0

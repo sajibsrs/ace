@@ -351,8 +351,8 @@ field           := key ":" value newline           // surrounding spaces/tabs
                                                     // and value are
                                                     // insignificant
 key             := top_key | dep_key | link_key
-top_key         := "name" | "version" | "ace" | "type" | "root"
-                  | "description" | "author" | "license" | "repository"
+top_key         := "name" | "version" | "ace" | "type" | "root" | "test"
+                  | "output" | "description" | "author" | "license" | "repository"
 dep_key         := ident                           // import alias, only
                                                     // inside [dependency]
 link_key        := "path" | "framework"            // only inside [link];
@@ -376,7 +376,8 @@ Notes:
 4. A `dep_key`'s `value` is one exact `major.minor.patch` version
    (Package System #4); a `path` value is one exact file, absolute or
    relative to the declaring package's own directory with no `..` traversal
-   (Package System #14); a `framework` value is a bare name.
+   (Package System #14); a `framework` value is a bare name; `output`'s
+   value is `archive` (Package System #17).
 5. [P] The recognized section kinds and key sets are closed and expected to
    grow; today only `[dependency]` and `[link]` exist, and an unrecognized
    header, qualifier, or key is an error.

@@ -31,9 +31,9 @@ to the program. `init` takes its own `[DIR]` and rejects `--dir`. `check` perfor
 semantic check with cross-package imports resolved, no codegen — the
 manifest-aware counterpart to plain `ace file.ace`'s default mode. `build`
 resolves the dependency graph and fully checks the root file; for a `lib`
-package that is the entire result, plus ensuring `build/bin/` exists, since v1
-ships libraries as source with no reusable binary archive. For an `exe`
-package, `build` additionally compiles and links into
+package that is the entire result, plus ensuring `build/bin/` exists, since
+libraries ship as source; see [Static archives](#static-archives) for a C
+consumer. For an `exe` package, `build` additionally compiles and links into
 `build/bin/<package-name>`, accepting the same `--debug`/`--release`/
 `--target=`/`--report` flags as plain compilation. `run` is
 exe-only — it errors on a `lib` package — and otherwise builds, then
@@ -76,6 +76,45 @@ analogous to `--tokens`/`--ast` exposing earlier compiler stages — resolving
 or checking the package at an explicit `DIR` rather than one found from the
 working directory.
 
+## Static archives
+
+A `lib` emits a static archive for a C consumer when its manifest says so, or
+for one build with `ace pkg build --archive`:
+
+```
+name: codec
+version: 0.1.0
+ace: 0.1
+type: lib
+root: src/mod.ace
+output: archive
+```
+
+The build writes two files to `build/bin/`:
+
+- `libcodec.a`: one object holding the code of the whole graph, `std` included.
+  Only `extern "c"` definitions are global symbols; everything else is local.
+- `libcodec.link`: the graph's [link inputs](#native-link-inputs), one linker
+  argument per line in link order, with `-framework` and its name on separate
+  lines. It is empty when there are none, so a consumer can always read it.
+
+An archive records no dependencies, so the consumer passes those arguments
+itself:
+
+```sh
+cc app.c build/bin/libcodec.a $(cat build/bin/libcodec.link) -o app
+```
+
+That form splits on spaces; a build system that may see a path with spaces
+reads the file line by line. The same input rules apply as for an `exe`,
+including overrides and conflicts. `--archive` on an `exe` is an error, as is
+`output: archive`, and an archive's root may not define `main`: the program
+linking it brings its own. A dependency's `output` has no effect. An Ace
+consumer still depends on the package as source, since mangled Ace symbols are
+private to each object. Two Ace archives in one C program each carry their own
+copy of `std` and of any shared dependency, and an `extern "c"` export they
+share collides at link.
+
 ## Native link inputs
 
 A `[link]` section names inputs for an `exe`'s final link, one per line:
@@ -117,6 +156,14 @@ that, two dependencies declaring one file name at different paths are an
 error naming both. The linked file must exist.
 
 ## Design rationale
+
+The request exists both as a manifest field and a flag. The field states that
+a package ships this way, so every plain build does the same thing; the flag
+serves a one-off build, and `ace --archive` has no manifest to read. A file
+beside the archive, like a `pkg-config` `.pc` file, keeps the exact-path rule:
+Mach-O's `LC_LINKER_OPTION` autolinking (used by Clang and Swift) carries only
+`-l` and `-framework`, and merging inputs into the archive cannot take a
+dylib or framework.
 
 Why the rules in `spec/modules-packages.md` are shaped as they are.
 

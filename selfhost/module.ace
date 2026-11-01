@@ -223,6 +223,19 @@ Loader.resolve_root(self, root_path: string, in_package: bool, pkg: usize): bool
 
 // --- accessors ----------------------------------------------------------------
 
+/* Reports a main in the root module, which an archive may not define: the
+ * program linking it brings its own; false after reporting.
+ */
+pub Loader.reject_archive_main(self): bool {
+    top: Node = self.node(0, self.top(0))
+    for k: u32 in 0..top.nkids {
+        n: Node = self.node(0, self.kid(0, self.top(0), k))
+        if n.kind != Kind.func || (n.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 { continue }
+        if mem.equal(n.text, "main") { self.err(0, n, ["an archive may not define main"]) }
+    }
+    return self.errors == 0
+}
+
 /* Node `id` of module `mi`'s tree, and child `k` of node `id`. */
 Loader.node(self, mi: usize, id: u32): Node {
     return *self.mods.get(mi).parser.node(id)

@@ -1,0 +1,8 @@
+// expect-build-err: output 'archive' requires type 'lib'
+
+name: archive_exe_err
+version: 0.1.0
+ace: 0.1
+type: exe
+root: src/main.ace
+output: archive

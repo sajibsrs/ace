@@ -1,0 +1,3 @@
+extern "c" archive_flag_value(): i32 {
+    return 0
+}

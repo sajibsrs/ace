@@ -94,7 +94,7 @@ main(): int {
         defer pool.wipe()
         obj: string = ""
         if object { obj = pool.join([stem(path), ".o"]) }
-        return check_bodies(path, full || lower || object, lower, obj, debug)
+        return check_bodies(path, full || lower || object, lower, obj, debug, false)
     }
     src: []u8, rerr: Error = file.read(path)
     defer mem.release[u8](&src)
@@ -225,9 +225,10 @@ stem(name: string): string {
 /* Checks `path` through its function bodies, then with `full` runs the
  * end-of-file checks as `ace` does, and with `lower` prints its functions'
  * IR as `ace --ir` does, or `ace --debug --ir` with `debug`, or with a
- * nonempty `obj` writes its object file there as `ace -c` does; 1 on any error.
+ * nonempty `obj` writes its object file there as `ace -c` does, refusing a
+ * main with `archive`; 1 on any error.
  */
-check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): int {
+check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool, archive: bool): int {
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer l.wipe()
     if !found { return 1 }
@@ -236,6 +237,7 @@ check_bodies(path: string, full: bool, lower: bool, obj: string, debug: bool): i
     defer s.wipe()
     rc: int = checked(&s, path, full)
     if rc != 0 || (!lower && obj.len == 0) { return rc }
+    if archive && !l.reject_archive_main() { return summary(path, l.errors) }
     return finish(&s, path, obj, debug)
 }
 
@@ -371,6 +373,31 @@ run_linker(argv: []string): bool {
     return true
 }
 
+/* Packs `obj` as the static archive `out`; ar updates an archive in place, so
+ * a previous output goes first.
+ */
+write_archive(out: string, obj: string): bool {
+    info: sys.FileInfo, missing: Error = sys.lstat(out)
+    if missing == null {
+        uerr: Error = sys.unlink(out)
+        if uerr != null {
+            fmt.printf(sys.stderr, "ace: cannot replace '%s': %s\n", out, uerr.message)
+            return false
+        }
+    }
+    child: sys.Process, err: Error = exec.spawn(["ar", "rcs", out, obj])
+    if err != null {
+        fmt.printf(sys.stderr, "ace: cannot launch ar: %s\n", err.message)
+        return false
+    }
+    code: int = wait_for(child, "ar")
+    if code != 0 {
+        fmt.printf(sys.stderr, "ace: ar exited with status %d\n", code)
+        return false
+    }
+    return true
+}
+
 /* Whether `a` is one of C's driver options other than those `build` takes. */
 driver_option(a: string): bool {
     for known: string in ["--tokens", "--ast", "--resolved", "--symbols", "--check", "--ir", "--report", "--target", "--pkg-graph", "--pkg-check", "-c"] {
@@ -389,6 +416,7 @@ driver_option(a: string): bool {
 build(): int {
     debug: bool = false
     mode_seen: bool = false
+    archive: bool = false
     root: string = ""
     out: string = ""
     links: array.Array[string] = array.Array[string] {}
@@ -405,6 +433,8 @@ build(): int {
             }
             mode_seen = true
             debug = mem.equal(a, "--debug")
+        } else if mem.equal(a, "--archive") {
+            archive = true
         } else if mem.equal(a, "-o") {
             value: string, ok: bool = option_value(&i, "-o", "an output name")
             if !ok { return 2 }
@@ -455,6 +485,14 @@ build(): int {
         fmt.printf(sys.stderr, "usage: ace-self [--debug|--release] -o NAME file.ace [inputs]\n")
         return 2
     }
+    if archive && !str.has(out, ".a", true) {
+        fmt.printf(sys.stderr, "ace: --archive requires -o NAME.a\n")
+        return 2
+    }
+    if archive && links.len > 0 {
+        fmt.printf(sys.stderr, "ace: --archive links nothing, so it takes no link inputs\n")
+        return 2
+    }
     pool: path.Pool = blank(path.Pool)
     defer pool.wipe()
     obj: string = pool.join([out, ".o"])
@@ -462,7 +500,12 @@ build(): int {
     for input: string in inputs.view() {
         if !distinct_output(obj, input, "generated object") || !distinct_output(out, input, "linked output") { return 2 }
     }
-    if check_bodies(root, true, false, obj, debug) != 0 { return 1 }
+    if archive {
+        if check_bodies(root, true, false, obj, debug, true) != 0 { return 1 }
+        if !write_archive(out, obj) { return 1 }
+        return 0
+    }
+    if check_bodies(root, true, false, obj, debug, false) != 0 { return 1 }
 
     argv: array.Array[string] = array.Array[string] {}
     defer argv.wipe()
@@ -690,6 +733,7 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
     debug: bool = false
     mode_seen: bool = false
     target: string = TARGET
+    flag_archive: bool = false
     for a: string in args {
         if mem.equal(a, "--debug") || mem.equal(a, "--release") {
             if mode_seen && debug != mem.equal(a, "--debug") {
@@ -698,6 +742,8 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
             }
             mode_seen = true
             debug = mem.equal(a, "--debug")
+        } else if mem.equal(a, "--archive") {
+            flag_archive = true
         } else if mem.equal(a, "--report") {
             fmt.printf(sys.stderr, "ace: selfhost does not yet support --report\n")
             return 1, ""
@@ -744,17 +790,49 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
         fmt.printf(sys.stderr, "ace: 'run' requires an exe package; '%s' is type 'lib'\n", p.name)
         return 2, ""
     }
+    if flag_archive && p.is_exe {
+        fmt.printf(sys.stderr, "ace: --archive requires a lib package; '%s' is type 'exe'\n", p.name)
+        return 2, ""
+    }
+    archive: bool = flag_archive || p.is_archive
     build_dir: string = pool.join([p.dir, "/build/bin"])
     merr: Error = make_dirs(pool, build_dir)
     if merr != null {
         fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", build_dir, merr.message)
         return 1, ""
     }
-    if !p.is_exe { return 0, "" } // lib: checked, build/ ensured, nothing to link
+    if !p.is_exe && !archive { return 0, "" } // lib: checked, build/ ensured, nothing to link
     bin: string = pool.join([build_dir, "/", p.name])
     obj: string = pool.join([bin, ".o"])
+    if archive && !l.reject_archive_main() { return summary(p.root_file, l.errors), "" }
     if finish(&s, p.root_file, obj, debug) != 0 { return 1, "" }
+    if archive { return archive_package(pool, &g, obj, build_dir, p.name), "" }
     return link_package(&g, obj, bin), bin
+}
+
+/* Packs `obj` as `lib<name>.a` with the graph's [link] inputs beside it in
+ * `lib<name>.link`, one linker argument per line.
+ */
+archive_package(pool: *path.Pool, g: *package.Graph, obj: string, dir: string, name: string): int {
+    argv: array.Array[string] = array.Array[string] {}
+    defer argv.wipe()
+    if !g.collect_links(&argv) { return 1 }
+    if !write_archive(pool.join([dir, "/lib", name, ".a"]), obj) { return 1 }
+    link_file: string = pool.join([dir, "/lib", name, ".link"])
+    text: string = ""
+    for arg: string in argv.view() {
+        if str.has(arg, '\n') {
+            fmt.printf(sys.stderr, "ace: link input '%s' cannot be written to '%s': it contains a newline\n", arg, link_file)
+            return 1
+        }
+        text = pool.join([text, arg, "\n"])
+    }
+    err: Error = file.write(link_file, text)
+    if err != null {
+        fmt.printf(sys.stderr, "ace: cannot write '%s': %s\n", link_file, err.message)
+        return 1
+    }
+    return 0
 }
 
 /* Links `obj` to `bin` with the graph's [link] inputs. */

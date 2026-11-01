@@ -28,6 +28,7 @@ typedef struct {
     const char* type; int type_line;
     const char* root; int root_line;
     const char* test; int test_line;
+    const char* output; int output_line;
     const char* description; int description_line;
     const char* author; int author_line;
     const char* license; int license_line;
@@ -334,6 +335,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         FIELD("type", type, type_line)
         FIELD("root", root, root_line)
         FIELD("test", test, test_line)
+        FIELD("output", output, output_line)
         FIELD("description", description, description_line)
         FIELD("author", author, author_line)
         FIELD("license", license, license_line)
@@ -455,6 +457,17 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         package_err(L, manifest, rm.type_line, "type '%s' must be 'exe' or 'lib'", rm.type);
         ok = 0;
     }
+    int is_archive = 0;
+    if (rm.output) {
+        is_archive = text_is(rm.output, (uint32_t)strlen(rm.output), "archive");
+        if (!is_archive) {
+            package_err(L, manifest, rm.output_line, "output '%s' must be 'archive'", rm.output);
+            ok = 0;
+        } else if (is_exe) {
+            package_err(L, manifest, rm.output_line, "output 'archive' requires type 'lib'");
+            ok = 0;
+        }
+    }
     if (!is_root && is_exe) {
         package_err(L, manifest, rm.type_line,
                 "dependency '%s' is type 'exe'; only a lib package can be a dependency",
@@ -546,6 +559,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     package->ver_major = vmaj; package->ver_minor = vmin; package->ver_patch = vpat;
     package->ace_major = amaj; package->ace_minor = amin;
     package->is_exe = is_exe;
+    package->is_archive = is_archive;
     package->root_file = root_canon;
     package->test_dir = test_canon;
     package->test_rel = rm.test ? arena_string(rm.test) : NULL;

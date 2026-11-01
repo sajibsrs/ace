@@ -392,6 +392,7 @@ struct Package {
     int         ver_major, ver_minor, ver_patch;
     int         ace_major, ace_minor;
     int         is_exe;      // 0 = lib, 1 = exe
+    int         is_archive;  // a lib declaring `output: archive`
     const char* root_file;   // canonical path to the root .ace file
     const char* test_dir;    // canonical test directory, NULL if absent
     const char* test_rel;    // the manifest's spelling of it, NULL if absent

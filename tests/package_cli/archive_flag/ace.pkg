@@ -1,0 +1,8 @@
+// --archive asks for the archive from a lib that does not declare one.
+// expect-archive: --archive --debug
+
+name: archive_flag
+version: 0.1.0
+ace: 0.1
+type: lib
+root: src/mod.ace

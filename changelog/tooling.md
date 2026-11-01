@@ -1,5 +1,9 @@
 # Tooling
 
+- A `lib` emits a static archive (#174) with `output: archive` or `ace pkg
+  build --archive`, and one source with `ace --archive -o NAME.a`: `ar` packs
+  the one object, and `lib<name>.link` beside it carries the `[link]` inputs.
+  The C driver and selfhost agree; only `extern "c"` symbols are global.
 - `ace test` finds the nearest `ace.pkg` at or above each test file, resolves
   its dependency graph, and links the packages' native inputs, so a package's
   tests import its dependencies (`tests/test_package/`).

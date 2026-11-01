@@ -2486,6 +2486,32 @@ if [ -d tests/driver ]; then
         echo "FAIL: -L/-l archive link exited $got, want 7"
         fail=1
     fi
+    # --archive packs the object: C links it, and each misuse is refused.
+    if ! "$ACE" --debug --archive -o /tmp/ace_driver/libarchived.a tests/driver/archived.ace; then
+        echo "FAIL: --archive should emit a static archive"
+        fail=1
+    fi
+    printf 'int ace_archived(void);\nint main(void) { return ace_archived(); }\n' > /tmp/ace_driver/archive_user.c
+    cc /tmp/ace_driver/archive_user.c /tmp/ace_driver/libarchived.a -o /tmp/ace_driver/archive_user
+    /tmp/ace_driver/archive_user
+    got=$?
+    if [ "$got" -ne 7 ]; then
+        echo "FAIL: linking the emitted archive exited $got, want 7"
+        fail=1
+    fi
+    for bad in "--archive -c" "--archive -o /tmp/ace_driver/no_suffix" \
+               "--archive -o /tmp/ace_driver/inputs.a /tmp/ace_driver/helper_raw.o"; do
+        if "$ACE" $bad tests/driver/archived.ace 2>/dev/null; then
+            echo "FAIL: '$bad' should be refused"
+            fail=1
+        fi
+    done
+    out=$("$ACE" --archive -o /tmp/ace_driver/main.a tests/driver/main_obj.ace 2>&1)
+    if ! printf '%s\n' "$out" | grep -qF "an archive may not define main"; then
+        echo "FAIL: --archive should refuse a root defining main"
+        printf '%s\n' "$out"
+        fail=1
+    fi
     # Apple frameworks exist on a Darwin host only
     if [ "$(uname -s)" = Darwin ]; then
         out=$("$ACE" --debug -o /tmp/ace_driver/app_fw tests/driver/main_fw.ace \
@@ -2889,6 +2915,9 @@ fi
 # expect-list-has: substring` (repeatable) runs `pkg list` expecting success
 # and every listed substring present in its output. `// expect-host: OS`
 # skips the case unless `uname -s` prints OS (e.g. Darwin for a framework).
+# `// expect-archive: [ARGS]` runs `pkg build ARGS` on a lib case, expecting
+# build/bin/lib<name>.a and .link, then links the case's consumer.c against
+# the archive and the .link file's arguments, expecting it to exit 0.
 if [ -d tests/package_cli ]; then
     for case_dir in tests/package_cli/*/; do
         if [ -f "${case_dir}ace.pkg" ]; then dir=${case_dir%/}
@@ -2903,6 +2932,8 @@ if [ -d tests/package_cli ]; then
         run_args=$(sed -n 's/^\/\/ *run-args:[[:space:]]*//p' "$f")
         build_ok=$(sed -n 's/^\/\/ *expect-build-ok[[:space:]]*.*/yes/p' "$f")
         build_err=$(sed -n 's/^\/\/ *expect-build-err:[[:space:]]*//p' "$f")
+        has_archive=$(sed -n 's/^\/\/ *expect-archive:.*/yes/p' "$f")
+        archive_args=$(sed -n 's/^\/\/ *expect-archive:[[:space:]]*//p' "$f")
         run_err=$(sed -n 's/^\/\/ *expect-run-err:[[:space:]]*//p' "$f")
         check_ok=$(sed -n 's/^\/\/ *expect-check-ok[[:space:]]*.*/yes/p' "$f")
         pkg_add_args=$(sed -n 's/^\/\/ *pkg-add-args:[[:space:]]*//p' "$f")
@@ -3044,6 +3075,26 @@ EOF
                 fail=1
             fi
         fi
+        if [ -n "$has_archive" ]; then
+            archive="$dir/build/bin/lib$name.a"
+            rm -f "$archive" "$dir/build/bin/lib$name.link" "$dir/build/bin/consumer"
+            if ! (cd "$dir" && "$ACE" pkg build $archive_args) >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL (pkg build should emit an archive): $dir"
+                cat /tmp/ace_test_errs
+                fail=1
+            elif [ ! -f "$archive" ] || [ ! -f "$dir/build/bin/lib$name.link" ]; then
+                echo "FAIL: $dir should emit lib$name.a and lib$name.link"
+                fail=1
+            elif ! (IFS='
+'
+                    set -f
+                    cc "$dir/consumer.c" "$archive" $(cat "$dir/build/bin/lib$name.link") \
+                        -o "$dir/build/bin/consumer" && "$dir/build/bin/consumer") >/dev/null 2>/tmp/ace_test_errs; then
+                echo "FAIL: $dir consumer did not link and run against the archive"
+                cat /tmp/ace_test_errs
+                fail=1
+            fi
+        fi
         if [ -n "$run_err" ]; then
             run_out=$(cd "$dir" && "$ACE" pkg run --debug 2>&1)
             got=$?
@@ -3071,7 +3122,7 @@ EOF
         if [ -n "$pkg_add_args" ]; then
             (cd "$dir" && "$ACE" pkg remove "$add_name") >/dev/null 2>&1
         fi
-        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$run_err" ] &&
+        if [ -z "$build_exit" ] && [ -z "$build_ok" ] && [ -z "$build_err" ] && [ -z "$has_archive" ] && [ -z "$run_err" ] &&
            [ -z "$check_ok" ] && [ -z "$add_err" ] && [ -z "$remove_ok" ] && [ -z "$remove_err" ] &&
            [ -z "$list_has" ]; then
             echo "FAIL: $f has no expect-*/pkg-add-args marker comment"
