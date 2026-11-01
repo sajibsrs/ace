@@ -1,0 +1,9 @@
+// expect-err: [link] framework list has an empty item
+name: link_framework_empty
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+framework: Security,

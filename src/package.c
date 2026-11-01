@@ -10,16 +10,21 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <spawn.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+extern char** environ;
 
 typedef struct { const char* alias; const char* version; int line; } RawDep;
 
-// One [link] line's path or framework name, in file order.
-typedef struct { const char* value; int line; int framework; } RawLink;
+// One [link] input: a path, framework name, or URL with its hash, in file order.
+typedef struct { const char* value; int line; int framework; const char* sha256; } RawLink;
 
 typedef struct {
     const char* name; int name_line;
@@ -35,6 +40,7 @@ typedef struct {
     const char* repository; int repository_line;
     RawDep* deps; int ndeps, cdeps;
     RawLink* links; int nlinks, clinks;
+    int link_any, link_active; // a [link] section exists; one is active
 } RawManifest;
 
 typedef struct NameEntry NameEntry;
@@ -190,6 +196,7 @@ static void add_raw_link(RawManifest* rm, const char* value, int line, int frame
     rm->links[rm->nlinks].value = value;
     rm->links[rm->nlinks].line = line;
     rm->links[rm->nlinks].framework = framework;
+    rm->links[rm->nlinks].sha256 = NULL;
     rm->nlinks++;
 }
 
@@ -210,6 +217,23 @@ static int target_qualifier_matches(const char* q, size_t n, const char* target)
     return (n == tl || n == os) && memcmp(q, target, n) == 0;
 }
 
+// A fetched input's URL: http or https, with a plain file name at its end.
+static int url_is_valid(const char* url) {
+    const char* rest = strncmp(url, "https://", 8) == 0 ? url + 8 : strncmp(url, "http://", 7) == 0 ? url + 7 : NULL;
+    if (!rest) return 0;
+    for (const char* c = url; *c; c++)
+        if ((unsigned char)*c <= ' ' || *c == 0x7f || *c == '?' || *c == '#' || *c == '\\') return 0;
+    const char* slash = strrchr(rest, '/');
+    return slash && slash[1] && strcmp(slash + 1, ".") != 0 && strcmp(slash + 1, "..") != 0;
+}
+
+static int sha256_is_valid(const char* hash) {
+    size_t n = 0;
+    for (; hash[n]; n++)
+        if (!isdigit((unsigned char)hash[n]) && !(hash[n] >= 'a' && hash[n] <= 'f')) return 0;
+    return n == 64;
+}
+
 // Parse one ace.pkg's text into its raw (unvalidated) fields and dependency
 // entries. Diagnoses malformed lines but keeps scanning so one pass reports
 // every problem in the file.
@@ -219,6 +243,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
     memset(rm, 0, sizeof *rm);
     int line = 0, in_deps = 0, in_link = 0, active = 1, ok = 1;
     int section = 0, dep_first = 0; // current section's index, its first RawDep
+    int url_line = 0, framework_seen = 0; // a url awaiting its sha256; this section's framework field
     // Headers seen so far, as "kind:qualifier", to reject a repeat.
     const char* seen[32]; int nseen = 0;
     const char* p = s.buf;
@@ -234,6 +259,12 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         if (tlen == 0) continue;
         if (tlen >= 2 && t[0] == '/' && t[1] == '/') continue; // comment
         if (t[0] == '[') {
+            if (url_line) {
+                package_err(L, manifest_path, url_line, "[link] url must be followed immediately by sha256");
+                ok = 0;
+                url_line = 0;
+            }
+            framework_seen = 0;
             in_deps = in_link = 0;
             active = 0; // fields of a bad header are dropped
             section++;
@@ -268,6 +299,10 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
             in_deps = is_dep;
             in_link = is_link;
             active = !qcolon || target_qualifier_matches(qual, qlen, L->target);
+            if (is_link) {
+                rm->link_any = 1;
+                if (active) rm->link_active = 1;
+            }
             continue;
         }
         if (!in_deps && !in_link && section) continue; // inside a rejected header
@@ -300,13 +335,52 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
             continue;
         }
         if (in_link) {
+            if (text_is(key, (uint32_t)kt, "sha256")) {
+                if (!url_line) {
+                    package_err(L, manifest_path, line, "[link] sha256 must follow a url");
+                    ok = 0;
+                    continue;
+                }
+                url_line = 0;
+                if (active) rm->links[rm->nlinks - 1].sha256 = package_strndup(val, vlen);
+                continue;
+            }
+            if (url_line) {
+                package_err(L, manifest_path, url_line, "[link] url must be followed immediately by sha256");
+                ok = 0;
+                url_line = 0;
+            }
             int framework = text_is(key, (uint32_t)kt, "framework");
-            if (!framework && !text_is(key, (uint32_t)kt, "path")) {
+            int url = text_is(key, (uint32_t)kt, "url");
+            if (!framework && !url && !text_is(key, (uint32_t)kt, "path")) {
                 package_err(L, manifest_path, line, "unknown [link] field '%.*s'", (int)kt, key);
                 ok = 0;
                 continue;
             }
-            if (active) add_raw_link(rm, package_strndup(val, vlen), line, framework);
+            if (url) url_line = line;
+            if (!framework) {
+                if (active) add_raw_link(rm, package_strndup(val, vlen), line, 0);
+                continue;
+            }
+            if (framework_seen) {
+                package_err(L, manifest_path, line, "repeated [link] field 'framework'");
+                ok = 0;
+                continue;
+            }
+            framework_seen = 1;
+            for (const char* it = val, *stop = val + vlen;;) {
+                const char* comma = memchr(it, ',', (size_t)(stop - it));
+                size_t nlen;
+                const char* item = trim(it, (size_t)((comma ? comma : stop) - it), &nlen);
+                if (!nlen) {
+                    package_err(L, manifest_path, line, "[link] framework list has an empty item");
+                    ok = 0;
+                } else if (active) {
+                    add_raw_link(rm, package_strndup(item, nlen), line, 1);
+                }
+                if (!comma) break;
+                it = comma + 1;
+            }
             continue;
         }
         if (in_deps) {
@@ -342,6 +416,10 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         FIELD("repository", repository, repository_line)
 #undef FIELD
         package_err(L, manifest_path, line, "unknown field '%.*s'", (int)kt, key);
+        ok = 0;
+    }
+    if (url_line) {
+        package_err(L, manifest_path, url_line, "[link] url must be followed immediately by sha256");
         ok = 0;
     }
     // Drop inactive sections' entries (marked by a negated line).
@@ -545,6 +623,21 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
                 package_err(L, manifest, rl->line, "[link] framework '%s' must be a bare name", rl->value);
                 ok = 0;
             }
+            for (int j = 0; j < i; j++)
+                if (rm.links[j].framework && rm.links[j].line == rl->line && strcmp(rm.links[j].value, rl->value) == 0) {
+                    package_err(L, manifest, rl->line, "[link] framework '%s' is repeated", rl->value);
+                    ok = 0;
+                    break;
+                }
+        } else if (rl->sha256) {
+            if (!url_is_valid(rl->value)) {
+                package_err(L, manifest, rl->line, "[link] url '%s' must be http or https and end in a file name", rl->value);
+                ok = 0;
+            }
+            if (!sha256_is_valid(rl->sha256)) {
+                package_err(L, manifest, rl->line, "[link] sha256 '%s' must be 64 lowercase hex digits", rl->sha256);
+                ok = 0;
+            }
         } else if (rl->value[0] != '/' && !path_is_contained(rl->value, strlen(rl->value))) {
             package_err(L, manifest, rl->line,
                     "[link] path '%s' must be absolute or a relative path within the package", rl->value);
@@ -612,7 +705,7 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         const char* value = rl->value;
         // A relative path must exist now; an absolute one is checked only
         // if it is the one linked, since the root may override it.
-        if (!rl->framework && value[0] != '/') {
+        if (!rl->framework && !rl->sha256 && value[0] != '/') {
             const char* resolved = canonicalize(join_path(canon, value));
             if (!resolved || !(path_beneath(resolved, canon) || strcmp(resolved, canon) == 0)) {
                 package_err(L, manifest, rl->line, "[link] path '%s' does not exist", value);
@@ -627,12 +720,14 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
         PackageLink* pl = (PackageLink*)arena_alloc(sizeof(PackageLink));
         pl->value = arena_string(value);
         pl->framework = rl->framework;
+        pl->sha256 = rl->sha256 ? arena_string(rl->sha256) : NULL;
         pl->line = rl->line;
         pl->next = NULL;
         if (links_tail) links_tail->next = pl; else links = pl;
         links_tail = pl;
     }
     package->links = links;
+    package->link_unmet = rm.link_any && !rm.link_active;
     free(rm.links);
 
     L->loading = package->next; // pop
@@ -669,6 +764,143 @@ static const char* link_identity(const char* path) {
     return slash ? slash + 1 : path;
 }
 
+// Runs a host tool, whose success is its exit status.
+static int run_tool(char* const* argv) {
+    pid_t pid;
+    if (posix_spawn(&pid, argv[0], NULL, NULL, argv, environ) != 0) return 0;
+    int status;
+    while (waitpid(pid, &status, 0) < 0) if (errno != EINTR) return 0;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+static const uint32_t SHA256_K[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+    0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+    0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+};
+
+#define ROTR32(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
+
+static void sha256_compress(uint32_t state[8], const unsigned char* block) {
+    uint32_t w[64], v[8];
+    for (int i = 0; i < 16; i++)
+        w[i] = (uint32_t)block[i * 4] << 24 | (uint32_t)block[i * 4 + 1] << 16 |
+               (uint32_t)block[i * 4 + 2] << 8 | block[i * 4 + 3];
+    for (int i = 16; i < 64; i++) {
+        uint32_t s0 = ROTR32(w[i - 15], 7) ^ ROTR32(w[i - 15], 18) ^ (w[i - 15] >> 3);
+        uint32_t s1 = ROTR32(w[i - 2], 17) ^ ROTR32(w[i - 2], 19) ^ (w[i - 2] >> 10);
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+    }
+    memcpy(v, state, sizeof v);
+    for (int i = 0; i < 64; i++) {
+        uint32_t s1 = ROTR32(v[4], 6) ^ ROTR32(v[4], 11) ^ ROTR32(v[4], 25);
+        uint32_t t1 = v[7] + s1 + ((v[4] & v[5]) ^ (~v[4] & v[6])) + SHA256_K[i] + w[i];
+        uint32_t s0 = ROTR32(v[0], 2) ^ ROTR32(v[0], 13) ^ ROTR32(v[0], 22);
+        uint32_t t2 = s0 + ((v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]));
+        memmove(v + 1, v, 7 * sizeof v[0]);
+        v[4] += t1;
+        v[0] = t1 + t2;
+    }
+    for (int i = 0; i < 8; i++) state[i] += v[i];
+}
+
+// Whether `file`'s SHA-256 (std/crypto's, as selfhost computes it) is `hash`.
+static int file_has_sha256(const char* file, const char* hash) {
+    FILE* f = fopen(file, "rb");
+    if (!f) return 0;
+    uint32_t state[8] = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                          0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 };
+    unsigned char tail[128] = {0};
+    uint64_t total = 0;
+    size_t n;
+    while ((n = fread(tail, 1, 64, f)) == 64) {
+        sha256_compress(state, tail);
+        total += 64;
+    }
+    int bad = ferror(f);
+    fclose(f);
+    if (bad) return 0;
+    total += n;
+    memset(tail + n, 0, sizeof tail - n);
+    tail[n] = 0x80;
+    size_t size = n >= 56 ? 128 : 64;
+    for (int i = 0; i < 8; i++) tail[size - 1 - (size_t)i] = (unsigned char)(total * 8 >> (i * 8));
+    sha256_compress(state, tail);
+    if (size == 128) sha256_compress(state, tail + 64);
+    char hex[65];
+    for (int i = 0; i < 8; i++) snprintf(hex + i * 8, 9, "%08x", state[i]);
+    return strcmp(hex, hash) == 0;
+}
+
+static int make_dirs(char* dir) {
+    for (char* c = dir + 1; *c; c++) {
+        if (*c != '/') continue;
+        *c = 0;
+        int rc = mkdir(dir, 0777);
+        *c = '/';
+        if (rc != 0 && errno != EEXIST) return 0;
+    }
+    return mkdir(dir, 0777) == 0 || errno == EEXIST;
+}
+
+// The verified cache file of a fetched input, downloading it when absent or
+// damaged (Package System #14). NULL after reporting why not.
+static const char* fetch_link(const PackageLink* pl, const char* manifest) {
+    const char* home = getenv("HOME");
+    if (!home || !*home) {
+        fprintf(stderr, "%s:%d: error: [link] url '%s' needs HOME for the cache\n", manifest, pl->line, pl->value);
+        return NULL;
+    }
+    char* dir = (char*)join_path(join_path(home, ".ace/cache"), pl->sha256);
+    const char* file = join_path(dir, link_identity(pl->value));
+    struct stat st;
+    if (stat(file, &st) == 0 && S_ISREG(st.st_mode) && file_has_sha256(file, pl->sha256)) return file;
+    if (!make_dirs(dir)) {
+        fprintf(stderr, "%s:%d: error: [link] url '%s' cannot be cached in '%s'\n", manifest, pl->line, pl->value, dir);
+        return NULL;
+    }
+    size_t cap = strlen(file) + 16;
+    char* part = (char*)arena_alloc(cap);
+    snprintf(part, cap, "%s.part", file);
+    char* argv[] = { "/usr/bin/curl", "-fsSL", "--globoff", "--proto", "=http,https", "--proto-redir", "=http,https",
+                     "-o", part, "--url", (char*)pl->value, NULL };
+    if (!run_tool(argv)) {
+        unlink(part);
+        fprintf(stderr, "%s:%d: error: [link] url '%s' could not be fetched\n", manifest, pl->line, pl->value);
+        return NULL;
+    }
+    if (!file_has_sha256(part, pl->sha256)) {
+        unlink(part);
+        fprintf(stderr, "%s:%d: error: [link] url '%s' does not match its sha256\n", manifest, pl->line, pl->value);
+        return NULL;
+    }
+    if (rename(part, file) != 0) {
+        unlink(part);
+        fprintf(stderr, "%s:%d: error: [link] url '%s' cannot be cached in '%s'\n", manifest, pl->line, pl->value, dir);
+        return NULL;
+    }
+    return file;
+}
+
+// One input, as a conflict sees it: a fetched file is its hash.
+static int links_agree(const PackageLink* a, const PackageLink* b) {
+    if (a->sha256 && b->sha256) return strcmp(a->sha256, b->sha256) == 0;
+    return !a->sha256 && !b->sha256 && strcmp(a->value, b->value) == 0;
+}
+
 char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
     const char** seen = NULL; int nseen = 0, cseen = 0;
     const char** fw = NULL; int nfw = 0, cfw = 0;
@@ -681,7 +913,14 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
         }                                                                     \
         args[nargv++] = (char*)(s);                                          \
     } while (0)
-    Package* root = order[norder - 1];
+    Package* root = norder ? order[norder - 1] : NULL;
+
+    for (int i = 0; i < norder - 1; i++)
+        if (order[i]->link_unmet) {
+            fprintf(stderr, "%s: error: package '%s' has no [link] section for this target\n",
+                    join_path(order[i]->dir, "ace.pkg"), order[i]->name);
+            d->errors++;
+        }
 
     // Each file name links once, at its first position in the graph: the
     // root's path when it declares one, else the dependencies' one agreed
@@ -723,7 +962,7 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
                 for (const PackageLink* q = order[j]->links; q; q = q->next) {
                     if (q->framework || strcmp(link_identity(q->value), identity) != 0) continue;
                     if (!chosen) { chosen = q; chosen_pkg = order[j]; continue; }
-                    if (strcmp(chosen->value, q->value) != 0) {
+                    if (!links_agree(chosen, q)) {
                         fprintf(stderr,
                                 "%s:%d: error: [link] path '%s' conflicts with %s:%d's '%s'; "
                                 "the root package can choose one with its own path\n",
@@ -734,14 +973,20 @@ char** package_collect_links(Package** order, int norder, Diag* d, int* nargs) {
                     }
                 }
             if (conflict) continue;
-            struct stat st;
-            if (stat(chosen->value, &st) != 0 || !S_ISREG(st.st_mode)) {
-                fprintf(stderr, "%s:%d: error: [link] path '%s' is not a file\n",
-                        join_path(chosen_pkg->dir, "ace.pkg"), chosen->line, chosen->value);
-                d->errors++;
-                continue;
+            const char* file = chosen->value;
+            if (chosen->sha256) {
+                file = fetch_link(chosen, join_path(chosen_pkg->dir, "ace.pkg"));
+                if (!file) { d->errors++; continue; }
+            } else {
+                struct stat st;
+                if (stat(file, &st) != 0 || !S_ISREG(st.st_mode)) {
+                    fprintf(stderr, "%s:%d: error: [link] path '%s' is not a file\n",
+                            join_path(chosen_pkg->dir, "ace.pkg"), chosen->line, file);
+                    d->errors++;
+                    continue;
+                }
             }
-            PUSH_ARG(chosen->value);
+            PUSH_ARG(file);
         }
     }
 #undef PUSH_ARG

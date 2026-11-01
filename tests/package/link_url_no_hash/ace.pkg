@@ -1,0 +1,9 @@
+// expect-err: [link] url must be followed immediately by sha256
+name: link_url_no_hash
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+url: https://example.com/libx.a

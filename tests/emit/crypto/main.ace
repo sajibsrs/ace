@@ -1,0 +1,27 @@
+// expect-exit: 0
+
+import crypto
+import mem
+
+HEX: const string = "0123456789abcdef"
+
+matches(text: string, want: string): bool {
+    digest: [32]u8 = crypto.sha256(text)
+    got: [64]char
+    for i: usize in 0..32 {
+        got[i * 2] = HEX[digest[i] >> 4]
+        got[i * 2 + 1] = HEX[digest[i] & 15]
+    }
+    return mem.equal(got, want)
+}
+
+main(): int {
+    /* FIPS 180-4 vectors. */
+    if !matches("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") { return 1 }
+    if !matches("abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") { return 2 }
+    if !matches("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq", "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1") { return 3 }
+
+    /* Padding spills into a second block at 56 bytes. */
+    if !matches("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a") { return 4 }
+    return 0
+}

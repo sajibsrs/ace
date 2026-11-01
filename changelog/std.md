@@ -173,3 +173,5 @@
   (`%-16s`); a piece writer's zero flag becomes a `pad` byte.
 - `test` checks take `file, line` (#176), written `@file, @line` and forwarded by
   helpers, and print `file:line: got X, want Y`; the `check N` index is gone.
+- `crypto` adds `sha256`, the hash behind `[link]` fetching in selfhost; the C
+  compiler keeps its own copy while it bootstraps.

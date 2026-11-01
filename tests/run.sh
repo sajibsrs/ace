@@ -3231,6 +3231,11 @@ for f in $(find tests/emit -name '*.ace' | sort); do
     fi
 done
 
+if ! out=$(tests/package_fetch.sh "$ACE" 2>/dev/null); then
+    echo "$out" | grep '^FAIL'
+    fail=1
+fi
+
 wait
 for name in checked modules driver; do
     cat "/tmp/ace_sections/$name.log"

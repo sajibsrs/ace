@@ -90,3 +90,7 @@
   keys, text), `focus`, consuming `key_pressed`, `text_field` and `scroll_area`.
   `pkg/sdl` gains text-input events; binbox's Save-as box and Open list use
   these, and its shortcuts run after widgets on what they left.
+- `[link]` gains fetched inputs: `url:` plus a required `sha256:` download through
+  curl into `~/.ace/cache/<sha256>/`, verified on every use, only for
+  the input actually linked. `framework:` becomes one comma list per section. A
+  dependency with `[link]` sections but none for the target is a link error.

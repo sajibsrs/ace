@@ -1,0 +1,10 @@
+// expect-err: must be http or https and end in a file name
+name: link_url_scheme
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+url: file:///tmp/libx.a
+sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

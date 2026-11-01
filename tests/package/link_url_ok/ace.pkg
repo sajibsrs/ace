@@ -1,0 +1,11 @@
+// A fetched input is not touched while resolving.
+// expect-ok: link_url_ok
+name: link_url_ok
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+url: http://localhost:1/libx.a
+sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

@@ -12,6 +12,7 @@ Today's modules:
 - [`sort`](sort.md) — in-place allocation-free sorting of slices
 - [`atomic`](atomic.md) — lock-free `u32` and `u64` operations with explicit ordering
 - [`bits`](bits.md) — explicit machine-representation access and operations
+- [`crypto`](crypto.md) — basic cryptographic hashes for integrity checks
 - [`exec`](exec.md) — starting programs as child processes
 - [`file`](file.md) — whole-file reads and writes over `sys`
 - [`fmt`](fmt.md) — allocation-free text output

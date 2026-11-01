@@ -1,0 +1,10 @@
+// expect-err: repeated [link] field 'framework'
+name: link_framework_repeat_key
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+framework: Security
+framework: CoreFoundation

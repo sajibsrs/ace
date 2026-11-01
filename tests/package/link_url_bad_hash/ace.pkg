@@ -1,0 +1,10 @@
+// expect-err: must be 64 lowercase hex digits
+name: link_url_bad_hash
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+url: https://example.com/libx.a
+sha256: ABC

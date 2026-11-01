@@ -149,16 +149,18 @@ either side. An Ace consumer still depends on the package as source.
 ## Native link inputs
 
 A `[link]` section names inputs for an `exe`'s final link, one per line:
-an exact file, with the extension it has on disk, or a platform framework.
-Either key may repeat:
+an exact file, with the extension it has on disk, a file fetched by URL and
+hash, or a comma list of platform frameworks. `path` and `url` may repeat;
+`framework` appears once per section:
 
 ```
 [link]
 path: vendor/libfoo.a
-framework: CoreFoundation
+framework: CoreFoundation, Security
 
 [link: darwin-arm64]
-path: /opt/homebrew/lib/libSDL3.dylib
+url: https://example.com/releases/libSDL3.a
+sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
 
 [link: linux]
 path: /usr/lib/libSDL3.so
@@ -186,7 +188,27 @@ dependency's path by declaring the same file name at its own path; without
 that, two dependencies declaring one file name at different paths are an
 error naming both. The linked file must exist.
 
+A fetched input pairs `url:` with the `sha256:` on its next line. The build
+downloads it with `/usr/bin/curl` into `~/.ace/cache/<sha256>/<file name>`,
+checks its SHA-256, and links that file. Later builds check the
+cached copy and need no network; a damaged copy is downloaded again. Nothing is
+fetched by `ace pkg check`, for an inactive section, or for an input the root
+overrides, which it does as for a path: the same file name, here usually a
+`path:` to a local build. Two dependencies naming one hash at different URLs
+are one input. A static library linked this way ends up inside the executable,
+so the program needs neither the cache nor the library at run time.
+
+A dependency whose `[link]` sections all miss the target stops the link with an
+error rather than undefined symbols. An empty section for that target says the
+package needs nothing there.
+
 ## Design rationale
+
+A fetched input requires its hash because the hash, not the transport, is what
+pins the file: a changed or tampered download fails the build, as in Go's
+`go.sum` and Nix's fixed-output fetches, which is also why `http` is allowed
+for mirrors and local servers. Fetching waits for the link step so checking a
+package never needs the network.
 
 `--shared` is the spelling of gcc and clang and of Go's `c-shared`, and it names
 what is asked for rather than one platform's file format. The `@rpath` install

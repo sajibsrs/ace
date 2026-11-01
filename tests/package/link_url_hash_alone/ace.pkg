@@ -1,0 +1,9 @@
+// expect-err: [link] sha256 must follow a url
+name: link_url_hash_alone
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

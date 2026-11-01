@@ -1,0 +1,48 @@
+/* A file server for tests/package_fetch.sh: GET /NAME from the directory in
+ * argv[1], on a loopback port it prints. Runs until killed.
+ */
+
+import file
+import fmt
+import mem
+import net
+import str
+import sys
+import net/tcp
+
+respond(conn: tcp.Conn, dir: string) {
+    request: [2048]u8
+    n: int, rerr: Error = tcp.receive(conn, request[0..2048])
+    if rerr != null || n < 5 { return }
+    line: string = string(request[4..usize(n)])
+    end: usize, found: bool = str.find(line, ' ')
+    if !found { return }
+    path: [1024]u8
+    mem.copy(path[0..dir.len], dir)
+    name: string = line[..end]
+    mem.copy(path[dir.len..dir.len + name.len], name)
+    data: []u8, err: Error = file.read(string(path[0..dir.len + name.len]))
+    defer mem.release[u8](&data)
+    if err != null {
+        tcp.send_all(conn, "HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n")
+        return
+    }
+    tcp.send_all(conn, "HTTP/1.0 200 OK\r\n\r\n")
+    tcp.send_all(conn, data)
+}
+
+main(): int {
+    address: net.Addr4, ok: bool = net.parse4("127.0.0.1:0")
+    if !ok { return 1 }
+    listener: tcp.Listener, err: Error = tcp.listen(address, 16)
+    if err != null { return 1 }
+    bound: net.Addr4, lerr: Error = tcp.local(listener)
+    if lerr != null { return 1 }
+    fmt.printf("%d\n", int(bound.port))
+    for {
+        conn: tcp.Conn, peer: net.Addr4, aerr: Error = tcp.accept(listener)
+        if aerr != null { continue }
+        respond(conn, sys.arg(1))
+        tcp.close(&conn)
+    }
+}

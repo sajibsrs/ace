@@ -377,12 +377,13 @@ struct PackageDep {
 };
 
 // A native link input declared on a [link] line (spec/modules-packages.md
-// Package System #14, GRAMMAR.md §7): an exact file linked as written, or a
-// platform framework name.
+// Package System #14, GRAMMAR.md §7): an exact file linked as written, a
+// file fetched by URL and hash, or a platform framework name.
 typedef struct PackageLink PackageLink;
 struct PackageLink {
     const char*  value;     // canonical path when relative in the manifest, else as written; or a framework name
     int          framework; // value is a framework name
+    const char*  sha256;    // value is a URL fetched to this hash; NULL otherwise
     int          line;
     PackageLink* next;
 };
@@ -404,6 +405,7 @@ struct Package {
     const char* repository;  // NULL if absent
     PackageDep*  deps;
     PackageLink* links;      // declaration order
+    int          link_unmet; // has [link] sections, none active for the target
     Package*    next;        // completion order: dependencies before dependents
 };
 

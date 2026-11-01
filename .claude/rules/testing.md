@@ -47,6 +47,8 @@ paths:
   `tests/definite-init-diff.sh <HEAD-ace> ./ace [count] [seed]`: random
   functions under every branch form must get byte-identical diagnostics from
   a build of `HEAD` and the change. It is not part of `make test`.
+- `tests/package_fetch.sh [compiler]`, run by `tests/run.sh`, serves a library
+  on loopback to exercise `[link]` fetching.
 - Sandboxes may deny network and loopback sockets, causing `net`, `poll`, `tcp`,
   and HTTP fixtures to fail. Confirm environmental restrictions before treating
   those failures as regressions.

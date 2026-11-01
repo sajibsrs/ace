@@ -1,0 +1,9 @@
+// expect-err: [link] framework 'Security' is repeated
+name: link_framework_duplicate
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+framework: Security, Security

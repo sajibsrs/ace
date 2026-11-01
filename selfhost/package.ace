@@ -7,6 +7,8 @@
  */
 
 import array
+import crypto
+import exec
 import file
 import fmt
 import mem
@@ -25,12 +27,13 @@ pub Dep: struct {
 }
 
 /* A [link] input: a canonical path when relative in the manifest, else as
- * written; or a framework name.
+ * written; a URL with the hash it is fetched to; or a framework name.
  */
 pub Link: struct {
     pub value: string,
     pub framework: bool,
     pub line: int,
+    pub sha256: string = "",
 }
 
 pub Package: struct {
@@ -53,6 +56,7 @@ pub Package: struct {
     pub repository: string = "",
     pub deps: array.Array[Dep],
     pub links: array.Array[Link],
+    pub link_unmet: bool = false,           // has [link] sections, none active for the target
 }
 
 /* A manifest field's value and line; line 0 when absent. */
@@ -83,6 +87,8 @@ Raw: struct {
     repository: Field,
     deps: array.Array[RawDep],
     links: array.Array[Link],
+    link_any: bool = false,                 // a [link] section exists
+    link_active: bool = false,              // one is active for the target
 }
 
 Raw.wipe(self) {
@@ -289,6 +295,8 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
     in_deps: bool = false
     in_link: bool = false
     active: bool = true
+    url_line: int = 0                       // a url awaiting its sha256
+    framework_seen: bool = false            // this section's framework field
     ok: bool = true
     section: int = 0
     dep_first: usize = 0                    // the current section's first entry
@@ -309,6 +317,13 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
         if t.len == 0 { continue }
         if t.len >= 2 && t[0] == '/' && t[1] == '/' { continue } // comment
         if t[0] == '[' {
+            if url_line != 0 {
+                self.at(manifest, url_line)
+                fmt.printf(sys.stderr, "[link] url must be followed immediately by sha256\n")
+                ok = false
+                url_line = 0
+            }
+            framework_seen = false
             in_deps = false
             in_link = false
             active = false // fields of a bad header are dropped
@@ -359,6 +374,10 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
             in_deps = is_dep
             in_link = is_link
             active = !qcolon || qualifier_matches(qual, self.target)
+            if is_link {
+                rm.link_any = true
+                if active { rm.link_active = true }
+            }
             continue
         }
         if !in_deps && !in_link && section > 0 { continue } // inside a rejected header
@@ -390,14 +409,63 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
             continue
         }
         if in_link {
+            if mem.equal(key, "sha256") {
+                if url_line == 0 {
+                    self.at(manifest, line)
+                    fmt.printf(sys.stderr, "[link] sha256 must follow a url\n")
+                    ok = false
+                    continue
+                }
+                url_line = 0
+                if active {
+                    l: Link = rm.links.get(rm.links.len - 1)
+                    l.sha256 = self.pool.copy(val)
+                    rm.links.set(rm.links.len - 1, l)
+                }
+                continue
+            }
+            if url_line != 0 {
+                self.at(manifest, url_line)
+                fmt.printf(sys.stderr, "[link] url must be followed immediately by sha256\n")
+                ok = false
+                url_line = 0
+            }
             framework: bool = mem.equal(key, "framework")
-            if !framework && !mem.equal(key, "path") {
+            url: bool = mem.equal(key, "url")
+            if !framework && !url && !mem.equal(key, "path") {
                 self.at(manifest, line)
                 fmt.printf(sys.stderr, "unknown [link] field '%s'\n", key)
                 ok = false
                 continue
             }
-            if active { fail(rm.links.push(Link { value = self.pool.copy(val), framework = framework, line = line })) }
+            if url { url_line = line }
+            if !framework {
+                if active { fail(rm.links.push(Link { value = self.pool.copy(val), framework = false, line = line })) }
+                continue
+            }
+            if framework_seen {
+                self.at(manifest, line)
+                fmt.printf(sys.stderr, "repeated [link] field 'framework'\n")
+                ok = false
+                continue
+            }
+            framework_seen = true
+            list: string = val
+            for {
+                comma: usize, more: bool = str.find(list, ',')
+                item: string = list
+                if more { item = list[..comma] }
+                item = trim(item)
+                if item.len == 0 {
+                    self.at(manifest, line)
+                    fmt.printf(sys.stderr, "[link] framework list has an empty item\n")
+                    ok = false
+                } else if active {
+                    fail(rm.links.push(Link { value = self.pool.copy(item), framework = true, line = line }))
+                }
+                if !more { break }
+                list = list[comma + 1..]
+            }
             continue
         }
         if in_deps {
@@ -426,6 +494,11 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
         if !stored { ok = false }
     }
     // Drop inactive sections' entries (marked by a negated line).
+    if url_line != 0 {
+        self.at(manifest, url_line)
+        fmt.printf(sys.stderr, "[link] url must be followed immediately by sha256\n")
+        ok = false
+    }
     kept: usize = 0
     for i: usize in 0..rm.deps.len {
         d: RawDep = rm.deps.get(i)
@@ -657,12 +730,33 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
             ok = false
         }
     }
-    for l: Link in rm.links.view() {
+    for i: usize in 0..rm.links.len {
+        l: Link = rm.links.get(i)
         if l.framework {
             at: usize, slash: bool = str.find(l.value, '/')
             if slash {
                 self.at(manifest, l.line)
                 fmt.printf(sys.stderr, "[link] framework '%s' must be a bare name\n", l.value)
+                ok = false
+            }
+            for j: usize in 0..i {
+                o: Link = rm.links.get(j)
+                if o.framework && o.line == l.line && mem.equal(o.value, l.value) {
+                    self.at(manifest, l.line)
+                    fmt.printf(sys.stderr, "[link] framework '%s' is repeated\n", l.value)
+                    ok = false
+                    break
+                }
+            }
+        } else if l.sha256.len != 0 {
+            if !url_valid(l.value) {
+                self.at(manifest, l.line)
+                fmt.printf(sys.stderr, "[link] url '%s' must be http or https and end in a file name\n", l.value)
+                ok = false
+            }
+            if !sha256_valid(l.sha256) {
+                self.at(manifest, l.line)
+                fmt.printf(sys.stderr, "[link] sha256 '%s' must be 64 lowercase hex digits\n", l.sha256)
                 ok = false
             }
         } else if l.value[0] != '/' && !contained(l.value) {
@@ -713,7 +807,7 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
         value: string = l.value
         // A relative path must exist now; an absolute one is checked only if
         // it is the one linked, since the root may override it.
-        if !l.framework && value[0] != '/' {
+        if !l.framework && l.sha256.len == 0 && value[0] != '/' {
             resolved: string, exists: bool = path.canonical(&self.pool, self.pool.join([canon, "/", value]))
             if !exists || !(path.beneath(resolved, canon) || mem.equal(resolved, canon)) {
                 self.at(manifest, l.line)
@@ -727,12 +821,13 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
             }
             value = resolved
         }
-        fail(links.push(Link { value = value, framework = l.framework, line = l.line }))
+        fail(links.push(Link { value = value, framework = l.framework, line = l.line, sha256 = l.sha256 }))
     }
 
     p: Package = self.pkgs.get(pi)
     p.deps = deps
     p.links = links
+    p.link_unmet = rm.link_any && !rm.link_active
     self.pkgs.set(pi, p)
     self.loading.truncate(self.loading.len - 1)
     fail(self.order.push(pi)) // completed: its dependencies already precede it
@@ -746,6 +841,108 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
 pub Graph.resolve(self, dir: string): (usize, bool) {
     root: usize, ok: bool = self.load(dir, true, "", 0)
     return root, ok && self.errors == 0
+}
+
+/* A fetched input's URL: http or https, with a plain file name at its end. */
+url_valid(url: string): bool {
+    scheme: usize = 0
+    if str.has(url, "https://", false) { scheme = 8 } else if str.has(url, "http://", false) { scheme = 7 }
+    if scheme == 0 { return false }
+    for c: u8 in url {
+        if c <= ' ' || c == 0x7f || c == '?' || c == '#' || c == '\\' { return false }
+    }
+    rest: string = url[scheme..]
+    name: string = link_identity(rest)
+    return name.len != 0 && name.len != rest.len && !mem.equal(name, ".") && !mem.equal(name, "..")
+}
+
+sha256_valid(hash: string): bool {
+    if hash.len != 64 { return false }
+    for c: u8 in hash {
+        if !(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') { return false }
+    }
+    return true
+}
+
+/* mkdir -p: an existing directory is fine. */
+pub make_dirs(dir: string): Error {
+    if path.is_dir(dir) { return null }
+    parent: string = path.dir(dir)
+    if !mem.equal(parent, dir) && !mem.equal(parent, ".") {
+        err: Error = make_dirs(parent)
+        if err != null { return err }
+    }
+    err: Error = sys.mkdir(dir)
+    if err != null && !path.is_dir(dir) { return err }
+    return null
+}
+
+/* Runs a host tool, whose success is its exit status. */
+run_tool(argv: []string): bool {
+    child: sys.Process, err: Error = exec.spawn(argv)
+    if err != null { return false }
+    status: sys.ProcessStatus, werr: Error = sys.wait(child)
+    for werr != null && werr.code == sys.EINTR { status, werr = sys.wait(child) }
+    return werr == null && status.exited && status.code == 0
+}
+
+/* Whether `name`'s SHA-256 is the hex `hash`. */
+has_sha256(name: string, hash: string): bool {
+    data: []u8, err: Error = file.read(name)
+    defer mem.release[u8](&data)
+    if err != null { return false }
+    digest: [32]u8 = crypto.sha256(data)
+    digits: string = "0123456789abcdef"
+    for i: usize in 0..32 {
+        if hash[i * 2] != digits[digest[i] >> 4] || hash[i * 2 + 1] != digits[digest[i] & 15] { return false }
+    }
+    return true
+}
+
+/* The verified cache file of a fetched input, downloading it when absent or
+ * damaged (Package System #14). False after reporting why not.
+ */
+Graph.fetch_link(self, link: Link, dir: string): (string, bool) {
+    home: string = ""
+    for i: usize in 0 .. sys.envc() {
+        e: string = sys.env(i)
+        if home.len == 0 && e.len > 5 && str.has(e, "HOME=", false) { home = e[5..] }
+    }
+    if home.len == 0 {
+        fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] url '%s' needs HOME for the cache\n", dir, link.line, link.value)
+        return "", false
+    }
+    cache: string = self.pool.join([home, "/.ace/cache/", link.sha256])
+    name: string = self.pool.join([cache, "/", link_identity(link.value)])
+    info: sys.FileInfo, serr: Error = sys.stat(name)
+    if serr == null && info.file_type == sys.FileType.regular && has_sha256(name, link.sha256) { return name, true }
+    if make_dirs(cache) != null {
+        fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] url '%s' cannot be cached in '%s'\n", dir, link.line, link.value, cache)
+        return "", false
+    }
+    part: string = self.pool.join([name, ".part"])
+    if !run_tool(["/usr/bin/curl", "-fsSL", "--globoff", "--proto", "=http,https", "--proto-redir", "=http,https", "-o", part, "--url", link.value]) {
+        sys.unlink(part)
+        fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] url '%s' could not be fetched\n", dir, link.line, link.value)
+        return "", false
+    }
+    if !has_sha256(part, link.sha256) {
+        sys.unlink(part)
+        fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] url '%s' does not match its sha256\n", dir, link.line, link.value)
+        return "", false
+    }
+    if sys.rename(part, name) != null {
+        sys.unlink(part)
+        fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] url '%s' cannot be cached in '%s'\n", dir, link.line, link.value, cache)
+        return "", false
+    }
+    return name, true
+}
+
+/* One input, as a conflict sees it: a fetched file is its hash. */
+links_agree(a: Link, b: Link): bool {
+    if a.sha256.len != 0 && b.sha256.len != 0 { return mem.equal(a.sha256, b.sha256) }
+    return a.sha256.len == 0 && b.sha256.len == 0 && mem.equal(a.value, b.value)
 }
 
 link_identity(value: string): string {
@@ -768,6 +965,14 @@ pub Graph.collect_links(self, args: *array.Array[string]): bool {
     order: []usize = self.order.view()
     if order.len == 0 { return true }
     root: Package = self.pkgs.get(order[order.len - 1])
+    for pi: usize in order[..order.len - 1] {
+        dep: Package = self.pkgs.get(pi)
+        if dep.link_unmet {
+            fmt.printf(sys.stderr, "%s/ace.pkg: error: package '%s' has no [link] section for this target\n", dep.dir, dep.name)
+            self.errors += 1
+            failed = true
+        }
+    }
     for pi: usize in order {
         for link: Link in self.pkgs.get(pi).links.view() {
             if link.framework {
@@ -801,7 +1006,7 @@ pub Graph.collect_links(self, args: *array.Array[string]): bool {
                             have = true
                             chosen = q
                             chosen_dir = dep.dir
-                        } else if !mem.equal(chosen.value, q.value) {
+                        } else if !links_agree(chosen, q) {
                             fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] path '%s' conflicts with %s/ace.pkg:%d's '%s'; the root package can choose one with its own path\n", dep.dir, q.line, q.value, chosen_dir, chosen.line, chosen.value)
                             self.errors += 1
                             conflict = true
@@ -811,14 +1016,25 @@ pub Graph.collect_links(self, args: *array.Array[string]): bool {
                 }
             }
             if conflict { continue }
-            info: sys.FileInfo, err: Error = sys.stat(chosen.value)
-            if err != null || info.file_type != sys.FileType.regular {
-                fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] path '%s' is not a file\n", chosen_dir, chosen.line, chosen.value)
-                self.errors += 1
-                failed = true
-                continue
+            input: string = chosen.value
+            if chosen.sha256.len != 0 {
+                cached: string, fetched: bool = self.fetch_link(chosen, chosen_dir)
+                if !fetched {
+                    self.errors += 1
+                    failed = true
+                    continue
+                }
+                input = cached
+            } else {
+                info: sys.FileInfo, err: Error = sys.stat(input)
+                if err != null || info.file_type != sys.FileType.regular {
+                    fmt.printf(sys.stderr, "%s/ace.pkg:%d: error: [link] path '%s' is not a file\n", chosen_dir, chosen.line, input)
+                    self.errors += 1
+                    failed = true
+                    continue
+                }
             }
-            fail(args.push(chosen.value))
+            fail(args.push(input))
         }
     }
     return !failed

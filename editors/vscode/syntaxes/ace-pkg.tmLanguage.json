@@ -51,7 +51,7 @@
           "name": "keyword.other.key.ace-pkg"
         },
         {
-          "match": "\\b(path|framework)\\b",
+          "match": "\\b(path|framework|url|sha256)\\b",
           "name": "keyword.other.key.link.ace-pkg"
         },
         {

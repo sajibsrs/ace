@@ -561,19 +561,6 @@ package_root(pool: *path.Pool, start: string): (string, bool) {
     return "", false
 }
 
-/* mkdir -p: an existing directory is fine. */
-make_dirs(pool: *path.Pool, dir: string): Error {
-    if path.is_dir(dir) { return null }
-    parent: string = path.dir(dir)
-    if !mem.equal(parent, dir) && !mem.equal(parent, ".") {
-        err: Error = make_dirs(pool, parent)
-        if err != null { return err }
-    }
-    err: Error = sys.mkdir(dir)
-    if err != null && !path.is_dir(dir) { return err }
-    return null
-}
-
 /* `ace pkg ...`. --dir=DIR, looked for before a `--`, starts the walk-up in
  * DIR; std has no chdir, so `start` is passed down and `run` spawns there.
  */
@@ -830,7 +817,7 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
     archive: bool = flag_archive || (p.is_archive && !flag_shared)
     shared: bool = flag_shared || (p.is_shared && !flag_archive)
     build_dir: string = pool.join([p.dir, "/build/bin"])
-    merr: Error = make_dirs(pool, build_dir)
+    merr: Error = package.make_dirs(build_dir)
     if merr != null {
         fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", build_dir, merr.message)
         return 1, ""
@@ -941,7 +928,7 @@ package_init(args: []string): int {
         fmt.printf(sys.stderr, "ace: directory name '%s' is not a valid package name (must be a lowercase identifier); rename the directory or pass a different DIR\n", base)
         return 2
     }
-    merr: Error = make_dirs(&pool, resolved)
+    merr: Error = package.make_dirs(resolved)
     if merr != null {
         fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", dir_arg, merr.message)
         return 1
@@ -969,7 +956,7 @@ package_init(args: []string): int {
         }
     }
     src_dir: string = pool.join([canon, "/src"])
-    derr: Error = make_dirs(&pool, src_dir)
+    derr: Error = package.make_dirs(src_dir)
     if derr != null {
         fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", src_dir, derr.message)
         return 1

@@ -1,0 +1,10 @@
+// Frameworks form one comma list.
+// expect-ok: link_framework_list
+name: link_framework_list
+version: 0.1.0
+ace: 0.1
+type: exe
+root: main.ace
+
+[link]
+framework: CoreFoundation, Security

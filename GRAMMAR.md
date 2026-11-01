@@ -355,8 +355,11 @@ top_key         := "name" | "version" | "ace" | "type" | "root" | "test"
                   | "output" | "description" | "author" | "license" | "repository"
 dep_key         := ident                           // import alias, only
                                                     // inside [dependency]
-link_key        := "path" | "framework"            // only inside [link];
-                                                    // repeatable
+link_key        := "path" | "framework" | "url" | "sha256"
+                                                    // only inside [link]; path
+                                                    // and url repeat, sha256
+                                                    // directly follows url, and
+                                                    // framework is one comma list
 value           := (any – newline)*                [P: escaping/quoting]
 ```
 
