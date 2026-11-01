@@ -43,7 +43,7 @@ for case_dir in */; do
             cat /tmp/ace_pkg_sdl_test_errs
             fail=1
         else
-            "$dir/build/$name" >/tmp/ace_pkg_sdl_test_out 2>&1
+            "$dir/build/bin/$name" >/tmp/ace_pkg_sdl_test_out 2>&1
             got=$?
             if [ "$got" -ne "$exp" ]; then
                 echo "FAIL: $dir exited $got, want $exp"

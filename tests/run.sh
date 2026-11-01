@@ -1766,11 +1766,11 @@ if [ -d tests/emit ]; then
     fi
     # Reuse: a second run skips the build; an edited input rebuilds it.
     cache_dir=tests/test_package/app
-    rm -rf "$cache_dir/build/.test"
+    rm -rf "$cache_dir/build/test"
     "$ACE" pkg test --dir="$cache_dir" >/dev/null
-    cache_inode=$(ls -i "$cache_dir/build/.test/greet")
+    cache_inode=$(ls -i "$cache_dir/build/test/greet")
     "$ACE" pkg test --dir="$cache_dir" >/dev/null
-    if [ "$cache_inode" != "$(ls -i "$cache_dir/build/.test/greet")" ]; then
+    if [ "$cache_inode" != "$(ls -i "$cache_dir/build/test/greet")" ]; then
         echo "FAIL: ace pkg test rebuilt an unchanged test"
         fail=1
     fi
@@ -2872,7 +2872,7 @@ fi
 # expecting exit code N, passing the words of `// run-args: ...` to the binary
 # and after `pkg run --debug --`, also run from the repository root through
 # `--dir` with a relative compiler path; `// expect-build-ok` builds a lib case, expecting
-# `pkg build` to succeed with no linked binary in build/; `// expect-build-err:
+# `pkg build` to succeed with no linked binary in build/bin/; `// expect-build-err:
 # substring` expects `pkg build` on an app case to fail with that diagnostic
 # (e.g. a native link-input conflict, Package System #14 — checking alone
 # never reaches the link step); `// expect-run-err: substring` expects
@@ -2997,10 +2997,10 @@ EOF
                 cat /tmp/ace_test_errs
                 fail=1
             else
-                "$dir/build/$name" $run_args
+                "$dir/build/bin/$name" $run_args
                 got=$?
                 if [ "$got" -ne "$build_exit" ]; then
-                    echo "FAIL: $dir/build/$name exited $got, want $build_exit"
+                    echo "FAIL: $dir/build/bin/$name exited $got, want $build_exit"
                     fail=1
                 fi
                 (cd "$dir" && "$ACE" pkg run --debug -- $run_args) >/dev/null 2>/tmp/ace_test_errs
@@ -3027,8 +3027,8 @@ EOF
                 echo "FAIL (pkg build should succeed): $dir"
                 cat /tmp/ace_test_errs
                 fail=1
-            elif [ ! -d "$dir/build" ] || [ -e "$dir/build/$name" ]; then
-                echo "FAIL: $dir lib build should create an empty build/ with no linked binary"
+            elif [ ! -d "$dir/build/bin" ] || [ -e "$dir/build/bin/$name" ]; then
+                echo "FAIL: $dir lib build should create an empty build/bin/ with no linked binary"
                 fail=1
             fi
         fi

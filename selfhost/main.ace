@@ -744,7 +744,7 @@ package_build(pool: *path.Pool, args: []string, start: string, require_exe: bool
         fmt.printf(sys.stderr, "ace: 'run' requires an exe package; '%s' is type 'lib'\n", p.name)
         return 2, ""
     }
-    build_dir: string = pool.join([p.dir, "/build"])
+    build_dir: string = pool.join([p.dir, "/build/bin"])
     merr: Error = make_dirs(pool, build_dir)
     if merr != null {
         fmt.printf(sys.stderr, "ace: cannot create '%s': %s\n", build_dir, merr.message)
@@ -1033,9 +1033,8 @@ hex(pool: *path.Pool, v: u64): string {
 
 /* Builds each of `files` into its own binary and runs it in `base`, which
  * they are relative to ("" for the working directory). `dir` is the package
- * directory of a package test, which keeps its binaries in build/.test beside
- * .dep records of their inputs and reuses the current ones: dotted because
- * build/<package-name> is the package's own output.
+ * directory of a package test, which keeps its binaries in build/test beside
+ * .dep records of their inputs and reuses the current ones.
  */
 test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: string): int {
     tmp: string = "/tmp"
@@ -1055,7 +1054,7 @@ test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: stri
     work: string = pool.join([tmp, "/ace-test-", name, "-t"])
     if dir.len > 0 {
         sys.mkdir(pool.join([dir, "/build"]))
-        work = pool.join([dir, "/build/.test"])
+        work = pool.join([dir, "/build/test"])
         sys.mkdir(work)
         _, merr: Error = sys.stat(work)
         if merr != null {

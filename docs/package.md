@@ -31,10 +31,10 @@ to the program. `init` takes its own `[DIR]` and rejects `--dir`. `check` perfor
 semantic check with cross-package imports resolved, no codegen — the
 manifest-aware counterpart to plain `ace file.ace`'s default mode. `build`
 resolves the dependency graph and fully checks the root file; for a `lib`
-package that is the entire result, plus ensuring `build/` exists, since v1
+package that is the entire result, plus ensuring `build/bin/` exists, since v1
 ships libraries as source with no reusable binary archive. For an `exe`
 package, `build` additionally compiles and links into
-`build/<package-name>`, accepting the same `--debug`/`--release`/
+`build/bin/<package-name>`, accepting the same `--debug`/`--release`/
 `--target=`/`--report` flags as plain compilation. `run` is
 exe-only — it errors on a `lib` package — and otherwise builds, then
 executes the linked binary in place, propagating its exact exit code.

@@ -10,7 +10,7 @@ make ace
 
 # The Ace side imports pkg/regex, so it is a package built in release mode.
 (cd bench/package/regex && ../../../ace pkg build --release > /dev/null)
-cp bench/package/regex/build/regex_bench "$bench_tmp/regex-ace"
+cp bench/package/regex/build/bin/regex_bench "$bench_tmp/regex-ace"
 cc -std=c11 -O2 -o "$bench_tmp/regex-c" bench/package/regex.c
 
 # PCRE2 is an optional reference column: skipped when not installed.

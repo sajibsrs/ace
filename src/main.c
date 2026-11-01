@@ -538,8 +538,8 @@ static int package_cmd_check(int argc, char** argv) {
 }
 
 // Shared by `pkg build` and `pkg run`: resolve + check the enclosing
-// package, then for an exe compile and link it into build/<package-name>
-// (spec/modules-packages.md Package System #15). A lib only checks and ensures build/
+// package, then for an exe compile and link it into build/bin/<package-name>
+// (spec/modules-packages.md Package System #15). A lib only checks and ensures build/bin/
 // exists, since v1 ships libraries as source with no reusable archive.
 // require_exe rejects a lib package outright (used by `run`). On success
 // for an exe, out_bin receives the linked executable's path.
@@ -594,13 +594,13 @@ static int package_build_or_run(int argc, char** argv, int require_exe,
     }
 
     char build_dir[4096];
-    snprintf(build_dir, sizeof build_dir, "%s/build", root_package->dir);
+    snprintf(build_dir, sizeof build_dir, "%s/build/bin", root_package->dir);
     if (mkdir_p(build_dir) != 0) {
         fprintf(stderr, "ace: cannot create '%s': %s\n", build_dir, strerror(errno));
         free(order);
         return 1;
     }
-    if (!root_package->is_exe) { // lib: checked, build/ ensured, nothing to link
+    if (!root_package->is_exe) { // lib: checked, build/bin/ ensured, nothing to link
         free(order);
         return 0;
     }
@@ -894,10 +894,9 @@ static int test_synthesize_main(Node* file, Diag* d, const char* target) {
 
 // --- test build reuse ---------------------------------------------------------
 //
-// A package test keeps its binary at build/.test/<file> beside a .dep record:
+// A package test keeps its binary at build/test/<stem> beside a .dep record:
 // the build mode, then a content hash and path per input. The binary is reused
-// only while every input hashes the same. The directory is dotted because
-// build/<package-name> is the package's own output.
+// only while every input hashes the same.
 
 static char test_compiler[4096];
 
@@ -1100,7 +1099,7 @@ static void test_collect(const char* dir, ArgList* out) {
 static int test_run(ArgList* files, const char* target, EmitMode mode, Package* pkg, Package** order, int norder) {
     char work[4096];
     if (pkg) {
-        snprintf(work, sizeof work, "build/.test");
+        snprintf(work, sizeof work, "build/test");
         if (mkdir_p(work) != 0) {
             fprintf(stderr, "ace: cannot create '%s': %s\n", work, strerror(errno));
             return 1;

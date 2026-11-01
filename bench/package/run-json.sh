@@ -11,7 +11,7 @@ make ace
 # The benchmark imports pkg/json, so it is a package built in release mode.
 # There is no C column: compare runs of this script across builds instead.
 (cd bench/package/json && ../../../ace pkg build --release > /dev/null)
-cp bench/package/json/build/json_bench "$bench_tmp/json-ace"
+cp bench/package/json/build/bin/json_bench "$bench_tmp/json-ace"
 
 # Discard one run: see bench/README.md on first-run cost.
 "$bench_tmp/json-ace" > /dev/null

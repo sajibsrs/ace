@@ -219,3 +219,4 @@
   private to the package's test directory; test files stay unimportable.
 - `ace pkg test` reuses binaries in `build/.test` while the content hashes in each
   `.dep` record match: compiler, sources, manifests, link files; tests always run.
+- `ace pkg build` writes to `build/bin/<package-name>` and `ace pkg test` to `build/test`, so a package's name can't collide with test output.

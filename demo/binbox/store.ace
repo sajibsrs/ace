@@ -14,8 +14,8 @@ import sim: "./sim.ace"
 import diagram: "./diagram.ace"
 
 /* Where diagrams are listed, read and written, relative to the folder that
- * holds the executable's build/ folder. */
-FOLDER: const string = "../diagram"
+ * holds the executable's build/bin/ folder. */
+FOLDER: const string = "../../diagram"
 /* Longest diagram name, without the extension. */
 pub NAME_MAX: const usize = 32
 /* Most diagrams the Open list shows. */

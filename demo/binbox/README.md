@@ -15,7 +15,7 @@ ace pkg run      # build and run
 ace pkg test     # run the tests
 ```
 
-The program finds its diagrams in `diagram/` next to its `build/` folder, so
+The program finds its diagrams in `diagram/` in the package root, two folders above `build/bin/`, so
 it can be started from any directory.
 
 ## Blocks
