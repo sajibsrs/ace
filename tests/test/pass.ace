@@ -5,13 +5,13 @@ import test
 Level: enum u8 { low, high }
 
 pub numbers(t: *test.T) {
-    t.equal(2 + 2, 4)
-    t.equal(uint(7), uint(7))
-    t.equal(usize(3), usize(3))
+    t.equal(2 + 2, 4, @file, @line)
+    t.equal(uint(7), uint(7), @file, @line)
+    t.equal(usize(3), usize(3), @file, @line)
 }
 
 pub text(t: *test.T) {
-    t.equal("ace", "ace")
-    t.equal(true, 1 < 2)
-    test.equal[Level](t, Level.high, Level.high)
+    t.equal("ace", "ace", @file, @line)
+    t.equal(true, 1 < 2, @file, @line)
+    test.equal[Level](t, Level.high, Level.high, @file, @line)
 }

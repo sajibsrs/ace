@@ -1,4 +1,4 @@
-/* Failing checks report their index and values; later checks still run, the
+/* Failing checks report their location and values; later checks still run, the
  * other cases still run, and `test.run` exits 1. */
 
 import test
@@ -6,16 +6,16 @@ import test
 Facing: enum { north, east }
 
 pub good(t: *test.T) {
-    t.equal(1, 1)
+    t.equal(1, 1, @file, @line)
 }
 
 pub bad(t: *test.T) {
-    t.equal(1, 1)
-    t.equal(-3, 4)
-    t.equal(uint(5), uint(6))
-    t.equal(usize(0), usize(1))
-    t.equal(false, true)
-    t.equal("got", "want")
-    test.equal[Facing](t, Facing.east, Facing.north)
-    t.fail("unreachable state")
+    t.equal(1, 1, @file, @line)
+    t.equal(-3, 4, @file, @line)
+    t.equal(uint(5), uint(6), @file, @line)
+    t.equal(usize(0), usize(1), @file, @line)
+    t.equal(false, true, @file, @line)
+    t.equal("got", "want", @file, @line)
+    test.equal[Facing](t, Facing.east, Facing.north, @file, @line)
+    t.fail("unreachable state", @file, @line)
 }

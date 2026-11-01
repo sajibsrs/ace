@@ -28,25 +28,25 @@ spin(a: *app.App, ns: u64) {
 
 pub slice_leaves_room_for_drawing(t: *test.T) {
     a: app.App = app.App {}
-    t.equal(a.slice() == 14600000, true)
+    t.equal(a.slice() == 14600000, true, @file, @line)
     a.drawn = 5000000
-    t.equal(a.slice() == 9600000, true)
+    t.equal(a.slice() == 9600000, true, @file, @line)
     a.drawn = 40000000
-    t.equal(a.slice() == 2000000, true)
+    t.equal(a.slice() == 2000000, true, @file, @line)
     /* A 120 Hz display leaves half the room. */
     a.drawn = 1000000
     a.refresh(120.0)
-    t.equal(a.slice() > 5000000 && a.slice() < 5400000, true)
+    t.equal(a.slice() > 5000000 && a.slice() < 5400000, true, @file, @line)
     a.refresh(0.0)
-    t.equal(a.frame == app.FRAME, true)
+    t.equal(a.frame == app.FRAME, true, @file, @line)
 }
 
 pub fixed_rate_is_kept(t: *test.T) {
     /* Stop 18 is 100 Hz. */
     a: app.App = running(18)
     spin(&a, 700000000)
-    t.equal(a.count >= 50 && a.count <= 90, true)
-    t.equal(a.rate >= 90.0 && a.rate <= 110.0, true)
+    t.equal(a.count >= 50 && a.count <= 90, true, @file, @line)
+    t.equal(a.rate >= 90.0 && a.rate <= 110.0, true, @file, @line)
 }
 
 pub high_rate_is_kept(t: *test.T) {
@@ -54,8 +54,8 @@ pub high_rate_is_kept(t: *test.T) {
     a: app.App = running(45)
     spin(&a, 700000000)
     /* 100 kHz for 0.7 s; the empty board ticks faster than that. */
-    t.equal(a.count > 30000 && a.count <= 75000, true)
-    t.equal(a.rate > 30000.0 && a.rate <= 110000.0, true)
+    t.equal(a.count > 30000 && a.count <= 75000, true, @file, @line)
+    t.equal(a.rate > 30000.0 && a.rate <= 110000.0, true, @file, @line)
 }
 
 pub pausing_stops_ticks_and_clears_the_rate(t: *test.T) {
@@ -64,8 +64,8 @@ pub pausing_stops_ticks_and_clears_the_rate(t: *test.T) {
     a.auto = false
     count: int = a.count
     spin(&a, 50000000)
-    t.equal(a.count, count)
-    t.equal(a.rate == 0.0, true)
+    t.equal(a.count, count, @file, @line)
+    t.equal(a.rate == 0.0, true, @file, @line)
 }
 
 pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
@@ -82,26 +82,26 @@ pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
     for i: int in 0 .. 5 { a.tick() }
     a.auto = true
     a.reset()
-    t.equal(a.count, 0)
-    t.equal(a.auto, true)
-    t.equal(a.s.level(0, 0) == sim.Level.high, true)
-    t.equal(a.s.level(2, 0) == sim.Level.high, false)
-    t.equal(a.s.g.get(2, 0) == grid.Block.not, true)
+    t.equal(a.count, 0, @file, @line)
+    t.equal(a.auto, true, @file, @line)
+    t.equal(a.s.level(0, 0) == sim.Level.high, true, @file, @line)
+    t.equal(a.s.level(2, 0) == sim.Level.high, false, @file, @line)
+    t.equal(a.s.g.get(2, 0) == grid.Block.not, true, @file, @line)
     /* The same ticks give the same result as the first time. */
     for i: int in 0 .. 5 { a.tick() }
-    t.equal(a.s.level(2, 0) == sim.Level.high, false)
+    t.equal(a.s.level(2, 0) == sim.Level.high, false, @file, @line)
 }
 
 pub clock_slider_picks_a_span(t: *test.T) {
     a: app.App = app.App {}
     at: ui.Rect = ui.Rect { x = 100.0, w = 180.0, h = 22.0 }
-    t.equal(a.clock, 0)
+    t.equal(a.clock, 0, @file, @line)
     a.slide_clock(at.x + at.w - 1.0, at)
-    t.equal(a.clock, grid.SPANS - 1)
+    t.equal(a.clock, grid.SPANS - 1, @file, @line)
     a.slide_clock(at.x - 50.0, at)
-    t.equal(a.clock, 0)
+    t.equal(a.clock, 0, @file, @line)
     a.slide_clock(at.x + at.w / 2.0 + 1.0, at)
-    t.equal(a.clock, grid.SPANS / 2)
+    t.equal(a.clock, grid.SPANS / 2, @file, @line)
 }
 
 /* The dropper takes the block under the pointer, and a clock's span, and
@@ -114,18 +114,18 @@ pub dropper_picks_the_block_under_the_pointer(t: *test.T) {
     a: app.App = app.App { s = sim.Sim.new(g) }
     a.pick = bar.Tool.select
     a.drop(3, 2)
-    t.equal(a.block == grid.Block.xor, true)
-    t.equal(a.pick == bar.Tool.pencil, true)
+    t.equal(a.block == grid.Block.xor, true, @file, @line)
+    t.equal(a.pick == bar.Tool.pencil, true, @file, @line)
     a.pick = bar.Tool.dropper
     a.drop(4, 2)
-    t.equal(a.block == grid.Block.clock, true)
-    t.equal(a.clock, 5)
-    t.equal(a.pick == bar.Tool.pencil, true)
+    t.equal(a.block == grid.Block.clock, true, @file, @line)
+    t.equal(a.clock, 5, @file, @line)
+    t.equal(a.pick == bar.Tool.pencil, true, @file, @line)
     a.pick = bar.Tool.dropper
     a.drop(0, 0)
-    t.equal(a.block == grid.Block.clock, true)
-    t.equal(a.pick == bar.Tool.dropper, true)
+    t.equal(a.block == grid.Block.clock, true, @file, @line)
+    t.equal(a.pick == bar.Tool.dropper, true, @file, @line)
     a.switch(app.Phase.run)
     a.drop(3, 2)
-    t.equal(a.block == grid.Block.clock, true)
+    t.equal(a.block == grid.Block.clock, true, @file, @line)
 }

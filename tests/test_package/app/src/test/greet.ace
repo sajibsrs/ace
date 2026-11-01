@@ -4,5 +4,5 @@ import test
 import greeter
 
 pub greets(t: *test.T) {
-    t.equal(greeter.greet(), 7)
+    t.equal(greeter.greet(), 7, @file, @line)
 }

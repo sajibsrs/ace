@@ -1,5 +1,5 @@
 import test
 
 pub passes(t: *test.T) {
-    t.equal(1, 1)
+    t.equal(1, 1, @file, @line)
 }

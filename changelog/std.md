@@ -171,3 +171,5 @@
   with `fd` -1, because epoll's data word holds one value.
 - `fmt.printf` gains the `-` flag, spaces after the text on any conversion
   (`%-16s`); a piece writer's zero flag becomes a `pad` byte.
+- `test` checks take `file, line` (#176), written `@file, @line` and forwarded by
+  helpers, and print `file:line: got X, want Y`; the `check N` index is gone.

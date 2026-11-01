@@ -4,5 +4,5 @@ import test
 import helper: "./helper/one.ace"
 
 pub uses_helper(t: *test.T) {
-    t.equal(helper.one(), 1)
+    t.equal(helper.one(), 1, @file, @line)
 }

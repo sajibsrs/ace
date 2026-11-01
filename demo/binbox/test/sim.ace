@@ -11,15 +11,15 @@ row(g: *grid.Grid, x: int, y: int, blocks: []grid.Block) {
 }
 
 high(t: *test.T, s: sim.Sim, x: int, y: int) {
-    test.equal[sim.Level](t, s.level(x, y), sim.Level.high)
+    test.equal[sim.Level](t, s.level(x, y), sim.Level.high, @file, @line)
 }
 
 low(t: *test.T, s: sim.Sim, x: int, y: int) {
-    test.equal[sim.Level](t, s.level(x, y), sim.Level.low)
+    test.equal[sim.Level](t, s.level(x, y), sim.Level.low, @file, @line)
 }
 
 error(t: *test.T, s: sim.Sim, x: int, y: int) {
-    test.equal[sim.Level](t, s.level(x, y), sim.Level.error)
+    test.equal[sim.Level](t, s.level(x, y), sim.Level.error, @file, @line)
 }
 
 /* Sources (0,0) and (0,2) drive write pins (1,0) and (1,2), read by pins
@@ -42,45 +42,45 @@ result(block: grid.Block, a: bool, b: bool): sim.Level {
 }
 
 pub and_truth_table(t: *test.T) {
-    test.equal[sim.Level](t, result(grid.Block.and, false, false), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.and, true, false), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.and, false, true), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.and, true, true), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.and, false, false), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.and, true, false), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.and, false, true), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.and, true, true), sim.Level.high, @file, @line)
 }
 
 pub or_truth_table(t: *test.T) {
-    test.equal[sim.Level](t, result(grid.Block.or, false, false), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.or, true, false), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.or, false, true), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.or, true, true), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.or, false, false), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.or, true, false), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.or, false, true), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.or, true, true), sim.Level.high, @file, @line)
 }
 
 pub nand_truth_table(t: *test.T) {
-    test.equal[sim.Level](t, result(grid.Block.nand, false, false), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.nand, true, false), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.nand, false, true), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.nand, true, true), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.nand, false, false), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.nand, true, false), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.nand, false, true), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.nand, true, true), sim.Level.low, @file, @line)
 }
 
 pub nor_truth_table(t: *test.T) {
-    test.equal[sim.Level](t, result(grid.Block.nor, false, false), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.nor, true, false), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.nor, false, true), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.nor, true, true), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.nor, false, false), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.nor, true, false), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.nor, false, true), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.nor, true, true), sim.Level.low, @file, @line)
 }
 
 pub xor_truth_table(t: *test.T) {
-    test.equal[sim.Level](t, result(grid.Block.xor, false, false), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.xor, true, false), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.xor, false, true), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.xor, true, true), sim.Level.low)
+    test.equal[sim.Level](t, result(grid.Block.xor, false, false), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.xor, true, false), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.xor, false, true), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.xor, true, true), sim.Level.low, @file, @line)
 }
 
 pub xnor_truth_table(t: *test.T) {
-    test.equal[sim.Level](t, result(grid.Block.xnor, false, false), sim.Level.high)
-    test.equal[sim.Level](t, result(grid.Block.xnor, true, false), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.xnor, false, true), sim.Level.low)
-    test.equal[sim.Level](t, result(grid.Block.xnor, true, true), sim.Level.high)
+    test.equal[sim.Level](t, result(grid.Block.xnor, false, false), sim.Level.high, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.xnor, true, false), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.xnor, false, true), sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, result(grid.Block.xnor, true, true), sim.Level.high, @file, @line)
 }
 
 /* A five-cell XOR column with pins on rows 0, 2 and 4 is high on an odd count of
@@ -260,7 +260,7 @@ pub not_loop_oscillates(t: *test.T) {
 
 pub toggle_rejects_non_source(t: *test.T) {
     s: sim.Sim = two_input(grid.Block.and)
-    t.equal(s.toggle(2, 1, true), false)
+    t.equal(s.toggle(2, 1, true), false, @file, @line)
 }
 
 ticks(s: *sim.Sim, n: int) {
@@ -305,13 +305,13 @@ jk(): sim.Sim {
 pub jk_matches_file(t: *test.T) {
     data: []u8, err: Error = file.read("diagram/jk-flip-flop.bnbx")
     defer mem.release[u8](&data)
-    t.equal(err == null, true)
+    t.equal(err == null, true, @file, @line)
     stored: sim.Sim, derr: Error = diagram.decode(data)
-    t.equal(derr == null, true)
+    t.equal(derr == null, true, @file, @line)
     built: sim.Sim = jk()
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH {
-            test.equal[grid.Block](t, stored.g.get(x, y), built.g.get(x, y))
+            test.equal[grid.Block](t, stored.g.get(x, y), built.g.get(x, y), @file, @line)
         }
     }
 }
@@ -516,8 +516,8 @@ pub bridge_crosses_signals(t: *test.T) {
     high(t, s, 5, 2)
     low(t, s, 2, 5)
     v: sim.Level, h: sim.Level = s.cross(2, 2)
-    test.equal[sim.Level](t, v, sim.Level.low)
-    test.equal[sim.Level](t, h, sim.Level.high)
+    test.equal[sim.Level](t, v, sim.Level.low, @file, @line)
+    test.equal[sim.Level](t, h, sim.Level.high, @file, @line)
     high(t, s, 2, 2)
     s.toggle(0, 2, false)
     s.toggle(2, 0, true)
@@ -676,18 +676,18 @@ pub span_sets_a_clock_s_half_cycle(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     row(&g, 0, 0, [grid.Block.clock, grid.Block.write, grid.Block.read, grid.Block.led])
     s: sim.Sim = sim.Sim.new(g)
-    t.equal(s.span(0, 0, 2), true)
-    t.equal(s.g.span(0, 0), 2)
+    t.equal(s.span(0, 0, 2), true, @file, @line)
+    t.equal(s.g.span(0, 0), 2, @file, @line)
     ticks(&s, 3)
     low(t, s, 3, 0)
     ticks(&s, 1)
     high(t, s, 3, 0)
-    t.equal(s.span(1, 0, 2), false)
+    t.equal(s.span(1, 0, 2), false, @file, @line)
 }
 
 pub toggle_rejects_a_clock(t: *test.T) {
     s: sim.Sim = clocked()
-    t.equal(s.toggle(0, 0, true), false)
+    t.equal(s.toggle(0, 0, true), false, @file, @line)
 }
 
 /* Placing elsewhere regroups but keeps the time, so clocks stay in step. */
@@ -706,7 +706,7 @@ pub counter_counts(t: *test.T) {
     data: []u8, err: Error = file.read("diagram/ripple-counter.bnbx")
     defer mem.release[u8](&data)
     s: sim.Sim, derr: Error = diagram.decode(data)
-    t.equal(err == null && derr == null, true)
+    t.equal(err == null && derr == null, true, @file, @line)
     last: int = -1
     for k: int in 0 .. 30 {
         ticks(&s, 32)
@@ -714,7 +714,7 @@ pub counter_counts(t: *test.T) {
         for i: int in 0 .. 8 {
             if s.level(114 + 4 * i, 61) == sim.Level.high { v += 1 << i }
         }
-        if k > 1 { t.equal(v, (last + 1) % 256) }
+        if k > 1 { t.equal(v, (last + 1) % 256, @file, @line) }
         last = v
     }
 }

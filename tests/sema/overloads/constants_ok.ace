@@ -12,7 +12,7 @@ shade(a: Color): int { return 1 }
 shade(a: string): int { return 2 }
 
 check(t: *test.T, n: usize) {
-    t.equal(n, 0)
+    t.equal(n, 0, @file, @line)
 }
 
 main(): int {

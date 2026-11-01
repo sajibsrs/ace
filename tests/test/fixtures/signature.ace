@@ -3,7 +3,7 @@
 import test
 
 pub ok(t: *test.T) {
-    t.equal(1, 1)
+    t.equal(1, 1, @file, @line)
 }
 
 pub helper(x: int): int {

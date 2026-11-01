@@ -1,35 +1,35 @@
 /* test — table-driven test runner.
  *
- * A test is `pub name(t: *test.T)` in a test file whose `main` returns `test.run([("name", name), ...])`. Checks report the test's
- * name and the check's index; nothing allocates.
+ * A test is `pub name(t: *test.T)` in a test file whose `main` returns `test.run([("name", name), ...])`. Checks report the
+ * test's name and the location the caller passes; nothing allocates.
  */
 
 import fmt
 import mem
 
-/* One test's state: whether a check failed, and how many checks ran. */
+/* One test's state: whether a check failed. */
 pub T: struct {
     failed: bool,
-    checks: int,
 }
 
 /* A named test function. */
 pub Case: type = (string, (t: *T): void)
 
-/* Counts a check; on failure marks the test failed and prints its index. */
-begin(t: *T, ok: bool): bool {
-    t.checks += 1
+/* On failure marks the test failed and prints the check's location. */
+begin(t: *T, ok: bool, file: string, line: int): bool {
     if ok { return true }
 
     t.failed = true
-    fmt.print("    check ")
-    fmt.print(t.checks)
+    fmt.print("    ")
+    fmt.print(file)
+    fmt.print(":")
+    fmt.print(line)
     fmt.print(": ")
     return false
 }
 
-pub T.equal(self, got: int, want: int): bool {
-    if begin(&self, got == want) { return true }
+pub T.equal(self, got: int, want: int, file: string, line: int): bool {
+    if begin(&self, got == want, file, line) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -37,8 +37,8 @@ pub T.equal(self, got: int, want: int): bool {
     return false
 }
 
-pub T.equal(self, got: uint, want: uint): bool {
-    if begin(&self, got == want) { return true }
+pub T.equal(self, got: uint, want: uint, file: string, line: int): bool {
+    if begin(&self, got == want, file, line) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -46,8 +46,8 @@ pub T.equal(self, got: uint, want: uint): bool {
     return false
 }
 
-pub T.equal(self, got: usize, want: usize): bool {
-    if begin(&self, got == want) { return true }
+pub T.equal(self, got: usize, want: usize, file: string, line: int): bool {
+    if begin(&self, got == want, file, line) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -55,8 +55,8 @@ pub T.equal(self, got: usize, want: usize): bool {
     return false
 }
 
-pub T.equal(self, got: bool, want: bool): bool {
-    if begin(&self, got == want) { return true }
+pub T.equal(self, got: bool, want: bool, file: string, line: int): bool {
+    if begin(&self, got == want, file, line) { return true }
     fmt.print("got ")
     fmt.print(got)
     fmt.print(", want ")
@@ -64,8 +64,8 @@ pub T.equal(self, got: bool, want: bool): bool {
     return false
 }
 
-pub T.equal(self, got: string, want: string): bool {
-    if begin(&self, mem.equal(got, want)) { return true }
+pub T.equal(self, got: string, want: string, file: string, line: int): bool {
+    if begin(&self, mem.equal(got, want), file, line) { return true }
     fmt.print("got \"")
     fmt.print(got)
     fmt.print("\", want \"")
@@ -76,8 +76,8 @@ pub T.equal(self, got: string, want: string): bool {
 
 /* Compares enum values of type `E`, printing members by name; an open
  * enum's non-member prints as an empty name. */
-pub equal[E](t: *T, got: E, want: E): bool {
-    if begin(t, got == want) { return true }
+pub equal[E](t: *T, got: E, want: E, file: string, line: int): bool {
+    if begin(t, got == want, file, line) { return true }
     fmt.print("got ")
     fmt.print(got.name)
     fmt.print(", want ")
@@ -86,8 +86,8 @@ pub equal[E](t: *T, got: E, want: E): bool {
 }
 
 /* Fails the test unconditionally with `message`. */
-pub T.fail(self, message: string) {
-    begin(&self, false)
+pub T.fail(self, message: string, file: string, line: int) {
+    begin(&self, false, file, line)
     fmt.println(message)
 }
 

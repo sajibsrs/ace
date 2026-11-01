@@ -1765,10 +1765,10 @@ if [ -d tests/emit ]; then
         fail=1
     fi
     test_dir_expected=$(printf '%s\n' '== tests/test/fail.ace' 'ok   good' \
-        '    check 2: got -3, want 4' '    check 3: got 5, want 6' \
-        '    check 4: got 0, want 1' '    check 5: got false, want true' \
-        '    check 6: got "got", want "want"' '    check 7: got east, want north' \
-        '    check 8: unreachable state' \
+        '    fail.ace:14: got -3, want 4' '    fail.ace:15: got 5, want 6' \
+        '    fail.ace:16: got 0, want 1' '    fail.ace:17: got false, want true' \
+        '    fail.ace:18: got "got", want "want"' '    fail.ace:19: got east, want north' \
+        '    fail.ace:20: unreachable state' \
         'FAIL bad' '1 passed, 1 failed' '== tests/test/pass.ace' \
         'ok   numbers' 'ok   text' '2 passed, 0 failed' '2 modules, 1 failed')
     if [ "$test_dir_out" != "$test_dir_expected" ]; then

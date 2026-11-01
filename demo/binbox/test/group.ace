@@ -12,18 +12,18 @@ pub separate_runs(t: *test.T) {
     wire(&g, 1, 0)
     wire(&g, 5, 5)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 2)
-    t.equal(n.of(0, 0), 0)
-    t.equal(n.of(1, 0), 0)
-    t.equal(n.of(5, 5), 1)
-    t.equal(n.of(2, 2), -1)
+    t.equal(n.count, 2, @file, @line)
+    t.equal(n.of(0, 0), 0, @file, @line)
+    t.equal(n.of(1, 0), 0, @file, @line)
+    t.equal(n.of(5, 5), 1, @file, @line)
+    t.equal(n.of(2, 2), -1, @file, @line)
 }
 
 pub diagonal_does_not_join(t: *test.T) {
     g: grid.Grid = grid.Grid {}
     wire(&g, 0, 0)
     wire(&g, 1, 1)
-    t.equal(group.Groups.init(g).count, 2)
+    t.equal(group.Groups.init(g).count, 2, @file, @line)
 }
 
 pub bend_and_loop_are_one_net(t: *test.T) {
@@ -37,8 +37,8 @@ pub bend_and_loop_are_one_net(t: *test.T) {
     wire(&g, 3, 1)
     wire(&g, 3, 2)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 1)
-    t.equal(n.of(2, 3), 0)
+    t.equal(n.count, 1, @file, @line)
+    t.equal(n.of(2, 3), 0, @file, @line)
 }
 
 /* Wire, read pins, and write pins touching are one net; the LED, the sources,
@@ -53,12 +53,12 @@ pub conductors_form_one_net(t: *test.T) {
     g.place(0, 1, grid.Block.source)
     g.place(1, 1, grid.Block.clock)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 4)
-    t.equal(n.of(0, 0), n.of(0, 1))
-    t.equal(n.of(1, 0) == n.of(2, 0), true)
-    t.equal(n.of(2, 0) == n.of(3, 0), true)
-    t.equal(n.of(4, 0) == n.of(3, 0), false)
-    t.equal(n.of(0, 1) == n.of(1, 1), false)
+    t.equal(n.count, 4, @file, @line)
+    t.equal(n.of(0, 0), n.of(0, 1), @file, @line)
+    t.equal(n.of(1, 0) == n.of(2, 0), true, @file, @line)
+    t.equal(n.of(2, 0) == n.of(3, 0), true, @file, @line)
+    t.equal(n.of(4, 0) == n.of(3, 0), false, @file, @line)
+    t.equal(n.of(0, 1) == n.of(1, 1), false, @file, @line)
 }
 
 /* Touching LEDs and sources are one block each; clocks merge only at one span. */
@@ -73,11 +73,11 @@ pub devices_merge_by_kind(t: *test.T) {
     g.place(2, 4, grid.Block.clock)
     g.span(2, 4, 3)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 4)
-    t.equal(n.of(0, 0), n.of(1, 0))
-    t.equal(n.of(0, 2), n.of(1, 2))
-    t.equal(n.of(0, 4), n.of(1, 4))
-    t.equal(n.of(1, 4) != n.of(2, 4), true)
+    t.equal(n.count, 4, @file, @line)
+    t.equal(n.of(0, 0), n.of(1, 0), @file, @line)
+    t.equal(n.of(0, 2), n.of(1, 2), @file, @line)
+    t.equal(n.of(0, 4), n.of(1, 4), @file, @line)
+    t.equal(n.of(1, 4) != n.of(2, 4), true, @file, @line)
 }
 
 /* A run of bridges joins pins like wire: pin to pin, or pin to wire. */
@@ -91,8 +91,8 @@ pub bridge_joins_pins(t: *test.T) {
     g.place(2, 2, grid.Block.bridge)
     wire(&g, 3, 2)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.of(0, 0), n.of(2, 0))
-    t.equal(n.of(0, 2), n.of(3, 2))
+    t.equal(n.of(0, 0), n.of(2, 0), @file, @line)
+    t.equal(n.of(0, 2), n.of(3, 2), @file, @line)
 }
 
 /* A pin pair crossing another pin pair in one bridge cell stays two nets: a
@@ -105,10 +105,10 @@ pub bridge_pin_pairs_stay_apart(t: *test.T) {
     g.place(1, 0, grid.Block.write)
     g.place(1, 2, grid.Block.read)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 2)
-    t.equal(n.of(0, 1), n.of(2, 1))
-    t.equal(n.of(1, 0), n.of(1, 2))
-    t.equal(n.of(0, 1) != n.of(1, 0), true)
+    t.equal(n.count, 2, @file, @line)
+    t.equal(n.of(0, 1), n.of(2, 1), @file, @line)
+    t.equal(n.of(1, 0), n.of(1, 2), @file, @line)
+    t.equal(n.of(0, 1) != n.of(1, 0), true, @file, @line)
 }
 
 /* Touching cells of one gate type are one gate; other blocks stay apart. */
@@ -120,13 +120,13 @@ pub same_gates_merge(t: *test.T) {
     g.place(2, 0, grid.Block.or)
     wire(&g, 0, 1)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 3)
-    t.equal(n.of(1, 1), n.of(0, 0))
-    t.equal(n.of(2, 0) == n.of(1, 0), false)
-    t.equal(n.of(0, 1) == n.of(0, 0), false)
+    t.equal(n.count, 3, @file, @line)
+    t.equal(n.of(1, 1), n.of(0, 0), @file, @line)
+    t.equal(n.of(2, 0) == n.of(1, 0), false, @file, @line)
+    t.equal(n.of(0, 1) == n.of(0, 0), false, @file, @line)
     hx: int, hy: int = n.head(n.of(1, 1))
-    t.equal(hx, 0)
-    t.equal(hy, 0)
+    t.equal(hx, 0, @file, @line)
+    t.equal(hy, 0, @file, @line)
 }
 
 pub full_board(t: *test.T) {
@@ -134,7 +134,7 @@ pub full_board(t: *test.T) {
     for y: int in 0 .. grid.HEIGHT {
         for x: int in 0 .. grid.WIDTH { wire(&g, x, y) }
     }
-    t.equal(group.Groups.init(g).count, 1)
+    t.equal(group.Groups.init(g).count, 1, @file, @line)
 }
 
 /* Wire from (1, 2) runs east through bridges (2..4, 2) to (5, 2); wire from
@@ -147,11 +147,11 @@ pub bridge_keeps_crossing_nets_apart(t: *test.T) {
     wire(&g, 3, 1)
     wire(&g, 3, 3)
     n: group.Groups = group.Groups.init(g)
-    t.equal(n.count, 2)
-    t.equal(n.of(1, 2), n.of(5, 2))
-    t.equal(n.of(3, 1), n.of(3, 3))
-    t.equal(n.of(1, 2) != n.of(3, 1), true)
-    t.equal(n.of(3, 2), -1)
+    t.equal(n.count, 2, @file, @line)
+    t.equal(n.of(1, 2), n.of(5, 2), @file, @line)
+    t.equal(n.of(3, 1), n.of(3, 3), @file, @line)
+    t.equal(n.of(1, 2) != n.of(3, 1), true, @file, @line)
+    t.equal(n.of(3, 2), -1, @file, @line)
 }
 
 /* A bridge passes only conductors: gate cells on either side stay apart. */
@@ -160,5 +160,5 @@ pub bridge_does_not_join_gates(t: *test.T) {
     g.place(0, 0, grid.Block.and)
     g.place(1, 0, grid.Block.bridge)
     g.place(2, 0, grid.Block.and)
-    t.equal(group.Groups.init(g).count, 2)
+    t.equal(group.Groups.init(g).count, 2, @file, @line)
 }

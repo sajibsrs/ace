@@ -7,7 +7,7 @@ shows(t: *test.T, rate: f64, want: string) {
     storage: [32]u8
     b: fmt.Buffer = fmt.Buffer.init(storage[..])
     speed.show(&b, rate)
-    t.equal(b.text(), want)
+    t.equal(b.text(), want, @file, @line)
 }
 
 pub steps_by_decade(t: *test.T) {
@@ -26,14 +26,14 @@ pub steps_by_decade(t: *test.T) {
 }
 
 pub zones_are_equal(t: *test.T) {
-    t.equal(speed.stop_at(0.0), 0)
-    t.equal(speed.stop_at(0.999), speed.STOPS - 1)
+    t.equal(speed.stop_at(0.0), 0, @file, @line)
+    t.equal(speed.stop_at(0.999), speed.STOPS - 1, @file, @line)
     shows(t, speed.hz(speed.STOPS - 1), "1 MHz")
-    t.equal(speed.stop_at(1.0), speed.STOPS - 1)
-    t.equal(speed.stop_at(-0.5), 0)
+    t.equal(speed.stop_at(1.0), speed.STOPS - 1, @file, @line)
+    t.equal(speed.stop_at(-0.5), 0, @file, @line)
     /* Half way is the middle zone, and filling it reaches its far edge. */
-    t.equal(speed.stop_at(0.5), speed.STOPS / 2)
-    t.equal(speed.fill(speed.STOPS - 1) == 1.0, true)
+    t.equal(speed.stop_at(0.5), speed.STOPS / 2, @file, @line)
+    t.equal(speed.fill(speed.STOPS - 1) == 1.0, true, @file, @line)
 }
 
 pub units(t: *test.T) {

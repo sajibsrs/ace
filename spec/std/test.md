@@ -18,16 +18,17 @@
     - In a package, importing a file directly in the test directory is a
       compile error, and a helper beneath it is importable only from inside
       it. Any module may import `test`.
-    - `T: struct` has private fields: whether a check failed and how many ran.
-    - `T.equal(self, got, want): bool` overloads `int`, `uint`, `usize`,
+    - `T: struct` has a private field: whether a check failed.
+    - Checks take `file: string, line: int` last, written `@file, @line`; a
+      helper forwards its caller's location the same way.
+    - `T.equal(self, got, want, file, line): bool` overloads `int`, `uint`, `usize`,
       `bool`, and `string` (bytes, by `mem.equal`). A mismatch marks the test
-      failed, prints `check N: got X, want Y` with N the test's 1-based check
-      index, and returns false; the test keeps running.
-    - `equal[E](t: *T, got: E, want: E): bool` compares enum values with
+      failed, prints `file:line: got X, want Y`, and returns false; the test keeps running.
+    - `equal[E](t: *T, got: E, want: E, file, line): bool` compares enum values with
       `==` and prints them by `.name` (Type System #14), as `T.equal` does.
-    - `T.fail(self, message)` fails unconditionally as `check N: message`.
+    - `T.fail(self, message, file, line)` fails unconditionally as
+      `file:line: message`.
     - `Case: type = (string, (t: *T): void)`. `run(table: []Case): int`
       runs cases in order on a fresh `T`, prints `ok   name` or `FAIL name`
       to stdout after each case's check lines, then `N passed, M failed`, and
       returns 0 when none failed, otherwise 1.
-    - No file or line is reported: Ace has no caller-location builtin.
