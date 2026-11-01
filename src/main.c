@@ -48,8 +48,8 @@ static void usage(void) {
                     "           [<file.o> | <file.a> | -L DIR | -l NAME | -framework NAME]...\n"
                     "       ace --pkg-graph=DIR\n"
                     "       ace --pkg-check=DIR\n"
-                    "       ace pkg <init|build|run|check|add|remove|list> ...\n"
-                    "       ace test [--debug | --release] PATH...\n"
+                    "       ace pkg <init|build|run|check|test|add|remove|list> ...\n"
+                    "       ace test [--debug | --release] [--dir=DIR] PATH...\n"
                     "  (default)       full semantic check, no codegen\n"
                     "  --debug         emit runtime diagnostics\n"
                     "  --release       emit without runtime diagnostic machinery\n"
@@ -75,8 +75,8 @@ static void usage(void) {
                     "  ace pkg run   [--debug|--release] [--target=TARGET] [--report] [-- ARGS...]\n"
                     "                build, then execute the exe (exe-only), passing it ARGS\n"
                     "  ace pkg check full semantic check of the enclosing package, no codegen\n"
-                    "  ace test PATH... build and run each *.test.ace (a file, or every one\n"
-                    "                under a directory, skipping fixtures/), with a generated main\n");
+                    "  ace test PATH... build and run a test file, or each .ace file directly in\n"
+                    "                a directory, with a generated main; --dir=DIR acts as a prior cd\n");
     exit(2);
 }
 
@@ -253,6 +253,7 @@ static void package_usage(void) {
                     "       ace pkg run   [--debug|--release] [--target=TARGET]\n"
                     "                     [--report] [-- ARGS...]\n"
                     "       ace pkg check\n"
+                    "       ace pkg test  [--debug|--release] [FILE]\n"
                     "       ace pkg add NAME VERSION\n"
                     "       ace pkg remove NAME\n"
                     "       ace pkg list\n"
@@ -264,6 +265,8 @@ static void package_usage(void) {
                     "         up from the working directory to the nearest ace.pkg\n"
                     "  run    build, then execute the exe (exe-only)\n"
                     "  check  full semantic check of the package, no codegen\n"
+                    "  test   build and run the files directly in the manifest's test\n"
+                    "         directory, or the one FILE among them, in the package root\n"
                     "  add    add a lib dependency found as the nearest pkg/NAME\n"
                     "  remove remove a dependency by name\n"
                     "  list   print the resolved dependency graph\n");
@@ -760,6 +763,8 @@ static int package_cmd_init(int argc, char** argv) {
     return 0;
 }
 
+static int package_cmd_test(int argc, char** argv);
+
 static int package_main(int argc, char** argv) {
     if (argc < 1) package_usage();
     // --dir=DIR starts the nearest-ace.pkg walk-up in DIR, as a prior cd
@@ -792,6 +797,7 @@ static int package_main(int argc, char** argv) {
     if (strcmp(argv[0], "build") == 0) return package_cmd_build(argc - 1, argv + 1);
     if (strcmp(argv[0], "run") == 0) return package_cmd_run(argc - 1, argv + 1);
     if (strcmp(argv[0], "check") == 0) return package_cmd_check(argc - 1, argv + 1);
+    if (strcmp(argv[0], "test") == 0) return package_cmd_test(argc - 1, argv + 1);
     if (strcmp(argv[0], "add") == 0) return package_cmd_add(argc - 1, argv + 1);
     if (strcmp(argv[0], "remove") == 0) return package_cmd_remove(argc - 1, argv + 1);
     if (strcmp(argv[0], "list") == 0) return package_cmd_list(argc - 1, argv + 1);
@@ -883,8 +889,10 @@ static int test_synthesize_main(Node* file, Diag* d, const char* target) {
     return 0;
 }
 
-// Compile one test file with its generated main and link it to `bin`.
-static int test_build(const char* path, const char* target, EmitMode mode, const char* bin) {
+// Compile one test file with its generated main and link it to `bin`. A
+// package test resolves `pkg`'s dependencies and links their native inputs.
+static int test_build(const char* path, const char* target, EmitMode mode, const char* bin,
+                      Package* pkg, Package** order, int norder) {
     Source s;
     if (source_load(&s, path) != 0) return 1;
     Diag d = {path, 0};
@@ -894,20 +902,6 @@ static int test_build(const char* path, const char* target, EmitMode mode, const
         char root_dir[4096];
         path_dir(root_dir, sizeof root_dir, path);
         build_roots(root_dir);
-        // A test file inside a package resolves that package's dependencies
-        // and links their native inputs, as `ace pkg build` does.
-        Package* pkg = NULL;
-        Package** order = NULL;
-        int norder = 0;
-        const char* pkg_dir = find_package_root_from(root_dir[0] ? root_dir : ".");
-        if (pkg_dir) {
-            Diag pd = {pkg_dir, 0};
-            pkg = package_resolve(pkg_dir, target, &pd, &order, &norder);
-            if (!pkg || pd.errors > 0) {
-                fprintf(stderr, "%s: %d error%s\n", pkg_dir, pd.errors, pd.errors == 1 ? "" : "s");
-                return 1;
-            }
-        }
         Node* file = parse(toks, ntok, &d, target);
         if (d.errors == 0) test_synthesize_main(file, &d, target);
         if (d.errors == 0) resolve_imports(file, &d, target, NULL, pkg);
@@ -958,7 +952,8 @@ static int str_cmp(const void* a, const void* b) {
     return strcmp(*(char* const*)a, *(char* const*)b);
 }
 
-// Collect the *.test.ace files under `dir`, skipping fixtures/ and dot directories.
+// Collect the .ace files directly in `dir`, skipping dot files. Subdirectories
+// hold helpers and data.
 static void test_collect(const char* dir, ArgList* out) {
     DIR* dp = opendir(dir);
     if (!dp) {
@@ -967,7 +962,7 @@ static void test_collect(const char* dir, ArgList* out) {
     }
     struct dirent* e;
     while ((e = readdir(dp))) {
-        if (e->d_name[0] == '.') continue;
+        if (e->d_name[0] == '.' || !has_suffix(e->d_name, ".ace")) continue;
         size_t n = strlen(dir) + strlen(e->d_name) + 2;
         char* child = malloc(n);
         if (!child) {
@@ -976,57 +971,14 @@ static void test_collect(const char* dir, ArgList* out) {
         }
         snprintf(child, n, "%s/%s", dir, e->d_name);
         struct stat st;
-        if (stat(child, &st) == 0 && S_ISDIR(st.st_mode)) {
-            if (strcmp(e->d_name, "fixtures") != 0) test_collect(child, out);
-            free(child);
-        } else if (has_suffix(e->d_name, ".test.ace")) {
-            arg_push(out, child);
-        } else {
-            free(child);
-        }
+        if (stat(child, &st) == 0 && S_ISREG(st.st_mode)) arg_push(out, child);
+        else free(child);
     }
     closedir(dp);
 }
 
-// ace test [--debug | --release] PATH...: build each *.test.ace (a file, or
-// every one under a directory) into its own binary and run it.
-static int test_main(int argc, char** argv) {
-    int mode_seen = 0;
-    EmitMode mode = EMIT_RELEASE;
-    ArgList files = {0};
-    for (int i = 0; i < argc; i++) {
-        char* a = argv[i];
-        if (strcmp(a, "--debug") == 0 || strcmp(a, "--release") == 0) {
-            EmitMode m = a[2] == 'd' ? EMIT_DEBUG : EMIT_RELEASE;
-            if (mode_seen && mode != m) cli_error("--debug and --release are mutually exclusive");
-            mode_seen = 1;
-            mode = m;
-        } else if (a[0] == '-' && a[1] != 0) {
-            fprintf(stderr, "ace: unknown option '%s'\n", a);
-            return 2;
-        } else {
-            struct stat st;
-            if (stat(a, &st) != 0) {
-                fprintf(stderr, "ace: cannot open '%s'\n", a);
-                return 2;
-            }
-            size_t first = files.len;
-            if (S_ISDIR(st.st_mode)) test_collect(a, &files);
-            else if (has_suffix(a, ".test.ace")) arg_push(&files, a);
-            else {
-                fprintf(stderr, "ace: '%s' is not a *.test.ace file or a directory\n", a);
-                return 2;
-            }
-            qsort(files.items + first, files.len - first, sizeof(char*), str_cmp);
-        }
-    }
-    if (files.len == 0) {
-        fprintf(stderr, "usage: ace test [--debug | --release] PATH...\n");
-        return 2;
-    }
-    const char* target = host_target();
-    if (!target_select(target)) return 2;
-
+// Build each of `files` into its own binary and run it in the working directory.
+static int test_run(ArgList* files, const char* target, EmitMode mode, Package* pkg, Package** order, int norder) {
     const char* tmp = getenv("TMPDIR");
     char work[4096];
     snprintf(work, sizeof work, "%s/ace-test-XXXXXX", tmp && tmp[0] ? tmp : "/tmp");
@@ -1036,8 +988,8 @@ static int test_main(int argc, char** argv) {
     }
 
     size_t failed = 0;
-    for (size_t i = 0; i < files.len; i++) {
-        const char* path = files.items[i];
+    for (size_t i = 0; i < files->len; i++) {
+        const char* path = files->items[i];
         char bin[4200], obj[4300];
         snprintf(bin, sizeof bin, "%s/t%zu", work, i);
         snprintf(obj, sizeof obj, "%s.o", bin);
@@ -1049,7 +1001,7 @@ static int test_main(int argc, char** argv) {
             fprintf(stderr, "ace: cannot fork: %s\n", strerror(errno));
             return 1;
         }
-        if (pid == 0) _exit(test_build(path, target, mode, bin));
+        if (pid == 0) _exit(test_build(path, target, mode, bin, pkg, order, norder));
         int rc = test_wait(pid, path);
         if (rc == 0) {
             char* args[] = {bin, NULL};
@@ -1066,8 +1018,131 @@ static int test_main(int argc, char** argv) {
         unlink(obj);
     }
     rmdir(work);
-    printf("%zu module%s, %zu failed\n", files.len, files.len == 1 ? "" : "s", failed);
+    printf("%zu module%s, %zu failed\n", files->len, files->len == 1 ? "" : "s", failed);
     return failed > 0 ? 1 : 0;
+}
+
+// --debug or --release at `a`: sets `mode`; 0 for any other word.
+static int test_mode(const char* a, int* mode_seen, EmitMode* mode) {
+    if (strcmp(a, "--debug") != 0 && strcmp(a, "--release") != 0) return 0;
+    EmitMode m = a[2] == 'd' ? EMIT_DEBUG : EMIT_RELEASE;
+    if (*mode_seen && *mode != m) cli_error("--debug and --release are mutually exclusive");
+    *mode_seen = 1;
+    *mode = m;
+    return 1;
+}
+
+// ace test [--debug | --release] [--dir=DIR] PATH...: no manifest is read; each
+// PATH is a test file, or a directory whose direct .ace files are tests.
+static int test_main(int argc, char** argv) {
+    int mode_seen = 0;
+    EmitMode mode = EMIT_RELEASE;
+    const char* start_dir = NULL;
+    ArgList paths = {0};
+    for (int i = 0; i < argc; i++) {
+        char* a = argv[i];
+        if (test_mode(a, &mode_seen, &mode)) continue;
+        if (strncmp(a, "--dir=", 6) == 0) {
+            if (start_dir) cli_error("--dir given more than once");
+            if (a[6] == 0) cli_error("--dir requires a directory");
+            start_dir = a + 6;
+        } else if (a[0] == '-' && a[1] != 0) {
+            fprintf(stderr, "ace: unknown option '%s'\n", a);
+            return 2;
+        } else {
+            arg_push(&paths, a);
+        }
+    }
+    if (paths.len == 0) {
+        fprintf(stderr, "usage: ace test [--debug | --release] [--dir=DIR] PATH...\n");
+        return 2;
+    }
+    if (start_dir && chdir(start_dir) != 0) {
+        fprintf(stderr, "ace: cannot enter '%s': %s\n", start_dir, strerror(errno));
+        return 1;
+    }
+    ArgList files = {0};
+    for (size_t i = 0; i < paths.len; i++) {
+        char* a = paths.items[i];
+        struct stat st;
+        if (stat(a, &st) != 0) {
+            fprintf(stderr, "ace: cannot open '%s'\n", a);
+            return 2;
+        }
+        size_t first = files.len;
+        if (S_ISDIR(st.st_mode)) test_collect(a, &files);
+        else if (has_suffix(a, ".ace")) arg_push(&files, a);
+        else {
+            fprintf(stderr, "ace: '%s' is not an .ace file or a directory\n", a);
+            return 2;
+        }
+        qsort(files.items + first, files.len - first, sizeof(char*), str_cmp);
+    }
+    if (files.len == 0) {
+        fprintf(stderr, "ace: no test files in the given paths\n");
+        return 1;
+    }
+    const char* target = host_target();
+    if (!target_select(target)) return 2;
+    return test_run(&files, target, mode, NULL, NULL, 0);
+}
+
+// ace pkg test [--debug | --release] [FILE]: the files directly in the
+// manifest's test directory, or the one FILE among them, run in the package root.
+static int package_cmd_test(int argc, char** argv) {
+    int mode_seen = 0;
+    EmitMode mode = EMIT_RELEASE;
+    const char* one = NULL;
+    for (int i = 0; i < argc; i++) {
+        if (test_mode(argv[i], &mode_seen, &mode)) continue;
+        if (one || (argv[i][0] == '-' && argv[i][1] != 0)) package_usage();
+        one = argv[i];
+    }
+    const char* one_canon = NULL;
+    if (one && !(one_canon = canonicalize(one))) {
+        fprintf(stderr, "ace: cannot open '%s'\n", one);
+        return 2;
+    }
+    const char* dir = find_package_root();
+    if (!dir) {
+        fprintf(stderr, "ace: no ace.pkg found in this directory or any parent\n");
+        return 1;
+    }
+    const char* target = host_target();
+    if (!target_select(target)) return 2;
+    Package** order = NULL;
+    int norder = 0;
+    Diag pd = {dir, 0};
+    Package* pkg = package_resolve(dir, target, &pd, &order, &norder);
+    if (!pkg || pd.errors > 0) {
+        fprintf(stderr, "%s: %d error%s\n", dir, pd.errors, pd.errors == 1 ? "" : "s");
+        return 1;
+    }
+    if (!pkg->test_dir) {
+        fprintf(stderr, "ace: package '%s' has no 'test' field in ace.pkg\n", pkg->name);
+        return 1;
+    }
+    if (chdir(dir) != 0) {
+        fprintf(stderr, "ace: cannot enter '%s': %s\n", dir, strerror(errno));
+        return 1;
+    }
+    ArgList files = {0};
+    if (one) {
+        if (!path_beneath(one_canon, pkg->test_dir) || strchr(one_canon + strlen(pkg->test_dir) + 1, '/') ||
+            !has_suffix(one_canon, ".ace")) {
+            fprintf(stderr, "ace: '%s' is not a file directly in test directory '%s'\n", one, pkg->test_rel);
+            return 2;
+        }
+        arg_push(&files, (char*)join_path(pkg->test_rel, one_canon + strlen(pkg->test_dir) + 1));
+    } else {
+        test_collect(pkg->test_rel, &files);
+        qsort(files.items, files.len, sizeof(char*), str_cmp);
+    }
+    if (files.len == 0) {
+        fprintf(stderr, "ace: no test files in '%s'\n", pkg->test_rel);
+        return 1;
+    }
+    return test_run(&files, target, mode, pkg, order, norder);
 }
 
 int main(int argc, char** argv) {

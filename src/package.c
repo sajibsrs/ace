@@ -27,6 +27,7 @@ typedef struct {
     const char* ace; int ace_line;
     const char* type; int type_line;
     const char* root; int root_line;
+    const char* test; int test_line;
     const char* description; int description_line;
     const char* author; int author_line;
     const char* license; int license_line;
@@ -332,6 +333,7 @@ static int parse_manifest(PackageLoader* L, const char* manifest_path, RawManife
         FIELD("ace", ace, ace_line)
         FIELD("type", type, type_line)
         FIELD("root", root, root_line)
+        FIELD("test", test, test_line)
         FIELD("description", description, description_line)
         FIELD("author", author, author_line)
         FIELD("license", license, license_line)
@@ -476,6 +478,18 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
             ok = 0;
         }
     }
+    const char* test_canon = NULL;
+    if (ok && rm.test) {
+        test_canon = canonicalize(join_path(canon, rm.test));
+        struct stat st;
+        if (!test_canon || !path_beneath(test_canon, canon) || stat(test_canon, &st) != 0 || !S_ISDIR(st.st_mode)) {
+            package_err(L, manifest, rm.test_line, "test directory '%s' does not exist within the package", rm.test);
+            ok = 0;
+        } else if (!package_contains(canon, test_canon)) {
+            package_err(L, manifest, rm.test_line, "test directory '%s' is inside the reserved pkg/ directory", rm.test);
+            ok = 0;
+        }
+    }
     if (ok && is_std_module_name(rm.name)) {
         package_err(L, manifest, rm.name_line,
                 "package name '%s' collides with a standard-library module name", rm.name);
@@ -533,6 +547,8 @@ static Package* package_load(PackageLoader* L, const char* dir_arg, int is_root,
     package->ace_major = amaj; package->ace_minor = amin;
     package->is_exe = is_exe;
     package->root_file = root_canon;
+    package->test_dir = test_canon;
+    package->test_rel = rm.test ? arena_string(rm.test) : NULL;
     package->description = rm.description ? arena_string(rm.description) : NULL;
     package->author = rm.author ? arena_string(rm.author) : NULL;
     package->license = rm.license ? arena_string(rm.license) : NULL;

@@ -1,9 +1,9 @@
 import file
 import mem
 import test
-import grid: "./grid.ace"
-import sim: "./sim.ace"
-import diagram: "./diagram.ace"
+import grid: "../grid.ace"
+import sim: "../sim.ace"
+import diagram: "../diagram.ace"
 
 /* Places a row of blocks starting at (x, y), one per cell eastward. */
 row(g: *grid.Grid, x: int, y: int, blocks: []grid.Block) {

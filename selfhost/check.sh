@@ -319,10 +319,10 @@ for f in $(cd tests/package_cli && git ls-files '*ace.pkg' | grep -v '/pkg/'); d
         fi
     done
 done
-for t in tests/test/pass.test.ace tests/test tests/test/fixtures/main.test.ace tests/test/fixtures/signature.test.ace tests/test/fixtures/empty.test.ace; do
+for t in tests/test/pass.ace tests/test tests/test/fixtures/main.ace tests/test/fixtures/signature.ace tests/test/fixtures/empty.ace; do
     compare_command . test "$t"
 done
-compare_command tests/test_package/app test src
+compare_command tests/test_package/app pkg test
 echo "commands: $((ctotal - cbad2))/$ctotal agree"
 
 echo "timing, ${runs:=200} runs per file (ms per run): file  ace --tokens  ace-self"

@@ -1,9 +1,9 @@
 import file
 import mem
 import test
-import grid: "./grid.ace"
-import sim: "./sim.ace"
-import diagram: "./diagram.ace"
+import grid: "../grid.ace"
+import sim: "../sim.ace"
+import diagram: "../diagram.ace"
 
 /* S - I & O L with the source on, a lone NOT, and NAND, NOR, XOR, XNOR apart
  * on row 5. */

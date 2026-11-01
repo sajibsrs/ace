@@ -179,7 +179,7 @@ Manifest-aware building (`ace.pkg`, dependencies, native link inputs, and the
 
 ## Tests
 
-`ace test PATH...` builds and runs `*.test.ace` files with a generated
+`ace test PATH...` and `ace pkg test` build and run test files with a generated
 `main`; see [std.test](std/test.md).
 
 ## Design rationale

@@ -757,10 +757,6 @@ Loader.import_target(self, mi: usize, imp: Node): (string, bool, bool, usize) {
         }
         target: string, ok: bool = self.relative_target(mi, imp, p.text)
         if !ok { return "", false, false, 0 }
-        if str.has(target, ".test.ace", true) {
-            self.err(mi, imp, ["test file '", p.text, "' cannot be imported; ace test builds it"])
-            return "", false, false, 0
-        }
         // A package's relative imports stay in its own directory and out of
         // its reserved pkg/, which also keeps a consumer from deep-importing a
         // dependency's internal files.
@@ -774,6 +770,18 @@ Loader.import_target(self, mi: usize, imp: Node): (string, bool, bool, usize) {
             if found && !package.contains(own, tc) {
                 self.err(mi, imp, ["relative import '", p.text, "' reaches into the reserved pkg/ directory of '", own, "'"])
                 return "", false, false, 0
+            }
+            // A test is never imported; a helper is private to the test directory.
+            tests: string = self.graph.pkgs.get(pkg).test_dir
+            if found && tests.len > 0 && path.beneath(tc, tests) {
+                if path.is_child(tc, tests) {
+                    self.err(mi, imp, ["test file '", p.text, "' cannot be imported; ace pkg test builds it"])
+                    return "", false, false, 0
+                }
+                if !path.beneath(self.mods.get(mi).canon, tests) {
+                    self.err(mi, imp, ["test helper '", p.text, "' can only be imported from inside the test directory"])
+                    return "", false, false, 0
+                }
             }
         }
         return target, true, in_package, pkg

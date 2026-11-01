@@ -1,5 +1,5 @@
 import test
-import grid: "./grid.ace"
+import grid: "../grid.ace"
 
 pub place_and_get(t: *test.T) {
     g: grid.Grid = grid.Grid {}

@@ -873,11 +873,6 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path, Pac
             target = resolve_module_path(L, imp, dir, "module", segs, nsegs);
             if (!target) return NULL;
         }
-        size_t tn = strlen(target);
-        if (tn >= 9 && strcmp(target + tn - 9, ".test.ace") == 0) {
-            import_err(L->d, imp, "test file '%s' cannot be imported; ace test builds it", raw);
-            return NULL;
-        }
         // A package's ordinary relative imports may not reach outside its own
         // canonical directory, nor into its reserved pkg/ — this is also what
         // keeps a dependency's internal files from being deep-imported by a
@@ -893,6 +888,19 @@ static const char* import_target(Loader* L, Node* imp, const char* src_path, Pac
             if (target_canon && !package_contains(own, target_canon)) {
                 import_err(L->d, imp, "relative import '%s' reaches into the reserved pkg/ directory of '%s'", raw, own);
                 return NULL;
+            }
+            // A test is never imported; a helper is private to the test directory.
+            const char* tests = (*target_package)->test_dir;
+            if (target_canon && tests && path_beneath(target_canon, tests)) {
+                if (!strchr(target_canon + strlen(tests) + 1, '/')) {
+                    import_err(L->d, imp, "test file '%s' cannot be imported; ace pkg test builds it", raw);
+                    return NULL;
+                }
+                const char* from = canonicalize(src_path);
+                if (!from || !path_beneath(from, tests)) {
+                    import_err(L->d, imp, "test helper '%s' can only be imported from inside the test directory", raw);
+                    return NULL;
+                }
             }
         }
         return target;

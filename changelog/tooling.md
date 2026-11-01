@@ -213,3 +213,7 @@
   `main.c` with `Graph.collect_links`; a test file's main is parsed from the
   same snippet, spliced with `adopt`/`relink`. `check.sh` diffs them against
   `ace`; `--report` stays refused.
+- Tests are selected by location, not the `.test.ace` suffix: `ace pkg test`
+  runs the files directly in the manifest's `test: DIR` from the package root;
+  `ace test [--dir=DIR] PATH...` reads no manifest. Subdirectories hold helpers,
+  private to the package's test directory; test files stay unimportable.

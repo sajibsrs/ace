@@ -2,19 +2,22 @@
 
 29. `test` (implemented) — a table-driven test runner. `std/test.ace` imports
     only `fmt` and `mem` and allocates nothing.
-    - A test is `pub name(t: *test.T)` in a `<name>.test.ace` file.
-      `ace test PATH...` builds each such file (a file, or every one under a
-      directory, skipping `fixtures/` and dot directories, in sorted order)
+    - A test is `pub name(t: *test.T)` in a test file, under any file name.
+      `ace pkg test [FILE]` runs the `.ace` files directly in the manifest's
+      `test: DIR`, or the one FILE among them, in the package root, and resolves
+      the package's dependencies. `ace test [--dir=DIR] PATH...` reads no
+      manifest: each PATH is a file, or a directory whose direct `.ace` files
+      run, and `--dir` acts as a prior `cd`. Subdirectories never run: they
+      hold helpers and data. Each test file builds, in sorted order,
       with a generated `main` returning `test.run([("name", name), ...])` over
       its non-method `pub` functions in declaration order, links one binary
       per file, runs it, and exits 1 if any build or run failed. A `pub`
       function of another signature is a type error at its declaration; a
       user `main`, or a file with no `pub` function, is a compile error.
-    - A test file inside a package (nearest `ace.pkg` at or above its
-      directory) resolves that package's dependencies and links their native
-      inputs, as `ace pkg build` does; outside any package only `std` and
-      relative imports resolve.
-    - Importing a `*.test.ace` file is a compile error.
+    - `ace test` resolves only `std` and relative imports.
+    - In a package, importing a file directly in the test directory is a
+      compile error, and a helper beneath it is importable only from inside
+      it. Any module may import `test`.
     - `T: struct` has private fields: whether a check failed and how many ran.
     - `T.equal(self, got, want): bool` overloads `int`, `uint`, `usize`,
       `bool`, and `string` (bytes, by `mem.equal`). A mismatch marks the test

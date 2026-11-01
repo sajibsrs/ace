@@ -1,6 +1,6 @@
 import test
-import grid: "./grid.ace"
-import group: "./group.ace"
+import grid: "../grid.ace"
+import group: "../group.ace"
 
 wire(g: *grid.Grid, x: int, y: int) {
     g.place(x, y, grid.Block.wire)

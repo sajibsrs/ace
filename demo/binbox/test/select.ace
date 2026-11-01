@@ -1,8 +1,8 @@
 import test
-import grid: "./grid.ace"
-import sim: "./sim.ace"
-import bar: "./bar.ace"
-import app: "./app.ace"
+import grid: "../grid.ace"
+import sim: "../sim.ace"
+import bar: "../bar.ace"
+import app: "../app.ace"
 
 /* An editor with a wire at (0, 0) and a wire at (3, 0), the first selected
  * and dragged two cells east, next to the second, then released. */

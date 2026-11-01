@@ -1,0 +1,5 @@
+/* A helper under the test directory: not a test, private to it. */
+
+pub one(): int {
+    return 1
+}

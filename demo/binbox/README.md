@@ -12,7 +12,7 @@ Needs Homebrew SDL3 on Apple arm64. From this directory:
 
 ```sh
 ace pkg run      # build and run
-ace test .       # run the tests
+ace pkg test     # run the tests
 ```
 
 The program finds its diagrams in `diagram/` next to its `build/` folder, so
@@ -225,4 +225,4 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `style.ace` | The spacing the bars, panels and dialogs share. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
 | `main.ace` | The SDL window and the event loop. |
-| `*.test.ace` | Tests for each module, run with `ace test .`. |
+| `test/` | Tests for each module, run with `ace pkg test`. |

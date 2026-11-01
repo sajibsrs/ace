@@ -392,6 +392,8 @@ struct Package {
     int         ace_major, ace_minor;
     int         is_exe;      // 0 = lib, 1 = exe
     const char* root_file;   // canonical path to the root .ace file
+    const char* test_dir;    // canonical test directory, NULL if absent
+    const char* test_rel;    // the manifest's spelling of it, NULL if absent
     const char* description; // NULL if absent
     const char* author;      // NULL if absent
     const char* license;     // NULL if absent

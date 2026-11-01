@@ -480,7 +480,7 @@ build(): int {
 NO_PACKAGE: const string = "ace: no ace.pkg found in the working directory or any parent\n"
 
 package_usage(): int {
-    fmt.printf(sys.stderr, "usage: ace pkg init <exe|lib> [DIR]\n       ace pkg build [--debug|--release] [--target=TARGET]\n       ace pkg run   [--debug|--release] [--target=TARGET] [-- ARGS...]\n       ace pkg check\n       ace pkg add NAME VERSION\n       ace pkg remove NAME\n       ace pkg list\n  --dir=DIR  start the ace.pkg walk-up in DIR (every command but init)\n")
+    fmt.printf(sys.stderr, "usage: ace pkg init <exe|lib> [DIR]\n       ace pkg build [--debug|--release] [--target=TARGET]\n       ace pkg run   [--debug|--release] [--target=TARGET] [-- ARGS...]\n       ace pkg check\n       ace pkg test  [--debug|--release] [FILE]\n       ace pkg add NAME VERSION\n       ace pkg remove NAME\n       ace pkg list\n  --dir=DIR  start the ace.pkg walk-up in DIR (every command but init)\n")
     return 2
 }
 
@@ -577,6 +577,7 @@ package_main(): int {
         rc: int, bin: string = package_build(&pool, rest, start, false, true)
         return rc
     }
+    if mem.equal(command, "test") { return package_test(rest, start) }
     if mem.equal(command, "add") {
         if rest.len != 2 { return package_usage() }
         return package_edit(start, rest[0], rest[1], true)
@@ -872,11 +873,11 @@ package_init(args: []string): int {
 
 // --- ace test -----------------------------------------------------------------
 
-/* Compiles one test file with its generated main and links it to `bin`. A file
- * inside a package resolves that package's dependencies and links their
- * native inputs, as `ace pkg build` does.
+/* Compiles one test file with its generated main and links it to `bin`. With a
+ * package directory, resolves that package's dependencies and links their
+ * native inputs.
  */
-test_build(file_path: string, debug: bool, bin: string): int {
+test_build(file_path: string, debug: bool, bin: string, dir: string): int {
     pool: path.Pool = blank(path.Pool)
     defer pool.wipe()
     l: module.Loader, found: bool = module.Loader.new(TARGET)
@@ -885,9 +886,8 @@ test_build(file_path: string, debug: bool, bin: string): int {
     l.want_main = true
     g: package.Graph = package.Graph.init(TARGET, l.std_dir)
     defer g.wipe()
-    dir: string, in_package: bool = package_root(&pool, path.dir(file_path))
     resolved: bool = false
-    if in_package {
+    if dir.len > 0 {
         root: usize, ok: bool = g.resolve(dir)
         if !ok { return summary(dir, g.errors) }
         resolved = l.resolve_in(g, root, file_path)
@@ -903,8 +903,8 @@ test_build(file_path: string, debug: bool, bin: string): int {
     return link_package(&g, obj, bin)
 }
 
-/* Collects the *.test.ace files under `dir`, skipping fixtures/ and dot
- * directories.
+/* Collects the .ace files directly in `dir`, skipping dot files. Subdirectories
+ * hold helpers and data.
  */
 test_collect(pool: *path.Pool, dir: string, out: *array.Array[string]): int {
     handle: sys.Dir, err: Error = sys.opendir(dir)
@@ -918,13 +918,9 @@ test_collect(pool: *path.Pool, dir: string, out: *array.Array[string]): int {
         n: usize, kind: sys.FileType, done: bool, rerr: Error = sys.readdir(&handle, buf[0..1024])
         if rerr != null || done { break }
         name: string = pool.copy(buf[..n])
-        if name[0] == '.' { continue }
+        if name[0] == '.' || !str.has(name, ".ace", true) { continue }
         child: string = pool.join([dir, "/", name])
-        if path.is_dir(child) {
-            if !mem.equal(name, "fixtures") && test_collect(pool, child, out) != 0 { return 1 }
-        } else if str.has(name, ".test.ace", true) {
-            fail(out.push(child))
-        }
+        if !path.is_dir(child) { fail(out.push(child)) }
     }
     return 0
 }
@@ -946,51 +942,11 @@ hex(pool: *path.Pool, v: u64): string {
     return pool.copy(digits[i..16])
 }
 
-/* `ace test [--debug | --release] PATH...`: builds each *.test.ace (a file, or
- * every one under a directory) into its own binary and runs it.
+/* Builds each of `files` into its own binary and runs it in `base`, which
+ * they are relative to ("" for the working directory). `dir` is the package
+ * directory of a package test.
  */
-test_main(): int {
-    debug: bool = false
-    mode_seen: bool = false
-    pool: path.Pool = blank(path.Pool)
-    defer pool.wipe()
-    files: array.Array[string] = array.Array[string] {}
-    defer files.wipe()
-    for i: usize in 2 .. sys.argc() {
-        a: string = sys.arg(i)
-        if mem.equal(a, "--debug") || mem.equal(a, "--release") {
-            if mode_seen && debug != mem.equal(a, "--debug") {
-                fmt.printf(sys.stderr, "ace: --debug and --release are mutually exclusive\n")
-                return 2
-            }
-            mode_seen = true
-            debug = mem.equal(a, "--debug")
-        } else if a.len > 1 && a[0] == '-' {
-            fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
-            return 2
-        } else {
-            info: sys.FileInfo, err: Error = sys.stat(a)
-            if err != null {
-                fmt.printf(sys.stderr, "ace: cannot open '%s'\n", a)
-                return 2
-            }
-            first: usize = files.len
-            if info.file_type == sys.FileType.directory {
-                if test_collect(&pool, a, &files) != 0 { return 1 }
-            } else if str.has(a, ".test.ace", true) {
-                fail(files.push(a))
-            } else {
-                fmt.printf(sys.stderr, "ace: '%s' is not a *.test.ace file or a directory\n", a)
-                return 2
-            }
-            sort.unstable[string](files.view()[first..], path_before)
-        }
-    }
-    if files.len == 0 {
-        fmt.printf(sys.stderr, "usage: ace test [--debug | --release] PATH...\n")
-        return 2
-    }
-
+test_run(pool: *path.Pool, files: []string, base: string, debug: bool, dir: string): int {
     tmp: string = "/tmp"
     for i: usize in 0 .. sys.envc() {
         e: string = sys.env(i)
@@ -1004,13 +960,15 @@ test_main(): int {
         return 1
     }
     name: string = ""
-    for b: u8 in seed[0..8] { name = pool.join([name, hex(&pool, u64(b))]) }
+    for b: u8 in seed[0..8] { name = pool.join([name, hex(pool, u64(b))]) }
     work: string = pool.join([tmp, "/ace-test-", name, "-t"])
 
     failed: usize = 0
     for i: usize in 0 .. files.len {
-        test_path: string = files.get(i)
-        bin: string = pool.join([work, hex(&pool, u64(i))])
+        test_path: string = files[i]
+        real: string = test_path
+        if base.len > 0 { real = pool.join([base, "/", test_path]) }
+        bin: string = pool.join([work, hex(pool, u64(i))])
         obj: string = pool.join([bin, ".o"])
         fmt.printf("== %s\n", test_path)
         // Each build runs in a child: compiler state stays per file.
@@ -1019,10 +977,12 @@ test_main(): int {
             fmt.printf(sys.stderr, "ace: cannot fork: %s\n", err.message)
             return 1
         }
-        if int(pid) == 0 { sys.exit(test_build(test_path, debug, bin)) }
+        if int(pid) == 0 { sys.exit(test_build(real, debug, bin, dir)) }
         rc: int = wait_for(pid, test_path)
         if rc == 0 {
-            child: sys.Process, serr: Error = exec.spawn([bin])
+            options: exec.SpawnOptions = blank(exec.SpawnOptions)
+            options.dir = base
+            child: sys.Process, serr: Error = exec.spawn([bin], options)
             if serr != null {
                 fmt.printf(sys.stderr, "ace: cannot launch '%s': %s\n", bin, serr.message)
                 rc = 1
@@ -1039,4 +999,162 @@ test_main(): int {
     fmt.printf("%u %s, %u failed\n", uint(files.len), noun, uint(failed))
     if failed > 0 { return 1 }
     return 0
+}
+
+/* --debug or --release in `a`: sets the mode; false for any other word. */
+test_mode(a: string, mode_seen: *bool, debug: *bool): (bool, bool) {
+    if !mem.equal(a, "--debug") && !mem.equal(a, "--release") { return false, true }
+    if *mode_seen && *debug != mem.equal(a, "--debug") {
+        fmt.printf(sys.stderr, "ace: --debug and --release are mutually exclusive\n")
+        return true, false
+    }
+    *mode_seen = true
+    *debug = mem.equal(a, "--debug")
+    return true, true
+}
+
+/* `ace test [--debug | --release] [--dir=DIR] PATH...`: no manifest is read;
+ * each PATH is a test file, or a directory whose direct .ace files are tests.
+ * std has no chdir, so paths are joined to DIR, which the tests run in.
+ */
+test_main(): int {
+    debug: bool = false
+    mode_seen: bool = false
+    start: string = ""
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    paths: array.Array[string] = array.Array[string] {}
+    defer paths.wipe()
+    for i: usize in 2 .. sys.argc() {
+        a: string = sys.arg(i)
+        used: bool, valid: bool = test_mode(a, &mode_seen, &debug)
+        if !valid { return 2 }
+        if used { continue }
+        if str.has(a, "--dir=", false) {
+            if start.len > 0 {
+                fmt.printf(sys.stderr, "ace: --dir given more than once\n")
+                return 2
+            }
+            if a.len == 6 {
+                fmt.printf(sys.stderr, "ace: --dir requires a directory\n")
+                return 2
+            }
+            start = a[6..]
+        } else if a.len > 1 && a[0] == '-' {
+            fmt.printf(sys.stderr, "ace: unknown option '%s'\n", a)
+            return 2
+        } else {
+            fail(paths.push(a))
+        }
+    }
+    if paths.len == 0 {
+        fmt.printf(sys.stderr, "usage: ace test [--debug | --release] [--dir=DIR] PATH...\n")
+        return 2
+    }
+    if start.len > 0 && !path.is_dir(start) {
+        fmt.printf(sys.stderr, "ace: cannot enter '%s': Not a directory\n", start)
+        return 1
+    }
+    files: array.Array[string] = array.Array[string] {}
+    defer files.wipe()
+    for a: string in paths.view() {
+        real: string = a
+        if start.len > 0 { real = pool.join([start, "/", a]) }
+        info: sys.FileInfo, err: Error = sys.stat(real)
+        if err != null {
+            fmt.printf(sys.stderr, "ace: cannot open '%s'\n", a)
+            return 2
+        }
+        first: usize = files.len
+        if info.file_type == sys.FileType.directory {
+            found: array.Array[string] = array.Array[string] {}
+            defer found.wipe()
+            if test_collect(&pool, real, &found) != 0 { return 1 }
+            for f: string in found.view() {
+                fail(files.push(pool.join([a, f[real.len..]])))
+            }
+        } else if str.has(a, ".ace", true) {
+            fail(files.push(a))
+        } else {
+            fmt.printf(sys.stderr, "ace: '%s' is not an .ace file or a directory\n", a)
+            return 2
+        }
+        sort.unstable[string](files.view()[first..], path_before)
+    }
+    if files.len == 0 {
+        fmt.printf(sys.stderr, "ace: no test files in the given paths\n")
+        return 1
+    }
+    return test_run(&pool, files.view(), start, debug, "")
+}
+
+/* `ace pkg test [--debug | --release] [FILE]`: the files directly in the
+ * manifest's test directory, or the one FILE among them, run in the package root.
+ */
+package_test(args: []string, start: string): int {
+    debug: bool = false
+    mode_seen: bool = false
+    one: string = ""
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    for a: string in args {
+        used: bool, valid: bool = test_mode(a, &mode_seen, &debug)
+        if !valid { return 2 }
+        if used { continue }
+        if one.len > 0 || (a.len > 1 && a[0] == '-') { return package_usage() }
+        one = a
+    }
+    one_canon: string = ""
+    if one.len > 0 {
+        from_one: string = one
+        if start.len > 0 { from_one = pool.join([start, "/", one]) }
+        c: string, found: bool = path.canonical(&pool, from_one)
+        if !found {
+            fmt.printf(sys.stderr, "ace: cannot open '%s'\n", one)
+            return 2
+        }
+        one_canon = c
+    }
+    from: string = start
+    if from.len == 0 { from = "." }
+    dir: string, in_package: bool = package_root(&pool, from)
+    if !in_package {
+        fmt.printf(sys.stderr, "ace: no ace.pkg found in this directory or any parent\n")
+        return 1
+    }
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return 1 }
+    g: package.Graph = package.Graph.init(TARGET, l.std_dir)
+    defer g.wipe()
+    root: usize, ok: bool = g.resolve(dir)
+    if !ok { return summary(dir, g.errors) }
+    pkg: package.Package = g.pkgs.get(root)
+    if pkg.test_dir.len == 0 {
+        fmt.printf(sys.stderr, "ace: package '%s' has no 'test' field in ace.pkg\n", pkg.name)
+        return 1
+    }
+    files: array.Array[string] = array.Array[string] {}
+    defer files.wipe()
+    if one.len > 0 {
+        if !path.beneath(one_canon, pkg.test_dir) || !path.is_child(one_canon, pkg.test_dir) || !str.has(one_canon, ".ace", true) {
+            fmt.printf(sys.stderr, "ace: '%s' is not a file directly in test directory '%s'\n", one, pkg.test_rel)
+            return 2
+        }
+        fail(files.push(pool.join([pkg.test_rel, one_canon[pkg.test_dir.len..]])))
+    } else {
+        found_files: array.Array[string] = array.Array[string] {}
+        defer found_files.wipe()
+        test_abs: string = pool.join([dir, "/", pkg.test_rel])
+        if test_collect(&pool, test_abs, &found_files) != 0 { return 1 }
+        for f: string in found_files.view() {
+            fail(files.push(pool.join([pkg.test_rel, f[test_abs.len..]])))
+        }
+        sort.unstable[string](files.view(), path_before)
+    }
+    if files.len == 0 {
+        fmt.printf(sys.stderr, "ace: no test files in '%s'\n", pkg.test_rel)
+        return 1
+    }
+    return test_run(&pool, files.view(), dir, debug, dir)
 }

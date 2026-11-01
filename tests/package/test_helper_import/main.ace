@@ -1,0 +1,5 @@
+import t: "./test/helper/one.ace"
+
+main(): int {
+    return 0
+}

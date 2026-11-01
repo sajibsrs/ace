@@ -32,7 +32,7 @@ answer. Keep its diagram descriptions current whenever a diagram changes.
 - Toolbar layout is `bar.place` (button widths, group gaps); icon sizes are
   drawn in `render.ace`.
 - Diagrams: one byte per cell after a 10-byte header; codes are `CODE` in
-  `diagram.ace`. Verify a diagram with a temporary `*.test.ace` that loads it
+  `diagram.ace`. Verify a diagram with a temporary file in `test/` that loads it
   through `diagram.decode` and drives `sim.Sim` (`toggle`, `tick`, `level`),
-  run as `ace test <file>`; delete it afterwards. Do not write a separate
+  run as `ace pkg test <file>`; delete it afterwards. Do not write a separate
   simulator.

@@ -3,8 +3,8 @@
 [Standard library](index.md)
 
 `test` runs a table of test functions and reports each one. It allocates
-nothing. A test is a `pub` function taking `t: *test.T` in a file named
-`<name>.test.ace`; `ace test` generates its `main`:
+nothing. A test is a `pub` function taking `t: *test.T` in a test file; the
+runner generates its `main`:
 
 ```ace
 import test
@@ -16,25 +16,32 @@ pub sums(t: *test.T) {
 ```
 
 ```
-$ ace test sums.test.ace
-== sums.test.ace
+$ ace test sums.ace
+== sums.ace
 ok   sums
 1 passed, 0 failed
 1 module, 0 failed
 ```
 
-`ace test [--debug | --release] PATH...` takes files and directories; a
-directory runs every `*.test.ace` beneath it in sorted order, skipping
-`fixtures/` (test inputs, including deliberately invalid sources) and dot
-directories. Each file becomes its own binary, so an `assert` abort fails
-only that module, and the command exits 1 when any module failed to build or
-run. Every non-method `pub` function is a test, in declaration order: one with
-another signature is a type error at its declaration. A test file may not
-define `main`, must have a test, and cannot be imported.
+A package names its test directory in `ace.pkg` (`test: test`), and
+`ace pkg test [--debug | --release] [--dir=DIR] [FILE]` runs the `.ace` files
+directly in it, or the one FILE among them, in sorted order. It works from
+anywhere in the package, runs tests in the package root, and links the
+package's dependencies and native inputs. A package without `test` has no tests,
+and the command fails.
 
-A test file inside a package (the nearest `ace.pkg` at or above its directory)
-resolves that package's dependencies and links their native inputs, as
-`ace pkg build` does.
+`ace test [--debug | --release] [--dir=DIR] PATH...` reads no manifest. Each
+PATH is a file, or a directory whose direct `.ace` files run; `--dir` acts as a
+prior `cd`, and tests run there. Only `std` and relative imports resolve.
+
+File names carry no meaning. Subdirectories hold helpers and data and never
+run. In a package, a test file cannot be imported, and a helper can be imported
+only from inside the test directory. A library of test helpers is an ordinary
+module or package that imports `test`. Each file becomes its own binary, so an
+`assert` abort fails only that module, and the command exits 1 when any module
+failed to build or run. Every non-method `pub` function is a test, in
+declaration order: one with another signature is a type error at its
+declaration. A test file may not define `main` and must have a test.
 
 - `T.equal(self, got, want): bool` compares `int`, `uint`, `usize`, `bool`,
   or `string` (exact bytes). On a mismatch it prints

@@ -43,6 +43,8 @@ pub Package: struct {
     pub ace_minor: int,
     pub is_exe: bool,
     pub root_file: string,                  // canonical path to the root .ace file
+    pub test_dir: string,                   // canonical test directory, "" if absent
+    pub test_rel: string,                   // the manifest's spelling of it, "" if absent
     pub description: string = "",           // "" when absent
     pub author: string = "",
     pub license: string = "",
@@ -71,6 +73,7 @@ Raw: struct {
     ace: Field,
     type: Field,
     root: Field,
+    test: Field,
     description: Field,
     author: Field,
     license: Field,
@@ -412,7 +415,7 @@ Graph.parse_manifest(self, manifest: string, rm: *Raw): bool {
             continue
         }
         stored: bool = true
-        if mem.equal(key, "name") { stored = self.field(manifest, line, &rm.name, key, val) } else if mem.equal(key, "version") { stored = self.field(manifest, line, &rm.version, key, val) } else if mem.equal(key, "ace") { stored = self.field(manifest, line, &rm.ace, key, val) } else if mem.equal(key, "type") { stored = self.field(manifest, line, &rm.type, key, val) } else if mem.equal(key, "root") { stored = self.field(manifest, line, &rm.root, key, val) } else if mem.equal(key, "description") { stored = self.field(manifest, line, &rm.description, key, val) } else if mem.equal(key, "author") { stored = self.field(manifest, line, &rm.author, key, val) } else if mem.equal(key, "license") { stored = self.field(manifest, line, &rm.license, key, val) } else if mem.equal(key, "repository") { stored = self.field(manifest, line, &rm.repository, key, val) } else {
+        if mem.equal(key, "name") { stored = self.field(manifest, line, &rm.name, key, val) } else if mem.equal(key, "version") { stored = self.field(manifest, line, &rm.version, key, val) } else if mem.equal(key, "ace") { stored = self.field(manifest, line, &rm.ace, key, val) } else if mem.equal(key, "type") { stored = self.field(manifest, line, &rm.type, key, val) } else if mem.equal(key, "root") { stored = self.field(manifest, line, &rm.root, key, val) } else if mem.equal(key, "test") { stored = self.field(manifest, line, &rm.test, key, val) } else if mem.equal(key, "description") { stored = self.field(manifest, line, &rm.description, key, val) } else if mem.equal(key, "author") { stored = self.field(manifest, line, &rm.author, key, val) } else if mem.equal(key, "license") { stored = self.field(manifest, line, &rm.license, key, val) } else if mem.equal(key, "repository") { stored = self.field(manifest, line, &rm.repository, key, val) } else {
             self.at(manifest, line)
             fmt.printf(sys.stderr, "unknown field '%s'\n", key)
             stored = false
@@ -589,6 +592,20 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
             ok = false
         }
     }
+    test_canon: string = ""
+    if ok && rm.test.line != 0 {
+        tc: string, exists: bool = path.canonical(&self.pool, self.pool.join([canon, "/", rm.test.value]))
+        test_canon = tc
+        if !exists || !path.beneath(tc, canon) || !path.is_dir(tc) {
+            self.at(manifest, rm.test.line)
+            fmt.printf(sys.stderr, "test directory '%s' does not exist within the package\n", rm.test.value)
+            ok = false
+        } else if !contains(canon, tc) {
+            self.at(manifest, rm.test.line)
+            fmt.printf(sys.stderr, "test directory '%s' is inside the reserved pkg/ directory\n", rm.test.value)
+            ok = false
+        }
+    }
     if ok && self.is_std_module_name(rm.name.value) {
         self.at(manifest, rm.name.line)
         fmt.printf(sys.stderr, "package name '%s' collides with a standard-library module name\n", rm.name.value)
@@ -641,7 +658,7 @@ Graph.load(self, dir_arg: string, is_root: bool, dep_manifest: string, dep_line:
     pi: usize = self.pkgs.len
     fail(self.pkgs.push(Package {
         dir = canon, name = rm.name.value, ver_major = vmaj, ver_minor = vmin, ver_patch = vpat,
-        ace_major = amaj, ace_minor = amin, is_exe = is_exe, root_file = root_canon,
+        ace_major = amaj, ace_minor = amin, is_exe = is_exe, root_file = root_canon, test_dir = test_canon, test_rel = rm.test.value,
         description = rm.description.value, author = rm.author.value,
         license = rm.license.value, repository = rm.repository.value,
         deps = array.Array[Dep] {}, links = array.Array[Link] {},

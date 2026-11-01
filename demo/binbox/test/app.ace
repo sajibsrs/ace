@@ -1,11 +1,11 @@
 import time
 import test
 import ui
-import bar: "./bar.ace"
-import grid: "./grid.ace"
-import sim: "./sim.ace"
-import speed: "./speed.ace"
-import app: "./app.ace"
+import bar: "../bar.ace"
+import grid: "../grid.ace"
+import sim: "../sim.ace"
+import speed: "../speed.ace"
+import app: "../app.ace"
 
 /* Pace's work is timed, so these check ranges wide enough for a busy machine. */
 

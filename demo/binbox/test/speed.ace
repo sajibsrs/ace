@@ -1,6 +1,6 @@
 import fmt
 import test
-import speed: "./speed.ace"
+import speed: "../speed.ace"
 
 /* Checks that `rate` shows as `want`. */
 shows(t: *test.T, rate: f64, want: string) {

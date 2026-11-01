@@ -1741,19 +1741,20 @@ if [ -d tests/emit ]; then
         echo "FAIL: maximum negative f64 with %.324f must fit the 640-byte buffer"
         fail=1
     fi
-    # ace test: generated main, per-module binaries, fixtures/ skipped by the walk.
-    test_pass_out=$("$ACE" test tests/test/pass.test.ace)
-    test_pass_expected=$(printf '%s\n' '== tests/test/pass.test.ace' \
+    # ace test: generated main, per-module binaries, subdirectories never run.
+    test_pass_out=$("$ACE" test tests/test/pass.ace)
+    test_pass_expected=$(printf '%s\n' '== tests/test/pass.ace' \
         'ok   numbers' 'ok   text' '2 passed, 0 failed' '1 module, 0 failed')
     if [ "$test_pass_out" != "$test_pass_expected" ]; then
         echo "FAIL: ace test passing output did not match"
         printf 'got:\n%s\nwant:\n%s\n' "$test_pass_out" "$test_pass_expected"
         fail=1
     fi
-    # a test file in a package resolves that package's dependencies
-    pkg_test_out=$(cd tests/test_package/app && "$ACE" test src)
-    pkg_test_expected=$(printf '%s\n' '== src/greet.test.ace' 'ok   greets' \
-        '1 passed, 0 failed' '1 module, 0 failed')
+    # ace pkg test runs the manifest's test directory, from anywhere in the package
+    pkg_test_out=$("$ACE" pkg test --dir=tests/test_package/app/src/test)
+    pkg_test_expected=$(printf '%s\n' '== src/test/greet.ace' 'ok   greets' \
+        '1 passed, 0 failed' '== src/test/helped.ace' 'ok   uses_helper' \
+        '1 passed, 0 failed' '2 modules, 0 failed')
     if [ "$pkg_test_out" != "$pkg_test_expected" ]; then
         echo "FAIL: ace test in a package did not resolve its dependency"
         printf 'got:\n%s\nwant:\n%s\n' "$pkg_test_out" "$pkg_test_expected"
@@ -1763,12 +1764,12 @@ if [ -d tests/emit ]; then
         echo "FAIL: ace test with a failing module must exit nonzero"
         fail=1
     fi
-    test_dir_expected=$(printf '%s\n' '== tests/test/fail.test.ace' 'ok   good' \
+    test_dir_expected=$(printf '%s\n' '== tests/test/fail.ace' 'ok   good' \
         '    check 2: got -3, want 4' '    check 3: got 5, want 6' \
         '    check 4: got 0, want 1' '    check 5: got false, want true' \
         '    check 6: got "got", want "want"' '    check 7: got east, want north' \
         '    check 8: unreachable state' \
-        'FAIL bad' '1 passed, 1 failed' '== tests/test/pass.test.ace' \
+        'FAIL bad' '1 passed, 1 failed' '== tests/test/pass.ace' \
         'ok   numbers' 'ok   text' '2 passed, 0 failed' '2 modules, 1 failed')
     if [ "$test_dir_out" != "$test_dir_expected" ]; then
         echo "FAIL: ace test directory output did not match"
@@ -1780,16 +1781,24 @@ if [ -d tests/emit ]; then
                 'empty: error: no pub test functions'; do
         name=${case%%:*}
         name=${name%% *}
-        want="tests/test/fixtures/$name.test.ace${case#$name}"
-        if "$ACE" test "tests/test/fixtures/$name.test.ace" >/dev/null 2>/tmp/ace_emit/test_errs ||
+        want="tests/test/fixtures/$name.ace${case#$name}"
+        if "$ACE" test "tests/test/fixtures/$name.ace" >/dev/null 2>/tmp/ace_emit/test_errs ||
            ! grep -qF "$want" /tmp/ace_emit/test_errs; then
-            echo "FAIL: ace test fixtures/$name.test.ace must report '$want'"
+            echo "FAIL: ace test fixtures/$name.ace must report '$want'"
             fail=1
         fi
     done
-    if "$ACE" tests/test/fixtures/import.ace 2>/tmp/ace_emit/test_errs ||
-       ! grep -qF "3:1: error: test file './empty.test.ace' cannot be imported" /tmp/ace_emit/test_errs; then
-        echo "FAIL: importing a *.test.ace file must be rejected"
+    if ! "$ACE" test --dir=tests test/pass.ace >/dev/null; then
+        echo "FAIL: ace test --dir must act as a prior cd"
+        fail=1
+    fi
+    if "$ACE" test --dir=tests 2>/dev/null; then
+        echo "FAIL: ace test with no path must be rejected"
+        fail=1
+    fi
+    if "$ACE" pkg test --dir=tests/package/cross_import 2>/tmp/ace_emit/test_errs ||
+       ! grep -qF "has no 'test' field" /tmp/ace_emit/test_errs; then
+        echo "FAIL: ace pkg test without a test field must be rejected"
         fail=1
     fi
     process_empty_out=$(/usr/bin/env -i /tmp/ace_emit/sys/process)

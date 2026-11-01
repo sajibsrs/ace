@@ -1,0 +1,5 @@
+import t: "./test/a.ace"
+
+main(): int {
+    return 0
+}

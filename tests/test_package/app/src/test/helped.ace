@@ -1,0 +1,8 @@
+/* A test imports a helper from a subdirectory of the test directory. */
+
+import test
+import helper: "./helper/one.ace"
+
+pub uses_helper(t: *test.T) {
+    t.equal(helper.one(), 1)
+}

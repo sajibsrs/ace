@@ -49,6 +49,8 @@ refuses to overwrite an existing `ace.pkg` or root file. An exe gets
 empty `src/mod.ace`, since a library's root module needs no content to be a
 valid sole import surface. The generated `ace.pkg` includes empty
 `description`, `author`, `license`, and `repository` fields ready to fill in.
+An optional `test: DIR` names the directory `ace pkg test` runs; see
+[std.test](std/test.md).
 
 Every dependency, direct or transitive, is found from the directory of the
 package being built: the first existing `pkg/NAME` in that directory or any

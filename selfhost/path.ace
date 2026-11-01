@@ -60,6 +60,14 @@ pub canonical(pool: *Pool, path: string): (string, bool) {
     return pool.copy(buf[..n]), true
 }
 
+/* Whether `p` is directly in `dir`, which it is beneath. */
+pub is_child(p: string, dir: string): bool {
+    for i: usize in dir.len + 1 .. p.len {
+        if p[i] == '/' { return false }
+    }
+    return true
+}
+
 /* Whether `path` names a directory, following symlinks. */
 pub is_dir(path: string): bool {
     info: sys.FileInfo, err: Error = sys.stat(path)
