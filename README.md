@@ -1,6 +1,6 @@
 # Ace
 
-**C's speed and control, without C's traps.**
+**Close to C's speed, with C's control and without its traps.**
 
 Ace compiles straight to native machine code, with no runtime, no garbage
 collector and no hidden allocations. It keeps C's model: you manage memory,
