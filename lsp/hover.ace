@@ -11,10 +11,10 @@ import path: "../selfhost/path.ace"
 Token: type = lexer.Token
 
 /* The hover Markdown for the declaration at 1-based `line` of `src`: its
- * line in an `ace` code block, then its doc comment, the comments on their
- * own lines that end just above it. Lives in `pool`.
+ * line in an `ace` code block, then the doc comment of line `doc`, the
+ * comments on their own lines that end just above it. Lives in `pool`.
  */
-pub text(pool: *path.Pool, src: string, line: u32): string {
+pub text(pool: *path.Pool, src: string, line: u32, doc: u32): string {
     lx: lexer.Lexer = lexer.Lexer.new(src, true)
     defer lx.wipe()
     for lx.next() != Token.eof {}
@@ -38,7 +38,7 @@ pub text(pool: *path.Pool, src: string, line: u32): string {
     // Back from the line above, each comment ending on the line before the next.
     last: usize = 0
     for k: usize in 0..notes.len {
-        if notes[k].last + 1 == line && alone(src, notes[k].start) { last = k + 1 }
+        if notes[k].last + 1 == doc && alone(src, notes[k].start) { last = k + 1 }
     }
     if last == 0 { return pool.join(parts.view()) }
     first: usize = last - 1

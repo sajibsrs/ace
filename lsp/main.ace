@@ -268,7 +268,7 @@ describe(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, chara
     out.key("contents")
     out.object()
     out.field("kind", "markdown")
-    out.field("value", hover.text(&pool, target, loc.line))
+    out.field("value", hover.text(&pool, target, loc.line, loc.doc))
     out.end()
     out.end()
 }

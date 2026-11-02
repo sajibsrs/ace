@@ -17,13 +17,15 @@ Node: type = parser.Node
 TARGET: const string = "darwin-arm64"
 
 /* A declaration's place: its canonical file, 1-based line and byte column,
- * and its name's length in bytes. `file` is a string of the caller's pool.
+ * its name's length in bytes, and the line whose doc comment describes it
+ * (its function's for a parameter). `file` is a string of the caller's pool.
  */
 pub Location: struct {
     pub file: string,
     pub line: u32,
     pub col: u32,
     pub len: u32,
+    pub doc: u32,
 }
 
 /* The declaration of the name at 1-based `line` and byte `col` of the file
@@ -31,7 +33,7 @@ pub Location: struct {
  * the program cannot be loaded. The result's strings live in `pool`.
  */
 pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32): (Location, bool) {
-    none: Location = Location { file = "", line = 0, col = 0, len = 0 }
+    none: Location = Location { file = "", line = 0, col = 0, len = 0, doc = 0 }
     canon: string, exists: bool = path.canonical(pool, file_path)
     if !exists { return none, false }
     l: module.Loader, found: bool = module.Loader.new(TARGET)
@@ -86,13 +88,24 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
         b: Node = s.node(best)
         for bind: module.Binding in mods[mi].binds.view() {
             if (b.kind == parser.Kind.ident || b.kind == parser.Kind.named) && mem.equal(bind.name, b.text) {
-                return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0 }, true
+                return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true
             }
         }
         return none, false
     }
     d: Node = s.node(decl)
-    return Location { file = pool.copy(mods[l.module_of(decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len) }, true
+    doc: u32 = d.line
+    if d.kind == parser.Kind.param {
+        // A function's parameters are its direct kids.
+        for id: u32 in 1..u32(mods[0].parser.nnode) {
+            f: Node = s.node(id)
+            if f.kind != parser.Kind.func { continue }
+            for k: u32 in 0..f.nkids {
+                if s.kid(id, k) == decl { doc = f.line }
+            }
+        }
+    }
+    return Location { file = pool.copy(mods[l.module_of(decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len), doc = doc }, true
 }
 
 /* The declaration node `n` names, or 0: its symbol's, the function a call

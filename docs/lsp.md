@@ -31,7 +31,7 @@ It currently answers:
 - `textDocument/hover`: the declaration go to definition finds, shown as its
   source line (without a trailing `{`) and its doc comment: the comments on
   their own lines that end directly above it, with comment markers removed.
-  The selfhost lexer records them when made with `Lexer.new(src, true)`;
+  On a parameter it shows the function's doc comment. The selfhost lexer records them when made with `Lexer.new(src, true)`;
   the compiler's lexers record none. The same unsaved-changes rule applies.
 
 Documents are synchronized in full on every change. A file with a syntax

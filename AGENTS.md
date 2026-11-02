@@ -113,6 +113,10 @@ history.
   that. `wipe` is safe on any value of the type, so a result can be deferred
   without checking which constructor made it. A verb function's doc comment
   says what its result owns.
+- A declaration's doc comment is the comment block on its own lines directly
+  above it; editor hover shows it. Write it as prose that names parameters
+  and results in backticks where they need explaining, as Go does; no
+  `@param`-style tags, since the signature already gives names and types.
 - A property's accessors are one overloaded name, told apart by signature:
   `color()` reads it and `color(value)` sets it, never `get_color`/
   `set_color`. The getter takes `const self`. `get`/`set` remain ordinary method names for keyed access
