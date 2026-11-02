@@ -125,6 +125,21 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
     if best == 0 { return none, false }
     decl: u32 = target(&s, best, u32(mods[0].parser.nnode))
     if decl == 0 {
+        b: Node = s.node(best)
+        // `mod.Name` in an expression: the declaration `Name` in that module.
+        if b.kind == parser.Kind.selector && b.a != 0 {
+            base: Node = s.node(b.a)
+            for bind: module.Binding in mods[mi].binds.view() {
+                if base.kind != parser.Kind.ident || !mem.equal(bind.name, base.text) { continue }
+                identity: string = pool.join([mods[bind.module].prefix, source_name(b.text)])
+                sym: u32 = s.type_named(identity)
+                if sym == 0 { sym = s.value_named(identity) }
+                if sym == 0 { continue }
+                decl = s.sym(sym).decl
+            }
+        }
+    }
+    if decl == 0 {
         // An import's name: the start of the module it binds.
         b: Node = s.node(best)
         for sel: module.Select in mods[mi].sels.view() {

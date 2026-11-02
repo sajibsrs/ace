@@ -11,6 +11,9 @@
   and doc comment (a parameter's is its function's). The selfhost lexer
   records every comment's span when made with `Lexer.new(src, true)`
   (`Lexer.comments`); the compiler's lexers don't.
+- `ace-lsp` goes to definition from `mod.Name` in an expression
+  (`history.Snap.of(s)`): a selector whose base is an import binding looks up
+  the module's private identity, as a type and then as a value.
 - A `lib` emits a darwin dylib (#21) with `output: shared` or `ace pkg build
   --shared`, and one source with `ace --shared -o NAME.dylib`: `cc -dynamiclib`
   links the one object with its `[link]` inputs under an `@rpath` install name.
