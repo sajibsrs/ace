@@ -3,9 +3,9 @@
 # functions (every integer type, bool, casts, arithmetic, bitwise, shift and
 # comparison operators, comparison chains, && and ||, if/else, general for
 # loops, labeled break/continue and blocks, early returns, and calls between
-# them) and memory (globals, a struct global and its mut method, mut
-# parameters, pointers to variables, function values, and range loops with
-# steps in both directions), and floats (f32 and f64 locals, parameters past
+# them) and memory (globals, a struct global and its writing method, plain,
+# const, and pointer parameters (an &x argument), pointers to variables,
+# function values, and range loops with steps in both directions), and floats (f32 and f64 locals, parameters past
 # the eight argument registers, results, globals, arithmetic, NaN-producing
 # division, comparisons, and conversions both ways), and records (random
 # structs: floating aggregates, words shared by several fields, ones past 16
@@ -15,7 +15,7 @@
 # and calls to generic templates and a written specialization, directly and
 # as values, and indexing and slicing (reads, writes, ^=, &, every slice form;
 # indices and bounds mostly in range, at times one past either end) of a
-# 22-byte mut []u8, a string, and a [22]u8 struct field, each a window
+# 22-byte []u8, a string, and a [22]u8 struct field, each a window
 # between two guard bytes (and in-range reads of a local copy of the array), so a
 # debug bounds trap ends the run the same way in both and release reads or
 # writes a guard. Some scalar-result functions are inline, so their calls
@@ -25,7 +25,8 @@
 # parameters, and tagged unions (one nested, one of over 16 bytes) are built,
 # passed, returned, copied, compared, and switched on (with a binder and a
 # default), and held in a struct member and an array, and calls with a noalias slice
-# parameter compare their slice windows, and for-in loops read and change them. A labeled block restarts, a computed
+# parameter compare their slice windows, and for-in loops read them (and
+# index loops change them). A labeled block restarts, a computed
 # global constant is read, and an Error's name and message are looked up. Some functions bind an
 # address-taken local in an asm statement (a host register), read from its home. Each
 # program is built with two
@@ -202,18 +203,21 @@ function any_var(   i, n, c) {
 }
 
 # an index into a 22-element window at a random integer type: usually in
-# range, at times one past the end or -1
+# range, at times one past the end or -1 (adding the zero global gz, so an
+# out-of-range index is a runtime trap rather than a constant compile error)
 function index_of(depth,   r, e, t) {
     r = rand()
     e = "u8(" expr(types[2 + pick(ntypes - 1)], depth) ")"
+    if (r < 0.2) e = "(" e " + gz)"
     if (r < 0.05) return "(i8(" e " % 2) - 1)"
     t = types[2 + pick(ntypes - 1)]
     return t "(" e " % " (r < 0.2 ? 23 : 22) ")"
 }
 
-# a window (the mut []u8 gv or the string gt) sliced from lo, a u8 local
-# below 12: every form, lo at times -1 and hi at times one past the end
-# a writable 22-byte window: the mut []u8 gv, or the array ga.a
+# a window (the []u8 gv or the string gt) sliced from lo, a u8 local
+# below 12: every form, lo at times -1 and hi at times one past the end (at
+# run time, through gz)
+# a writable 22-byte window: the []u8 gv, or the array ga.a
 function window() { return chance(0.5) ? "gv" : "ga.a" }
 
 function slice_of(lo, depth,   w, r, t, hi) {
@@ -224,15 +228,15 @@ function slice_of(lo, depth,   w, r, t, hi) {
     if (r < 0.2) return w "[.." lo "]"
     t = types[2 + pick(ntypes - 1)]
     if (r < 0.3) return w "[" t "(" lo ")..]"
-    if (r < 0.35) return w "[(i8(" lo " % 2) - 1).." lo "]"
-    hi = "(" lo " + u8(" expr(types[2 + pick(ntypes - 1)], depth) ") % " (chance(0.15) ? 13 : 12) ")"
+    if (r < 0.35) return w "[(i8((" lo " + gz) % 2) - 1).." lo "]"
+    hi = chance(0.15) ? "(" lo " + (u8(" expr(types[2 + pick(ntypes - 1)], depth) ") + gz) % 13)" : "(" lo " + u8(" expr(types[2 + pick(ntypes - 1)], depth) ") % 12)"
     return w "[" t "(" lo ").." t "(" hi ")]"
 }
 
-# a for-in loop over a window (the mut []u8 gv, the string gt, or the array
+# a for-in loop over a window (the []u8 gv, the string gt, or the array
 # ga.a, or a slice of one): each element copied to a binder, with or without
-# the index, or (over a writable one) aliased and changed; it sums into a new
-# local, and at times skips or leaves early
+# the index, or (over a writable one) an index loop that changes each element
+# in place; it sums into a new local, and at times skips or leaves early
 function forin_stmt(pad,   p, acc, w, r, c, i, k) {
     p = indent(pad)
     acc = "v" nlocals++
@@ -243,9 +247,10 @@ function forin_stmt(pad,   p, acc, w, r, c, i, k) {
     k = pick(200)
     r = rand()
     if (r < 0.3) {
-        print p "for " c ": u8 in mut " window() " {"
-        print p "    " c " ^= u8(" k ")"
-        print p "    " acc " += int(" c ")"
+        w = window()
+        print p "for " i ": usize in 0 .. " w ".len {"
+        print p "    " w "[" i "] ^= u8(" k ")"
+        print p "    " acc " += int(" w "[" i "])"
         print p "}"
         return
     }
@@ -313,16 +318,16 @@ function leaf(t, depth,   v, r, s) {
         return "gpick[" t "](" expr(t, depth - 1) ", " expr(t, depth - 1) ", " boolean(depth - 1) ")"
     }
     if (t != "bool" && nfuncs > 0 && depth > 0 && r < 0.9) return call_conv(t)
-    if (t != "bool" && depth > 0 && r < 0.93) return t "(mut gs.bump(" expr("i64", 0) "))"
+    if (t != "bool" && depth > 0 && r < 0.93) return t "(gs.bump(" expr("i64", 0) "))"
     return t == "bool" ? literal(t) : t "(" literal(t) ")"
 }
 
-# the arguments of a call to fj: a mut parameter takes a variable
+# the arguments of a call to fj: a pointer parameter takes the address of a variable
 function args_of(j, lit,   k, s, t) {
     s = ""
     for (k = 0; k < nparams[j]; k++) {
         t = ptype[j, k]
-        if (pmut[j, k]) s = s (k ? ", " : "") "mut " lvalue(t)
+        if (pmut[j, k]) s = s (k ? ", " : "") "&" lvalue(t)
         else if (isrec(t)) s = s (k ? ", " : "") rexpr(t, 0)
         else if (t == "string") s = s (k ? ", " : "") (lit ? strs[1 + pick(nstrs)] : sexpr(0))
         else if (lit) s = s (k ? ", " : "") (t == "bool" || isfloat(t) ? literal(t) : t "(" literal(t) ")")
@@ -352,7 +357,7 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
         if (i < 0 || vname[i] ~ /^\*/) return
         t = vtype[i]
         name = "q" nlocals++
-        print p name ": mut *" t " = mut &" vname[i]
+        print p name ": *" t " = &" vname[i]
         if (t == "bool" || isfloat(t)) print p "*" name " = " expr(t, 1)
         else print p "*" name " += (" expr(t, 1) " & 3)"
         declare("*" name, t)
@@ -368,10 +373,10 @@ function memory_stmt(depth, pad, loops,   p, r, t, i, name, lab, j, k, s) {
     }
     if (r < 0.55) { # a call through a function value
         j = pick(nfuncs + 1) - 1
-        if (j < 0 || fmut[j] || fret[j] ~ /^\(/) return
+        if (j < 0 || fret[j] ~ /^\(/) return
         name = "h" nlocals++
         s = ""
-        for (k = 0; k < nparams[j]; k++) s = s (k ? ", " : "") ptype[j, k]
+        for (k = 0; k < nparams[j]; k++) s = s (k ? ", " : "") (pmut[j, k] ? "*" : pconst[j, k] ? "const " : "") ptype[j, k]
         print p name ": (" s "): " fret[j] " = f" j
         print p "v" nlocals ": " fret[j] " = " name "(" args_of(j, 0) ")"
         declare("v" nlocals++, fret[j])
@@ -502,6 +507,14 @@ function record_stmt(pad,   p, r, t, i, k, j, n, c, name) {
     nlocals += 3
 }
 
+# a computed case pattern, kept a run-time value through the zero global gz:
+# sema folds a constant one and rejects it when it repeats an earlier case
+function computed(t,   e) {
+    e = expr(t, 1)
+    if (t == "bool") return "(gz == 0 && " e ")"
+    return "(" e (isfloat(t) ? " + " : " ^ ") t "(gz))"
+}
+
 # a switch on a fresh scalar local: each case has one to three patterns (a
 # literal, a variable, an expression, at times the scrutinee itself, so some
 # cases always match), a case that is not last may fall through into the next,
@@ -522,7 +535,7 @@ function switch_stmt(depth, pad, loops,   p, q, t, name, ncases, hasdef, i, j, k
         pats = ""
         for (j = 0; j < k; j++) {
             r = rand()
-            pat = r < 0.4 ? literal(t) : r < 0.6 ? (var_of(t) != "" ? var_of(t) : literal(t)) : r < 0.9 ? expr(t, 1) : name
+            pat = r < 0.4 ? literal(t) : r < 0.6 ? (var_of(t) != "" ? var_of(t) : literal(t)) : r < 0.9 ? computed(t) : name
             # sema rejects a repeated constant: a repeat becomes the scrutinee
             key = pat
             gsub(/[() ]/, "", key)
@@ -660,7 +673,7 @@ BEGIN {
     print "g_f32: f32 = " fliteral("f32") "\ng_f64: f64 = " fliteral("f64")
     print "\nS: struct {\n    a: i64,\n    b: u8,\n}\n"
     print "gs: S = S { a = " literal("i64") ", b = " literal("u8") " }\n"
-    print "S.bump(mut self, n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
+    print "S.bump(self, n: i64): int {\n    self.a += n & 7\n    self.b = u8(self.a & 63)\n    return int(self.b)\n}\n"
     print "UE: union { none, a: u8, b: i64, c: f32 }\n"
     print "UW: union { none, w: i32, o: UE }\n"
     print "mk(k: i64, v: i64): UE {\n    if k == 0 { return UE.none }\n    if k == 1 { return UE.a(u8(v)) }\n    if k == 2 { return UE.b(v) }\n    return UE.c(f32(v))\n}\n"
@@ -670,25 +683,25 @@ BEGIN {
     print "nee(a: UE, b: UE): int {\n    return bit(a != b)\n}\n"
     print "eqw(a: UW, b: UW): int {\n    return bit(a == b)\n}\n"
     print "new(a: UW, b: UW): int {\n    return bit(a != b)\n}\n"
-    print "swap(e: UE, w: UW, mut o: UE): UW {\n    o = e\n    return w\n}\n"
+    print "swap(e: UE, w: UW, o: *UE): UW {\n    *o = e\n    return w\n}\n"
     print "UB: struct {\n    k: i64,\n    e: UE,\n    t: u8,\n}\n"
     print "eval(e: UE): i64 {\n    switch e {\n    UE.none { return 1 }\n    UE.a(x: u8) { return i64(x) }\n    UE.b(x: i64) { return x * 3 }\n    default { return 9 }\n    }\n    return 0\n}\n"
     print "evw(w: UW): i64 {\n    switch w {\n    UW.none { return 5 }\n    UW.w(x: i32) { return i64(x) }\n    UW.o(x: UE) { return eval(x) + 7 }\n    }\n    return 0\n}\n"
     print "mkb(k: i64, v: i64): UB {\n    return UB { k = k, e = mk(k, v), t = u8(v) }\n}\n"
     print "sumb(b: UB): i64 {\n    return b.k + eval(b.e) + i64(b.t)\n}\n"
     print "echob(b: UB): UB {\n    return b\n}\n"
-    print "nblit(noalias d: mut []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
+    print "nblit(noalias d: []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
     print "GK: const int = 3 * 5 + 1\n"
     print "DomErr: error {\n    3: three = \"the third\",\n    9: nine = \"nine\",\n}\n"
     print "derr(k: i64): Error {\n    if k == 0 { return null }\n    if k == 1 { return DomErr(3) }\n    if k == 2 { return DomErr(9) }\n    return DomErr(i32(k))\n}\n"
     print "dlen(e: Error): int {\n    return int(e.name.len) * 100 + int(e.message.len)\n}\n"
-    print "again(n: i64): i64 {\n    t: i64 = 0\n    k: i64 = 0\n    rep: {\n        k += 1\n        t += k * GK\n        if k < n { continue rep }\n    }\n    return t\n}\n"
+    print "again(n: i64): i64 {\n    t: i64 = 0\n    k: i64 = 0\n    rep: {\n        k += 1\n        t += k * i64(GK)\n        if k < n { continue rep }\n    }\n    return t\n}\n"
     print "table() {\n    for i: i64 in 0 .. 4 {\n        for j: i64 in 0 .. 4 {"
     print "            fmt.printf(\"%d\", eqe(mk(i, " pick(3) "), mk(j, " pick(3) ")))"
     print "            fmt.printf(\"%d\", nee(mk(i, 1), mk(j, 2)))"
     print "            fmt.printf(\"%d\", eqw(mkw(i, " pick(3) "), mkw(j, " pick(3) ")))"
     print "            fmt.printf(\"%d \", new(mkw(i, 2), mkw(j, 2)))"
-    print "            o: UE = mk(0, 0)\n            w: UW = swap(mk(i, 1), mkw(j, 2), mut o)"
+    print "            o: UE = mk(0, 0)\n            w: UW = swap(mk(i, 1), mkw(j, 2), &o)"
     print "            fmt.printf(\"%d\", eqe(o, mk(i, 1)))\n            fmt.printf(\"%d \", eqw(w, mkw(j, 2)))"
     print "            fmt.printf(\"%d %d \", eval(mk(i, " pick(9) ")), evw(mkw(j, " pick(9) ")))"
     print "            bb: UB = echob(mkb(i, " pick(9) "))\n            fmt.printf(\"%d \", sumb(bb))"
@@ -696,9 +709,9 @@ BEGIN {
     print "            arr: [2]UE = [mk(i, 1), mk(j, 2)]\n            fmt.printf(\"%d\\n\", eval(arr[0]) + eval(arr[j & 1]))\n        }\n    }\n}\n"
     print "gd: i64\n"
     print "dnote(x: i64) {\n    gd = gd * 3 % 1000003 + x % 1000\n}\n"
-    print "pin(mut n: i64) {}\n"
+    print "pin(n: *i64) {}\n"
     print "Fail: error\n"
-    print "gbuf: [24]u8\ngv: mut []u8\ngt: string\n"
+    print "gbuf: [24]u8\ngv: []u8\ngt: string\ngz: u8\n"
     print "GA: struct {\n    lo: u8,\n    a: [22]u8,\n    hi: u8,\n}\n\nga: GA\n"
     nstrs = split("\"\" \"a\" \"hello\" \"ace-ir\" \"0123456789abcdef01234\"", strs, " ")
     print "gmax[T](a: T, b: T): T {\n    if a > b { return a }\n    return b\n}\n"
@@ -734,11 +747,11 @@ BEGIN {
         for (k = 0; k < np; k++) {
             t = chance(0.3) ? "R" pick(nrec) : chance(0.15) ? "string" : anytype()
             ptype[f, k] = t
-            pmut[f, k] = !isrec(t) && t != "string" && chance(0.2)
-            if (pmut[f, k]) fmut[f] = 1
-            s = s (k ? ", " : "") (pmut[f, k] ? "mut " : "") "p" k ": " t
-            declare("p" k, t)
-            if (!pmut[f, k]) vfixed["p" k] = 1
+            pmut[f, k] = !isrec(t) && t != "string" && chance(0.2) # writes reach the caller
+            pconst[f, k] = !pmut[f, k] && chance(0.3)
+            s = s (k ? ", " : "") "p" k ": " (pmut[f, k] ? "*" : pconst[f, k] ? "const " : "") t
+            declare((pmut[f, k] ? "*" : "") "p" k, t)
+            if (pconst[f, k]) vfixed["p" k] = 1
         }
         for (k = 1; k <= ntypes; k++) if (chance(0.25)) declare("g_" types[k], types[k])
         if (chance(0.3)) declare("g_f32", "f32")
@@ -746,11 +759,11 @@ BEGIN {
         if (chance(0.3)) declare("gs.a", "i64")
         if (chance(0.3)) declare("gs.b", "u8")
         print s "): " rett " {"
-        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(mut ap)\n    asm \"nop\" { in: " asm_reg " = ap }" # an address-taken binding, read from its home; an inline function cannot hold asm
+        if (!finl && chance(0.3)) print "    ap: i64 = 0\n    pin(&ap)\n    asm \"nop\" { in: " asm_reg " = ap }" # an address-taken binding, read from its home; an inline function cannot hold asm
         if (!finl && chance(0.3)) { # deferred notes: the value a parameter has when deferred, then a constant
             for (k = 0; k < np; k++)
                 if (ptype[f, k] ~ /^(i8|i16|i32|i64|u8|u16|u32|u64|usize|int)$/ && (pmut[f, k] || chance(0.3))) {
-                    print "    defer dnote(i64(p" k "))"
+                    print "    defer dnote(i64(" (pmut[f, k] ? "*" : "") "p" k "))"
                     break
                 }
             if (chance(0.5)) print "    defer dnote(" pick(50) ")"
@@ -764,7 +777,7 @@ BEGIN {
     }
     nvars = 0
     print "main(): int {"
-    print "    gbuf[0] = 35\n    gbuf[23] = 36\n    gv = mut gbuf[1..23]"
+    print "    gbuf[0] = 35\n    gbuf[23] = 36\n    gv = gbuf[1..23]"
     print "    ga.lo = 37\n    ga.hi = 38\n    for k: usize in 0 .. 22 { ga.a[k] = u8(k * 3) }"
     print "    gt = \"#abcdefghijklmnopqrstuv$\"[1..23]"
     for (f = 0; f < nf; f++) {
@@ -784,7 +797,7 @@ BEGIN {
     }
     for (k = 0; k < 3; k++) { # two nonempty windows of gbuf: disjoint, or a debug contract trap in both (the function only reads, so a release overlap is harmless)
         lo = 1 + pick(20); hi = lo + 1 + pick(23 - lo); lo2 = 1 + pick(20); hi2 = lo2 + 1 + pick(23 - lo2)
-        print "    fmt.printf(\"%d\\n\", nblit(mut gbuf[" lo ".." hi "], gbuf[" lo2 ".." hi2 "]))"
+        print "    fmt.printf(\"%d\\n\", nblit(gbuf[" lo ".." hi "], gbuf[" lo2 ".." hi2 "]))"
     }
     print "    for k: i64 in 0 .. 5 {\n        fmt.printf(\"%d %d\\n\", dlen(derr(k)), int(again(k)))\n        if derr(k).domain == typeid(DomErr) { fmt.printf(\"dom\\n\") }\n    }"
     print "    table()"
