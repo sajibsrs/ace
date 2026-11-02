@@ -1,5 +1,10 @@
 # Standard library
 
+- Darwin `poll.wait` is no longer capped at 64 events (#167): it collects
+  kevents in the caller's storage when that holds more than the stack buffer,
+  leaving the suffix unspecified, and merges one fd's filters through an
+  fd-indexed stack table, O(1) per event below fd 1024. 1.47x per event at
+  1024 ready descriptors (`bench/std/poll.ace`).
 - `mem.new[T]()` and `mem.release[T](&pointer)` allocate and release one value
   by pointer, as plain Ace over `[]T(pointer, 1)` (#171). A view exact to a live
   allocation is now its authoritative descriptor. Overload matching accepts a

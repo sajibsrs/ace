@@ -1,0 +1,108 @@
+/* poll.wait fills large caller storage in one call and merges one
+ * descriptor's read and write readiness, for descriptors below and above 1024.
+ */
+
+// expect-exit: 0
+
+import net
+import net/tcp
+import poll
+import sys
+
+PIPES: const usize = 600
+
+Pair: struct {
+    client: tcp.Conn,
+    server: tcp.Conn,
+}
+
+/* Connects a client that is both readable and writable. */
+pair(listener: tcp.Listener, address: net.Addr4): (Pair, bool) {
+    result: Pair = Pair { client = tcp.Conn {}, server = tcp.Conn {} }
+    client: tcp.Conn, connect_err: Error = tcp.connect(address)
+    if connect_err != null { return result, false }
+    result.client = client
+
+    server: tcp.Conn, peer: net.Addr4, accept_err: Error = tcp.accept(listener)
+    if accept_err != null { return result, false }
+    result.server = server
+
+    byte: [1]u8 = [u8(1)]
+    sent: usize, send_err: Error = tcp.send_all(server, byte[0..1])
+    if send_err != null || sent != 1 { return result, false }
+    tcp.interest(&result.client, tcp.Interest.both)
+    return result, true
+}
+
+main(): int {
+    q: poll.Queue, err: Error = poll.queue()
+    if err != null { return 1 }
+
+    address: net.Addr4 = net.Addr4 { ip = [127, 0, 0, 1], port = 0 }
+    listener: tcp.Listener, listen_err: Error = tcp.listen(address, 4)
+    if listen_err != null { return 2 }
+    bound: net.Addr4, local_err: Error = tcp.local(listener)
+    if local_err != null { return 3 }
+
+    low: Pair, low_ok: bool = pair(listener, bound)
+    if !low_ok { return 4 }
+
+    reads: [600]sys.Fd = [sys.Fd(-1) : 600]
+    writes: [600]sys.Fd = [sys.Fd(-1) : 600]
+    byte: [1]u8 = [u8(1)]
+    for i: usize in 0 .. PIPES {
+        read_fd: sys.Fd, write_fd: sys.Fd, pipe_err: Error = sys.pipe()
+        if pipe_err != null { return 5 }
+        reads[i] = read_fd
+        writes[i] = write_fd
+        sys.write(write_fd, byte[0..1])
+        if poll.watch(q, read_fd, true, false) != null { return 6 }
+        if poll.watch(q, write_fd, false, true) != null { return 6 }
+    }
+
+    high: Pair, high_ok: bool = pair(listener, bound)
+    if !high_ok { return 7 }
+    if tcp.watch(q, low.client, *u8(&low)) != null { return 8 }
+    if tcp.watch(q, high.client, *u8(&high)) != null { return 8 }
+
+    storage: [2048]poll.Event = [blank(poll.Event) : 2048]
+    count: usize, wait_err: Error = poll.wait(q, storage[..], 1000000000)
+    if wait_err != null { return 9 }
+    if count != PIPES * 2 + 2 { return 10 }
+
+    seen: [2048]u8 = [u8(0) : 2048]
+    low_seen: int = 0
+    high_seen: int = 0
+    for i: usize in 0 .. count {
+        event: poll.Event = storage[i]
+        if event.context == *u8(&low) {
+            if !event.readable || !event.writable { return 11 }
+            low_seen += 1
+        } else if event.context == *u8(&high) {
+            if !event.readable || !event.writable { return 12 }
+            high_seen += 1
+        } else {
+            fd: usize = usize(i32(event.fd))
+            if fd >= 2048 || seen[fd] != 0 { return 13 }
+            seen[fd] = 1
+        }
+    }
+    if low_seen != 1 || high_seen != 1 { return 14 }
+
+    for i: usize in 0 .. PIPES {
+        if seen[usize(i32(reads[i]))] != 1 || seen[usize(i32(writes[i]))] != 1 { return 15 }
+    }
+    if usize(i32(writes[PIPES - 1])) < 1024 { return 16 }
+
+    for i: usize in 0 .. PIPES {
+        sys.close(reads[i])
+        sys.close(writes[i])
+    }
+    tcp.close(&low.client)
+    tcp.close(&low.server)
+    tcp.close(&high.client)
+    tcp.close(&high.server)
+    tcp.close(&listener)
+    sys.close(sys.Fd(q))
+    return 0
+}

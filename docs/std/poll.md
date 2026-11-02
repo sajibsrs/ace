@@ -72,9 +72,11 @@ The readiness surface is:
 - `unwatch(q, fd): Error` removes an existing registration. Removing an
   unwatched descriptor is an error.
 - `wait(q, events: []Event, timeout_ns): (usize, Error)` writes a fully initialized
-  prefix of caller-owned storage. The suffix remains unchanged. An empty slice
-  is an error. The OS layer uses bounded stack storage, allocates nothing, and
-  may return fewer events than the supplied capacity.
+  prefix of caller-owned storage; the contents after it are unspecified. An
+  empty slice is an error. The OS layer allocates nothing and may return fewer
+  events than the supplied capacity. Darwin collects kernel events in a
+  64-entry stack buffer, or in the caller's storage when that holds more, so a
+  slice of 86 or more events serves more than 64 per call.
 
 An `Event` contains `fd`, `context`, `readable`, `writable`, `error`, and
 `hangup`. A watch with non-null context reports that context and `fd` -1, since
@@ -132,6 +134,14 @@ Why the rules in `spec/std/net.md` are shaped as they are.
 - `wait`: caller-owned storage, fixed bounded OS-layer work, explicit lifetime,
   and one wait transition preserve performance and machine truth while
   OS-neutral public names do not expose kqueue.
+- Darwin `wait` storage: a kevent (32 bytes) is larger than an `Event` (24),
+  so the caller's slice holds three kevents per four events and each event is
+  written at or before the kevent it came from, after that kevent is read.
+  Reusing the slice lets one call serve every ready descriptor, where a fixed
+  stack buffer would cap it, at the cost of an unspecified suffix. One fd's
+  read and write kevents merge through a per-call stack table from fd (below
+  1024) to slot; it is never cleared, since a hit counts only when that slot
+  holds the fd. Sorting by fd instead cost more than the larger batch saved.
 - Nonblocking server proof: a deterministic multi-client chat fixture
   demonstrates that the carved one-attempt operations are sufficient for bounded
   servers while preserving the machine-visible storage and control-flow model

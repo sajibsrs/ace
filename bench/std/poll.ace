@@ -1,0 +1,102 @@
+// Readiness-collection benchmark for poll.wait.
+// Run with: ./bench/std/run-poll.sh
+import fmt
+import poll
+import sys
+import time
+
+PIPES: const usize = 512
+ROUNDS: const usize = 2000
+
+Sweep: struct {
+    elapsed: u64,
+    calls: usize,
+    events: usize,
+    failures: usize,
+}
+
+/* Collects `want` events in repeated nonblocking waits, `rounds` times. Every
+ * watched descriptor stays ready, so each sweep sees them all.
+ */
+sweep(q: poll.Queue, events: []poll.Event, want: usize, rounds: usize): Sweep {
+    result: Sweep = Sweep { elapsed = u64(0), calls = 0, events = 0, failures = 0 }
+    started: u64 = time.awake()
+    for round: usize in 0 .. rounds {
+        seen: usize = 0
+        for ; seen < want; {
+            count: usize, err: Error = poll.wait(q, events, u64(0))
+            result.calls += 1
+            if err != null || count == 0 {
+                result.failures += 1
+                break
+            }
+            seen += count
+        }
+        result.events += seen
+    }
+    result.elapsed = time.awake() - started
+    return result
+}
+
+report(name: string, result: Sweep, rounds: usize) {
+    fmt.print(name)
+    fmt.print("\n  calls/sweep:  ")
+    fmt.print(result.calls / rounds)
+    fmt.print("\n  ns/sweep:     ")
+    fmt.print(result.elapsed / u64(rounds))
+    fmt.print("\n  ns/event:     ")
+    fmt.print(result.elapsed / u64(result.events))
+    fmt.print("\n")
+}
+
+main(): int {
+    q: poll.Queue, err: Error = poll.queue()
+    if err != null { return 1 }
+
+    zero: poll.Event = poll.Event {
+        fd = sys.Fd(0),
+        readable = false,
+        writable = false,
+        error = false,
+        hangup = false,
+    }
+    storage: [1024]poll.Event = [zero : 1024]
+    reads: [512]sys.Fd = [sys.Fd(-1) : 512]
+    writes: [512]sys.Fd = [sys.Fd(-1) : 512]
+    byte: [1]u8 = [u8(1) : 1]
+
+    // A few ready descriptors, as in most event-loop wakeups.
+    for i: usize in 0 .. 16 {
+        read_fd: sys.Fd, write_fd: sys.Fd, pipe_err: Error = sys.pipe()
+        if pipe_err != null { return 2 }
+        reads[i] = read_fd
+        writes[i] = write_fd
+        sys.write(write_fd, byte[0..1])
+        if poll.watch(q, read_fd, true, false) != null { return 3 }
+        if poll.watch(q, write_fd, false, true) != null { return 3 }
+    }
+    small: Sweep = sweep(q, storage[0..64], usize(32), ROUNDS * 16)
+
+    // Many ready descriptors and large caller storage.
+    for i: usize in 16 .. PIPES {
+        read_fd: sys.Fd, write_fd: sys.Fd, pipe_err: Error = sys.pipe()
+        if pipe_err != null { return 2 }
+        reads[i] = read_fd
+        writes[i] = write_fd
+        sys.write(write_fd, byte[0..1])
+        if poll.watch(q, read_fd, true, false) != null { return 3 }
+        if poll.watch(q, write_fd, false, true) != null { return 3 }
+    }
+    large: Sweep = sweep(q, storage[0..1024], PIPES * 2, ROUNDS)
+
+    report("32 ready, 64 slots", small, ROUNDS * 16)
+    report("1024 ready, 1024 slots", large, ROUNDS)
+
+    for i: usize in 0 .. PIPES {
+        sys.close(reads[i])
+        sys.close(writes[i])
+    }
+    sys.close(sys.Fd(q))
+    if small.failures != 0 || large.failures != 0 { return 4 }
+    return 0
+}

@@ -64,7 +64,8 @@ EV_EOF: const u16 = 0x8000
 EINVAL: const i32 = 22
 ENOENT: const i32 = 2
 NSEC_PER_SEC: const u64 = 1000000000
-MAX_WAIT_EVENTS: const usize = 64
+STACK_EVENTS: const usize = 64
+MAX_KEVENTS: const usize = 0x7fffffff
 
 extern "c" {
     c_kqueue(): i32 as "kqueue"
@@ -152,15 +153,17 @@ change_filter(q: Queue, fd: sys.Fd, filter: i16, flags: u16, context: *u8): i32 
     return c_kevent(i32(sys.Fd(q)), &change, 1, null, 0, null)
 }
 
+/* Collects raw kevents into whichever holds more: a stack buffer or the
+ * caller's storage viewed as kevents, which are larger than an Event and no
+ * more aligned, so each Event lands at or before the bytes of the kevent it
+ * came from, after that kevent is read. `slots` maps an fd below 1024 to its
+ * Event; it is never cleared, so a hit counts only when that Event has the fd.
+ */
 pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
     if events.len == 0 {
         sys.errno(EINVAL)
         return usize(0), WaitErr.invalid
     }
-    capacity: usize = events.len
-
-    if capacity > MAX_WAIT_EVENTS { capacity = MAX_WAIT_EVENTS }
-
     timeout: DarwinTimespec = DarwinTimespec {
         seconds = i64(0),
         nanoseconds = i64(0),
@@ -172,24 +175,44 @@ pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
         timeout.nanoseconds = i64(timeout_ns % NSEC_PER_SEC)
         timeout_pointer = &timeout
     }
-    raw: [64]DarwinKevent = [blank(DarwinKevent) : 64]
-    ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, &raw[0], i32(capacity), timeout_pointer)
+    stack: [64]DarwinKevent
+    raw: []DarwinKevent = stack[0..STACK_EVENTS]
+
+    if events.len < STACK_EVENTS { raw = stack[0..events.len] }
+
+    shared: usize = events.len * sizeof(Event) / sizeof(DarwinKevent)
+
+    if shared > STACK_EVENTS {
+        if shared > MAX_KEVENTS { shared = MAX_KEVENTS }
+        raw = []DarwinKevent(*DarwinKevent(*u8(&events[0])), shared)
+    }
+    ready: i32 = c_kevent(i32(sys.Fd(q)), null, 0, &raw[0], i32(raw.len), timeout_pointer)
     if ready == -1 { return usize(0), WaitErr(sys.errno()) }
 
+    slots: [1024]u32
     written: usize = 0
 
     for index: usize in 0 .. usize(ready) {
-        fd: sys.Fd = sys.Fd(i32(raw[index].ident))
-        slot: usize = written
+        change: DarwinKevent = raw[index]
+        fd: sys.Fd = sys.Fd(i32(change.ident))
 
-        for candidate: usize in 0 .. written {
-            if events[candidate].fd == fd { slot = candidate }
+        slot: usize = written
+        key: usize = usize(i32(fd))
+
+        if key < 1024 {
+            candidate: usize = usize(slots[key])
+            if candidate < written && events[candidate].fd == fd { slot = candidate }
+        } else {
+            for other: usize in 0 .. written {
+                if events[other].fd == fd { slot = other }
+            }
         }
 
         if slot == written {
-            events[slot] = Event {
+            if key < 1024 { slots[key] = u32(written) }
+            events[written] = Event {
                 fd = fd,
-                context = raw[index].udata,
+                context = change.udata,
                 readable = false,
                 writable = false,
                 error = false,
@@ -198,13 +221,13 @@ pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
             written += usize(1)
         }
 
-        if raw[index].filter == EVFILT_READ { events[slot].readable = true }
+        if change.filter == EVFILT_READ { events[slot].readable = true }
 
-        if raw[index].filter == EVFILT_WRITE { events[slot].writable = true }
+        if change.filter == EVFILT_WRITE { events[slot].writable = true }
 
-        if (raw[index].flags & EV_ERROR) != 0 { events[slot].error = true }
+        if (change.flags & EV_ERROR) != 0 { events[slot].error = true }
 
-        if (raw[index].flags & EV_EOF) != 0 { events[slot].hangup = true }
+        if (change.flags & EV_EOF) != 0 { events[slot].hangup = true }
     }
 
     for index: usize in 0 .. written {

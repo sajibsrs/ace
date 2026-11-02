@@ -13,7 +13,7 @@ reference where one exists.
 |---|---|---|
 | `compiler/` | the compiler's own speed and output size | `run-compile.sh` |
 | `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh`, `run-raytrace.sh`, `run-tree.sh` |
-| `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh` |
+| `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh`, `run-poll.sh` |
 | `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh`, `run-binbox.sh` |
 
 ## First-run cost
@@ -1179,6 +1179,21 @@ Three consecutive reference runs produced stable per-operation medians:
 
 The larger debug cost comes from the live-allocation registry and is
 diagnostic-mode overhead, not part of release output.
+
+### Poll
+
+Run the readiness-collection benchmark:
+
+```sh
+./bench/std/run-poll.sh
+```
+
+`bench/std/poll.ace` watches pipes whose read ends hold a byte and whose write
+ends have room, so every watched descriptor stays ready. Each sweep calls
+`poll.wait` with a zero timeout until it has collected one event per ready
+descriptor, and the program reports calls per sweep and nanoseconds per
+delivered event for 32 ready descriptors in 64 slots and 1024 in 1024 slots.
+Kernel work per knote, about 60 ns, dominates the 1024 case.
 ## Packages
 
 ### Regular expressions
