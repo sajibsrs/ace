@@ -102,19 +102,19 @@ pub BTN_Y: const f32 = GAP + 2.0
 pub BTN_H: const f32 = BAR - 4.0
 
 /* The width of the zoom readout, which shows five characters at most. */
-pub ZOOM_W: const f32 = 6.0 * ui.GLYPH
+pub ZOOM_W: const f32 = 6.0 * ui.GLYPH_WIDTH
 
 /* The width of `button`: icon, gap and label, inset by PAD; an icon alone is
  * square, and the zoom readout holds its text. */
 width(button: Button): f32 {
-    if LABEL[button].len > 0 { return 2.0 * PAD + GLYPH_SIDE + LABEL_GAP + f32(LABEL[button].len) * ui.GLYPH }
+    if LABEL[button].len > 0 { return 2.0 * PAD + GLYPH_SIDE + LABEL_GAP + f32(LABEL[button].len) * ui.GLYPH_WIDTH }
     if button == Button.zoom_level { return ZOOM_W }
     return BAR
 }
 
 /* The width of the title before `button`, its gap included. */
 pub title_w(button: Button): f32 {
-    return f32(heading(button).len) * ui.GLYPH + style.CONTROL_GAP
+    return f32(heading(button).len) * ui.GLYPH_WIDTH + style.CONTROL_GAP
 }
 
 /* The bar rectangle of `button`, cut from the bar left to right: each group
@@ -125,12 +125,12 @@ pub place(button: Button): ui.Rect {
     for i: usize in 0 .. members(Button).len {
         each: Button = members(Button)[i]
         if heading(each).len > 0 {
-            if i > 0 { row.take_left(style.GROUP_GAP) }
-            row.take_left(title_w(each))
+            if i > 0 { row.cut_left(style.GROUP_GAP) }
+            row.cut_left(title_w(each))
         }
-        at: ui.Rect = row.take_left(width(each))
+        at: ui.Rect = row.cut_left(width(each))
         if each == button { return at }
-        row.take_left(style.CONTROL_GAP)
+        row.cut_left(style.CONTROL_GAP)
     }
     return ui.Rect {}
 }

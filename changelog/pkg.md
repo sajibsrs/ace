@@ -90,6 +90,10 @@
   keys, text), `focus`, consuming `key_pressed`, `text_field` and `scroll_area`.
   `pkg/sdl` gains text-input events; binbox's Save-as box and Open list use
   these, and its shortcuts run after widgets on what they left.
+- `pkg/ui` regroups its API around Ace types: `Ctx` becomes `Context` with
+  `Mouse` and `Keyboard`, `ButtonStyle` becomes `Style` with `Fill` and `Lead`
+  over `Color`, `TextInput` and `Scroll` hold control state, and overloads replace
+  `round`, `left`, `center` and `lead`; strips are `cut_left` and `cut_top`.
 - `[link]` gains fetched inputs: `url:` plus a required `sha256:` download through
   curl into `~/.ace/cache/<sha256>/`, verified on every use, only for
   the input actually linked. `framework:` becomes one comma list per section. A

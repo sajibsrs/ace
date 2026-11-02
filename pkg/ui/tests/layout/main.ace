@@ -6,24 +6,24 @@ canvas: ui.Canvas
 
 main(): int {
     row: ui.Rect = ui.Rect { x = 10.0, y = 20.0, w = 100.0, h = 30.0 }
-    left: ui.Rect = row.take_left(40.0)
+    left: ui.Rect = row.cut_left(40.0)
     if left.x != 10.0 || left.w != 40.0 || left.h != 30.0 { return 1 }
     if row.x != 50.0 || row.w != 60.0 { return 2 }
-    top: ui.Rect = row.take_top(10.0)
+    top: ui.Rect = row.cut_top(10.0)
     if top.y != 20.0 || top.h != 10.0 || row.y != 30.0 || row.h != 20.0 { return 3 }
     inner: ui.Rect = row.inset(ui.Insets.all(2.0))
     if inner.x != 52.0 || inner.y != 32.0 || inner.w != 56.0 || inner.h != 16.0 { return 4 }
-    box: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }.center(4.0)
+    box: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }.square(4.0)
     if box.x != 3.0 || box.y != 3.0 || box.w != 4.0 { return 5 }
 
     /* A click is a press and a release on the same widget. */
-    ctx: ui.Ctx = ui.Ctx { x = 5.0, y = 5.0, pressed = true }
+    ctx: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true } }
     hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
     miss: ui.Rect = ui.Rect { x = 20.0, w = 10.0, h = 10.0 }
     if !ctx.track(1, hit).press || ctx.track(2, miss).press { return 6 }
     ctx.end()
     if !ctx.track(1, hit).held || ctx.track(1, hit).click { return 7 }
-    ctx.released = true
+    ctx.mouse.released = true
     if !ctx.track(1, hit).click { return 8 }
     ctx.end()
     if ctx.track(1, hit).held { return 9 }
@@ -31,65 +31,66 @@ main(): int {
     if ctx.track(1, hit).hover { return 10 }
 
     /* A key is consumed once, with exactly its modifiers, either side's. */
-    io: ui.Ctx = ui.Ctx { canvas = &canvas, x = 5.0, y = 5.0 }
-    io.add_key(Keycode.s, 0x0400, false)
-    if io.key_pressed(Keycode.s, 0) || io.key_pressed(Keycode.a, ui.MOD_GUI) { return 11 }
-    if !io.key_pressed(Keycode.s, ui.MOD_GUI) || io.key_pressed(Keycode.s, ui.MOD_GUI) { return 12 }
+    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
+    io.keyboard.add(Keycode.s, 0x0400, false)
+    if io.keyboard.consume(Keycode.s, 0) || io.keyboard.consume(Keycode.a, ui.MOD_GUI) { return 11 }
+    if !io.keyboard.consume(Keycode.s, ui.MOD_GUI) || io.keyboard.consume(Keycode.s, ui.MOD_GUI) { return 12 }
     io.end()
-    if io.key_count != 0 { return 13 }
+    if io.keyboard.count != 0 { return 13 }
 
     /* A click focuses a field, which takes keys and allowed text ahead of
      * shortcuts; a press elsewhere drops focus. */
     bytes: [4]u8 = [0 : 4]
-    len: usize = 0
-    at: usize = 0
-    look: ui.ButtonStyle = ui.ButtonStyle {}
-    io.add_text("a")
-    io.pressed = true
-    res: ui.Response = io.text_field(3, hit, bytes[..], &len, &at, "ab", look)
-    if io.focus != 3 || !res.changed || len != 1 || at != 1 { return 14 }
+    field: ui.TextInput = ui.TextInput { buffer = bytes[..] }
+    look: ui.Style = ui.Style {}
+    io.keyboard.add("a")
+    io.mouse.pressed = true
+    res: ui.Response = io.text_field(3, hit, &field, "ab", look)
+    if io.focus != 3 || !res.changed || field.len != 1 || field.caret != 1 { return 14 }
     io.end()
-    io.add_key(Keycode.left, 0, false)
-    io.add_text("bZ")
-    res = io.text_field(3, hit, bytes[..], &len, &at, "ab", look)
-    if len != 2 || at != 1 || bytes[0] != 'b' || bytes[1] != 'a' { return 15 }
-    if !io.keys[0].used || io.typed().len != 0 { return 16 }
+    io.keyboard.add(Keycode.left, 0, false)
+    io.keyboard.add("bZ")
+    res = io.text_field(3, hit, &field, "ab", look)
+    if field.len != 2 || field.caret != 1 || bytes[0] != 'b' || bytes[1] != 'a' { return 15 }
+    if !io.keyboard.keys[0].used || io.keyboard.typed().len != 0 { return 16 }
     io.end()
-    io.add_key(Keycode.backspace, 0, false)
-    io.add_key(Keycode.enter, 0, false)
-    res = io.text_field(3, hit, bytes[..], &len, &at, "ab", look)
-    if !res.submit || !res.changed || len != 1 || at != 0 || bytes[0] != 'a' { return 17 }
-    if io.key_pressed(Keycode.enter, 0) { return 18 }
+    io.keyboard.add(Keycode.backspace, 0, false)
+    io.keyboard.add(Keycode.enter, 0, false)
+    res = io.text_field(3, hit, &field, "ab", look)
+    if !res.submit || !res.changed || field.len != 1 || field.caret != 0 || bytes[0] != 'a' { return 17 }
+    if io.keyboard.consume(Keycode.enter, 0) { return 18 }
     io.end()
     /* A key read first stays with its reader. */
-    io.add_key(Keycode.escape, 0, false)
-    if !io.key_pressed(Keycode.escape, 0) { return 19 }
+    io.keyboard.add(Keycode.escape, 0, false)
+    if !io.keyboard.consume(Keycode.escape, 0) { return 19 }
     io.end()
-    io.x = 50.0
-    io.pressed = true
-    io.text_field(3, hit, bytes[..], &len, &at, "", look)
+    io.mouse.x = 50.0
+    io.mouse.pressed = true
+    io.text_field(3, hit, &field, "", look)
     if io.focus != 0 { return 20 }
     io.end()
     /* Unfocused, keys and text pass by. */
-    io.add_key(Keycode.a, 0, false)
-    io.add_text("a")
-    io.text_field(3, hit, bytes[..], &len, &at, "", look)
-    if len != 1 || io.keys[0].used || io.typed().len != 1 { return 21 }
+    io.keyboard.add(Keycode.a, 0, false)
+    io.keyboard.add("a")
+    io.text_field(3, hit, &field, "", look)
+    if field.len != 1 || io.keyboard.keys[0].used || io.keyboard.typed().len != 1 { return 21 }
     io.end()
 
     /* A list consumes the wheel only under the pointer and when overflowing. */
-    top_: f32 = 0.0
-    io.x = 5.0
-    io.scroll = -2.0
-    if !io.scroll_area(hit, 100.0, &top_, 20.0, look).changed || top_ != 40.0 || io.scroll != 0.0 { return 22 }
-    io.scroll = -9.0
-    io.scroll_area(hit, 100.0, &top_, 20.0, look)
-    if top_ != 90.0 { return 23 }
-    io.scroll = 1.0
-    io.scroll_area(hit, 5.0, &top_, 20.0, look)
-    if top_ != 0.0 || io.scroll != 1.0 { return 24 }
-    io.x = 50.0
-    io.scroll_area(hit, 100.0, &top_, 20.0, look)
-    if top_ != 0.0 || io.scroll != 1.0 { return 25 }
+    pane: ui.Scroll = ui.Scroll { content = 100.0, step = 20.0 }
+    io.mouse.x = 5.0
+    io.mouse.wheel = -2.0
+    if !io.scroll_bar(hit, &pane, look).changed || pane.offset != 40.0 || io.mouse.wheel != 0.0 { return 22 }
+    io.mouse.wheel = -9.0
+    io.scroll_bar(hit, &pane, look)
+    if pane.offset != 90.0 { return 23 }
+    io.mouse.wheel = 1.0
+    pane.content = 5.0
+    io.scroll_bar(hit, &pane, look)
+    if pane.offset != 0.0 || io.mouse.wheel != 1.0 { return 24 }
+    pane.content = 100.0
+    io.mouse.x = 50.0
+    io.scroll_bar(hit, &pane, look)
+    if pane.offset != 0.0 || io.mouse.wheel != 1.0 { return 25 }
     return 0
 }

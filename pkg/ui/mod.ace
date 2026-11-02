@@ -2,7 +2,7 @@
  *
  * A Canvas holds a layer of triangles, shapes and text alike, in draw order;
  * flushing submits it in one geometry call. Rects are cut into layout, and a
- * Ctx's controls draw themselves, take the frame's input, and report it.
+ * Context's controls draw themselves, take the frame's input, and report it.
  */
 
 import math
@@ -10,10 +10,10 @@ import Renderer, Vertex, Point, Color, Keycode from sdl
 import font: "./inc/font.ace"
 
 /* Text size, in pixels per em. */
-pub TEXT: const f32 = 16.0
+pub TEXT_SIZE: const f32 = 16.0
 
-/* Advance of one glyph, the font being monospaced: 0.6 of TEXT. */
-pub GLYPH: const f32 = 9.6
+/* Advance of one glyph, the font being monospaced: 0.6 of TEXT_SIZE. */
+pub GLYPH_WIDTH: const f32 = 9.6
 
 pub Rect: struct {
     pub x: f32 = 0.0,
@@ -45,8 +45,13 @@ pub Rect.inset(const self, by: Insets): Rect {
     return Rect { x = self.x + by.left, y = self.y + by.top, w = self.w - by.left - by.right, h = self.h - by.top - by.bottom }
 }
 
+/* The baseline that centers capital letters in the rectangle. */
+Rect.baseline(const self): f32 {
+    return self.y + (self.h + font.CAP * TEXT_SIZE / font.EM) / 2.0
+}
+
 /* Removes a strip `w` wide from the left and returns it. */
-pub Rect.take_left(self, w: f32): Rect {
+pub Rect.cut_left(self, w: f32): Rect {
     strip: Rect = Rect { x = self.x, y = self.y, w = w, h = self.h }
     self.x += w
     self.w -= w
@@ -54,7 +59,7 @@ pub Rect.take_left(self, w: f32): Rect {
 }
 
 /* Removes a strip `h` high from the top and returns it. */
-pub Rect.take_top(self, h: f32): Rect {
+pub Rect.cut_top(self, h: f32): Rect {
     strip: Rect = Rect { x = self.x, y = self.y, w = self.w, h = h }
     self.y += h
     self.h -= h
@@ -62,12 +67,12 @@ pub Rect.take_top(self, h: f32): Rect {
 }
 
 /* A square of `side` centered in the rectangle. */
-pub Rect.center(const self, side: f32): Rect {
+pub Rect.square(const self, side: f32): Rect {
     return Rect { x = self.x + (self.w - side) / 2.0, y = self.y + (self.h - side) / 2.0, w = side, h = side }
 }
 
 /* A square of `side`, `pad` in from the left and centered vertically. */
-pub Rect.lead(const self, pad: f32, side: f32): Rect {
+pub Rect.square(const self, pad: f32, side: f32): Rect {
     return Rect { x = self.x + pad, y = self.y + (self.h - side) / 2.0, w = side, h = side }
 }
 
@@ -83,7 +88,7 @@ pub Canvas: struct {
 pub Canvas.init(r: Renderer): Canvas { return Canvas { r = r } }
 
 pub Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
-    if self.count + 3 > self.vertices.len { self.flush(self.r) }
+    if self.count + 3 > self.vertices.len { self.flush() }
     self.vertices[self.count] = Vertex { position = a, color = color }
     self.vertices[self.count + 1] = Vertex { position = b, color = color }
     self.vertices[self.count + 2] = Vertex { position = c, color = color }
@@ -109,7 +114,7 @@ pub Canvas.outline(self, box: Rect, thick: f32, color: Color) {
 
 /* A `thick` dashed outline just inside `box`, in dashes of 3 and gaps of 2
  * times `thick`; only dashes that reach `view` are drawn. */
-pub Canvas.dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
+pub Canvas.outline_dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
     dash: f32 = 3.0 * thick
     step: f32 = 5.0 * thick
     x: f32 = box.x
@@ -139,7 +144,7 @@ ROUND_C: [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
 ROUND_S: [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
 
 /* `box` with corners of `radius`, its edge fading out over one pixel. */
-pub Canvas.round(self, box: Rect, radius: f32, color: Color) {
+pub Canvas.fill(self, box: Rect, radius: f32, color: Color) {
     if box.w <= 0.0 || box.h <= 0.0 { return }
     rad: f32 = math.min[f32](radius, math.min[f32](box.w, box.h) / 2.0)
     if rad <= 0.5 {
@@ -147,7 +152,7 @@ pub Canvas.round(self, box: Rect, radius: f32, color: Color) {
         return
     }
     n: usize = ROUND_POINTS
-    if self.count + 9 * n > self.vertices.len { self.flush(self.r) }
+    if self.count + 9 * n > self.vertices.len { self.flush() }
     clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
     inner: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
     outer: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
@@ -179,7 +184,7 @@ Canvas.arc(self, inner: []Point, outer: []Point, k: usize, x: f32, y: f32, dx: f
 }
 
 pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
-    if self.count + 6 > self.vertices.len { self.flush(self.r) }
+    if self.count + 6 > self.vertices.len { self.flush() }
     self.vertices[self.count] = a
     self.vertices[self.count + 1] = b
     self.vertices[self.count + 2] = c
@@ -197,10 +202,10 @@ STROKE: const f32 = 3.5
 /* A `thick` stroke through `pts`, joined at its corners and square-capped
  * unless `closed`, anti-aliased: an opaque ribbon whose edges fade out over
  * one pixel straddling the true edge. */
-pub Canvas.stroke(self, r: Renderer, pts: []Point, closed: bool, thick: f32, color: Color) {
+pub Canvas.stroke(self, pts: []Point, closed: bool, thick: f32, color: Color) {
     n: usize = pts.len
     if n < 2 || n > SHAPE_MAX { return }
-    if self.count + 18 * n + 12 > self.vertices.len { self.flush(r) }
+    if self.count + 18 * n + 12 > self.vertices.len { self.flush() }
     clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
     /* The opaque ribbon reaches `fill` from the path; the fade, `fade`. */
     fill: f32 = thick / 2.0 - 0.5
@@ -286,12 +291,12 @@ pub Canvas.icon(self, shape: Icon, box: Rect, color: Color) {
     unit: f32 = side / 24.0
     ox: f32 = box.x + (box.w - side) / 2.0
     oy: f32 = box.y + (box.h - side) / 2.0
-    self.shapes(self.r, shape.points, shape.start, ox, oy, unit, color)
+    self.shapes(shape.points, shape.start, ox, oy, unit, color)
 }
 
 /* The shapes of `data` from index `i` to its -9 end mark, each point scaled
  * by `unit` and moved to (ox, oy). */
-Canvas.shapes(self, r: Renderer, data: []f32, at: usize, ox: f32, oy: f32, unit: f32, color: Color) {
+Canvas.shapes(self, data: []f32, at: usize, ox: f32, oy: f32, unit: f32, color: Color) {
     clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
     edge: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
     inner: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
@@ -310,7 +315,7 @@ Canvas.shapes(self, r: Renderer, data: []f32, at: usize, ox: f32, oy: f32, unit:
             for k: usize in 0 .. n {
                 edge[k] = Point { x = ox + data[i + 2 * k] * unit, y = oy + data[i + 2 * k + 1] * unit }
             }
-            self.stroke(r, edge[0..n], tag == -3.0, STROKE * unit, color)
+            self.stroke(edge[0..n], tag == -3.0, STROKE * unit, color)
             i += 2 * n
             continue
         }
@@ -369,7 +374,7 @@ Canvas.shapes(self, r: Renderer, data: []f32, at: usize, ox: f32, oy: f32, unit:
             inner[k] = Point { x = here.x - mx * reach, y = here.y - my * reach }
             outer[k] = Point { x = here.x + mx * reach, y = here.y + my * reach }
         }
-        if self.count + 3 * (n - 2) + 6 * n > self.vertices.len { self.flush(r) }
+        if self.count + 3 * (n - 2) + 6 * n > self.vertices.len { self.flush() }
         for t: usize in 0 .. n - 2 {
             a: usize = usize(data[tris + 3 * t])
             b: usize = usize(data[tris + 3 * t + 1])
@@ -396,8 +401,8 @@ turn(a: Point, b: Point): Point {
 }
 
 /* Draws the layer and empties it for the next. */
-pub Canvas.flush(self, r: Renderer) {
-    r.geometry(self.vertices[0..self.count], [])
+pub Canvas.flush(self) {
+    self.r.geometry(self.vertices[0..self.count], [])
     self.count = 0
 }
 
@@ -406,32 +411,34 @@ pub color(rgb: u32): Color { return Color.hex(rgb) }
 
 /* `text` with its baseline at window point (x, y), in this layer. Glyphs sit
  * on whole pixels, so every copy of a letter looks alike. */
-Canvas.print(self, x: f32, y: f32, text: string, ink: u32) {
-    color: Color = Color.hex(ink)
-    unit: f32 = TEXT / font.EM
+Canvas.print(self, x: f32, y: f32, text: string, color: Color) {
+    unit: f32 = TEXT_SIZE / font.EM
     base: f32 = math.floor(y + 0.5)
     for k: usize in 0 .. text.len {
         c: usize = usize(text[k])
         if c < font.FIRST || c > font.LAST { continue }
-        pen: f32 = math.floor(x + GLYPH * f32(k) + 0.5)
-        if self.count + 3000 > self.vertices.len { self.flush(self.r) }
-        self.shapes(self.r, font.POINTS[0..], usize(font.START[c - font.FIRST]), pen, base, unit, color)
+        pen: f32 = math.floor(x + GLYPH_WIDTH * f32(k) + 0.5)
+        if self.count + 3000 > self.vertices.len { self.flush() }
+        self.shapes(font.POINTS[0..], usize(font.START[c - font.FIRST]), pen, base, unit, color)
     }
 }
 
-/* The baseline that centers capital letters in `box`. */
-baseline(box: Rect): f32 {
-    return box.y + (box.h + font.CAP * TEXT / font.EM) / 2.0
+/* Where text sits in a box. */
+pub Align: enum {
+    left,
+    center,
 }
 
-/* `text` centered in `box`, in this layer. */
-pub Canvas.center(self, box: Rect, text: string, ink: u32) {
-    self.print(box.x + (box.w - GLYPH * f32(text.len)) / 2.0, baseline(box), text, ink)
+/* `text` aligned in `box`, in this layer. */
+pub Canvas.text(self, box: Rect, text: string, color: Color, align: Align) {
+    pad: f32 = 0.0
+    if align == Align.center { pad = (box.w - GLYPH_WIDTH * f32(text.len)) / 2.0 }
+    self.print(box.x + pad, box.baseline(), text, color)
 }
 
 /* `text` left-aligned in `box`, `pad` pixels in, in this layer. */
-pub Canvas.left(self, box: Rect, pad: f32, text: string, ink: u32) {
-    self.print(box.x + pad, baseline(box), text, ink)
+pub Canvas.text(self, box: Rect, pad: f32, text: string, color: Color) {
+    self.print(box.x + pad, box.baseline(), text, color)
 }
 
 /* What input did to a widget. `hover` and `held` last while true; the rest
@@ -447,16 +454,32 @@ pub Response: struct {
     pub submit: bool = false,
 }
 
-pub ButtonStyle: struct {
-    pub radius: f32 = 0.0,
-    pub rest: u32 = 0,
-    pub hover: u32 = 0,
-    pub press: u32 = 0,
-    pub ink: u32 = 0,
-    /* The inset before the icon, the icon's side, and the gap to the label. */
+/* A control's fill in each state. */
+pub Fill: struct {
+    pub rest: Color = Color {},
+    pub hover: Color = Color {},
+    pub press: Color = Color {},
+}
+
+/* The inset before an icon, its side, and the gap to the label. */
+pub Lead: struct {
     pub pad: f32 = 0.0,
-    pub side: f32 = 0.0,
+    pub size: f32 = 0.0,
     pub gap: f32 = 0.0,
+}
+
+pub Style: struct {
+    pub radius: f32 = 0.0,
+    pub fill: Fill = Fill {},
+    pub color: Color = Color {},
+    pub lead: Lead = Lead {},
+}
+
+/* The fill for the state `res` reports. */
+Style.shade(const self, res: Response): Color {
+    if res.held { return self.fill.press }
+    if res.hover { return self.fill.hover }
+    return self.fill.rest
 }
 
 /* Modifier groups, each either side's key, as SDL_KMOD_* bits. */
@@ -490,37 +513,39 @@ pub Key: struct {
     pub used: bool = false,
 }
 
-/* The frame's input. `pressed` and `released` are the left button's edges
- * since the last `end`; a press something else took is not reported. `scroll`
- * is the wheel's delta, positive away from the user. A widget that uses an
- * input consumes it, so what runs after it, shortcuts included, sees none. */
-pub Ctx: struct {
-    pub canvas: *Canvas = null,
+/* The pointer. `pressed` and `released` are the left button's edges since the
+ * last `end`; a press something else took is not reported. `wheel` is the
+ * delta, positive away from the user. */
+pub Mouse: struct {
     pub x: f32 = 0.0,
     pub y: f32 = 0.0,
     pub pressed: bool = false,
     pub released: bool = false,
-    /* A dialog is up, and this is not it: nothing is under the pointer. */
-    pub blocked: bool = false,
-    pub scroll: f32 = 0.0,
-    /* The widget that takes the keyboard; 0 for none. */
-    pub focus: u32 = 0,
+    pub wheel: f32 = 0.0,
+}
+
+/* Whether the pointer lies in `box`. */
+pub Mouse.over(const self, box: Rect): bool {
+    return box.has(self.x, self.y)
+}
+
+/* The frame's keys and typed text. */
+pub Keyboard: struct {
     pub keys: [KEYS_MAX]Key = [Key {} : KEYS_MAX],
-    pub key_count: usize = 0,
+    pub count: usize = 0,
     text: [TEXT_MAX]u8 = [0 : TEXT_MAX],
     text_len: usize = 0,
-    active: u32 = 0,
 }
 
 /* Records a key pressed this frame. */
-pub Ctx.add_key(self, code: Keycode, mod: u16, repeat: bool) {
-    if self.key_count == KEYS_MAX { return }
-    self.keys[self.key_count] = Key { code = code, mod = mod, repeat = repeat }
-    self.key_count += 1
+pub Keyboard.add(self, code: Keycode, mod: u16, repeat: bool) {
+    if self.count == KEYS_MAX { return }
+    self.keys[self.count] = Key { code = code, mod = mod, repeat = repeat }
+    self.count += 1
 }
 
 /* Records text typed this frame. */
-pub Ctx.add_text(self, text: string) {
+pub Keyboard.add(self, text: string) {
     for i: usize in 0 .. text.len {
         if self.text_len == TEXT_MAX { return }
         self.text[self.text_len] = text[i]
@@ -529,156 +554,176 @@ pub Ctx.add_text(self, text: string) {
 }
 
 /* The text typed this frame that no widget consumed. */
-pub Ctx.typed(self): string {
+pub Keyboard.typed(self): string {
     return string(self.text[0..self.text_len])
 }
 
-/* Whether `a` and `b` hold the same modifier groups, either side's key. */
-same_mod(a: u16, b: u16): bool {
-    return ((a & MOD_SHIFT) != 0) == ((b & MOD_SHIFT) != 0) &&
-        ((a & MOD_CTRL) != 0) == ((b & MOD_CTRL) != 0) &&
-        ((a & MOD_ALT) != 0) == ((b & MOD_ALT) != 0) &&
-        ((a & MOD_GUI) != 0) == ((b & MOD_GUI) != 0)
+/* Whether this is `code` with exactly the modifier groups in `mod`, either
+ * side's key. */
+Key.matches(const self, code: Keycode, mod: u16): bool {
+    return self.code == code &&
+        ((self.mod & MOD_SHIFT) != 0) == ((mod & MOD_SHIFT) != 0) &&
+        ((self.mod & MOD_CTRL) != 0) == ((mod & MOD_CTRL) != 0) &&
+        ((self.mod & MOD_ALT) != 0) == ((mod & MOD_ALT) != 0) &&
+        ((self.mod & MOD_GUI) != 0) == ((mod & MOD_GUI) != 0)
 }
 
 /* Consumes a press of `code` with exactly the modifier groups in `mod`, and
  * says whether there was one. */
-pub Ctx.key_pressed(self, code: Keycode, mod: u16): bool {
-    for i: usize in 0 .. self.key_count {
-        if self.keys[i].used || self.keys[i].code != code || !same_mod(self.keys[i].mod, mod) { continue }
+pub Keyboard.consume(self, code: Keycode, mod: u16): bool {
+    for i: usize in 0 .. self.count {
+        if self.keys[i].used || !self.keys[i].matches(code, mod) { continue }
         self.keys[i].used = true
         return true
     }
     return false
 }
 
+/* The frame's input and who holds it. A widget that uses an input consumes
+ * it, so what runs after it, shortcuts included, sees none. */
+pub Context: struct {
+    pub canvas: *Canvas = null,
+    pub mouse: Mouse = Mouse {},
+    pub keyboard: Keyboard = Keyboard {},
+    /* A dialog is up, and this is not it: nothing is under the pointer. */
+    pub blocked: bool = false,
+    /* The widget that takes the keyboard; 0 for none. */
+    pub focus: u32 = 0,
+    active: u32 = 0,
+}
+
 /* Ends the frame's input; `id`s are nonzero. */
-pub Ctx.end(self) {
-    if self.released { self.active = 0 }
-    self.pressed = false
-    self.released = false
-    self.scroll = 0.0
-    self.key_count = 0
-    self.text_len = 0
+pub Context.end(self) {
+    if self.mouse.released { self.active = 0 }
+    self.mouse.pressed = false
+    self.mouse.released = false
+    self.mouse.wheel = 0.0
+    self.keyboard.count = 0
+    self.keyboard.text_len = 0
 }
 
 /* What the pointer did to the widget `id` at `box`. A click is a release on
  * the widget that took the press. */
-pub Ctx.track(self, id: u32, box: Rect): Response {
-    over: bool = !self.blocked && box.has(self.x, self.y)
+pub Context.track(self, id: u32, box: Rect): Response {
+    over: bool = !self.blocked && self.mouse.over(box)
     res: Response = Response { hover = over }
-    if over && self.pressed {
+    if over && self.mouse.pressed {
         self.active = id
         res.press = true
     }
     res.held = self.active == id
-    res.click = res.held && over && self.released
+    res.click = res.held && over && self.mouse.released
     return res
-}
-
-/* The fill `style` gives a widget in the state `res` reports. */
-shade(res: Response, style: ButtonStyle): u32 {
-    if res.held { return style.press }
-    if res.hover { return style.hover }
-    return style.rest
 }
 
 /* An icon and a label in `box`, or the icon alone, centered, when the label
  * is empty. */
-pub Ctx.button(self, id: u32, box: Rect, shape: Icon, label: string, style: ButtonStyle): Response {
+pub Context.button(self, id: u32, box: Rect, shape: Icon, label: string, style: Style): Response {
     res: Response = self.track(id, box)
-    self.canvas.round(box, style.radius, Color.hex(shade(res, style)))
-    ink: Color = Color.hex(style.ink)
+    self.canvas.fill(box, style.radius, style.shade(res))
     if label.len == 0 {
-        self.canvas.icon(shape, box.center(style.side), ink)
+        self.canvas.icon(shape, box.square(style.lead.size), style.color)
     } else {
-        self.canvas.icon(shape, box.lead(style.pad, style.side), ink)
-        self.canvas.left(box, style.pad + style.side + style.gap, label, style.ink)
+        self.canvas.icon(shape, box.square(style.lead.pad, style.lead.size), style.color)
+        self.canvas.text(box, style.lead.pad + style.lead.size + style.lead.gap, label, style.color)
     }
     return res
 }
 
 /* A bar filled to `fill` (0 to 1) with `label` centered; `held` lasts for a
  * drag begun on it. */
-pub Ctx.slider(self, id: u32, box: Rect, fill: f32, label: string, style: ButtonStyle): Response {
+pub Context.slider(self, id: u32, box: Rect, fill: f32, label: string, style: Style): Response {
     res: Response = self.track(id, box)
-    self.canvas.round(box, style.radius, Color.hex(style.rest))
-    self.canvas.round(Rect { x = box.x, y = box.y, w = box.w * fill, h = box.h }, style.radius, Color.hex(style.hover))
-    self.canvas.center(box, label, style.ink)
+    self.canvas.fill(box, style.radius, style.fill.rest)
+    self.canvas.fill(Rect { x = box.x, y = box.y, w = box.w * fill, h = box.h }, style.radius, style.fill.hover)
+    self.canvas.text(box, label, style.color, Align.center)
     return res
 }
 
 /* A list row: `text` `pad` in, filled by `style`. */
-pub Ctx.row(self, id: u32, box: Rect, pad: f32, text: string, style: ButtonStyle): Response {
+pub Context.row(self, id: u32, box: Rect, pad: f32, text: string, style: Style): Response {
     res: Response = self.track(id, box)
-    self.canvas.fill(box, Color.hex(shade(res, style)))
-    self.canvas.left(box, pad, text, style.ink)
+    self.canvas.fill(box, style.shade(res))
+    self.canvas.text(box, pad, text, style.color)
     return res
 }
 
-/* Removes the byte at `i` of the first `len` bytes of `value`. */
-cut(value: []u8, len: *usize, i: usize) {
-    for j: usize in i .. *len - 1 { value[j] = value[j + 1] }
-    *len -= 1
+/* Caller storage for a text field: the first `len` bytes of `buffer` are in
+ * use, with the caret before byte `caret`. */
+pub TextInput: struct {
+    pub buffer: []u8 = [],
+    pub len: usize = 0,
+    pub caret: usize = 0,
 }
 
-/* A one-line field over `value`, of which the first `len` bytes are in use,
- * with its caret before byte `at`. A click takes focus, a press elsewhere drops
+/* Removes the byte at `i`. */
+TextInput.remove(self, i: usize) {
+    for j: usize in i .. self.len - 1 { self.buffer[j] = self.buffer[j + 1] }
+    self.len -= 1
+}
+
+/* Inserts `c` at the caret and moves past it. */
+TextInput.insert(self, c: u8) {
+    for j: usize = self.len; j > self.caret; j -= 1 { self.buffer[j] = self.buffer[j - 1] }
+    self.buffer[self.caret] = c
+    self.len += 1
+    self.caret += 1
+}
+
+/* A one-line field over `input`. A click takes focus, a press elsewhere drops
  * it. Focused, it consumes every key and the frame's text, so read a key meant
  * for its owner first; a frame's keys apply before its text. It adds only the
  * printable ASCII bytes in `allow`, or any when `allow` is empty. */
-pub Ctx.text_field(self, id: u32, box: Rect, value: []u8, len: *usize, at: *usize, allow: string, style: ButtonStyle): Response {
+pub Context.text_field(self, id: u32, box: Rect, input: *TextInput, allow: string, style: Style): Response {
     res: Response = self.track(id, box)
     if res.press {
         self.focus = id
-    } else if self.pressed && self.focus == id {
+    } else if self.mouse.pressed && self.focus == id {
         self.focus = 0
     }
     if self.focus == id {
-        for i: usize in 0 .. self.key_count {
-            if self.keys[i].used { continue }
-            self.keys[i].used = true
-            code: Keycode = self.keys[i].code
+        kb: *Keyboard = &self.keyboard
+        for i: usize in 0 .. kb.count {
+            if kb.keys[i].used { continue }
+            kb.keys[i].used = true
+            code: Keycode = kb.keys[i].code
             k: u32 = u32(code)
             if code == Keycode.enter {
                 res.submit = true
             } else if code == Keycode.backspace {
-                if *at > 0 {
-                    cut(value, len, *at - 1)
-                    *at -= 1
+                if input.caret > 0 {
+                    input.remove(input.caret - 1)
+                    input.caret -= 1
                     res.changed = true
                 }
             } else if k == KEY_DELETE {
-                if *at < *len {
-                    cut(value, len, *at)
+                if input.caret < input.len {
+                    input.remove(input.caret)
                     res.changed = true
                 }
             } else if code == Keycode.left {
-                if *at > 0 { *at -= 1 }
+                if input.caret > 0 { input.caret -= 1 }
             } else if code == Keycode.right {
-                if *at < *len { *at += 1 }
+                if input.caret < input.len { input.caret += 1 }
             } else if k == KEY_HOME {
-                *at = 0
+                input.caret = 0
             } else if k == KEY_END {
-                *at = *len
+                input.caret = input.len
             }
         }
-        for i: usize in 0 .. self.text_len {
-            c: u8 = self.text[i]
-            if c < 0x20 || c > 0x7e || *len == value.len || !allowed(allow, c) { continue }
-            for j: usize = *len; j > *at; j -= 1 { value[j] = value[j - 1] }
-            value[*at] = c
-            *len += 1
-            *at += 1
+        for i: usize in 0 .. kb.text_len {
+            c: u8 = kb.text[i]
+            if c < 0x20 || c > 0x7e || input.len == input.buffer.len || !allowed(allow, c) { continue }
+            input.insert(c)
             res.changed = true
         }
-        self.text_len = 0
+        kb.text_len = 0
     }
-    self.canvas.round(box, style.radius, Color.hex(style.rest))
-    self.canvas.left(box, style.pad, string(value[0..*len]), style.ink)
+    self.canvas.fill(box, style.radius, style.fill.rest)
+    self.canvas.text(box, style.lead.pad, string(input.buffer[0..input.len]), style.color)
     if self.focus == id {
-        caret: f32 = box.x + style.pad + f32(*at) * GLYPH
-        self.canvas.fill(Rect { x = caret - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, Color.hex(style.ink))
+        caret: f32 = box.x + style.lead.pad + f32(input.caret) * GLYPH_WIDTH
+        self.canvas.fill(Rect { x = caret - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, style.color)
     }
     return res
 }
@@ -692,25 +737,32 @@ allowed(allow: string, c: u8): bool {
     return false
 }
 
-/* Scrolling over `content` pixels seen through `box`, from `offset`, kept in
- * range. Under the pointer and overflowing, it consumes the wheel, `step`
- * pixels a notch, and `changed` reports a move. The caller draws what the
- * offset shows, whole rows fitting `box`; nothing is clipped. Call it before
- * the rows, on whose press it does not compete. */
-pub Ctx.scroll_area(self, box: Rect, content: f32, offset: *f32, step: f32, style: ButtonStyle): Response {
-    res: Response = Response { hover = !self.blocked && box.has(self.x, self.y) }
-    most: f32 = math.max[f32](content - box.h, 0.0)
-    before: f32 = *offset
+/* Caller state for scrolling: `content` pixels, `offset` from their top,
+ * moved `step` pixels a wheel notch. */
+pub Scroll: struct {
+    pub offset: f32 = 0.0,
+    pub content: f32 = 0.0,
+    pub step: f32 = 0.0,
+}
+
+/* Scrolling seen through `box`, its offset kept in range. Under the pointer
+ * and overflowing, it consumes the wheel, and `changed` reports a move. The
+ * caller draws what the offset shows, whole rows fitting `box`; nothing is
+ * clipped. Call it before the rows, on whose press it does not compete. */
+pub Context.scroll_bar(self, box: Rect, scroll: *Scroll, style: Style): Response {
+    res: Response = Response { hover = !self.blocked && self.mouse.over(box) }
+    most: f32 = math.max[f32](scroll.content - box.h, 0.0)
+    before: f32 = scroll.offset
     if res.hover && most > 0.0 {
-        *offset -= self.scroll * step
-        self.scroll = 0.0
+        scroll.offset -= self.mouse.wheel * scroll.step
+        self.mouse.wheel = 0.0
     }
-    *offset = math.max[f32](math.min[f32](*offset, most), 0.0)
-    res.changed = *offset != before
+    scroll.offset = math.max[f32](math.min[f32](scroll.offset, most), 0.0)
+    res.changed = scroll.offset != before
     if most > 0.0 {
-        h: f32 = math.max[f32](box.h * box.h / content, THUMB_MIN)
-        y: f32 = box.y + (box.h - h) * *offset / most
-        self.canvas.round(Rect { x = box.x + box.w - THUMB_W, y = y, w = THUMB_W, h = h }, THUMB_W / 2.0, Color.hex(style.ink))
+        h: f32 = math.max[f32](box.h * box.h / scroll.content, THUMB_MIN)
+        y: f32 = box.y + (box.h - h) * scroll.offset / most
+        self.canvas.fill(Rect { x = box.x + box.w - THUMB_W, y = y, w = THUMB_W, h = h }, THUMB_W / 2.0, style.color)
     }
     return res
 }

@@ -13,21 +13,22 @@ pub Toolbar: struct {
 }
 
 /* The buttons' look: `on` keeps one lit, as an open list or a set toggle does. */
-Toolbar.style(self, each: bar.Button, on: bool): ui.ButtonStyle {
-    look: ui.ButtonStyle = ui.ButtonStyle {
-        radius = style.RADIUS, rest = theme.BUTTON, hover = theme.ACTIVE, press = theme.PRESS, ink = theme.INK,
-        pad = bar.PAD, side = bar.GLYPH_SIDE, gap = bar.LABEL_GAP,
+Toolbar.style(self, each: bar.Button, on: bool): ui.Style {
+    look: ui.Style = ui.Style {
+        radius = style.RADIUS, fill = ui.Fill { rest = ui.color(theme.BUTTON), hover = ui.color(theme.ACTIVE), press = ui.color(theme.PRESS) },
+        color = ui.color(theme.INK),
+        lead = ui.Lead { pad = bar.PAD, size = bar.GLYPH_SIDE, gap = bar.LABEL_GAP },
     }
-    if on { look.rest = theme.ACTIVE }
+    if on { look.fill.rest = ui.color(theme.ACTIVE) }
     /* The mode button names the mode a press switches to. */
     if each == bar.Button.mode {
-        look.rest = theme.SIM
-        look.hover = theme.SIM_LIT
-        look.press = theme.SIM
+        look.fill.rest = ui.color(theme.SIM)
+        look.fill.hover = ui.color(theme.SIM_LIT)
+        look.fill.press = ui.color(theme.SIM)
         if self.g.phase == app.Phase.run {
-            look.rest = theme.EDIT
-            look.hover = theme.EDIT_LIT
-            look.press = theme.EDIT
+            look.fill.rest = ui.color(theme.EDIT)
+            look.fill.hover = ui.color(theme.EDIT_LIT)
+            look.fill.press = ui.color(theme.EDIT)
         }
     }
     return look
@@ -53,22 +54,22 @@ Toolbar.act(self, each: bar.Button) {
     if each == bar.Button.snap { g.snap = !g.snap }
 }
 
-pub Toolbar.draw(self, ctx: *ui.Ctx) {
+pub Toolbar.draw(self, context: *ui.Context) {
     g: *app.App = self.g
-    canvas: *ui.Canvas = ctx.canvas
+    canvas: *ui.Canvas = context.canvas
     for i: usize in 0 .. members(bar.Button).len {
         each: bar.Button = members(bar.Button)[i]
         at: ui.Rect = bar.place(each)
         if bar.heading(each).len > 0 {
-            canvas.left(at, -bar.title_w(each), bar.heading(each), theme.DIM)
+            canvas.text(at, -bar.title_w(each), bar.heading(each), ui.color(theme.DIM))
         }
         /* The zoom readout is not a button. */
         if each == bar.Button.zoom_level {
-            canvas.round(at, style.RADIUS, ui.color(theme.DEEP))
+            canvas.fill(at, style.RADIUS, ui.color(theme.DEEP))
             level: [16]u8
             zoom: fmt.Buffer = fmt.Buffer.init(level[..])
             zoom.printf("%.3g", g.view.level())
-            canvas.center(at, zoom.text(), theme.INK)
+            canvas.text(at, zoom.text(), ui.color(theme.INK), ui.Align.center)
             continue
         }
         on: bool = (each == bar.Button.open && g.mode == app.Mode.open) ||
@@ -79,11 +80,11 @@ pub Toolbar.draw(self, ctx: *ui.Ctx) {
             shown = icon.Id.edit
             label = bar.EDIT_LABEL
         }
-        res: ui.Response = ctx.button(u32(each) + 1, at, bar.shape(shown), label, self.style(each, on))
+        res: ui.Response = context.button(u32(each) + 1, at, bar.shape(shown), label, self.style(each, on))
         if res.click { self.act(each) }
     }
     title: string = g.name.text()
     if title.len == 0 { title = "untitled" }
     head: ui.Rect = g.view.head()
-    canvas.left(head, head.w - bar.EDGE - ui.GLYPH * f32(title.len), title, theme.INK)
+    canvas.text(head, head.w - bar.EDGE - ui.GLYPH_WIDTH * f32(title.len), title, ui.color(theme.INK))
 }

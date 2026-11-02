@@ -59,7 +59,7 @@ pub App: struct {
     /* The name being typed in the Save-as box. */
     pub draft: store.Name = store.Name {},
     /* How far the Open list is scrolled, in pixels. */
-    pub scroll: f32 = 0.0,
+    pub scroll: ui.Scroll = ui.Scroll {},
     pub store: store.Store = store.Store {},
     /* The last file result, shown in the status line. */
     notes: [96]u8 = [0 : 96],
@@ -71,7 +71,7 @@ pub App: struct {
     pub hy: int = -1,
     pub view: view.View = view.View {},
     /* The pointer as the widgets see it. */
-    pub ctx: ui.Ctx = ui.Ctx {},
+    pub context: ui.Context = ui.Context {},
     /* The tool in use, and the select tool's selection. */
     pub pick: bar.Tool = bar.Tool.pencil,
     pub sel: select.Selection = select.Selection {},
@@ -343,7 +343,7 @@ pub App.browse(self) {
     }
     err: Error = self.store.scan()
     if err != null { self.failed("cannot list", self.store.where(), err) }
-    self.scroll = 0.0
+    self.scroll.offset = 0.0
     self.mode = Mode.open
 }
 

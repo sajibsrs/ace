@@ -32,7 +32,7 @@ pub Footer.draw(self, canvas: *ui.Canvas) {
             speed.show(&status, g.rate)
         }
     }
-    canvas.left(foot, bar.EDGE, status.text(), theme.INK)
+    canvas.text(foot, bar.EDGE, status.text(), ui.color(theme.INK))
     note: string = g.status()
-    canvas.left(foot, foot.w - bar.EDGE - ui.GLYPH * f32(note.len), note, theme.DIM)
+    canvas.text(foot, foot.w - bar.EDGE - ui.GLYPH_WIDTH * f32(note.len), note, ui.color(theme.DIM))
 }

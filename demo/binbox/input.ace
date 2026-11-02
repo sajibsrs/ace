@@ -99,20 +99,20 @@ Input.paint(self, g: *app.App, x: int, y: int, button: MouseButton, press: bool)
  * paints nothing. */
 Input.click(self, g: *app.App, x: f32, y: f32, button: MouseButton): bool {
     if g.mode == app.Mode.save_as {
-        if button == MouseButton.left { g.ctx.pressed = true }
+        if button == MouseButton.left { g.context.mouse.pressed = true }
         return true
     }
     if g.sel.drag == select.Drag.move { return true }
     if g.mode == app.Mode.open {
-        if button == MouseButton.left { g.ctx.pressed = true } else { g.mode = app.Mode.none }
+        if button == MouseButton.left { g.context.mouse.pressed = true } else { g.mode = app.Mode.none }
         return true
     }
     if g.view.side().has(x, y) {
-        if button == MouseButton.left { g.ctx.pressed = true }
+        if button == MouseButton.left { g.context.mouse.pressed = true }
         return true
     }
     if y >= bar.TOP { return false }
-    if button == MouseButton.left { g.ctx.pressed = true }
+    if button == MouseButton.left { g.context.mouse.pressed = true }
     return true
 }
 
@@ -167,13 +167,13 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
         running = false
     }
     key: KeyboardEvent, is_key: bool = event.key()
-    if is_key && key.down { g.ctx.add_key(key.key, key.mod, key.repeat) }
+    if is_key && key.down { g.context.keyboard.add(key.key, key.mod, key.repeat) }
     text: string, is_text: bool = event.text_input()
-    if is_text { g.ctx.add_text(text) }
+    if is_text { g.context.keyboard.add(text) }
     b: MouseButtonEvent, is_button: bool = event.mouse_button()
     if is_button {
         if !b.down && b.button == MouseButton.left {
-            g.ctx.released = true
+            g.context.mouse.released = true
         }
         if b.down {
             clicked: bool = self.click(g, b.x, b.y, b.button)
@@ -225,19 +225,19 @@ pub Input.event(self, g: *app.App, event: *Event): bool {
         }
     }
     wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()
-    if is_wheel { g.ctx.scroll += wh.y }
+    if is_wheel { g.context.mouse.wheel += wh.y }
     return running
 }
 
 /* What the frame's widgets left of its keys and wheel; false to quit. */
 pub Input.shortcuts(self, g: *app.App): bool {
     running: bool = true
-    for i: usize in 0 .. g.ctx.key_count {
-        if !g.ctx.keys[i].used { running = self.key(g, g.ctx.keys[i]) && running }
+    for i: usize in 0 .. g.context.keyboard.count {
+        if !g.context.keyboard.keys[i].used { running = self.key(g, g.context.keyboard.keys[i]) && running }
     }
     /* The wheel zooms the board about the pointer, in either phase. */
-    if g.ctx.scroll != 0.0 && g.mode == app.Mode.none {
-        g.view.zoom(g.ctx.scroll, g.mx, g.my)
+    if g.context.mouse.wheel != 0.0 && g.mode == app.Mode.none {
+        g.view.zoom(g.context.mouse.wheel, g.mx, g.my)
         x: int, y: int = g.view.cell_at(g.mx, g.my)
         g.hx = x
         g.hy = y

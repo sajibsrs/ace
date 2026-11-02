@@ -99,7 +99,7 @@ main(): int {
         render.draw(&editor, &canvas, renderer, &bloom)
         /* Widgets had first claim on the frame's keys and wheel. */
         running = mouse.shortcuts(&editor) && running
-        editor.ctx.end()
+        editor.context.end()
         editor.drawn = time.elapsed() - drawing
         renderer.present()
     }

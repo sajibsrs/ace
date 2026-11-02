@@ -150,7 +150,7 @@ draw_bloom(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom, a: ui.Re
             lit = true
         }
     }
-    canvas.flush(r)
+    canvas.flush()
     if lit {
         for i: usize in 1 .. PASSES {
             r.target(bloom.pass[i])
@@ -177,7 +177,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     a: ui.Rect = g.view.area()
     /* The board's panel; nothing below is drawn outside it. */
     canvas.fill(a, Color.hex(theme.PANEL))
-    canvas.flush(r)
+    canvas.flush()
     r.clip(i32(a.x), i32(a.y), i32(a.w), i32(a.h))
     /* Empty cells keep a gap so the grid shows. Block sides go down next, then
      * every top face over them, so a side shows only where no block covers it. */
@@ -218,7 +218,7 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
             }
         }
     }
-    canvas.flush(r)
+    canvas.flush()
     if g.phase == app.Phase.run { draw_bloom(g, canvas, r, bloom, a) }
     if g.sel.drag == select.Drag.move || g.sel.held {
         draw_lifted(g, canvas, r, false)
@@ -235,12 +235,12 @@ draw_board(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     }
     /* The box being drawn, or the selection, carried along while it moves. */
     if g.sel.drag == select.Drag.box {
-        canvas.dashed(g.view.span(math.min[int](g.sel.ax, g.sel.bx), math.min[int](g.sel.ay, g.sel.by), math.max[int](g.sel.ax, g.sel.bx), math.max[int](g.sel.ay, g.sel.by)), 2.0, Color.hex(theme.DIM), a)
+        canvas.outline_dashed(g.view.span(math.min[int](g.sel.ax, g.sel.bx), math.min[int](g.sel.ay, g.sel.by), math.max[int](g.sel.ax, g.sel.bx), math.max[int](g.sel.ay, g.sel.by)), 2.0, Color.hex(theme.DIM), a)
     }
     if g.sel.on && g.sel.drag != select.Drag.box {
-        canvas.dashed(g.view.span(g.sel.x0 + g.sel.dx, g.sel.y0 + g.sel.dy, g.sel.x1 + g.sel.dx, g.sel.y1 + g.sel.dy), 2.0, Color.hex(theme.DIM), a)
+        canvas.outline_dashed(g.view.span(g.sel.x0 + g.sel.dx, g.sel.y0 + g.sel.dy, g.sel.x1 + g.sel.dx, g.sel.y1 + g.sel.dy), 2.0, Color.hex(theme.DIM), a)
     }
-    canvas.flush(r)
+    canvas.flush()
     r.unclip()
 }
 
@@ -290,34 +290,34 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     canvas.fill(ui.Rect { x = 0.0, y = 0.0, w = wide, h = top.y + top.h + reach }, chrome)
     canvas.fill(ui.Rect { x = 0.0, y = foot.y - reach, w = wide, h = foot.h + bar.GAP + reach }, chrome)
     canvas.fill(ui.Rect { x = panel.x - reach, y = panel.y, w = panel.w + bar.GAP + reach, h = panel.h }, chrome)
-    canvas.flush(r)
+    canvas.flush()
     bar_top: toolbar.Toolbar = toolbar.Toolbar { g = g }
-    bar_top.draw(&g.ctx)
+    bar_top.draw(&g.context)
     panel_side: sidebar.Sidebar = sidebar.Sidebar { g = g }
-    panel_side.draw(&g.ctx)
+    panel_side.draw(&g.context)
     status: footer.Footer = footer.Footer { g = g }
     status.draw(canvas)
-    canvas.flush(r)
+    canvas.flush()
 }
 
 pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     /* A dialog takes the pointer from what lies under it. */
     listing: bool = g.mode == app.Mode.open
-    g.ctx.blocked = g.mode != app.Mode.none
-    g.ctx.canvas = canvas
-    g.ctx.x = g.mx
-    g.ctx.y = g.my
+    g.context.blocked = g.mode != app.Mode.none
+    g.context.canvas = canvas
+    g.context.mouse.x = g.mx
+    g.context.mouse.y = g.my
     r.color(Color.hex(theme.WINDOW))
     r.clear()
     draw_board(g, canvas, r, bloom)
     draw_bars(g, canvas, r)
     if g.mode == app.Mode.open {
         list: dialog.OpenList = dialog.OpenList { g = g }
-        list.draw(&g.ctx, listing)
+        list.draw(&g.context, listing)
     }
     if g.mode == app.Mode.save_as {
         ask: dialog.SaveDialog = dialog.SaveDialog { g = g }
-        ask.draw(&g.ctx)
+        ask.draw(&g.context)
     }
-    canvas.flush(r)
+    canvas.flush()
 }
