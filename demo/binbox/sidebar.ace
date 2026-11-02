@@ -50,10 +50,11 @@ Sidebar.open(self, canvas: *ui.Canvas, area: *ui.Rect, title: string, height: f3
 
 /* The tools widget: one button per tool. */
 Sidebar.tools(self, context: *ui.Context, body: ui.Rect) {
+    row: ui.Rect = body.cut_top(bar.PICK)
     for i: usize in 0 .. members(bar.Tool).len {
         each: bar.Tool = members(bar.Tool)[i]
-        at: ui.Rect = body.cut_left(bar.PICK)
-        body.cut_left(bar.BLOCK_GAP)
+        at: ui.Rect = row.cut_left(bar.PICK)
+        row.cut_left(bar.BLOCK_GAP)
         look: ui.Style = plain(each == self.g.pick)
         look.lead.size = at.w - 2.0 * bar.TOOL_PAD
         if context.button(ID_TOOL + u32(i), at, bar.shape(bar.STRIP_ICON[each]), "", look).click { self.g.use(each) }
