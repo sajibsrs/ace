@@ -1,9 +1,20 @@
 import test
+import fmt
 import ui: "../mod.ace"
 import Keycode from sdl
 
 /* No window: drawing only fills the layer. */
 canvas: ui.Canvas
+
+/* Controls 26 high: an 18 icon with 4 above and below. */
+THEME: const ui.Theme = ui.Theme { padding = 8.0, gap = 4.0, icon = 18.0 }
+
+/* A context over `canvas`, its frame begun. */
+frame(c: *ui.Context) {
+    c.canvas = &canvas
+    c.theme = THEME
+    c.begin()
+}
 
 pub cuts(t: *test.T) {
     row: ui.Rect = ui.Rect { x = 10.0, y = 20.0, w = 100.0, h = 30.0 }
@@ -19,114 +30,177 @@ pub cuts(t: *test.T) {
     t.equal(box.x == 3.0 && box.y == 3.0 && box.w == 4.0, true, @file, @line)
 }
 
+/* Down an area controls take its width; across one they keep theirs,
+ * centered on its height; `fill` sends the rest to the far edge. */
+pub place(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    column: ui.Area = ui.area(ui.Rect { x = 10.0, y = 20.0, w = 100.0, h = 200.0 })
+    a: ui.Rect = ui.place(30.0, 26.0)
+    t.equal(a.x == 10.0 && a.y == 20.0 && a.w == 100.0 && a.h == 26.0, true, @file, @line)
+    ui.space(6.0)
+    b: ui.Rect = ui.place(30.0, 10.0)
+    t.equal(b.y == 56.0, true, @file, @line)
+    ui.width(40.0)
+    t.equal(ui.place(0.0, 10.0).w == 40.0, true, @file, @line)
+    t.equal(ui.place(0.0, 10.0).w == 100.0, true, @file, @line)
+    column.end()
+
+    bar: ui.Area = ui.area(ui.Rect { x = 0.0, y = 0.0, w = 300.0, h = 30.0 }, ui.Flow.across)
+    d: ui.Rect = ui.place(50.0, 26.0)
+    e: ui.Rect = ui.place(20.0, 10.0)
+    t.equal(d.x == 0.0 && d.y == 2.0 && d.w == 50.0, true, @file, @line)
+    t.equal(e.x == 54.0 && e.y == 10.0, true, @file, @line)
+    ui.fill()
+    f: ui.Rect = ui.place(40.0, 26.0)
+    g: ui.Rect = ui.place(10.0, 26.0)
+    t.equal(f.x == 260.0 && g.x == 246.0, true, @file, @line)
+    bar.end()
+    c.end()
+}
+
+/* `row` splits one line into equal columns and ends it by itself; `grid`
+ * wraps its controls into lines. */
+pub rows(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    column: ui.Area = ui.area(ui.Rect { w = 104.0, h = 200.0 })
+    ui.row(2)
+    a: ui.Rect = ui.place(0.0, 20.0)
+    b: ui.Rect = ui.place(0.0, 26.0)
+    t.equal(a.x == 0.0 && a.w == 50.0 && b.x == 54.0 && b.w == 50.0 && b.y == 0.0, true, @file, @line)
+    after: ui.Rect = ui.place(0.0, 10.0)
+    t.equal(after.y == 30.0 && after.w == 104.0, true, @file, @line)
+
+    ui.grid(3, 4)
+    for i: usize in 0 .. 3 { ui.place(0.0, 10.0) }
+    fourth: ui.Rect = ui.place(0.0, 10.0)
+    t.equal(fourth.x == 0.0 && fourth.y == 58.0 && fourth.w == 32.0, true, @file, @line)
+    t.equal(ui.place(0.0, 10.0).y == 72.0, true, @file, @line)
+    column.end()
+    c.end()
+}
+
+/* A button is as wide as its content across an area, an icon alone square,
+ * and `width` can size it for another label. */
+pub buttons(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    shape: ui.Icon = ui.Icon {}
+    bar: ui.Area = ui.area(ui.Rect { w = 400.0, h = 30.0 }, ui.Flow.across)
+    ui.button("Save")
+    t.equal(ui.last().rect.w == 16.0 + 4.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    ui.button(shape, "Open")
+    t.equal(ui.last().rect.w == 16.0 + 18.0 + 4.0 + 4.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    ui.button(shape)
+    t.equal(ui.last().rect.w == 26.0 && ui.last().rect.h == 26.0, true, @file, @line)
+    ui.width("Simulate")
+    ui.button(shape, "Edit")
+    t.equal(ui.last().rect.w == 16.0 + 18.0 + 4.0 + 8.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    bar.end()
+    c.end()
+}
+
 /* A click is a press and a release on the same widget. */
 pub clicks(t: *test.T) {
-    ctx: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true } }
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true } }
     hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
     miss: ui.Rect = ui.Rect { x = 20.0, w = 10.0, h = 10.0 }
-    t.equal(ctx.track(1, hit).press, true, @file, @line)
-    t.equal(ctx.track(2, miss).press, false, @file, @line)
-    ctx.end()
-    t.equal(ctx.track(1, hit).held, true, @file, @line)
-    t.equal(ctx.track(1, hit).click, false, @file, @line)
-    ctx.mouse.released = true
-    t.equal(ctx.track(1, hit).click, true, @file, @line)
-    ctx.end()
-    t.equal(ctx.track(1, hit).held, false, @file, @line)
-    ctx.blocked = true
-    t.equal(ctx.track(1, hit).hover, false, @file, @line)
+    frame(&c)
+    t.equal(ui.track(1, hit).press, true, @file, @line)
+    t.equal(ui.track(2, miss).press, false, @file, @line)
+    c.end()
+    frame(&c)
+    t.equal(ui.track(1, hit).held, true, @file, @line)
+    t.equal(ui.last().held, true, @file, @line)
+    t.equal(ui.track(1, hit).click, false, @file, @line)
+    c.mouse.released = true
+    t.equal(ui.track(1, hit).click, true, @file, @line)
+    c.end()
+    frame(&c)
+    t.equal(ui.track(1, hit).held, false, @file, @line)
+    c.end()
+}
+
+/* While a popup is up, a frame later, only its controls take the pointer. */
+pub popup(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0 } }
+    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
+    for i: usize in 0 .. 2 {
+        frame(&c)
+        under: bool = ui.track(1, hit).hover
+        t.equal(under, i == 0, @file, @line)
+        dialog: ui.Area = ui.popup(ui.Rect { w = 50.0, h = 50.0 })
+        t.equal(ui.track(2, hit).hover, true, @file, @line)
+        dialog.end()
+        c.end()
+    }
+    frame(&c)
+    c.end()
+    frame(&c)
+    t.equal(ui.track(1, hit).hover, true, @file, @line)
+    c.end()
+}
+
+/* A label, an icon or a value's address names a control; a scope tells the
+ * same name apart. */
+pub ids(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    a: bool = false
+    b: bool = false
+    t.equal(ui.id("Save") != ui.id("Open"), true, @file, @line)
+    t.equal(ui.id(ui.Icon { start = 3 }) == ui.id(ui.Icon { start = 3 }), true, @file, @line)
+    t.equal(ui.id(ui.Icon { start = 3 }) != ui.id(ui.Icon { start = 4 }), true, @file, @line)
+    t.equal(ui.id(usize(&a)) != ui.id(usize(&b)), true, @file, @line)
+    t.equal(ui.id(usize(3)) != ui.id(ui.Icon { start = 3 }), true, @file, @line)
+    outer: u32 = ui.id("row")
+    ui.push_id(1)
+    one: u32 = ui.id("row")
+    ui.pop_id()
+    ui.push_id(2)
+    two: u32 = ui.id("row")
+    ui.pop_id()
+    t.equal(outer != one && one != two && outer != two, true, @file, @line)
+    t.equal(ui.id("row") == outer, true, @file, @line)
+    c.end()
+}
+
+/* A toggle flips its value on a click and rests selected while it is set. */
+pub toggle(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
+    on: bool = false
+    frame(&c)
+    bar: ui.Area = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
+    t.equal(ui.toggle(ui.Icon {}, &on), true, @file, @line)
+    t.equal(on, true, @file, @line)
+    bar.end()
+    c.end()
 }
 
 /* A key is consumed once, with exactly its modifiers, either side's. */
 pub keys(t: *test.T) {
-    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
-    io.keyboard.add(Keycode.s, 0x0400, false)
-    t.equal(io.keyboard.consume(Keycode.s, 0), false, @file, @line)
-    t.equal(io.keyboard.consume(Keycode.a, ui.MOD_GUI), false, @file, @line)
-    t.equal(io.keyboard.consume(Keycode.s, ui.MOD_GUI), true, @file, @line)
-    t.equal(io.keyboard.consume(Keycode.s, ui.MOD_GUI), false, @file, @line)
-    io.end()
-    t.equal(io.keyboard.count, 0, @file, @line)
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    c.keyboard.add(Keycode.s, 0x0400, false)
+    c.keyboard.add(Keycode.escape, 0, false)
+    t.equal(c.keyboard.consume(Keycode.s, 0), false, @file, @line)
+    t.equal(c.keyboard.consume(Keycode.a, ui.MOD_GUI), false, @file, @line)
+    t.equal(c.keyboard.consume(Keycode.s, ui.MOD_GUI), true, @file, @line)
+    t.equal(c.keyboard.consume(Keycode.s, ui.MOD_GUI), false, @file, @line)
+    t.equal(ui.key(Keycode.escape), true, @file, @line)
+    t.equal(ui.key(Keycode.escape), false, @file, @line)
+    c.end()
+    t.equal(c.keyboard.count, 0, @file, @line)
 }
 
-/* A click focuses a field, which takes keys and allowed text ahead of
- * shortcuts; a press elsewhere drops focus.
- */
-pub text_field(t: *test.T) {
-    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
-    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
-    bytes: [4]u8 = [0 : 4]
-    field: ui.TextInput = ui.TextInput { buffer = bytes[..] }
-    look: ui.Style = ui.Style {}
-    io.keyboard.add("a")
-    io.mouse.pressed = true
-    res: ui.Response = io.text_field(3, hit, &field, "ab", look)
-    t.equal(int(io.focus), 3, @file, @line)
-    t.equal(res.changed, true, @file, @line)
-    t.equal(field.len, 1, @file, @line)
-    t.equal(field.caret, 1, @file, @line)
-    io.end()
-
-    io.keyboard.add(Keycode.left, 0, false)
-    io.keyboard.add("bZ")
-    res = io.text_field(3, hit, &field, "ab", look)
-    t.equal(string(bytes[..field.len]), "ba", @file, @line)
-    t.equal(field.caret, 1, @file, @line)
-    t.equal(io.keyboard.keys[0].used, true, @file, @line)
-    t.equal(io.keyboard.typed().len, 0, @file, @line)
-    io.end()
-
-    io.keyboard.add(Keycode.backspace, 0, false)
-    io.keyboard.add(Keycode.enter, 0, false)
-    res = io.text_field(3, hit, &field, "ab", look)
-    t.equal(res.submit, true, @file, @line)
-    t.equal(res.changed, true, @file, @line)
-    t.equal(string(bytes[..field.len]), "a", @file, @line)
-    t.equal(field.caret, 0, @file, @line)
-    t.equal(io.keyboard.consume(Keycode.enter, 0), false, @file, @line)
-    io.end()
-
-    /* A key read first stays with its reader. */
-    io.keyboard.add(Keycode.escape, 0, false)
-    t.equal(io.keyboard.consume(Keycode.escape, 0), true, @file, @line)
-    io.end()
-    io.mouse.x = 50.0
-    io.mouse.pressed = true
-    io.text_field(3, hit, &field, "", look)
-    t.equal(int(io.focus), 0, @file, @line)
-    io.end()
-
-    /* Unfocused, keys and text pass by. */
-    io.keyboard.add(Keycode.a, 0, false)
-    io.keyboard.add("a")
-    io.text_field(3, hit, &field, "", look)
-    t.equal(field.len, 1, @file, @line)
-    t.equal(io.keyboard.keys[0].used, false, @file, @line)
-    t.equal(io.keyboard.typed().len, 1, @file, @line)
-    io.end()
-}
-
-/* A list consumes the wheel only under the pointer and when overflowing. */
-pub scroll(t: *test.T) {
-    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
-    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
-    look: ui.Style = ui.Style {}
-    pane: ui.Scroll = ui.Scroll { content = 100.0, step = 20.0 }
-    io.mouse.wheel = -2.0
-    t.equal(io.scroll_bar(hit, &pane, look).changed, true, @file, @line)
-    t.equal(pane.offset == 40.0 && io.mouse.wheel == 0.0, true, @file, @line)
-
-    io.mouse.wheel = -9.0
-    io.scroll_bar(hit, &pane, look)
-    t.equal(pane.offset == 90.0, true, @file, @line)
-
-    io.mouse.wheel = 1.0
-    pane.content = 5.0
-    io.scroll_bar(hit, &pane, look)
-    t.equal(pane.offset == 0.0 && io.mouse.wheel == 1.0, true, @file, @line)
-
-    pane.content = 100.0
-    io.mouse.x = 50.0
-    io.scroll_bar(hit, &pane, look)
-    t.equal(pane.offset == 0.0 && io.mouse.wheel == 1.0, true, @file, @line)
+/* `line` formats into scratch space, empty on each call. */
+pub line(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    l: *fmt.Buffer = ui.line()
+    l.printf("%d ticks", 8)
+    t.equal(l.text(), "8 ticks", @file, @line)
+    t.equal(ui.line().text(), "", @file, @line)
+    c.end()
 }

@@ -1,6 +1,8 @@
 /* theme — the bar and panel colors, and each block's name and colors. */
 
 import grid: "./grid.ace"
+import ui
+import style: "./style.ace"
 
 /* Bar and panel colors. */
 pub CHROME: const u32 = 0x22262b
@@ -23,6 +25,22 @@ pub SIM: const u32 = 0x3d9a66
 pub SIM_LIT: const u32 = 0x41bb77
 pub INK: const u32 = 0xdddddd
 pub DIM: const u32 = 0x888888
+
+/* The look of the bars' and panels' controls. */
+pub controls(): ui.Theme {
+    return ui.Theme {
+        text = ui.color(INK),
+        muted = ui.color(DIM),
+        header = ui.color(DEEP),
+        button = ui.Fill { rest = ui.color(BUTTON), hover = ui.color(ACTIVE), press = ui.color(PRESS) },
+        selected = ui.color(ACTIVE),
+        field = ui.color(CHROME),
+        radius = style.RADIUS,
+        padding = 8.0,
+        gap = 4.0,
+        icon = 18.0,
+    }
+}
 
 /* An empty cell's gap, which lets the grid show. */
 pub CELL_GAP: const f32 = 1.0

@@ -292,32 +292,30 @@ draw_bars(g: *app.App, canvas: *ui.Canvas, r: Renderer) {
     canvas.fill(ui.Rect { x = panel.x - reach, y = panel.y, w = panel.w + bar.GAP + reach, h = panel.h }, chrome)
     canvas.flush()
     bar_top: toolbar.Toolbar = toolbar.Toolbar { g = g }
-    bar_top.draw(&g.context)
+    bar_top.draw()
     panel_side: sidebar.Sidebar = sidebar.Sidebar { g = g }
-    panel_side.draw(&g.context)
+    panel_side.draw()
     status: footer.Footer = footer.Footer { g = g }
-    status.draw(canvas)
+    status.draw()
     canvas.flush()
 }
 
 pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
-    /* A dialog takes the pointer from what lies under it. */
     listing: bool = g.mode == app.Mode.open
-    g.context.blocked = g.mode != app.Mode.none
-    g.context.canvas = canvas
-    g.context.mouse.x = g.mx
-    g.context.mouse.y = g.my
+    g.ui.canvas = canvas
+    g.ui.mouse.x = g.mx
+    g.ui.mouse.y = g.my
     r.color(Color.hex(theme.WINDOW))
     r.clear()
     draw_board(g, canvas, r, bloom)
     draw_bars(g, canvas, r)
     if g.mode == app.Mode.open {
         list: dialog.OpenList = dialog.OpenList { g = g }
-        list.draw(&g.context, listing)
+        list.draw(listing)
     }
     if g.mode == app.Mode.save_as {
         ask: dialog.SaveDialog = dialog.SaveDialog { g = g }
-        ask.draw(&g.context)
+        ask.draw()
     }
     canvas.flush()
 }

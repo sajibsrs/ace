@@ -11,11 +11,11 @@ pub Footer: struct {
     pub g: *app.App = null,
 }
 
-pub Footer.draw(self, canvas: *ui.Canvas) {
+pub Footer.draw(self) {
     g: *app.App = self.g
-    foot: ui.Rect = g.view.foot()
-    storage: [128]u8
-    status: fmt.Buffer = fmt.Buffer.init(storage[..])
+    row: ui.Area = ui.area(g.view.foot().inset(ui.Insets { left = bar.EDGE, right = bar.EDGE }), ui.Flow.across)
+    defer row.end()
+    status: *fmt.Buffer = ui.line()
     if g.phase == app.Phase.edit {
         if g.pick == bar.Tool.select {
             status.printf("select")
@@ -29,10 +29,10 @@ pub Footer.draw(self, canvas: *ui.Canvas) {
         /* The rate reached, which falls short of the setting when the frames cannot keep up. */
         if g.auto && g.rate > 0.0 {
             status.printf(" | ")
-            speed.show(&status, g.rate)
+            speed.show(status, g.rate)
         }
     }
-    canvas.text(foot, bar.EDGE, status.text(), ui.color(theme.INK))
-    note: string = g.status()
-    canvas.text(foot, foot.w - bar.EDGE - ui.GLYPH_WIDTH * f32(note.len), note, ui.color(theme.DIM))
+    ui.text(status.text())
+    ui.fill()
+    ui.muted(g.status())
 }

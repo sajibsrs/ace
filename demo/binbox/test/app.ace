@@ -97,19 +97,6 @@ pub reset_restores_the_state_simulate_was_entered_with(t: *test.T) {
     t.equal(a.s.level(2, 0) == sim.Level.high, false, @file, @line)
 }
 
-pub clock_slider_picks_a_span(t: *test.T) {
-    a: app.App = app.App {}
-    defer a.wipe()
-    at: ui.Rect = ui.Rect { x = 100.0, w = 180.0, h = 22.0 }
-    t.equal(a.clock, 0, @file, @line)
-    a.slide_clock(at.x + at.w - 1.0, at)
-    t.equal(a.clock, grid.SPANS - 1, @file, @line)
-    a.slide_clock(at.x - 50.0, at)
-    t.equal(a.clock, 0, @file, @line)
-    a.slide_clock(at.x + at.w / 2.0 + 1.0, at)
-    t.equal(a.clock, grid.SPANS / 2, @file, @line)
-}
-
 /* The dropper takes the block under the pointer, and a clock's span, and
  * switches to the pencil; an empty cell, or Sim, changes nothing. */
 pub dropper_picks_the_block_under_the_pointer(t: *test.T) {

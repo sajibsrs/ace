@@ -1,0 +1,107 @@
+/* ui input — the frame's keys, typed text and pointer, as the application
+ * records them for the controls. */
+
+import Keycode from sdl
+import Rect from "./canvas.ace"
+
+/* Modifier groups, each either side's key, as SDL_KMOD_* bits. */
+pub MOD_SHIFT: const u16 = 0x0003
+pub MOD_CTRL: const u16 = 0x00c0
+pub MOD_ALT: const u16 = 0x0300
+pub MOD_GUI: const u16 = 0x0c00
+
+/* SDL keycodes the binding leaves unnamed. */
+pub KEY_DELETE: const u32 = 0x7f
+pub KEY_HOME: const u32 = 0x4000_004a
+pub KEY_END: const u32 = 0x4000_004d
+
+/* Keys and bytes of text one frame holds; more are dropped. */
+KEYS_MAX: const usize = 16
+TEXT_MAX: const usize = 64
+
+/* A key pressed this frame. `used` is set once a widget consumed it. */
+pub Key: struct {
+    pub code: Keycode = Keycode.unknown,
+    pub mod: u16 = 0,
+    pub repeat: bool = false,
+    pub used: bool = false,
+}
+
+/* The pointer. `pressed` and `released` are the left button's edges since the
+ * last `end`; a press something else took is not reported. `wheel` is the
+ * delta, positive away from the user. */
+pub Mouse: struct {
+    pub x: f32 = 0.0,
+    pub y: f32 = 0.0,
+    pub pressed: bool = false,
+    pub released: bool = false,
+    pub wheel: f32 = 0.0,
+}
+
+/* Whether the pointer lies in `box`. */
+pub Mouse.over(const self, box: Rect): bool {
+    return box.has(self.x, self.y)
+}
+
+/* The frame's keys and typed text. */
+pub Keyboard: struct {
+    pub keys: [KEYS_MAX]Key = [Key {} : KEYS_MAX],
+    pub count: usize = 0,
+    text: [TEXT_MAX]u8 = [0 : TEXT_MAX],
+    text_len: usize = 0,
+}
+
+/* Records a key pressed this frame. */
+pub Keyboard.add(self, code: Keycode, mod: u16, repeat: bool) {
+    if self.count == KEYS_MAX { return }
+    self.keys[self.count] = Key { code = code, mod = mod, repeat = repeat }
+    self.count += 1
+}
+
+/* Records text typed this frame. */
+pub Keyboard.add(self, text: string) {
+    for i: usize in 0 .. text.len {
+        if self.text_len == TEXT_MAX { return }
+        self.text[self.text_len] = text[i]
+        self.text_len += 1
+    }
+}
+
+/* The text typed this frame that no widget consumed. */
+pub Keyboard.typed(self): string {
+    return string(self.text[0..self.text_len])
+}
+
+/* Consumes the text typed this frame, and returns it. */
+pub Keyboard.consume(self): string {
+    text: string = self.typed()
+    self.text_len = 0
+    return text
+}
+
+/* Forgets the frame's keys and text. */
+pub Keyboard.clear(self) {
+    self.count = 0
+    self.text_len = 0
+}
+
+/* Whether this is `code` with exactly the modifier groups in `mod`, either
+ * side's key. */
+Key.matches(const self, code: Keycode, mod: u16): bool {
+    return self.code == code &&
+        ((self.mod & MOD_SHIFT) != 0) == ((mod & MOD_SHIFT) != 0) &&
+        ((self.mod & MOD_CTRL) != 0) == ((mod & MOD_CTRL) != 0) &&
+        ((self.mod & MOD_ALT) != 0) == ((mod & MOD_ALT) != 0) &&
+        ((self.mod & MOD_GUI) != 0) == ((mod & MOD_GUI) != 0)
+}
+
+/* Consumes a press of `code` with exactly the modifier groups in `mod`, and
+ * says whether there was one. */
+pub Keyboard.consume(self, code: Keycode, mod: u16): bool {
+    for i: usize in 0 .. self.count {
+        if self.keys[i].used || !self.keys[i].matches(code, mod) { continue }
+        self.keys[i].used = true
+        return true
+    }
+    return false
+}

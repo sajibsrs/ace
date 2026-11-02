@@ -1,0 +1,180 @@
+import test
+import ui: "../mod.ace"
+import Keycode from sdl
+
+/* No window: drawing only fills the layer. */
+canvas: ui.Canvas
+
+/* Controls 26 high: an 18 icon with 4 above and below. */
+THEME: const ui.Theme = ui.Theme { padding = 8.0, gap = 4.0, icon = 18.0 }
+
+/* Begins a frame of `c` and opens a column 110 wide at the origin. */
+open(c: *ui.Context): ui.Area {
+    c.canvas = &canvas
+    c.theme = THEME
+    c.begin()
+    return ui.area(ui.Rect { w = 110.0, h = 200.0 })
+}
+
+/* Closes the column and ends the frame. */
+close(c: *ui.Context, column: ui.Area) {
+    column.end()
+    c.end()
+}
+
+/* A click anywhere on a checkbox flips its value. */
+pub checkbox(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 60.0, y = 5.0, pressed = true, released = true } }
+    on: bool = false
+    column: ui.Area = open(&c)
+    t.equal(ui.checkbox("Grid", &on), true, @file, @line)
+    t.equal(on, true, @file, @line)
+    close(&c, column)
+    column = open(&c)
+    t.equal(ui.checkbox("Grid", &on), false, @file, @line)
+    t.equal(on, true, @file, @line)
+    close(&c, column)
+}
+
+/* Sets `x` and presses there, which a slider at the column's top takes. */
+drag(c: *ui.Context, x: f32): ui.Area {
+    c.mouse = ui.Mouse { x = x, y = 5.0, pressed = true }
+    return open(c)
+}
+
+/* A whole-number slider has one equal zone per value; a fraction slider
+ * follows the pointer. */
+pub slider(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    stop: int = 3
+    column: ui.Area = open(&c)
+    t.equal(ui.slider(&stop, 0, 54, "3"), false, @file, @line)
+    close(&c, column)
+    column = drag(&c, 0.0)
+    t.equal(ui.slider(&stop, 0, 54, ""), true, @file, @line)
+    t.equal(stop, 0, @file, @line)
+    close(&c, column)
+    column = drag(&c, 109.9)
+    ui.slider(&stop, 0, 54, "")
+    t.equal(stop, 54, @file, @line)
+    close(&c, column)
+    column = drag(&c, 55.0)
+    ui.slider(&stop, 0, 54, "")
+    t.equal(stop, 27, @file, @line)
+    close(&c, column)
+    /* Held, it follows the pointer past its ends. */
+    c.mouse.x = -50.0
+    column = open(&c)
+    ui.slider(&stop, 0, 54, "")
+    t.equal(stop, 0, @file, @line)
+    close(&c, column)
+
+    level: f32 = 0.0
+    column = drag(&c, 55.0)
+    t.equal(ui.slider(&level, 0.0, 10.0), true, @file, @line)
+    t.equal(level == 5.0, true, @file, @line)
+    close(&c, column)
+}
+
+/* A click focuses a field, which takes keys and allowed text ahead of
+ * shortcuts; a press elsewhere drops focus. */
+pub field(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true } }
+    bytes: [4]u8 = [0 : 4]
+    input: ui.TextInput = ui.TextInput { buffer = bytes[..] }
+    column: ui.Area = open(&c)
+    c.keyboard.add("a")
+    t.equal(ui.field(&input, "ab"), true, @file, @line)
+    t.equal(c.focus == ui.id(usize(&bytes[0])), true, @file, @line)
+    t.equal(input.text(), "a", @file, @line)
+    t.equal(input.caret, 1, @file, @line)
+    close(&c, column)
+
+    column = open(&c)
+    c.keyboard.add(Keycode.left, 0, false)
+    c.keyboard.add("bZ")
+    ui.field(&input, "ab")
+    t.equal(input.text(), "ba", @file, @line)
+    t.equal(input.caret, 1, @file, @line)
+    t.equal(c.keyboard.keys[0].used, true, @file, @line)
+    t.equal(c.keyboard.typed().len, 0, @file, @line)
+    close(&c, column)
+
+    column = open(&c)
+    c.keyboard.add(Keycode.backspace, 0, false)
+    c.keyboard.add(Keycode.enter, 0, false)
+    t.equal(ui.field(&input, "ab"), true, @file, @line)
+    t.equal(ui.last().submit, true, @file, @line)
+    t.equal(input.text(), "a", @file, @line)
+    t.equal(input.caret, 0, @file, @line)
+    t.equal(c.keyboard.consume(Keycode.enter, 0), false, @file, @line)
+    close(&c, column)
+
+    /* A key read first stays with its reader. */
+    column = open(&c)
+    c.keyboard.add(Keycode.escape, 0, false)
+    t.equal(ui.key(Keycode.escape), true, @file, @line)
+    close(&c, column)
+    c.mouse.x = 150.0
+    c.mouse.pressed = true
+    column = open(&c)
+    ui.field(&input, "")
+    t.equal(int(c.focus), 0, @file, @line)
+    close(&c, column)
+
+    /* Unfocused, keys and text pass by. */
+    column = open(&c)
+    c.keyboard.add(Keycode.a, 0, false)
+    c.keyboard.add("a")
+    t.equal(ui.field(&input, ""), false, @file, @line)
+    t.equal(input.len, 1, @file, @line)
+    t.equal(c.keyboard.keys[0].used, false, @file, @line)
+    t.equal(c.keyboard.typed().len, 1, @file, @line)
+    close(&c, column)
+
+    /* `focus` hands the next field the keyboard. */
+    column = open(&c)
+    ui.focus()
+    ui.field(&input, "")
+    t.equal(c.focus == ui.id(usize(&bytes[0])), true, @file, @line)
+    close(&c, column)
+}
+
+/* A press picks a row; the wheel scrolls a row a notch, only under the
+ * pointer and when the list overflows. Rows are 24 high. */
+pub list(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 30.0, pressed = true } }
+    items: [5]string = ["a", "b", "c", "d", "e"]
+    chosen: usize = 5
+    scroll: f32 = 0.0
+    column: ui.Area = open(&c)
+    t.equal(ui.list(items[..], &chosen, 2, &scroll), true, @file, @line)
+    t.equal(chosen, 1, @file, @line)
+    t.equal(ui.last().rect.h == 48.0, true, @file, @line)
+    close(&c, column)
+
+    c.mouse = ui.Mouse { x = 5.0, y = 5.0, wheel = -2.0 }
+    column = open(&c)
+    t.equal(ui.list(items[..], &chosen, 2, &scroll), false, @file, @line)
+    t.equal(scroll == 2.0 && c.mouse.wheel == 0.0, true, @file, @line)
+    close(&c, column)
+
+    c.mouse = ui.Mouse { x = 5.0, y = 5.0, wheel = -9.0, pressed = true }
+    column = open(&c)
+    ui.list(items[..], &chosen, 2, &scroll)
+    t.equal(scroll == 3.0 && chosen == 3, true, @file, @line)
+    close(&c, column)
+
+    c.mouse = ui.Mouse { x = 5.0, y = 5.0, wheel = 1.0 }
+    scroll = 0.0
+    column = open(&c)
+    ui.list(items[0..2], &chosen, 2, &scroll)
+    t.equal(scroll == 0.0 && c.mouse.wheel == 1.0, true, @file, @line)
+    close(&c, column)
+
+    c.mouse = ui.Mouse { x = 150.0, y = 5.0, wheel = -1.0 }
+    column = open(&c)
+    ui.list(items[..], &chosen, 2, &scroll)
+    t.equal(scroll == 0.0 && c.mouse.wheel == -1.0, true, @file, @line)
+    close(&c, column)
+}

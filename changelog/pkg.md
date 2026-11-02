@@ -1,5 +1,9 @@
 # Packages
 
+- `pkg/ui` follows Dear ImGui's model: controls, value controls included
+  (`checkbox`, `slider`, `field`, `list`), are free functions on the context
+  current between `begin` and `end`, placed in `Area`s and drawn from
+  `Context.theme`; ids hash a label, icon or value address (FNV-1a).
 - `pkg/sdl` creates system cursors: `Cursor.new(SystemCursor)`, released with
   `wipe()`, and made active with `sdl.cursor(c)`.
 - `pkg/sdl` delivers `MouseWheelEvent` as an `Event` member, read through

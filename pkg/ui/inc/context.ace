@@ -1,0 +1,443 @@
+/* ui context — a frame's input, theme, ids and layout: what places and tracks
+ * every control. */
+
+import bits
+import fmt
+import math
+import Color, Keycode from sdl
+import Rect, Canvas, Icon, TEXT_SIZE, GLYPH_WIDTH from "./canvas.ace"
+import Mouse, Keyboard from "./input.ace"
+
+/* What the pointer did to a control, from `track`. `hover` and `held` last
+ * while true; `press` and `click` hold for one frame. */
+pub Response: struct {
+    pub hover: bool = false,
+    pub press: bool = false,
+    pub held: bool = false,
+    pub click: bool = false,
+}
+
+/* The last control placed: whether the pointer is over it or holds it, where
+ * it is, and, for a field, whether Enter was pressed in it. */
+pub Item: struct {
+    pub hovered: bool = false,
+    pub held: bool = false,
+    pub rect: Rect = Rect {},
+    pub submit: bool = false,
+}
+
+/* A control's fill in each state. */
+pub Fill: struct {
+    pub rest: Color = Color {},
+    pub hover: Color = Color {},
+    pub press: Color = Color {},
+}
+
+/* The fill for the state `res` reports. */
+pub Fill.shade(const self, res: Response): Color {
+    if res.held { return self.press }
+    if res.hover { return self.hover }
+    return self.rest
+}
+
+/* How every control looks. A caller copies it, changes a field for the
+ * controls that follow, and assigns the copy back after. */
+pub Theme: struct {
+    /* Body text, and icons. */
+    pub text: Color = Color {},
+    /* Secondary text: captions, hints, labels. */
+    pub muted: Color = Color {},
+    /* A heading's strip, and a readout's background. */
+    pub header: Color = Color {},
+    /* A button's background. */
+    pub button: Fill = Fill {},
+    /* A selected or toggled-on control, and a slider's filled part. */
+    pub selected: Color = Color {},
+    /* A text field's background. */
+    pub field: Color = Color {},
+    /* Corner radius. */
+    pub radius: f32 = 0.0,
+    /* Inside a control, around its content. */
+    pub padding: f32 = 0.0,
+    /* Between controls, and between a control's icon and label. */
+    pub gap: f32 = 0.0,
+    /* An icon's side. */
+    pub icon: f32 = 0.0,
+}
+
+/* Nested `push_id` scopes and areas, and the ids a debug build checks for
+ * repeats in one frame; past that many it checks no more. */
+SCOPES_MAX: const usize = 16
+AREAS_MAX: const usize = 8
+SEEN_MAX: const usize = 256
+
+/* The bytes `line` formats into. */
+LINE_MAX: const usize = 256
+
+/* FNV-1a, 32-bit, from the scope's hash. */
+FNV_PRIME: const u32 = 0x0100_0193
+
+/* Tags that keep an icon's and a pointer's id apart from a label's. */
+TAG_ICON: const u8 = 1
+TAG_POINTER: const u8 = 2
+
+/* Which way an area's controls follow one another. */
+pub Flow: enum {
+    down,
+    across,
+}
+
+/* An open area, closed by `end`. */
+pub Area: struct {
+    level: usize = 0,
+}
+
+/* Where an open area places its next control. */
+Layout: struct {
+    box: Rect = Rect {},
+    flow: Flow = Flow.down,
+    /* Down, the next control's top; across, its left, or after `fill` its
+     * right, from the far edge. Both from the area's own edge. */
+    at: f32 = 0.0,
+    far: bool = false,
+    /* In a popup, which a popup shown last frame leaves under the pointer. */
+    modal: bool = false,
+    /* A `grid`'s columns, the controls it has left to place, the column the
+     * next takes, and the height of its line so far. */
+    cols: usize = 0,
+    left: usize = 0,
+    col: usize = 0,
+    line: f32 = 0.0,
+}
+
+/* The frame's input, who holds it, and where controls go. A widget that uses
+ * an input consumes it, so what runs after it, shortcuts included, sees none.
+ * All zeros is a valid context; the application sets `theme` and `canvas`. */
+pub Context: struct {
+    pub canvas: *Canvas = null,
+    pub mouse: Mouse = Mouse {},
+    pub keyboard: Keyboard = Keyboard {},
+    /* The widget that takes the keyboard; 0 for none. */
+    pub focus: u32 = 0,
+    /* `focus()` was called: the next field takes the keyboard. */
+    focusing: bool = false,
+    pub theme: Theme = Theme {},
+    active: u32 = 0,
+    scope: u32 = 0,
+    scopes: [SCOPES_MAX]u32 = [0 : SCOPES_MAX],
+    depth: usize = 0,
+    seen: [SEEN_MAX]u32 = [0 : SEEN_MAX],
+    seen_count: usize = 0,
+    areas: [AREAS_MAX]Layout = [Layout {} : AREAS_MAX],
+    level: usize = 0,
+    /* The next control's width from `width`, or its label's stand-in. */
+    next_w: f32 = 0.0,
+    fit: string = "",
+    fitting: bool = false,
+    last: Item = Item {},
+    /* A popup is up this frame, and was last frame: only it takes the
+     * pointer. */
+    modal: bool = false,
+    blocking: bool = false,
+    bytes: [LINE_MAX]u8 = [0 : LINE_MAX],
+    scratch: fmt.Buffer = blank(fmt.Buffer),
+}
+
+/* The context the free functions act on, from `begin` to `end`. */
+pub current: *Context = null
+
+/* Starts a frame: the free functions act on this context until `end`. */
+pub Context.begin(self) {
+    current = &self
+    self.blocking = self.modal
+    self.modal = false
+}
+
+/* Ends the frame: clears its input, after the application's shortcuts read
+ * what the controls left. Every area and id scope is closed by now. */
+pub Context.end(self) {
+    assert(self.depth == 0 && self.level == 0)
+    current = null
+    self.seen_count = 0
+    if self.mouse.released { self.active = 0 }
+    self.mouse.pressed = false
+    self.mouse.released = false
+    self.mouse.wheel = 0.0
+    self.keyboard.clear()
+}
+
+/* `bytes` mixed into hash `h`. */
+fnv(h: u32, bytes: []u8): u32 {
+    for i: usize in 0 .. bytes.len { h = bits.wrmul(h ^ u32(bytes[i]), FNV_PRIME) }
+    return h
+}
+
+/* `n`'s eight bytes after `tag`, mixed into hash `h`. */
+fnv(h: u32, tag: u8, n: u64): u32 {
+    k: [9]u8 = [tag, u8(n), u8(n >> 8), u8(n >> 16), u8(n >> 24), u8(n >> 32), u8(n >> 40), u8(n >> 48), u8(n >> 56)]
+    return fnv(h, k[..])
+}
+
+/* `h` as an id, which is never 0. */
+nonzero(h: u32): u32 {
+    if h == 0 { return 1 }
+    return h
+}
+
+/* The id of the control `label` names in the current scope. */
+pub id(label: string): u32 { return nonzero(fnv(current.scope, label)) }
+
+/* The id of the icon-only control that shows `shape`. */
+pub id(shape: Icon): u32 { return nonzero(fnv(current.scope, TAG_ICON, u64(shape.start))) }
+
+/* The id of the control that edits the value at `address`, as `usize(&v)`. */
+pub id(address: usize): u32 { return nonzero(fnv(current.scope, TAG_POINTER, u64(address))) }
+
+/* Opens a scope `n` names: the same label, icon or value names a different
+ * control inside it, as in a loop's rows. `pop_id` closes it. */
+pub push_id(n: u32) {
+    c: *Context = current
+    c.scopes[c.depth] = c.scope
+    c.depth += 1
+    c.scope = fnv(c.scope, 0, u64(n))
+}
+
+pub pop_id() {
+    c: *Context = current
+    c.depth -= 1
+    c.scope = c.scopes[c.depth]
+}
+
+/* Whether `id` is new this frame, recording it. */
+Context.unique(self, id: u32): bool {
+    for i: usize in 0 .. self.seen_count {
+        if self.seen[i] == id { return false }
+    }
+    if self.seen_count < SEEN_MAX {
+        self.seen[self.seen_count] = id
+        self.seen_count += 1
+    }
+    return true
+}
+
+/* `id`, which a debug build aborts on when a second control takes it in one
+ * frame. */
+Context.claim(self, id: u32): u32 {
+    assert(self.unique(id))
+    return id
+}
+
+/* Whether the pointer may reach a control: always, unless a popup is up and
+ * the control is outside it. */
+Context.reachable(const self): bool {
+    return !self.blocking || (self.level > 0 && self.areas[self.level - 1].modal)
+}
+
+/* What the pointer did to the widget `id` at `box`. A click is a release on
+ * the widget that took the press. */
+pub track(id: u32, box: Rect): Response {
+    c: *Context = current
+    over: bool = c.reachable() && c.mouse.over(box)
+    res: Response = Response { hover = over }
+    if over && c.mouse.pressed {
+        c.active = id
+        res.press = true
+    }
+    res.held = c.active == id
+    res.click = res.held && over && c.mouse.released
+    c.last = Item { hovered = res.hover, held = res.held, rect = box }
+    return res
+}
+
+/* The last control placed. */
+pub last(): Item { return current.last }
+
+/* An area over `box` whose controls go down it, each as wide as it. */
+pub area(box: Rect): Area { return current.open(box, Flow.down, false) }
+
+/* An area over `box` whose controls follow `flow`. Across, each is as wide
+ * as its content and centered on the area's height. */
+pub area(box: Rect, flow: Flow): Area { return current.open(box, flow, false) }
+
+/* A modal area over `box`, filled as a button rests: while it is up, only
+ * the controls inside it take the pointer. Its controls go down it. */
+pub popup(box: Rect): Area {
+    c: *Context = current
+    c.modal = true
+    c.canvas.fill(box, c.theme.radius, c.theme.button.rest)
+    return c.open(box, Flow.down, true)
+}
+
+Context.open(self, box: Rect, flow: Flow, modal: bool): Area {
+    assert(self.level < AREAS_MAX)
+    inside: bool = modal || (self.level > 0 && self.areas[self.level - 1].modal)
+    self.areas[self.level] = Layout { box = box, flow = flow, modal = inside }
+    self.level += 1
+    return Area { level = self.level }
+}
+
+/* Closes the area; areas close in the reverse of their opening. */
+pub Area.end(const self) {
+    c: *Context = current
+    assert(c.level == self.level)
+    c.level -= 1
+}
+
+/* The next `n` controls share a line in equal columns; the line ends after
+ * them. */
+pub row(n: usize) { grid(n, n) }
+
+/* The next `count` controls go in lines of `n` equal columns. */
+pub grid(n: usize, count: usize) {
+    l: *Layout = current.top()
+    l.cols = n
+    l.left = count
+    l.col = 0
+    l.line = 0.0
+    if count == 0 { l.cols = 0 }
+}
+
+/* The next control is `w` wide, down an area as across one. */
+pub width(w: f32) { current.next_w = w }
+
+/* The next control is as wide as it would be showing `label`. */
+pub width(label: string) {
+    current.fit = label
+    current.fitting = true
+}
+
+/* Moves the next control `w` further on. */
+pub space(w: f32) { current.top().at += w }
+
+/* Puts the rest of an across area at its far edge: the next control at the
+ * edge, and each after it before the last. */
+pub fill() {
+    l: *Layout = current.top()
+    l.far = true
+    l.at = 0.0
+}
+
+Context.top(self): *Layout {
+    assert(self.level > 0)
+    return &self.areas[self.level - 1]
+}
+
+/* How wide the next control is down its area: a `grid`'s column, else the
+ * area's width, unless `width` set it. */
+Context.span(self): f32 {
+    if self.next_w > 0.0 { return self.next_w }
+    l: *Layout = self.top()
+    if l.cols > 0 { return (l.box.w - self.theme.gap * f32(l.cols - 1)) / f32(l.cols) }
+    return l.box.w
+}
+
+/* Whether the next control goes across its area, outside a grid. */
+Context.across(self): bool {
+    l: *Layout = self.top()
+    return l.flow == Flow.across && l.cols == 0
+}
+
+/* The rectangle of the next control, `w` wide (across an area; down one it
+ * takes `span`) and `h` high, past which the area moves on. */
+pub place(w: f32, h: f32): Rect { return current.place(w, h) }
+
+Context.place(self, w: f32, h: f32): Rect {
+    l: *Layout = self.top()
+    gap: f32 = self.theme.gap
+    if self.next_w > 0.0 { w = self.next_w }
+    box: Rect = Rect {}
+    if l.cols > 0 {
+        w = self.span()
+        box = Rect { x = l.box.x + f32(l.col) * (w + gap), y = l.box.y + l.at, w = w, h = h }
+        l.line = math.max[f32](l.line, h)
+        l.col += 1
+        l.left -= 1
+        if l.col == l.cols || l.left == 0 {
+            l.at += l.line + gap
+            l.col = 0
+            l.line = 0.0
+            if l.left == 0 { l.cols = 0 }
+        }
+    } else if l.flow == Flow.down {
+        box = Rect { x = l.box.x, y = l.box.y + l.at, w = self.span(), h = h }
+        l.at += h + gap
+    } else {
+        x: f32 = l.box.x + l.at
+        if l.far { x = l.box.x + l.box.w - l.at - w }
+        box = Rect { x = x, y = l.box.y + (l.box.h - h) / 2.0, w = w, h = h }
+        l.at += w + gap
+    }
+    self.next_w = 0.0
+    self.fitting = false
+    return box
+}
+
+/* A control's height: an icon with a gap above and below. */
+Context.frame(const self): f32 { return self.theme.icon + 2.0 * self.theme.gap }
+
+/* How wide a button is across an area: its label, or `width`'s stand-in,
+ * padded, after its icon; an icon alone is square. */
+Context.measure(const self, icon: bool, label: string): f32 {
+    t: Theme = self.theme
+    text: string = label
+    if self.fitting { text = self.fit }
+    if text.len == 0 { return self.frame() }
+    w: f32 = 2.0 * t.padding + f32(text.len) * GLYPH_WIDTH
+    if icon { w += t.icon + t.gap }
+    return w
+}
+
+/* Consumes a press of `code` with no modifiers, and says whether there was
+ * one. */
+pub key(code: Keycode): bool { return current.keyboard.consume(code, 0) }
+
+/* The context's scratch buffer, emptied, for a control's formatted text, as
+ * `ui.text(l.text())` after `l.printf(...)`. The next call empties it. */
+pub line(): *fmt.Buffer {
+    c: *Context = current
+    c.scratch = fmt.Buffer.init(c.bytes[..])
+    return &c.scratch
+}
+
+/* The next control that takes the keyboard takes `focus`. */
+pub focus() { current.focusing = true }
+
+/* What controls in other files reach of the current context. */
+
+/* `id`, which a debug build aborts on when a second control takes it in one
+ * frame. */
+pub claim(id: u32): u32 { return current.claim(id) }
+
+/* Whether the pointer may reach the next control. */
+pub reachable(): bool { return current.reachable() }
+
+/* A control's height. */
+pub frame(): f32 { return current.frame() }
+
+/* How wide a button is across an area. */
+pub measure(icon: bool, label: string): f32 { return current.measure(icon, label) }
+
+/* How wide the next control is down its area. */
+pub span(): f32 { return current.span() }
+
+/* Whether the next control goes across its area. */
+pub across(): bool { return current.across() }
+
+/* Records `item` as the last control. */
+pub record(item: Item) { current.last = item }
+
+/* Records that Enter was pressed in the last control. */
+pub submit() { current.last.submit = true }
+
+/* Whether `focus` was called since a control last asked, which this asks. */
+pub focusing(): bool {
+    asked: bool = current.focusing
+    current.focusing = false
+    return asked
+}
+
+/* The id of part `n` of the control `base`. */
+pub derive(base: u32, n: usize): u32 { return nonzero(fnv(base, 0, u64(n))) }
+
+/* A list row's height: a line of text with a gap above and below. */
+pub list_row(): f32 { return TEXT_SIZE + 2.0 * current.theme.gap }

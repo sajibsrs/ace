@@ -1,22 +1,13 @@
 /* style — the spacing the bars, panels and dialogs share. */
 
-/* Between controls in a group, and between groups in the toolbar. */
-pub CONTROL_GAP: const f32 = 8.0
+/* Between groups in the toolbar. */
 pub GROUP_GAP: const f32 = 24.0
 
 /* The corners of controls and dialogs. */
 pub RADIUS: const f32 = 4.0
 
-/* Before a widget's title and before the panel's title. */
-pub TITLE_PAD: const f32 = 8.0
+/* Before the panel's title. */
 pub HEADING_PAD: const f32 = 8.0
 
-/* Inside a dialog, and before the text of a field or list row. */
+/* Inside a dialog. */
 pub DIALOG_PAD: const f32 = 12.0
-pub TEXT_PAD: const f32 = 8.0
-
-/* The Save-as dialog: its title and field. */
-pub DIALOG_TITLE_Y: const f32 = 4.0
-pub DIALOG_TITLE_H: const f32 = 24.0
-pub FIELD_Y: const f32 = 32.0
-pub FIELD_H: const f32 = 28.0

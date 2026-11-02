@@ -1,0 +1,357 @@
+/* ui controls — buttons, toggles, value controls and text, each placed in the
+ * current area and drawn from the theme. */
+
+import math
+import fmt
+import Point, Color, Keycode from sdl
+import Rect, Icon, Align, TEXT_SIZE, GLYPH_WIDTH from "./canvas.ace"
+import Keyboard, KEY_DELETE, KEY_HOME, KEY_END from "./input.ace"
+import context: "./context.ace"
+import Context, Fill, Theme, Item, Response from "./context.ace"
+
+/* The text field's caret. */
+CARET_W: const f32 = 2.0
+CARET_PAD: const f32 = 6.0
+
+/* A list's scroll thumb, inside its right edge. */
+THUMB_W: const f32 = 4.0
+THUMB_MIN: const f32 = 16.0
+
+/* Places and draws a button in `fill`, with an icon when `icon`, and says
+ * whether it was clicked. */
+press(id: u32, shape: Icon, icon: bool, label: string, fill: Fill): bool {
+    c: *Context = context.current
+    box: Rect = context.place(context.measure(icon, label), context.frame())
+    res: Response = context.track(context.claim(id), box)
+    t: *Theme = &c.theme
+    c.canvas.fill(box, t.radius, fill.shade(res))
+    if label.len == 0 {
+        c.canvas.icon(shape, box.square(t.icon), t.text)
+    } else if icon {
+        c.canvas.icon(shape, box.square(t.padding, t.icon), t.text)
+        c.canvas.text(box, t.padding + t.icon + t.gap, label, t.text)
+    } else {
+        c.canvas.text(box, t.padding, label, t.text)
+    }
+    return res.click
+}
+
+/* A button showing `label`, which names it; true when clicked. */
+pub button(label: string): bool {
+    c: *Context = context.current
+    return press(context.id(label), Icon {}, false, label, c.theme.button)
+}
+
+/* An icon and `label`, which names it. */
+pub button(shape: Icon, label: string): bool {
+    c: *Context = context.current
+    return press(name(shape, label), shape, true, label, c.theme.button)
+}
+
+/* An icon alone, which names it. */
+pub button(shape: Icon): bool {
+    c: *Context = context.current
+    return press(context.id(shape), shape, true, "", c.theme.button)
+}
+
+/* A button that rests in the selected color while `on`, as a chosen tool
+ * does. */
+pub button(shape: Icon, label: string, on: bool): bool {
+    c: *Context = context.current
+    fill: Fill = c.theme.button
+    if on { fill.rest = c.theme.selected }
+    return press(name(shape, label), shape, true, label, fill)
+}
+
+/* A button in `fill` rather than the theme's. */
+pub button(shape: Icon, label: string, fill: Fill): bool {
+    return press(name(shape, label), shape, true, label, fill)
+}
+
+/* The id of a button: its label's, or its icon's when it has none. */
+name(shape: Icon, label: string): u32 {
+    if label.len == 0 { return context.id(shape) }
+    return context.id(label)
+}
+
+/* A button that flips `value` when clicked and rests in the selected color
+ * while it is set; `value`'s address names it. True when it flipped. */
+pub toggle(shape: Icon, label: string, value: *bool): bool {
+    c: *Context = context.current
+    fill: Fill = c.theme.button
+    if *value { fill.rest = c.theme.selected }
+    if !press(context.id(usize(value)), shape, true, label, fill) { return false }
+    *value = !*value
+    return true
+}
+
+/* A toggle showing its icon alone. */
+pub toggle(shape: Icon, value: *bool): bool { return toggle(shape, "", value) }
+
+/* `s` in `color`, as wide as it and a text line high. */
+print(s: string, color: Color) {
+    box: Rect = context.place(f32(s.len) * GLYPH_WIDTH, TEXT_SIZE)
+    context.record(Item { rect = box })
+    context.current.canvas.text(box, 0.0, s, color)
+}
+
+/* A line of body text. */
+pub text(s: string) { print(s, context.current.theme.text) }
+
+/* A line of secondary text. */
+pub muted(s: string) { print(s, context.current.theme.muted) }
+
+/* A section's title in muted text on a header strip, which reaches half the
+ * padding past the area's sides. */
+pub heading(s: string) {
+    c: *Context = context.current
+    t: *Theme = &c.theme
+    box: Rect = context.place(f32(s.len) * GLYPH_WIDTH + 2.0 * t.padding, TEXT_SIZE + 2.0 * t.gap)
+    context.record(Item { rect = box })
+    strip: Rect = Rect { x = box.x - t.padding / 2.0, y = box.y, w = box.w + t.padding, h = box.h }
+    c.canvas.fill(strip, t.radius, t.header)
+    c.canvas.text(strip, t.padding, s, t.muted)
+}
+
+/* `s` centered on the header color: a value shown, not edited. */
+pub readout(s: string) {
+    c: *Context = context.current
+    t: *Theme = &c.theme
+    box: Rect = context.place(f32(s.len) * GLYPH_WIDTH + 2.0 * t.padding, context.frame())
+    context.record(Item { rect = box })
+    c.canvas.fill(box, t.radius, t.header)
+    c.canvas.text(box, s, t.text, Align.center)
+}
+
+/* A square showing `shape` in `color`, on the selected color while
+ * `selected`; the pointer changes nothing. Its icon names it. True when
+ * clicked. */
+pub swatch(shape: Icon, color: Color, selected: bool): bool {
+    c: *Context = context.current
+    side: f32 = context.frame()
+    if !context.across() { side = context.span() }
+    box: Rect = context.place(side, side)
+    res: Response = context.track(context.claim(context.id(shape)), box)
+    if selected { c.canvas.fill(box, c.theme.radius, c.theme.selected) }
+    c.canvas.icon(shape, box.square(c.theme.icon), color)
+    return res.click
+}
+
+/* A box ticked while `value` is set, then `label`; a click anywhere on it
+ * flips `value`, whose address names it. True when it flipped. */
+pub checkbox(label: string, value: *bool): bool {
+    c: *Context = context.current
+    t: *Theme = &c.theme
+    side: f32 = context.frame()
+    box: Rect = context.place(side + t.gap + f32(label.len) * GLYPH_WIDTH, side)
+    res: Response = context.track(context.claim(context.id(usize(value))), box)
+    if res.click { *value = !*value }
+    tick: Rect = Rect { x = box.x, y = box.y, w = side, h = side }
+    c.canvas.fill(tick, t.radius, t.button.shade(res))
+    if *value {
+        mark: [3]Point = [
+            Point { x = tick.x + 0.27 * side, y = tick.y + 0.52 * side },
+            Point { x = tick.x + 0.43 * side, y = tick.y + 0.68 * side },
+            Point { x = tick.x + 0.73 * side, y = tick.y + 0.34 * side },
+        ]
+        c.canvas.stroke(mark[..], false, side / 9.0, t.text)
+    }
+    c.canvas.text(box, side + t.gap, label, t.text)
+    return res.click
+}
+
+/* A slider's width across an area, unless `width` sets it. */
+SLIDER_GLYPHS: const f32 = 12.0
+
+/* Places a slider for the value at `address` and tracks it: where the
+ * pointer holds it, 0 to 1, or -1 while it is not held. */
+grab(address: usize): f32 {
+    c: *Context = context.current
+    box: Rect = context.place(SLIDER_GLYPHS * GLYPH_WIDTH + 2.0 * c.theme.padding, context.frame())
+    res: Response = context.track(context.claim(context.id(address)), box)
+    if !res.held { return -1.0 }
+    return math.max[f32](0.0, math.min[f32](1.0, (c.mouse.x - box.x) / box.w))
+}
+
+/* The last control's bar, filled to `fill` (0 to 1), with `text` centered. */
+bar(fill: f32, text: string) {
+    c: *Context = context.current
+    t: *Theme = &c.theme
+    box: Rect = context.last().rect
+    c.canvas.fill(box, t.radius, t.button.rest)
+    c.canvas.fill(Rect { x = box.x, y = box.y, w = box.w * fill, h = box.h }, t.radius, t.selected)
+    c.canvas.text(box, text, t.text, Align.center)
+}
+
+/* A bar dragged to set `value` from `min` to `max`, filled up to it and
+ * showing it; `value`'s address names it. True when it changed. */
+pub slider(value: *f32, min: f32, max: f32): bool {
+    c: *Context = context.current
+    at: f32 = grab(usize(value))
+    before: f32 = *value
+    if at >= 0.0 { *value = min + at * (max - min) }
+    digits: [32]u8
+    shown: fmt.Buffer = fmt.Buffer.init(digits[..])
+    shown.printf("%.3g", *value)
+    bar((*value - min) / (max - min), shown.text())
+    return *value != before
+}
+
+/* A bar of equal zones, one for each whole number from `min` to `max`, that
+ * sets `value` to the zone dragged over, filled to its zone's far edge, and
+ * showing `text`; `value`'s address names it. True when it changed. */
+pub slider(value: *int, min: int, max: int, text: string): bool {
+    c: *Context = context.current
+    n: int = max - min + 1
+    at: f32 = grab(usize(value))
+    before: int = *value
+    if at >= 0.0 { *value = min + math.min[int](n - 1, int(at * f32(n))) }
+    bar(f32(*value - min + 1) / f32(n), text)
+    return *value != before
+}
+
+/* Caller storage for a field: the first `len` bytes of `buffer` are in use,
+ * with the caret before byte `caret`. `buffer` stays put from frame to frame:
+ * its address names the field. */
+pub TextInput: struct {
+    pub buffer: []u8 = [],
+    pub len: usize = 0,
+    pub caret: usize = 0,
+}
+
+/* The text in use. */
+pub TextInput.text(const self): string { return string(self.buffer[0..self.len]) }
+
+/* Removes the byte at `i`. */
+TextInput.remove(self, i: usize) {
+    for j: usize in i .. self.len - 1 { self.buffer[j] = self.buffer[j + 1] }
+    self.len -= 1
+}
+
+/* Inserts `c` at the caret and moves past it. */
+TextInput.insert(self, c: u8) {
+    for j: usize = self.len; j > self.caret; j -= 1 { self.buffer[j] = self.buffer[j - 1] }
+    self.buffer[self.caret] = c
+    self.len += 1
+    self.caret += 1
+}
+
+/* A one-line field over `input`, as wide as its buffer across an area. A
+ * click or `focus` gives it the keyboard; a press elsewhere takes it away.
+ * Focused, it consumes every key and the frame's text, so read a key meant
+ * for its owner first; a frame's keys apply before its text. It adds only the
+ * printable ASCII bytes in `allow`, or any when `allow` is empty. True when
+ * the text changed; Enter sets `last().submit`. */
+pub field(input: *TextInput, allow: string): bool {
+    c: *Context = context.current
+    t: *Theme = &c.theme
+    assert(input.buffer.len > 0)
+    box: Rect = context.place(2.0 * t.padding + f32(input.buffer.len) * GLYPH_WIDTH, context.frame())
+    me: u32 = context.claim(context.id(usize(&input.buffer[0])))
+    res: Response = context.track(me, box)
+    if context.focusing() || res.press {
+        c.focus = me
+    } else if c.mouse.pressed && c.focus == me {
+        c.focus = 0
+    }
+    changed: bool = false
+    if c.focus == me {
+        kb: *Keyboard = &c.keyboard
+        for i: usize in 0 .. kb.count {
+            if kb.keys[i].used { continue }
+            kb.keys[i].used = true
+            code: Keycode = kb.keys[i].code
+            k: u32 = u32(code)
+            if code == Keycode.enter {
+                context.submit()
+            } else if code == Keycode.backspace {
+                if input.caret > 0 {
+                    input.remove(input.caret - 1)
+                    input.caret -= 1
+                    changed = true
+                }
+            } else if k == KEY_DELETE {
+                if input.caret < input.len {
+                    input.remove(input.caret)
+                    changed = true
+                }
+            } else if code == Keycode.left {
+                if input.caret > 0 { input.caret -= 1 }
+            } else if code == Keycode.right {
+                if input.caret < input.len { input.caret += 1 }
+            } else if k == KEY_HOME {
+                input.caret = 0
+            } else if k == KEY_END {
+                input.caret = input.len
+            }
+        }
+        typed: string = kb.consume()
+        for i: usize in 0 .. typed.len {
+            b: u8 = typed[i]
+            if b < 0x20 || b > 0x7e || input.len == input.buffer.len || !allowed(allow, b) { continue }
+            input.insert(b)
+            changed = true
+        }
+    }
+    c.canvas.fill(box, t.radius, t.field)
+    c.canvas.text(box, t.padding, input.text(), t.text)
+    if c.focus == me {
+        caret: f32 = box.x + t.padding + f32(input.caret) * GLYPH_WIDTH
+        c.canvas.fill(Rect { x = caret - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, t.text)
+    }
+    return changed
+}
+
+/* Whether `allow` lets `c` in. */
+allowed(allow: string, c: u8): bool {
+    if allow.len == 0 { return true }
+    for i: usize in 0 .. allow.len {
+        if allow[i] == c { return true }
+    }
+    return false
+}
+
+/* The height of a list showing `rows` rows. */
+pub list_height(rows: usize): f32 { return f32(rows) * context.list_row() }
+
+/* A list of `items`, `rows` of them showing from row `*scroll` on, every
+ * other row on the field color and `*chosen` on the selected color. A press
+ * on a row sets `*chosen` to it; true when a row was pressed. Under the
+ * pointer and longer than `rows`, it consumes the wheel, a row a notch, and
+ * draws a thumb at its right edge. `scroll`'s address names it. */
+pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
+    c: *Context = context.current
+    t: *Theme = &c.theme
+    h: f32 = context.list_row()
+    box: Rect = context.place(context.span(), f32(rows) * h)
+    base: u32 = context.claim(context.id(usize(scroll)))
+    most: f32 = 0.0
+    if items.len > rows { most = f32(items.len - rows) }
+    if context.reachable() && c.mouse.over(box) && most > 0.0 {
+        *scroll -= c.mouse.wheel
+        c.mouse.wheel = 0.0
+    }
+    *scroll = math.max[f32](0.0, math.min[f32](*scroll, most))
+    first: usize = usize(*scroll)
+    pressed: bool = false
+    for i: usize in first .. math.min[usize](first + rows, items.len) {
+        at: Rect = Rect { x = box.x, y = box.y + f32(i - first) * h, w = box.w, h = h }
+        res: Response = context.track(context.derive(base, i), at)
+        if res.press {
+            *chosen = i
+            pressed = true
+        }
+        fill: Fill = t.button
+        if i % 2 == 1 { fill.rest = t.field }
+        if i == *chosen { fill.rest = t.selected }
+        c.canvas.fill(at, fill.shade(res))
+        c.canvas.text(at, t.padding, items[i], t.text)
+    }
+    if most > 0.0 {
+        thumb: f32 = math.max[f32](box.h * f32(rows) / f32(items.len), THUMB_MIN)
+        y: f32 = box.y + (box.h - thumb) * *scroll / most
+        c.canvas.fill(Rect { x = box.x + box.w - THUMB_W, y = y, w = THUMB_W, h = thumb }, THUMB_W / 2.0, t.text)
+    }
+    context.record(Item { hovered = context.reachable() && c.mouse.over(box), rect = box })
+    return pressed
+}

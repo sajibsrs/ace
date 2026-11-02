@@ -11,69 +11,40 @@ import icon: "./icon.ace"
 import app: "./app.ace"
 import style: "./style.ace"
 
-/* Where each kind of control's ids start, past the toolbar's. */
-ID_FOLD: const u32 = 100
-ID_STEP: const u32 = 101
-ID_AUTO: const u32 = 102
-ID_RESET: const u32 = 103
-ID_SPEED: const u32 = 104
-ID_CLOCK: const u32 = 105
-ID_TOOL: const u32 = 110
-ID_BLOCK: const u32 = 120
-
 pub Sidebar: struct {
     pub g: *app.App = null,
 }
 
-/* A panel button, lit while `on`. */
-plain(on: bool): ui.Style {
-    look: ui.Style = ui.Style {
-        radius = style.RADIUS, fill = ui.Fill { rest = ui.color(theme.BUTTON), hover = ui.color(theme.ACTIVE), press = ui.color(theme.PRESS) },
-        color = ui.color(theme.INK),
-        lead = ui.Lead { pad = bar.PAD, size = bar.GLYPH_SIDE, gap = bar.LABEL_GAP },
-    }
-    if on { look.fill.rest = ui.color(theme.ACTIVE) }
-    return look
+/* A widget's header, set apart from its body. */
+open(title: string) {
+    ui.heading(title)
+    ui.space(bar.INSET / 2.0)
 }
 
-/* Cuts a widget of `height` from `area` and draws its header; the rest is
- * its body. */
-Sidebar.open(self, canvas: *ui.Canvas, area: *ui.Rect, title: string, height: f32): ui.Rect {
-    head: ui.Rect = area.cut_top(bar.TITLE_H).inset(ui.Insets { left = bar.GAP, right = bar.GAP })
-    canvas.fill(head, style.RADIUS, ui.color(theme.DEEP))
-    canvas.text(head, style.TITLE_PAD, title, ui.color(theme.DIM))
-    area.cut_top(bar.BODY_GAP)
-    body: ui.Rect = area.cut_top(height - bar.TITLE_H - bar.BODY_GAP).inset(ui.Insets { left = bar.INSET, right = bar.INSET })
-    area.cut_top(bar.GAP)
-    return body
-}
+/* The space after a widget's body. */
+close() { ui.space(bar.INSET) }
 
-/* The tools widget: one button per tool. */
-Sidebar.tools(self, context: *ui.Context, body: ui.Rect) {
-    row: ui.Rect = body.cut_top(bar.PICK)
+/* The tools widget: one button per tool, its icon larger than a label's. */
+Sidebar.tools(self) {
+    g: *app.App = self.g
+    plain: ui.Theme = g.ui.theme
+    g.ui.theme.icon = bar.TOOL_ICON
+    ui.grid(bar.COLS, members(bar.Tool).len)
     for i: usize in 0 .. members(bar.Tool).len {
         each: bar.Tool = members(bar.Tool)[i]
-        at: ui.Rect = row.cut_left(bar.PICK)
-        row.cut_left(bar.BLOCK_GAP)
-        look: ui.Style = plain(each == self.g.pick)
-        look.lead.size = at.w - 2.0 * bar.TOOL_PAD
-        if context.button(ID_TOOL + u32(i), at, bar.shape(bar.STRIP_ICON[each]), "", look).click { self.g.use(each) }
+        if ui.button(bar.shape(bar.STRIP_ICON[each]), "", each == g.pick) { g.use(each) }
     }
+    g.ui.theme = plain
 }
 
 /* The blocks widget: icons alone in rows of COLS, the selected one in its
- * block's color, the rest dimmer; the pointer changes nothing. */
-Sidebar.blocks(self, context: *ui.Context, body: ui.Rect) {
+ * block's color, the rest dimmer. */
+Sidebar.blocks(self) {
     g: *app.App = self.g
-    row: ui.Rect = ui.Rect {}
+    plain: ui.Theme = g.ui.theme
+    ui.grid(bar.COLS, members(grid.Block).len - 1)
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
-        if (i - 1) % usize(bar.COLS) == 0 {
-            row = body.cut_top(bar.BAR)
-            body.cut_top(bar.BLOCK_GAP)
-        }
-        at: ui.Rect = row.cut_left(bar.BAR)
-        row.cut_left(bar.BLOCK_GAP)
         ink: u32 = theme.LOW[each]
         if each == g.block { ink = theme.HIGH[each] }
         /* The wire's and bridge's muted board colors vanish on the panel. */
@@ -83,67 +54,49 @@ Sidebar.blocks(self, context: *ui.Context, body: ui.Rect) {
             if each == g.block { which += 2 }
             ink = theme.PANEL_BRIGHT[which]
         }
-        rest: u32 = theme.CHROME
-        if each == g.block { rest = theme.ACTIVE }
-        look: ui.Style = ui.Style {
-            radius = style.RADIUS,
-            fill = ui.Fill { rest = ui.color(rest), hover = ui.color(rest), press = ui.color(rest) },
-            color = ui.color(ink),
-            lead = ui.Lead { size = bar.block_icon_box(at, each).w },
-        }
-        if context.button(ID_BLOCK + u32(i), at, bar.shape(bar.BLOCK_ICON[each]), "", look).click { g.block = each }
+        g.ui.theme.icon = bar.block_icon(each)
+        if ui.swatch(bar.shape(bar.BLOCK_ICON[each]), ui.color(ink), each == g.block) { g.block = each }
     }
+    g.ui.theme = plain
 }
 
 /* The clock widget's slider, filled up to its span. */
-Sidebar.clock(self, context: *ui.Context, body: ui.Rect) {
+Sidebar.clock(self) {
     g: *app.App = self.g
-    half: [16]u8
-    ticks: fmt.Buffer = fmt.Buffer.init(half[..])
+    ticks: *fmt.Buffer = ui.line()
     if g.clock == 0 {
         ticks.printf("1 tick")
     } else {
         ticks.printf("%d ticks", 1 << g.clock)
     }
-    fill: f32 = f32(g.clock + 1) / f32(grid.SPANS)
-    span: ui.Rect = body.cut_top(bar.SLIDER_H)
-    if context.slider(ID_CLOCK, span, fill, ticks.text(), plain(false)).held { g.slide_clock(context.mouse.x, span) }
+    ui.slider(&g.clock, 0, grid.SPANS - 1, ticks.text())
 }
 
 /* The simulation widget: Step, Play/Pause, Reset and the speed slider. */
-Sidebar.sim(self, context: *ui.Context, body: ui.Rect) {
+Sidebar.sim(self) {
     g: *app.App = self.g
-    first: ui.Rect = body.cut_top(bar.PICK)
-    body.cut_top(bar.BLOCK_GAP)
-    if context.button(ID_STEP, first.cut_left(bar.SIM_W), bar.shape(icon.Id.step), bar.STEP_LABEL, plain(false)).click { g.step() }
-    shown: icon.Id = icon.Id.run
-    play: string = bar.PLAY_LABEL
+    ui.row(2)
+    if ui.button(bar.shape(icon.Id.step), "Step") { g.step() }
     if g.auto {
-        shown = icon.Id.pause
-        play = bar.PAUSE_LABEL
+        ui.toggle(bar.shape(icon.Id.pause), "Pause", &g.auto)
+    } else {
+        ui.toggle(bar.shape(icon.Id.run), "Play", &g.auto)
     }
-    first.cut_left(bar.BLOCK_GAP)
-    if context.button(ID_AUTO, first, bar.shape(shown), play, plain(g.auto)).click { g.auto = !g.auto }
-    if context.button(ID_RESET, body.cut_top(bar.PICK), bar.shape(icon.Id.reset), bar.RESET_LABEL, plain(false)).click { g.reset() }
-    body.cut_top(bar.BLOCK_GAP)
-    context.canvas.text(body.cut_top(bar.LINE), 0.0, bar.SPEED, ui.color(theme.DIM))
-    body.cut_top(bar.SPEED_GAP)
-    pace: ui.Rect = body.cut_top(bar.SLIDER_H)
-    rated: [16]u8
-    setting: fmt.Buffer = fmt.Buffer.init(rated[..])
-    speed.show(&setting, speed.hz(g.stop))
-    if context.slider(ID_SPEED, pace, speed.fill(g.stop), setting.text(), plain(false)).held { g.slide(context.mouse.x, pace) }
+    if ui.button(bar.shape(icon.Id.reset), "Reset") { g.reset() }
+    ui.muted("Speed")
+    setting: *fmt.Buffer = ui.line()
+    speed.show(setting, speed.hz(g.stop))
+    ui.slider(&g.stop, 0, speed.STOPS - 1, setting.text())
 }
 
-/* The info widget: the cell under the cursor, its
- * block and level, and the board's size. */
-Sidebar.info(self, canvas: *ui.Canvas, body: ui.Rect, edit: bool) {
+/* The info widget: the cell under the cursor, its block and level, and the
+ * board's size. */
+Sidebar.info(self, edit: bool) {
     g: *app.App = self.g
-    lines: [96]u8
-    info: fmt.Buffer = fmt.Buffer.init(lines[..])
+    info: *fmt.Buffer = ui.line()
     if g.hx >= 0 { info.printf("X %d, Y %d", g.hx, g.hy) } else { info.printf("X -, Y -") }
-    canvas.text(body.cut_top(bar.LINE), 0.0, info.text(), ui.color(theme.DIM))
-    info = fmt.Buffer.init(lines[..])
+    ui.muted(info.text())
+    info = ui.line()
     if g.hx >= 0 {
         here: grid.Block = g.s.g.get(g.hx, g.hy)
         info.printf("Block %s", theme.NAME[here])
@@ -156,36 +109,60 @@ Sidebar.info(self, canvas: *ui.Canvas, body: ui.Rect, edit: bool) {
     } else {
         info.printf("Block -")
     }
-    canvas.text(body.cut_top(bar.LINE), 0.0, info.text(), ui.color(theme.DIM))
-    info = fmt.Buffer.init(lines[..])
+    ui.muted(info.text())
+    info = ui.line()
     info.printf("Grid %d x %d", grid.WIDTH, grid.HEIGHT)
-    canvas.text(body.cut_top(bar.LINE), 0.0, info.text(), ui.color(theme.DIM))
+    ui.muted(info.text())
 }
 
-pub Sidebar.draw(self, context: *ui.Context) {
+/* The header, its fold button and the panel's title on the header color out
+ * to the window's edge, then the widgets that apply: the tools in Edit, the
+ * blocks with the pencil, the clock's span when it holds the clock, the
+ * simulation controls in Simulate, and the info always. */
+pub Sidebar.draw(self) {
     g: *app.App = self.g
-    canvas: *ui.Canvas = context.canvas
-    area: ui.Rect = g.view.side()
-    edit: bool = g.phase == app.Phase.edit
-    pencil: bool = g.pick == bar.Tool.pencil
-    clocked: bool = g.block == grid.Block.clock
+    side: ui.Rect = g.view.side()
+    head: ui.Rect = side.cut_top(bar.BAR)
     reach: f32 = bar.GAP - bar.BORDER
-    head: ui.Rect = area.cut_top(bar.BAR)
-    canvas.fill(ui.Rect { x = head.x - reach, y = head.y, w = head.w + bar.GAP + reach, h = head.h }, ui.color(theme.DEEP))
+    g.ui.canvas.fill(ui.Rect { x = head.x - reach, y = head.y, w = head.w + bar.GAP + reach, h = head.h }, ui.color(theme.DEEP))
+    top: ui.Area = ui.area(head, ui.Flow.across)
     fold_icon: icon.Id = icon.Id.panel_right
     if g.view.shut { fold_icon = icon.Id.panel_left }
-    fold: ui.Style = plain(false)
-    fold.fill.rest = ui.color(theme.DEEP)
-    if context.button(ID_FOLD, head.cut_left(bar.BAR), bar.shape(fold_icon), "", fold).click { g.view.fold() }
+    plain: ui.Theme = g.ui.theme
+    g.ui.theme.button.rest = g.ui.theme.header
+    if ui.button(bar.shape(fold_icon)) { g.view.fold() }
+    g.ui.theme = plain
+    edit: bool = g.phase == app.Phase.edit
+    if !g.view.shut {
+        ui.space(style.HEADING_PAD - g.ui.theme.gap)
+        if edit { ui.text("Editor") } else { ui.text("Simulation") }
+    }
+    top.end()
     if g.view.shut { return }
 
-    title: string = bar.PANEL_TITLE
-    if !edit { title = bar.PANEL_TITLE_RUN }
-    canvas.text(head, style.HEADING_PAD, title, ui.color(theme.INK))
-    area.cut_top(bar.GAP)
-    if bar.shown(bar.Widget.tools, edit, pencil, clocked) { self.tools(context, self.open(canvas, &area, bar.TITLE[bar.Widget.tools], bar.height(bar.Widget.tools))) }
-    if bar.shown(bar.Widget.blocks, edit, pencil, clocked) { self.blocks(context, self.open(canvas, &area, bar.TITLE[bar.Widget.blocks], bar.height(bar.Widget.blocks))) }
-    if bar.shown(bar.Widget.clock, edit, pencil, clocked) { self.clock(context, self.open(canvas, &area, bar.TITLE[bar.Widget.clock], bar.height(bar.Widget.clock))) }
-    if bar.shown(bar.Widget.sim, edit, pencil, clocked) { self.sim(context, self.open(canvas, &area, bar.TITLE[bar.Widget.sim], bar.height(bar.Widget.sim))) }
-    self.info(canvas, self.open(canvas, &area, bar.TITLE[bar.Widget.info], bar.height(bar.Widget.info)), edit)
+    body: ui.Area = ui.area(side.inset(ui.Insets { top = bar.GAP, left = bar.INSET, right = bar.INSET }))
+    defer body.end()
+    pencil: bool = g.pick == bar.Tool.pencil
+    if edit {
+        open("Tools")
+        self.tools()
+        close()
+    }
+    if edit && pencil {
+        open("Blocks")
+        self.blocks()
+        close()
+    }
+    if edit && pencil && g.block == grid.Block.clock {
+        open("Clock")
+        self.clock()
+        close()
+    }
+    if !edit {
+        open("Simulate")
+        self.sim()
+        close()
+    }
+    open("Info")
+    self.info(edit)
 }

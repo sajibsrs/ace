@@ -36,6 +36,7 @@ import (
 ) from sdl
 import bar: "./bar.ace"
 import grid: "./grid.ace"
+import theme: "./theme.ace"
 import sim: "./sim.ace"
 import ui
 import app: "./app.ace"
@@ -71,6 +72,7 @@ main(): int {
 
     editor: app.App = app.App { s = sim.Sim.new(grid.Grid {}) }
     defer editor.wipe()
+    editor.ui.theme = theme.controls()
     if editor.store.locate() != null {
         fmt.println("binbox: cannot find the executable's path")
         return 1
@@ -96,10 +98,11 @@ main(): int {
         editor.refresh(window.refresh())
         editor.pace()
         drawing: u64 = time.elapsed()
+        editor.ui.begin()
         render.draw(&editor, &canvas, renderer, &bloom)
         /* Widgets had first claim on the frame's keys and wheel. */
         running = mouse.shortcuts(&editor) && running
-        editor.context.end()
+        editor.ui.end()
         editor.drawn = time.elapsed() - drawing
         renderer.present()
     }

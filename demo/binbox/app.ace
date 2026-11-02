@@ -6,7 +6,6 @@
  */
 
 import fmt
-import math
 import time
 import ui
 import bar: "./bar.ace"
@@ -58,8 +57,8 @@ pub App: struct {
     pub name: store.Name = store.Name {},
     /* The name being typed in the Save-as box. */
     pub draft: store.Name = store.Name {},
-    /* How far the Open list is scrolled, in pixels. */
-    pub scroll: ui.Scroll = ui.Scroll {},
+    /* How far the Open list is scrolled, in rows. */
+    pub scroll: f32 = 0.0,
     pub store: store.Store = store.Store {},
     /* The last file result, shown in the status line. */
     notes: [96]u8 = [0 : 96],
@@ -70,8 +69,10 @@ pub App: struct {
     pub hx: int = -1,
     pub hy: int = -1,
     pub view: view.View = view.View {},
-    /* The pointer as the widgets see it. */
-    pub context: ui.Context = ui.Context {},
+    /* The widgets' input and look. */
+    pub ui: ui.Context = ui.Context {},
+    /* Where the Open button is, which the Open list hangs under. */
+    pub opener: ui.Rect = ui.Rect {},
     /* The tool in use, and the select tool's selection. */
     pub pick: bar.Tool = bar.Tool.pencil,
     pub sel: select.Selection = select.Selection {},
@@ -176,16 +177,6 @@ pub App.pace(self) {
         self.metered = 0
         self.span = 0
     }
-}
-
-/* Moves the speed slider to window x. */
-pub App.slide(self, x: f32, at: ui.Rect) {
-    self.stop = speed.stop_at((x - at.x) / at.w)
-}
-
-/* Moves the clock span slider to window x. */
-pub App.slide_clock(self, x: f32, at: ui.Rect) {
-    self.clock = math.max[int](0, math.min[int](grid.SPANS - 1, int((x - at.x) / at.w * f32(grid.SPANS))))
 }
 
 /* Drops the selection; floating blocks land where they are. */
@@ -343,7 +334,7 @@ pub App.browse(self) {
     }
     err: Error = self.store.scan()
     if err != null { self.failed("cannot list", self.store.where(), err) }
-    self.scroll.offset = 0.0
+    self.scroll = 0.0
     self.mode = Mode.open
 }
 

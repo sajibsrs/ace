@@ -1,768 +1,175 @@
-/* ui — immediate-mode drawing and controls over pkg/sdl.
+/* ui — immediate-mode drawing, layout and controls over pkg/sdl, on Dear
+ * ImGui's model.
  *
- * A Canvas holds a layer of triangles, shapes and text alike, in draw order;
- * flushing submits it in one geometry call. Rects are cut into layout, and a
- * Context's controls draw themselves, take the frame's input, and report it.
+ * The application owns a Context and, each frame, fills its input, calls
+ * `begin`, calls controls, reads its own shortcuts from what they left, and
+ * calls `end`. Each control is placed in the open Area, tracked by an id from
+ * its label, icon or value, and drawn from the theme. A Canvas holds a layer
+ * of triangles, shapes and text alike, flushed in one geometry call.
  */
 
-import math
-import Renderer, Vertex, Point, Color, Keycode from sdl
-import font: "./inc/font.ace"
+import fmt
+import Color, Keycode from sdl
+import canvas: "./inc/canvas.ace"
+import input: "./inc/input.ace"
+import context: "./inc/context.ace"
+import controls: "./inc/controls.ace"
+
+pub Rect: type = canvas.Rect
+pub Insets: type = canvas.Insets
+pub Canvas: type = canvas.Canvas
+pub Icon: type = canvas.Icon
+pub Align: type = canvas.Align
+pub Key: type = input.Key
+pub Mouse: type = input.Mouse
+pub Keyboard: type = input.Keyboard
+pub Context: type = context.Context
+pub Theme: type = context.Theme
+pub Fill: type = context.Fill
+pub Flow: type = context.Flow
+pub Area: type = context.Area
+pub Item: type = context.Item
+pub Response: type = context.Response
+pub TextInput: type = controls.TextInput
 
 /* Text size, in pixels per em. */
-pub TEXT_SIZE: const f32 = 16.0
+pub TEXT_SIZE: const f32 = canvas.TEXT_SIZE
 
 /* Advance of one glyph, the font being monospaced: 0.6 of TEXT_SIZE. */
-pub GLYPH_WIDTH: const f32 = 9.6
-
-pub Rect: struct {
-    pub x: f32 = 0.0,
-    pub y: f32 = 0.0,
-    pub w: f32 = 0.0,
-    pub h: f32 = 0.0,
-}
-
-/* Whether window point (x, y) lies in the rectangle. */
-pub Rect.has(const self, x: f32, y: f32): bool {
-    return x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
-}
-
-/* Space kept inside each edge of a rectangle. */
-pub Insets: struct {
-    pub top: f32 = 0.0,
-    pub right: f32 = 0.0,
-    pub bottom: f32 = 0.0,
-    pub left: f32 = 0.0,
-}
-
-/* The same space on every edge. */
-pub Insets.all(n: f32): Insets {
-    return Insets { top = n, right = n, bottom = n, left = n }
-}
-
-/* The rectangle left inside `by`. */
-pub Rect.inset(const self, by: Insets): Rect {
-    return Rect { x = self.x + by.left, y = self.y + by.top, w = self.w - by.left - by.right, h = self.h - by.top - by.bottom }
-}
-
-/* The baseline that centers capital letters in the rectangle. */
-Rect.baseline(const self): f32 {
-    return self.y + (self.h + font.CAP * TEXT_SIZE / font.EM) / 2.0
-}
-
-/* Removes a strip `w` wide from the left and returns it. */
-pub Rect.cut_left(self, w: f32): Rect {
-    strip: Rect = Rect { x = self.x, y = self.y, w = w, h = self.h }
-    self.x += w
-    self.w -= w
-    return strip
-}
-
-/* Removes a strip `h` high from the top and returns it. */
-pub Rect.cut_top(self, h: f32): Rect {
-    strip: Rect = Rect { x = self.x, y = self.y, w = self.w, h = h }
-    self.y += h
-    self.h -= h
-    return strip
-}
-
-/* A square of `side` centered in the rectangle. */
-pub Rect.square(const self, side: f32): Rect {
-    return Rect { x = self.x + (self.w - side) / 2.0, y = self.y + (self.h - side) / 2.0, w = side, h = side }
-}
-
-/* A square of `side`, `pad` in from the left and centered vertically. */
-pub Rect.square(const self, pad: f32, side: f32): Rect {
-    return Rect { x = self.x + pad, y = self.y + (self.h - side) / 2.0, w = side, h = side }
-}
-
-/* Triangles for one layer, drawn in a single geometry call, or more when it
- * fills: a full layer is flushed to `r`, so nothing is dropped. */
-pub Canvas: struct {
-    vertices: [16384]Vertex = [Vertex {} : 16384],
-    count: usize = 0,
-    r: Renderer = Renderer { handle = null },
-}
-
-/* An empty layer that draws to `r`. */
-pub Canvas.init(r: Renderer): Canvas { return Canvas { r = r } }
-
-pub Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
-    if self.count + 3 > self.vertices.len { self.flush() }
-    self.vertices[self.count] = Vertex { position = a, color = color }
-    self.vertices[self.count + 1] = Vertex { position = b, color = color }
-    self.vertices[self.count + 2] = Vertex { position = c, color = color }
-    self.count += 3
-}
-
-pub Canvas.fill(self, box: Rect, color: Color) {
-    a: Point = Point { x = box.x, y = box.y }
-    b: Point = Point { x = box.x + box.w, y = box.y }
-    c: Point = Point { x = box.x + box.w, y = box.y + box.h }
-    d: Point = Point { x = box.x, y = box.y + box.h }
-    self.triangle(a, b, c, color)
-    self.triangle(a, c, d, color)
-}
-
-/* A `thick` outline just inside `box`. */
-pub Canvas.outline(self, box: Rect, thick: f32, color: Color) {
-    self.fill(Rect { x = box.x, y = box.y, w = box.w, h = thick }, color)
-    self.fill(Rect { x = box.x, y = box.y + box.h - thick, w = box.w, h = thick }, color)
-    self.fill(Rect { x = box.x, y = box.y, w = thick, h = box.h }, color)
-    self.fill(Rect { x = box.x + box.w - thick, y = box.y, w = thick, h = box.h }, color)
-}
-
-/* A `thick` dashed outline just inside `box`, in dashes of 3 and gaps of 2
- * times `thick`; only dashes that reach `view` are drawn. */
-pub Canvas.outline_dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
-    dash: f32 = 3.0 * thick
-    step: f32 = 5.0 * thick
-    x: f32 = box.x
-    for x < box.x + box.w {
-        w: f32 = math.min[f32](dash, box.x + box.w - x)
-        if x + w > view.x && x < view.x + view.w {
-            self.fill(Rect { x = x, y = box.y, w = w, h = thick }, color)
-            self.fill(Rect { x = x, y = box.y + box.h - thick, w = w, h = thick }, color)
-        }
-        x += step
-    }
-    y: f32 = box.y
-    for y < box.y + box.h {
-        h: f32 = math.min[f32](dash, box.y + box.h - y)
-        if y + h > view.y && y < view.y + view.h {
-            self.fill(Rect { x = box.x, y = y, w = thick, h = h }, color)
-            self.fill(Rect { x = box.x + box.w - thick, y = y, w = thick, h = h }, color)
-        }
-        y += step
-    }
-}
-
-/* Each corner's arc, a quarter turn in ROUND_STEPS even steps. */
-ROUND_STEPS: const usize = 5
-ROUND_POINTS: const usize = 4 * ROUND_STEPS
-ROUND_C: [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
-ROUND_S: [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
-
-/* `box` with corners of `radius`, its edge fading out over one pixel. */
-pub Canvas.fill(self, box: Rect, radius: f32, color: Color) {
-    if box.w <= 0.0 || box.h <= 0.0 { return }
-    rad: f32 = math.min[f32](radius, math.min[f32](box.w, box.h) / 2.0)
-    if rad <= 0.5 {
-        self.fill(box, color)
-        return
-    }
-    n: usize = ROUND_POINTS
-    if self.count + 9 * n > self.vertices.len { self.flush() }
-    clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
-    inner: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
-    outer: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
-    x0: f32 = box.x + rad
-    y0: f32 = box.y + rad
-    x1: f32 = box.x + box.w - rad
-    y1: f32 = box.y + box.h - rad
-    /* Clockwise on screen from the top-left corner's left end. */
-    for k: usize in 0 .. ROUND_STEPS {
-        c: f32 = ROUND_C[k]
-        s: f32 = ROUND_S[k]
-        self.arc(inner[..], outer[..], k, x0, y0, -c, -s, rad)
-        self.arc(inner[..], outer[..], k + ROUND_STEPS, x1, y0, s, -c, rad)
-        self.arc(inner[..], outer[..], k + 2 * ROUND_STEPS, x1, y1, c, s, rad)
-        self.arc(inner[..], outer[..], k + 3 * ROUND_STEPS, x0, y1, -s, c, rad)
-    }
-    for k: usize in 1 .. n - 1 { self.triangle(inner[0], inner[k], inner[k + 1], color) }
-    for k: usize in 0 .. n {
-        j: usize = (k + 1) % n
-        self.quad(Vertex { position = inner[k], color = color }, Vertex { position = inner[j], color = color },
-            Vertex { position = outer[j], color = clear }, Vertex { position = outer[k], color = clear })
-    }
-}
-
-/* Point `k` of a rounded box, around (x, y) along direction (dx, dy). */
-Canvas.arc(self, inner: []Point, outer: []Point, k: usize, x: f32, y: f32, dx: f32, dy: f32, rad: f32) {
-    inner[k] = Point { x = x + dx * (rad - 0.5), y = y + dy * (rad - 0.5) }
-    outer[k] = Point { x = x + dx * (rad + 0.5), y = y + dy * (rad + 0.5) }
-}
-
-pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
-    if self.count + 6 > self.vertices.len { self.flush() }
-    self.vertices[self.count] = a
-    self.vertices[self.count + 1] = b
-    self.vertices[self.count + 2] = c
-    self.vertices[self.count + 3] = a
-    self.vertices[self.count + 4] = c
-    self.vertices[self.count + 5] = d
-    self.count += 6
-}
-
-/* Most points of one icon or glyph polygon. */
-SHAPE_MAX: const usize = 128
-/* Stroke of an icon's lines, in grid units. */
-STROKE: const f32 = 3.5
-
-/* A `thick` stroke through `pts`, joined at its corners and square-capped
- * unless `closed`, anti-aliased: an opaque ribbon whose edges fade out over
- * one pixel straddling the true edge. */
-pub Canvas.stroke(self, pts: []Point, closed: bool, thick: f32, color: Color) {
-    n: usize = pts.len
-    if n < 2 || n > SHAPE_MAX { return }
-    if self.count + 18 * n + 12 > self.vertices.len { self.flush() }
-    clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
-    /* The opaque ribbon reaches `fill` from the path; the fade, `fade`. */
-    fill: f32 = thick / 2.0 - 0.5
-    fade: f32 = thick / 2.0 + 0.5
-    /* Both edges of the ribbon, and where each fades out, at every point. */
-    a: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    b: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    oa: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    ob: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    for k: usize in 0 .. n {
-        here: Point = pts[k]
-        mx: f32 = 0.0
-        my: f32 = 0.0
-        scale: f32 = 1.0
-        if !closed && k == 0 {
-            m: Point = turn(here, pts[1])
-            mx = m.x
-            my = m.y
-            /* The cap pushes the end back by what the ribbon reaches. */
-            here = Point { x = here.x + my * fill, y = here.y - mx * fill }
-        } else if !closed && k == n - 1 {
-            m: Point = turn(pts[n - 2], here)
-            mx = m.x
-            my = m.y
-            here = Point { x = here.x - my * fill, y = here.y + mx * fill }
-        } else {
-            n1: Point = turn(pts[(k + n - 1) % n], here)
-            n2: Point = turn(here, pts[(k + 1) % n])
-            mx = n1.x + n2.x
-            my = n1.y + n2.y
-            ml: f32 = math.sqrt(mx * mx + my * my)
-            if ml < 0.0001 {
-                mx = n1.x
-                my = n1.y
-                ml = 1.0
-            }
-            mx /= ml
-            my /= ml
-            cosine: f32 = mx * n1.x + my * n1.y
-            if cosine < 0.5 { cosine = 0.5 }
-            scale = 1.0 / cosine
-        }
-        a[k] = Point { x = here.x + mx * fill * scale, y = here.y + my * fill * scale }
-        b[k] = Point { x = here.x - mx * fill * scale, y = here.y - my * fill * scale }
-        oa[k] = Point { x = here.x + mx * fade * scale, y = here.y + my * fade * scale }
-        ob[k] = Point { x = here.x - mx * fade * scale, y = here.y - my * fade * scale }
-    }
-    last: usize = n - 1
-    if closed { last = n }
-    for k: usize in 0 .. last {
-        j: usize = (k + 1) % n
-        self.quad(Vertex { position = a[k], color = color }, Vertex { position = a[j], color = color },
-            Vertex { position = b[j], color = color }, Vertex { position = b[k], color = color })
-        self.quad(Vertex { position = a[k], color = color }, Vertex { position = a[j], color = color },
-            Vertex { position = oa[j], color = clear }, Vertex { position = oa[k], color = clear })
-        self.quad(Vertex { position = b[k], color = color }, Vertex { position = b[j], color = color },
-            Vertex { position = ob[j], color = clear }, Vertex { position = ob[k], color = clear })
-    }
-    if closed { return }
-    /* A cap's fade runs one pixel past each end, along the path. */
-    d0: Point = turn(b[0], a[0])
-    d1: Point = turn(a[last], b[last])
-    self.quad(Vertex { position = a[0], color = color }, Vertex { position = b[0], color = color },
-        Vertex { position = Point { x = b[0].x + d0.x, y = b[0].y + d0.y }, color = clear },
-        Vertex { position = Point { x = a[0].x + d0.x, y = a[0].y + d0.y }, color = clear })
-    self.quad(Vertex { position = a[last], color = color }, Vertex { position = b[last], color = color },
-        Vertex { position = Point { x = b[last].x + d1.x, y = b[last].y + d1.y }, color = clear },
-        Vertex { position = Point { x = a[last].x + d1.x, y = a[last].y + d1.y }, color = clear })
-}
-
-/* An icon: where its shapes start in baked `points`. */
-pub Icon: struct {
-    pub points: []f32 = [],
-    pub start: usize = 0,
-}
-
-/* `shape` drawn in the largest square that fits `box`, centered: bold lines
- * and filled polygons whose edges fade out over one pixel. Flushes whenever
- * the layer fills. */
-pub Canvas.icon(self, shape: Icon, box: Rect, color: Color) {
-    side: f32 = box.w
-    if box.h < side { side = box.h }
-    unit: f32 = side / 24.0
-    ox: f32 = box.x + (box.w - side) / 2.0
-    oy: f32 = box.y + (box.h - side) / 2.0
-    self.shapes(shape.points, shape.start, ox, oy, unit, color)
-}
-
-/* The shapes of `data` from index `i` to its -9 end mark, each point scaled
- * by `unit` and moved to (ox, oy). */
-Canvas.shapes(self, data: []f32, at: usize, ox: f32, oy: f32, unit: f32, color: Color) {
-    clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
-    edge: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    inner: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    outer: [SHAPE_MAX]Point = [Point {} : SHAPE_MAX]
-    /* The corner neighbors a fringe follows, and the bridge edges it skips. */
-    prev: [SHAPE_MAX]usize
-    next: [SHAPE_MAX]usize
-    bridge: [SHAPE_MAX]bool = [false : SHAPE_MAX]
-    i: usize = at
-    for data[i] != -9.0 {
-        tag: f32 = data[i]
-        n: usize = usize(data[i + 1])
-        i += 2
-        if tag != -2.0 && tag != -4.0 {
-            if n > SHAPE_MAX { return }
-            for k: usize in 0 .. n {
-                edge[k] = Point { x = ox + data[i + 2 * k] * unit, y = oy + data[i + 2 * k + 1] * unit }
-            }
-            self.stroke(edge[0..n], tag == -3.0, STROKE * unit, color)
-            i += 2 * n
-            continue
-        }
-        if n > SHAPE_MAX { return }
-        for k: usize in 0 .. n {
-            edge[k] = Point { x = ox + data[i + 2 * k] * unit, y = oy + data[i + 2 * k + 1] * unit }
-        }
-        i += 2 * n
-        tris: usize = i
-        i += 3 * (n - 2)
-        for k: usize in 0 .. n {
-            prev[k] = (k + n - 1) % n
-            next[k] = (k + 1) % n
-            bridge[k] = false
-        }
-        /* A bridge a -> b, c -> d (b at c's point, d at a's) is a zero-width
-         * cut: it draws no fringe, and its corners follow the true outline
-         * and hole edges around it. */
-        if tag == -4.0 {
-            for m: usize in 0 .. usize(data[i]) {
-                a: usize = usize(data[i + 1 + 2 * m])
-                c: usize = usize(data[i + 2 + 2 * m])
-                b: usize = (a + 1) % n
-                d: usize = (c + 1) % n
-                bridge[a] = true
-                bridge[c] = true
-                next[a] = (d + 1) % n
-                prev[d] = (a + n - 1) % n
-                prev[b] = (c + n - 1) % n
-                next[c] = (b + 1) % n
-            }
-            i += 1 + 2 * usize(data[i])
-        }
-        /* Each point moves half a pixel in and out along its corner's
-         * bisector, so the fringe between the two straddles the true edge. */
-        for k: usize in 0 .. n {
-            before: Point = edge[prev[k]]
-            here: Point = edge[k]
-            after: Point = edge[next[k]]
-            n1: Point = turn(before, here)
-            n2: Point = turn(here, after)
-            mx: f32 = n1.x + n2.x
-            my: f32 = n1.y + n2.y
-            ml: f32 = math.sqrt(mx * mx + my * my)
-            if ml < 0.0001 {
-                mx = n1.x
-                my = n1.y
-                ml = 1.0
-            }
-            mx /= ml
-            my /= ml
-            /* A sharp corner reaches farther, up to twice. */
-            cosine: f32 = mx * n1.x + my * n1.y
-            if cosine < 0.5 { cosine = 0.5 }
-            reach: f32 = 0.5 / cosine
-            inner[k] = Point { x = here.x - mx * reach, y = here.y - my * reach }
-            outer[k] = Point { x = here.x + mx * reach, y = here.y + my * reach }
-        }
-        if self.count + 3 * (n - 2) + 6 * n > self.vertices.len { self.flush() }
-        for t: usize in 0 .. n - 2 {
-            a: usize = usize(data[tris + 3 * t])
-            b: usize = usize(data[tris + 3 * t + 1])
-            c: usize = usize(data[tris + 3 * t + 2])
-            self.triangle(inner[a], inner[b], inner[c], color)
-        }
-        for k: usize in 0 .. n {
-            if bridge[k] { continue }
-            j: usize = (k + 1) % n
-            self.quad(Vertex { position = inner[k], color = color }, Vertex { position = inner[j], color = color },
-                Vertex { position = outer[j], color = clear }, Vertex { position = outer[k], color = clear })
-        }
-    }
-}
-
-/* The unit normal of the edge from a to b, pointing out of a polygon wound
- * clockwise on screen. */
-turn(a: Point, b: Point): Point {
-    dx: f32 = b.x - a.x
-    dy: f32 = b.y - a.y
-    length: f32 = math.sqrt(dx * dx + dy * dy)
-    if length < 0.0001 { length = 0.0001 }
-    return Point { x = dy / length, y = -dx / length }
-}
-
-/* Draws the layer and empties it for the next. */
-pub Canvas.flush(self) {
-    self.r.geometry(self.vertices[0..self.count], [])
-    self.count = 0
-}
-
-/* `rgb` as a vertex color. */
-pub color(rgb: u32): Color { return Color.hex(rgb) }
-
-/* `text` with its baseline at window point (x, y), in this layer. Glyphs sit
- * on whole pixels, so every copy of a letter looks alike. */
-Canvas.print(self, x: f32, y: f32, text: string, color: Color) {
-    unit: f32 = TEXT_SIZE / font.EM
-    base: f32 = math.floor(y + 0.5)
-    for k: usize in 0 .. text.len {
-        c: usize = usize(text[k])
-        if c < font.FIRST || c > font.LAST { continue }
-        pen: f32 = math.floor(x + GLYPH_WIDTH * f32(k) + 0.5)
-        if self.count + 3000 > self.vertices.len { self.flush() }
-        self.shapes(font.POINTS[0..], usize(font.START[c - font.FIRST]), pen, base, unit, color)
-    }
-}
-
-/* Where text sits in a box. */
-pub Align: enum {
-    left,
-    center,
-}
-
-/* `text` aligned in `box`, in this layer. */
-pub Canvas.text(self, box: Rect, text: string, color: Color, align: Align) {
-    pad: f32 = 0.0
-    if align == Align.center { pad = (box.w - GLYPH_WIDTH * f32(text.len)) / 2.0 }
-    self.print(box.x + pad, box.baseline(), text, color)
-}
-
-/* `text` left-aligned in `box`, `pad` pixels in, in this layer. */
-pub Canvas.text(self, box: Rect, pad: f32, text: string, color: Color) {
-    self.print(box.x + pad, box.baseline(), text, color)
-}
-
-/* What input did to a widget. `hover` and `held` last while true; the rest
- * hold for one frame. */
-pub Response: struct {
-    pub hover: bool = false,
-    pub press: bool = false,
-    pub held: bool = false,
-    pub click: bool = false,
-    /* The widget's value moved. */
-    pub changed: bool = false,
-    /* Enter in a text field. */
-    pub submit: bool = false,
-}
-
-/* A control's fill in each state. */
-pub Fill: struct {
-    pub rest: Color = Color {},
-    pub hover: Color = Color {},
-    pub press: Color = Color {},
-}
-
-/* The inset before an icon, its side, and the gap to the label. */
-pub Lead: struct {
-    pub pad: f32 = 0.0,
-    pub size: f32 = 0.0,
-    pub gap: f32 = 0.0,
-}
-
-pub Style: struct {
-    pub radius: f32 = 0.0,
-    pub fill: Fill = Fill {},
-    pub color: Color = Color {},
-    pub lead: Lead = Lead {},
-}
-
-/* The fill for the state `res` reports. */
-Style.shade(const self, res: Response): Color {
-    if res.held { return self.fill.press }
-    if res.hover { return self.fill.hover }
-    return self.fill.rest
-}
+pub GLYPH_WIDTH: const f32 = canvas.GLYPH_WIDTH
 
 /* Modifier groups, each either side's key, as SDL_KMOD_* bits. */
-pub MOD_SHIFT: const u16 = 0x0003
-pub MOD_CTRL: const u16 = 0x00c0
-pub MOD_ALT: const u16 = 0x0300
-pub MOD_GUI: const u16 = 0x0c00
+pub MOD_SHIFT: const u16 = input.MOD_SHIFT
+pub MOD_CTRL: const u16 = input.MOD_CTRL
+pub MOD_ALT: const u16 = input.MOD_ALT
+pub MOD_GUI: const u16 = input.MOD_GUI
 
-/* SDL keycodes the binding leaves unnamed. */
-KEY_DELETE: const u32 = 0x7f
-KEY_HOME: const u32 = 0x4000_004a
-KEY_END: const u32 = 0x4000_004d
+/* `rgb` as a vertex color. */
+pub color(rgb: u32): Color { return canvas.color(rgb) }
 
-/* Keys and bytes of text one frame holds; more are dropped. */
-KEYS_MAX: const usize = 16
-TEXT_MAX: const usize = 64
+/* An area over `box` whose controls go down it, each as wide as it. Close it
+ * with `end`. */
+pub area(box: Rect): Area { return context.area(box) }
 
-/* The text field's caret. */
-CARET_W: const f32 = 2.0
-CARET_PAD: const f32 = 6.0
+/* An area over `box` whose controls follow `flow`: across, each as wide as its
+ * content and centered on the area's height. */
+pub area(box: Rect, flow: Flow): Area { return context.area(box, flow) }
 
-/* The scroll bar, inside the area's right edge. */
-THUMB_W: const f32 = 4.0
-THUMB_MIN: const f32 = 16.0
+/* A modal area over `box`, filled as a button rests: from the next frame on,
+ * only the controls inside it take the pointer. */
+pub popup(box: Rect): Area { return context.popup(box) }
 
-/* A key pressed this frame. `used` is set once a widget consumed it. */
-pub Key: struct {
-    pub code: Keycode = Keycode.unknown,
-    pub mod: u16 = 0,
-    pub repeat: bool = false,
-    pub used: bool = false,
-}
+/* The next `n` controls share a line in equal columns; the line ends after
+ * them. */
+pub row(n: usize) { context.row(n) }
 
-/* The pointer. `pressed` and `released` are the left button's edges since the
- * last `end`; a press something else took is not reported. `wheel` is the
- * delta, positive away from the user. */
-pub Mouse: struct {
-    pub x: f32 = 0.0,
-    pub y: f32 = 0.0,
-    pub pressed: bool = false,
-    pub released: bool = false,
-    pub wheel: f32 = 0.0,
-}
+/* The next `count` controls go in lines of `n` equal columns. */
+pub grid(n: usize, count: usize) { context.grid(n, count) }
 
-/* Whether the pointer lies in `box`. */
-pub Mouse.over(const self, box: Rect): bool {
-    return box.has(self.x, self.y)
-}
+/* The next control is `w` wide. */
+pub width(w: f32) { context.width(w) }
 
-/* The frame's keys and typed text. */
-pub Keyboard: struct {
-    pub keys: [KEYS_MAX]Key = [Key {} : KEYS_MAX],
-    pub count: usize = 0,
-    text: [TEXT_MAX]u8 = [0 : TEXT_MAX],
-    text_len: usize = 0,
-}
+/* The next control is as wide as it would be showing `label`. */
+pub width(label: string) { context.width(label) }
 
-/* Records a key pressed this frame. */
-pub Keyboard.add(self, code: Keycode, mod: u16, repeat: bool) {
-    if self.count == KEYS_MAX { return }
-    self.keys[self.count] = Key { code = code, mod = mod, repeat = repeat }
-    self.count += 1
-}
+/* Moves the next control `w` further on. */
+pub space(w: f32) { context.space(w) }
 
-/* Records text typed this frame. */
-pub Keyboard.add(self, text: string) {
-    for i: usize in 0 .. text.len {
-        if self.text_len == TEXT_MAX { return }
-        self.text[self.text_len] = text[i]
-        self.text_len += 1
-    }
-}
+/* Puts the rest of an across area at its far edge, the next control at the
+ * edge. */
+pub fill() { context.fill() }
 
-/* The text typed this frame that no widget consumed. */
-pub Keyboard.typed(self): string {
-    return string(self.text[0..self.text_len])
-}
+/* Reserves the next control's rectangle, `w` wide across an area (down one it
+ * takes the area's or column's width) and `h` high. */
+pub place(w: f32, h: f32): Rect { return context.place(w, h) }
 
-/* Whether this is `code` with exactly the modifier groups in `mod`, either
- * side's key. */
-Key.matches(const self, code: Keycode, mod: u16): bool {
-    return self.code == code &&
-        ((self.mod & MOD_SHIFT) != 0) == ((mod & MOD_SHIFT) != 0) &&
-        ((self.mod & MOD_CTRL) != 0) == ((mod & MOD_CTRL) != 0) &&
-        ((self.mod & MOD_ALT) != 0) == ((mod & MOD_ALT) != 0) &&
-        ((self.mod & MOD_GUI) != 0) == ((mod & MOD_GUI) != 0)
-}
+/* What the pointer did to the control `id` at `box`; it becomes `last`. */
+pub track(id: u32, box: Rect): Response { return context.track(id, box) }
 
-/* Consumes a press of `code` with exactly the modifier groups in `mod`, and
- * says whether there was one. */
-pub Keyboard.consume(self, code: Keycode, mod: u16): bool {
-    for i: usize in 0 .. self.count {
-        if self.keys[i].used || !self.keys[i].matches(code, mod) { continue }
-        self.keys[i].used = true
-        return true
-    }
-    return false
-}
+/* The last control placed: hovered, held, its rect, a field's submit. */
+pub last(): Item { return context.last() }
 
-/* The frame's input and who holds it. A widget that uses an input consumes
- * it, so what runs after it, shortcuts included, sees none. */
-pub Context: struct {
-    pub canvas: *Canvas = null,
-    pub mouse: Mouse = Mouse {},
-    pub keyboard: Keyboard = Keyboard {},
-    /* A dialog is up, and this is not it: nothing is under the pointer. */
-    pub blocked: bool = false,
-    /* The widget that takes the keyboard; 0 for none. */
-    pub focus: u32 = 0,
-    active: u32 = 0,
-}
+/* The id of the control `label` names in the current scope. */
+pub id(label: string): u32 { return context.id(label) }
 
-/* Ends the frame's input; `id`s are nonzero. */
-pub Context.end(self) {
-    if self.mouse.released { self.active = 0 }
-    self.mouse.pressed = false
-    self.mouse.released = false
-    self.mouse.wheel = 0.0
-    self.keyboard.count = 0
-    self.keyboard.text_len = 0
-}
+/* The id of the icon-only control that shows `shape`. */
+pub id(shape: Icon): u32 { return context.id(shape) }
 
-/* What the pointer did to the widget `id` at `box`. A click is a release on
- * the widget that took the press. */
-pub Context.track(self, id: u32, box: Rect): Response {
-    over: bool = !self.blocked && self.mouse.over(box)
-    res: Response = Response { hover = over }
-    if over && self.mouse.pressed {
-        self.active = id
-        res.press = true
-    }
-    res.held = self.active == id
-    res.click = res.held && over && self.mouse.released
-    return res
-}
+/* The id of the control that edits the value at `address`, as `usize(&v)`. */
+pub id(address: usize): u32 { return context.id(address) }
 
-/* An icon and a label in `box`, or the icon alone, centered, when the label
- * is empty. */
-pub Context.button(self, id: u32, box: Rect, shape: Icon, label: string, style: Style): Response {
-    res: Response = self.track(id, box)
-    self.canvas.fill(box, style.radius, style.shade(res))
-    if label.len == 0 {
-        self.canvas.icon(shape, box.square(style.lead.size), style.color)
-    } else {
-        self.canvas.icon(shape, box.square(style.lead.pad, style.lead.size), style.color)
-        self.canvas.text(box, style.lead.pad + style.lead.size + style.lead.gap, label, style.color)
-    }
-    return res
-}
+/* Opens a scope `n` names, in which the same name names a different control.
+ * `pop_id` closes it. */
+pub push_id(n: u32) { context.push_id(n) }
 
-/* A bar filled to `fill` (0 to 1) with `label` centered; `held` lasts for a
- * drag begun on it. */
-pub Context.slider(self, id: u32, box: Rect, fill: f32, label: string, style: Style): Response {
-    res: Response = self.track(id, box)
-    self.canvas.fill(box, style.radius, style.fill.rest)
-    self.canvas.fill(Rect { x = box.x, y = box.y, w = box.w * fill, h = box.h }, style.radius, style.fill.hover)
-    self.canvas.text(box, label, style.color, Align.center)
-    return res
-}
+pub pop_id() { context.pop_id() }
 
-/* A list row: `text` `pad` in, filled by `style`. */
-pub Context.row(self, id: u32, box: Rect, pad: f32, text: string, style: Style): Response {
-    res: Response = self.track(id, box)
-    self.canvas.fill(box, style.shade(res))
-    self.canvas.text(box, pad, text, style.color)
-    return res
-}
+/* Consumes a press of `code` with no modifiers, and says whether there was
+ * one. */
+pub key(code: Keycode): bool { return context.key(code) }
 
-/* Caller storage for a text field: the first `len` bytes of `buffer` are in
- * use, with the caret before byte `caret`. */
-pub TextInput: struct {
-    pub buffer: []u8 = [],
-    pub len: usize = 0,
-    pub caret: usize = 0,
-}
+/* The context's scratch buffer, emptied, for formatted text: `l.printf(...)`,
+ * then `ui.text(l.text())`. */
+pub line(): *fmt.Buffer { return context.line() }
 
-/* Removes the byte at `i`. */
-TextInput.remove(self, i: usize) {
-    for j: usize in i .. self.len - 1 { self.buffer[j] = self.buffer[j + 1] }
-    self.len -= 1
-}
+/* The next field takes the keyboard. */
+pub focus() { context.focus() }
 
-/* Inserts `c` at the caret and moves past it. */
-TextInput.insert(self, c: u8) {
-    for j: usize = self.len; j > self.caret; j -= 1 { self.buffer[j] = self.buffer[j - 1] }
-    self.buffer[self.caret] = c
-    self.len += 1
-    self.caret += 1
-}
+/* A button showing `label`, which names it; true when clicked. */
+pub button(label: string): bool { return controls.button(label) }
 
-/* A one-line field over `input`. A click takes focus, a press elsewhere drops
- * it. Focused, it consumes every key and the frame's text, so read a key meant
- * for its owner first; a frame's keys apply before its text. It adds only the
- * printable ASCII bytes in `allow`, or any when `allow` is empty. */
-pub Context.text_field(self, id: u32, box: Rect, input: *TextInput, allow: string, style: Style): Response {
-    res: Response = self.track(id, box)
-    if res.press {
-        self.focus = id
-    } else if self.mouse.pressed && self.focus == id {
-        self.focus = 0
-    }
-    if self.focus == id {
-        kb: *Keyboard = &self.keyboard
-        for i: usize in 0 .. kb.count {
-            if kb.keys[i].used { continue }
-            kb.keys[i].used = true
-            code: Keycode = kb.keys[i].code
-            k: u32 = u32(code)
-            if code == Keycode.enter {
-                res.submit = true
-            } else if code == Keycode.backspace {
-                if input.caret > 0 {
-                    input.remove(input.caret - 1)
-                    input.caret -= 1
-                    res.changed = true
-                }
-            } else if k == KEY_DELETE {
-                if input.caret < input.len {
-                    input.remove(input.caret)
-                    res.changed = true
-                }
-            } else if code == Keycode.left {
-                if input.caret > 0 { input.caret -= 1 }
-            } else if code == Keycode.right {
-                if input.caret < input.len { input.caret += 1 }
-            } else if k == KEY_HOME {
-                input.caret = 0
-            } else if k == KEY_END {
-                input.caret = input.len
-            }
-        }
-        for i: usize in 0 .. kb.text_len {
-            c: u8 = kb.text[i]
-            if c < 0x20 || c > 0x7e || input.len == input.buffer.len || !allowed(allow, c) { continue }
-            input.insert(c)
-            res.changed = true
-        }
-        kb.text_len = 0
-    }
-    self.canvas.fill(box, style.radius, style.fill.rest)
-    self.canvas.text(box, style.lead.pad, string(input.buffer[0..input.len]), style.color)
-    if self.focus == id {
-        caret: f32 = box.x + style.lead.pad + f32(input.caret) * GLYPH_WIDTH
-        self.canvas.fill(Rect { x = caret - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, style.color)
-    }
-    return res
-}
+/* An icon and `label`, which names it. */
+pub button(shape: Icon, label: string): bool { return controls.button(shape, label) }
 
-/* Whether `allow` lets `c` in. */
-allowed(allow: string, c: u8): bool {
-    if allow.len == 0 { return true }
-    for i: usize in 0 .. allow.len {
-        if allow[i] == c { return true }
-    }
-    return false
-}
+/* An icon alone, which names it. */
+pub button(shape: Icon): bool { return controls.button(shape) }
 
-/* Caller state for scrolling: `content` pixels, `offset` from their top,
- * moved `step` pixels a wheel notch. */
-pub Scroll: struct {
-    pub offset: f32 = 0.0,
-    pub content: f32 = 0.0,
-    pub step: f32 = 0.0,
-}
+/* A button that rests in the selected color while `on`. */
+pub button(shape: Icon, label: string, on: bool): bool { return controls.button(shape, label, on) }
 
-/* Scrolling seen through `box`, its offset kept in range. Under the pointer
- * and overflowing, it consumes the wheel, and `changed` reports a move. The
- * caller draws what the offset shows, whole rows fitting `box`; nothing is
- * clipped. Call it before the rows, on whose press it does not compete. */
-pub Context.scroll_bar(self, box: Rect, scroll: *Scroll, style: Style): Response {
-    res: Response = Response { hover = !self.blocked && self.mouse.over(box) }
-    most: f32 = math.max[f32](scroll.content - box.h, 0.0)
-    before: f32 = scroll.offset
-    if res.hover && most > 0.0 {
-        scroll.offset -= self.mouse.wheel * scroll.step
-        self.mouse.wheel = 0.0
-    }
-    scroll.offset = math.max[f32](math.min[f32](scroll.offset, most), 0.0)
-    res.changed = scroll.offset != before
-    if most > 0.0 {
-        h: f32 = math.max[f32](box.h * box.h / scroll.content, THUMB_MIN)
-        y: f32 = box.y + (box.h - h) * scroll.offset / most
-        self.canvas.fill(Rect { x = box.x + box.w - THUMB_W, y = y, w = THUMB_W, h = h }, THUMB_W / 2.0, style.color)
-    }
-    return res
-}
+/* A button in `fill` rather than the theme's. */
+pub button(shape: Icon, label: string, fill: Fill): bool { return controls.button(shape, label, fill) }
+
+/* A button that flips `value` and rests selected while it is set; true when it
+ * flipped. */
+pub toggle(shape: Icon, label: string, value: *bool): bool { return controls.toggle(shape, label, value) }
+
+/* A toggle showing its icon alone. */
+pub toggle(shape: Icon, value: *bool): bool { return controls.toggle(shape, value) }
+
+/* A box ticked while `value` is set, then `label`; true when it flipped. */
+pub checkbox(label: string, value: *bool): bool { return controls.checkbox(label, value) }
+
+/* A bar dragged to set `value` from `min` to `max`; true when it changed. */
+pub slider(value: *f32, min: f32, max: f32): bool { return controls.slider(value, min, max) }
+
+/* A bar of equal zones, one for each whole number from `min` to `max`,
+ * showing `text`; true when `value` changed. */
+pub slider(value: *int, min: int, max: int, text: string): bool { return controls.slider(value, min, max, text) }
+
+/* A one-line field over `input` taking the bytes in `allow` (any when empty);
+ * true when the text changed. Enter sets `last().submit`. */
+pub field(input: *TextInput, allow: string): bool { return controls.field(input, allow) }
+
+/* `rows` of `items` from row `*scroll` on; a press on a row sets `*chosen`.
+ * True when a row was pressed. */
+pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool { return controls.list(items, chosen, rows, scroll) }
+
+/* The height of a list showing `rows` rows. */
+pub list_height(rows: usize): f32 { return controls.list_height(rows) }
+
+/* A square showing `shape` in `color`, on the selected color while `selected`;
+ * true when clicked. */
+pub swatch(shape: Icon, color: Color, selected: bool): bool { return controls.swatch(shape, color, selected) }
+
+/* A line of body text. */
+pub text(s: string) { controls.text(s) }
+
+/* A line of secondary text. */
+pub muted(s: string) { controls.muted(s) }
+
+/* A section's title on a header strip. */
+pub heading(s: string) { controls.heading(s) }
+
+/* `s` centered on the header color: a value shown, not edited. */
+pub readout(s: string) { controls.readout(s) }

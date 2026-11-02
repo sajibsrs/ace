@@ -8,9 +8,6 @@ import ui
 import app: "./app.ace"
 import style: "./style.ace"
 
-ID_ROW: const u32 = 200
-ID_FIELD: const u32 = 300
-
 /* What a diagram's name may hold. */
 NAME_CHARS: const string = "abcdefghijklmnopqrstuvwxyz0123456789-_"
 
@@ -19,75 +16,53 @@ pub OpenList: struct {
 }
 
 /* A press on a row opens it; any press closes the list. `live` is false in the
- * frame the list opens, whose press belongs to the toolbar. The list keeps to
- * the window and scrolls when it overflows. */
-pub OpenList.draw(self, context: *ui.Context, live: bool) {
+ * frame the list opens, whose press belongs to the toolbar. The list hangs
+ * under the Open button, keeps to the window, and scrolls when it
+ * overflows. */
+pub OpenList.draw(self, live: bool) {
     g: *app.App = self.g
-    canvas: *ui.Canvas = context.canvas
-    context.blocked = false
-    if !live { context.mouse.pressed = false }
-    count: usize = g.store.list.count
-    rows: usize = bar.shown(count, g.view.height())
+    if !live { g.ui.mouse.pressed = false }
+    names: []string = g.store.list.names[0..g.store.list.count]
+    /* The rows that fit under the toolbar, at least one. */
+    room: f32 = g.view.height() - (bar.GAP + bar.BAR) - bar.LIST_TOP - bar.LIST_BOTTOM
+    rows: usize = names.len
+    for rows > 1 && ui.list_height(rows) > room { rows -= 1 }
     if rows == 0 { rows = 1 }
-    panel: ui.Rect = bar.list(rows)
-    canvas.fill(panel, style.RADIUS, ui.color(theme.BUTTON))
-    pad: f32 = bar.LIST_PAD + style.TEXT_PAD
-    if count == 0 {
-        canvas.text(bar.row(0), pad, "no diagrams in diagram/", ui.color(theme.DIM))
-    }
-    area: ui.Rect = panel.inset(ui.Insets { top = bar.LIST_TOP, bottom = bar.LIST_BOTTOM })
-    look: ui.Style = ui.Style {
-        fill = ui.Fill { rest = ui.color(theme.BUTTON), hover = ui.color(theme.ACTIVE), press = ui.color(theme.PRESS) },
-        color = ui.color(theme.INK),
-    }
-    area.h = f32(rows) * bar.ROW
-    g.scroll.content = f32(count) * bar.ROW
-    g.scroll.step = bar.ROW
-    context.scroll_bar(area, &g.scroll, look)
-    /* Whole rows, so nothing needs clipping. */
-    first: usize = usize(g.scroll.offset / bar.ROW)
-    chosen: usize = count
-    for i: usize in first .. first + rows {
-        if i >= count { break }
-        look.fill.rest = ui.color(theme.BUTTON)
-        if i % 2 == 1 { look.fill.rest = ui.color(theme.STRIPE) }
-        if context.row(ID_ROW + u32(i), bar.row(i - first), pad, g.store.list.names[i], look).press { chosen = i }
-    }
-    if context.mouse.pressed { g.mode = app.Mode.none }
-    if chosen < count { g.load(g.store.list.names[chosen]) }
+    panel: ui.Rect = ui.Rect { x = g.opener.x, y = bar.GAP + bar.BAR, w = bar.LIST_W, h = ui.list_height(rows) + bar.LIST_TOP + bar.LIST_BOTTOM }
+    list: ui.Area = ui.popup(panel)
+    defer list.end()
+    ui.space(bar.LIST_TOP)
+    chosen: usize = names.len
+    if names.len == 0 { ui.muted("no diagrams in diagram/") }
+    if ui.list(names, &chosen, rows, &g.scroll) { g.load(names[chosen]) }
+    if g.ui.mouse.pressed { g.mode = app.Mode.none }
 }
 
 pub SaveDialog: struct {
     pub g: *app.App = null,
 }
 
-/* Esc is read ahead of the field, which takes every other key. */
-pub SaveDialog.draw(self, context: *ui.Context) {
+/* Esc is read ahead of the field, which takes every other key; the box is
+ * modal, so its field always has the keyboard. */
+pub SaveDialog.draw(self) {
     g: *app.App = self.g
-    canvas: *ui.Canvas = context.canvas
-    context.blocked = false
-    if context.keyboard.consume(Keycode.escape, 0) { g.mode = app.Mode.none }
+    if ui.key(Keycode.escape) { g.mode = app.Mode.none }
     panel: ui.Rect = g.view.panel()
-    field: ui.Rect = ui.Rect { x = panel.x + style.DIALOG_PAD, y = panel.y + style.FIELD_Y, w = panel.w - 2.0 * style.DIALOG_PAD, h = style.FIELD_H }
-    canvas.fill(panel, style.RADIUS, ui.color(theme.DIM))
-    canvas.fill(panel.inset(ui.Insets.all(1.0)), style.RADIUS - 1.0, ui.color(theme.BUTTON))
-    title: ui.Rect = ui.Rect { x = panel.x, y = panel.y + style.DIALOG_TITLE_Y, w = panel.w, h = style.DIALOG_TITLE_H }
-    canvas.text(title, style.DIALOG_PAD, "Save as     Enter saves, Esc cancels", ui.color(theme.INK))
-    /* The box is modal: its field always has the keyboard. */
-    context.focus = ID_FIELD
-    look: ui.Style = ui.Style {
-        radius = style.RADIUS,
-        fill = ui.Fill { rest = ui.color(theme.CHROME) },
-        color = ui.color(theme.INK),
-        lead = ui.Lead { pad = style.TEXT_PAD },
-    }
+    /* A one-pixel border around the box. */
+    g.ui.canvas.fill(panel, style.RADIUS, ui.color(theme.DIM))
+    box: ui.Area = ui.popup(panel.inset(ui.Insets.all(1.0)))
+    defer box.end()
+    inside: ui.Area = ui.area(panel.inset(ui.Insets.all(style.DIALOG_PAD)))
+    defer inside.end()
+    ui.text("Save as     Enter saves, Esc cancels")
     input: ui.TextInput = ui.TextInput { buffer = g.draft.bytes[..], len = g.draft.len, caret = g.draft.at }
-    res: ui.Response = context.text_field(ID_FIELD, field, &input, NAME_CHARS, look)
+    ui.focus()
+    ui.field(&input, NAME_CHARS)
     g.draft.len = input.len
     g.draft.at = input.caret
     /* The extension, dimmed: it is added, not typed. */
-    canvas.text(field, style.TEXT_PAD + ui.GLYPH_WIDTH * f32(g.draft.len), diagram.EXTENSION, ui.color(theme.DIM))
-    if res.submit && g.draft.len > 0 {
+    g.ui.canvas.text(ui.last().rect, g.ui.theme.padding + ui.GLYPH_WIDTH * f32(g.draft.len), diagram.EXTENSION, ui.color(theme.DIM))
+    if ui.last().submit && g.draft.len > 0 {
         g.mode = app.Mode.none
         g.write()
     }

@@ -208,7 +208,7 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `sim.ace` | Levels, drivers and contention, and the tick. |
 | `speed.ace` | The Speed slider's stops as tick rates, and their Hz/kHz/MHz text. |
 | `diagram.ace` | `.bnbx` encode and decode. |
-| `bar.ace` | Where the toolbar and the side panel's Tools, Blocks, Simulate and Info widgets sit, and what is in them. |
+| `bar.ace` | The sizes of the window's bars and panels, and the icons they show. |
 | `view.ace` | The window size and the board's zoom and pan. |
 | `history.ace` | Undo and Redo snapshots. |
 | `select.ace` | The select tool's box, carried blocks, and clipboard. |
@@ -217,11 +217,11 @@ wrong magic, version, reserved byte, board size, file length, or unknown code.
 | `input.ace` | SDL events to `ui.Context` frame input, and shortcuts from what widgets leave. |
 | `render.ace` | Draws the board, bars, and panels; in Simulate, high blocks bloom: blurred together offscreen and added over the board. |
 | `theme.ace` | The bar and panel colors, and block names and colors. |
-| `toolbar.ace` | The bar across the top: its buttons and what they do. |
+| `toolbar.ace` | The bar across the top: its buttons, laid out by `pkg/ui`, and what they do. |
 | `sidebar.ace` | The side panel: fold button and widgets. |
 | `footer.ace` | The status line. |
 | `dialog.ace` | The Open list and the Save-as box, over `pkg/ui` controls. |
-| `pkg/ui` | Drawing, text, cuts and controls: `Canvas`, `Rect`, `Context`, and the font. |
+| `pkg/ui` | Drawing, text, cuts, layout areas and controls: `Canvas`, `Rect`, `Context`, and the font. |
 | `style.ace` | The spacing the bars, panels and dialogs share. |
 | `icon.ace` | The icons, generated from `icon/*.svg` by `python3 -I icon/bake.py`; do not edit by hand. |
 | `main.ace` | The SDL window and the event loop. |

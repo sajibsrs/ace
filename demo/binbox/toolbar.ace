@@ -12,79 +12,54 @@ pub Toolbar: struct {
     pub g: *app.App = null,
 }
 
-/* The buttons' look: `on` keeps one lit, as an open list or a set toggle does. */
-Toolbar.style(self, each: bar.Button, on: bool): ui.Style {
-    look: ui.Style = ui.Style {
-        radius = style.RADIUS, fill = ui.Fill { rest = ui.color(theme.BUTTON), hover = ui.color(theme.ACTIVE), press = ui.color(theme.PRESS) },
-        color = ui.color(theme.INK),
-        lead = ui.Lead { pad = bar.PAD, size = bar.GLYPH_SIDE, gap = bar.LABEL_GAP },
-    }
-    if on { look.fill.rest = ui.color(theme.ACTIVE) }
-    /* The mode button names the mode a press switches to. */
-    if each == bar.Button.mode {
-        look.fill.rest = ui.color(theme.SIM)
-        look.fill.hover = ui.color(theme.SIM_LIT)
-        look.fill.press = ui.color(theme.SIM)
-        if self.g.phase == app.Phase.run {
-            look.fill.rest = ui.color(theme.EDIT)
-            look.fill.hover = ui.color(theme.EDIT_LIT)
-            look.fill.press = ui.color(theme.EDIT)
-        }
-    }
-    return look
+/* A fill resting in `rest` and `bright` under the pointer. */
+lit(rest: u32, bright: u32): ui.Fill {
+    return ui.Fill { rest = ui.color(rest), hover = ui.color(bright), press = ui.color(rest) }
 }
 
-/* What a click on `each` does. */
-Toolbar.act(self, each: bar.Button) {
+/* Groups of buttons, each after its title, with the diagram's name at the far
+ * end. The mode button names the mode a press switches to, as wide as the
+ * longer label. */
+pub Toolbar.draw(self) {
     g: *app.App = self.g
-    a: ui.Rect = g.view.area()
+    row: ui.Area = ui.area(g.view.head().inset(ui.Insets { left = bar.EDGE, right = bar.EDGE }), ui.Flow.across)
+    defer row.end()
+    ui.muted("File")
+    if ui.button(bar.shape(icon.Id.new), "New") { g.clear() }
+    if ui.button(bar.shape(icon.Id.open), "Open", g.mode == app.Mode.open) { g.browse() }
+    g.opener = ui.last().rect
+    if ui.button(bar.shape(icon.Id.save), "Save") { g.save() }
+    if ui.button(bar.shape(icon.Id.save_as), "Save as") { g.ask() }
+
+    ui.space(style.GROUP_GAP)
+    ui.muted("Mode")
+    ui.width("Simulate")
+    if g.phase == app.Phase.run {
+        if ui.button(bar.shape(icon.Id.edit), "Edit", lit(theme.EDIT, theme.EDIT_LIT)) { g.switch(app.Phase.edit) }
+    } else if ui.button(bar.shape(icon.Id.run), "Simulate", lit(theme.SIM, theme.SIM_LIT)) {
+        g.switch(app.Phase.run)
+    }
+
+    ui.space(style.GROUP_GAP)
+    ui.muted("Zoom")
+    ui.width(bar.ZOOM_W)
+    level: *fmt.Buffer = ui.line()
+    level.printf("%.3g", g.view.level())
+    ui.readout(level.text())
     /* The zoom buttons zoom about the board area's center. */
-    mx: f32 = a.x + a.w / 2.0
-    my: f32 = a.y + a.h / 2.0
-    if each == bar.Button.new { g.clear() }
-    if each == bar.Button.open { g.browse() }
-    if each == bar.Button.save { g.save() }
-    if each == bar.Button.save_as { g.ask() }
-    if each == bar.Button.mode {
-        if g.phase == app.Phase.edit { g.switch(app.Phase.run) } else { g.switch(app.Phase.edit) }
-    }
-    if each == bar.Button.zoom_out { g.view.zoom(-1.0, mx, my) }
-    if each == bar.Button.zoom_in { g.view.zoom(1.0, mx, my) }
-    if each == bar.Button.depth { g.depth = !g.depth }
-    if each == bar.Button.snap { g.snap = !g.snap }
-}
+    a: ui.Rect = g.view.area()
+    if ui.button(bar.shape(icon.Id.zoom_out)) { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    if ui.button(bar.shape(icon.Id.zoom_in)) { g.view.zoom(1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
 
-pub Toolbar.draw(self, context: *ui.Context) {
-    g: *app.App = self.g
-    canvas: *ui.Canvas = context.canvas
-    for i: usize in 0 .. members(bar.Button).len {
-        each: bar.Button = members(bar.Button)[i]
-        at: ui.Rect = bar.place(each)
-        if bar.heading(each).len > 0 {
-            canvas.text(at, -bar.title_w(each), bar.heading(each), ui.color(theme.DIM))
-        }
-        /* The zoom readout is not a button. */
-        if each == bar.Button.zoom_level {
-            canvas.fill(at, style.RADIUS, ui.color(theme.DEEP))
-            level: [16]u8
-            zoom: fmt.Buffer = fmt.Buffer.init(level[..])
-            zoom.printf("%.3g", g.view.level())
-            canvas.text(at, zoom.text(), ui.color(theme.INK), ui.Align.center)
-            continue
-        }
-        on: bool = (each == bar.Button.open && g.mode == app.Mode.open) ||
-            (each == bar.Button.depth && g.depth) || (each == bar.Button.snap && g.snap)
-        shown: icon.Id = bar.ICON[each]
-        label: string = bar.LABEL[each]
-        if each == bar.Button.mode && g.phase == app.Phase.run {
-            shown = icon.Id.edit
-            label = bar.EDIT_LABEL
-        }
-        res: ui.Response = context.button(u32(each) + 1, at, bar.shape(shown), label, self.style(each, on))
-        if res.click { self.act(each) }
-    }
+    ui.space(style.GROUP_GAP)
+    ui.muted("Depth")
+    ui.toggle(bar.shape(icon.Id.depth), &g.depth)
+    ui.space(style.GROUP_GAP)
+    ui.muted("Snap")
+    ui.toggle(bar.shape(icon.Id.snap), &g.snap)
+
     title: string = g.name.text()
     if title.len == 0 { title = "untitled" }
-    head: ui.Rect = g.view.head()
-    canvas.text(head, head.w - bar.EDGE - ui.GLYPH_WIDTH * f32(title.len), title, ui.color(theme.INK))
+    ui.fill()
+    ui.text(title)
 }
