@@ -28,6 +28,12 @@ It currently answers:
   It answers nothing while the file, or the file it would jump to, has
   unsaved changes, since positions come from disk.
 
+- `textDocument/hover`: the declaration go to definition finds, shown as its
+  source line (without a trailing `{`) and its doc comment: the comments on
+  their own lines that end directly above it, with comment markers removed.
+  The selfhost lexer records them when made with `Lexer.new(src, true)`;
+  the compiler's lexers record none. The same unsaved-changes rule applies.
+
 Documents are synchronized in full on every change. A file with a syntax
 error has an empty outline, since the parser keeps no declarations then.
 
@@ -41,4 +47,7 @@ The server reuses the selfhost front-end rather than parsing Ace itself, as
 so a language change reaches the editor with no second update. A separate
 executable is needed while `ace` is the C compiler; once selfhost ships as
 `ace`, it can become an `ace lsp` subcommand, as `deno lsp` and `gleam lsp`
-are. The outline needs only the parser, so it never waits on sema.
+are. The outline needs only the parser, so it never waits on sema. Comments
+are a side list of spans in the lexer rather than tokens, as Go's scanner
+reports them only on request: the parser never sees them, and a formatter can
+use the same list.

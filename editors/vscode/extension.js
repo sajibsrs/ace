@@ -1,4 +1,4 @@
-// Starts ace-lsp and forwards Ace documents, outline and definition requests
+// Starts ace-lsp and forwards Ace documents, outline, definition and hover requests
 // to it over LSP. Dependency-free: the JSON-RPC framing is the few lines below.
 const vscode = require("vscode");
 const { spawn } = require("child_process");
@@ -113,6 +113,15 @@ async function activate(context) {
           position: { line: pos.line, character: pos.character },
         });
         return result ? new vscode.Location(vscode.Uri.parse(result.uri), range(result.range)) : null;
+      },
+    }),
+    vscode.languages.registerHoverProvider("ace", {
+      async provideHover(doc, pos) {
+        const result = await request("textDocument/hover", {
+          textDocument: { uri: doc.uri.toString() },
+          position: { line: pos.line, character: pos.character },
+        });
+        return result ? new vscode.Hover(new vscode.MarkdownString(result.contents.value)) : null;
       },
     }),
     vscode.languages.registerDocumentSymbolProvider("ace", {

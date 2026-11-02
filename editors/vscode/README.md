@@ -14,10 +14,11 @@ The extension currently provides:
 - comment and bracket configuration
 - automatic closing pairs and block indentation
 - the document outline (Outline view, breadcrumbs, **Go to Symbol in
-  Editor**) and go to definition (Cmd+click, F12) from `ace-lsp`
+  Editor**) and go to definition (Cmd+click, F12), and hover (a declaration's
+  line and doc comment) from `ace-lsp`
   (`docs/lsp.md` in the repository)
 
-It does not yet provide completion, diagnostics, formatting, or hover.
+It does not yet provide completion, diagnostics, or formatting.
 
 ## Maintenance
 

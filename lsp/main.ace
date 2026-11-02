@@ -1,7 +1,7 @@
 /* ace-lsp: the Ace language server. Speaks LSP over stdin and stdout,
  * keeping each open document's full text, and answers the outline
  * (textDocument/documentSymbol) and go to definition
- * (textDocument/definition). Diagnostics go to stderr.
+ * (textDocument/definition) and hover (textDocument/hover). Diagnostics go to stderr.
  */
 
 import array
@@ -15,6 +15,7 @@ import sys
 import path: "../selfhost/path.ace"
 
 import definition: "./definition.ace"
+import hover: "./hover.ace"
 import outline: "./outline.ace"
 import position: "./position.ace"
 
@@ -216,34 +217,32 @@ saved(pool: *path.Pool, docs: *array.Array[Doc], file_path: string): (string, bo
     return pool.copy(data), true
 }
 
-/* Writes the Location of the declaration named at 0-based `line` and UTF-16
- * `character` of `uri`, or null.
+/* The declaration named at 0-based `line` and UTF-16 `character` of `uri`
+ * and the saved text of its file, or false. Strings live in `pool`.
+ */
+resolve(pool: *path.Pool, docs: *array.Array[Doc], uri: string, line: u32, character: u32): (definition.Location, string, bool) {
+    none: definition.Location = blank(definition.Location)
+    p: string, ok: bool = uri_path(pool, uri)
+    if !ok { return none, "", false }
+    canon: string, found: bool = path.canonical(pool, p)
+    if !found { return none, "", false }
+    src: string, fresh: bool = saved(pool, docs, canon)
+    if !fresh { return none, "", false }
+    loc: definition.Location, hit: bool = definition.find(pool, canon, src, line + 1, position.byte(src, line + 1, character))
+    if !hit { return none, "", false }
+    target: string, target_fresh: bool = saved(pool, docs, loc.file)
+    if !target_fresh { return none, "", false }
+    return loc, target, true
+}
+
+/* Writes the Location of the declaration named at `line` and `character`
+ * of `uri`, or null.
  */
 locate(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, character: u32) {
     pool: path.Pool = blank(path.Pool)
     defer pool.wipe()
-    p: string, ok: bool = uri_path(&pool, uri)
+    loc: definition.Location, target: string, ok: bool = resolve(&pool, docs, uri, line, character)
     if !ok {
-        out.none()
-        return
-    }
-    canon: string, found: bool = path.canonical(&pool, p)
-    if !found {
-        out.none()
-        return
-    }
-    src: string, fresh: bool = saved(&pool, docs, canon)
-    if !fresh {
-        out.none()
-        return
-    }
-    loc: definition.Location, hit: bool = definition.find(&pool, canon, src, line + 1, position.byte(src, line + 1, character))
-    if !hit {
-        out.none()
-        return
-    }
-    target: string, target_fresh: bool = saved(&pool, docs, loc.file)
-    if !target_fresh {
         out.none()
         return
     }
@@ -251,6 +250,26 @@ locate(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, charact
     out.field("uri", file_uri(&pool, loc.file))
     out.key("range")
     outline.range(out, target, loc.line, loc.col, loc.line, loc.col + loc.len)
+    out.end()
+}
+
+/* Writes the Hover for the declaration named at `line` and `character` of
+ * `uri`: its line and doc comment as Markdown, or null.
+ */
+describe(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, character: u32) {
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    loc: definition.Location, target: string, ok: bool = resolve(&pool, docs, uri, line, character)
+    if !ok {
+        out.none()
+        return
+    }
+    out.object()
+    out.key("contents")
+    out.object()
+    out.field("kind", "markdown")
+    out.field("value", hover.text(&pool, target, loc.line))
+    out.end()
     out.end()
 }
 
@@ -300,6 +319,7 @@ main(): int {
             out.field("textDocumentSync", 1) // full text on every change
             out.field("documentSymbolProvider", true)
             out.field("definitionProvider", true)
+            out.field("hoverProvider", true)
             out.end()
             out.key("serverInfo")
             out.object()
@@ -313,6 +333,9 @@ main(): int {
         } else if mem.equal(method, "textDocument/definition") {
             out.key("result")
             locate(&out, &docs, req.string("/params/textDocument/uri"), u32(req.number("/params/position/line")), u32(req.number("/params/position/character")))
+        } else if mem.equal(method, "textDocument/hover") {
+            out.key("result")
+            describe(&out, &docs, req.string("/params/textDocument/uri"), u32(req.number("/params/position/line")), u32(req.number("/params/position/character")))
         } else if mem.equal(method, "textDocument/documentSymbol") {
             uri: string = req.string("/params/textDocument/uri")
             text: string, open_: bool = find(&docs, uri)

@@ -114,14 +114,33 @@ pub Lexer: struct {
     ival: u64,      // int value, char byte
     fval: f64,      // float value
     errs: array.Array[Diag], // every error so far, in source order
+    keep: bool,     // record comments in `notes`
+    notes: array.Array[Comment],
+}
+
+/* A comment's source span: byte offsets `start` and `end` (past its last
+ * byte), and the lines of its first and last bytes.
+ */
+pub Comment: struct {
+    pub start: usize,
+    pub end: usize,
+    pub line: u32,
+    pub last: u32,
 }
 
 /* A lexer over `src`, which must outlive it. Call `wipe` when done. */
 pub Lexer.new(src: string): Lexer {
+    return Lexer.new(src, false)
+}
+
+/* A lexer over `src` that records every comment when `comments` is true,
+ * for tools; see `comments`.
+ */
+pub Lexer.new(src: string, comments: bool): Lexer {
     lx: Lexer = Lexer {
         src = src, off = 0, line = 1, lstart = 0, tline = 1, tcol = 1,
         prev = Token.newline, count = 0, used = 0, text = "", ival = 0, fval = 0.0,
-        errs = array.Array[Diag] {},
+        errs = array.Array[Diag] {}, keep = comments, notes = array.Array[Comment] {},
     }
     if src.len >= 3 && src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF {
         lx.off = 3 // UTF-8 BOM
@@ -133,7 +152,15 @@ pub Lexer.new(src: string): Lexer {
 pub Lexer.wipe(self) {
     mem.release[u8](&self.scratch)
     self.errs.wipe()
+    self.notes.wipe()
     self.used = 0
+}
+
+/* The comments scanned so far, in source order; empty unless the lexer was
+ * made to record them.
+ */
+pub Lexer.comments(const self): []Comment {
+    return self.notes.view()
 }
 
 /* The current token's position. */
@@ -714,9 +741,13 @@ Lexer.trivia(self): bool {
             }
             nl = true
         } else if c == '/' && i + 1 < src.len && src[i + 1] == '/' {
+            start: usize = i
             i += 2
             for i < src.len && src[i] != 0 && src[i] != '\n' { i += 1 }
+            if self.keep { self.notes.push(Comment { start = start, end = i, line = self.line, last = self.line }) }
         } else if c == '/' && i + 1 < src.len && src[i + 1] == '*' {
+            start: usize = i
+            line: u32 = self.line
             self.off = i
             self.mark()
             i += 2
@@ -737,6 +768,7 @@ Lexer.trivia(self): bool {
                     nl = true
                 }
             }
+            if self.keep { self.notes.push(Comment { start = start, end = i, line = line, last = self.line }) }
         } else {
             break
         }
