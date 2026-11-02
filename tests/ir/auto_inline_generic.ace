@@ -1,0 +1,27 @@
+/* Release auto-inlines a small method of a generic type and the accessor
+ * forwarding to it, so `main` keeps no call.
+ */
+
+Row[T]: struct {
+    items: []T = null,
+    len: usize = 0,
+}
+
+Row[T].view(const self): []T {
+    return self.items[..self.len]
+}
+
+Table: struct {
+    rows: Row[u32],
+}
+
+Table.at(const self, id: usize): *u32 {
+    return &self.rows.view()[id]
+}
+
+main(): int {
+    store: [4]u32 = [0 : 4]
+    t: Table = Table { rows = Row[u32] { items = store[..], len = 2 } }
+    *(t.at(1)) = 7
+    return int(*(t.at(1)))
+}

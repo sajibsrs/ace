@@ -175,3 +175,5 @@
   helpers, and print `file:line: got X, want Y`; the `check N` index is gone.
 - `crypto` adds `sha256`, the hash behind `[link]` fetching in selfhost; the C
   compiler keeps its own copy while it bootstraps.
+- `Array.view` is `inline`, as `get` is: it counts one node in a caller's
+  auto-inline budget, so accessors over it (selfhost's `A64.x`) still expand.

@@ -3987,7 +3987,7 @@ Lw.inline_target(self, x: u32): (u32, u32, u32) {
     if callee == 0 { return 0, 0, 0 }
     if self.node(callee).kind == Kind.index && self.nsym(callee) != 0 {
         d: u32 = self.s.sym(self.nsym(callee)).decl
-        if d == 0 || (self.node(d).flags & parser.F_INLINE) == 0 { return 0, 0, 0 }
+        if d == 0 || ((self.node(d).flags & parser.F_INLINE) == 0 && !self.auto_inline(self.nsym(callee))) { return 0, 0, 0 }
         args: u32, found: bool = self.s.inst_args(d, self.nty(callee))
         if !found { return 0, 0, 0 }
         return d, args, self.node(self.node(d).c).nkids
@@ -4085,7 +4085,7 @@ Lw.auto_inline_decl(self, s: u32): int {
     }
     fail(self.s.auto_seen.set(f, 1))
     n: Node = self.node(f)
-    if n.kind != Kind.func || n.b == 0 || n.c != 0 || sy.is_extern || sy.is_generic || sy.spec_args != 0 { return 0 }
+    if n.kind != Kind.func || n.b == 0 || sy.is_extern || sy.spec_args != 0 { return 0 }
     if (n.flags & (parser.F_INTRINSIC | parser.F_SPECIALIZED | parser.F_COLD)) != 0 || n.nkids > 64 { return 0 }
     if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main") { return 0 }
     for i: u32 in 0..n.nkids {

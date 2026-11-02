@@ -57,7 +57,7 @@ pub inline Array[T].wipe(self) {
 /* The live elements. The view aliases the array's storage and is invalidated
  * by any call that grows it.
  */
-pub Array[T].view(const self): []T {
+pub inline Array[T].view(const self): []T {
     return self.items[..self.len]
 }
 

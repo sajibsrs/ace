@@ -1,0 +1,26 @@
+; Row.view: not lowered (generic)
+
+Table.at(ptr, u64): ptr {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = load ptr [%0]
+    %3 = padd ptr %2, %1 * 4
+    ret %3
+}
+
+main(): i64 {
+b0:
+    %0 = slot ptr 16, 4
+    %1 = const u64 0
+    store [%0], %1
+    store [%0 + 8], %1
+    %4 = const u32 7
+    %5 = const u64 1
+    %6 = padd ptr %0, %5 * 4
+    store [%6], %4
+    %8 = load u32 [%6]
+    %9 = cast i64 %8
+    ret %9
+}
+

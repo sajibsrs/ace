@@ -35,20 +35,18 @@ b1: ; preds b0
     ret %4
 b2: ; preds b0
     %6 = const i64 2
-    %7 = const i64 1
-    %8 = call i64 larger(%6, %7)
-    %9 = global ptr larger
-    %10 = const i64 1
-    %11 = call i64 twice(%10)
-    %12 = calli i64 %9(%8, %11)
-    %13 = const i64 3
-    %14 = ne bool %12, %13
-    br %14, b3, b4
+    %7 = global ptr larger
+    %8 = const i64 1
+    %9 = call i64 twice(%8)
+    %10 = calli i64 %7(%6, %9)
+    %11 = const i64 3
+    %12 = ne bool %10, %11
+    br %12, b3, b4
 b3: ; preds b2
-    %16 = const i64 2
-    ret %16
+    %14 = const i64 2
+    ret %14
 b4: ; preds b2
-    %18 = const i64 5
-    ret %18
+    %16 = const i64 5
+    ret %16
 }
 

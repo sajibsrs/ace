@@ -1990,7 +1990,7 @@ static int auto_inline_decl(Sym* s) {
     uintptr_t seen = ptrmap_get(&auto_inline_seen, f);
     if (seen) return seen == 1 ? 0 : (int)seen - 1;
     ptrmap_put(&auto_inline_seen, f, 1); // while measuring: a cycle back here stays a call
-    int ok = f->kind == N_FUNC && f->b && !f->c && !s->is_extern && !s->is_generic && !s->spec_args &&
+    int ok = f->kind == N_FUNC && f->b && !s->is_extern && !s->spec_args &&
              !(f->flags & (F_INTRINSIC | F_SPECIALIZED | F_COLD)) && f->nkids <= MAX_PARAMS &&
              !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
     for (int i = 0; ok && i < f->nkids; i++)
@@ -2018,7 +2018,7 @@ static Node* inline_target(Lw* l, Node* call, SType*** targs, int* ntargs) {
     *ntargs = 0;
     if (callee->kind == N_INDEX && callee->sym) {
         Sym* gs = node_sym(callee);
-        if (!gs->decl || !(gs->decl->flags & F_INLINE)) return NULL;
+        if (!gs->decl || (!(gs->decl->flags & F_INLINE) && !auto_inline(l, gs))) return NULL;
         for (STypeInst* inst = sema_insts(gs->decl); inst; inst = inst->next)
             if (inst->result == callee->ty) {
                 *targs = inst->args;

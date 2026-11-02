@@ -553,7 +553,8 @@ most 24 syntax nodes, its auto-inlined callees' nodes included, that calls
 nothing but conversions, compiler-provided operations, `inline` functions (a
 by-value accessor wrapping `Array.get`), and functions that auto-inline in turn
 (an accessor forwarding to another accessor), within the limits above, and not
-generic, `@cold`, `main`, or recursive. Debug builds keep those calls, so
+an explicit specialization, `@cold`, `main`, or recursive. Generic functions
+and methods of generic types qualify. Debug builds keep those calls, so
 backtraces show them. Mark a larger helper `inline` to expand it.
 
 An expansion binds a receiver to the argument itself when

@@ -256,3 +256,9 @@
 - An error raised during emission or lowering now ends with the closing
   `path: N error(s)` line in both compilers, as a sema error does; selfhost
   adds the object writer's errors to `s.errors` to count them.
+- Release auto-inlining also takes generic functions and methods of generic
+  types (C and selfhost); explicit specializations still stay calls. `Func.at`
+  over `Array.view` inlines again, as it did before `mut` left. With
+  `Array.view` now `inline`, selfhost `--release -c` on itself 1.06x, on a
+  30k-function corpus 1.12x; `bench/std/collections` map-get 1.10x,
+  `bench/core/tree` walk 1.04x; other `bench/` code unchanged.
