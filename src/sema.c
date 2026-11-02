@@ -5842,7 +5842,10 @@ static void check_stmt(Ck* k, Node* s) {
                     wants[i] = discard_type(k, s->b, rt, i);
                     continue;
                 }
-                old[i] = lookup_val(k, binder->str, binder->len);
+                /* A typed name is new in this scope, as declare_val; it may
+                 * shadow an outer or top-level name. A bare name must exist. */
+                old[i] = binder->kind == N_PARAM ? scope_find(k->scope, 0, binder->str, binder->len)
+                                                 : lookup_val(k, binder->str, binder->len);
                 if (binder->kind == N_PARAM) {
                     wants[i] = build_type(k, binder->a);
                     if (wants[i] && wants[i]->kind == SK_ERROR_DOMAIN)

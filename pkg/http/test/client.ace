@@ -41,7 +41,7 @@ pub error_codes(t: *test.T) {
     t.equal(allocation.message, "memory allocation failed", @file, @line)
 }
 
-pub addresses(t: *test.T) {
+pub address(t: *test.T) {
     address: net.Addr4, valid: bool = net.parse4("127.0.0.1:8080")
     t.equal(valid, true, @file, @line)
     t.equal(int(address.ip[0]), 127, @file, @line)
@@ -62,7 +62,7 @@ pub addresses(t: *test.T) {
     }
 }
 
-pub urls(t: *test.T) {
+pub url(t: *test.T) {
     url: http.Url, err: Error = http.Url.parse("http://example.com:8080?x=%2f")
     if t.equal(err == null, true, @file, @line) {
         t.equal(url.host, "example.com", @file, @line)

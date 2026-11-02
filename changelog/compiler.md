@@ -262,3 +262,7 @@
   `Array.view` now `inline`, selfhost `--release -c` on itself 1.06x, on a
   30k-function corpus 1.12x; `bench/std/collections` map-get 1.10x,
   `bench/core/tree` walk 1.04x; other `bench/` code unchanged.
+- A typed name in a multi-name `=` (`two: int, ok: bool = pair()`) need only
+  be new in its own scope, as a single declaration, so it may shadow a
+  top-level function or an outer local; the check looked through every
+  enclosing scope. Fixed in the C compiler and selfhost.

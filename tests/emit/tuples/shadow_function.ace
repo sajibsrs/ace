@@ -1,0 +1,25 @@
+/* A typed name in a multi-name `=` may shadow a top-level function or an
+ * outer local, as a single declaration may; it need only be new in its own
+ * scope. */
+
+// expect-exit: 12
+
+pair(): (int, bool) { return 3, true }
+
+two(): int {
+    two: int, ok: bool = pair()
+    if !ok { return 0 }
+    return two
+}
+
+nested(): int {
+    n: int = 4
+    if true {
+        n: int, ok: bool = pair()
+        if !ok { return 0 }
+        n += 2
+    }
+    return n
+}
+
+main(): int { return two() + nested() + 1 + 4 }

@@ -6846,7 +6846,9 @@ Sema.check_var_stmt(self, s: u32) {
                 fail(wants.push(self.discard_type(n.b, rt, i)))
                 continue
             }
-            o: u32 = self.lookup_val(b.text)
+            // a typed name is new in this frame, as declare_local; a bare one must exist
+            o: u32 = 0
+            if b.kind == Kind.param { o = self.find_local(b.text, self.frame().start) } else { o = self.lookup_val(b.text) }
             fail(old.push(o))
             w: u32 = self.t_err
             if b.kind == Kind.param {
