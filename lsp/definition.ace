@@ -18,7 +18,9 @@ TARGET: const string = "darwin-arm64"
 
 /* A declaration's place: its canonical file, 1-based line and byte column,
  * its name's length in bytes, and the line whose doc comment describes it
- * (its function's for a parameter). `file` is a string of the caller's pool.
+ * (its function's for a parameter). `origin` and `origin_len` span what the
+ * cursor named on its line when that is not one word (a quoted path); 0
+ * otherwise. `file` is a string of the caller's pool.
  */
 pub Location: struct {
     pub file: string,
@@ -26,6 +28,8 @@ pub Location: struct {
     pub col: u32,
     pub len: u32,
     pub doc: u32,
+    pub origin: u32 = 0,
+    pub origin_len: u32 = 0,
 }
 
 /* The declaration of the name at 1-based `line` and byte `col` of the file
@@ -65,6 +69,43 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
     for i: usize in 0..mods.len {
         if mem.equal(mods[i].canon, canon) { mi = i }
     }
+    // A name the import on this line selects: its declaration in its module.
+    for sel: module.Select in mods[mi].sels.view() {
+        if sel.line != line || col < sel.col || col >= sel.col + u32(sel.name.len) { continue }
+        sym: u32 = sel.is_type ? s.type_named(sel.identity) : s.value_named(sel.identity)
+        if sym == 0 { return none, false }
+        d: Node = s.node(s.sym(sym).decl)
+        return Location { file = pool.copy(mods[l.module_of(s.sym(sym).decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len), doc = d.line }, true
+    }
+
+    // An import's quoted path: the start of the module it loads.
+    from: u32, to: u32, in_quotes: bool = quoted(src, line, col)
+    if in_quotes {
+        target: usize = 0
+        found_import: bool = false
+        for bind: module.Binding in mods[mi].binds.view() {
+            if bind.line == line {
+                target = bind.module
+                found_import = true
+            }
+        }
+        for sel: module.Select in mods[mi].sels.view() {
+            if sel.line == line {
+                target = sel.module
+                found_import = true
+            }
+        }
+        if found_import { return Location { file = pool.copy(mods[target].canon), line = 1, col = 1, len = 0, doc = 0, origin = from, origin_len = to - from }, true }
+    }
+
+    // A module an import on this line binds: the start of its file.
+    for bind: module.Binding in mods[mi].binds.view() {
+        if bind.line != line { continue }
+        at: u32 = name_col(src, line, bind.col, bind.name) // the binding sits at `import`
+        if col < at || col >= at + u32(bind.name.len) { continue }
+        return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true
+    }
+
     // The innermost name under the cursor, then what it resolved to.
     best: u32 = 0
     best_len: u32 = 0
@@ -86,6 +127,9 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
     if decl == 0 {
         // An import's name: the start of the module it binds.
         b: Node = s.node(best)
+        for sel: module.Select in mods[mi].sels.view() {
+            if sel.line == b.line { return Location { file = pool.copy(mods[sel.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true }
+        }
         for bind: module.Binding in mods[mi].binds.view() {
             if (b.kind == parser.Kind.ident || b.kind == parser.Kind.named) && mem.equal(bind.name, b.text) {
                 return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true
@@ -177,6 +221,32 @@ name_col(src: string, line: u32, col: u32, name: string): u32 {
         i += 1
     }
     return col
+}
+
+/* The 1-based byte columns of the `"..."` on `line` holding byte `col`,
+ * its quotes included, as a start and an end past the closing quote; false
+ * when `col` is outside any.
+ */
+quoted(src: string, line: u32, col: u32): (u32, u32, bool) {
+    at: usize = 0
+    for l: u32 = 1; l < line && at < src.len; {
+        if src[at] == '\n' { l += 1 }
+        at += 1
+    }
+    open_: usize = 0
+    inside: bool = false
+    for i: usize = at; i < src.len && src[i] != '\n'; {
+        if src[i] == '"' {
+            if !inside {
+                open_ = i
+            } else if usize(col) - 1 + at >= open_ && usize(col) - 1 + at <= i {
+                return u32(open_ - at) + 1, u32(i - at) + 2, true
+            }
+            inside = !inside
+        }
+        i += 1
+    }
+    return 0, 0, false
 }
 
 /* The name as written: a resolved `mod.name` reads `mod$name`. */

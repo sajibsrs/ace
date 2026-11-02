@@ -112,7 +112,12 @@ async function activate(context) {
           textDocument: { uri: doc.uri.toString() },
           position: { line: pos.line, character: pos.character },
         });
-        return result ? new vscode.Location(vscode.Uri.parse(result.uri), range(result.range)) : null;
+        return (result || []).map((link) => ({
+          originSelectionRange: link.originSelectionRange && range(link.originSelectionRange),
+          targetUri: vscode.Uri.parse(link.targetUri),
+          targetRange: range(link.targetRange),
+          targetSelectionRange: range(link.targetSelectionRange),
+        }));
       },
     }),
     vscode.languages.registerHoverProvider("ace", {

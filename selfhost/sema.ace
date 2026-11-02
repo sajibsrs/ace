@@ -1179,6 +1179,13 @@ pub Sema.type_named(self, name: string): u32 {
     return self.files.find(true, name)
 }
 
+/* The top-level value symbol of merged-tree name `name`, as `type_named`;
+ * one overload of a function. 0 when there is none.
+ */
+pub Sema.value_named(self, name: string): u32 {
+    return self.files.find(false, name)
+}
+
 Sema.lookup_val(self, name: string): u32 {
     l: u32 = self.find_local(name, 0)
     if l != 0 { return l }

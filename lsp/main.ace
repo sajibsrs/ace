@@ -217,39 +217,50 @@ saved(pool: *path.Pool, docs: *array.Array[Doc], file_path: string): (string, bo
     return pool.copy(data), true
 }
 
-/* The declaration named at 0-based `line` and UTF-16 `character` of `uri`
- * and the saved text of its file, or false. Strings live in `pool`.
+/* The declaration named at 0-based `line` and UTF-16 `character` of `uri`,
+ * the saved text of its file, and that of `uri`'s, or false. Strings live in
+ * `pool`.
  */
-resolve(pool: *path.Pool, docs: *array.Array[Doc], uri: string, line: u32, character: u32): (definition.Location, string, bool) {
+resolve(pool: *path.Pool, docs: *array.Array[Doc], uri: string, line: u32, character: u32): (definition.Location, string, string, bool) {
     none: definition.Location = blank(definition.Location)
     p: string, ok: bool = uri_path(pool, uri)
-    if !ok { return none, "", false }
+    if !ok { return none, "", "", false }
     canon: string, found: bool = path.canonical(pool, p)
-    if !found { return none, "", false }
+    if !found { return none, "", "", false }
     src: string, fresh: bool = saved(pool, docs, canon)
-    if !fresh { return none, "", false }
+    if !fresh { return none, "", "", false }
     loc: definition.Location, hit: bool = definition.find(pool, canon, src, line + 1, position.byte(src, line + 1, character))
-    if !hit { return none, "", false }
+    if !hit { return none, "", "", false }
     target: string, target_fresh: bool = saved(pool, docs, loc.file)
-    if !target_fresh { return none, "", false }
-    return loc, target, true
+    if !target_fresh { return none, "", "", false }
+    return loc, target, src, true
 }
 
-/* Writes the Location of the declaration named at `line` and `character`
+/* Writes the LocationLink array of the declaration named at `line` and `character`
  * of `uri`, or null.
  */
 locate(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, character: u32) {
     pool: path.Pool = blank(path.Pool)
     defer pool.wipe()
-    loc: definition.Location, target: string, ok: bool = resolve(&pool, docs, uri, line, character)
+    loc: definition.Location, target: string, src: string, ok: bool = resolve(&pool, docs, uri, line, character)
     if !ok {
         out.none()
         return
     }
+    // A LocationLink, so a link spanning several words (a quoted path) is
+    // underlined whole.
+    out.array()
     out.object()
-    out.field("uri", file_uri(&pool, loc.file))
-    out.key("range")
+    if loc.origin != 0 {
+        out.key("originSelectionRange")
+        outline.range(out, src, line + 1, loc.origin, line + 1, loc.origin + loc.origin_len)
+    }
+    out.field("targetUri", file_uri(&pool, loc.file))
+    out.key("targetRange")
     outline.range(out, target, loc.line, loc.col, loc.line, loc.col + loc.len)
+    out.key("targetSelectionRange")
+    outline.range(out, target, loc.line, loc.col, loc.line, loc.col + loc.len)
+    out.end()
     out.end()
 }
 
@@ -259,7 +270,7 @@ locate(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, charact
 describe(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, character: u32) {
     pool: path.Pool = blank(path.Pool)
     defer pool.wipe()
-    loc: definition.Location, target: string, ok: bool = resolve(&pool, docs, uri, line, character)
+    loc: definition.Location, target: string, src: string, ok: bool = resolve(&pool, docs, uri, line, character)
     if !ok {
         out.none()
         return

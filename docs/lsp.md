@@ -25,6 +25,8 @@ It currently answers:
   nearest `ace.pkg`'s package when there is one) and follows the name under
   the cursor: a local, global, or function (the overload a call resolved
   to), a type, a field, enum member, or error entry, or an import's module.
+  On an import line, a selected name jumps to its declaration and a module
+  name or quoted path to its file.
   It answers nothing while the file, or the file it would jump to, has
   unsaved changes, since positions come from disk.
 

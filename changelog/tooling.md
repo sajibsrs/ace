@@ -4,6 +4,9 @@
   that answers `textDocument/documentSymbol` (the outline) and
   `textDocument/definition` over selfhost sema's resolved names; the VS Code
   extension bundles it with `std/` and starts it from `extension.js`.
+- `ace-lsp` goes to definition from import lines: a selected name to its
+  declaration (`Sema.value_named` beside `type_named`), a module name or
+  quoted path to its file, the path linked whole by `originSelectionRange`.
 - `ace-lsp` answers `textDocument/hover` with the definition's source line
   and doc comment (a parameter's is its function's). The selfhost lexer
   records every comment's span when made with `Lexer.new(src, true)`
