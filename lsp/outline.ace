@@ -1,0 +1,151 @@
+/* The document outline: each declaration of one file as an LSP
+ * DocumentSymbol, from the selfhost parser alone.
+ */
+
+import json: "../pkg/json/mod.ace"
+import str
+
+import parser: "../selfhost/parser.ace"
+import position: "./position.ace"
+
+Kind: type = parser.Kind
+Node: type = parser.Node
+
+/* LSP SymbolKind values. */
+SK_METHOD: const int = 6
+SK_FIELD: const int = 8
+SK_ENUM: const int = 10
+SK_INTERFACE: const int = 11
+SK_FUNCTION: const int = 12
+SK_VARIABLE: const int = 13
+SK_CONSTANT: const int = 14
+SK_ENUMMEMBER: const int = 22
+SK_STRUCT: const int = 23
+SK_TYPEPARAMETER: const int = 26
+
+/* Writes the outline of `src` to `out` as a DocumentSymbol array. A file
+ * with a syntax error has no declarations, so its outline is empty.
+ */
+pub write(out: *json.Json, src: string, uri: string) {
+    p: parser.Parser, lex_errors: int = parser.Parser.new(src, uri)
+    defer p.wipe()
+    out.array()
+    if lex_errors == 0 {
+        file: u32 = p.parse("darwin-arm64")
+        f: Node = *(p.node(file))
+        for k: u32 in 0..f.nkids { decl(out, &p, src, p.kid(file, k)) }
+    }
+    out.end()
+}
+
+/* One top-level declaration, with its members as children. */
+decl(out: *json.Json, p: *parser.Parser, src: string, n: u32) {
+    x: Node = *(p.node(n))
+    switch x.kind {
+        Kind.struct, Kind.bits { parent(out, p, src, n, x.text, SK_STRUCT, SK_FIELD) }
+        Kind.union { parent(out, p, src, n, x.text, SK_STRUCT, SK_FIELD) }
+        Kind.enum { parent(out, p, src, n, x.text, SK_ENUM, SK_ENUMMEMBER) }
+        Kind.error { parent(out, p, src, n, x.text, SK_ENUM, SK_ENUMMEMBER) }
+        Kind.contract { parent(out, p, src, n, x.text, SK_INTERFACE, SK_METHOD) }
+        Kind.alias, Kind.distinct { leaf(out, src, x, x.text, SK_TYPEPARAMETER) }
+        Kind.func {
+            if x.d != 0 { // Owner.name: a method or an associated function
+                owner: Node = *(p.node(x.d))
+                method(out, src, x, owner.text)
+            } else {
+                leaf(out, src, x, x.text, SK_FUNCTION)
+            }
+        }
+        Kind.var {
+            sk: int = (x.flags & parser.F_CONST) != 0 ? SK_CONSTANT : SK_VARIABLE
+            for k: u32 in 0..x.nkids {
+                name: Node = *(p.node(p.kid(n, k)))
+                if name.kind == Kind.param { leaf(out, src, name, name.text, sk) }
+            }
+        }
+        Kind.extern {
+            for k: u32 in 0..x.nkids {
+                y: Node = *(p.node(p.kid(n, k)))
+                if y.kind == Kind.externfn { leaf(out, src, y, y.text, SK_FUNCTION) }
+                if y.kind == Kind.externvar { leaf(out, src, y, y.text, SK_VARIABLE) }
+            }
+        }
+        default {}
+    }
+}
+
+/* A type whose named kids are its members, each of kind `member`. */
+parent(out: *json.Json, p: *parser.Parser, src: string, n: u32, name: string, kind: int, member: int) {
+    x: Node = *(p.node(n))
+    // The range runs to the last member, so the members lie inside it.
+    end_line: u32 = x.line
+    end_col: u32 = x.col + u32(name.len)
+    for k: u32 in 0..x.nkids {
+        y: Node = *(p.node(p.kid(n, k)))
+        if y.text.len == 0 { continue }
+        if y.line > end_line || (y.line == end_line && y.col + u32(y.text.len) > end_col) {
+            end_line = y.line
+            end_col = y.col + u32(y.text.len)
+        }
+    }
+    out.object()
+    out.field("name", name)
+    out.field("kind", kind)
+    out.key("range")
+    range(out, src, x.line, x.col, end_line, end_col)
+    out.key("selectionRange")
+    range(out, src, x.line, x.col, x.line, x.col + u32(name.len))
+    out.key("children")
+    out.array()
+    for k: u32 in 0..x.nkids {
+        y: Node = *(p.node(p.kid(n, k)))
+        if y.text.len > 0 { leaf(out, src, y, y.text, member) }
+    }
+    out.end()
+    out.end()
+}
+
+/* A method or associated function, shown as `Owner.name` beside the
+ * functions.
+ */
+method(out: *json.Json, src: string, x: Node, owner: string) {
+    buf: [264]char // two names of at most 128 bytes and the dot
+    n: usize, ok: bool = str.concat([owner, ".", x.text], buf[..])
+    out.object()
+    out.field("name", ok ? string(buf[..n]) : x.text)
+    out.field("kind", (x.flags & parser.F_METHOD) != 0 ? SK_METHOD : SK_FUNCTION)
+    out.key("range")
+    range(out, src, x.line, x.col, x.line, x.col + u32(x.text.len))
+    out.key("selectionRange")
+    range(out, src, x.line, x.col, x.line, x.col + u32(x.text.len))
+    out.end()
+}
+
+/* A declaration with no children. */
+leaf(out: *json.Json, src: string, x: Node, name: string, kind: int) {
+    out.object()
+    out.field("name", name)
+    out.field("kind", kind)
+    out.key("range")
+    range(out, src, x.line, x.col, x.line, x.col + u32(name.len))
+    out.key("selectionRange")
+    range(out, src, x.line, x.col, x.line, x.col + u32(name.len))
+    out.end()
+}
+
+/* An LSP Range from 1-based byte positions, in 0-based UTF-16 units. */
+pub range(out: *json.Json, src: string, line: u32, col: u32, end_line: u32, end_col: u32) {
+    out.object()
+    out.key("start")
+    point(out, src, line, col)
+    out.key("end")
+    point(out, src, end_line, end_col)
+    out.end()
+}
+
+point(out: *json.Json, src: string, line: u32, col: u32) {
+    out.object()
+    out.field("line", uint(line - 1))
+    out.field("character", uint(position.utf16(src, line, col)))
+    out.end()
+}

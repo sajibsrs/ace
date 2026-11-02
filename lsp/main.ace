@@ -1,0 +1,337 @@
+/* ace-lsp: the Ace language server. Speaks LSP over stdin and stdout,
+ * keeping each open document's full text, and answers the outline
+ * (textDocument/documentSymbol) and go to definition
+ * (textDocument/definition). Diagnostics go to stderr.
+ */
+
+import array
+import file
+import fmt
+import json: "../pkg/json/mod.ace"
+import mem
+import str
+import sys
+
+import path: "../selfhost/path.ace"
+
+import definition: "./definition.ace"
+import outline: "./outline.ace"
+import position: "./position.ace"
+
+/* An open document; both strings are owned. */
+Doc: struct {
+    uri: []u8,
+    text: []u8,
+}
+
+/* The LSP stream on stdin: header lines, then a body of Content-Length bytes. */
+Reader: struct {
+    buf: []u8 = null,
+    start: usize = 0,
+    end: usize = 0,
+}
+
+Reader.wipe(self) {
+    mem.release[u8](&self.buf)
+}
+
+/* Reads more of stdin; false at end of input or on a read error. */
+Reader.fill(self): bool {
+    if self.start > 0 {
+        mem.move(self.buf[..self.end - self.start], self.buf[self.start..self.end])
+        self.end -= self.start
+        self.start = 0
+    }
+    if self.end == self.buf.len {
+        size: usize = self.buf.len == 0 ? 4096 : self.buf.len * 2
+        self.buf = mem.realloc[u8](self.buf, size)
+    }
+    n: int, err: Error = sys.read(sys.stdin, self.buf[self.end..])
+    if err != null || n <= 0 { return false }
+    self.end += usize(n)
+    return true
+}
+
+/* The next message body, valid until the next call; false at end of input. */
+Reader.next(self): (string, bool) {
+    length: usize = 0
+    for {
+        // One header line, through its CRLF; an empty one ends the header.
+        nl: usize, found: bool = str.find(self.buf[self.start..self.end], "\r\n")
+        if !found {
+            if !self.fill() { return "", false }
+            continue
+        }
+        line: string = self.buf[self.start..self.start + nl]
+        self.start += nl + 2
+        if line.len == 0 { break }
+        name: string = "Content-Length:"
+        if line.len > name.len && mem.equal(line[..name.len], name) {
+            value: usize, ok: bool = str.parse[usize](str.trim(line[name.len..]))
+            if ok { length = value }
+        }
+    }
+    for self.end - self.start < length {
+        if !self.fill() { return "", false }
+    }
+    body: string = self.buf[self.start..self.start + length]
+    self.start += length
+    return body, true
+}
+
+/* Writes one message with its header to stdout. */
+send(body: string) {
+    head: [64]char
+    n: usize, ok: bool = str.concat(["Content-Length: "], head[..])
+    m: usize, ok2: bool = str.format(head[n..], body.len)
+    n += m
+    k: usize, ok3: bool = str.concat(["\r\n\r\n"], head[n..])
+    n += k
+    write_all(head[..n])
+    write_all(body)
+}
+
+write_all(data: []u8) {
+    at: usize = 0
+    for at < data.len {
+        n: int, err: Error = sys.write(sys.stdout, data[at..])
+        if err != null || n <= 0 { return }
+        at += usize(n)
+    }
+}
+
+/* Replaces or adds the document at `uri`. */
+open(docs: *array.Array[Doc], uri: string, text: string) {
+    copy: []u8 = mem.alloc[u8](text.len)
+    mem.copy(copy, text)
+    for i: usize in 0..docs.len {
+        d: Doc = docs.get(i)
+        if mem.equal(d.uri, uri) {
+            mem.release[u8](&d.text)
+            d.text = copy
+            docs.set(i, d)
+            return
+        }
+    }
+    name: []u8 = mem.alloc[u8](uri.len)
+    mem.copy(name, uri)
+    err: Error = docs.push(Doc { uri = name, text = copy })
+    if err != null {
+        mem.release[u8](&name)
+        mem.release[u8](&copy)
+    }
+}
+
+close(docs: *array.Array[Doc], uri: string) {
+    for i: usize in 0..docs.len {
+        d: Doc = docs.get(i)
+        if mem.equal(d.uri, uri) {
+            mem.release[u8](&d.uri)
+            mem.release[u8](&d.text)
+            docs.set(i, docs.get(docs.len - 1))
+            docs.len -= 1
+            return
+        }
+    }
+}
+
+find(docs: *array.Array[Doc], uri: string): (string, bool) {
+    for d: Doc in docs.view() {
+        if mem.equal(d.uri, uri) { return d.text, true }
+    }
+    return "", false
+}
+
+wipe(docs: *array.Array[Doc]) {
+    for d: Doc in docs.view() {
+        mem.release[u8](&d.uri)
+        mem.release[u8](&d.text)
+    }
+    docs.wipe()
+}
+
+/* The path a file URI names, its %XX escapes decoded; false for another
+ * scheme. The result lives in `pool`.
+ */
+uri_path(pool: *path.Pool, uri: string): (string, bool) {
+    scheme: string = "file://"
+    if uri == null || uri.len < scheme.len || !mem.equal(uri[..scheme.len], scheme) { return "", false }
+    raw: string = pool.copy(uri[scheme.len..])
+    buf: []u8 = raw // the pool's own storage; decoding only shrinks it
+    n: usize = 0
+    i: usize = 0
+    for i < raw.len {
+        if raw[i] == '%' && i + 2 < raw.len {
+            v: uint, ok: bool = str.parse[uint](raw[i + 1..i + 3], u8(16))
+            if ok {
+                buf[n] = u8(v)
+                n += 1
+                i += 3
+                continue
+            }
+        }
+        buf[n] = raw[i]
+        n += 1
+        i += 1
+    }
+    return buf[..n], true
+}
+
+/* The file URI of absolute `file_path`, escaping what a URI path cannot hold. */
+file_uri(pool: *path.Pool, file_path: string): string {
+    hex: string = "0123456789ABCDEF"
+    buf: []u8 = mem.alloc[u8](7 + file_path.len * 3)
+    defer mem.release[u8](&buf)
+    mem.copy(buf[..7], "file://")
+    n: usize = 7
+    for c: u8 in file_path {
+        plain: bool = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/' || c == '-' || c == '.' || c == '_' || c == '~'
+        if plain {
+            buf[n] = c
+            n += 1
+        } else {
+            buf[n] = '%'
+            buf[n + 1] = hex[c >> 4]
+            buf[n + 2] = hex[c & 15]
+            n += 3
+        }
+    }
+    return pool.copy(buf[..n])
+}
+
+/* The text of `file_path` on disk, provided no open document holds other,
+ * unsaved text for it: positions are read from disk. False otherwise.
+ * The result lives in `pool`.
+ */
+saved(pool: *path.Pool, docs: *array.Array[Doc], file_path: string): (string, bool) {
+    data: []u8, err: Error = file.read(file_path)
+    defer mem.release[u8](&data)
+    if err != null { return "", false }
+    for d: Doc in docs.view() {
+        p: string, ok: bool = uri_path(pool, d.uri)
+        if !ok { continue }
+        canon: string, found: bool = path.canonical(pool, p)
+        if found && mem.equal(canon, file_path) && !mem.equal(d.text, data) { return "", false }
+    }
+    return pool.copy(data), true
+}
+
+/* Writes the Location of the declaration named at 0-based `line` and UTF-16
+ * `character` of `uri`, or null.
+ */
+locate(out: *json.Json, docs: *array.Array[Doc], uri: string, line: u32, character: u32) {
+    pool: path.Pool = blank(path.Pool)
+    defer pool.wipe()
+    p: string, ok: bool = uri_path(&pool, uri)
+    if !ok {
+        out.none()
+        return
+    }
+    canon: string, found: bool = path.canonical(&pool, p)
+    if !found {
+        out.none()
+        return
+    }
+    src: string, fresh: bool = saved(&pool, docs, canon)
+    if !fresh {
+        out.none()
+        return
+    }
+    loc: definition.Location, hit: bool = definition.find(&pool, canon, src, line + 1, position.byte(src, line + 1, character))
+    if !hit {
+        out.none()
+        return
+    }
+    target: string, target_fresh: bool = saved(&pool, docs, loc.file)
+    if !target_fresh {
+        out.none()
+        return
+    }
+    out.object()
+    out.field("uri", file_uri(&pool, loc.file))
+    out.key("range")
+    outline.range(out, target, loc.line, loc.col, loc.line, loc.col + loc.len)
+    out.end()
+}
+
+main(): int {
+    reader: Reader = Reader {}
+    defer reader.wipe()
+    req: json.Json = json.Json.new()
+    defer req.wipe()
+    out: json.Json = json.Json.new()
+    defer out.wipe()
+    docs: array.Array[Doc] = array.Array[Doc] {}
+    defer wipe(&docs)
+    shut: bool = false
+    for {
+        body: string, ok: bool = reader.next()
+        if !ok { return 1 }
+        if req.parse(body) != null {
+            fmt.printf(sys.stderr, "ace-lsp: malformed message\n")
+            continue
+        }
+        method: string = req.string("/method")
+        id: json.Value, has_id: bool = req.get("/id")
+        if method == null { continue } // a response to us; we send no requests
+        if mem.equal(method, "exit") { return shut ? 0 : 1 }
+        if mem.equal(method, "textDocument/didOpen") {
+            open(&docs, req.string("/params/textDocument/uri"), req.string("/params/textDocument/text"))
+            continue
+        }
+        if mem.equal(method, "textDocument/didChange") {
+            open(&docs, req.string("/params/textDocument/uri"), req.string("/params/contentChanges/0/text"))
+            continue
+        }
+        if mem.equal(method, "textDocument/didClose") {
+            close(&docs, req.string("/params/textDocument/uri"))
+            continue
+        }
+        if !has_id { continue } // other notifications need no answer
+        out.reset()
+        out.object()
+        out.field("jsonrpc", "2.0")
+        out.field("id", id)
+        if mem.equal(method, "initialize") {
+            out.key("result")
+            out.object()
+            out.key("capabilities")
+            out.object()
+            out.field("textDocumentSync", 1) // full text on every change
+            out.field("documentSymbolProvider", true)
+            out.field("definitionProvider", true)
+            out.end()
+            out.key("serverInfo")
+            out.object()
+            out.field("name", "ace-lsp")
+            out.end()
+            out.end()
+        } else if mem.equal(method, "shutdown") {
+            shut = true
+            out.key("result")
+            out.none()
+        } else if mem.equal(method, "textDocument/definition") {
+            out.key("result")
+            locate(&out, &docs, req.string("/params/textDocument/uri"), u32(req.number("/params/position/line")), u32(req.number("/params/position/character")))
+        } else if mem.equal(method, "textDocument/documentSymbol") {
+            uri: string = req.string("/params/textDocument/uri")
+            text: string, open_: bool = find(&docs, uri)
+            out.key("result")
+            if open_ { outline.write(&out, text, uri) } else { out.none() }
+        } else {
+            out.key("error")
+            out.object()
+            out.field("code", 0 - 32601)
+            out.field("message", "method not found")
+            out.end()
+        }
+        out.end()
+        text: string, err: Error = out.format()
+        if err != null {
+            fmt.printf(sys.stderr, "ace-lsp: cannot format a response to %s\n", method)
+            continue
+        }
+        send(text)
+    }
+    return 0
+}

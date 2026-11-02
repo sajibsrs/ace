@@ -2,7 +2,7 @@
   "name": "ace-language",
   "displayName": "Ace",
   "publisher": "sajibsrs",
-  "description": "Ace language and package-manifest syntax highlighting, file icons, and editor configuration.",
+  "description": "Ace language support: syntax highlighting, file icons, editor configuration, and an outline and go to definition from ace-lsp.",
   "author": "Sajidur Rahman",
   "version": "0.0.1",
   "private": true,
@@ -13,6 +13,10 @@
   },
   "categories": [
     "Programming Languages"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:ace"
   ],
   "contributes": {
     "languages": [
@@ -76,6 +80,19 @@
         "scopeName": "source.acefmt",
         "path": "./syntaxes/acefmt.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Ace",
+      "properties": {
+        "ace.lsp.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to an ace-lsp executable to use instead of the one bundled with the extension."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "rm -rf bin && mkdir -p bin && ../../ace -o bin/ace-lsp ../../lsp/main.ace && rm -f bin/ace-lsp.o && cp -R ../../std bin/std"
   }
 }

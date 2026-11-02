@@ -11,3 +11,5 @@ build/
 !.vscode/
 .vscode/*
 !.vscode/launch.json
+/lsp/ace-lsp
+/editors/vscode/bin/

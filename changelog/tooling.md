@@ -1,5 +1,9 @@
 # Tooling
 
+- Added `ace-lsp` in `lsp/`, an LSP server in Ace over the selfhost parser
+  that answers `textDocument/documentSymbol` (the outline) and
+  `textDocument/definition` over selfhost sema's resolved names; the VS Code
+  extension bundles it with `std/` and starts it from `extension.js`.
 - A `lib` emits a darwin dylib (#21) with `output: shared` or `ace pkg build
   --shared`, and one source with `ace --shared -o NAME.dylib`: `cc -dynamiclib`
   links the one object with its `[link]` inputs under an `@rpath` install name.

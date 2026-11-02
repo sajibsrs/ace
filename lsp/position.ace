@@ -1,0 +1,43 @@
+/* Conversions between Ace's 1-based byte columns and LSP's 0-based UTF-16
+ * ones, over a document's text.
+ */
+
+import utf8
+
+/* The byte offset where 1-based `line` starts, or `src.len` past the end. */
+line_start(src: string, line: u32): usize {
+    at: usize = 0
+    for l: u32 = 1; l < line && at < src.len; {
+        if src[at] == '\n' { l += 1 }
+        at += 1
+    }
+    return at
+}
+
+/* How many UTF-16 units precede byte column `col` (1-based) of `line`. */
+pub utf16(src: string, line: u32, col: u32): u32 {
+    at: usize = line_start(src, line)
+    end: usize = at + usize(col - 1)
+    units: u32 = 0
+    for at < end && at < src.len {
+        cp: u32, width: usize, ok: bool = utf8.decode(src, at)
+        if !ok || width == 0 { width = 1 }
+        units += cp >= 0x10000 ? 2 : 1
+        at += width
+    }
+    return units
+}
+
+/* The 1-based byte column of 0-based UTF-16 `units` into `line`. */
+pub byte(src: string, line: u32, units: u32): u32 {
+    start: usize = line_start(src, line)
+    at: usize = start
+    seen: u32 = 0
+    for seen < units && at < src.len && src[at] != '\n' {
+        cp: u32, width: usize, ok: bool = utf8.decode(src, at)
+        if !ok || width == 0 { width = 1 }
+        seen += cp >= 0x10000 ? 2 : 1
+        at += width
+    }
+    return u32(at - start) + 1
+}

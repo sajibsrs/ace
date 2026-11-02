@@ -13,8 +13,11 @@ The extension currently provides:
 - theme-compatible TextMate syntax scopes
 - comment and bracket configuration
 - automatic closing pairs and block indentation
+- the document outline (Outline view, breadcrumbs, **Go to Symbol in
+  Editor**) and go to definition (Cmd+click, F12) from `ace-lsp`
+  (`docs/lsp.md` in the repository)
 
-It does not yet provide completion, diagnostics, formatting, navigation, or a language server.
+It does not yet provide completion, diagnostics, formatting, or hover.
 
 ## Maintenance
 
@@ -71,4 +74,11 @@ them apart needs the declaration context a TextMate grammar does not track.
 
 An Extension Development Host opens with `samples/showcase.ace`; `samples/ace.pkg` shows manifest highlighting. Changes to the grammar can be loaded there with **Developer: Reload Window**.
 
-No dependencies or build step are required.
+The outline comes from `ace-lsp`, which the packaged extension bundles in
+`bin/`: `npx @vscode/vsce package` builds it with `../../ace` and copies `std/`
+beside it first, so build
+the compiler before packaging. When running from source (F5), build it with
+`mkdir -p editors/vscode/bin && ./ace -o editors/vscode/bin/ace-lsp lsp/main.ace`
+and link `std/` beside it.
+`ace.lsp.path` overrides the bundled server. A server that fails to start is
+logged in the **Ace Language Server** output channel; highlighting still works.

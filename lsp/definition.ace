@@ -1,0 +1,188 @@
+/* Go to definition: checks the program holding a file with the selfhost
+ * loader and sema, then follows the name under the cursor to the symbol it
+ * resolved to and that symbol's declaration.
+ */
+
+import mem
+import sys
+
+import module: "../selfhost/module.ace"
+import package: "../selfhost/package.ace"
+import parser: "../selfhost/parser.ace"
+import path: "../selfhost/path.ace"
+import sema: "../selfhost/sema.ace"
+
+Node: type = parser.Node
+
+TARGET: const string = "darwin-arm64"
+
+/* A declaration's place: its canonical file, 1-based line and byte column,
+ * and its name's length in bytes. `file` is a string of the caller's pool.
+ */
+pub Location: struct {
+    pub file: string,
+    pub line: u32,
+    pub col: u32,
+    pub len: u32,
+}
+
+/* The declaration of the name at 1-based `line` and byte `col` of the file
+ * at `file_path`, whose text on disk is `src`; false when there is none or
+ * the program cannot be loaded. The result's strings live in `pool`.
+ */
+pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32): (Location, bool) {
+    none: Location = Location { file = "", line = 0, col = 0, len = 0 }
+    canon: string, exists: bool = path.canonical(pool, file_path)
+    if !exists { return none, false }
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return none, false }
+    g: package.Graph = package.Graph.init(TARGET, l.std_dir)
+    defer g.wipe()
+    resolved: bool = false
+    dir: string, in_package: bool = package_root(pool, path.dir(canon))
+    if in_package {
+        root: usize, ok: bool = g.resolve(dir)
+        if !ok { return none, false }
+        resolved = l.resolve_in(g, root, canon)
+    } else {
+        resolved = l.resolve(canon)
+    }
+    if !resolved { return none, false }
+    s: sema.Sema = sema.Sema.new(l)
+    defer s.wipe()
+    // Every stage `ace --check` runs; a name resolves even past an error.
+    s.enter()
+    s.complete()
+    s.promoted_collisions()
+    s.signatures()
+    s.check_bodies()
+
+    mods: []module.Module = l.mods.view()
+    mi: usize = 0
+    for i: usize in 0..mods.len {
+        if mem.equal(mods[i].canon, canon) { mi = i }
+    }
+    // The innermost name under the cursor, then what it resolved to.
+    best: u32 = 0
+    best_len: u32 = 0
+    for id: u32 in 1..u32(mods[0].parser.nnode) {
+        n: Node = s.node(id)
+        if n.line != line || (n.flags & parser.F_TEXT) == 0 { continue }
+        name: string = source_name(n.text)
+        len: u32 = u32(name.len)
+        if len == 0 || l.module_of(id) != mi { continue }
+        at: u32 = name_col(src, n.line, n.col, name)
+        if col < at || col >= at + len { continue }
+        if best == 0 || len < best_len {
+            best = id
+            best_len = len
+        }
+    }
+    if best == 0 { return none, false }
+    decl: u32 = target(&s, best, u32(mods[0].parser.nnode))
+    if decl == 0 {
+        // An import's name: the start of the module it binds.
+        b: Node = s.node(best)
+        for bind: module.Binding in mods[mi].binds.view() {
+            if (b.kind == parser.Kind.ident || b.kind == parser.Kind.named) && mem.equal(bind.name, b.text) {
+                return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0 }, true
+            }
+        }
+        return none, false
+    }
+    d: Node = s.node(decl)
+    return Location { file = pool.copy(mods[l.module_of(decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len) }, true
+}
+
+/* The declaration node `n` names, or 0: its symbol's, the function a call
+ * through it resolved to, or the type it spells.
+ */
+target(s: *sema.Sema, n: u32, count: u32): u32 {
+    sym: u32 = s.node_sym(n)
+    if sym == 0 {
+        // A callee's overload is resolved on its call node.
+        for id: u32 in 1..count {
+            c: Node = s.node(id)
+            if c.kind == parser.Kind.call && c.a == n { sym = s.node_sym(id) }
+        }
+    }
+    if sym != 0 { return s.sym(sym).decl }
+    x: Node = s.node(n)
+    if x.kind == parser.Kind.named || x.kind == parser.Kind.ident {
+        sym = s.type_named(x.text)
+        if sym != 0 { return s.sym(sym).decl }
+    }
+    if x.kind == parser.Kind.selector && x.a != 0 { return member(s, x.a, source_name(x.text)) }
+    t: u32 = s.node_ty(n)
+    if t == 0 { return 0 }
+    ty: sema.SType = s.ty(t)
+    // An ident spells a type only when it is that type's name.
+    if x.kind == parser.Kind.ident && !mem.equal(source_name(ty.name), source_name(x.text)) { return 0 }
+    if x.kind != parser.Kind.named && x.kind != parser.Kind.ident { return 0 }
+    return ty.decl
+}
+
+/* The member `name` of the type of expression or type name `base`: a struct
+ * or union field, an enum member, or an error entry. 0 when there is none.
+ */
+member(s: *sema.Sema, base: u32, name: string): u32 {
+    owner: u32 = 0
+    t: u32 = s.node_ty(base)
+    for t != 0 && s.ty(t).kind == sema.TypeKind.ptr { t = s.ty(t).base }
+    if t != 0 { owner = s.ty(t).decl }
+    b: Node = s.node(base)
+    if owner == 0 && (b.flags & parser.F_TEXT) != 0 {
+        sym: u32 = s.type_named(b.text) // `Enum.member`: the base names a type
+        if sym != 0 {
+            named: u32 = s.sym(sym).ty // through an alias to the type it names
+            owner = named != 0 ? s.ty(named).decl : s.sym(sym).decl
+        }
+    }
+    if owner == 0 { return 0 }
+    o: Node = s.node(owner)
+    for k: u32 in 0..o.nkids {
+        kid: u32 = s.kid(owner, k)
+        if mem.equal(s.node(kid).text, name) { return kid }
+    }
+    return 0
+}
+
+/* Where `name` starts on `line` at or after byte `col`: a resolved
+ * `mod.Name` sits at `mod`, its name after the dot.
+ */
+name_col(src: string, line: u32, col: u32, name: string): u32 {
+    at: usize = 0
+    for l: u32 = 1; l < line && at < src.len; {
+        if src[at] == '\n' { l += 1 }
+        at += 1
+    }
+    start: usize = at
+    i: usize = at + usize(col - 1)
+    for i + name.len <= src.len && src[i] != '\n' {
+        if mem.equal(src[i..i + name.len], name) { return u32(i - start) + 1 }
+        i += 1
+    }
+    return col
+}
+
+/* The name as written: a resolved `mod.name` reads `mod$name`. */
+source_name(text: string): string {
+    at: usize = text.len
+    for at > 0 && text[at - 1] != '$' { at -= 1 }
+    return text[at..]
+}
+
+/* The nearest directory from `start` upward holding an ace.pkg, as `ace pkg`
+ * finds it.
+ */
+package_root(pool: *path.Pool, start: string): (string, bool) {
+    dir: string = start
+    for {
+        info: sys.FileInfo, err: Error = sys.stat(pool.join([dir, "/ace.pkg"]))
+        if err == null && info.file_type == sys.FileType.regular { return dir, true }
+        if mem.equal(dir, "/") || dir.len == 0 { return "", false }
+        dir = path.dir(dir)
+    }
+    return "", false
+}

@@ -1172,6 +1172,13 @@ Sema.lookup_type(self, name: string): u32 {
     return self.resolved(s)
 }
 
+/* The top-level type symbol of merged-tree name `name` (`mod$Name` from an
+ * import), unresolved; 0 when there is none. For tools reading a checked tree.
+ */
+pub Sema.type_named(self, name: string): u32 {
+    return self.files.find(true, name)
+}
+
 Sema.lookup_val(self, name: string): u32 {
     l: u32 = self.find_local(name, 0)
     if l != 0 { return l }
