@@ -33,15 +33,15 @@ main(): int {
 
 | | C | C++ | Rust | **Ace** |
 |---|---|---|---|---|
-| Undefined behavior | everywhere | everywhere | only in `unsafe` | **none: an operation works, traps, or does exactly what the machine does** |
-| Memory | manual | RAII, hidden destructors | ownership and borrow checker | **manual, with `defer` and debug-build checks** |
-| Errors | return codes, `errno` | exceptions | `Result` and `?` | **plain values, handled where they occur** |
-| Hidden costs | implicit conversions | copies, constructors, exceptions | `Drop`, implicit monomorphization | **none: no implicit conversions, copies or allocations** |
-| Generics | macros | templates | traits | **explicit: `Array[int]`** |
-| Polymorphism | hand-made function-pointer tables | inheritance, `virtual` | traits, `dyn` | **contracts: explicit vtable values** |
-| Code organization | headers, preprocessor | headers, preprocessor | crates | **modules; no headers, any declaration order** |
-| Toolchain | compiler, build system, package manager: pick each | same as C | `cargo`, LLVM | **one binary: compiler, packages, tests, no LLVM** |
-| Learning curve | small | huge | steep | **small** |
+| Undefined behavior | everywhere | everywhere | only in `unsafe` | none: an operation works, traps, or does exactly what the machine does |
+| Memory | manual | RAII, hidden destructors | ownership and borrow checker | manual, with `defer` and debug-build checks |
+| Errors | return codes, `errno` | exceptions | `Result` and `?` | plain values, handled where they occur |
+| Hidden costs | implicit conversions | copies, constructors, exceptions | `Drop`, implicit monomorphization | none: no implicit conversions, copies or allocations |
+| Generics | macros | templates | traits | explicit: `Array[int]` |
+| Polymorphism | hand-made function-pointer tables | inheritance, `virtual` | traits, `dyn` | contracts: explicit vtable values |
+| Code organization | headers, preprocessor | headers, preprocessor | crates | modules; no headers, any declaration order |
+| Toolchain | compiler, build system, package manager: pick each | same as C | `cargo`, LLVM | one binary: compiler, packages, tests, no LLVM |
+| Learning curve | small | huge | steep | small |
 
 ## Speed
 
