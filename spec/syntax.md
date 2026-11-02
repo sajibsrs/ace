@@ -76,7 +76,7 @@
     Unknown and duplicate fields remain errors, and there is no positional,
     spread, or update literal. Each default is independently checked against
     its declared field type and may use only the existing constant-expression
-    surface; it cannot call a function or refer to `self` or another instance
+    surface, `blank(T)` included; it cannot call a function or refer to `self` or another instance
     field. Defaults apply only when constructing a struct literal: they do not
     initialize bare locals, globals, allocations, arrays, or canonical-zero
     values and do not affect layout or ABI. Generic defaults neither infer type

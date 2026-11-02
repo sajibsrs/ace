@@ -1874,6 +1874,7 @@ Sema.compile_time_expr(self, e: u32): bool {
         Kind.call {
             if self.node_sym(e) != 0 { return false } // an ordinary function call
             if n.a != 0 && self.node(n.a).kind == Kind.ident && mem.equal(self.node(n.a).text, "typeid") && self.is_prim(self.node_ty(e), P_TYPEID) { return true }
+            if n.a != 0 && self.node(n.a).kind == Kind.ident && self.node_sym(n.a) == 0 && mem.equal(self.node(n.a).text, "blank") { return true } // its argument is a type
             for i: u32 in 0..n.nkids {
                 if !self.compile_time_expr(self.kid(e, i)) { return false }
             }

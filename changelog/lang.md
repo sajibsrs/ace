@@ -1,5 +1,10 @@
 # Language
 
+- `blank(T)` is a compile-time expression, so it serves as a field default
+  (`b: fmt.Buffer = blank(fmt.Buffer)`) and a global initializer:
+  `compile_time_expr` accepts it without checking its type argument, and
+  `eval_const` writes the type's zero bytes. C and selfhost.
+
 - Definite initialization no longer tracks arrays, local or field: an array is
   raw storage, readable from its declaration, as heap memory is, and zeros are
   explicit. `init_state_full` counts an array as full and `init_path` stops at

@@ -1,6 +1,7 @@
 /* blank(T) is the canonical zero value of any type: the all-bits-zero
  * representation of scalars, floats, strings, slices, arrays, structs, enums,
- * distinct types, pointers, and Error, inside and outside generic bodies.
+ * distinct types, pointers, and Error, inside and outside generic bodies. It is
+ * a compile-time expression: a field default and a global initializer.
  */
 
 // expect-exit: 0
@@ -8,6 +9,10 @@
 P: struct { a: int, b: f64, c: string }
 Color: enum { red, green }
 Id: distinct u32
+Holder: struct { n: int = 3, p: P = blank(P), id: Id = blank(Id) }
+
+g: P = blank(P)
+h: Holder = Holder {}
 
 zero_of[T](): T {
     return blank(T)
@@ -33,5 +38,8 @@ main(): int {
     if sl.len != 0 { r += 1024 }
     arr: [4]int = blank([4]int)
     if arr[3] != 0 { r += 2048 }
+    d: Holder = Holder {}
+    if d.n != 3 || d.p.a != 0 || d.p.c.len != 0 || d.id != Id(0) { r += 4096 }
+    if g.a != 0 || g.b != 0.0 || h.n != 3 || h.p.c.len != 0 { r += 8192 }
     return r
 }

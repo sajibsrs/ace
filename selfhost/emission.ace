@@ -672,6 +672,10 @@ Em.eval_const(self, value: u32, ty: u32, out: *array.Array[u8], rels: *array.Arr
                 put_u(out, self.s.node_ival(v), 8)
                 return true
             }
+            if callee != 0 && self.s.node(callee).kind == Kind.ident && self.s.node_sym(v) == 0 && self.s.node_sym(callee) == 0 && mem.equal(self.s.node(callee).text, "blank") {
+                pad(out, out.len, usize(x.size)) // the zero of its type
+                return true
+            }
             // A constructor-shaped cast sema resolved against a type: folding
             // the argument at the checked target matches the runtime cast,
             // within one family.

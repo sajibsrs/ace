@@ -1151,6 +1151,7 @@ static int compile_time_expr(Node* e) {
     case N_CALL:
         if (e->sym) return 0; // an ordinary function call
         if (e->a && e->a->kind == N_IDENT && e->a->len == 6 && memcmp(e->a->str, "typeid", 6) == 0 && e->ival) return 1;
+        if (e->a && e->a->kind == N_IDENT && !e->a->sym && e->a->len == 5 && memcmp(e->a->str, "blank", 5) == 0) return 1; // its argument is a type
         for (int i = 0; i < e->nkids; i++) if (!compile_time_expr(e->kids[i])) return 0;
         return 1; // type cast, layout/type builtin, or union construction
     default:

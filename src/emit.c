@@ -1019,6 +1019,10 @@ static int eval_const(Em* e, Node* v, SType* t, Buf* out, ConstRels* rels) {
             put_u(out, v->ival, 8);
             return 1;
         }
+        if (v->a && v->a->kind == N_IDENT && !v->sym && !v->a->sym && v->a->len == 5 && memcmp(v->a->str, "blank", 5) == 0) {
+            for (uint32_t i = 0; i < ty_size(t); i++) buf_put8(out, 0); // the zero of its type
+            return 1;
+        }
         // Constructor-shaped cast sema resolved against a type (no callee
         // function symbol): the runtime cast emits only a width adjustment
         // (gen_cast), so folding the argument at the checked target is

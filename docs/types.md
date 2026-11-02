@@ -366,7 +366,9 @@ parameter where `null` and literals cannot: `0` for `int`, `0.0` for floats,
 `false` for `bool`, and an all-zero struct, array, slice, or string. It takes one
 type in the full type grammar and does no work beyond zero-filling. It is a
 filler, not a marker of absence, so a function that has nothing to return
-pairs it with an `Error`:
+pairs it with an `Error`. It is a compile-time value, so it serves as a field
+default or global initializer, including for a type whose fields have no
+defaults, as `scratch: fmt.Buffer = blank(fmt.Buffer)` does:
 
 ```ace
 pop(): (T, Error) {
