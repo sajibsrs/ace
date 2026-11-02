@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 224" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<text x="0" y="20" font-size="18" font-weight="600" fill="#888">Time to compile 20,000 functions — shorter is faster</text>
+<text x="110" y="64.0" font-size="13" fill="#888" text-anchor="end">Ace --debug</text>
+<rect x="120" y="44" width="13.4" height="30" rx="2" fill="#cc4152"/>
+<text x="141.4" y="64.0" font-size="13" font-weight="600" fill="#cc4152">0.58 s</text>
+<text x="110" y="108.0" font-size="13" fill="#888" text-anchor="end">Ace --release</text>
+<rect x="120" y="88" width="15.9" height="30" rx="2" fill="#cc4152"/>
+<text x="143.9" y="108.0" font-size="13" font-weight="600" fill="#cc4152">0.69 s</text>
+<text x="110" y="152.0" font-size="13" fill="#888" text-anchor="end">cc -O0</text>
+<rect x="120" y="132" width="83.2" height="30" rx="2" fill="#8b8f98"/>
+<text x="211.2" y="152.0" font-size="13" font-weight="600" fill="#8b8f98">3.6 s</text>
+<text x="110" y="196.0" font-size="13" fill="#888" text-anchor="end">cc -O2</text>
+<rect x="120" y="176" width="710.0" height="30" rx="2" fill="#8b8f98"/>
+<text x="838.0" y="196.0" font-size="13" font-weight="600" fill="#8b8f98">30.9 s</text>
+</svg>
