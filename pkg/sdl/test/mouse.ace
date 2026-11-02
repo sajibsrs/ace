@@ -1,0 +1,82 @@
+/* Headless round trip: a mouse-button, a mouse-motion and a mouse-wheel event
+ * are pushed onto SDL's queue and polled back, proving SDL and Ace agree on
+ * their layouts.
+ */
+
+import test
+import sdl: "../mod.ace"
+
+extern "c" {
+    push_event(event: *sdl.Event): bool as "SDL_PushEvent"
+}
+
+pub round_trip(t: *test.T) {
+    if !sdl.init(sdl.InitFlags { events = 1 }) {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    defer sdl.quit()
+
+    click: sdl.Event
+    click.padding = [0 : 128]
+    click.button.type = sdl.EventType.mouse_button_down
+    click.button.window_id = 7
+    click.button.button = sdl.MouseButton.right
+    click.button.down = true
+    click.button.clicks = 2
+    click.button.x = 12.5
+    click.button.y = 40.0
+    t.equal(push_event(&click), true, @file, @line)
+
+    move: sdl.Event
+    move.padding = [0 : 128]
+    move.motion.type = sdl.EventType.mouse_motion
+    move.motion.window_id = 7
+    move.motion.state = sdl.MouseButtons { left = 1, right = 1 }
+    move.motion.x = 3.0
+    move.motion.y = 4.0
+    move.motion.xrel = -1.5
+    move.motion.yrel = 2.0
+    t.equal(push_event(&move), true, @file, @line)
+
+    roll: sdl.Event
+    roll.padding = [0 : 128]
+    roll.wheel.type = sdl.EventType.mouse_wheel
+    roll.wheel.window_id = 7
+    roll.wheel.y = -2.0
+    roll.wheel.mouse_x = 9.0
+    roll.wheel.mouse_y = 11.0
+    roll.wheel.integer_y = -2
+    t.equal(push_event(&roll), true, @file, @line)
+
+    seen: int = 0
+    got: sdl.Event
+    for got.poll() {
+        b: sdl.MouseButtonEvent, is_button: bool = got.mouse_button()
+        m: sdl.MouseMotionEvent, is_motion: bool = got.mouse_motion()
+        w: sdl.MouseWheelEvent, is_wheel: bool = got.mouse_wheel()
+        if (is_button && is_motion) || (is_wheel && (is_button || is_motion)) {
+            t.fail("event matches two kinds", @file, @line)
+        }
+        if is_button {
+            test.equal[sdl.MouseButton](t, b.button, sdl.MouseButton.right, @file, @line)
+            t.equal(b.down, true, @file, @line)
+            t.equal(uint(b.clicks), 2, @file, @line)
+            t.equal(b.x == 12.5 && b.y == 40.0, true, @file, @line)
+            t.equal(uint(b.window_id), 7, @file, @line)
+            seen += 1
+        } else if is_motion {
+            held: sdl.MouseButtons = m.state
+            t.equal(uint(held.left), 1, @file, @line)
+            t.equal(uint(held.middle), 0, @file, @line)
+            t.equal(uint(held.right), 1, @file, @line)
+            t.equal(m.x == 3.0 && m.y == 4.0 && m.xrel == -1.5 && m.yrel == 2.0, true, @file, @line)
+            seen += 1
+        } else if is_wheel {
+            t.equal(w.y == -2.0 && w.mouse_x == 9.0 && w.mouse_y == 11.0, true, @file, @line)
+            t.equal(int(w.integer_y), -2, @file, @line)
+            seen += 1
+        }
+    }
+    t.equal(seen, 3, @file, @line)
+}

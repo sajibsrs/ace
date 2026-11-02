@@ -1,0 +1,47 @@
+import fmt
+import mem
+import test
+import json: "../mod.ace"
+
+/* Parses `text`, expecting a failure whose context is `want`. */
+check(t: *test.T, text: string, want: string, file: string, line: int) {
+    doc: json.Json = json.Json.new()
+    defer doc.wipe()
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    err: Error = doc.parse(text, &diag)
+
+    if err == null {
+        t.fail("parse succeeded", file, line)
+        return
+    }
+    t.equal(diag.text(), want, file, line)
+}
+
+pub nesting(t: *test.T) {
+    check(t, "{\"items\": [1, 2,\n  {\"a\": tru}]}", "invalid literal at 2:9\nin key \"a\"\nin array element 2\nin key \"items\"\n", @file, @line)
+    check(t, "{\"items\": [1 2]}", "expected ',' or ']' at 1:14\nin key \"items\"\n", @file, @line)
+    check(t, "[\"\\q\"]", "invalid string escape at 1:3\nin array element 0\n", @file, @line)
+    check(t, "[\n  \"open", "unterminated string at 2:3\nin array element 0\n", @file, @line)
+}
+
+pub top_level(t: *test.T) {
+    check(t, "{\"a\" 1}", "expected ':' at 1:6\n", @file, @line)
+    check(t, "1 2", "expected end of input at 1:3\n", @file, @line)
+    check(t, "{", "expected a string key at 1:2\n", @file, @line)
+}
+
+/* A diagnostic buffer too small for the message keeps its prefix and counts
+ * the rest as dropped.
+ */
+pub truncated(t: *test.T) {
+    small: [12]u8
+    diag: fmt.Buffer = fmt.Buffer.init(small[..])
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("[[[x]]]", &diag)
+
+    t.equal(err == json.ParseErr.unexpected_token, true, @file, @line)
+    t.equal(diag.text(), "expected a v", @file, @line)
+    t.equal(diag.dropped() != 0, true, @file, @line)
+}

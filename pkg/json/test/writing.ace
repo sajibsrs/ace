@@ -1,0 +1,229 @@
+import test
+import json: "../mod.ace"
+
+/* Checks a finished formatter's result against `want`. */
+same(t: *test.T, text: string, err: Error, want: string, file: string, line: int) {
+    if err != null {
+        t.fail("format failed", file, line)
+        return
+    }
+    t.equal(text, want, file, line)
+}
+
+pub fields(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    count: usize = 128
+    f.object()
+    f.field("level", "info")
+    f.field("status", 200)
+    f.field("delta", 0 - 3)
+    f.field("size", uint(7))
+    f.field("len", count)
+    f.field("ratio", 0.5)
+    f.field("ok", true)
+    f.key("parent")
+    f.none()
+    f.end()
+    text: string, err: Error = f.finish()
+    same(t, text, err, "{\"level\":\"info\",\"status\":200,\"delta\":-3,\"size\":7,\"len\":128,\"ratio\":0.5,\"ok\":true,\"parent\":null}", @file, @line)
+}
+
+pub nesting(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    f.object()
+    f.key("tags")
+    f.array()
+    f.value("a")
+    f.value("b")
+    f.array()
+    f.end()
+    f.object()
+    f.end()
+    f.end()
+    f.field("n", 1)
+    f.end()
+    text: string, err: Error = f.finish()
+    same(t, text, err, "{\"tags\":[\"a\",\"b\",[],{}],\"n\":1}", @file, @line)
+}
+
+pub scalar_root(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    f.value(1.0e21)
+    text: string, err: Error = f.finish()
+    same(t, text, err, "1e21", @file, @line)
+}
+
+/* A parsed tree written back through the formatter reproduces its text. */
+pub tree(t: *test.T) {
+    text: string = "{\"a\":[1,2.5,true,null],\"b\":{\"c\":\"d\"},\"e\":[]}"
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    root: json.Value, perr: Error = p.parse(text)
+    if perr != null {
+        t.fail("parse failed", @file, @line)
+        return
+    }
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    f.value(root)
+    out: string, err: Error = f.finish()
+    same(t, out, err, text, @file, @line)
+}
+
+pub escapes(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    f.value("q\"b\\n\nt\tc\x01é")
+    text: string, err: Error = f.finish()
+    same(t, text, err, "\"q\\\"b\\\\n\\nt\\tc\\u0001é\"", @file, @line)
+}
+
+pub failures(t: *test.T) {
+    nan: f64 = 0.0 / 0.0
+    err: Error
+    text: string
+
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    f.value(nan)
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.number, true, @file, @line)
+
+    f.reset()
+    f.object()
+    f.value(1)
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    f.array()
+    f.key("k")
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    f.value(1)
+    f.value(2)
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    f.array()
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    f.end()
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    f.object()
+    f.key("k")
+    f.end()
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+
+    f.reset()
+    for 0 .. 513 { f.array() }
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.depth, true, @file, @line)
+
+    /* The first error sticks: a later structure failure does not replace it. */
+    f.reset()
+    f.value(nan)
+    f.value("again")
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.number, true, @file, @line)
+}
+
+/* Output far past the first allocation, checked by parsing it back. */
+pub growth(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    f.array()
+
+    for i: int in 0 .. 5000 {
+        f.object()
+        f.field("id", i)
+        f.field("name", "record")
+        f.end()
+    }
+    f.end()
+    text: string, err: Error = f.finish()
+    if err != null || text.len < 100000 {
+        t.fail("short or failed output", @file, @line)
+        return
+    }
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    root: json.Value, perr: Error = p.parse(text)
+    t.equal(perr == null, true, @file, @line)
+
+    switch root {
+        json.Value.array(items: []json.Value) {
+            if !t.equal(items.len, 5000, @file, @line) { return }
+
+            switch items[4999] {
+                json.Value.object(pairs: []json.Pair) {
+                    switch pairs[0].value {
+                        json.Value.number(n: f64) { t.equal(n == 4999.0, true, @file, @line) }
+                        default { t.fail("id: not a number", @file, @line) }
+                    }
+                }
+                default { t.fail("items[4999]: not an object", @file, @line) }
+            }
+        }
+        default { t.fail("root: not an array", @file, @line) }
+    }
+}
+
+/* One formatter writes many documents in turn: each `reset` keeps the buffer,
+ * and a second document without one is rejected.
+ */
+pub reuse(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    text: string
+    err: Error
+    want: [3]string = ["{\"n\":0}", "{\"n\":1}", "{\"n\":2}"]
+
+    for i: int in 0 .. 3 {
+        f.object()
+        f.field("n", i)
+        f.end()
+        text, err = f.finish()
+        same(t, text, err, want[i], @file, @line)
+        f.reset()
+    }
+    f.value(1)
+    f.value(2)
+    text, err = f.finish()
+    t.equal(err == json.FormatErr.structure, true, @file, @line)
+}
+
+/* Runtime-shaped data: the number of records and their values are computed. */
+pub runtime(t: *test.T) {
+    f: json.Formatter = json.Formatter.new()
+    defer f.wipe()
+    count: int = 4
+    f.array()
+
+    for i: int in 0 .. count {
+        f.object()
+        f.field("id", i)
+        f.field("square", i * i)
+        f.field("even", i % 2 == 0)
+        f.end()
+    }
+    f.end()
+    text: string, err: Error = f.finish()
+    same(t, text, err, "[{\"id\":0,\"square\":0,\"even\":true},{\"id\":1,\"square\":1,\"even\":false},{\"id\":2,\"square\":4,\"even\":true},{\"id\":3,\"square\":9,\"even\":false}]", @file, @line)
+}

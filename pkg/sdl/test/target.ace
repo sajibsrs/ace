@@ -1,0 +1,61 @@
+/* Headless draw: a white half drawn into a texture is added onto the window at
+ * half strength and read back, proving Texture targets, BLEND_ADD and
+ * Texture.alpha.
+ */
+
+import test
+import sdl: "../mod.ace"
+import screen: "inc/screen.ace"
+
+SIZE: const i32 = 16
+
+pub blend_add(t: *test.T) {
+    if !t.equal(screen.headless(true), true, @file, @line) { return }
+    if !sdl.init(sdl.InitFlags { video = 1 }) {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    defer sdl.quit()
+    window: sdl.Window = sdl.Window.new("target", SIZE, SIZE, sdl.WindowFlags {})
+    defer window.wipe()
+    if !window.ok() {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    renderer: sdl.Renderer = sdl.Renderer.new(window)
+    defer renderer.wipe()
+    if !t.equal(renderer.ok(), true, @file, @line) { return }
+
+    texture: sdl.Texture = sdl.Texture.new(renderer, SIZE, SIZE)
+    defer texture.wipe()
+    if !texture.ok() {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    white: sdl.Color = sdl.Color.hex(0xFFFFFF)
+    half: [3]sdl.Vertex = [
+        sdl.Vertex { position = sdl.Point { x = 0.0, y = 0.0 }, color = white },
+        sdl.Vertex { position = sdl.Point { x = 16.0, y = 0.0 }, color = white },
+        sdl.Vertex { position = sdl.Point { x = 0.0, y = 16.0 }, color = white },
+    ]
+    t.equal(renderer.target(texture), true, @file, @line)
+    t.equal(renderer.color(sdl.Color {}), true, @file, @line)
+    t.equal(renderer.clear(), true, @file, @line)
+    t.equal(renderer.geometry(half[..], null), true, @file, @line)
+    t.equal(renderer.target(blank(sdl.Texture)), true, @file, @line)
+    t.equal(renderer.clear(), true, @file, @line)
+    t.equal(texture.blend(sdl.BLEND_ADD), true, @file, @line)
+    t.equal(texture.alpha(0.5), true, @file, @line)
+    t.equal(renderer.copy(texture), true, @file, @line)
+
+    surface: *screen.Surface = screen.pixels(renderer)
+    defer screen.release(surface)
+    if surface == null {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    /* Half of 255, give or take the renderer's rounding. */
+    shade: int = screen.red(surface, 2, 2)
+    t.equal(shade >= 120 && shade <= 135, true, @file, @line)
+    t.equal(screen.red(surface, 13, 13), 0, @file, @line)
+}

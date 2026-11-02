@@ -229,5 +229,6 @@ sdl.cursor(grab)
 
 ## Testing
 
-`pkg/sdl/tests/run.sh` runs under `make test-packages` and is skipped where
-the hinted directory holds no `libSDL3`.
+`pkg/sdl/test` runs under `ace pkg test` and `make test-packages`, headless on
+SDL's dummy video driver. It links the `libSDL3` the manifest's `[link]` path
+names, so a host without it fails to build the tests.

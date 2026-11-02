@@ -1,0 +1,147 @@
+import fmt
+import mem
+import test
+import regex: "../mod.ace"
+
+/* Parses `pattern` and compares its canonical text with `want`. */
+tree(t: *test.T, pattern: string, want: string, file: string, line: int) {
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern)
+    defer s.wipe()
+    if err != null {
+        t.fail(err.message, file, line)
+        return
+    }
+    buffer: [512]u8
+    n: usize, ok: bool = s.format(buffer[0..512])
+    t.equal(ok, true, file, line)
+    t.equal(string(buffer[0..n]), want, file, line)
+}
+
+/* Expects `pattern` to fail with `want`, its context starting with the error
+ * at byte offset `offset`.
+ */
+fails(t: *test.T, pattern: string, want: Error, offset: usize, file: string, line: int) {
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, &diag)
+    defer s.wipe()
+    if err == null {
+        t.fail("parse succeeded", file, line)
+        return
+    }
+    if err != want {
+        t.equal(err.message, want.message, file, line)
+        t.fail("wrong error", file, line)
+        return
+    }
+
+    head_storage: [64]u8
+    head: fmt.Buffer = fmt.Buffer.init(head_storage[..])
+    head.printf("%s at 1:%d\n", want.message, int(offset + 1))
+    text: string = diag.text()
+    n: usize = head.text().len
+    if text.len < n { n = text.len }
+    t.equal(text[0..n], head.text(), file, line)
+}
+
+/* Expects `pattern` to fail with exactly the context `want`. */
+explains(t: *test.T, pattern: string, want: string, file: string, line: int) {
+    storage: [256]u8
+    diag: fmt.Buffer = fmt.Buffer.init(storage[..])
+    s: regex.Syntax, err: Error = regex.Syntax.parse(pattern, &diag)
+    defer s.wipe()
+    t.equal(err != null, true, file, line)
+    t.equal(diag.text(), want, file, line)
+}
+
+pub structure(t: *test.T) {
+    tree(t, "", "emp{}", @file, @line)
+    tree(t, "a", "lit{a}", @file, @line)
+    tree(t, "abc", "cat{lit{a} lit{b} lit{c}}", @file, @line)
+    tree(t, "a|b|c", "alt{lit{a} lit{b} lit{c}}", @file, @line)
+    tree(t, "a|", "alt{lit{a} emp{}}", @file, @line)
+    tree(t, "ab|cd", "alt{cat{lit{a} lit{b}} cat{lit{c} lit{d}}}", @file, @line)
+    tree(t, "a(b|c)*?", "cat{lit{a} star?{cap1{alt{lit{b} lit{c}}}}}", @file, @line)
+    tree(t, "(?:ab)+", "plus{grp{cat{lit{a} lit{b}}}}", @file, @line)
+    tree(t, "(a)(b(c))", "cat{cap1{lit{a}} cap2{cat{lit{b} cap3{lit{c}}}}}", @file, @line)
+    tree(t, "()", "cap1{emp{}}", @file, @line)
+    tree(t, "^a.$", "cat{bol{} lit{a} dot{} eol{}}", @file, @line)
+    tree(t, "\\bx\\B", "cat{wb{} lit{x} nwb{}}", @file, @line)
+    tree(t, "a}]", "cat{lit{a} lit{\\x7D} lit{]}}", @file, @line)
+}
+
+pub repetition(t: *test.T) {
+    tree(t, "x??", "que?{lit{x}}", @file, @line)
+    tree(t, "a{3}", "rep{3 lit{a}}", @file, @line)
+    tree(t, "a{2,}", "rep{2, lit{a}}", @file, @line)
+    tree(t, "a{2,5}?", "rep?{2,5 lit{a}}", @file, @line)
+    tree(t, "a{0,}", "star{lit{a}}", @file, @line)
+    tree(t, "a{1,}", "plus{lit{a}}", @file, @line)
+    tree(t, "a{0,1}", "que{lit{a}}", @file, @line)
+    tree(t, "a{1000}", "rep{1000 lit{a}}", @file, @line)
+    tree(t, "ab*", "cat{lit{a} star{lit{b}}}", @file, @line)
+}
+
+pub classes(t: *test.T) {
+    tree(t, "[a-c_]", "cc{_ a-c}", @file, @line)
+    tree(t, "[-a]", "cc{\\x2D a}", @file, @line)
+    tree(t, "[a-]", "cc{\\x2D a}", @file, @line)
+    tree(t, "[^\\n]", "cc{\\x00-\\x09 \\x0B-\\xFF}", @file, @line)
+    tree(t, "\\d", "cc{0-9}", @file, @line)
+    tree(t, "\\D", "cc{\\x00-/ :-\\xFF}", @file, @line)
+    tree(t, "\\s", "cc{\\x09-\\x0A \\x0C-\\x0D \\x20}", @file, @line)
+    tree(t, "[\\w]", "cc{0-9 A-Z _ a-z}", @file, @line)
+    tree(t, "[\\]\\-x]", "cc{\\x2D ] x}", @file, @line)
+    tree(t, "[\\x00-\\x02]", "cc{\\x00-\\x02}", @file, @line)
+    tree(t, "\\x41\\.\\-", "cat{lit{A} lit{.} lit{\\x2D}}", @file, @line)
+}
+
+pub errors(t: *test.T) {
+    fails(t, "(ab", regex.ParseErr.missing_paren, 0, @file, @line)
+    fails(t, "a(b(c)", regex.ParseErr.missing_paren, 1, @file, @line)
+    fails(t, "ab)", regex.ParseErr.unexpected_paren, 2, @file, @line)
+    fails(t, "*a", regex.ParseErr.missing_operand, 0, @file, @line)
+    fails(t, "a**", regex.ParseErr.missing_operand, 2, @file, @line)
+    fails(t, "a|*", regex.ParseErr.missing_operand, 2, @file, @line)
+    fails(t, "(*)", regex.ParseErr.missing_operand, 1, @file, @line)
+    fails(t, "{2}", regex.ParseErr.missing_operand, 0, @file, @line)
+    fails(t, "(?i)a", regex.ParseErr.missing_operand, 1, @file, @line)
+    fails(t, "a{3,1}", regex.ParseErr.invalid_repeat, 1, @file, @line)
+    fails(t, "a{1001}", regex.ParseErr.invalid_repeat, 1, @file, @line)
+    fails(t, "a{,2}", regex.ParseErr.invalid_repeat, 1, @file, @line)
+    fails(t, "a{2", regex.ParseErr.invalid_repeat, 1, @file, @line)
+    fails(t, "[z-a]", regex.ParseErr.invalid_range, 1, @file, @line)
+    fails(t, "[a-\\d]", regex.ParseErr.invalid_range, 1, @file, @line)
+    fails(t, "[abc", regex.ParseErr.unterminated_class, 0, @file, @line)
+    fails(t, "[a\\]", regex.ParseErr.unterminated_class, 0, @file, @line)
+    fails(t, "\\q", regex.ParseErr.invalid_escape, 0, @file, @line)
+    fails(t, "a\\", regex.ParseErr.invalid_escape, 1, @file, @line)
+    fails(t, "\\x4", regex.ParseErr.invalid_escape, 0, @file, @line)
+    fails(t, "\\xZZ", regex.ParseErr.invalid_escape, 0, @file, @line)
+    fails(t, "[\\b]", regex.ParseErr.invalid_escape, 1, @file, @line)
+    fails(t, "\\1", regex.ParseErr.invalid_escape, 0, @file, @line)
+    explains(t, "a(b[c-\\q])", "invalid escape sequence at 1:7\nin class at 1:4\nin group at 1:2\n", @file, @line)
+    explains(t, "((a)(b{2,1}))", "invalid repetition count at 1:7\nin group at 1:5\nin group at 1:1\n", @file, @line)
+    explains(t, "x\n(a*?+)", "repetition operator has no operand at 2:5\nin group at 2:1\n", @file, @line)
+    explains(t, "(a", "missing closing parenthesis at 1:1\n", @file, @line)
+}
+
+/* 512 nested groups parse; the 513th is rejected at its own `(`. */
+pub depth(t: *test.T) {
+    storage: [1026]u8
+    text: []u8 = storage[0..1026]
+
+    for i: usize in 0 .. 512 {
+        text[i] = '('
+        text[1024 - 1 - i] = ')'
+    }
+    s: regex.Syntax, err: Error = regex.Syntax.parse(string(text[0..1024]))
+    s.wipe()
+    t.equal(err == null, true, @file, @line)
+
+    deep_storage: [513]u8
+    deep: []u8 = deep_storage[0..513]
+
+    for i: usize in 0 .. 513 { deep[i] = '(' }
+    fails(t, string(deep[0..513]), regex.ParseErr.depth, 512, @file, @line)
+}

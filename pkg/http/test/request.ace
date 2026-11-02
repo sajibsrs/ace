@@ -1,0 +1,226 @@
+import test
+import http: "../mod.ace"
+
+new_parser(): http.RequestParser {
+    return http.RequestParser {
+        input_offset = usize(0),
+        line_start = usize(0),
+        scan_offset = usize(0),
+        line_stop = usize(0),
+        line_next = usize(0),
+        line_ready = false,
+        header_count = usize(0),
+        body_count = usize(0),
+        content_length = usize(0),
+        chunk_remaining = usize(0),
+        method_start = usize(0),
+        method_count = usize(0),
+        target_start = usize(0),
+        target_count = usize(0),
+        phase = http.RequestPhase.request,
+        framing = http.RequestFraming.undecided,
+    }
+}
+
+new_response_parser(): http.ResponseParser {
+    return http.ResponseParser {
+        input_offset = usize(0),
+        line_start = usize(0),
+        scan_offset = usize(0),
+        line_stop = usize(0),
+        line_next = usize(0),
+        line_ready = false,
+        header_count = usize(0),
+        body_count = usize(0),
+        content_length = usize(0),
+        chunk_remaining = usize(0),
+        version_minor = u8(0),
+        status = u16(0),
+        reason_start = usize(0),
+        reason_count = usize(0),
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
+        informational_count = usize(0),
+    }
+}
+
+pub content_length(t: *test.T) {
+    headers: [4]http.Header
+    body: [16]u8 = [0 : 16]
+    parser: http.RequestParser = new_parser()
+    result: http.RequestResult = parser.parse(
+        "POST /submit HTTP/1.1\r\nContent-Length: 4\r\nX-Test: yes\r\n\r\ndata",
+        headers[..],
+        body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.complete(request: http.Request) {
+            t.equal(request.method, "POST", @file, @line)
+            t.equal(request.target, "/submit", @file, @line)
+            t.equal(request.headers.len, 2, @file, @line)
+            t.equal(request.body, "data", @file, @line)
+        }
+        default { t.fail("not complete", @file, @line) }
+    }
+}
+
+pub framing(t: *test.T) {
+    headers: [4]http.Header
+    body: [16]u8 = [0 : 16]
+    parser: http.RequestParser = new_parser()
+    result: http.RequestResult = parser.parse(
+        "POST / HTTP/1.1\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nx",
+        headers[..1],
+        body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.framing {}
+        default { t.fail("not a framing error", @file, @line) }
+    }
+
+    /* Out of header space for a chunked trailer, then parsed again with room. */
+    parser = new_parser()
+    result = parser.parse(
+        "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        headers[..0],
+        body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.capacity(capacity_type: http.RequestCapacity) {
+            test.equal[http.RequestCapacity](t, capacity_type, http.RequestCapacity.headers, @file, @line)
+        }
+        default { t.fail("not a capacity result", @file, @line) }
+    }
+    result = parser.parse(
+        "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        headers[..],
+        body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.complete(request: http.Request) {}
+        default { t.fail("not complete", @file, @line) }
+    }
+}
+
+pub chunked(t: *test.T) {
+    headers: [4]http.Header
+    body: [16]u8 = [0 : 16]
+    parser: http.RequestParser = new_parser()
+    result: http.RequestResult = parser.parse(
+        "POST /chunk HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n",
+        headers[..],
+        body[..],
+        false,
+    )
+    switch result {
+        http.RequestResult.complete(request: http.Request) { t.equal(request.body, "Wikipedia", @file, @line) }
+        default { t.fail("not complete", @file, @line) }
+    }
+}
+
+/* Fed one more byte at a time, the parser never moves backward and completes
+ * exactly at the last byte.
+ */
+pub request_bytes(t: *test.T) {
+    headers: [4]http.Header
+    body: [16]u8 = [0 : 16]
+    request_text: string = "PUT /byte HTTP/1.1\r\nContent-Length: 3\r\nX-A: b\r\n\r\none"
+    parser: http.RequestParser = new_parser()
+    previous_scan: usize = 0
+    previous_body: usize = 0
+
+    for occupied: usize in 1 .. request_text.len + 1 {
+        result: http.RequestResult = parser.parse(request_text[..occupied], headers[..], body[..], false)
+        if parser.scan_offset < previous_scan || parser.body_count < previous_body {
+            t.fail("moved backward", @file, @line)
+            return
+        }
+        previous_scan = parser.scan_offset
+        previous_body = parser.body_count
+
+        switch result {
+            http.RequestResult.progress(value: http.RequestProgress) {
+                if occupied == request_text.len { t.fail("incomplete at the last byte", @file, @line) }
+            }
+            http.RequestResult.complete(request: http.Request) {
+                t.equal(occupied, request_text.len, @file, @line)
+                t.equal(request.body, "one", @file, @line)
+            }
+            default {
+                t.fail("unexpected result", @file, @line)
+                return
+            }
+        }
+    }
+}
+
+pub response_bytes(t: *test.T) {
+    headers: [4]http.Header
+    body: [16]u8 = [0 : 16]
+    response_text: string = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nX-A: b\r\n\r\ntwo"
+    response_parser: http.ResponseParser = new_response_parser()
+    previous_scan: usize = 0
+    previous_body: usize = 0
+
+    for occupied: usize in 1 .. response_text.len + 1 {
+        response_result: http.ResponseResult = response_parser.parse(
+            response_text[..occupied],
+            headers[..],
+            body[..],
+            false,
+            false,
+        )
+        if response_parser.scan_offset < previous_scan || response_parser.body_count < previous_body {
+            t.fail("moved backward", @file, @line)
+            return
+        }
+        previous_scan = response_parser.scan_offset
+        previous_body = response_parser.body_count
+
+        switch response_result {
+            http.ResponseResult.progress(value: http.ResponseProgress) {
+                if occupied == response_text.len { t.fail("incomplete at the last byte", @file, @line) }
+            }
+            http.ResponseResult.complete(parsed: http.Response) {
+                t.equal(occupied, response_text.len, @file, @line)
+                t.equal(parsed.body, "two", @file, @line)
+            }
+            default {
+                t.fail("unexpected result", @file, @line)
+                return
+            }
+        }
+    }
+}
+
+pub response_format(t: *test.T) {
+    response_headers: [1]http.Header = [
+        http.Header {
+            name = "Content-Length",
+            value = "2",
+        },
+    ]
+    response: http.Response = http.Response {
+        version_minor = u8(1),
+        status = u16(200),
+        reason = "OK",
+        headers = response_headers[..],
+        body = "ok",
+    }
+    output: [64]u8 = [0 : 64]
+    count: usize, err: Error = response.format(output[..])
+    t.equal(err == null, true, @file, @line)
+    t.equal(string(output[..count]), "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok", @file, @line)
+
+    /* Too small: nothing is written and the storage is untouched. */
+    small: [4]u8 = [7 : 4]
+    count, err = response.format(small[..])
+    t.equal(count, 0, @file, @line)
+    t.equal(err != null, true, @file, @line)
+    t.equal(int(small[0]), 7, @file, @line)
+    t.equal(int(small[3]), 7, @file, @line)
+}

@@ -1,0 +1,43 @@
+/* SDL's dummy video driver and software renderer, read back pixel by pixel. */
+
+import sdl: "../../mod.ace"
+
+pub Surface: struct {}
+
+extern "c" {
+    set_hint(name: *u8, value: *u8): bool as "SDL_SetHint"
+    read_pixels(renderer: *u8, rect: *u8): *Surface as "SDL_RenderReadPixels"
+    read_pixel(surface: *Surface, x: i32, y: i32, r: *u8, g: *u8, b: *u8, a: *u8): bool as "SDL_ReadSurfacePixel"
+    destroy_surface(surface: *Surface) as "SDL_DestroySurface"
+}
+
+/* Selects the dummy video driver, and the software renderer when `software`. */
+pub headless(software: bool): bool {
+    // Hints are C strings, so these end in "\0" by hand.
+    video: string = "SDL_VIDEO_DRIVER\0"
+    dummy: string = "dummy\0"
+    render: string = "SDL_RENDER_DRIVER\0"
+    renderer: string = "software\0"
+    if !set_hint(&video[0], &dummy[0]) { return false }
+
+    return !software || set_hint(&render[0], &renderer[0])
+}
+
+/* The renderer's pixels, null on failure; release them with `release`. */
+pub pixels(renderer: sdl.Renderer): *Surface {
+    return read_pixels(*u8(renderer.handle), null)
+}
+
+pub release(surface: *Surface) {
+    destroy_surface(surface)
+}
+
+/* The red channel at (x, y), or -1 when it cannot be read. */
+pub red(surface: *Surface, x: i32, y: i32): int {
+    r: u8 = 0
+    g: u8 = 0
+    b: u8 = 0
+    a: u8 = 0
+    if !read_pixel(surface, x, y, &r, &g, &b, &a) { return -1 }
+    return int(r)
+}

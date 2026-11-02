@@ -307,5 +307,7 @@ second document without `reset` is a `structure` error. Errors come from the
 
 ## Tests
 
-`pkg/json/tests` holds the package's own behavioral cases and runs under
-`make test-packages`, not `make test`.
+`pkg/json/test` holds the package's own tests, run by `ace pkg test` from the
+package (the manifest's `test: test`) and by `make test-packages`, not
+`make test`. They import the package as `import json: "../mod.ace"`, since a
+package cannot import itself by name.

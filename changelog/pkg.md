@@ -98,3 +98,7 @@
   curl into `~/.ace/cache/<sha256>/`, verified on every use, only for
   the input actually linked. `framework:` becomes one comma list per section. A
   dependency with `[link]` sections but none for the target is a link error.
+- First-party package tests move from per-package `tests/run.sh` harnesses of
+  exit-code app cases to `std/test` files in each package's `test/`, run by
+  `ace pkg test`, as is `make test-packages` (#149). sdl no longer skips itself
+  without `libSDL3`; http's compile-only API case now also runs.

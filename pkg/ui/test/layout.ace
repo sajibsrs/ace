@@ -1,0 +1,132 @@
+import test
+import ui: "../mod.ace"
+import Keycode from sdl
+
+/* No window: drawing only fills the layer. */
+canvas: ui.Canvas
+
+pub cuts(t: *test.T) {
+    row: ui.Rect = ui.Rect { x = 10.0, y = 20.0, w = 100.0, h = 30.0 }
+    left: ui.Rect = row.cut_left(40.0)
+    t.equal(left.x == 10.0 && left.w == 40.0 && left.h == 30.0, true, @file, @line)
+    t.equal(row.x == 50.0 && row.w == 60.0, true, @file, @line)
+    top: ui.Rect = row.cut_top(10.0)
+    t.equal(top.y == 20.0 && top.h == 10.0, true, @file, @line)
+    t.equal(row.y == 30.0 && row.h == 20.0, true, @file, @line)
+    inner: ui.Rect = row.inset(ui.Insets.all(2.0))
+    t.equal(inner.x == 52.0 && inner.y == 32.0 && inner.w == 56.0 && inner.h == 16.0, true, @file, @line)
+    box: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }.square(4.0)
+    t.equal(box.x == 3.0 && box.y == 3.0 && box.w == 4.0, true, @file, @line)
+}
+
+/* A click is a press and a release on the same widget. */
+pub clicks(t: *test.T) {
+    ctx: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true } }
+    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
+    miss: ui.Rect = ui.Rect { x = 20.0, w = 10.0, h = 10.0 }
+    t.equal(ctx.track(1, hit).press, true, @file, @line)
+    t.equal(ctx.track(2, miss).press, false, @file, @line)
+    ctx.end()
+    t.equal(ctx.track(1, hit).held, true, @file, @line)
+    t.equal(ctx.track(1, hit).click, false, @file, @line)
+    ctx.mouse.released = true
+    t.equal(ctx.track(1, hit).click, true, @file, @line)
+    ctx.end()
+    t.equal(ctx.track(1, hit).held, false, @file, @line)
+    ctx.blocked = true
+    t.equal(ctx.track(1, hit).hover, false, @file, @line)
+}
+
+/* A key is consumed once, with exactly its modifiers, either side's. */
+pub keys(t: *test.T) {
+    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
+    io.keyboard.add(Keycode.s, 0x0400, false)
+    t.equal(io.keyboard.consume(Keycode.s, 0), false, @file, @line)
+    t.equal(io.keyboard.consume(Keycode.a, ui.MOD_GUI), false, @file, @line)
+    t.equal(io.keyboard.consume(Keycode.s, ui.MOD_GUI), true, @file, @line)
+    t.equal(io.keyboard.consume(Keycode.s, ui.MOD_GUI), false, @file, @line)
+    io.end()
+    t.equal(io.keyboard.count, 0, @file, @line)
+}
+
+/* A click focuses a field, which takes keys and allowed text ahead of
+ * shortcuts; a press elsewhere drops focus.
+ */
+pub text_field(t: *test.T) {
+    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
+    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
+    bytes: [4]u8 = [0 : 4]
+    field: ui.TextInput = ui.TextInput { buffer = bytes[..] }
+    look: ui.Style = ui.Style {}
+    io.keyboard.add("a")
+    io.mouse.pressed = true
+    res: ui.Response = io.text_field(3, hit, &field, "ab", look)
+    t.equal(int(io.focus), 3, @file, @line)
+    t.equal(res.changed, true, @file, @line)
+    t.equal(field.len, 1, @file, @line)
+    t.equal(field.caret, 1, @file, @line)
+    io.end()
+
+    io.keyboard.add(Keycode.left, 0, false)
+    io.keyboard.add("bZ")
+    res = io.text_field(3, hit, &field, "ab", look)
+    t.equal(string(bytes[..field.len]), "ba", @file, @line)
+    t.equal(field.caret, 1, @file, @line)
+    t.equal(io.keyboard.keys[0].used, true, @file, @line)
+    t.equal(io.keyboard.typed().len, 0, @file, @line)
+    io.end()
+
+    io.keyboard.add(Keycode.backspace, 0, false)
+    io.keyboard.add(Keycode.enter, 0, false)
+    res = io.text_field(3, hit, &field, "ab", look)
+    t.equal(res.submit, true, @file, @line)
+    t.equal(res.changed, true, @file, @line)
+    t.equal(string(bytes[..field.len]), "a", @file, @line)
+    t.equal(field.caret, 0, @file, @line)
+    t.equal(io.keyboard.consume(Keycode.enter, 0), false, @file, @line)
+    io.end()
+
+    /* A key read first stays with its reader. */
+    io.keyboard.add(Keycode.escape, 0, false)
+    t.equal(io.keyboard.consume(Keycode.escape, 0), true, @file, @line)
+    io.end()
+    io.mouse.x = 50.0
+    io.mouse.pressed = true
+    io.text_field(3, hit, &field, "", look)
+    t.equal(int(io.focus), 0, @file, @line)
+    io.end()
+
+    /* Unfocused, keys and text pass by. */
+    io.keyboard.add(Keycode.a, 0, false)
+    io.keyboard.add("a")
+    io.text_field(3, hit, &field, "", look)
+    t.equal(field.len, 1, @file, @line)
+    t.equal(io.keyboard.keys[0].used, false, @file, @line)
+    t.equal(io.keyboard.typed().len, 1, @file, @line)
+    io.end()
+}
+
+/* A list consumes the wheel only under the pointer and when overflowing. */
+pub scroll(t: *test.T) {
+    io: ui.Context = ui.Context { canvas = &canvas, mouse = ui.Mouse { x = 5.0, y = 5.0 } }
+    hit: ui.Rect = ui.Rect { w = 10.0, h = 10.0 }
+    look: ui.Style = ui.Style {}
+    pane: ui.Scroll = ui.Scroll { content = 100.0, step = 20.0 }
+    io.mouse.wheel = -2.0
+    t.equal(io.scroll_bar(hit, &pane, look).changed, true, @file, @line)
+    t.equal(pane.offset == 40.0 && io.mouse.wheel == 0.0, true, @file, @line)
+
+    io.mouse.wheel = -9.0
+    io.scroll_bar(hit, &pane, look)
+    t.equal(pane.offset == 90.0, true, @file, @line)
+
+    io.mouse.wheel = 1.0
+    pane.content = 5.0
+    io.scroll_bar(hit, &pane, look)
+    t.equal(pane.offset == 0.0 && io.mouse.wheel == 1.0, true, @file, @line)
+
+    pane.content = 100.0
+    io.mouse.x = 50.0
+    io.scroll_bar(hit, &pane, look)
+    t.equal(pane.offset == 0.0 && io.mouse.wheel == 1.0, true, @file, @line)
+}

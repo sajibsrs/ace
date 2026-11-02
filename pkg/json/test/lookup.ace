@@ -1,0 +1,38 @@
+import test
+import json: "../mod.ace"
+
+/* JSON Pointer steps, escapes, and every way a lookup misses. */
+pub lookup(t: *test.T) {
+    doc: json.Json = json.Json.new()
+    defer doc.wipe()
+    err: Error = doc.parse("{\"a\": {\"b/c\": [10, true, \"x\"], \"m~n\": 1, \"\": 2}, \"d\": 1, \"d\": 2}")
+    if err != null {
+        t.fail("parse failed", @file, @line)
+        return
+    }
+    t.equal(doc.number("/a/b~1c/0") == 10.0, true, @file, @line)
+    t.equal(doc.bool("/a/b~1c/1"), true, @file, @line)
+    t.equal(doc.string("/a/b~1c/2"), "x", @file, @line)
+    t.equal(doc.number("/a/m~0n") == 1.0, true, @file, @line)
+    t.equal(doc.number("/a/") == 2.0, true, @file, @line)
+    t.equal(doc.number("/d") == 1.0, true, @file, @line)
+
+    whole: json.Value, ok: bool = doc.get("")
+    t.equal(ok, true, @file, @line)
+
+    switch whole {
+        json.Value.object(pairs: []json.Pair) { t.equal(pairs.len, 3, @file, @line) }
+        default { t.fail("root: not an object", @file, @line) }
+    }
+
+    for miss: string in ["a", "/z", "/a/b~1c/3", "/a/b~1c/01", "/a/b~1c/-", "/d/x", "/a/m~2n", "/a/b~", "/a/b~1c/1x"] {
+        node: json.Value, found: bool = doc.get(miss)
+        if found { t.fail(miss, @file, @line) }
+    }
+    t.equal(doc.string("/d") == null, true, @file, @line)
+    t.equal(doc.number("/a/b~1c/2") == 0.0, true, @file, @line)
+    t.equal(doc.bool("/z"), false, @file, @line)
+
+    tree: json.Value, hit: bool = json.get(doc.root, "/a/b~1c/2")
+    t.equal(hit, true, @file, @line)
+}

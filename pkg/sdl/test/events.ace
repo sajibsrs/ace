@@ -1,0 +1,76 @@
+/* Headless round trip: a key event written through Event.keyboard is pushed
+ * onto SDL's queue and polled back, proving SDL and Ace agree on its layout.
+ */
+
+import test
+import sdl: "../mod.ace"
+
+extern "c" {
+    push_event(event: *sdl.Event): bool as "SDL_PushEvent"
+}
+
+SCANCODE_ESCAPE: const u32 = 41
+KMOD_LCTRL: const u16 = 0x0040
+
+pub keycodes(t: *test.T) {
+    t.equal(uint(sdl.Keycode.digit_0), 0x30, @file, @line)
+    t.equal(uint(sdl.Keycode.z), 0x7a, @file, @line)
+    test.equal[sdl.Keycode](t, sdl.Keycode('a'), sdl.Keycode.a, @file, @line)
+    t.equal(uint(sdl.Keycode.up), 0x4000_0052, @file, @line)
+    t.equal(uint(sdl.Keycode('/')), uint('/'), @file, @line)
+    t.equal(sdl.Keycode('/').name.len, 0, @file, @line)
+}
+
+pub accessors(t: *test.T) {
+    quit: sdl.Event
+    quit.padding = [0 : 128]
+    quit.type = sdl.EventType.quit
+    quit_key: sdl.KeyboardEvent, quit_is_key: bool = quit.key()
+    t.equal(quit_is_key, false, @file, @line)
+
+    typed: sdl.Event
+    typed.padding = [0 : 128]
+    typed.input.type = sdl.EventType.text_input
+    typed.input.text = &"ab"[0]
+    text: string, is_text: bool = typed.text_input()
+    t.equal(is_text, true, @file, @line)
+    t.equal(text, "ab", @file, @line)
+    _none: string, none_is_text: bool = quit.text_input()
+    t.equal(none_is_text, false, @file, @line)
+}
+
+pub key_round_trip(t: *test.T) {
+    if !sdl.init(sdl.InitFlags { events = 1 }) {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    defer sdl.quit()
+
+    sent: sdl.Event
+    sent.keyboard.type = sdl.EventType.key_down
+    sent.keyboard.reserved = 0
+    sent.keyboard.timestamp = 0
+    sent.keyboard.window_id = 7
+    sent.keyboard.which = 0
+    sent.keyboard.scancode = SCANCODE_ESCAPE
+    sent.keyboard.key = sdl.Keycode.escape
+    sent.keyboard.mod = KMOD_LCTRL
+    sent.keyboard.raw = 0
+    sent.keyboard.down = true
+    sent.keyboard.repeat = false
+    if !t.equal(push_event(&sent), true, @file, @line) { return }
+
+    got: sdl.Event
+    for got.poll() {
+        key: sdl.KeyboardEvent, is_key: bool = got.key()
+        if !is_key { continue }
+        test.equal[sdl.Keycode](t, key.key, sdl.Keycode.escape, @file, @line)
+        t.equal(uint(key.scancode), uint(SCANCODE_ESCAPE), @file, @line)
+        t.equal(uint(key.window_id), 7, @file, @line)
+        t.equal(uint(key.mod), uint(KMOD_LCTRL), @file, @line)
+        t.equal(key.down, true, @file, @line)
+        t.equal(key.repeat, false, @file, @line)
+        return
+    }
+    t.fail("no key event polled", @file, @line)
+}

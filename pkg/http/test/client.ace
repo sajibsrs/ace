@@ -1,0 +1,187 @@
+import net
+import test
+import http: "../mod.ace"
+
+pub context(t: *test.T) {
+    context: http.ClientContext = http.ClientContext.new()
+    t.equal(context.storage != null, true, @file, @line)
+
+    context.redirects = http.RedirectPolicy { limit = 4 }
+    context.wipe()
+    t.equal(context.storage == null, true, @file, @line)
+    t.equal(context.redirects.limit, 0, @file, @line)
+    context.wipe()
+}
+
+pub status(t: *test.T) {
+    t.equal(http.status(u16(200)), "OK", @file, @line)
+    t.equal(http.status(u16(209)), "", @file, @line)
+    t.equal(http.status(u16(226)), "IM Used", @file, @line)
+    t.equal(http.status(u16(301)), "Moved Permanently", @file, @line)
+    t.equal(http.status(u16(404)), "Not Found", @file, @line)
+    t.equal(http.status(u16(999)), "", @file, @line)
+}
+
+pub error_codes(t: *test.T) {
+    t.equal(http.UrlErr.invalid == http.UrlErr(1), true, @file, @line)
+    t.equal(http.FormatErr.capacity == http.FormatErr(1), true, @file, @line)
+    t.equal(http.FormatErr.method == http.FormatErr(2), true, @file, @line)
+    t.equal(http.FormatErr.target == http.FormatErr(3), true, @file, @line)
+    t.equal(http.FormatErr.header_name == http.FormatErr(4), true, @file, @line)
+    t.equal(http.FormatErr.header_value == http.FormatErr(5), true, @file, @line)
+    t.equal(http.FormatErr.version == http.FormatErr(6), true, @file, @line)
+    t.equal(http.FormatErr.status == http.FormatErr(7), true, @file, @line)
+    t.equal(http.FormatErr.reason == http.FormatErr(8), true, @file, @line)
+    t.equal(http.ClientErr.address == http.ClientErr(1), true, @file, @line)
+    t.equal(http.ClientErr.target_capacity == http.ClientErr(2), true, @file, @line)
+    t.equal(http.ClientErr.response == http.ClientErr(3), true, @file, @line)
+
+    allocation: Error = http.ClientErr.allocation
+    t.equal(int(allocation.code), 4, @file, @line)
+    t.equal(allocation.message, "memory allocation failed", @file, @line)
+}
+
+pub addresses(t: *test.T) {
+    address: net.Addr4, valid: bool = net.parse4("127.0.0.1:8080")
+    t.equal(valid, true, @file, @line)
+    t.equal(int(address.ip[0]), 127, @file, @line)
+    t.equal(int(address.ip[3]), 1, @file, @line)
+    t.equal(int(address.port), 8080, @file, @line)
+
+    address, valid = net.parse4("256.0.0.1:80")
+    t.equal(valid, false, @file, @line)
+    t.equal(int(address.port), 0, @file, @line)
+
+    address, valid = net.parse4("1.2.3.4:65535")
+    t.equal(valid, true, @file, @line)
+    t.equal(int(address.port), 65535, @file, @line)
+
+    for text: string in ["1.2.3:80", "1.2.3.4:65536", "1.2.3.4:80x"] {
+        address, valid = net.parse4(text)
+        if valid { t.fail(text, @file, @line) }
+    }
+}
+
+pub urls(t: *test.T) {
+    url: http.Url, err: Error = http.Url.parse("http://example.com:8080?x=%2f")
+    if t.equal(err == null, true, @file, @line) {
+        t.equal(url.host, "example.com", @file, @line)
+        t.equal(url.path, "/", @file, @line)
+        t.equal(url.query, "?x=%2f", @file, @line)
+        t.equal(int(url.port), 8080, @file, @line)
+    }
+    url, err = http.Url.parse("http://127.0.0.1/")
+    if t.equal(err == null, true, @file, @line) {
+        t.equal(url.path, "/", @file, @line)
+        t.equal(url.query.len, 0, @file, @line)
+    }
+    url, err = http.Url.parse("https://example.com/")
+    if t.equal(err == null, true, @file, @line) {
+        t.equal(url.host, "example.com", @file, @line)
+        t.equal(url.path, "/", @file, @line)
+        t.equal(int(url.port), 443, @file, @line)
+    }
+    for text: string in [
+        "http://user@example.com/",
+        "http://example.com:65536/",
+        "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com/",
+    ] {
+        url, err = http.Url.parse(text)
+        if err == null { t.fail(text, @file, @line) }
+    }
+    url, err = http.Url.parse("http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com:65535/")
+    if t.equal(err == null, true, @file, @line) { t.equal(int(url.port), 65535, @file, @line) }
+}
+
+pub request_format(t: *test.T) {
+    header_storage: [2]http.Header = [
+        http.Header { name = "Host", value = "example.com" }, http.Header { name = "X-Test", value = "caf\u{E9}" },
+    ]
+    request: http.Request = http.Request {
+        method = "POST",
+        target = "/submit",
+        headers = header_storage[..],
+        body = "ok",
+    }
+    output_storage: [128]u8 = [0 : 128]
+    written: usize, err: Error = request.format(output_storage[..])
+    t.equal(err == null, true, @file, @line)
+    t.equal(string(output_storage[..written]), "POST /submit HTTP/1.1\r\nHost: example.com\r\nX-Test: caf\u{E9}\r\n\r\nok", @file, @line)
+
+    /* Too small: nothing is written and the storage is untouched. */
+    small: [4]u8 = [7 : 4]
+    written, err = request.format(small[..])
+    t.equal(written, 0, @file, @line)
+    t.equal(err == http.FormatErr.capacity, true, @file, @line)
+    t.equal(err.name, "FormatErr", @file, @line)
+    t.equal(err.message, "output storage is too small", @file, @line)
+    t.equal(int(small[0]), 7, @file, @line)
+    t.equal(int(small[3]), 7, @file, @line)
+
+    bad_headers: [1]http.Header = [
+        http.Header {
+            name = "Bad Name",
+            value = "x",
+        },
+    ]
+    request.headers = bad_headers[..]
+    written, err = request.format(output_storage[..])
+    t.equal(written, 0, @file, @line)
+    t.equal(err == http.FormatErr.header_name, true, @file, @line)
+    t.equal(err.message, "invalid header name", @file, @line)
+
+    default_request: http.Request = http.Request {
+        method = http.GET,
+        target = "/health",
+    }
+    written, err = default_request.format(output_storage[..])
+    t.equal(err == null, true, @file, @line)
+    t.equal(string(output_storage[..written]), "GET /health HTTP/1.1\r\n\r\n", @file, @line)
+}
+
+/* Formats `response` and compares the text with `want`. */
+formats(t: *test.T, response: http.Response, want: string, file: string, line: int) {
+    output_storage: [128]u8 = [0 : 128]
+    written: usize, err: Error = response.format(output_storage[..])
+    t.equal(err == null, true, file, line)
+    t.equal(string(output_storage[..written]), want, file, line)
+}
+
+pub response_format(t: *test.T) {
+    response: http.Response = http.Response {}
+    formats(t, response, "HTTP/1.1 200 OK\r\n\r\n", @file, @line)
+
+    response.status = 404
+    formats(t, response, "HTTP/1.1 404 Not Found\r\n\r\n", @file, @line)
+
+    response.status = u16(599)
+    formats(t, response, "HTTP/1.1 599 \r\n\r\n", @file, @line)
+
+    response.status = 200
+    response.reason = ""
+    formats(t, response, "HTTP/1.1 200 \r\n\r\n", @file, @line)
+}
+
+pub response_parse(t: *test.T) {
+    response_headers: [4]http.Header
+    response_body: [16]u8 = [0 : 16]
+    state: http.ResponseParser = http.ResponseParser {
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
+    }
+    result: http.ResponseResult = state.parse(
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\nX-Text: caf\u{E9}\r\n\r\nh\u{E9}!",
+        response_headers[..],
+        response_body[..],
+        false,
+        false,
+    )
+    switch result {
+        http.ResponseResult.complete(response: http.Response) {
+            t.equal(int(response.status), 200, @file, @line)
+            t.equal(response.body, "h\u{E9}!", @file, @line)
+            t.equal(response.headers.len, 2, @file, @line)
+        }
+        default { t.fail("not complete", @file, @line) }
+    }
+}

@@ -1,0 +1,56 @@
+import test
+import http: "../mod.ace"
+
+home_route(request: http.Request): http.Response {
+    return http.Response {
+        status = 200,
+        body = "home",
+    }
+}
+
+about_route(request: http.Request): http.Response {
+    return http.Response {
+        status = 200,
+        body = "about",
+    }
+}
+
+submit_route(request: http.Request): http.Response {
+    return http.Response {
+        status = 200,
+        body = "submit",
+    }
+}
+
+/* Dispatches `method target` and compares the response's status and `body`. */
+routes(t: *test.T, router: *http.Router, method: string, target: string, status: int, body: string, file: string, line: int) {
+    response: http.Response = router.dispatch(http.Request {
+        method = method,
+        target = target,
+    })
+    t.equal(int(response.status), status, file, line)
+    if body != null { t.equal(response.body, body, file, line) }
+}
+
+pub dispatch(t: *test.T) {
+    router: http.Router = http.Router.new()
+    defer router.wipe()
+    t.equal(router.handle(http.GET, "/home", home_route) == null, true, @file, @line)
+    t.equal(router.handle(http.GET, "/home/about", about_route) == null, true, @file, @line)
+    t.equal(router.handle(http.POST, "/submit", submit_route) == null, true, @file, @line)
+
+    routes(t, &router, "GET", "/home", 200, "home", @file, @line)
+    routes(t, &router, "GET", "/home/about", 200, "about", @file, @line)
+    routes(t, &router, "GET", "/home/42", 200, "home", @file, @line)
+    routes(t, &router, "GET", "/homework", 404, null, @file, @line)
+    routes(t, &router, "GET", "/home?x=1", 200, "home", @file, @line)
+    routes(t, &router, "POST", "/home", 404, null, @file, @line)
+    routes(t, &router, "POST", "/submit", 200, "submit", @file, @line)
+
+    response: http.Response = router.dispatch(http.Request {
+        method = "GET",
+        target = "/nope",
+    })
+    t.equal(int(response.status), 404, @file, @line)
+    t.equal(response.reason, "Not Found", @file, @line)
+}

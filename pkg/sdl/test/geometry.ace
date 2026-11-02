@@ -1,0 +1,52 @@
+/* Headless draw: one triangle drawn from vertices alone (no indices) is read
+ * back pixel by pixel, proving Renderer.geometry draws unindexed triangles.
+ * Indices without vertices must fail.
+ */
+
+import test
+import sdl: "../mod.ace"
+import screen: "inc/screen.ace"
+
+SIZE: const i32 = 16
+
+pub unindexed(t: *test.T) {
+    if !t.equal(screen.headless(true), true, @file, @line) { return }
+    if !sdl.init(sdl.InitFlags { video = 1 }) {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    defer sdl.quit()
+    window: sdl.Window = sdl.Window.new("geometry", SIZE, SIZE, sdl.WindowFlags {})
+    defer window.wipe()
+    if !window.ok() {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    renderer: sdl.Renderer = sdl.Renderer.new(window)
+    defer renderer.wipe()
+    if !t.equal(renderer.ok(), true, @file, @line) { return }
+
+    none: [1]i32 = [0]
+    t.equal(renderer.geometry(null, none[..]), false, @file, @line)
+
+    // The top-left half of the target: its corner is inside, the opposite
+    // corner outside.
+    red_color: sdl.Color = sdl.Color.hex(0xFF0000)
+    triangle: [3]sdl.Vertex = [
+        sdl.Vertex { position = sdl.Point { x = 0.0, y = 0.0 }, color = red_color },
+        sdl.Vertex { position = sdl.Point { x = 16.0, y = 0.0 }, color = red_color },
+        sdl.Vertex { position = sdl.Point { x = 0.0, y = 16.0 }, color = red_color },
+    ]
+    t.equal(renderer.color(sdl.Color {}), true, @file, @line)
+    t.equal(renderer.clear(), true, @file, @line)
+    t.equal(renderer.geometry(triangle[..], null), true, @file, @line)
+
+    surface: *screen.Surface = screen.pixels(renderer)
+    defer screen.release(surface)
+    if surface == null {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    t.equal(screen.red(surface, 2, 2), 255, @file, @line)
+    t.equal(screen.red(surface, 13, 13), 0, @file, @line)
+}

@@ -1,0 +1,43 @@
+/* Headless shader contract: a renderer named by its driver that is not on
+ * the GPU driver accepts no shader format, and a shader and render state made
+ * for it fail and wipe cleanly instead of reaching SDL with a null device.
+ * An unknown driver name fails creation.
+ */
+
+import test
+import sdl: "../mod.ace"
+import screen: "inc/screen.ace"
+
+pub software_driver(t: *test.T) {
+    if !t.equal(screen.headless(false), true, @file, @line) { return }
+    if !sdl.init(sdl.InitFlags { video = 1 }) {
+        t.fail(sdl.error(), @file, @line)
+        return
+    }
+    defer sdl.quit()
+    window: sdl.Window = sdl.Window.new("shader", 16, 16, sdl.WindowFlags {})
+    defer window.wipe()
+    if !t.equal(window.ok(), true, @file, @line) { return }
+
+    missing: sdl.Renderer = sdl.Renderer.new(window, "no-such-driver")
+    defer missing.wipe()
+    t.equal(missing.ok(), false, @file, @line)
+
+    renderer: sdl.Renderer = sdl.Renderer.new(window, "software")
+    defer renderer.wipe()
+    if !t.equal(renderer.ok(), true, @file, @line) { return }
+    t.equal(renderer.shader_formats() == blank(sdl.ShaderFormats), true, @file, @line)
+
+    code: [4]u8 = [0x03, 0x02, 0x23, 0x07]
+    program: sdl.Shader = sdl.Shader.new(renderer, sdl.ShaderFormats { spirv = 1 }, code[..], 1)
+    defer program.wipe()
+    t.equal(program.ok(), false, @file, @line)
+
+    state: sdl.RenderState = sdl.RenderState.new(renderer, program)
+    defer state.wipe()
+    t.equal(state.ok(), false, @file, @line)
+
+    scene: [4]f32 = [0.0 : 4]
+    t.equal(state.uniforms(0, scene[..]), false, @file, @line)
+    t.equal(renderer.state(blank(sdl.RenderState)), true, @file, @line)
+}

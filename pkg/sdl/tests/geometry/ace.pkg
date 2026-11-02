@@ -1,9 +1,0 @@
-// expect-exit: 0
-name: geometry
-version: 0.1.0
-ace: 0.1
-type: exe
-root: main.ace
-
-[dependency]
-sdl: 0.1.0

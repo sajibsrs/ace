@@ -1,0 +1,95 @@
+import net
+import test
+import http: "../mod.ace"
+
+/* Type-checked only: running it would reach the network. */
+
+check_client(context: *http.ClientContext) {
+    response: http.Response, err: Error = http.get("http://example.com/", context)
+}
+
+check(
+    state: *http.ResponseParser,
+    request_parser: *http.RequestParser,
+    headers: []http.Header,
+    body: []u8,
+    output: []u8,
+): int {
+    address: net.Addr4, valid: bool = net.parse4("127.0.0.1:80")
+    url: http.Url, err: Error = http.Url.parse("http://example.com/?q=1")
+    request_headers: [1]http.Header = [
+        http.Header {
+            name = "Host",
+            value = "example.com",
+        },
+    ]
+    request: http.Request = http.Request {
+        method = http.GET,
+        target = "/",
+        headers = request_headers[..],
+    }
+    empty_request: http.Request = http.Request {
+        method = http.HEAD,
+        target = "/",
+    }
+    default_response: http.Response = http.Response {}
+    not_found: http.Response = http.Response { status = 404 }
+    fresh_request_parser: http.RequestParser = http.RequestParser {
+        phase = http.RequestPhase.request,
+        framing = http.RequestFraming.undecided,
+    }
+    fresh_response_parser: http.ResponseParser = http.ResponseParser {
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
+    }
+    count: usize
+    count, err = request.format(output)
+    if err != null && err.domain != typeid(http.FormatErr) { return 2 }
+
+    request_result: http.RequestResult = request_parser.parse("GET / HTTP/1.1\r\n\r\n", headers, body, false)
+    result: http.ResponseResult = state.parse("HTTP/1.1 204 No Content\r\n\r\n", headers, body, false, false)
+    switch result {
+        http.ResponseResult.complete(response: http.Response) {
+            count += usize(response.status)
+            response_count: usize
+            response_count, err = response.format(output)
+            count += response_count
+        }
+        default {}
+    }
+    switch request_result {
+        http.RequestResult.complete(parsed: http.Request) {
+            count += parsed.method.len
+        }
+        default {}
+    }
+    if valid && address.port == 80 && url.port == 80 && err == null {
+        count += empty_request.body.len + usize(default_response.status - 200)
+        count += usize(not_found.status - 404)
+        count += fresh_request_parser.input_offset + fresh_response_parser.input_offset
+        return int(count - count)
+    }
+    return 1
+}
+
+/* Every public type a consumer names, built and parsed through once. */
+pub surface(t: *test.T) {
+    state: http.ResponseParser = http.ResponseParser {
+        phase = http.ResponsePhase.status,
+        framing = http.ResponseFraming.undecided,
+    }
+    request_parser: http.RequestParser = http.RequestParser {
+        phase = http.RequestPhase.request,
+        framing = http.RequestFraming.undecided,
+    }
+    headers: [8]http.Header
+    body: [256]u8
+    output: [256]u8
+    t.equal(check(&state, &request_parser, headers[..], body[..], output[..]), 0, @file, @line)
+}
+
+pub client_context(t: *test.T) {
+    context: http.ClientContext = http.ClientContext.new()
+    defer context.wipe()
+    context.redirects = http.RedirectPolicy { limit = 10 }
+}

@@ -1,0 +1,210 @@
+import mem
+import test
+import json: "../mod.ace"
+
+pub scalars(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("null")
+    t.equal(err == null, true, @file, @line)
+
+    switch v {
+        json.Value.none {}
+        default { t.fail("null: not none", @file, @line) }
+    }
+    v, err = p.parse("true")
+
+    switch v {
+        json.Value.bool(b: bool) { t.equal(b, true, @file, @line) }
+        default { t.fail("true: not a bool", @file, @line) }
+    }
+    v, err = p.parse("false")
+
+    switch v {
+        json.Value.bool(b: bool) { t.equal(b, false, @file, @line) }
+        default { t.fail("false: not a bool", @file, @line) }
+    }
+    v, err = p.parse("  42  ")
+
+    switch v {
+        json.Value.number(n: f64) { t.equal(n == 42.0, true, @file, @line) }
+        default { t.fail("42: not a number", @file, @line) }
+    }
+    v, err = p.parse("-3.5e2")
+    expected: f64 = 0.0 - 350.0
+
+    switch v {
+        json.Value.number(n: f64) { t.equal(n == expected, true, @file, @line) }
+        default { t.fail("-3.5e2: not a number", @file, @line) }
+    }
+}
+
+pub string_value(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("\"a\\u00e9\\n\\\"\"")
+    t.equal(err == null, true, @file, @line)
+
+    switch v {
+        json.Value.string(s: string) { t.equal(s, "a\u{E9}\n\"", @file, @line) }
+        default { t.fail("not a string", @file, @line) }
+    }
+}
+
+pub array(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("[1, 2, [3, 4], \"x\"]")
+    t.equal(err == null, true, @file, @line)
+
+    switch v {
+        json.Value.array(items: []json.Value) {
+            if !t.equal(items.len, 4, @file, @line) { return }
+
+            switch items[2] {
+                json.Value.array(inner: []json.Value) { t.equal(inner.len, 2, @file, @line) }
+                default { t.fail("items[2]: not an array", @file, @line) }
+            }
+        }
+        default { t.fail("not an array", @file, @line) }
+    }
+}
+
+pub object(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("{\"a\": 1, \"b\": {\"c\": true}, \"d\": []}")
+    t.equal(err == null, true, @file, @line)
+
+    switch v {
+        json.Value.object(pairs: []json.Pair) {
+            if !t.equal(pairs.len, 3, @file, @line) { return }
+            t.equal(pairs[0].key, "a", @file, @line)
+            t.equal(pairs[1].key, "b", @file, @line)
+
+            switch pairs[1].value {
+                json.Value.object(nested: []json.Pair) {
+                    if t.equal(nested.len, 1, @file, @line) { t.equal(nested[0].key, "c", @file, @line) }
+                }
+                default { t.fail("b: not an object", @file, @line) }
+            }
+
+            switch pairs[2].value {
+                json.Value.array(empty: []json.Value) { t.equal(empty.len, 0, @file, @line) }
+                default { t.fail("d: not an array", @file, @line) }
+            }
+        }
+        default { t.fail("not an object", @file, @line) }
+    }
+}
+
+pub failures(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    v: json.Value, err: Error = p.parse("")
+    t.equal(err == json.ParseErr.empty_input, true, @file, @line)
+
+    v, err = p.parse("{")
+    t.equal(err == json.ParseErr.unexpected_token, true, @file, @line)
+
+    v, err = p.parse("\"unterminated")
+    t.equal(err == json.ParseErr.unterminated_string, true, @file, @line)
+
+    v, err = p.parse("01")
+    t.equal(err == json.ParseErr.invalid_number, true, @file, @line)
+
+    v, err = p.parse("true false")
+    t.equal(err == json.ParseErr.trailing_data, true, @file, @line)
+
+    v, err = p.parse("{\"a\": 1,}")
+    t.equal(err == json.ParseErr.unexpected_token, true, @file, @line)
+}
+
+nested(depth: usize): ([]u8, Error) {
+    text: []u8 = mem.alloc[u8](depth * 2)
+    if text == null { return null, json.ParseErr.allocation }
+
+    for i: usize in 0 .. depth {
+        text[i] = '['
+        text[depth * 2 - 1 - i] = ']'
+    }
+    return text, null
+}
+
+pub depth_limit(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    text: []u8, terr: Error = nested(512)
+    defer mem.release[u8](&text)
+    if !t.equal(terr == null, true, @file, @line) { return }
+
+    v: json.Value, err: Error = p.parse(text)
+    t.equal(err == null, true, @file, @line)
+
+    deeper: []u8, derr: Error = nested(513)
+    defer mem.release[u8](&deeper)
+    if !t.equal(derr == null, true, @file, @line) { return }
+
+    w: json.Value, werr: Error = p.parse(deeper)
+    t.equal(werr == json.ParseErr.depth, true, @file, @line)
+}
+
+/* Trees from one parser stay valid side by side, and a failed parse leaves
+ * the parser usable.
+ */
+pub accumulate(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+    a: json.Value, aerr: Error = p.parse("[1, \"x\", {\"k\": [true]}]")
+    bad: json.Value, berr: Error = p.parse("[1, 2")
+    b: json.Value, cerr: Error = p.parse("{\"y\": \"z\"}")
+
+    t.equal(aerr == null, true, @file, @line)
+    t.equal(berr == json.ParseErr.unexpected_token, true, @file, @line)
+    t.equal(cerr == null, true, @file, @line)
+
+    switch a {
+        json.Value.array(items: []json.Value) {
+            if !t.equal(items.len, 3, @file, @line) { return }
+
+            switch items[1] {
+                json.Value.string(s: string) { t.equal(s, "x", @file, @line) }
+                default { t.fail("items[1]: not a string", @file, @line) }
+            }
+        }
+        default { t.fail("a: not an array", @file, @line) }
+    }
+
+    switch b {
+        json.Value.object(pairs: []json.Pair) {
+            if t.equal(pairs.len, 1, @file, @line) { t.equal(pairs[0].key, "y", @file, @line) }
+        }
+        default { t.fail("b: not an object", @file, @line) }
+    }
+}
+
+/* `reset` invalidates earlier trees but keeps the storage, and the parser
+ * parses again, including a larger document than any before it.
+ */
+pub reuse(t: *test.T) {
+    p: json.Parser = json.Parser.new()
+    defer p.wipe()
+
+    for 0 .. 3 {
+        v: json.Value, err: Error = p.parse("[1, {\"k\": \"v\"}, [true, null]]")
+        t.equal(err == null, true, @file, @line)
+
+        switch v {
+            json.Value.array(items: []json.Value) { t.equal(items.len, 3, @file, @line) }
+            default { t.fail("not an array", @file, @line) }
+        }
+        p.reset()
+    }
+    big: json.Value, berr: Error = p.parse("[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]")
+    t.equal(berr == null, true, @file, @line)
+
+    switch big {
+        json.Value.array(items: []json.Value) { t.equal(items.len, 20, @file, @line) }
+        default { t.fail("big: not an array", @file, @line) }
+    }
+}
