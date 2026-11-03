@@ -251,3 +251,8 @@
   delimited JSON-RPC on stdio, offering `ace-lsp`'s `definition` and `hover`
   as tools over files on disk at 1-based line and byte column; `.mcp.json`
   starts it from the repository root, where it finds `std/`.
+- `ace-mcp` gained `diagnostics` and `std_lookup` (#182). The selfhost loader,
+  parser (lex errors included), and sema keep each error they print as a
+  `module.Diagnostic` in `diags`; `diagnostics` loads a file's program through
+  `definition.Program` and lists them. `std_lookup` loads a std module and
+  shows every public declaration a qualified name names, overloads included.

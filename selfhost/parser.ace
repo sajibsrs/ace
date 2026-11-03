@@ -140,8 +140,9 @@ pub SyntaxError: struct {
 pub ERROR_LIMIT: const usize = 10
 
 /* Lexes `src` (which must outlive the parser) into a parser over `path`.
- * Lex errors are reported on stderr as `ace --tokens` reports them; the
- * returned count is how many there were. Call `wipe` when done.
+ * Lex errors are reported on stderr as `ace --tokens` reports them, the first
+ * ERROR_LIMIT also kept for `errors`; the returned count is how many there
+ * were. Call `wipe` when done.
  */
 pub Parser.new(src: string, path: string): (Parser, int) {
     msg: []u8 = mem.alloc[u8](256 * ERROR_LIMIT) // the longest message, one name included
@@ -178,7 +179,16 @@ pub Parser.new(src: string, path: string): (Parser, int) {
         p.ntok += 1
         if t == Token.eof { break }
     }
-    for d: lexer.Diag in lx.errors() { lexer.report(path, d) }
+    for d: lexer.Diag in lx.errors() {
+        lexer.report(path, d)
+        if p.errs.len == ERROR_LIMIT { continue }
+        from: usize = p.err.text().len
+        d.text(&p.err)
+        if p.errs.push(SyntaxError { line = d.line, col = d.col, message = p.err.text()[from..] }) != null {
+            report("ace", 0, 0, "out of memory")
+            sys.exit(1)
+        }
+    }
     return p, int(lx.errors().len)
 }
 

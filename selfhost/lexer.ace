@@ -79,23 +79,31 @@ pub LexErr: error {
  */
 pub Diag: struct {
     err: Error,
-    line: u32,
-    col: u32,
+    pub line: u32,
+    pub col: u32,
     byte: u8,
 }
 
 /* Writes `d` to stderr as the C lexer words it. */
 pub report(path: string, d: Diag) {
-    if d.err == LexErr.non_ascii {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: non-ASCII byte 0x%02X (identifiers are ASCII in v1)\n", path, int(d.line), int(d.col), uint(d.byte))
-    } else if d.err == LexErr.unexpected || d.err == LexErr.binary || d.err == LexErr.octal {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: %s '%c'\n", path, int(d.line), int(d.col), d.err.message, d.byte)
-    } else if d.err == LexErr.escape {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: %s '\\%c'\n", path, int(d.line), int(d.col), d.err.message, d.byte)
-    } else if d.err == LexErr.byte {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: unexpected byte 0x%02X\n", path, int(d.line), int(d.col), uint(d.byte))
+    buf: [256]u8
+    b: fmt.Buffer = fmt.Buffer.init(buf[0..256])
+    d.text(&b)
+    fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(d.line), int(d.col), b.text())
+}
+
+/* Appends `d`'s message, as the C lexer words it, to `out`. */
+pub Diag.text(const self, out: *fmt.Buffer) {
+    if self.err == LexErr.non_ascii {
+        _ = out.printf("non-ASCII byte 0x%02X (identifiers are ASCII in v1)", uint(self.byte))
+    } else if self.err == LexErr.unexpected || self.err == LexErr.binary || self.err == LexErr.octal {
+        _ = out.printf("%s '%c'", self.err.message, self.byte)
+    } else if self.err == LexErr.escape {
+        _ = out.printf("%s '\\%c'", self.err.message, self.byte)
+    } else if self.err == LexErr.byte {
+        _ = out.printf("unexpected byte 0x%02X", uint(self.byte))
     } else {
-        fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(d.line), int(d.col), d.err.message)
+        _ = out.printf("%s", self.err.message)
     }
 }
 

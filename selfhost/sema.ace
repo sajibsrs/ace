@@ -181,6 +181,7 @@ pub Sema: struct {
     pub errors: int = 0,
     quiet: bool = false,                // count errors in quiet_errors instead of reporting them
     quiet_errors: int = 0,
+    pub diags: array.Array[module.Diagnostic], // every error reported, in order; strings in `pool`
     l: module.Loader,                   // the loader of the merged tree; not owned
     p: parser.Parser,                   // the merged tree, the loader's; not owned
     pub file: u32,
@@ -242,7 +243,7 @@ pub Sema: struct {
 /* A checker over `l`'s merged tree, which must outlive it. */
 pub Sema.new(l: module.Loader): Sema {
     root: module.Module = l.mods.get(0)
-    s: Sema = Sema { l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, norigin = array.Array[u32] {}, ncopy = array.Array[u32] {}, identities = map.Map[u32, u32] {}, auto_seen = map.Map[u32, int] {}, ik = blank(InitCk) }
+    s: Sema = Sema { diags = array.Array[module.Diagnostic] {}, l = l, p = root.parser, file = root.file, pool = blank(path.Pool), syms = array.Array[Sym] {}, types = array.Array[SType] {}, files = Scope.init(), imports = Scope.init(), fields = array.Array[SField] {}, params = array.Array[u32] {}, resolving = array.Array[u32] {}, deferred = array.Array[u32] {}, tnames = array.Array[string] {}, ttypes = array.Array[u32] {}, insts = array.Array[TInst] {}, inst_heads = map.Map[u32, u32] {}, signings = map.Map[u32, u32] {}, conf_at = map.Map[u32, u32] {}, conf_methods = array.Array[ConfMethod] {}, reexported = map.Map[u32, bool] {}, frames = array.Array[Frame] {}, locals = array.Array[u32] {}, stamps = array.Array[Stamp] {}, cabi = array.Array[u32] {}, nty = array.Array[u32] {}, nsym = array.Array[u32] {}, nival = array.Array[u64] {}, nrep = array.Array[bool] {}, nproof = array.Array[u8] {}, nview = map.Map[u32, u32] {}, fplans = map.Map[u32, FormatPlan] {}, fparts = array.Array[FormatPart] {}, norigin = array.Array[u32] {}, ncopy = array.Array[u32] {}, identities = map.Map[u32, u32] {}, auto_seen = map.Map[u32, int] {}, ik = blank(InitCk) }
     fail(s.syms.push(Sym { name = "", kind = SymKind.var }))
     fail(s.types.push(SType { kind = TypeKind.err }))
     s.t_err = s.new_type(SType { kind = TypeKind.err })
@@ -259,6 +260,7 @@ pub Sema.new(l: module.Loader): Sema {
 }
 
 pub Sema.wipe(self) {
+    self.diags.wipe()
     self.syms.wipe()
     self.types.wipe()
     self.fields.wipe()
@@ -342,11 +344,7 @@ pub Sema.err(self, at: u32, parts: []string) {
         self.quiet_errors += 1
         return
     }
-    n: Node = self.node(at)
-    msg: string = self.pool.join(parts)
-    fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
-    self.print_shown(msg)
-    fmt.printf(sys.stderr, "\n")
+    self.report(at, self.pool.join(parts))
     // a call's error is reported on the call: look through it to its callee
     f: u32 = at
     for f != 0 && (self.node(f).kind == Kind.call || self.node(f).kind == Kind.index) { f = self.node(f).a }
@@ -360,35 +358,48 @@ pub Sema.err(self, at: u32, parts: []string) {
         fmt.printf(sys.stderr, "%s:%d:%d: note: in '", self.l.mods.get(self.l.module_of(st.at)).path, int(sn.line), int(sn.col))
         g: Node = self.node(st.decl)
         if g.kind == Kind.func && (g.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 && g.d != 0 { // the owner takes the type arguments
-            self.print_shown(self.pool.join([self.node(g.d).text, self.args_name(st.args, st.nargs), ".", g.text]))
+            fmt.printf(sys.stderr, "%s", self.shown(self.pool.join([self.node(g.d).text, self.args_name(st.args, st.nargs), ".", g.text])))
         } else {
-            self.print_shown(self.pool.join([g.text, self.args_name(st.args, st.nargs)]))
+            fmt.printf(sys.stderr, "%s", self.shown(self.pool.join([g.text, self.args_name(st.args, st.nargs)])))
         }
         fmt.printf(sys.stderr, "' instantiated here\n")
     }
+}
+
+/* Reports `msg` at node `at` as an error, written as `shown` gives it, on
+ * stderr and in `diags`, and counts it.
+ */
+Sema.report(self, at: u32, msg: string) {
+    n: Node = self.node(at)
+    path: string = self.l.mods.get(self.l.module_of(at)).path
+    text: string = self.shown(msg)
+    fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", path, int(n.line), int(n.col), text)
+    fail(self.diags.push(module.Diagnostic { path = path, line = n.line, col = n.col, message = text }))
     self.errors += 1
 }
 
-/* `msg` with each module-private identity in it as written. */
-Sema.print_shown(self, msg: string) {
+/* `msg` with each module-private identity in it as written, in `pool`. */
+Sema.shown(self, msg: string): string {
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
     i: usize = 0
     for i < msg.len {
-        if !identity_char(msg[i]) {
-            fmt.printf(sys.stderr, "%c", msg[i])
-            i += 1
-            continue
-        }
         j: usize = i
         dollar: bool = false
-        for j < msg.len && identity_char(msg[j]) {
-            dollar = dollar || msg[j] == '$'
-            j += 1
+        if identity_char(msg[i]) {
+            for j < msg.len && identity_char(msg[j]) {
+                dollar = dollar || msg[j] == '$'
+                j += 1
+            }
+        } else {
+            for j < msg.len && !identity_char(msg[j]) { j += 1 }
         }
         word: string = msg[i..j]
         if dollar { word = self.l.shown(&self.pool, word) }
-        fmt.printf(sys.stderr, "%s", word)
+        fail(parts.push(word))
         i = j
     }
+    return self.pool.join(parts.view())
 }
 
 /* `[int, string]`: type arguments as a stamp note spells them, cut to C's
@@ -8283,13 +8294,9 @@ Sema.init_path_state(self, v: u32, p: InitPath, n: u32, create: bool): u32 {
 }
 
 Sema.init_diag(self, at: u32, p: InitPath, want: u32) {
-    n: Node = self.node(at)
     fully: string = ""
     if self.init_aggregate(want) || (p.n == 0 && self.init_aggregate(self.sym(p.root).ty)) { fully = "fully " }
-    fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(at)).path, int(n.line), int(n.col))
-    self.print_shown(self.pool.join(["'", self.sym(p.root).name, "' was not ", fully, "initialized before use"]))
-    fmt.printf(sys.stderr, "\n")
-    self.errors += 1
+    self.report(at, self.pool.join(["'", self.sym(p.root).name, "' was not ", fully, "initialized before use"]))
 }
 
 Sema.init_require_path(self, e: u32): bool {
@@ -8734,10 +8741,7 @@ Sema.check_definite_initialization(self) {
         }
         falls: bool = self.init_block(n.b)
         if falls && n.a != 0 && !self.is_void(n.a) {
-            fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.l.mods.get(self.l.module_of(f)).path, int(n.line), int(n.col))
-            self.print_shown(self.pool.join(["function '", n.text, "' can reach the end of its body without returning a value"]))
-            fmt.printf(sys.stderr, "\n")
-            self.errors += 1
+            self.report(f, self.pool.join(["function '", n.text, "' can reach the end of its body without returning a value"]))
         }
     }
 }

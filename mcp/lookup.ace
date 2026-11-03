@@ -1,0 +1,77 @@
+/* Std lookup: every public declaration a qualified name such as `str.format`
+ * or `fmt.Buffer.printf` names in a std module, found by loading that module
+ * with the selfhost loader, each shown as hover shows it.
+ */
+
+import array
+import file
+import mem
+import str
+
+import hover: "../lsp/hover.ace"
+import module: "../selfhost/module.ace"
+import parser: "../selfhost/parser.ace"
+import path: "../selfhost/path.ace"
+
+Node: type = parser.Node
+
+TARGET: const string = "darwin-arm64"
+
+/* For `name`, `module.name` or `module.Type.method`, each match as its
+ * `file:line` and hover Markdown, in declaration order, or why there is none
+ * and false. Lives in `pool`.
+ */
+pub text(pool: *path.Pool, name: string): (string, bool) {
+    segs: [4]string
+    n: usize, fits: bool = str.split(name, '.', segs[..])
+    if !fits || n < 2 || n > 3 { return "needs module.name or module.Type.method", false }
+    want: string = segs[n - 1]
+    owner: string = n == 3 ? segs[1] : ""
+
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return "cannot locate std/", false }
+    root: string, flat: bool = path.canonical(pool, pool.join([l.std_dir, "/", segs[0], ".ace"]))
+    under: string = "" // a directory module's files all sit under its directory
+    if !flat {
+        dir_root: string, nested: bool = path.canonical(pool, pool.join([l.std_dir, "/", segs[0], "/mod.ace"]))
+        if !nested { return pool.join(["no std module '", segs[0], "'"]), false }
+        root = dir_root
+        under = pool.join([path.dir(root), "/"])
+    }
+    if !l.resolve(root) { return pool.join(["std module '", segs[0], "' does not load"]), false }
+
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    mods: []module.Module = l.mods.view()
+    p: parser.Parser = mods[0].parser // the merged tree, where each module's file node lists every module's declarations
+    for mi: usize in 0..mods.len {
+        m: module.Module = mods[mi]
+        if !mem.equal(m.canon, root) && (under.len == 0 || !str.has(m.canon, under, false)) { continue }
+        src: []u8, err: Error = file.read(m.canon)
+        defer mem.release[u8](&src)
+        if err != null { continue }
+        for k: u32 in 0..p.node(m.file).nkids {
+            id: u32 = p.kid(m.file, k)
+            if l.module_of(id) != mi { continue }
+            d: *Node = p.node(id)
+            if (d.flags & parser.F_PUB) == 0 || !mem.equal(source_name(d.text), want) { continue }
+            method: bool = d.kind == parser.Kind.func && (d.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 && d.d != 0
+            if method != (owner.len > 0) { continue }
+            if method && !mem.equal(source_name(p.node(d.d).text), owner) { continue }
+            num: [16]char
+            w: usize, _ = str.format(num[..], usize(d.line))
+            if parts.len > 0 { parts.push("\n\n") }
+            parts.push(pool.join([m.canon, ":", num[..w], "\n", hover.text(pool, src, d.line, d.line)]))
+        }
+    }
+    if parts.len == 0 { return pool.join(["no public declaration '", name, "'"]), false }
+    return pool.join(parts.view()), true
+}
+
+/* A declared name without its module's private prefix (`m$name`). */
+source_name(text: string): string {
+    i: usize = text.len
+    for i > 0 && text[i - 1] != '$' { i -= 1 }
+    return text[i..]
+}

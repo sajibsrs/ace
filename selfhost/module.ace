@@ -76,8 +76,19 @@ pub Module: struct {
     pub package: usize = 0,                 // that package's index
 }
 
+/* One reported error: where, 1-based line and byte column (0 when it has
+ * none), and the message after `error: `.
+ */
+pub Diagnostic: struct {
+    pub path: string,
+    pub line: u32,
+    pub col: u32,
+    pub message: string,
+}
+
 pub Loader: struct {
     pub errors: int = 0,
+    pub diags: array.Array[Diagnostic],     // every error reported, in order; strings in `pool`
     pub target: string = "",
     pub std_dir: string = "",               // beside the compiler, as written
     std_root: string = "",                  // its realpath, "" when absent
@@ -100,7 +111,7 @@ pub Loader: struct {
  * so std/.
  */
 pub Loader.new(target: string): (Loader, bool) {
-    l: Loader = Loader { target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {}, graph = blank(package.Graph), generated = blank(parser.Parser) }
+    l: Loader = Loader { diags = array.Array[Diagnostic] {}, target = target, pool = blank(path.Pool), roots = path.Roots {}, mods = array.Array[Module] {}, order = array.Array[usize] {}, prefixes = array.Array[string] {}, stack = array.Array[usize] {}, graph = blank(package.Graph), generated = blank(parser.Parser) }
     exe: string, ok: bool = path.executable_dir(&l.pool)
     if !ok {
         fmt.printf(sys.stderr, "ace: cannot locate the ace executable to find std/\n")
@@ -122,6 +133,7 @@ pub Loader.wipe(self) {
         m.sels.wipe()
     }
     self.mods.wipe()
+    self.diags.wipe()
     self.order.wipe()
     self.prefixes.wipe()
     self.stack.wipe()
@@ -180,7 +192,7 @@ Loader.generate_main(self, mi: usize): bool {
     if self.errors > 0 { return false }
     if tests.len == 0 {
         fmt.printf(sys.stderr, "%s: error: no pub test functions\n", shown)
-        self.errors += 1
+        self.record(shown, 0, 0, "no pub test functions")
         return false
     }
     fail(parts.push("]) }\n"))
@@ -261,9 +273,14 @@ Loader.top(self, mi: usize): u32 {
 // --- diagnostics --------------------------------------------------------------
 
 Loader.err(self, mi: usize, n: Node, parts: []string) {
-    fmt.printf(sys.stderr, "%s:%d:%d: error: ", self.mods.get(mi).path, int(n.line), int(n.col))
-    for part: string in parts { fmt.printf(sys.stderr, "%s", part) }
-    fmt.printf(sys.stderr, "\n")
+    msg: string = self.pool.join(parts)
+    fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", self.mods.get(mi).path, int(n.line), int(n.col), msg)
+    self.record(self.mods.get(mi).path, n.line, n.col, msg)
+}
+
+/* Keeps an error already written to stderr in `diags`, and counts it. */
+Loader.record(self, path: string, line: u32, col: u32, message: string) {
+    fail(self.diags.push(Diagnostic { path = self.pool.copy(path), line = line, col = col, message = self.pool.copy(message) }))
     self.errors += 1
 }
 
@@ -277,7 +294,7 @@ Loader.load(self, shown: string, canon: string): (usize, bool) {
     src: []u8, rerr: Error = file.read(shown)
     if rerr != null {
         fmt.printf(sys.stderr, "ace: cannot open '%s'\n", shown)
-        self.errors += 1
+        self.record(shown, 0, 0, self.pool.join(["cannot open '", shown, "'"]))
         return 0, false
     }
     p: parser.Parser, lex_errors: int = parser.Parser.new(src, shown)
@@ -285,16 +302,19 @@ Loader.load(self, shown: string, canon: string): (usize, bool) {
     self.tokens += p.tokens()
     f: u32 = 0
     failed: bool = lex_errors > 0
-    self.errors += lex_errors
-    if !failed {
+    if failed { // already on stderr; the parser kept the first ERROR_LIMIT
+        lexed: []parser.SyntaxError, _ = p.errors()
+        for e: parser.SyntaxError in lexed { self.record(shown, e.line, e.col, e.message) }
+        self.errors += lex_errors - int(lexed.len)
+    } else {
         p.file = self.roots.show(&self.pool, shown)
         f = p.parse(self.target)
         errors: []parser.SyntaxError, stopped: bool = p.errors()
         for e: parser.SyntaxError in errors {
             fmt.printf(sys.stderr, "%s:%d:%d: error: %s\n", shown, int(e.line), int(e.col), e.message)
+            self.record(shown, e.line, e.col, e.message)
         }
         if stopped { fmt.printf(sys.stderr, "%s: stopped at %d errors; the rest of the file was not parsed\n", shown, int(parser.ERROR_LIMIT)) }
-        self.errors += int(errors.len)
         failed = errors.len > 0
     }
     if failed {
@@ -417,7 +437,7 @@ Loader.reserved(self, m: Module, n: Node, name: string) {
     if self.mods.len == 0 { return }
     if mem.equal(name, "panic") || mem.equal(name, "assert") {
         fmt.printf(sys.stderr, "%s:%d:%d: error: '%s' is a reserved builtin name \u{2014} no declaration may take it\n", m.path, int(n.line), int(n.col), name)
-        self.errors += 1
+        self.record(m.path, n.line, n.col, self.pool.join(["'", name, "' is a reserved builtin name \u{2014} no declaration may take it"]))
     }
 }
 

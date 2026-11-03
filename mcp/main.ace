@@ -3,6 +3,7 @@
  * ace-lsp's lookups as tools over files on disk. Diagnostics go to stderr.
  */
 
+import array
 import file
 import fmt
 import json: "../pkg/json/mod.ace"
@@ -14,6 +15,8 @@ import path: "../selfhost/path.ace"
 
 import definition: "../lsp/definition.ace"
 import hover: "../lsp/hover.ace"
+import lookup: "./lookup.ace"
+import module: "../selfhost/module.ace"
 
 /* The MCP revision this server implements. */
 PROTOCOL: const string = "2025-06-18"
@@ -88,11 +91,49 @@ resolve(pool: *path.Pool, file_path: string, line: u32, column: u32): (definitio
     return loc, pool.copy(target), true
 }
 
+/* Every error the loader and sema report for the program holding
+ * `file_path`, one `path:line:column: message` per line (0 where there is
+ * no position), or "no errors". The text lives in `pool`.
+ */
+diagnostics(pool: *path.Pool, file_path: string): (string, bool) {
+    canon: string, found: bool = path.canonical(pool, file_path)
+    if !found { return pool.join(["cannot open '", file_path, "'"]), true }
+    prog: definition.Program, loaded: bool = definition.Program.new(pool, canon)
+    defer prog.wipe()
+    if !loaded { return "the program's package graph does not resolve", true }
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    report(pool, &parts, prog.l.diags.view())
+    if prog.checked { report(pool, &parts, prog.s.diags.view()) }
+    if parts.len == 0 { return "no errors", false }
+    return pool.join(parts.view()), false
+}
+
+/* Appends each of `diags` to `parts` as a line. */
+report(pool: *path.Pool, parts: *array.Array[string], diags: []module.Diagnostic) {
+    for d: module.Diagnostic in diags {
+        num: [32]char
+        n: usize, _ = str.format(num[..], usize(d.line))
+        m: usize, _ = str.format(num[n..], usize(d.col))
+        parts.push(pool.join([d.path, ":", num[..n], ":", num[n..n + m], ": ", d.message, "\n"]))
+    }
+}
+
 /* Runs tool `name` on the arguments in `req` and returns its text and
  * whether it failed. The text lives in `pool`.
  */
 call(pool: *path.Pool, req: *json.Json, name: string): (string, bool) {
     file_path: string = req.string("/params/arguments/file")
+    if mem.equal(name, "diagnostics") {
+        if file_path == null { return "needs file", true }
+        return diagnostics(pool, file_path)
+    }
+    if mem.equal(name, "std_lookup") {
+        qualified: string = req.string("/params/arguments/name")
+        if qualified == null { return "needs name", true }
+        text: string, ok: bool = lookup.text(pool, qualified)
+        return text, !ok
+    }
     line: f64 = req.number("/params/arguments/line")
     column: f64 = req.number("/params/arguments/column")
     if !mem.equal(name, "definition") && !mem.equal(name, "hover") { return "unknown tool", true }
@@ -107,8 +148,10 @@ call(pool: *path.Pool, req: *json.Json, name: string): (string, bool) {
     return pool.join([loc.file, ":", num[..n + m + k]]), false
 }
 
-/* Writes one tool's description: `name`, `about`, and the position input. */
-tool(out: *json.Json, name: string, about: string) {
+/* Writes one tool's description: `name`, `about`, and its inputs `keys`,
+ * each one of `file`, `line`, `column`, or `name`, all required.
+ */
+tool(out: *json.Json, name: string, about: string, keys: []string) {
     out.object()
     out.field("name", name)
     out.field("description", about)
@@ -117,27 +160,28 @@ tool(out: *json.Json, name: string, about: string) {
     out.field("type", "object")
     out.key("properties")
     out.object()
-    out.key("file")
-    out.object()
-    out.field("type", "string")
-    out.field("description", "path of an .ace file")
-    out.end()
-    out.key("line")
-    out.object()
-    out.field("type", "integer")
-    out.field("description", "1-based line")
-    out.end()
-    out.key("column")
-    out.object()
-    out.field("type", "integer")
-    out.field("description", "1-based byte column of the name")
-    out.end()
+    for key: string in keys {
+        out.key(key)
+        out.object()
+        if mem.equal(key, "file") {
+            out.field("type", "string")
+            out.field("description", "path of an .ace file")
+        } else if mem.equal(key, "line") {
+            out.field("type", "integer")
+            out.field("description", "1-based line")
+        } else if mem.equal(key, "column") {
+            out.field("type", "integer")
+            out.field("description", "1-based byte column of the name")
+        } else {
+            out.field("type", "string")
+            out.field("description", "a qualified std name: module.name or module.Type.method")
+        }
+        out.end()
+    }
     out.end()
     out.key("required")
     out.array()
-    out.value("file")
-    out.value("line")
-    out.value("column")
+    for key: string in keys { out.value(key) }
     out.end()
     out.end()
     out.end()
@@ -188,8 +232,10 @@ main(): int {
             out.object()
             out.key("tools")
             out.array()
-            tool(&out, "definition", "Where the Ace name at a position is declared, as file:line:column. Resolves through sema: locals, overloads, fields, imports, std.")
-            tool(&out, "hover", "The declaration line and doc comment of the Ace name at a position, as Markdown.")
+            tool(&out, "definition", "Where the Ace name at a position is declared, as file:line:column. Resolves through sema: locals, overloads, fields, imports, std.", ["file", "line", "column"])
+            tool(&out, "hover", "The declaration line and doc comment of the Ace name at a position, as Markdown.", ["file", "line", "column"])
+            tool(&out, "diagnostics", "Every compile error in the Ace program holding a file, as path:line:column: message lines (line and byte column 1-based), or 'no errors'.", ["file"])
+            tool(&out, "std_lookup", "Every public std declaration a qualified name names (str.format, mem.copy, fmt.Buffer.printf), all overloads, each as file:line then its signature and doc comment in Markdown.", ["name"])
             out.end()
             out.end()
         } else if mem.equal(method, "tools/call") {

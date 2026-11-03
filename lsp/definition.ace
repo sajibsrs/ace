@@ -32,6 +32,52 @@ pub Location: struct {
     pub origin_len: u32 = 0,
 }
 
+/* A program loaded and checked from one file: its loader, package graph,
+ * and sema. `checked` says sema ran, which needs every module loaded; the
+ * loader's and sema's `diags` hold what either reported. Call `wipe`.
+ */
+pub Program: struct {
+    pub l: module.Loader,
+    g: package.Graph,
+    pub s: sema.Sema,
+    pub checked: bool = false,
+}
+
+/* The program holding the file at canonical path `canon`, checked as far as
+ * it loads; false when the loader cannot start or the package graph holding
+ * the file does not resolve (its errors only on stderr).
+ */
+pub Program.new(pool: *path.Pool, canon: string): (Program, bool) {
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    p: Program = Program { l = l, g = package.Graph.init(TARGET, l.std_dir), s = blank(sema.Sema) }
+    if !found { return p, false }
+    resolved: bool = false
+    dir: string, in_package: bool = package_root(pool, path.dir(canon))
+    if in_package {
+        root: usize, ok: bool = p.g.resolve(dir)
+        if !ok { return p, false }
+        resolved = p.l.resolve_in(p.g, root, canon)
+    } else {
+        resolved = p.l.resolve(canon)
+    }
+    if !resolved { return p, true }
+    p.s = sema.Sema.new(p.l)
+    // Every stage `ace --check` runs; a name resolves even past an error.
+    p.s.enter()
+    p.s.complete()
+    p.s.promoted_collisions()
+    p.s.signatures()
+    p.s.check_bodies()
+    p.checked = true
+    return p, true
+}
+
+pub Program.wipe(self) {
+    if self.checked { self.s.wipe() }
+    self.g.wipe()
+    self.l.wipe()
+}
+
 /* The declaration of the name at 1-based `line` and byte `col` of the file
  * at `file_path`, whose text on disk is `src`; false when there is none or
  * the program cannot be loaded. The result's strings live in `pool`.
@@ -40,29 +86,11 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
     none: Location = Location { file = "", line = 0, col = 0, len = 0, doc = 0 }
     canon: string, exists: bool = path.canonical(pool, file_path)
     if !exists { return none, false }
-    l: module.Loader, found: bool = module.Loader.new(TARGET)
-    defer l.wipe()
-    if !found { return none, false }
-    g: package.Graph = package.Graph.init(TARGET, l.std_dir)
-    defer g.wipe()
-    resolved: bool = false
-    dir: string, in_package: bool = package_root(pool, path.dir(canon))
-    if in_package {
-        root: usize, ok: bool = g.resolve(dir)
-        if !ok { return none, false }
-        resolved = l.resolve_in(g, root, canon)
-    } else {
-        resolved = l.resolve(canon)
-    }
-    if !resolved { return none, false }
-    s: sema.Sema = sema.Sema.new(l)
-    defer s.wipe()
-    // Every stage `ace --check` runs; a name resolves even past an error.
-    s.enter()
-    s.complete()
-    s.promoted_collisions()
-    s.signatures()
-    s.check_bodies()
+    prog: Program, loaded: bool = Program.new(pool, canon)
+    defer prog.wipe()
+    if !loaded || !prog.checked { return none, false }
+    l: *module.Loader = &prog.l
+    s: *sema.Sema = &prog.s
 
     mods: []module.Module = l.mods.view()
     mi: usize = 0
@@ -123,7 +151,7 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
         }
     }
     if best == 0 { return none, false }
-    decl: u32 = target(&s, best, u32(mods[0].parser.nnode))
+    decl: u32 = target(s, best, u32(mods[0].parser.nnode))
     if decl == 0 {
         b: Node = s.node(best)
         // `mod.Name` in an expression: the declaration `Name` in that module.
