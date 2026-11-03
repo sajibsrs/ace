@@ -191,7 +191,7 @@ union_pattern := named_type "." member
 return_stmt   := "return" [expr_list]
 break_stmt    := "break" [ident]                         // labeled break
 continue_stmt := "continue" [ident]                      // nearest loop, or an enclosing label
-defer_stmt    := "defer" expr                           // operand must be a call (semantic rule)
+defer_stmt    := "defer" (block | expr)                 // an expr operand must be a call (semantic rule)
 fallthrough_stmt := contextual_fallthrough                // only as final statement of a non-final switch case
 contextual_fallthrough := ident                            // exact text "fallthrough"; not reserved
 

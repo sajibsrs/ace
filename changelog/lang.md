@@ -1,5 +1,10 @@
 # Language
 
+- `defer { ... }` defers a block, for cleanup that is more than one call: it
+  is checked where it stands, reads its variables at exit, and no `return`,
+  `break`, or `continue` may leave it. Lowering keeps it in the defer list and
+  lowers it as an ordinary block at each exit. C and selfhost.
+
 - `blank(T)` is a compile-time expression, so it serves as a field default
   (`b: fmt.Buffer = blank(fmt.Buffer)`) and a global initializer:
   `compile_time_expr` accepts it without checking its type argument, and

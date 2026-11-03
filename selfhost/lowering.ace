@@ -81,7 +81,7 @@ Target: struct {
     ndefers: usize,  // defers pending outside it: leaving it runs those above
 }
 
-/* A captured defer: its call, re-lowered at each exit, and the statement. */
+/* A captured defer: its call, re-lowered at each exit (0 for a deferred block), and the statement. */
 Deferred: struct {
     call: u32,
     at: u32,
@@ -772,7 +772,7 @@ Lw.scan_walk(self, at: u32) {
         ps: u32 = self.nsym(at)
         if ps != 0 && self.in_memory(self.s.sym(ps).ty) { fail(self.stored.set(ps, true)) } // a binder in memory
     }
-    if n.kind == Kind.defer {
+    if n.kind == Kind.defer && n.b == 0 { // a deferred block reads its variables at exit, like any code
         in_defer: bool = self.in_defer
         self.in_defer = true
         self.scan_walk(n.a)
@@ -5513,6 +5513,10 @@ Lw.defer_arg(self, a: u32, by_address: bool, in_slot: bool) {
 
 Lw.defer_capture(self, at: u32) {
     if self.inl.len != 0 { self.unsupported("defer placement") } // inline bodies hold no defer (Functions)
+    if self.node(at).b != 0 { // a deferred block captures nothing: each exit lowers it afresh
+        fail(self.defers.push(Deferred { call = 0, at = at }))
+        return
+    }
     call: u32 = self.node(at).a
     cn: Node = self.node(call)
     if cn.kind != Kind.call {
@@ -5536,15 +5540,19 @@ Lw.defer_capture(self, at: u32) {
     fail(self.defers.push(Deferred { call = call, at = at }))
 }
 
-/* The pending defers above floor, last first; they stay pending for the code after. */
+/* The pending defers above floor, last first; they stay pending for the code
+ * after. A deferred block lowers as a block; its own defers stack above the
+ * pending list and run at its end, and no exit inside it leaves it (Deferred
+ * calls #7).
+ */
 Lw.run_defers(self, floor: usize) {
     at: u32 = self.at
     i: usize = self.defers.len
-    for i > floor {
+    for i > floor && self.cur >= 0 {
         i -= 1
         d: Deferred = self.defers.get(i)
         self.at = d.at // exit-time code cites the defer's line
-        _ = self.expr(d.call, -1)
+        if d.call != 0 { _ = self.expr(d.call, -1) } else { self.block(self.node(d.at).b) }
     }
     self.at = at
 }

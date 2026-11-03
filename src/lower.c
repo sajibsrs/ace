@@ -60,7 +60,7 @@ typedef struct GenEscape { // a generic inline declaration's escape mask under o
     uint64_t  esc;
 } GenEscape;
 
-typedef struct { // a captured `defer`: its call over snapshot variables
+typedef struct { // a captured `defer`: its call over snapshot variables, or NULL for a block
     Node* call;
     Node* at;    // the defer statement, whose line the exit-time call carries
 } Deferred;
@@ -597,7 +597,7 @@ static void scan_walk(Lw* l, Scan* sc, Node* n) {
         for (int i = 0; i < n->nkids; i++) need_storage(l, sc, n->kids[i]);
     if (n->kind == N_PARAM && !sc->want && node_sym(n) && in_memory(node_sym(n)->type)) // a binder in memory
         ptrmap_put(&l->stored, node_sym(n), 1);
-    if (n->kind == N_DEFER) {
+    if (n->kind == N_DEFER && !n->b) { // a deferred block reads its variables at exit, like any code
         int was = l->in_defer;
         l->in_defer = 1;
         scan_walk(l, sc, n->a);
@@ -4275,6 +4275,11 @@ static Node* defer_arg(Lw* l, Node* a, int byaddr, int in_slot) {
 
 static void defer_capture(Lw* l, Node* s) {
     if (l->ninl) unsupported(l, "defer placement"); // inline bodies hold no defer (Functions)
+    if (s->b) { // a deferred block captures nothing: each exit lowers it afresh
+        l->defers = grow(l->defers, &l->cdefers, l->ndefers + 1, sizeof(Deferred));
+        l->defers[l->ndefers++] = (Deferred){ NULL, s };
+        return;
+    }
     Node* call = s->a;
     if (call->kind != N_CALL) unsupported(l, "defer operand");
     Node* callee = call->a;
@@ -4303,11 +4308,14 @@ static void defer_capture(Lw* l, Node* s) {
 }
 
 // The pending defers above floor, last first; they stay pending for the code after.
+// A deferred block lowers as a block; its own defers stack above the pending
+// list and run at its end, and no exit inside it leaves it (Deferred calls #7).
 static void run_defers(Lw* l, int floor) {
     Node* at = l->at;
-    for (int i = l->ndefers - 1; i >= floor; i--) {
+    for (int i = l->ndefers - 1; i >= floor && l->cur >= 0; i--) {
         l->at = l->defers[i].at; // exit-time code cites the defer's line
-        expr(l, l->defers[i].call, -1);
+        if (l->defers[i].call) expr(l, l->defers[i].call, -1);
+        else block(l, l->defers[i].at->b);
     }
     l->at = at;
 }

@@ -64,7 +64,7 @@
 //   N_ASM       str = instruction text; kids = N_ASMBIND (str = in/out/clobbers;
 //               kids = [reg, val, reg, val, ...] for in/out, [reg, ...] for clobbers)
 //   N_LABEL     str = label; a = block
-//   N_DEFER     a = call expression deferred to the exit of its block
+//   N_DEFER     a = call expression deferred to the exit of its block, or b = a deferred block
 //   N_NAMED     str = name; a = qualifier (N_NAMED/N_IDENT chain); kids = generic args (types)
 //   N_PTR       a = pointee
 //   N_SLICE_T   a = element
@@ -1525,7 +1525,8 @@ static Node* parse_stmt(P* p) {
     case T_DEFER: {
         Node* n = nd(p, N_DEFER);
         p->i++;
-        n->a = expr(p, CTX_NOSLIT);
+        if (at(p, T_LBRACE)) n->b = parse_block(p); // a deferred block
+        else n->a = expr(p, CTX_NOSLIT);
         return n;
     }
     case T_IDENT:

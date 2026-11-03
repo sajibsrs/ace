@@ -1,0 +1,19 @@
+/* A deferred block cannot be left by return, break, or continue; exits to
+ * targets inside it are ordinary. */
+
+work(n: int): int {
+    for i: int in 0..n {
+        defer {
+            if i == 1 { break }
+            if i == 2 { continue }
+            for j: int in 0..2 { if j == 1 { break } }
+        }
+    }
+    out: {
+        defer { break out }
+    }
+    defer { return 1 }
+    return 0
+}
+
+main(): int { return work(3) }

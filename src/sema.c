@@ -305,6 +305,7 @@ typedef struct Scope {
     uint32_t      nvalues, ntypes;
     const char*   label;
     int           is_loop;
+    int           is_defer; // a deferred block's body: no exit leaves it
 } Scope;
 
 enum { DECL_DONE, DECL_ENTERED, DECL_RESOLVING };
@@ -6074,6 +6075,13 @@ static void check_stmt(Ck* k, Node* s) {
         return;
     }
     case N_DEFER: {
+        if (s->b) { // a deferred block, checked where it stands
+            scope_push(k);
+            k->scope->is_defer = 1;
+            check_block(k, s->b);
+            scope_pop(k);
+            return;
+        }
         if (s->a->kind != N_CALL) {
             ck_err(k, s->a, "defer operand must be a call");
             return;
@@ -6198,6 +6206,11 @@ static void check_stmt(Ck* k, Node* s) {
     case N_FALLTHROUGH:
         return; // placement was validated by the enclosing switch
     case N_RETURN: {
+        for (Scope* sc = k->scope; sc; sc = sc->parent)
+            if (sc->is_defer) {
+                ck_err(k, s, "return cannot leave a deferred block");
+                return;
+            }
         SType* rt = k->ret;
         int nret = rt ? (rt->kind == SK_TUPLE ? rt->nfields : 1) : 0;
         if (!s->a) {
@@ -6247,27 +6260,47 @@ static void check_stmt(Ck* k, Node* s) {
     }
     case N_BREAK: {
         if (s->str) {
-            for (Scope* sc = k->scope; sc; sc = sc->parent)
-                if (sc->label && (uint32_t)strlen(sc->label) == s->len &&
-                    memcmp(sc->label, s->str, s->len) == 0) return;
+            int crossed = 0; // a deferred block lies between it and its target
+            for (Scope* sc = k->scope; sc; sc = sc->parent) {
+                if (sc->label && (uint32_t)strlen(sc->label) == s->len && memcmp(sc->label, s->str, s->len) == 0) {
+                    if (crossed) ck_err(k, s, "break cannot leave a deferred block");
+                    return;
+                }
+                crossed |= sc->is_defer;
+            }
             ck_err(k, s, "no enclosing block labeled '%.*s'", (int)s->len, s->str);
         } else {
-            int loop = 0;
-            for (Scope* sc = k->scope; sc; sc = sc->parent) loop |= sc->is_loop;
-            if (!loop) ck_err(k, s, "break outside a loop");
+            for (Scope* sc = k->scope; sc; sc = sc->parent) {
+                if (sc->is_loop) return;
+                if (sc->is_defer) {
+                    ck_err(k, s, "break cannot leave a deferred block");
+                    return;
+                }
+            }
+            ck_err(k, s, "break outside a loop");
         }
         return;
     }
     case N_CONTINUE: {
         if (s->str) {
-            for (Scope* sc = k->scope; sc; sc = sc->parent)
-                if (sc->label && (uint32_t)strlen(sc->label) == s->len &&
-                    memcmp(sc->label, s->str, s->len) == 0) return;
+            int crossed = 0; // a deferred block lies between it and its target
+            for (Scope* sc = k->scope; sc; sc = sc->parent) {
+                if (sc->label && (uint32_t)strlen(sc->label) == s->len && memcmp(sc->label, s->str, s->len) == 0) {
+                    if (crossed) ck_err(k, s, "continue cannot leave a deferred block");
+                    return;
+                }
+                crossed |= sc->is_defer;
+            }
             ck_err(k, s, "no enclosing block labeled '%.*s'", (int)s->len, s->str);
         } else {
-            int loop = 0;
-            for (Scope* sc = k->scope; sc; sc = sc->parent) loop |= sc->is_loop;
-            if (!loop) ck_err(k, s, "continue outside a loop");
+            for (Scope* sc = k->scope; sc; sc = sc->parent) {
+                if (sc->is_loop) return;
+                if (sc->is_defer) {
+                    ck_err(k, s, "continue cannot leave a deferred block");
+                    return;
+                }
+            }
+            ck_err(k, s, "continue outside a loop");
         }
         return;
     }
@@ -7163,6 +7196,13 @@ static int init_stmt(InitCk* k, Node* s) {
     }
     case N_RETURN:
         init_expr(k, s->a); return 0;
+    case N_DEFER: // a deferred block reads only what is set where it stands; its writes stay inside it
+        if (s->b) {
+            int outer = init_begin(k);
+            init_block(k, s->b);
+            init_end(k, outer);
+        }
+        return 1;
     case N_FALLTHROUGH:
         return 0;
     case N_ASM:

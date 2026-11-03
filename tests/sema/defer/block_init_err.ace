@@ -1,0 +1,10 @@
+/* A deferred block reads only what is initialized at the defer statement. */
+
+import fmt
+
+main(): int {
+    y: int
+    defer { fmt.printf("%d\n", y) }
+    y = 1
+    return 0
+}

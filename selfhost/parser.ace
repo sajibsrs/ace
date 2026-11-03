@@ -1724,7 +1724,11 @@ Parser.stmt(self): u32 {
         Token.continue { return self.jump(Kind.continue) }
         Token.defer {
             n: u32 = self.leaf(Kind.defer)
-            self.nodes[n].a = self.expr(NOSLIT)
+            if self.at(Token.lbrace) { // a deferred block
+                self.nodes[n].b = self.block()
+            } else {
+                self.nodes[n].a = self.expr(NOSLIT)
+            }
             return n
         }
         Token.ident {

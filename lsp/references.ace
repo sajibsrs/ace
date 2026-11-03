@@ -26,7 +26,10 @@ pub uses(prog: *definition.Program, pool: *path.Pool, decl: u32, only: bool, mi:
     calls: []u32 = definition.callees(&prog.s, count)
     defer mem.release[u32](&calls)
     srcs: [][]u8 = mem.zalloc[[]u8](mods.len) // each module's text, read on first use
-    defer mem.release[[]u8](&srcs)
+    defer {
+        for i: usize in 0..srcs.len { mem.release[u8](&srcs[i]) }
+        mem.release[[]u8](&srcs)
+    }
     for id: u32 in 1..count {
         if id == decl { continue }
         n: Node = prog.s.node(id)
@@ -46,7 +49,6 @@ pub uses(prog: *definition.Program, pool: *path.Pool, decl: u32, only: bool, mi:
         col: u32 = definition.name_col(srcs[m], n.line, n.col, name)
         out.push(definition.Location { file = pool.copy(mods[m].canon), line = n.line, col = col, len = u32(name.len), doc = n.line })
     }
-    for i: usize in 0..srcs.len { mem.release[u8](&srcs[i]) }
     sort.unstable[definition.Location](out.view(), before)
 }
 

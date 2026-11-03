@@ -6420,6 +6420,7 @@ Frame: struct {
     label: string = "",
     has_label: bool = false,
     is_loop: bool = false,
+    is_defer: bool = false, // a deferred block's body: no exit leaves it
 }
 
 Sema.scope_push(self) {
@@ -6796,6 +6797,13 @@ Sema.check_stmt(self, s: u32) {
         Kind.assign { self.check_assign(s) }
         Kind.exprstmt { self.check_expr_stmt(s, n.a) }
         Kind.defer {
+            if n.b != 0 { // a deferred block, checked where it stands
+                self.scope_push()
+                self.frame().is_defer = true
+                self.check_block(n.b)
+                self.scope_pop()
+                return
+            }
             if self.node(n.a).kind != Kind.call {
                 self.err(n.a, ["defer operand must be a call"])
                 return
@@ -6817,19 +6825,39 @@ Sema.check_stmt(self, s: u32) {
         Kind.for { self.check_for(s) }
         Kind.switch { self.check_switch(s) }
         Kind.fallthrough {} // placement was validated by the enclosing switch
-        Kind.return { self.check_return(s) }
+        Kind.return {
+            for f: Frame in self.frames.view() {
+                if f.is_defer {
+                    self.err(s, ["return cannot leave a deferred block"])
+                    return
+                }
+            }
+            self.check_return(s)
+        }
         Kind.break, Kind.continue {
+            what: string = "break"
+            if n.kind == Kind.continue { what = "continue" }
             if (n.flags & parser.F_TEXT) != 0 {
+                crossed: bool = false // a deferred block lies between it and its target
                 for i: usize = self.frames.len; i > 0; i -= 1 {
                     f: Frame = self.frames.get(i - 1)
-                    if f.has_label && mem.equal(f.label, n.text) { return }
+                    if f.has_label && mem.equal(f.label, n.text) {
+                        if crossed { self.err(s, [what, " cannot leave a deferred block"]) }
+                        return
+                    }
+                    if f.is_defer { crossed = true }
                 }
                 self.err(s, ["no enclosing block labeled '", n.text, "'"])
                 return
             }
-            for f: Frame in self.frames.view() { if f.is_loop { return } }
-            what: string = "break"
-            if n.kind == Kind.continue { what = "continue" }
+            for i: usize = self.frames.len; i > 0; i -= 1 {
+                f: Frame = self.frames.get(i - 1)
+                if f.is_loop { return }
+                if f.is_defer {
+                    self.err(s, [what, " cannot leave a deferred block"])
+                    return
+                }
+            }
             self.err(s, [what, " outside a loop"])
         }
         Kind.label {
@@ -8654,6 +8682,14 @@ Sema.init_stmt(self, s: u32): bool {
         Kind.return {
             self.init_expr(n.a)
             return false
+        }
+        Kind.defer { // a deferred block reads only what is set where it stands; its writes stay inside it
+            if n.b != 0 {
+                outer: u32 = self.init_begin()
+                _ = self.init_block(n.b)
+                self.init_end(outer)
+            }
+            return true
         }
         Kind.fallthrough, Kind.continue { return false }
         Kind.asm {

@@ -184,6 +184,11 @@ tests/sema/shadowing/module_member_err.ace|5:12: note: local 'mem' hides the imp
 tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
 tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
+tests/sema/defer/block_exit_err.ace|7:25: error: break cannot leave a deferred block
+tests/sema/defer/block_exit_err.ace|8:25: error: continue cannot leave a deferred block
+tests/sema/defer/block_exit_err.ace|13:17: error: break cannot leave a deferred block
+tests/sema/defer/block_exit_err.ace|15:13: error: return cannot leave a deferred block
+tests/sema/defer/block_init_err.ace|7:32: error: 'y' was not initialized before use
 tests/sema/inline/asm_err.ace|inline function 'spin' cannot contain inline assembly
 tests/sema/inline/specialized_err.ace|'inline' needs a body; 'weight' is marked 'specialized'
 tests/sema/inline/intrinsic_err.ace|'inline' cannot mark intrinsic declaration 'cast'

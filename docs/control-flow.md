@@ -335,9 +335,9 @@ type), or `panic`.
 
 ## Deferred calls
 
-`defer` schedules one call to run when the enclosing block exits. It may appear
-in any block — the function body, an `if`, a loop body, a switch case, or a
-labeled block — and its operand must be a call:
+`defer` schedules one call, or one block, to run when the enclosing block
+exits. It may appear in any block — the function body, an `if`, a loop body, a
+switch case, or a labeled block — and its operand is a call or a block:
 
 ```ace
 finish(): int {
@@ -447,6 +447,45 @@ Only leaving the block runs its defers:
 
 `main` defers work like any other function's.
 
+### Deferred blocks
+
+`defer { ... }` defers a whole block, for cleanup that is more than one call,
+such as releasing a slice of buffers and then the slice itself:
+
+```ace
+srcs: [][]u8 = mem.zalloc[[]u8](count)
+defer {
+    for i: usize in 0..srcs.len { mem.release[u8](&srcs[i]) }
+    mem.release[[]u8](&srcs)
+}
+```
+
+A deferred block takes its place in the block's defer list like a call and
+runs at the same exits, in the same reverse order. It differs from a call in
+what it sees:
+
+- It captures nothing. Its code runs at the exit and reads every variable's
+  value at that moment, unlike a call's arguments, which are snapshotted at
+  the `defer` statement:
+
+```ace
+work(): int {
+    n: int = 1
+    defer report(n)        // captures 1
+    defer { report(n) }    // reads n when it runs
+    n = 2
+    return 0 // prints 2, then 1
+}
+```
+
+- Definite initialization checks it where it stands: it may read only what
+  is initialized at the `defer` statement, and its own assignments do not
+  count as initializing anything after it.
+- No exit leaves it. `return` inside it, and `break` or `continue` aimed at a
+  loop or label outside it, are compile errors. A loop or labeled block inside
+  it uses `break` and `continue` normally, a `switch` inside it can
+  `fallthrough`, and a `defer` inside it runs when the deferred block ends.
+
 ## Design rationale
 
 Why the rules in `spec/control-flow.md` are shaped as they are.
@@ -483,6 +522,16 @@ Why the rules in `spec/control-flow.md` are shaped as they are.
   attribute scope defers to blocks as Ace does. Snapshotting every argument
   keeps a deferred call meaning what it would at the `defer` statement; an
   `&x` argument or a receiver still reaches the variable's final state.
+- Deferred calls #1, #7, deferred blocks: cleanup that is several statements,
+  such as a loop over owned buffers, needs either a block form or a closure,
+  and Ace has no closures. Zig's `defer { ... }` is the precedent; Go's
+  `defer func() { ... }()` relies on closures and a runtime defer record.
+  Because defers are already expanded inline, a block is lowered again at each
+  exit like any other block, at no runtime cost. Snapshotting is a property of
+  arguments, and a block has none, so it reads variables at the exit as Zig's
+  does. Forbidding exits out of the block keeps each expansion's control flow
+  local, so a cleanup can never skip the defers below it or replace the
+  function's return value.
 - Sequences #9: every view operation is explicit and allocation-free; a write
   into literal storage faults through the platform's page protection rather
   than a type-level permission (Philosophy #10). Removing sequence equality operators avoids both hidden

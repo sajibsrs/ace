@@ -1,0 +1,56 @@
+/* Deferred block fixture: a block runs at exit over its variables' final
+ * values, LIFO with deferred calls, its own defers at its end, on every exit. */
+
+// expect-exit: 0
+// expect-output: iter 0
+// expect-output: inner 0
+// expect-output: iter 1
+// expect-output: inner 1
+// expect-output: block 3
+// expect-output: call 1
+// expect-output: released
+// expect-output: 3
+// expect-output: iter 0
+// expect-output: inner 0
+// expect-output: iter 1
+// expect-output: inner 1
+// expect-output: iter 2
+// expect-output: inner 2
+// expect-output: block 2
+// expect-output: call 1
+// expect-output: released
+// expect-output: 7
+
+import fmt
+import mem
+
+run(n: int): int {
+    bufs: [][]u8 = mem.zalloc[[]u8](3)
+    defer {
+        for i: usize in 0..bufs.len { mem.release[u8](&bufs[i]) }
+        mem.release[[]u8](&bufs)
+        fmt.println("released")
+    }
+    for i: usize in 0..bufs.len { bufs[i] = mem.alloc[u8](8) }
+    x: int = 1
+    defer fmt.printf("call %d\n", x)
+    defer { fmt.printf("block %d\n", x) }
+    x = 2
+    for i: int in 0..3 {
+        if i == n { break }
+        defer {
+            fmt.printf("iter %d\n", i)
+            defer fmt.printf("inner %d\n", i)
+        }
+        if i == 0 { continue }
+    }
+    if n > 5 { return 7 }
+    x = 3
+    return x
+}
+
+main(): int {
+    fmt.printf("%d\n", run(2))
+    fmt.printf("%d\n", run(9))
+    return 0
+}
