@@ -112,3 +112,7 @@
 - `pkg/ui`'s row height moved to the theme as `Theme.row()`, and
   `list_height(rows)` became `rows(n)` (Naming #7); every `pub` declaration has
   a doc comment (Comments #1). `font/bake.py` finds the icon baker in binbox.
+- `pkg/ui` centers a button's icon and label however wide it is placed, adds
+  `Align.right` with `text`, `muted`, and `heading` overloads taking an
+  `Align`, and evens `outline_dashed`'s gaps so each corner holds a dash.
+  `demo/ui-gallery` shows every control, layout call, and primitive.

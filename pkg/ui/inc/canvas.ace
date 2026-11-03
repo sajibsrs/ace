@@ -111,13 +111,25 @@ pub Canvas.outline(self, box: Rect, thick: f32, color: Color) {
     self.fill(Rect { x = box.x + box.w - thick, y = box.y, w = thick, h = box.h }, color)
 }
 
-/* A `thick` dashed outline just inside `box`, in dashes of 3 and gaps of 2
- * times `thick`; only dashes that reach `view` are drawn. */
+/* The distance from one dash's start to the next along a side `side` long,
+ * near 5 times `thick` but even, so the last dash ends on the far corner; 0
+ * when the side is too short for two dashes. */
+dash_step(side: f32, thick: f32): f32 {
+    dash: f32 = 3.0 * thick
+    gaps: f32 = math.floor((side - dash) / (5.0 * thick) + 0.5)
+    if gaps < 1.0 { return 0.0 }
+    return (side - dash) / gaps
+}
+
+/* A `thick` dashed outline just inside `box`, in dashes of 3 times `thick`
+ * and gaps near 2 times, so every corner holds a dash; only dashes that reach
+ * `view` are drawn. */
 pub Canvas.outline_dashed(self, box: Rect, thick: f32, color: Color, view: Rect) {
     dash: f32 = 3.0 * thick
-    step: f32 = 5.0 * thick
+    step: f32 = dash_step(box.w, thick)
+    if step == 0.0 { step = box.w + 1.0 }
     x: f32 = box.x
-    for x < box.x + box.w {
+    for x < box.x + box.w - 0.5 {
         w: f32 = math.min[f32](dash, box.x + box.w - x)
         if x + w > view.x && x < view.x + view.w {
             self.fill(Rect { x = x, y = box.y, w = w, h = thick }, color)
@@ -125,8 +137,10 @@ pub Canvas.outline_dashed(self, box: Rect, thick: f32, color: Color, view: Rect)
         }
         x += step
     }
+    step = dash_step(box.h, thick)
+    if step == 0.0 { step = box.h + 1.0 }
     y: f32 = box.y
-    for y < box.y + box.h {
+    for y < box.y + box.h - 0.5 {
         h: f32 = math.min[f32](dash, box.y + box.h - y)
         if y + h > view.y && y < view.y + view.h {
             self.fill(Rect { x = box.x, y = y, w = thick, h = h }, color)
@@ -429,12 +443,14 @@ Canvas.print(self, x: f32, y: f32, text: string, color: Color) {
 pub Align: enum {
     left,
     center,
+    right,
 }
 
 /* `text` aligned in `box`, in this layer. */
 pub Canvas.text(self, box: Rect, text: string, color: Color, align: Align) {
     pad: f32 = 0.0
     if align == Align.center { pad = (box.w - GLYPH_WIDTH * f32(text.len)) / 2.0 }
+    if align == Align.right { pad = box.w - GLYPH_WIDTH * f32(text.len) }
     self.print(box.x + pad, box.baseline(), text, color)
 }
 

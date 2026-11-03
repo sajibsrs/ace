@@ -166,11 +166,20 @@ pub swatch(shape: Icon, color: Color, selected: bool): bool { return controls.sw
 /* A line of body text. */
 pub text(s: string) { controls.text(s) }
 
+/* A line of body text at `align` across the area. */
+pub text(s: string, align: Align) { controls.text(s, align) }
+
 /* A line of secondary text. */
 pub muted(s: string) { controls.muted(s) }
 
+/* A line of secondary text at `align` across the area. */
+pub muted(s: string, align: Align) { controls.muted(s, align) }
+
 /* A section's title on a header strip. */
 pub heading(s: string) { controls.heading(s) }
+
+/* A section's title at `align` on its strip. */
+pub heading(s: string, align: Align) { controls.heading(s, align) }
 
 /* `s` centered on the header color: a value shown, not edited. */
 pub readout(s: string) { controls.readout(s) }

@@ -17,6 +17,9 @@ bar.end()
 editor.ui.end()
 ```
 
+[`demo/ui-gallery`](../demo/ui-gallery/main.ace) shows every control, layout
+call, and canvas primitive in one window (`ace pkg run` there).
+
 ## Frames
 
 The application owns a `Context`, all zeros at start, and sets its `canvas`
@@ -61,8 +64,8 @@ forms place a box within one.
 ## Drawing
 
 `Canvas` batches triangles for one layer: `fill` (with an optional radius),
-`outline`, `outline_dashed`, `stroke`, `icon`, and `text`, placed by a pad or
-an `Align`. Everything lands in draw order; `flush` submits the layer. Icons
+`outline`, `outline_dashed` (its gaps evened so a dash holds every corner),
+`stroke`, `icon`, and `text`, placed by a pad or an `Align`. Everything lands in draw order; `flush` submits the layer. Icons
 are baked point data passed as an `Icon`. The font is Lilex SemiBold,
 printable ASCII, 16 px; regenerate `inc/font.ace` with
 `python3 -I font/bake.py` from `pkg/ui`.
@@ -81,7 +84,8 @@ whether its value changed.
 
 - `button(label)`, `button(icon, label)`, `button(icon)`; `button(icon,
   label, on)` rests in `selected` while `on`; `button(icon, label, fill)`
-  uses its own `Fill`.
+  uses its own `Fill`. A button's icon and label are centered together,
+  however wide it is placed.
 - `toggle(icon, label, &value)` and `toggle(icon, &value)` flip a `bool` and
   rest in `selected` while it is set.
 - `checkbox(label, &value)` ticks a box before its label; a click anywhere on
@@ -104,7 +108,9 @@ whether its value changed.
   `n` rows, for sizing what holds it; `Theme.row()` is one row's.
 - `swatch(icon, color, selected)`: an icon in its own color, on `selected`
   while chosen; the pointer changes nothing. Square, a column wide in a grid.
-- `text(s)` and `muted(s)` show a line; `heading(s)` a section title on a
+- `text(s)` and `muted(s)` show a line, and `text(s, align)` and
+  `muted(s, align)` one at `Align.left`, `center`, or `right` across the area;
+  `heading(s)` and `heading(s, align)` a section title on a
   `header` strip that reaches half the padding past the area's sides;
   `readout(s)` a value centered on `header`.
 - `popup(box)` opens a modal area filled as a button rests: while it is up,

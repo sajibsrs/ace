@@ -4,7 +4,7 @@
 import math
 import fmt
 import Point, Color, Keycode from sdl
-import Rect, Icon, Align, TEXT_SIZE, GLYPH_WIDTH from "./canvas.ace"
+import Rect, Insets, Icon, Align, TEXT_SIZE, GLYPH_WIDTH from "./canvas.ace"
 import Keyboard, KEY_DELETE, KEY_HOME, KEY_END from "./input.ace"
 import context: "./context.ace"
 import Context, Fill, Theme, Item, Response from "./context.ace"
@@ -25,13 +25,15 @@ press(id: u32, shape: Icon, icon: bool, label: string, fill: Fill): bool {
     res: Response = context.track(context.claim(id), box)
     t: *Theme = &c.theme
     c.canvas.fill(box, t.radius, fill.shade(res))
+    /* The icon and label are centered together, however wide the button. */
     if label.len == 0 {
         c.canvas.icon(shape, box.square(t.icon), t.text)
     } else if icon {
-        c.canvas.icon(shape, box.square(t.padding, t.icon), t.text)
-        c.canvas.text(box, t.padding + t.icon + t.gap, label, t.text)
+        at: f32 = (box.w - t.icon - t.gap - f32(label.len) * GLYPH_WIDTH) / 2.0
+        c.canvas.icon(shape, box.square(at, t.icon), t.text)
+        c.canvas.text(box, at + t.icon + t.gap, label, t.text)
     } else {
-        c.canvas.text(box, t.padding, label, t.text)
+        c.canvas.text(box, label, t.text, Align.center)
     }
     return res.click
 }
@@ -88,29 +90,41 @@ pub toggle(shape: Icon, label: string, value: *bool): bool {
 /* A toggle showing its icon alone. */
 pub toggle(shape: Icon, value: *bool): bool { return toggle(shape, "", value) }
 
-/* `s` in `color`, as wide as it and a text line high. */
-print(s: string, color: Color) {
-    box: Rect = context.place(f32(s.len) * GLYPH_WIDTH, TEXT_SIZE)
+/* `s` in `color`, a text line high, at `align` in its place: as wide as it,
+ * or the area's width when not left. */
+print(s: string, color: Color, align: Align) {
+    w: f32 = f32(s.len) * GLYPH_WIDTH
+    if align != Align.left && !context.across() { w = context.span() }
+    box: Rect = context.place(w, TEXT_SIZE)
     context.record(Item { rect = box })
-    context.current.canvas.text(box, 0.0, s, color)
+    context.current.canvas.text(box, s, color, align)
 }
 
 /* A line of body text. */
-pub text(s: string) { print(s, context.current.theme.text) }
+pub text(s: string) { print(s, context.current.theme.text, Align.left) }
+
+/* A line of body text at `align`. */
+pub text(s: string, align: Align) { print(s, context.current.theme.text, align) }
 
 /* A line of secondary text. */
-pub muted(s: string) { print(s, context.current.theme.muted) }
+pub muted(s: string) { print(s, context.current.theme.muted, Align.left) }
+
+/* A line of secondary text at `align`. */
+pub muted(s: string, align: Align) { print(s, context.current.theme.muted, align) }
 
 /* A section's title in muted text on a header strip, which reaches half the
  * padding past the area's sides. */
-pub heading(s: string) {
+pub heading(s: string) { heading(s, Align.left) }
+
+/* A section's title at `align` on its strip. */
+pub heading(s: string, align: Align) {
     c: *Context = context.current
     t: *Theme = &c.theme
     box: Rect = context.place(f32(s.len) * GLYPH_WIDTH + 2.0 * t.padding, TEXT_SIZE + 2.0 * t.gap)
     context.record(Item { rect = box })
     strip: Rect = Rect { x = box.x - t.padding / 2.0, y = box.y, w = box.w + t.padding, h = box.h }
     c.canvas.fill(strip, t.radius, t.header)
-    c.canvas.text(strip, t.padding, s, t.muted)
+    c.canvas.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, align)
 }
 
 /* `s` centered on the header color: a value shown, not edited. */
