@@ -25,9 +25,8 @@ pub uses(prog: *definition.Program, pool: *path.Pool, decl: u32, only: bool, mi:
     count: u32 = u32(mods[0].parser.nnode)
     calls: []u32 = definition.callees(&prog.s, count)
     defer mem.release[u32](&calls)
-    srcs: [][]u8 = mem.alloc[[]u8](mods.len) // each module's text, read on first use
+    srcs: [][]u8 = mem.zalloc[[]u8](mods.len) // each module's text, read on first use
     defer mem.release[[]u8](&srcs)
-    for i: usize in 0..srcs.len { srcs[i] = null }
     for id: u32 in 1..count {
         if id == decl { continue }
         n: Node = prog.s.node(id)

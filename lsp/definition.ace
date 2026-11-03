@@ -229,8 +229,7 @@ declares(kind: parser.Kind): bool {
  * with `mem.release`.
  */
 pub callees(s: *sema.Sema, count: u32): []u32 {
-    calls: []u32 = mem.alloc[u32](usize(count))
-    for i: usize in 0..calls.len { calls[i] = 0 }
+    calls: []u32 = mem.zalloc[u32](usize(count))
     for id: u32 in 1..count {
         c: Node = s.node(id)
         if c.kind == parser.Kind.call && c.a != 0 && c.a < count { calls[c.a] = s.node_sym(id) }
