@@ -1,0 +1,227 @@
+/* ace-mcp: the Ace server for coding agents. Speaks the Model Context
+ * Protocol over stdin and stdout, one JSON-RPC message per line, and offers
+ * ace-lsp's lookups as tools over files on disk. Diagnostics go to stderr.
+ */
+
+import file
+import fmt
+import json: "../pkg/json/mod.ace"
+import mem
+import str
+import sys
+
+import path: "../selfhost/path.ace"
+
+import definition: "../lsp/definition.ace"
+import hover: "../lsp/hover.ace"
+
+/* The MCP revision this server implements. */
+PROTOCOL: const string = "2025-06-18"
+
+/* The message stream on stdin: one message per newline-terminated line. */
+Reader: struct {
+    buf: []u8 = null,
+    start: usize = 0,
+    end: usize = 0,
+}
+
+Reader.wipe(self) {
+    mem.release[u8](&self.buf)
+}
+
+/* Reads more of stdin; false at end of input or on a read error. */
+Reader.fill(self): bool {
+    if self.start > 0 {
+        mem.move(self.buf[..self.end - self.start], self.buf[self.start..self.end])
+        self.end -= self.start
+        self.start = 0
+    }
+    if self.end == self.buf.len {
+        size: usize = self.buf.len == 0 ? 4096 : self.buf.len * 2
+        self.buf = mem.realloc[u8](self.buf, size)
+    }
+    n: int, err: Error = sys.read(sys.stdin, self.buf[self.end..])
+    if err != null || n <= 0 { return false }
+    self.end += usize(n)
+    return true
+}
+
+/* The next non-empty line, valid until the next call; false at end of input. */
+Reader.next(self): (string, bool) {
+    for {
+        nl: usize, found: bool = str.find(self.buf[self.start..self.end], "\n")
+        if !found {
+            if !self.fill() { return "", false }
+            continue
+        }
+        line: string = str.trim(self.buf[self.start..self.start + nl])
+        self.start += nl + 1
+        if line.len > 0 { return line, true }
+    }
+    return "", false
+}
+
+write_all(data: []u8) {
+    at: usize = 0
+    for at < data.len {
+        n: int, err: Error = sys.write(sys.stdout, data[at..])
+        if err != null || n <= 0 { return }
+        at += usize(n)
+    }
+}
+
+/* The declaration named at 1-based `line` and byte `column` of `file_path`
+ * and the text of its file, or false. Strings live in `pool`.
+ */
+resolve(pool: *path.Pool, file_path: string, line: u32, column: u32): (definition.Location, string, bool) {
+    none: definition.Location = blank(definition.Location)
+    canon: string, found: bool = path.canonical(pool, file_path)
+    if !found { return none, "", false }
+    src: []u8, err: Error = file.read(canon)
+    defer mem.release[u8](&src)
+    if err != null { return none, "", false }
+    loc: definition.Location, hit: bool = definition.find(pool, canon, src, line, column)
+    if !hit { return none, "", false }
+    target: []u8, terr: Error = file.read(loc.file)
+    defer mem.release[u8](&target)
+    if terr != null { return none, "", false }
+    return loc, pool.copy(target), true
+}
+
+/* Runs tool `name` on the arguments in `req` and returns its text and
+ * whether it failed. The text lives in `pool`.
+ */
+call(pool: *path.Pool, req: *json.Json, name: string): (string, bool) {
+    file_path: string = req.string("/params/arguments/file")
+    line: f64 = req.number("/params/arguments/line")
+    column: f64 = req.number("/params/arguments/column")
+    if !mem.equal(name, "definition") && !mem.equal(name, "hover") { return "unknown tool", true }
+    if file_path == null || line < 1.0 || column < 1.0 { return "needs file, and line and column from 1", true }
+    loc: definition.Location, target: string, ok: bool = resolve(pool, file_path, u32(line), u32(column))
+    if !ok { return "no declaration there, or the program does not load", true }
+    if mem.equal(name, "hover") { return hover.text(pool, target, loc.line, loc.doc), false }
+    num: [32]char
+    n: usize, nok: bool = str.format(num[..], usize(loc.line))
+    m: usize, mok: bool = str.concat([":"], num[n..])
+    k: usize, kok: bool = str.format(num[n + m..], usize(loc.col))
+    return pool.join([loc.file, ":", num[..n + m + k]]), false
+}
+
+/* Writes one tool's description: `name`, `about`, and the position input. */
+tool(out: *json.Json, name: string, about: string) {
+    out.object()
+    out.field("name", name)
+    out.field("description", about)
+    out.key("inputSchema")
+    out.object()
+    out.field("type", "object")
+    out.key("properties")
+    out.object()
+    out.key("file")
+    out.object()
+    out.field("type", "string")
+    out.field("description", "path of an .ace file")
+    out.end()
+    out.key("line")
+    out.object()
+    out.field("type", "integer")
+    out.field("description", "1-based line")
+    out.end()
+    out.key("column")
+    out.object()
+    out.field("type", "integer")
+    out.field("description", "1-based byte column of the name")
+    out.end()
+    out.end()
+    out.key("required")
+    out.array()
+    out.value("file")
+    out.value("line")
+    out.value("column")
+    out.end()
+    out.end()
+    out.end()
+}
+
+main(): int {
+    reader: Reader = Reader {}
+    defer reader.wipe()
+    req: json.Json = json.Json.new()
+    defer req.wipe()
+    out: json.Json = json.Json.new()
+    defer out.wipe()
+    for {
+        line: string, ok: bool = reader.next()
+        if !ok { return 0 }
+        if req.parse(line) != null {
+            fmt.printf(sys.stderr, "ace-mcp: malformed message\n")
+            continue
+        }
+        method: string = req.string("/method")
+        id: json.Value, has_id: bool = req.get("/id")
+        if method == null || !has_id { continue } // responses and notifications
+        out.reset()
+        out.object()
+        out.field("jsonrpc", "2.0")
+        out.field("id", id)
+        if mem.equal(method, "initialize") {
+            out.key("result")
+            out.object()
+            out.field("protocolVersion", PROTOCOL)
+            out.key("capabilities")
+            out.object()
+            out.key("tools")
+            out.object()
+            out.end()
+            out.end()
+            out.key("serverInfo")
+            out.object()
+            out.field("name", "ace-mcp")
+            out.end()
+            out.end()
+        } else if mem.equal(method, "ping") {
+            out.key("result")
+            out.object()
+            out.end()
+        } else if mem.equal(method, "tools/list") {
+            out.key("result")
+            out.object()
+            out.key("tools")
+            out.array()
+            tool(&out, "definition", "Where the Ace name at a position is declared, as file:line:column. Resolves through sema: locals, overloads, fields, imports, std.")
+            tool(&out, "hover", "The declaration line and doc comment of the Ace name at a position, as Markdown.")
+            out.end()
+            out.end()
+        } else if mem.equal(method, "tools/call") {
+            pool: path.Pool = blank(path.Pool)
+            defer pool.wipe()
+            text: string, failed: bool = call(&pool, &req, req.string("/params/name"))
+            out.key("result")
+            out.object()
+            out.key("content")
+            out.array()
+            out.object()
+            out.field("type", "text")
+            out.field("text", text)
+            out.end()
+            out.end()
+            out.field("isError", failed)
+            out.end()
+        } else {
+            out.key("error")
+            out.object()
+            out.field("code", 0 - 32601)
+            out.field("message", "method not found")
+            out.end()
+        }
+        out.end()
+        text: string, err: Error = out.format()
+        if err != null {
+            fmt.printf(sys.stderr, "ace-mcp: cannot format a response to %s\n", method)
+            continue
+        }
+        write_all(text)
+        write_all("\n")
+    }
+    return 0
+}

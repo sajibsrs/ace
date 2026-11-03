@@ -247,3 +247,7 @@
   one-export lib over `pkg/json` 76,156 to 24,140 bytes, over `pkg/regex` 72,892
   to 21,292. Plain `-c` still compiles everything; a library with no C export is
   an error, as it would be empty.
+- Added `ace-mcp` in `mcp/`, an MCP server for coding agents (#182): newline-
+  delimited JSON-RPC on stdio, offering `ace-lsp`'s `definition` and `hover`
+  as tools over files on disk at 1-based line and byte column; `.mcp.json`
+  starts it from the repository root, where it finds `std/`.

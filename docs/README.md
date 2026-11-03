@@ -55,6 +55,8 @@ must be corrected.
   for the dependency-free Ace VS Code extension.
 - [Language server](lsp.md) — `ace-lsp`, the outline over LSP from the
   selfhost front-end.
+- [Agent server](mcp.md) — `ace-mcp`, definition and hover for coding
+  agents over MCP.
 
 Repository implementation status is summarized in
 [`../AGENTS.md`](../AGENTS.md), with chunk-by-chunk history in

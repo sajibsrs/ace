@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "ace": {
+      "command": "./ace-mcp"
+    }
+  }
+}
