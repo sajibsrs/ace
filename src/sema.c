@@ -7196,13 +7196,13 @@ static int init_stmt(InitCk* k, Node* s) {
     }
     case N_RETURN:
         init_expr(k, s->a); return 0;
-    case N_DEFER: // a deferred block reads only what is set where it stands; its writes stay inside it
-        if (s->b) {
-            int outer = init_begin(k);
-            init_block(k, s->b);
-            init_end(k, outer);
-        }
+    case N_DEFER: { // a deferred block or call reads only what is set where it stands; its writes stay inside it
+        int outer = init_begin(k);
+        if (s->b) init_block(k, s->b);
+        else init_expr(k, s->a);
+        init_end(k, outer);
         return 1;
+    }
     case N_FALLTHROUGH:
         return 0;
     case N_ASM:

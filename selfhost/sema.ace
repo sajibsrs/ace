@@ -8683,12 +8683,10 @@ Sema.init_stmt(self, s: u32): bool {
             self.init_expr(n.a)
             return false
         }
-        Kind.defer { // a deferred block reads only what is set where it stands; its writes stay inside it
-            if n.b != 0 {
-                outer: u32 = self.init_begin()
-                _ = self.init_block(n.b)
-                self.init_end(outer)
-            }
+        Kind.defer { // a deferred block or call reads only what is set where it stands; its writes stay inside it
+            outer: u32 = self.init_begin()
+            if n.b != 0 { _ = self.init_block(n.b) } else { self.init_expr(n.a) }
+            self.init_end(outer)
             return true
         }
         Kind.fallthrough, Kind.continue { return false }

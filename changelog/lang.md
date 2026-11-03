@@ -1,5 +1,10 @@
 # Language
 
+- Definite initialization checks a deferred call's arguments at the `defer`
+  statement, where they are snapshotted, within the deferred block's scope:
+  an uninitialized argument is an error, and `&x` or a by-address receiver
+  initializes nothing after it. C and selfhost.
+
 - `defer { ... }` defers a block, for cleanup that is more than one call: it
   is checked where it stands, reads its variables at exit, and no `return`,
   `break`, or `continue` may leave it. Lowering keeps it in the defer list and

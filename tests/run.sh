@@ -189,6 +189,8 @@ tests/sema/defer/block_exit_err.ace|8:25: error: continue cannot leave a deferre
 tests/sema/defer/block_exit_err.ace|13:17: error: break cannot leave a deferred block
 tests/sema/defer/block_exit_err.ace|15:13: error: return cannot leave a deferred block
 tests/sema/defer/block_init_err.ace|7:32: error: 'y' was not initialized before use
+tests/sema/defer/call_init_err.ace|10:30: error: 'y' was not initialized before use
+tests/sema/defer/call_init_err.ace|14:12: error: 'z' was not initialized before use
 tests/sema/inline/asm_err.ace|inline function 'spin' cannot contain inline assembly
 tests/sema/inline/specialized_err.ace|'inline' needs a body; 'weight' is marked 'specialized'
 tests/sema/inline/intrinsic_err.ace|'inline' cannot mark intrinsic declaration 'cast'

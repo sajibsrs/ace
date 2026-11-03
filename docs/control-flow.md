@@ -481,6 +481,9 @@ work(): int {
 - Definite initialization checks it where it stands: it may read only what
   is initialized at the `defer` statement, and its own assignments do not
   count as initializing anything after it.
+  A deferred call is held to the same rule: its arguments must be
+  initialized at the `defer` statement, and `defer init(&x)` does not
+  initialize `x` for the code after it.
 - No exit leaves it. `return` inside it, and `break` or `continue` aimed at a
   loop or label outside it, are compile errors. A loop or labeled block inside
   it uses `break` and `continue` normally, a `switch` inside it can

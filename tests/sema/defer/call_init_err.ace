@@ -1,0 +1,15 @@
+/* A deferred call snapshots its arguments at the defer statement, and its
+   by-address arguments initialize nothing there. */
+
+import fmt
+
+set(p: *int) { *p = 1 }
+
+main(): int {
+    y: int
+    defer fmt.printf("%d\n", y)
+    y = 1
+    z: int
+    defer set(&z)
+    return z
+}
