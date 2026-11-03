@@ -186,8 +186,8 @@ shared rules are in `spec/std/README.md`.
       keeping a HEAD handler's own value, except for 1xx, 204, and 304, and
       omits the body for those and HEAD. A handler `Transfer-Encoding` fails
       with `ServerErr.framing` and a growth failure with `ServerErr.memory`.
-      The caller owns sockets, polling, and timeouts. Server concurrency
-      beyond this and TLS server mode remain deferred (issue #67).
+      The caller owns sockets, polling, threads, and timeouts. TLS server
+      mode waits on the TLS transport (issue #65).
     - `http` is plaintext-only; HTTPS/TLS support was removed (see the TLS
       client transport, issue #65) and is not part of the current
       surface. `Url` parsing still accepts an `https://` scheme for syntax

@@ -149,12 +149,6 @@ loop continues. There is no concurrency — one connection is handled at a
 time — so this overload is meant for demos and local testing rather than
 serving concurrent traffic.
 
-A caller-driven, nonblocking `ServerContext`/`Event` core existed here at one
-point but was implemented directly, without going through the Decision Queue
-carve process. It has been removed; a fresh carve of how much server
-mechanism belongs in the language versus a framework built on top is tracked
-in issue #67 before anything like it returns.
-
 ## Simple HTTP server demo
 
 A runnable proof of concept lives at `demo/http-simple-server/main.ace`: it
