@@ -15,6 +15,13 @@ history.
 - Compiler work: read `spec/compiler.md`, the chapters for the feature
   involved, and `GRAMMAR.md`, then grep `changelog/` and the implementation
   by topic.
+- When the `ace` MCP tools are available (`ace-mcp`, registered in
+  `.mcp.json`; see `docs/mcp.md`), prefer them to grep and reading files:
+  `std_lookup` for a std signature and doc comment, `spec_section` for a
+  reference such as "Memory #15", `definition`/`hover`/`references` for a
+  name in the code, `examples` for real uses, and `diagnostics` to check a
+  file. Rebuild with `./ace -o ace-mcp mcp/main.ace` after changing
+  `mcp/`, `lsp/`, or `selfhost/`.
 - Standard-library work: inspect the relevant `std/` modules and their
   `spec/std/` chapter (`spec/std/README.md` holds the shared rules). Reuse
   existing operations; do not duplicate parsing, memory, text, or platform
