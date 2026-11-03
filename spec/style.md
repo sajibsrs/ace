@@ -6,7 +6,7 @@ Decision: names state what a declaration does or owns; accuracy beats cosmetic s
 4. A property's accessors are one overloaded name, told apart by signature: `color()` reads it and `color(value)` sets it, never `get_color`/`set_color`. The getter takes `const self`. `get`/`set` remain ordinary method names for keyed access (`Map.get(key)`/`set(key, value)`).
 5. Module-level `const` declarations use all uppercase (`BACKLOG`). A same-named local (e.g. a parameter) may shadow it per the ordinary nearest-binding rule (Names & Scoping); no `DEFAULT_`-style prefix.
 6. File names are nouns, matching their own import alias (`parsing.ace` as `parsing`, not `parse.ace`).
-7. A name that joins several nouns (`window_title_font`) is first checked for structure it flattens: when the words are owner and part, a module, type, or field path (`window.title.font`) states each owner once and lets each level be reused. Words stay joined only when together they name one concept (`line_count`, `read_all`).
+7. A name that joins several nouns (`window_title_font`) is first checked for structure it flattens: when the words are owner and part, a module, type, or field path (`window.title.font`) states each owner once and lets each level be reused. Words stay joined only when together they name one concept (`line_count`, `read_all`), or where the language offers nothing to group them under: module-level constants keep a shared prefix (`MOD_SHIFT`).
 
 ## Resources
 Decision: release on every exit is written once, next to the acquisition.
@@ -14,7 +14,7 @@ Decision: release on every exit is written once, next to the acquisition.
 
 ## Comments
 Decision: the signature carries names and types; comments carry meaning.
-1. A declaration's doc comment is the comment block on its own lines directly above it; editor hover shows it. It is prose that names parameters and results in backticks where they need explaining, as Go does; no `@param`-style tags.
+1. A declaration's doc comment is the comment block on its own lines directly above it; editor hover shows it. Every `pub` declaration has one. It is prose that names parameters and results in backticks where they need explaining, as Go does; no `@param`-style tags.
 
 ## Layout
 Decision: one place for each kind of file; `.acefmt` is normative for formatting.

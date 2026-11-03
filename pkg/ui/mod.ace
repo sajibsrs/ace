@@ -102,6 +102,7 @@ pub id(address: usize): u32 { return context.id(address) }
  * `pop_id` closes it. */
 pub push_id(n: u32) { context.push_id(n) }
 
+/* Closes the scope the last `push_id` opened. */
 pub pop_id() { context.pop_id() }
 
 /* Consumes a press of `code` with no modifiers, and says whether there was
@@ -155,8 +156,8 @@ pub field(input: *TextInput, allow: string): bool { return controls.field(input,
  * True when a row was pressed. */
 pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool { return controls.list(items, chosen, rows, scroll) }
 
-/* The height of a list showing `rows` rows. */
-pub list_height(rows: usize): f32 { return controls.list_height(rows) }
+/* The height of `n` rows. */
+pub rows(n: usize): f32 { return controls.rows(n) }
 
 /* A square showing `shape` in `color`, on the selected color while `selected`;
  * true when clicked. */

@@ -29,7 +29,7 @@ EM = 64.0
 # Flatness of curves, in em units: 0.1 pixel at 40 pixels.
 FLAT = 0.1 * EM / 40.0
 
-spec = importlib.util.spec_from_file_location("icon_bake", HERE.parent / "icon" / "bake.py")
+spec = importlib.util.spec_from_file_location("icon_bake", HERE.parents[2] / "demo" / "binbox" / "icon" / "bake.py")
 icon_bake = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(icon_bake)
 
@@ -248,10 +248,13 @@ def main():
         "",
         "/* Em units per em; y runs down from the baseline. */",
         f"pub EM: const f32 = {EM}",
-        "/* The advance of every glyph, the cap and x heights above the baseline. */",
+        "/* The advance of every glyph, the font being monospaced. */",
         f"pub ADVANCE: const f32 = {adv}",
+        "/* The height of a capital above the baseline. */",
         f"pub CAP: const f32 = {698 * EM / 1000}",
+        "/* The height of a lowercase x above the baseline. */",
         f"pub XHEIGHT: const f32 = {516 * EM / 1000}",
+        "/* The first and last character code baked. */",
         f"pub FIRST: const usize = {FIRST}",
         f"pub LAST: const usize = {LAST}",
         f"/* The most points of one glyph polygon: {worst[0]} (\"{worst[1]}\"). */",
@@ -262,7 +265,7 @@ def main():
     ]
     for i in range(0, len(start), 12):
         lines.append("    " + ", ".join(str(v) for v in start[i:i + 12]) + ",")
-    lines += ["]", "", f"pub POINTS: [{len(flat)}]f32 = ["]
+    lines += ["]", "", "/* Each glyph's polygons in the icon table's layout, then -9; see font/bake.py. */", f"pub POINTS: [{len(flat)}]f32 = ["]
     for i in range(0, len(flat), 8):
         lines.append("    " + ", ".join(repr(float(v)) for v in flat[i:i + 8]) + ",")
     lines.append("]")

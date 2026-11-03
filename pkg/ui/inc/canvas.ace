@@ -11,6 +11,7 @@ pub TEXT_SIZE: const f32 = 16.0
 /* Advance of one glyph, the font being monospaced: 0.6 of TEXT_SIZE. */
 pub GLYPH_WIDTH: const f32 = 9.6
 
+/* A rectangle in window pixels: its top-left corner (x, y), width, and height. */
 pub Rect: struct {
     pub x: f32 = 0.0,
     pub y: f32 = 0.0,
@@ -83,6 +84,7 @@ pub Canvas: struct {
 /* An empty layer that draws to `r`. */
 pub Canvas.init(r: Renderer): Canvas { return Canvas { r = r } }
 
+/* A solid triangle `a`, `b`, `c` in `color`. */
 pub Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
     if self.count + 3 > self.vertices.len { self.flush() }
     self.vertices[self.count] = Vertex { position = a, color = color }
@@ -91,6 +93,7 @@ pub Canvas.triangle(self, a: Point, b: Point, c: Point, color: Color) {
     self.count += 3
 }
 
+/* `box` filled with `color`, square-cornered. */
 pub Canvas.fill(self, box: Rect, color: Color) {
     a: Point = Point { x = box.x, y = box.y }
     b: Point = Point { x = box.x + box.w, y = box.y }
@@ -179,6 +182,8 @@ Canvas.arc(self, inner: []Point, outer: []Point, k: usize, x: f32, y: f32, dx: f
     outer[k] = Point { x = x + dx * (rad + 0.5), y = y + dy * (rad + 0.5) }
 }
 
+/* A quadrilateral `a`, `b`, `c`, `d` in order, as two triangles, each corner
+ * keeping its vertex color. */
 pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
     if self.count + 6 > self.vertices.len { self.flush() }
     self.vertices[self.count] = a

@@ -7,10 +7,13 @@
 
 /* Em units per em; y runs down from the baseline. */
 pub EM: const f32 = 64.0
-/* The advance of every glyph, the cap and x heights above the baseline. */
+/* The advance of every glyph, the font being monospaced. */
 pub ADVANCE: const f32 = 38.4
+/* The height of a capital above the baseline. */
 pub CAP: const f32 = 44.672
+/* The height of a lowercase x above the baseline. */
 pub XHEIGHT: const f32 = 33.024
+/* The first and last character code baked. */
 pub FIRST: const usize = 32
 pub LAST: const usize = 126
 /* The most points of one glyph polygon: 112 ("g"). */
@@ -28,6 +31,7 @@ pub START: [95]u32 = [
     13248, 13365, 13502, 13549, 13626, 13698, 13785, 13832, 14129, 14146, 14443,
 ]
 
+/* Each glyph's polygons in the icon table's layout, then -9; see font/bake.py. */
 pub POINTS: [14615]f32 = [
     -9.0, -2.0, 6.0, 17.86, -15.36, 14.78, -31.68, 14.78,
     -44.67, 23.62, -44.67, 23.62, -31.68, 20.54, -15.36, 5.0,

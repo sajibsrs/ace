@@ -100,8 +100,8 @@ whether its value changed.
 - `list(items, &chosen, rows, &scroll)` shows `rows` of `items` from row
   `scroll` on, every other row on `field`. A press on a row picks it. Under
   the pointer and overflowing, it consumes the wheel, a row a notch, and draws
-  a thumb; otherwise the wheel passes on. `list_height(rows)` gives its
-  height, for sizing what holds it.
+  a thumb; otherwise the wheel passes on. `rows(n)` gives the height of
+  `n` rows, for sizing what holds it; `Theme.row()` is one row's.
 - `swatch(icon, color, selected)`: an icon in its own color, on `selected`
   while chosen; the pointer changes nothing. Square, a column wide in a grid.
 - `text(s)` and `muted(s)` show a line; `heading(s)` a section title on a

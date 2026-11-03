@@ -65,6 +65,9 @@ pub Theme: struct {
     pub icon: f32 = 0.0,
 }
 
+/* A row's height: a line of text with a gap above and below. */
+pub Theme.row(const self): f32 { return TEXT_SIZE + 2.0 * self.gap }
+
 /* Nested `push_id` scopes and areas, and the ids a debug build checks for
  * repeats in one frame; past that many it checks no more. */
 SCOPES_MAX: const usize = 16
@@ -202,6 +205,7 @@ pub push_id(n: u32) {
     c.scope = fnv(c.scope, 0, u64(n))
 }
 
+/* Closes the scope the last `push_id` opened. */
 pub pop_id() {
     c: *Context = current
     c.depth -= 1
@@ -438,6 +442,3 @@ pub focusing(): bool {
 
 /* The id of part `n` of the control `base`. */
 pub derive(base: u32, n: usize): u32 { return nonzero(fnv(base, 0, u64(n))) }
-
-/* A list row's height: a line of text with a gap above and below. */
-pub list_row(): f32 { return TEXT_SIZE + 2.0 * current.theme.gap }

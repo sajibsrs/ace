@@ -26,9 +26,9 @@ pub OpenList.draw(self, live: bool) {
     /* The rows that fit under the toolbar, at least one. */
     room: f32 = g.view.height() - (bar.GAP + bar.BAR) - bar.LIST_TOP - bar.LIST_BOTTOM
     rows: usize = names.len
-    for rows > 1 && ui.list_height(rows) > room { rows -= 1 }
+    for rows > 1 && ui.rows(rows) > room { rows -= 1 }
     if rows == 0 { rows = 1 }
-    panel: ui.Rect = ui.Rect { x = g.opener.x, y = bar.GAP + bar.BAR, w = bar.LIST_W, h = ui.list_height(rows) + bar.LIST_TOP + bar.LIST_BOTTOM }
+    panel: ui.Rect = ui.Rect { x = g.opener.x, y = bar.GAP + bar.BAR, w = bar.LIST_W, h = ui.rows(rows) + bar.LIST_TOP + bar.LIST_BOTTOM }
     list: ui.Area = ui.popup(panel)
     defer list.end()
     ui.space(bar.LIST_TOP)

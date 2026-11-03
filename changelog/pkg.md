@@ -109,3 +109,6 @@
 - `pkg/json`'s `escape` tests the common case (a byte written as itself) first
   rather than after seven compares: `bench/package/json` format 1.29x
   (15.6 → 12.1 µs per document).
+- `pkg/ui`'s row height moved to the theme as `Theme.row()`, and
+  `list_height(rows)` became `rows(n)` (Naming #7); every `pub` declaration has
+  a doc comment (Comments #1). `font/bake.py` finds the icon baker in binbox.

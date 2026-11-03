@@ -311,8 +311,8 @@ allowed(allow: string, c: u8): bool {
     return false
 }
 
-/* The height of a list showing `rows` rows. */
-pub list_height(rows: usize): f32 { return f32(rows) * context.list_row() }
+/* The height of `n` rows. */
+pub rows(n: usize): f32 { return f32(n) * context.current.theme.row() }
 
 /* A list of `items`, `rows` of them showing from row `*scroll` on, every
  * other row on the field color and `*chosen` on the selected color. A press
@@ -322,7 +322,7 @@ pub list_height(rows: usize): f32 { return f32(rows) * context.list_row() }
 pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
-    h: f32 = context.list_row()
+    h: f32 = t.row()
     box: Rect = context.place(context.span(), f32(rows) * h)
     base: u32 = context.claim(context.id(usize(scroll)))
     most: f32 = 0.0
