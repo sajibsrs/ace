@@ -30,11 +30,15 @@ tools. The first two take `file`, a 1-based `line`, and a 1-based byte
 - `std_lookup` (`name`): every public declaration in std that a qualified
   name names, `module.name` (`str.format`, `mem.copy`) or
   `module.Type.method` (`fmt.Buffer.printf`), all overloads in declaration
-  order. Each is shown as `file:line` and then its hover text. The module
+  order. Each is shown as `file:line` and then its hover text. A bare
+  `module` (`str`) lists every public declaration instead, one
+  `file:line: signature` line each, the signature cut before a body's `{`.
+  Paths are relative to the repository. The module
   is `std/<module>.ace` or `std/<module>/mod.ace`. A directory module's files
   are searched too, including its `inc/` and current-target `os/` files.
 - `spec_section` (`ref`): the spec item a reference such as `Memory #15`
-  names. The section is found through the table in `spec/README.md`, then
+  names, or with a bare section (`Naming`), the heading's `file:line` and the
+  whole section. The section is found through the table in `spec/README.md`, then
   item `N.` under that section's `## ` heading. The result is the item's
   `spec/` `file:line`, an `[open]` or `[controversial]` marker when its text
   has one, the item text, and then each `spec/queue.md` and `changelog/` line

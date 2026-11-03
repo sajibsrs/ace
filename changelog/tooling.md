@@ -268,3 +268,6 @@
 - Definition and hover resolve a generic call's name (`math.max[f32](...)`):
   sema binds a generic call on its `f[T]` callee, so `callees` maps that
   binding to the callee's base name as well.
+- `ace-mcp`'s `spec_section` takes a bare section (`Naming`) for the whole
+  section, and `std_lookup` a bare module (`str`) for one signature line per
+  public declaration; `std_lookup` paths are repository-relative.

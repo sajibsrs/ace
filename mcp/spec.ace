@@ -18,14 +18,14 @@ CHANGELOGS: const [5]string = ["changelog/lang.md", "changelog/compiler.md", "ch
 
 /* For `ref`, `Section #N`, the item's `file:line`, any `[open]` or
  * `[controversial]` marker, its text, and each citing queue and changelog
- * line, or why there is none and false. Lives in `pool`.
+ * line; for a bare `Section`, its heading's `file:line` and every item under
+ * it. Without a match, why there is none and false. Lives in `pool`.
  */
 pub text(pool: *path.Pool, ref: string): (string, bool) {
     hash: usize, has_hash: bool = str.find(ref, " #")
-    if !has_hash { return "needs Section #N, such as Memory #15", false }
-    section: string = str.trim(ref[..hash])
-    number: string = str.trim(ref[hash + 2..])
-    if section.len == 0 || number.len == 0 || !digits(number) { return "needs Section #N, such as Memory #15", false }
+    section: string = str.trim(has_hash ? ref[..hash] : ref)
+    number: string = has_hash ? str.trim(ref[hash + 2..]) : ""
+    if section.len == 0 || (has_hash && (number.len == 0 || !digits(number))) { return "needs Section or Section #N, such as Memory #15", false }
 
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer l.wipe()
@@ -49,10 +49,12 @@ pub text(pool: *path.Pool, ref: string): (string, bool) {
         name, _ = str.trim(name, '`', true)
         if !quoted { continue }
         chapter: string = pool.join(["spec/", name])
-        item(pool, &parts, root, chapter, section, number)
+        if has_hash { item(pool, &parts, root, chapter, section, number) } else { whole(pool, &parts, root, chapter, section) }
         if parts.len > 0 { break }
     }
+    if parts.len == 0 && !has_hash { return pool.join(["no section ", section, " in spec/"]), false }
     if parts.len == 0 { return pool.join(["no item ", section, " #", number, " in spec/"]), false }
+    if !has_hash { return pool.join(parts.view()), true }
     cite: string = pool.join([section, " #", number])
     cited(pool, &parts, root, "spec/queue.md", cite)
     for log: string in CHANGELOGS { cited(pool, &parts, root, log, cite) }
@@ -91,6 +93,35 @@ item(pool: *path.Pool, parts: *array.Array[string], root: string, chapter: strin
     if str.has(body, "[open]") { parts.push(" [open]") }
     if str.has(body, "[controversial]") { parts.push(" [controversial]") }
     parts.push(pool.join(["\n\n", body, "\n"]))
+}
+
+/* Appends the `## section` heading's location in `chapter` to `parts`, then
+ * the section's text up to the next heading.
+ */
+whole(pool: *path.Pool, parts: *array.Array[string], root: string, chapter: string, section: string) {
+    src: []u8, err: Error = file.read(pool.join([root, "/", chapter]))
+    defer mem.release[u8](&src)
+    if err != null { return }
+    head: string = pool.join(["## ", section])
+    start: usize = 0
+    found: bool = false
+    line: usize = 0
+    at: usize = 0
+    for at < src.len {
+        row: string = line_of(src[at..])
+        line += 1
+        if str.has(row, "## ", false) {
+            if found { break }
+            if str.has(row, head, false) && (row.len == head.len || !letter(row[head.len])) {
+                found = true
+                parts.push(where(pool, chapter, line))
+                start = at + row.len
+            }
+        }
+        at += row.len
+    }
+    if !found { return }
+    parts.push(pool.join(["\n\n", str.trim(src[start..at]), "\n"]))
 }
 
 /* Appends every line of `log` that cites `cite` (not followed by a digit). */

@@ -30,6 +30,9 @@ out=$(printf '%s\n' \
   '{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"references","arguments":{"file":"lsp/definition.ace","line":39,"column":5}}}' \
   '{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"examples","arguments":{"file":"std/str.ace","line":236,"column":5}}}' \
   '{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"references","arguments":{"file":"lsp/main.ace","line":1,"column":1}}}' \
+  '{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"std_lookup","arguments":{"name":"str"}}}' \
+  '{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"spec_section","arguments":{"ref":"Naming"}}}' \
+  '{"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"spec_section","arguments":{"ref":"Nothing"}}}' \
   | ./ace-mcp 2>/dev/null)
 
 fail=0
@@ -54,13 +57,13 @@ expect 8 'bad.ace:2:14: type mismatch: string given where int expected'
 expect 8 'bad.ace:3:12: unknown name'
 expect 9 "lex.ace:1:27: unknown escape sequence '\\\\q'"
 expect 10 '"text":"no errors"'
-expect 11 '/std/str.ace:236\n```ace\npub format(destination: []char, value: int): (usize, bool)'
-expect 11 '/std/str.ace:473\n'
+expect 11 '"text":"std/str.ace:236\n```ace\npub format(destination: []char, value: int): (usize, bool)'
+expect 11 '\n\nstd/str.ace:473\n'
 expect 12 'pub Buffer.printf(self, format: string): int'
 expect 13 '"isError":true'
 expect 2 '"name":"spec_section"'
 expect 14 'spec/memory.md:11\n\n9. Typed pointer arithmetic'
-expect 14 'changelog/lang.md:186: - An assignment evaluates'
+expect 14 ': - An assignment evaluates its right side before its target (Memory #9)'
 expect 15 'spec/modules-packages.md:19 [open]'
 expect 16 '"isError":true'
 expect 2 '"name":"references"'
@@ -69,6 +72,10 @@ expect 17 '/lsp/definition.ace:50:5\n'
 expect 17 '/lsp/definition.ace:89:35\n'
 expect 18 '/tests/emit/strings/str_format.ace:22:17: n, ok = str.format(dst, -17)\n'
 expect 19 '"isError":true'
-[ "$(printf '%s\n' "$out" | wc -l)" -eq 19 ] || { echo "FAIL: expected 19 responses"; fail=1; }
+expect 20 'std/str.ace:236: pub format(destination: []char, value: int): (usize, bool)\n'
+expect 21 'spec/style.md:1\n\nDecision: names state'
+expect 21 '7. A name that joins several nouns'
+expect 22 '"isError":true'
+[ "$(printf '%s\n' "$out" | wc -l)" -eq 22 ] || { echo "FAIL: expected 22 responses"; fail=1; }
 [ $fail -eq 0 ] && echo "ace-mcp: ok"
 exit $fail

@@ -18,19 +18,23 @@ Node: type = parser.Node
 TARGET: const string = "darwin-arm64"
 
 /* For `name`, `module.name` or `module.Type.method`, each match as its
- * `file:line` and hover Markdown, in declaration order, or why there is none
- * and false. Lives in `pool`.
+ * `file:line` and hover Markdown, in declaration order; for a bare `module`,
+ * each public declaration as `file:line: ` and its signature line. Paths are
+ * relative to the repository. Without a match, why there is none and false.
+ * Lives in `pool`.
  */
 pub text(pool: *path.Pool, name: string): (string, bool) {
     segs: [4]string
     n: usize, fits: bool = str.split(name, '.', segs[..])
-    if !fits || n < 2 || n > 3 { return "needs module.name or module.Type.method", false }
+    if !fits || n > 3 || segs[n - 1].len == 0 { return "needs module, module.name, or module.Type.method", false }
     want: string = segs[n - 1]
     owner: string = n == 3 ? segs[1] : ""
 
     l: module.Loader, found: bool = module.Loader.new(TARGET)
     defer l.wipe()
     if !found { return "cannot locate std/", false }
+    base: string, _ = path.canonical(pool, path.dir(l.std_dir))
+    base = pool.join([base, "/"])
     root: string, flat: bool = path.canonical(pool, pool.join([l.std_dir, "/", segs[0], ".ace"]))
     under: string = "" // a directory module's files all sit under its directory
     if !flat {
@@ -55,14 +59,20 @@ pub text(pool: *path.Pool, name: string): (string, bool) {
             id: u32 = p.kid(m.file, k)
             if l.module_of(id) != mi { continue }
             d: *Node = p.node(id)
-            if (d.flags & parser.F_PUB) == 0 || !mem.equal(source_name(d.text), want) { continue }
+            if (d.flags & parser.F_PUB) == 0 { continue }
+            num: [16]char
+            w: usize, _ = str.format(num[..], usize(d.line))
+            at: string = pool.join([relative(m.canon, base), ":", num[..w]])
+            if n == 1 {
+                parts.push(pool.join([at, ": ", signature(src, d.line), "\n"]))
+                continue
+            }
+            if !mem.equal(source_name(d.text), want) { continue }
             method: bool = d.kind == parser.Kind.func && (d.flags & (parser.F_METHOD | parser.F_ASSOC)) != 0 && d.d != 0
             if method != (owner.len > 0) { continue }
             if method && !mem.equal(source_name(p.node(d.d).text), owner) { continue }
-            num: [16]char
-            w: usize, _ = str.format(num[..], usize(d.line))
             if parts.len > 0 { parts.push("\n\n") }
-            parts.push(pool.join([m.canon, ":", num[..w], "\n", hover.text(pool, src, d.line, d.line)]))
+            parts.push(pool.join([at, "\n", hover.text(pool, src, d.line, d.line)]))
         }
     }
     if parts.len == 0 { return pool.join(["no public declaration '", name, "'"]), false }
@@ -74,4 +84,27 @@ source_name(text: string): string {
     i: usize = text.len
     for i > 0 && text[i - 1] != '$' { i -= 1 }
     return text[i..]
+}
+
+/* `canon` without the leading `base`, when it starts with it. */
+relative(canon: string, base: string): string {
+    return str.has(canon, base, false) ? canon[base.len..] : canon
+}
+
+/* Source line `line` of `src`, trimmed and cut before the ` {` that opens
+ * a body when the line ends in one. */
+signature(src: string, line: u32): string {
+    rest: string = src
+    for k: u32 in 1..line {
+        nl: usize, found: bool = str.find(rest, '\n')
+        if !found { return "" }
+        rest = rest[nl + 1..]
+    }
+    nl: usize, found: bool = str.find(rest, '\n')
+    row: string = str.trim(found ? rest[..nl] : rest)
+    if row.len > 0 && (row[row.len - 1] == '{' || row[row.len - 1] == '}') {
+        open: usize, has: bool = str.find(row, " {")
+        if has { row = row[..open] }
+    }
+    return row
 }
