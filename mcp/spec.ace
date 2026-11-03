@@ -1,0 +1,144 @@
+/* Spec lookup: a reference such as `Memory #15` resolved through the table
+ * in `spec/README.md` to its chapter and item, with the item's open markers
+ * and the queue and changelog lines that cite the same reference.
+ */
+
+import array
+import file
+import mem
+import str
+
+import module: "../selfhost/module.ace"
+import path: "../selfhost/path.ace"
+
+TARGET: const string = "darwin-arm64"
+
+/* The changelog files searched for citations, beside `spec/queue.md`. */
+CHANGELOGS: const [5]string = ["changelog/lang.md", "changelog/compiler.md", "changelog/std.md", "changelog/pkg.md", "changelog/tooling.md"]
+
+/* For `ref`, `Section #N`, the item's `file:line`, any `[open]` or
+ * `[controversial]` marker, its text, and each citing queue and changelog
+ * line, or why there is none and false. Lives in `pool`.
+ */
+pub text(pool: *path.Pool, ref: string): (string, bool) {
+    hash: usize, has_hash: bool = str.find(ref, " #")
+    if !has_hash { return "needs Section #N, such as Memory #15", false }
+    section: string = str.trim(ref[..hash])
+    number: string = str.trim(ref[hash + 2..])
+    if section.len == 0 || number.len == 0 || !digits(number) { return "needs Section #N, such as Memory #15", false }
+
+    l: module.Loader, found: bool = module.Loader.new(TARGET)
+    defer l.wipe()
+    if !found { return "cannot locate std/", false }
+    root: string = path.dir(l.std_dir) // the repository holding std/ and spec/
+    table: []u8, err: Error = file.read(pool.join([root, "/spec/README.md"]))
+    defer mem.release[u8](&table)
+    if err != null { return "cannot read spec/README.md", false }
+
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    rest: string = table
+    for rest.len > 0 {
+        row: string = line_of(rest)
+        rest = rest[row.len..]
+        if row.len > 0 && row[row.len - 1] == '\n' { row = row[..row.len - 1] }
+        cells: [4]string
+        n: usize, fits: bool = str.split(row, '|', cells[..])
+        if !fits || n != 4 || !str.has(cells[2], section) { continue }
+        name: string, quoted: bool = str.trim(str.trim(cells[1]), '`', false)
+        name, _ = str.trim(name, '`', true)
+        if !quoted { continue }
+        chapter: string = pool.join(["spec/", name])
+        item(pool, &parts, root, chapter, section, number)
+        if parts.len > 0 { break }
+    }
+    if parts.len == 0 { return pool.join(["no item ", section, " #", number, " in spec/"]), false }
+    cite: string = pool.join([section, " #", number])
+    cited(pool, &parts, root, "spec/queue.md", cite)
+    for log: string in CHANGELOGS { cited(pool, &parts, root, log, cite) }
+    return pool.join(parts.view()), true
+}
+
+/* Appends item `number` of the `## section` heading in `chapter` to
+ * `parts`: its location, markers, and text, ending at the next item or heading.
+ */
+item(pool: *path.Pool, parts: *array.Array[string], root: string, chapter: string, section: string, number: string) {
+    src: []u8, err: Error = file.read(pool.join([root, "/", chapter]))
+    defer mem.release[u8](&src)
+    if err != null { return }
+    head: string = pool.join(["## ", section])
+    lead: string = pool.join([number, ". "])
+    inside: bool = false
+    start: usize = 0
+    line: usize = 0
+    at: usize = 0
+    for at < src.len {
+        row: string = line_of(src[at..])
+        line += 1
+        if str.has(row, "## ", false) {
+            if start > 0 { break }
+            inside = str.has(row, head, false) && (row.len == head.len || !letter(row[head.len]))
+        } else if inside && start == 0 && str.has(row, lead, false) {
+            start = at
+            parts.push(where(pool, chapter, line))
+        } else if start > 0 && item_start(row) {
+            break
+        }
+        at += row.len
+    }
+    if start == 0 { return }
+    body: string = pool.copy(str.trim(src[start..at]))
+    if str.has(body, "[open]") { parts.push(" [open]") }
+    if str.has(body, "[controversial]") { parts.push(" [controversial]") }
+    parts.push(pool.join(["\n\n", body, "\n"]))
+}
+
+/* Appends every line of `log` that cites `cite` (not followed by a digit). */
+cited(pool: *path.Pool, parts: *array.Array[string], root: string, log: string, cite: string) {
+    src: []u8, err: Error = file.read(pool.join([root, "/", log]))
+    defer mem.release[u8](&src)
+    if err != null { return }
+    line: usize = 0
+    at: usize = 0
+    for at < src.len {
+        row: string = line_of(src[at..])
+        line += 1
+        at += row.len
+        i: usize, hit: bool = str.find(row, cite)
+        if !hit { continue }
+        end: usize = i + cite.len
+        if end < row.len && row[end] >= '0' && row[end] <= '9' { continue }
+        parts.push(pool.join(["\n", where(pool, log, line), ": ", str.trim(row)]))
+    }
+}
+
+/* `file:line`, in `pool`. */
+where(pool: *path.Pool, file_path: string, line: usize): string {
+    num: [16]char
+    n: usize, _ = str.format(num[..], line)
+    return pool.join([file_path, ":", num[..n]])
+}
+
+/* The first line of `text`, with its newline when it has one. */
+line_of(text: string): string {
+    nl: usize, found: bool = str.find(text, '\n')
+    return found ? text[..nl + 1] : text
+}
+
+/* Whether `row` opens a numbered item (`12. `). */
+item_start(row: string): bool {
+    i: usize = 0
+    for i < row.len && row[i] >= '0' && row[i] <= '9' { i += 1 }
+    return i > 0 && i + 1 < row.len && row[i] == '.' && row[i + 1] == ' '
+}
+
+/* Whether `text` is all decimal digits. */
+digits(text: string): bool {
+    for c: char in text { if c < '0' || c > '9' { return false } }
+    return true
+}
+
+/* Whether `c` continues a section name (so `## Memory` is not `## Memory X`). */
+letter(c: char): bool {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}

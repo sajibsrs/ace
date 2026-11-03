@@ -14,12 +14,18 @@ import sys
 import path: "../selfhost/path.ace"
 
 import definition: "../lsp/definition.ace"
+import examples: "./examples.ace"
 import hover: "../lsp/hover.ace"
 import lookup: "./lookup.ace"
+import references: "../lsp/references.ace"
 import module: "../selfhost/module.ace"
+import spec: "./spec.ace"
 
 /* The MCP revision this server implements. */
 PROTOCOL: const string = "2025-06-18"
+
+/* This server's version, as `initialize` reports it in `serverInfo`. */
+VERSION: const string = "0.1.0"
 
 /* The message stream on stdin: one message per newline-terminated line. */
 Reader: struct {
@@ -91,6 +97,39 @@ resolve(pool: *path.Pool, file_path: string, line: u32, column: u32): (definitio
     return loc, pool.copy(target), true
 }
 
+/* Every use of the declaration named at `line` and `column` of `file_path`
+ * in the program holding that file, one `path:line:column` per line, or
+ * why there is none and true. Lives in `pool`.
+ */
+uses(pool: *path.Pool, file_path: string, line: u32, column: u32): (string, bool) {
+    canon: string, found: bool = path.canonical(pool, file_path)
+    if !found { return pool.join(["cannot open '", file_path, "'"]), true }
+    src: []u8, err: Error = file.read(canon)
+    defer mem.release[u8](&src)
+    if err != null { return pool.join(["cannot open '", file_path, "'"]), true }
+    prog: definition.Program, loaded: bool = definition.Program.new(pool, canon)
+    defer prog.wipe()
+    if !loaded || !prog.checked { return "the program does not load", true }
+    _, decl: u32, hit: bool = prog.at(pool, canon, src, line, column)
+    if !hit || decl == 0 { return "no declaration there", true }
+    found_uses: array.Array[definition.Location] = array.Array[definition.Location] {}
+    defer found_uses.wipe()
+    references.uses(&prog, pool, decl, false, 0, &found_uses)
+    if found_uses.len == 0 { return "no uses", false }
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    for loc: definition.Location in found_uses.view() { parts.push(place(pool, loc)) }
+    return pool.join(parts.view()), false
+}
+
+/* `loc` as a `path:line:column` line, in `pool`. */
+place(pool: *path.Pool, loc: definition.Location): string {
+    num: [32]char
+    n: usize, _ = str.format(num[..], usize(loc.line))
+    m: usize, _ = str.format(num[n..], usize(loc.col))
+    return pool.join([loc.file, ":", num[..n], ":", num[n..n + m], "\n"])
+}
+
 /* Every error the loader and sema report for the program holding
  * `file_path`, one `path:line:column: message` per line (0 where there is
  * no position), or "no errors". The text lives in `pool`.
@@ -134,10 +173,21 @@ call(pool: *path.Pool, req: *json.Json, name: string): (string, bool) {
         text: string, ok: bool = lookup.text(pool, qualified)
         return text, !ok
     }
+    if mem.equal(name, "spec_section") {
+        ref: string = req.string("/params/arguments/ref")
+        if ref == null { return "needs ref", true }
+        text: string, ok: bool = spec.text(pool, ref)
+        return text, !ok
+    }
     line: f64 = req.number("/params/arguments/line")
     column: f64 = req.number("/params/arguments/column")
-    if !mem.equal(name, "definition") && !mem.equal(name, "hover") { return "unknown tool", true }
+    if !mem.equal(name, "definition") && !mem.equal(name, "hover") && !mem.equal(name, "references") && !mem.equal(name, "examples") { return "unknown tool", true }
     if file_path == null || line < 1.0 || column < 1.0 { return "needs file, and line and column from 1", true }
+    if mem.equal(name, "references") { return uses(pool, file_path, u32(line), u32(column)) }
+    if mem.equal(name, "examples") {
+        text: string, ok: bool = examples.text(pool, file_path, u32(line), u32(column))
+        return text, !ok
+    }
     loc: definition.Location, target: string, ok: bool = resolve(pool, file_path, u32(line), u32(column))
     if !ok { return "no declaration there, or the program does not load", true }
     if mem.equal(name, "hover") { return hover.text(pool, target, loc.line, loc.doc), false }
@@ -149,7 +199,7 @@ call(pool: *path.Pool, req: *json.Json, name: string): (string, bool) {
 }
 
 /* Writes one tool's description: `name`, `about`, and its inputs `keys`,
- * each one of `file`, `line`, `column`, or `name`, all required.
+ * each one of `file`, `line`, `column`, `name`, or `ref`, all required.
  */
 tool(out: *json.Json, name: string, about: string, keys: []string) {
     out.object()
@@ -172,6 +222,9 @@ tool(out: *json.Json, name: string, about: string, keys: []string) {
         } else if mem.equal(key, "column") {
             out.field("type", "integer")
             out.field("description", "1-based byte column of the name")
+        } else if mem.equal(key, "ref") {
+            out.field("type", "string")
+            out.field("description", "a spec reference: Section #N, such as Memory #15 or Stdlib #12")
         } else {
             out.field("type", "string")
             out.field("description", "a qualified std name: module.name or module.Type.method")
@@ -221,6 +274,7 @@ main(): int {
             out.key("serverInfo")
             out.object()
             out.field("name", "ace-mcp")
+            out.field("version", VERSION)
             out.end()
             out.end()
         } else if mem.equal(method, "ping") {
@@ -236,6 +290,9 @@ main(): int {
             tool(&out, "hover", "The declaration line and doc comment of the Ace name at a position, as Markdown.", ["file", "line", "column"])
             tool(&out, "diagnostics", "Every compile error in the Ace program holding a file, as path:line:column: message lines (line and byte column 1-based), or 'no errors'.", ["file"])
             tool(&out, "std_lookup", "Every public std declaration a qualified name names (str.format, mem.copy, fmt.Buffer.printf), all overloads, each as file:line then its signature and doc comment in Markdown.", ["name"])
+            tool(&out, "spec_section", "The spec item a reference such as 'Memory #15' names: its spec/ file:line, any [open] or [controversial] marker, its text, then each spec/queue.md and changelog/ line citing it.", ["ref"])
+            tool(&out, "references", "Every use of the declaration named at a position (or of the declaration itself, with the cursor on it) within the program rooted at that file, resolved through sema, as path:line:column lines.", ["file", "line", "column"])
+            tool(&out, "examples", "Up to 10 real uses of the declaration named at a position, from tests/, demo/, std/, and selfhost/ in that order, each file checked as its own program so only uses sema resolves to that declaration count; each as path:line:column: source line.", ["file", "line", "column"])
             out.end()
             out.end()
         } else if mem.equal(method, "tools/call") {

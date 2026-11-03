@@ -89,8 +89,20 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
     prog: Program, loaded: bool = Program.new(pool, canon)
     defer prog.wipe()
     if !loaded || !prog.checked { return none, false }
-    l: *module.Loader = &prog.l
-    s: *sema.Sema = &prog.s
+    loc: Location, _, found: bool = prog.at(pool, canon, src, line, col)
+    return loc, found
+}
+
+/* In checked program `self`, the declaration of the name at 1-based `line`
+ * and byte `col` of its file at canonical path `canon`, whose text is `src`:
+ * its place and its node, 0 when the name is a module (an import's name or
+ * path, whose place is that module's start); false when there is none. The
+ * place's strings live in `pool`.
+ */
+pub Program.at(self, pool: *path.Pool, canon: string, src: string, line: u32, col: u32): (Location, u32, bool) {
+    none: Location = Location { file = "", line = 0, col = 0, len = 0, doc = 0 }
+    l: *module.Loader = &self.l
+    s: *sema.Sema = &self.s
 
     mods: []module.Module = l.mods.view()
     mi: usize = 0
@@ -101,9 +113,9 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
     for sel: module.Select in mods[mi].sels.view() {
         if sel.line != line || col < sel.col || col >= sel.col + u32(sel.name.len) { continue }
         sym: u32 = sel.is_type ? s.type_named(sel.identity) : s.value_named(sel.identity)
-        if sym == 0 { return none, false }
+        if sym == 0 { return none, 0, false }
         d: Node = s.node(s.sym(sym).decl)
-        return Location { file = pool.copy(mods[l.module_of(s.sym(sym).decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len), doc = d.line }, true
+        return Location { file = pool.copy(mods[l.module_of(s.sym(sym).decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len), doc = d.line }, s.sym(sym).decl, true
     }
 
     // An import's quoted path: the start of the module it loads.
@@ -123,7 +135,7 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
                 found_import = true
             }
         }
-        if found_import { return Location { file = pool.copy(mods[target].canon), line = 1, col = 1, len = 0, doc = 0, origin = from, origin_len = to - from }, true }
+        if found_import { return Location { file = pool.copy(mods[target].canon), line = 1, col = 1, len = 0, doc = 0, origin = from, origin_len = to - from }, 0, true }
     }
 
     // A module an import on this line binds: the start of its file.
@@ -131,7 +143,7 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
         if bind.line != line { continue }
         at: u32 = name_col(src, line, bind.col, bind.name) // the binding sits at `import`
         if col < at || col >= at + u32(bind.name.len) { continue }
-        return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true
+        return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, 0, true
     }
 
     // The innermost name under the cursor, then what it resolved to.
@@ -150,35 +162,24 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
             best_len = len
         }
     }
-    if best == 0 { return none, false }
-    decl: u32 = target(s, best, u32(mods[0].parser.nnode))
-    if decl == 0 {
-        b: Node = s.node(best)
-        // `mod.Name` in an expression: the declaration `Name` in that module.
-        if b.kind == parser.Kind.selector && b.a != 0 {
-            base: Node = s.node(b.a)
-            for bind: module.Binding in mods[mi].binds.view() {
-                if base.kind != parser.Kind.ident || !mem.equal(bind.name, base.text) { continue }
-                identity: string = pool.join([mods[bind.module].prefix, source_name(b.text)])
-                sym: u32 = s.type_named(identity)
-                if sym == 0 { sym = s.value_named(identity) }
-                if sym == 0 { continue }
-                decl = s.sym(sym).decl
-            }
-        }
-    }
+    if best == 0 { return none, 0, false }
+    calls: []u32 = callees(s, u32(mods[0].parser.nnode))
+    defer mem.release[u32](&calls)
+    decl: u32 = target(s, best, calls)
+    if decl == 0 { decl = self.imported(pool, mi, best) }
+    if decl == 0 && declares(s.node(best).kind) { decl = best } // a declaration's own name
     if decl == 0 {
         // An import's name: the start of the module it binds.
         b: Node = s.node(best)
         for sel: module.Select in mods[mi].sels.view() {
-            if sel.line == b.line { return Location { file = pool.copy(mods[sel.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true }
+            if sel.line == b.line { return Location { file = pool.copy(mods[sel.module].canon), line = 1, col = 1, len = 0, doc = 0 }, 0, true }
         }
         for bind: module.Binding in mods[mi].binds.view() {
             if (b.kind == parser.Kind.ident || b.kind == parser.Kind.named) && mem.equal(bind.name, b.text) {
-                return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, true
+                return Location { file = pool.copy(mods[bind.module].canon), line = 1, col = 1, len = 0, doc = 0 }, 0, true
             }
         }
-        return none, false
+        return none, 0, false
     }
     d: Node = s.node(decl)
     doc: u32 = d.line
@@ -192,21 +193,57 @@ pub find(pool: *path.Pool, file_path: string, src: string, line: u32, col: u32):
             }
         }
     }
-    return Location { file = pool.copy(mods[l.module_of(decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len), doc = doc }, true
+    return Location { file = pool.copy(mods[l.module_of(decl)].canon), line = d.line, col = d.col, len = u32(source_name(d.text).len), doc = doc }, decl, true
+}
+
+/* The declaration selector `n` of module `mi` names when it is `mod.Name`
+ * in an expression, `Name` in the module `mod` binds, or 0.
+ */
+pub Program.imported(self, pool: *path.Pool, mi: usize, n: u32): u32 {
+    s: *sema.Sema = &self.s
+    b: Node = s.node(n)
+    if b.kind != parser.Kind.selector || b.a == 0 { return 0 }
+    base: Node = s.node(b.a)
+    if base.kind != parser.Kind.ident { return 0 }
+    mods: []module.Module = self.l.mods.view()
+    for bind: module.Binding in mods[mi].binds.view() {
+        if !mem.equal(bind.name, base.text) { continue }
+        identity: string = pool.join([mods[bind.module].prefix, source_name(b.text)])
+        sym: u32 = s.type_named(identity)
+        if sym == 0 { sym = s.value_named(identity) }
+        if sym != 0 { return s.sym(sym).decl }
+    }
+    return 0
+}
+
+/* Whether a node of `kind` declares the name it carries. */
+declares(kind: parser.Kind): bool {
+    switch kind {
+        parser.Kind.var, parser.Kind.func, parser.Kind.param, parser.Kind.struct, parser.Kind.bits, parser.Kind.field, parser.Kind.union, parser.Kind.variant, parser.Kind.contract, parser.Kind.method, parser.Kind.enum, parser.Kind.alias, parser.Kind.distinct, parser.Kind.error, parser.Kind.externfn, parser.Kind.externvar { return true }
+    }
+    return false
+}
+
+/* For each of the `count` nodes, the symbol of the call it is the callee
+ * of, or 0: a callee's overload is resolved on its call node. Release it
+ * with `mem.release`.
+ */
+pub callees(s: *sema.Sema, count: u32): []u32 {
+    calls: []u32 = mem.alloc[u32](usize(count))
+    for i: usize in 0..calls.len { calls[i] = 0 }
+    for id: u32 in 1..count {
+        c: Node = s.node(id)
+        if c.kind == parser.Kind.call && c.a != 0 && c.a < count { calls[c.a] = s.node_sym(id) }
+    }
+    return calls
 }
 
 /* The declaration node `n` names, or 0: its symbol's, the function a call
- * through it resolved to, or the type it spells.
+ * through it resolved to (`calls`, from `callees`), or the type it spells.
  */
-target(s: *sema.Sema, n: u32, count: u32): u32 {
+pub target(s: *sema.Sema, n: u32, calls: []u32): u32 {
     sym: u32 = s.node_sym(n)
-    if sym == 0 {
-        // A callee's overload is resolved on its call node.
-        for id: u32 in 1..count {
-            c: Node = s.node(id)
-            if c.kind == parser.Kind.call && c.a == n { sym = s.node_sym(id) }
-        }
-    }
+    if sym == 0 { sym = calls[n] }
     if sym != 0 { return s.sym(sym).decl }
     x: Node = s.node(n)
     if x.kind == parser.Kind.named || x.kind == parser.Kind.ident {
@@ -251,7 +288,7 @@ member(s: *sema.Sema, base: u32, name: string): u32 {
 /* Where `name` starts on `line` at or after byte `col`: a resolved
  * `mod.Name` sits at `mod`, its name after the dot.
  */
-name_col(src: string, line: u32, col: u32, name: string): u32 {
+pub name_col(src: string, line: u32, col: u32, name: string): u32 {
     at: usize = 0
     for l: u32 = 1; l < line && at < src.len; {
         if src[at] == '\n' { l += 1 }
@@ -293,7 +330,7 @@ quoted(src: string, line: u32, col: u32): (u32, u32, bool) {
 }
 
 /* The name as written: a resolved `mod.name` reads `mod$name`. */
-source_name(text: string): string {
+pub source_name(text: string): string {
     at: usize = text.len
     for at > 0 && text[at - 1] != '$' { at -= 1 }
     return text[at..]

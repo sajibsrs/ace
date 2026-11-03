@@ -1,0 +1,59 @@
+/* Find references: every name in a checked program that resolves to one
+ * declaration, the reverse of go to definition.
+ */
+
+import array
+import file
+import mem
+import sort
+import str
+
+import definition: "./definition.ace"
+import module: "../selfhost/module.ace"
+import parser: "../selfhost/parser.ace"
+import path: "../selfhost/path.ace"
+
+Node: type = parser.Node
+
+/* Appends to `out` each use in `prog` of declaration node `decl`, sorted by
+ * file, line, and column, the declaration itself left out; with `only` set, just the uses in
+ * module `mi`. Each place's `file` lives in `pool`.
+ */
+pub uses(prog: *definition.Program, pool: *path.Pool, decl: u32, only: bool, mi: usize, out: *array.Array[definition.Location]) {
+    l: *module.Loader = &prog.l
+    mods: []module.Module = l.mods.view()
+    count: u32 = u32(mods[0].parser.nnode)
+    calls: []u32 = definition.callees(&prog.s, count)
+    defer mem.release[u32](&calls)
+    srcs: [][]u8 = mem.alloc[[]u8](mods.len) // each module's text, read on first use
+    defer mem.release[[]u8](&srcs)
+    for i: usize in 0..srcs.len { srcs[i] = null }
+    for id: u32 in 1..count {
+        if id == decl { continue }
+        n: Node = prog.s.node(id)
+        if (n.flags & parser.F_TEXT) == 0 || n.kind == parser.Kind.call { continue }
+        m: usize = l.module_of(id)
+        if only && m != mi { continue }
+        name: string = definition.source_name(n.text)
+        if name.len == 0 { continue }
+        hit: u32 = definition.target(&prog.s, id, calls)
+        if hit == 0 { hit = prog.imported(pool, m, id) }
+        if hit != decl { continue }
+        if srcs[m] == null {
+            src: []u8, err: Error = file.read(mods[m].canon)
+            if err != null { continue }
+            srcs[m] = src
+        }
+        col: u32 = definition.name_col(srcs[m], n.line, n.col, name)
+        out.push(definition.Location { file = pool.copy(mods[m].canon), line = n.line, col = col, len = u32(name.len), doc = n.line })
+    }
+    for i: usize in 0..srcs.len { mem.release[u8](&srcs[i]) }
+    sort.unstable[definition.Location](out.view(), before)
+}
+
+before(a: definition.Location, b: definition.Location): bool {
+    order: int = str.compare(a.file, b.file)
+    if order != 0 { return order < 0 }
+    if a.line != b.line { return a.line < b.line }
+    return a.col < b.col
+}

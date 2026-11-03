@@ -1,0 +1,141 @@
+/* Usage examples: real uses of one declaration across the repository's
+ * `tests/`, `demo/`, `std/`, and `selfhost/`, each file checked as its own
+ * program so a use counts only when sema resolves it to that declaration.
+ */
+
+import array
+import file
+import mem
+import sort
+import str
+import sys
+
+import definition: "../lsp/definition.ace"
+import module: "../selfhost/module.ace"
+import parser: "../selfhost/parser.ace"
+import path: "../selfhost/path.ace"
+import references: "../lsp/references.ace"
+
+Node: type = parser.Node
+
+/* The directories searched, in this order. */
+DIRS: const [4]string = ["tests", "demo", "std", "selfhost"]
+
+/* How many uses a result lists; the search stops there. */
+LIMIT: const usize = 10
+
+/* A declaration as every program that loads its file sees it. */
+Decl: struct {
+    file: string,
+    line: u32,
+    col: u32,
+    kind: parser.Kind,
+    name: string,
+}
+
+/* Up to LIMIT uses of the declaration named at `line` and `column` of
+ * `file_path`, each as `path:line:column` and its source line, or why there
+ * are none and false. Lives in `pool`.
+ */
+pub text(pool: *path.Pool, file_path: string, line: u32, column: u32): (string, bool) {
+    canon: string, found: bool = path.canonical(pool, file_path)
+    if !found { return pool.join(["cannot open '", file_path, "'"]), false }
+    src: []u8, err: Error = file.read(canon)
+    defer mem.release[u8](&src)
+    if err != null { return pool.join(["cannot open '", file_path, "'"]), false }
+    prog: definition.Program, loaded: bool = definition.Program.new(pool, canon)
+    defer prog.wipe()
+    if !loaded || !prog.checked { return "the program does not load", false }
+    _, at: u32, hit: bool = prog.at(pool, canon, src, line, column)
+    if !hit || at == 0 { return "no declaration there", false }
+    d: Node = prog.s.node(at)
+    want: Decl = Decl { file = pool.copy(prog.l.mods.view()[prog.l.module_of(at)].canon), line = d.line, col = d.col, kind = d.kind, name = pool.copy(definition.source_name(d.text)) }
+    root: string = path.dir(prog.l.std_dir)
+
+    files: array.Array[string] = array.Array[string] {}
+    defer files.wipe()
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    for dir: string in DIRS {
+        first: usize = files.len
+        collect(pool, pool.join([root, "/", dir]), &files)
+        sort.unstable[string](files.view()[first..], before)
+    }
+    for f: string in files.view() {
+        if parts.len >= LIMIT { break }
+        search(pool, f, want, &parts)
+    }
+    if parts.len == 0 { return pool.join(["no uses of '", want.name, "' in tests/, demo/, std/, or selfhost/"]), false }
+    return pool.join(parts.view()), true
+}
+
+/* Appends to `parts`, up to LIMIT, each use of `want` in file `f`, checked
+ * as the root of its own program.
+ */
+search(pool: *path.Pool, f: string, want: Decl, parts: *array.Array[string]) {
+    src: []u8, err: Error = file.read(f)
+    defer mem.release[u8](&src)
+    if err != null || !str.has(src, want.name) { return }
+    prog: definition.Program, loaded: bool = definition.Program.new(pool, f)
+    defer prog.wipe()
+    if !loaded || !prog.checked { return }
+    mods: []module.Module = prog.l.mods.view()
+    mi: usize = mods.len
+    home: usize = mods.len
+    for i: usize in 0..mods.len {
+        if mem.equal(mods[i].canon, f) { mi = i }
+        if mem.equal(mods[i].canon, want.file) { home = i }
+    }
+    if mi == mods.len || home == mods.len { return }
+    decl: u32 = 0
+    for id: u32 in 1..u32(mods[0].parser.nnode) {
+        n: Node = prog.s.node(id)
+        if n.line == want.line && n.col == want.col && n.kind == want.kind && prog.l.module_of(id) == home { decl = id }
+    }
+    if decl == 0 { return }
+    found: array.Array[definition.Location] = array.Array[definition.Location] {}
+    defer found.wipe()
+    references.uses(&prog, pool, decl, true, mi, &found)
+    for loc: definition.Location in found.view() {
+        if parts.len >= LIMIT { return }
+        num: [32]char
+        n: usize, _ = str.format(num[..], usize(loc.line))
+        m: usize, _ = str.format(num[n..], usize(loc.col))
+        parts.push(pool.join([loc.file, ":", num[..n], ":", num[n..n + m], ": ", str.trim(line_at(src, loc.line)), "\n"]))
+    }
+}
+
+/* Appends every .ace file under `dir`, recursively, skipping dot entries. */
+collect(pool: *path.Pool, dir: string, out: *array.Array[string]) {
+    handle: sys.Dir, err: Error = sys.opendir(dir)
+    if err != null { return }
+    defer sys.closedir(&handle)
+    buf: [1024]u8
+    for {
+        n: usize, kind: sys.FileType, done: bool, rerr: Error = sys.readdir(&handle, buf[..])
+        if rerr != null || done { break }
+        if n == 0 || buf[0] == '.' { continue }
+        child: string = pool.join([dir, "/", buf[..n]])
+        if kind == sys.FileType.directory {
+            collect(pool, child, out)
+        } else if str.has(child, ".ace", true) {
+            out.push(child)
+        }
+    }
+}
+
+/* Line `line` (1-based) of `src`, without its newline. */
+line_at(src: string, line: u32): string {
+    at: usize = 0
+    for l: u32 = 1; l < line && at < src.len; {
+        if src[at] == '\n' { l += 1 }
+        at += 1
+    }
+    end: usize = at
+    for end < src.len && src[end] != '\n' { end += 1 }
+    return src[at..end]
+}
+
+before(a: string, b: string): bool {
+    return str.compare(a, b) < 0
+}

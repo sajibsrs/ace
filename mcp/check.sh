@@ -24,6 +24,12 @@ out=$(printf '%s\n' \
   '{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"std_lookup","arguments":{"name":"str.format"}}}' \
   '{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"std_lookup","arguments":{"name":"fmt.Buffer.printf"}}}' \
   '{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"std_lookup","arguments":{"name":"str.nothing"}}}' \
+  '{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"spec_section","arguments":{"ref":"Memory #9"}}}' \
+  '{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"spec_section","arguments":{"ref":"Package System #3"}}}' \
+  '{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"spec_section","arguments":{"ref":"Memory #999"}}}' \
+  '{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"references","arguments":{"file":"lsp/definition.ace","line":39,"column":5}}}' \
+  '{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"examples","arguments":{"file":"std/str.ace","line":236,"column":5}}}' \
+  '{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"references","arguments":{"file":"lsp/main.ace","line":1,"column":1}}}' \
   | ./ace-mcp 2>/dev/null)
 
 fail=0
@@ -34,6 +40,7 @@ expect() {
   fi
 }
 expect 1 '"protocolVersion":"2025-06-18"'
+expect 1 '"serverInfo":{"name":"ace-mcp","version":"0.1.0"}'
 expect 2 '"name":"definition"'
 expect 2 '"name":"hover"'
 expect 3 '/std/mem.ace:83:5"'
@@ -51,6 +58,17 @@ expect 11 '/std/str.ace:236\n```ace\npub format(destination: []char, value: int)
 expect 11 '/std/str.ace:473\n'
 expect 12 'pub Buffer.printf(self, format: string): int'
 expect 13 '"isError":true'
-[ "$(printf '%s\n' "$out" | wc -l)" -eq 13 ] || { echo "FAIL: expected 13 responses"; fail=1; }
+expect 2 '"name":"spec_section"'
+expect 14 'spec/memory.md:11\n\n9. Typed pointer arithmetic'
+expect 14 'changelog/lang.md:186: - An assignment evaluates'
+expect 15 'spec/modules-packages.md:19 [open]'
+expect 16 '"isError":true'
+expect 2 '"name":"references"'
+expect 2 '"name":"examples"'
+expect 17 '/lsp/definition.ace:50:5\n'
+expect 17 '/lsp/definition.ace:89:35\n'
+expect 18 '/tests/emit/strings/str_format.ace:22:17: n, ok = str.format(dst, -17)\n'
+expect 19 '"isError":true'
+[ "$(printf '%s\n' "$out" | wc -l)" -eq 19 ] || { echo "FAIL: expected 19 responses"; fail=1; }
 [ $fail -eq 0 ] && echo "ace-mcp: ok"
 exit $fail

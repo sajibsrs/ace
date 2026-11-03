@@ -256,3 +256,12 @@
   `module.Diagnostic` in `diags`; `diagnostics` loads a file's program through
   `definition.Program` and lists them. `std_lookup` loads a std module and
   shows every public declaration a qualified name names, overloads included.
+- `ace-mcp` gained `spec_section` (#182): a reference such as `Memory #15`
+  goes through `spec/README.md`'s table to its chapter and numbered item,
+  returned with its location, `[open]`/`[controversial]` markers, and the
+  `spec/queue.md` and `changelog/` lines citing it.
+- `ace-mcp` gained `references` and `examples` (#182), the first reverse
+  lookup: `lsp/references.ace` walks a checked program for names that resolve
+  to one declaration. `references` covers the program rooted at a file;
+  `examples` checks each file of `tests/`, `demo/`, `std/`, and `selfhost/`
+  holding the name and lists up to 10 uses.
