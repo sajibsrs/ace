@@ -29,7 +29,8 @@ answer. Keep its diagram descriptions current whenever a diagram changes.
   drawing and a 24px copy beside an existing tool icon; do not load the
   visualize guide or use `show_widget` for icons. Compute rotated shapes with a
   short script. A thicker body than the stroke allows must be a filled polygon.
-- Toolbar layout is `bar.place` (button widths, group gaps); icon sizes are
+- Toolbar and panel layout is `pkg/ui` areas in `toolbar.ace` and
+  `sidebar.ace`; sizes they share are in `bar.ace`. Board icon sizes are
   drawn in `render.ace`.
 - Diagrams: one byte per cell after a 10-byte header; codes are `CODE` in
   `diagram.ace`. Verify a diagram with a temporary file in `test/` that loads it
