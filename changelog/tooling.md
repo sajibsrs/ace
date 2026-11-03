@@ -265,3 +265,6 @@
   to one declaration. `references` covers the program rooted at a file;
   `examples` checks each file of `tests/`, `demo/`, `std/`, and `selfhost/`
   holding the name and lists up to 10 uses.
+- Definition and hover resolve a generic call's name (`math.max[f32](...)`):
+  sema binds a generic call on its `f[T]` callee, so `callees` maps that
+  binding to the callee's base name as well.
