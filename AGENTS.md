@@ -102,59 +102,11 @@ history.
 
 ## Conventions
 
-- Use accurate lexical pairs for relationships (`watch`/`unwatch`,
-  `add`/`remove`); accuracy beats cosmetic symmetry.
-- Put OS-specific standard-library code behind `std/<module>/mod.ace` in
-  `std/<module>/os/<target>.ace`. Reserve `backend` for compiler/code-generation
-  backends.
-- By convention, keep a directory module's `mod.ace` at its root and its other
-  implementation files under `std/<module>/inc/`; `mod.ace` remains the sole
-  external import surface.
-- A function that only builds or releases memory is named for it:
-  `Type.new(...)` (free form `x_new`) when the value owns heap memory that
-  must be released, whoever allocates it (`mem` or a C library); a matching
-  `Type.wipe(self)` (`x_wipe`) releases it. `Type.init(...)` (`x_init`)
-  when there is nothing to release, as for a value over caller storage. A
-  function that does work on its input keeps its verb (`parse`, `compile`).
-  A type that has a `wipe` owns memory, and all its constructors agree on
-  that. `wipe` is safe on any value of the type, so a result can be deferred
-  without checking which constructor made it. A verb function's doc comment
-  says what its result owns.
-- A declaration's doc comment is the comment block on its own lines directly
-  above it; editor hover shows it. Write it as prose that names parameters
-  and results in backticks where they need explaining, as Go does; no
-  `@param`-style tags, since the signature already gives names and types.
-- A property's accessors are one overloaded name, told apart by signature:
-  `color()` reads it and `color(value)` sets it, never `get_color`/
-  `set_color`. The getter takes `const self`. `get`/`set` remain ordinary method names for keyed access
-  (`Map.get(key)`/`set(key, value)`).
+- Coding rules (naming, resources, comments, layout) live in `spec/style.md`;
+  fetch an item with `spec_section` (e.g. "Naming #2").
 - Start strict and add conveniences later.
-- Release a resource that must be freed on every function exit with `defer`,
-  placed immediately after its acquisition, before the error check (release
-  is a no-op on `null`, so the failure path stays covered). Keep explicit
-  release only where ownership transfers on success, since `defer` also runs
-  on the success path.
-- Module-level `const` declarations use all uppercase (`BACKLOG`). A
-  same-named local (e.g. a parameter) may still shadow it per the ordinary
-  nearest-binding rule; that is not an error, so no `DEFAULT_`-style prefix.
-- `.acefmt` is normative; update it with formatting-rule changes.
-- File names are nouns, matching their own import alias (`parsing.ace` as
-  `parsing`, not `parse.ace`).
-- Keep `demo/`, `bench/`, and `tests/` structurally minimal: a plain `.ace`
-  file when `std` suffices, a directory of exact `.ace` path imports when it
-  needs several files. Add an `ace.pkg` only to depend on a `pkg/` package or
-  to test the package system, and a `mod.ace` only to test directory modules.
-- Place each benchmark in the `bench/` section whose code it measures:
-  `compiler/` (the compiler's own speed), `core/` (generated code for
-  language features), `std/` (standard-library operations), or `package/`
-  (first-party packages; not `pkg/`, which is reserved for dependency
-  lookup). Benchmarks never live under `tests/`.
-- `selfhost/` holds the self-hosted compiler written in Ace, flat (no
-  subdirectories); `src/` remains the C bootstrap compiler. `selfhost/check.sh`
-  diffs its output against `./ace`; it is not part of `make test`.
-- Put Ace programs written to find language flaws under `experiment/<name>/`,
-  structured like `demo/`. They are not part of `make test`; an experiment may
-  carry its own check script.
+- `selfhost/check.sh` diffs the selfhost's output against `./ace`; it and
+  `experiment/` check scripts are not part of `make test`.
 
 ## Scoped rules
 

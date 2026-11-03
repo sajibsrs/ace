@@ -19,6 +19,7 @@ gives each section's file. Stdlib items keep one numbering across their files.
 | `types.md` | Type System, Scalar-backed Bit Fields, Abstraction, Tagged Unions, Generics |
 | `control-flow.md` | Conditions, Iterations, Deferred calls, Sequences |
 | `modules-packages.md` | Modules, Package System, C Interop |
+| `style.md` | Naming, Resources, Comments, Layout |
 | `std/README.md` | Stdlib: conventions, #1–9 and #21 |
 | `std/sys.md` | Stdlib #10 `sys`, #11 `time`, #24 `exec` |
 | `std/fmt.md` | Stdlib #12 formatted output |
