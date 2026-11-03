@@ -35,6 +35,7 @@ Follow `spec/` for exact rules; do not propose or assume away these decisions:
   and direct machine-code emission from a per-function IR;
   no whole-program or cross-function analysis beyond `inline` and compiling
   only reachable functions.
-- Safety is cheap local checking plus removable debug-build diagnostics.
+- Safety is cheap local checking: bounds, null-use, and zero-divisor traps in
+  every build, plus removable debug-build diagnostics.
 - There is no `goto`; use labeled blocks and loops. Iteration, switch, and
   `fallthrough` follow `spec/` exactly.
