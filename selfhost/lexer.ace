@@ -12,6 +12,7 @@ import mem
 import str
 import sys
 
+/* Token kinds, in src/ace.h's TOKEN_LIST order. */
 pub Token: enum u8 {
     eof, newline, ident,
     import, pub, const, noalias, if, else, for,
@@ -41,6 +42,7 @@ PUNCT: StaticMap[Token]string = {
     Token.at: "@", Token.dot: ".", Token.dot_dot: "..", Token.dot_dot_dot: "...", Token.question: "?",
 }
 
+/* `kind` as diagnostics name it: its punctuation, or its word. */
 pub disp(kind: Token): string {
     p: string = PUNCT[kind]
     if p.len != 0 { return p }
@@ -107,6 +109,9 @@ pub Diag.text(const self, out: *fmt.Buffer) {
     }
 }
 
+/* Lexing state over one source; it owns its scratch buffer and errors,
+ * released by `wipe`.
+ */
 pub Lexer: struct {
     src: string,
     off: usize,

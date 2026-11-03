@@ -14,15 +14,19 @@
 import bits
 import table: @math_tables
 
+/* The correctly rounded square root of `value`; NaN for a negative one. */
 pub sqrt(value: f64): f64 intrinsic
 pub sqrt(value: f32): f32 intrinsic
 
+/* `value` rounded toward negative infinity. */
 pub floor(value: f64): f64 intrinsic
 pub floor(value: f32): f32 intrinsic
 
+/* `value` rounded toward positive infinity. */
 pub ceil(value: f64): f64 intrinsic
 pub ceil(value: f32): f32 intrinsic
 
+/* `a * b + c` rounded once. */
 pub fma(a: f64, b: f64, c: f64): f64 intrinsic
 pub fma(a: f32, b: f32, c: f32): f32 intrinsic
 
@@ -116,6 +120,7 @@ ABS_BITS: const u64 = 0x7FFFFFFFFFFFFFFF
 INF_BITS: const u64 = 0x7FF0000000000000
 POW_SIGN: const u64 = 0x8000000000000000
 
+/* Whether `value` is a NaN. */
 pub inline isnan(value: f64): bool {
     raw: u64 = bitcast(u64, value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
@@ -123,6 +128,7 @@ pub inline isnan(value: f64): bool {
     return exponent == u64(0x7FF0000000000000) && fraction != 0
 }
 
+/* Whether `value` is a NaN. */
 pub inline isnan(value: f32): bool {
     raw: u32 = bitcast(u32, value)
     exponent: u32 = raw & u32(0x7F800000)
@@ -130,45 +136,53 @@ pub inline isnan(value: f32): bool {
     return exponent == u32(0x7F800000) && fraction != 0
 }
 
+/* Whether `value` is positive or negative infinity. */
 pub inline isinf(value: f64): bool {
     raw: u64 = bitcast(u64, value)
     magnitude: u64 = raw & u64(0x7FFFFFFFFFFFFFFF)
     return magnitude == u64(0x7FF0000000000000)
 }
 
+/* Whether `value` is positive or negative infinity. */
 pub inline isinf(value: f32): bool {
     raw: u32 = bitcast(u32, value)
     magnitude: u32 = raw & u32(0x7FFFFFFF)
     return magnitude == u32(0x7F800000)
 }
 
+/* Whether `value` is neither infinite nor NaN. */
 pub inline isfinite(value: f64): bool {
     raw: u64 = bitcast(u64, value)
     exponent: u64 = raw & u64(0x7FF0000000000000)
     return exponent != u64(0x7FF0000000000000)
 }
 
+/* Whether `value` is neither infinite nor NaN. */
 pub inline isfinite(value: f32): bool {
     raw: u32 = bitcast(u32, value)
     exponent: u32 = raw & u32(0x7F800000)
     return exponent != u32(0x7F800000)
 }
 
+/* The smaller of `a` and `b`; `b` when they compare equal or unordered. */
 pub min[T](a: T, b: T): T {
     if a < b { return a }
     return b
 }
 
+/* The larger of `a` and `b`; `b` when they compare equal or unordered. */
 pub max[T](a: T, b: T): T {
     if a > b { return a }
     return b
 }
 
+/* The magnitude of `x`. */
 pub abs[T](x: T): T {
     if x < 0 { return -x }
     return x
 }
 
+/* e raised to `value`: infinity on overflow, 0 on underflow, NaN for NaN. */
 pub exp(value: f64): f64 {
     if isnan(value) { return value }
     if value > EXP_OVERFLOW { return bitcast(f64, u64(0x7FF0000000000000)) }
@@ -205,10 +219,14 @@ pub exp(value: f64): f64 {
     return fma(scale, correction, scale) * bitcast(f64, u64(23) << 52)
 }
 
+/* e raised to `value`, computed in f64. */
 pub inline exp(value: f32): f32 {
     return f32(exp(f64(value)))
 }
 
+/* The natural logarithm of `value`: negative infinity at 0, NaN below 0 or
+ * for NaN.
+ */
 pub log(value: f64): f64 {
     if isnan(value) { return value }
     if value < 0.0 { return bitcast(f64, u64(0x7FF8000000000000)) }
@@ -236,6 +254,7 @@ pub log(value: f64): f64 {
     return t + ((w - t + r) + (fma(f64(offset >> 52), LOG_LN2_LO, table.log[i].logctail) + r2 * q))
 }
 
+/* The natural logarithm of `value`, computed in f64. */
 pub inline log(value: f32): f32 {
     return f32(log(f64(value)))
 }
@@ -513,6 +532,7 @@ inline reduce_large(x: f64): (f64, f64, int) {
     return y0, y1, quotient & 3
 }
 
+/* The sine of `value` radians; NaN for an infinity or NaN. */
 pub sin(value: f64): f64 {
     raw: u64 = bitcast(u64, value)
     if (raw & ABS_BITS) >= INF_BITS { return bitcast(f64, u64(0x7FF8000000000000)) }
@@ -610,6 +630,7 @@ reduce_large32(value: f32): (f64, int) {
     return y0 + y1, quarter
 }
 
+/* The sine of `value` radians; NaN for an infinity or NaN. */
 pub sin(value: f32): f32 {
     bits: u32 = bitcast(u32, value) & u32(0x7FFFFFFF)
     if bits <= F32_PIO4_BITS {
@@ -634,6 +655,7 @@ pub sin(value: f32): f32 {
     return f32(-cos_kernel32(y))
 }
 
+/* The cosine of `value` radians; NaN for an infinity or NaN. */
 pub cos(value: f64): f64 {
     raw: u64 = bitcast(u64, value)
     if (raw & ABS_BITS) >= INF_BITS { return bitcast(f64, u64(0x7FF8000000000000)) }
@@ -708,6 +730,7 @@ pub cos(value: f64): f64 {
     return result
 }
 
+/* The cosine of `value` radians; NaN for an infinity or NaN. */
 pub cos(value: f32): f32 {
     bits: u32 = bitcast(u32, value) & u32(0x7FFFFFFF)
     if bits <= F32_PIO4_BITS {

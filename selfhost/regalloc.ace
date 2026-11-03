@@ -17,6 +17,7 @@ Func: type = ir.Func
 IrIns: type = ir.IrIns
 IrBlock: type = ir.IrBlock
 
+/* A use of value `v` in `block` at position `pos`. */
 pub RaUse: struct {
     pub v: int,
     pub block: int,
@@ -39,6 +40,9 @@ pub RaTarget: struct {
     pub cast_in_place: (u8, u8): bool, // the cast's register form is its operand's
 }
 
+/* One function's allocation: block layout, liveness, and the register or
+ * slot each value gets. It owns its arrays, released by `wipe`.
+ */
 pub Ra: struct {
     // layout
     pub order: array.Array[int],   // blocks in reverse postorder (analysis: liveness, allocation)
@@ -99,6 +103,7 @@ pub Ra.wipe(self) {
     self.slot.wipe()
 }
 
+/* Whether `op` is recomputed at each use rather than held in a register. */
 pub remat(op: u8): bool {
     return op == ir.IR_CONST || op == ir.IR_SLOT
 }
@@ -471,6 +476,9 @@ pub crosses(a: Ra, v: int, at: array.Array[int]): bool {
     return lo < at.len && a.end.get(v) > at.get(lo) + 1
 }
 
+/* Whether value `v` needs a register or slot: it has a type and a use and
+ * is neither rematerialized nor fused into its user.
+ */
 pub allocatable(a: Ra, fn: Func, v: int): bool {
     x: IrIns = *(fn.at(v))
     return x.ty != ir.IT_VOID && !remat(x.op) && !a.fused.get(v) && a.nuse.get(v) > 0

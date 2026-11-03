@@ -28,6 +28,9 @@ begin(t: *T, ok: bool, file: string, line: int): bool {
     return false
 }
 
+/* Whether `got` equals `want`; on a mismatch marks the test failed and
+ * prints both with the check's `file` and `line`.
+ */
 pub T.equal(self, got: int, want: int, file: string, line: int): bool {
     if begin(&self, got == want, file, line) { return true }
     fmt.print("got ")

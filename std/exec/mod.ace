@@ -12,6 +12,7 @@ import os: "./os/darwin-arm64.ace"
 @when(_PLATFORM_ == "linux-x64")
 import os: "./os/linux-x64.ace"
 
+/* Why `spawn` failed. */
 pub SpawnErr: type = os.SpawnErr
 
 /* Where a child's standard stream goes: `inherit` keeps this process's

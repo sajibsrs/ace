@@ -136,6 +136,7 @@ pub IRF_NONZERO: const u8 = 32
 /* An aggregate of over this many leaves stays in memory. */
 pub MAX_LEAVES: const usize = 32
 
+/* One scalar leaf of a type's flattened view: IR type `ty` at byte `off`. */
 pub IrLeaf: struct {
     pub off: u32,
     pub ty: u8,
@@ -199,6 +200,9 @@ asm_register_name(target: string, r: int): string {
     return ARM64_ASM_REG[r]
 }
 
+/* One SSA value: opcode `op` of IR type `ty`, its operands a run of
+ * `Func.args`; the other fields are per-opcode, as noted.
+ */
 pub IrIns: struct {
     pub op: u8,
     pub ty: u8,
@@ -217,6 +221,9 @@ pub IrIns: struct {
     pub at: u32 = 0,             // source position
 }
 
+/* A basic block: at most two successors, -1 when absent; `sealed` once
+ * every predecessor is known, so its phis are complete.
+ */
 pub IrBlock: struct {
     pub ins: array.Array[int],   // instruction ids; phis first, terminator last
     pub preds: array.Array[int],
@@ -225,6 +232,9 @@ pub IrBlock: struct {
     pub sealed: bool = false,
 }
 
+/* One function's IR. Instruction, block, and signature ids index its
+ * arrays; `wipe` releases everything it owns, `names` included.
+ */
 pub Func: struct {
     pub decl: u32,
     pub sym: u32,
@@ -258,6 +268,9 @@ pub IrLiteral: struct {
 
 // --- construction -----------------------------------------------------------
 
+/* An empty function for declaration node `decl` and symbol `sym`; it owns
+ * heap memory, released by `wipe`.
+ */
 pub Func.new(decl: u32, sym: u32): Func {
     return Func { decl = decl, sym = sym, params = array.Array[u8] {}, rets = array.Array[u8] {}, ins = array.Array[IrIns] {}, blocks = array.Array[IrBlock] {}, args = array.Array[int] {}, sigs = array.Array[IrSig] {}, parts = array.Array[IrPart] {}, names = blank(path.Pool), asms = array.Array[IrAsm] {}, asm_regs = array.Array[int] {}, lits = array.Array[IrLiteral] {}, vtables = array.Array[IrVtable] {} }
 }
@@ -296,10 +309,12 @@ pub Func.arg(const self, id: int, k: u32): int {
     return self.args.get(usize(self.ins.get(usize(id)).args + k))
 }
 
+/* Replaces operand `k` of instruction `id` with value `v`. */
 pub Func.set_arg(self, id: int, k: u32, v: int) {
     self.args.set(usize(self.ins.get(id).args + k), v)
 }
 
+/* A new empty, unsealed block's id. */
 pub Func.new_block(self): int {
     fail(self.blocks.push(IrBlock { ins = array.Array[int] {}, preds = array.Array[int] {} }))
     return int(self.blocks.len) - 1
@@ -357,6 +372,7 @@ pub Func.arg_add(self, v: int, arg: int) {
     self.ins.set(usize(v), x)
 }
 
+/* Adds edge `from` -> `to`: the first call sets `succ0`, the second `succ1`. */
 pub Func.edge_add(self, from: int, to: int) {
     f: *IrBlock = self.block(from)
     if f.succ0 < 0 { f.succ0 = to } else { f.succ1 = to }
@@ -364,6 +380,7 @@ pub Func.edge_add(self, from: int, to: int) {
     fail(t.preds.push(from))
 }
 
+/* A call signature over `parts` and result `ret`, as an index in `sigs`. */
 pub Func.new_sig(self, parts: []IrPart, ret: IrPart): int {
     start: u32 = u32(self.parts.len)
     for p: IrPart in parts { fail(self.parts.push(p)) }
@@ -371,12 +388,14 @@ pub Func.new_sig(self, parts: []IrPart, ret: IrPart): int {
     return int(self.sigs.len) - 1
 }
 
+/* Whether `op` ends a block. */
 pub is_term(op: u8): bool {
     return op == IR_JMP || op == IR_BR || op == IR_RET
 }
 
 // --- types ------------------------------------------------------------------
 
+/* IR type `t`'s width in bits, or 0 for void. */
 pub type_bits(t: u8): int {
     switch t {
         IT_BOOL, IT_I8, IT_U8 { return 8 }
@@ -710,6 +729,9 @@ pub dominators(fn: Func): (array.Array[int], array.Array[int]) {
     return idom, order
 }
 
+/* Whether block `a` dominates `b`, walking `b`'s immediate dominators in
+ * `idom` (as `dominators` returns) up to the entry block 0.
+ */
 pub dominates(idom: array.Array[int], a: int, b: int): bool {
     x: int = b
     for x != a && x != 0 { x = idom.get(x) }

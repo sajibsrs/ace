@@ -10,6 +10,7 @@ import thread
 @when(_PLATFORM_ == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
+/* Each operation's error domain. */
 pub HandleErr: type = os.HandleErr
 pub IgnoreErr: type = os.IgnoreErr
 pub ResetErr: type = os.ResetErr
@@ -19,6 +20,7 @@ pub SendErr: type = os.SendErr
 /* A signal number, in the target's own numbering. */
 pub Signal: distinct i32
 
+/* The signals, with their OS spellings and the target's numbers. */
 pub SIGHUP: const Signal = Signal(os.SIGHUP)
 pub SIGINT: const Signal = Signal(os.SIGINT)
 pub SIGQUIT: const Signal = Signal(os.SIGQUIT)
@@ -59,14 +61,17 @@ pub Set: struct {
     bits: u32,
 }
 
+/* Adds `s` to the set. */
 pub Set.add(self, s: Signal) {
     self.bits |= u32(1) << u32(i32(s) - 1)
 }
 
+/* Removes `s` from the set. */
 pub Set.remove(self, s: Signal) {
     self.bits &= ~(u32(1) << u32(i32(s) - 1))
 }
 
+/* Whether `s` is in the set. */
 pub Set.has(const self, s: Signal): bool {
     return (self.bits & u32(1) << u32(i32(s) - 1)) != 0
 }

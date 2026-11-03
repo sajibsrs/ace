@@ -29,6 +29,7 @@ Kind: type = parser.Kind
 Node: type = parser.Node
 Out: type = fmt.Buffer
 
+/* What a symbol names. */
 pub SymKind: enum u8 { var, func, type, module }
 
 /* src/sema.h's SK_ kinds, in its order. */
@@ -115,6 +116,9 @@ Stamp: struct {
     nargs: u32 = 0,
 }
 
+/* One field or variant of a struct, union, or enum type, with its
+ * requested and resolved layout.
+ */
 pub SField: struct {
     pub name: string = "",
     pub ty: u32 = 0,                    // 0 for a payloadless variant
@@ -177,6 +181,10 @@ ConfMethod: struct {
     via: int,                           // the embedded field it is promoted through, or -1
 }
 
+/* The checker's state over a loader's merged tree: scopes, symbols,
+ * types, and per-node facts lowering reads. It owns all but the loader,
+ * released by `wipe`.
+ */
 pub Sema: struct {
     pub errors: int = 0,
     quiet: bool = false,                // count errors in quiet_errors instead of reporting them
@@ -299,6 +307,7 @@ pub Sema.wipe(self) {
 
 // --- accessors ----------------------------------------------------------------
 
+/* Node `id` of the merged tree. */
 pub Sema.node(const self, id: u32): Node {
     return *self.p.node(id)
 }
@@ -825,6 +834,7 @@ PRIM_OF_NAME: [18]u8 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 12, 13, 14, 15
 MAX_RESOLVING: const u32 = 256
 MAX_PARAMS: const u32 = 64
 
+/* Type `id`. */
 pub Sema.ty(const self, id: u32): SType {
     return self.types.get(usize(id))
 }
@@ -833,6 +843,7 @@ Sema.set_ty(self, id: u32, t: SType) {
     self.types.set(usize(id), t)
 }
 
+/* Type `t`'s field `i`. */
 pub Sema.field(const self, t: SType, i: u32): SField {
     return self.fields.get(usize(t.fields + i))
 }
@@ -875,6 +886,7 @@ Sema.new_fields(self, n: u32): u32 {
     return first
 }
 
+/* The type id of primitive `p`. */
 pub Sema.prim(const self, p: u8): u32 {
     return self.prims + u32(p)
 }
@@ -1365,6 +1377,7 @@ Sema.grow(self, e: u32) {
     fail(self.ncopy.resize(n))
 }
 
+/* Expression `e`'s checked type, or 0 when sema recorded none. */
 pub Sema.node_ty(const self, e: u32): u32 {
     if usize(e) >= self.nty.len { return 0 }
     return self.nty.get(usize(e))
@@ -1572,6 +1585,7 @@ pub Sema.origin(const self, e: u32): u32 {
     return self.norigin.get(usize(e))
 }
 
+/* The symbol `e` resolved to, and its constant value, or 0. */
 pub Sema.node_sym(const self, e: u32): u32 {
     if usize(e) >= self.nsym.len { return 0 }
     return self.nsym.get(usize(e))
@@ -1608,6 +1622,7 @@ pub PROOF_SLICE: const u8 = 16
 pub PROOF_BOUNDS: const u8 = 32
 pub PROOF_STATIC: const u8 = 64
 
+/* Node `e`'s PROOF_ bits, or 0. */
 pub Sema.node_proof(self, e: u32): u8 {
     if usize(e) >= self.nproof.len { return 0 }
     return self.nproof.get(usize(e))
@@ -1635,6 +1650,7 @@ pub Sema.format_plan(self, e: u32): (FormatPlan, bool) {
     return self.fplans.get(e)
 }
 
+/* Part `i` of a format plan's run. */
 pub Sema.format_part(self, i: u32): FormatPart {
     return self.fparts.get(usize(i))
 }
@@ -4901,6 +4917,9 @@ Sema.build_ident(self, id: u32, named: bool): u32 {
     return self.sym(s).ty
 }
 
+/* The type a type-expression node `id` denotes, or the error type after
+ * reporting.
+ */
 pub Sema.build_type(self, id: u32): u32 {
     t: Node = self.node(id)
     switch t.kind {

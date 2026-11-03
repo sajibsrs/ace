@@ -36,6 +36,7 @@ pub Link: struct {
     pub sha256: string = "",
 }
 
+/* One package of the graph, as its ace.pkg manifest declares it. */
 pub Package: struct {
     pub dir: string,                        // canonical package root directory
     pub name: string,
@@ -102,6 +103,9 @@ Name: struct {
     dir: string,
 }
 
+/* The packages reachable from the root manifest and their diagnostics; it
+ * owns them, released by `wipe`.
+ */
 pub Graph: struct {
     pub errors: int = 0,
     target: string = "",                    // selects qualified sections

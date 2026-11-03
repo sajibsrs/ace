@@ -4,6 +4,7 @@
  */
 
 
+/* Loads and stores of the u32 at `p`. */
 pub load(p: *u32): u32 intrinsic
 pub load_acquire(p: *u32): u32 intrinsic
 pub load_relaxed(p: *u32): u32 intrinsic
@@ -11,46 +12,56 @@ pub store(p: *u32, value: u32) intrinsic
 pub store_release(p: *u32, value: u32) intrinsic
 pub store_relaxed(p: *u32, value: u32) intrinsic
 
+/* Writes `value` to the u32 at `p` and returns the previous value. */
 pub exchange(p: *u32, value: u32): u32 intrinsic
 pub exchange_acquire(p: *u32, value: u32): u32 intrinsic
 pub exchange_release(p: *u32, value: u32): u32 intrinsic
 pub exchange_acq_rel(p: *u32, value: u32): u32 intrinsic
 pub exchange_relaxed(p: *u32, value: u32): u32 intrinsic
 
+/* Adds `value` to the u32 at `p`, wrapping, and returns the previous value. */
 pub add(p: *u32, value: u32): u32 intrinsic
 pub add_acquire(p: *u32, value: u32): u32 intrinsic
 pub add_release(p: *u32, value: u32): u32 intrinsic
 pub add_acq_rel(p: *u32, value: u32): u32 intrinsic
 pub add_relaxed(p: *u32, value: u32): u32 intrinsic
 
+/* Subtracts `value` from the u32 at `p`, wrapping, and returns the previous value. */
 pub sub(p: *u32, value: u32): u32 intrinsic
 pub sub_acquire(p: *u32, value: u32): u32 intrinsic
 pub sub_release(p: *u32, value: u32): u32 intrinsic
 pub sub_acq_rel(p: *u32, value: u32): u32 intrinsic
 pub sub_relaxed(p: *u32, value: u32): u32 intrinsic
 
+/* ANDs `value` into the u32 at `p` and returns the previous value. */
 pub and(p: *u32, value: u32): u32 intrinsic
 pub and_acquire(p: *u32, value: u32): u32 intrinsic
 pub and_release(p: *u32, value: u32): u32 intrinsic
 pub and_acq_rel(p: *u32, value: u32): u32 intrinsic
 pub and_relaxed(p: *u32, value: u32): u32 intrinsic
 
+/* ORs `value` into the u32 at `p` and returns the previous value. */
 pub or(p: *u32, value: u32): u32 intrinsic
 pub or_acquire(p: *u32, value: u32): u32 intrinsic
 pub or_release(p: *u32, value: u32): u32 intrinsic
 pub or_acq_rel(p: *u32, value: u32): u32 intrinsic
 pub or_relaxed(p: *u32, value: u32): u32 intrinsic
 
+/* XORs `value` into the u32 at `p` and returns the previous value. */
 pub xor(p: *u32, value: u32): u32 intrinsic
 pub xor_acquire(p: *u32, value: u32): u32 intrinsic
 pub xor_release(p: *u32, value: u32): u32 intrinsic
 pub xor_acq_rel(p: *u32, value: u32): u32 intrinsic
 pub xor_relaxed(p: *u32, value: u32): u32 intrinsic
 
+/* Writes `desired` to the u32 at `p` only when it holds `expected`; returns
+ * the value observed and whether it wrote. Never fails spuriously.
+ */
 pub cas(p: *u32, expected: u32, desired: u32): (u32, bool) intrinsic
 pub cas_acq_rel(p: *u32, expected: u32, desired: u32): (u32, bool) intrinsic
 pub cas_relaxed(p: *u32, expected: u32, desired: u32): (u32, bool) intrinsic
 
+/* Loads and stores of the u64 at `p`. */
 pub load(p: *u64): u64 intrinsic
 pub load_acquire(p: *u64): u64 intrinsic
 pub load_relaxed(p: *u64): u64 intrinsic
@@ -58,46 +69,56 @@ pub store(p: *u64, value: u64) intrinsic
 pub store_release(p: *u64, value: u64) intrinsic
 pub store_relaxed(p: *u64, value: u64) intrinsic
 
+/* Writes `value` to the u64 at `p` and returns the previous value. */
 pub exchange(p: *u64, value: u64): u64 intrinsic
 pub exchange_acquire(p: *u64, value: u64): u64 intrinsic
 pub exchange_release(p: *u64, value: u64): u64 intrinsic
 pub exchange_acq_rel(p: *u64, value: u64): u64 intrinsic
 pub exchange_relaxed(p: *u64, value: u64): u64 intrinsic
 
+/* Adds `value` to the u64 at `p`, wrapping, and returns the previous value. */
 pub add(p: *u64, value: u64): u64 intrinsic
 pub add_acquire(p: *u64, value: u64): u64 intrinsic
 pub add_release(p: *u64, value: u64): u64 intrinsic
 pub add_acq_rel(p: *u64, value: u64): u64 intrinsic
 pub add_relaxed(p: *u64, value: u64): u64 intrinsic
 
+/* Subtracts `value` from the u64 at `p`, wrapping, and returns the previous value. */
 pub sub(p: *u64, value: u64): u64 intrinsic
 pub sub_acquire(p: *u64, value: u64): u64 intrinsic
 pub sub_release(p: *u64, value: u64): u64 intrinsic
 pub sub_acq_rel(p: *u64, value: u64): u64 intrinsic
 pub sub_relaxed(p: *u64, value: u64): u64 intrinsic
 
+/* ANDs `value` into the u64 at `p` and returns the previous value. */
 pub and(p: *u64, value: u64): u64 intrinsic
 pub and_acquire(p: *u64, value: u64): u64 intrinsic
 pub and_release(p: *u64, value: u64): u64 intrinsic
 pub and_acq_rel(p: *u64, value: u64): u64 intrinsic
 pub and_relaxed(p: *u64, value: u64): u64 intrinsic
 
+/* ORs `value` into the u64 at `p` and returns the previous value. */
 pub or(p: *u64, value: u64): u64 intrinsic
 pub or_acquire(p: *u64, value: u64): u64 intrinsic
 pub or_release(p: *u64, value: u64): u64 intrinsic
 pub or_acq_rel(p: *u64, value: u64): u64 intrinsic
 pub or_relaxed(p: *u64, value: u64): u64 intrinsic
 
+/* XORs `value` into the u64 at `p` and returns the previous value. */
 pub xor(p: *u64, value: u64): u64 intrinsic
 pub xor_acquire(p: *u64, value: u64): u64 intrinsic
 pub xor_release(p: *u64, value: u64): u64 intrinsic
 pub xor_acq_rel(p: *u64, value: u64): u64 intrinsic
 pub xor_relaxed(p: *u64, value: u64): u64 intrinsic
 
+/* Writes `desired` to the u64 at `p` only when it holds `expected`; returns
+ * the value observed and whether it wrote. Never fails spuriously.
+ */
 pub cas(p: *u64, expected: u64, desired: u64): (u64, bool) intrinsic
 pub cas_acq_rel(p: *u64, expected: u64, desired: u64): (u64, bool) intrinsic
 pub cas_relaxed(p: *u64, expected: u64, desired: u64): (u64, bool) intrinsic
 
+/* Loads and stores of the uint at `p`. */
 pub load(p: *uint): uint intrinsic
 pub load_acquire(p: *uint): uint intrinsic
 pub load_relaxed(p: *uint): uint intrinsic
@@ -105,46 +126,56 @@ pub store(p: *uint, value: uint) intrinsic
 pub store_release(p: *uint, value: uint) intrinsic
 pub store_relaxed(p: *uint, value: uint) intrinsic
 
+/* Writes `value` to the uint at `p` and returns the previous value. */
 pub exchange(p: *uint, value: uint): uint intrinsic
 pub exchange_acquire(p: *uint, value: uint): uint intrinsic
 pub exchange_release(p: *uint, value: uint): uint intrinsic
 pub exchange_acq_rel(p: *uint, value: uint): uint intrinsic
 pub exchange_relaxed(p: *uint, value: uint): uint intrinsic
 
+/* Adds `value` to the uint at `p`, wrapping, and returns the previous value. */
 pub add(p: *uint, value: uint): uint intrinsic
 pub add_acquire(p: *uint, value: uint): uint intrinsic
 pub add_release(p: *uint, value: uint): uint intrinsic
 pub add_acq_rel(p: *uint, value: uint): uint intrinsic
 pub add_relaxed(p: *uint, value: uint): uint intrinsic
 
+/* Subtracts `value` from the uint at `p`, wrapping, and returns the previous value. */
 pub sub(p: *uint, value: uint): uint intrinsic
 pub sub_acquire(p: *uint, value: uint): uint intrinsic
 pub sub_release(p: *uint, value: uint): uint intrinsic
 pub sub_acq_rel(p: *uint, value: uint): uint intrinsic
 pub sub_relaxed(p: *uint, value: uint): uint intrinsic
 
+/* ANDs `value` into the uint at `p` and returns the previous value. */
 pub and(p: *uint, value: uint): uint intrinsic
 pub and_acquire(p: *uint, value: uint): uint intrinsic
 pub and_release(p: *uint, value: uint): uint intrinsic
 pub and_acq_rel(p: *uint, value: uint): uint intrinsic
 pub and_relaxed(p: *uint, value: uint): uint intrinsic
 
+/* ORs `value` into the uint at `p` and returns the previous value. */
 pub or(p: *uint, value: uint): uint intrinsic
 pub or_acquire(p: *uint, value: uint): uint intrinsic
 pub or_release(p: *uint, value: uint): uint intrinsic
 pub or_acq_rel(p: *uint, value: uint): uint intrinsic
 pub or_relaxed(p: *uint, value: uint): uint intrinsic
 
+/* XORs `value` into the uint at `p` and returns the previous value. */
 pub xor(p: *uint, value: uint): uint intrinsic
 pub xor_acquire(p: *uint, value: uint): uint intrinsic
 pub xor_release(p: *uint, value: uint): uint intrinsic
 pub xor_acq_rel(p: *uint, value: uint): uint intrinsic
 pub xor_relaxed(p: *uint, value: uint): uint intrinsic
 
+/* Writes `desired` to the uint at `p` only when it holds `expected`; returns
+ * the value observed and whether it wrote. Never fails spuriously.
+ */
 pub cas(p: *uint, expected: uint, desired: uint): (uint, bool) intrinsic
 pub cas_acq_rel(p: *uint, expected: uint, desired: uint): (uint, bool) intrinsic
 pub cas_relaxed(p: *uint, expected: uint, desired: uint): (uint, bool) intrinsic
 
+/* Loads and stores of the usize at `p`. */
 pub load(p: *usize): usize intrinsic
 pub load_acquire(p: *usize): usize intrinsic
 pub load_relaxed(p: *usize): usize intrinsic
@@ -152,46 +183,56 @@ pub store(p: *usize, value: usize) intrinsic
 pub store_release(p: *usize, value: usize) intrinsic
 pub store_relaxed(p: *usize, value: usize) intrinsic
 
+/* Writes `value` to the usize at `p` and returns the previous value. */
 pub exchange(p: *usize, value: usize): usize intrinsic
 pub exchange_acquire(p: *usize, value: usize): usize intrinsic
 pub exchange_release(p: *usize, value: usize): usize intrinsic
 pub exchange_acq_rel(p: *usize, value: usize): usize intrinsic
 pub exchange_relaxed(p: *usize, value: usize): usize intrinsic
 
+/* Adds `value` to the usize at `p`, wrapping, and returns the previous value. */
 pub add(p: *usize, value: usize): usize intrinsic
 pub add_acquire(p: *usize, value: usize): usize intrinsic
 pub add_release(p: *usize, value: usize): usize intrinsic
 pub add_acq_rel(p: *usize, value: usize): usize intrinsic
 pub add_relaxed(p: *usize, value: usize): usize intrinsic
 
+/* Subtracts `value` from the usize at `p`, wrapping, and returns the previous value. */
 pub sub(p: *usize, value: usize): usize intrinsic
 pub sub_acquire(p: *usize, value: usize): usize intrinsic
 pub sub_release(p: *usize, value: usize): usize intrinsic
 pub sub_acq_rel(p: *usize, value: usize): usize intrinsic
 pub sub_relaxed(p: *usize, value: usize): usize intrinsic
 
+/* ANDs `value` into the usize at `p` and returns the previous value. */
 pub and(p: *usize, value: usize): usize intrinsic
 pub and_acquire(p: *usize, value: usize): usize intrinsic
 pub and_release(p: *usize, value: usize): usize intrinsic
 pub and_acq_rel(p: *usize, value: usize): usize intrinsic
 pub and_relaxed(p: *usize, value: usize): usize intrinsic
 
+/* ORs `value` into the usize at `p` and returns the previous value. */
 pub or(p: *usize, value: usize): usize intrinsic
 pub or_acquire(p: *usize, value: usize): usize intrinsic
 pub or_release(p: *usize, value: usize): usize intrinsic
 pub or_acq_rel(p: *usize, value: usize): usize intrinsic
 pub or_relaxed(p: *usize, value: usize): usize intrinsic
 
+/* XORs `value` into the usize at `p` and returns the previous value. */
 pub xor(p: *usize, value: usize): usize intrinsic
 pub xor_acquire(p: *usize, value: usize): usize intrinsic
 pub xor_release(p: *usize, value: usize): usize intrinsic
 pub xor_acq_rel(p: *usize, value: usize): usize intrinsic
 pub xor_relaxed(p: *usize, value: usize): usize intrinsic
 
+/* Writes `desired` to the usize at `p` only when it holds `expected`; returns
+ * the value observed and whether it wrote. Never fails spuriously.
+ */
 pub cas(p: *usize, expected: usize, desired: usize): (usize, bool) intrinsic
 pub cas_acq_rel(p: *usize, expected: usize, desired: usize): (usize, bool) intrinsic
 pub cas_relaxed(p: *usize, expected: usize, desired: usize): (usize, bool) intrinsic
 
+/* Orders memory accesses around it without touching a location. */
 pub fence() intrinsic
 pub fence_acquire() intrinsic
 pub fence_release() intrinsic

@@ -14,7 +14,7 @@ Decision: release on every exit is written once, next to the acquisition.
 
 ## Comments
 Decision: the signature carries names and types; comments carry meaning.
-1. A declaration's doc comment is the comment block on its own lines directly above it; editor hover shows it. Every `pub` declaration has one. It is prose that names parameters and results in backticks where they need explaining, as Go does; no `@param`-style tags.
+1. A declaration's doc comment is the comment block on its own lines directly above it; editor hover shows it. Every `pub` declaration on a `std/` module's import surface (its top-level file or `mod.ace`) and in `pkg/` has one; a comment above a run of related declarations (overloads, an ordering family, a constant table) with no blank line between covers the run, and an overload set's first doc comment covers its later overloads unless one behaves differently. It is prose that names parameters and results in backticks where they need explaining, as Go does; no `@param`-style tags.
 
 ## Layout
 Decision: one place for each kind of file; `.acefmt` is normative for formatting.

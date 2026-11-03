@@ -12,6 +12,7 @@ pub Listener: struct {
     active: bool = false,
 }
 
+/* The readiness a connection waits for, as `watch` registers it. */
 pub Interest: enum {
     none,
     read,
@@ -19,12 +20,18 @@ pub Interest: enum {
     both,
 }
 
+/* A connection handle; canonical zero (`Conn {}`) is the empty handle.
+ * The `progress_` functions keep its interest current.
+ */
 pub Conn: struct {
     socket: net.Socket = net.Socket(0),
     interest: Interest = Interest.none,
     active: bool = false,
 }
 
+/* What a `progress_` step did: nothing yet (wait for readiness), bytes
+ * received or sent, connected, the peer closed, or an error.
+ */
 pub Event: union {
     none,
     data: usize,
@@ -39,10 +46,12 @@ pub AcceptErr: error {
     0: pending = "no connection is ready to accept",
 }
 
+/* `incomplete`: the peer closed before `buffer` filled. */
 pub ReceiveAllErr: error {
     0: incomplete = "connection closed before the requested bytes were received",
 }
 
+/* `stalled`: a send made no progress. */
 pub SendAllErr: error {
     0: stalled = "connection made no progress while sending",
 }
@@ -75,6 +84,7 @@ with_write(interest: Interest, enabled: bool): Interest {
     return interest
 }
 
+/* A blocking listener bound to `address`, with SO_REUSEADDR set. */
 pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
     if err != null { return Listener {}, err }
@@ -94,6 +104,7 @@ pub listen(address: net.Addr4, backlog: usize): (Listener, Error) {
     return listener, null
 }
 
+/* A blocking connection to `address`. */
 pub connect(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
     if err != null { return Conn {}, err }
@@ -107,6 +118,9 @@ pub connect(address: net.Addr4): (Conn, Error) {
     return connection(sock, Interest.read), null
 }
 
+/* Starts a nonblocking connection to `address`; finish it with
+ * `progress_connect` once it is writable.
+ */
 pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
     if err != null { return Conn {}, err }
@@ -129,6 +143,7 @@ pub connect_nonblock(address: net.Addr4): (Conn, Error) {
     return Conn {}, err
 }
 
+/* Like `listen`, but `accept_nonblock` never blocks on it. */
 pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     sock: net.Socket, err: Error = net.socket(net.SocketType.tcp)
     if err != null { return Listener {}, err }
@@ -149,11 +164,13 @@ pub listen_nonblock(address: net.Addr4, backlog: usize): (Listener, Error) {
     return listener, null
 }
 
+/* The local address `listener` is bound to. */
 pub local(listener: Listener): (net.Addr4, Error) {
     address: net.Addr4, err: Error = net.local(listener.socket)
     return address, err
 }
 
+/* The next blocking connection on `listener` and its peer's address. */
 pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
     if err != null { return Conn {}, address, err }
@@ -161,6 +178,9 @@ pub accept(listener: Listener): (Conn, net.Addr4, Error) {
     return connection(sock, Interest.read), address, null
 }
 
+/* The next connection on `listener` as a nonblocking one, or
+ * `AcceptErr.pending` when none is ready.
+ */
 pub accept_nonblock(listener: Listener): (Conn, net.Addr4, Error) {
     sock: net.Socket, address: net.Addr4, err: Error = net.accept(listener.socket)
     if err != null {
@@ -213,6 +233,7 @@ pub watch(q: poll.Queue, listener: Listener, context: *u8): Error {
     return poll.watch(q, listener.socket, true, false, context)
 }
 
+/* Removes `connection` from `q` without closing it. */
 pub unwatch(q: poll.Queue, connection: Conn): Error {
     return poll.unwatch(q, connection.socket)
 }
@@ -221,6 +242,7 @@ pub unwatch(q: poll.Queue, listener: Listener): Error {
     return poll.unwatch(q, listener.socket)
 }
 
+/* The readiness `conn` currently waits for. */
 pub interest(conn: Conn): Interest {
     return conn.interest
 }
@@ -230,6 +252,9 @@ pub interest(conn: *Conn, value: Interest) {
     conn.interest = value
 }
 
+/* Finishes a nonblocking connect once its socket is writable:
+ * `connected`, or `failed` with the error.
+ */
 pub progress_connect(conn: *Conn): Event {
     err: Error = net.pending_error(conn.socket)
     if err == null {
@@ -241,6 +266,9 @@ pub progress_connect(conn: *Conn): Event {
     return Event.failed(err)
 }
 
+/* One nonblocking receive into `dest`: `data` with the count, `none` until
+ * readable, or `disconnected` at end of stream or reset.
+ */
 pub progress_receive(conn: *Conn, dest: []u8): Event {
     if dest.len == 0 {
         conn.interest = with_read(conn.interest, false)
@@ -268,6 +296,10 @@ pub progress_receive(conn: *Conn, dest: []u8): Event {
     }
 }
 
+/* One nonblocking send of `src`: `sent` with the count, `none` until
+ * writable, or `disconnected` on reset. Write interest stays set while
+ * bytes remain.
+ */
 pub progress_send(conn: *Conn, src: []u8): Event {
     if src.len == 0 {
         conn.interest = with_write(conn.interest, false)
@@ -304,6 +336,9 @@ pub receive(connection: Conn, buffer: []u8): (int, Error) {
     return net.receive(connection.socket, buffer)
 }
 
+/* Receives until `buffer` is full; returns the count received, with
+ * `ReceiveAllErr.incomplete` if the peer closes first.
+ */
 pub receive_all(connection: Conn, buffer: []u8): (usize, Error) {
     received: usize = 0
 
@@ -320,6 +355,9 @@ pub receive_all(connection: Conn, buffer: []u8): (usize, Error) {
     return received, null
 }
 
+/* Sends all of `data`; returns the count sent, with `SendAllErr.stalled`
+ * if a send makes no progress.
+ */
 pub send_all(connection: Conn, data: []u8): (usize, Error) {
     if data.len == 0 { return 0, null }
     sent: usize = 0
@@ -342,10 +380,12 @@ pub send_all(connection: Conn, data: []u8): (usize, Error) {
  */
 /* Ends this side's sending; receiving continues until the peer closes. */
 @when(_PLATFORM_ == "darwin-arm64")
+/* Shuts down the sending half of `connection`. */
 pub close_write(connection: Conn): Error {
     return net.close_write(connection.socket)
 }
 
+/* Closes the handle and empties it; an empty handle is a no-op. */
 pub close(listener: *Listener): Error {
     if !listener.active { return null }
     err: Error = sys.close(listener.socket)

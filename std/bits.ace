@@ -2,36 +2,45 @@
  * Compiler-backed target instructions; no numeric conversion or runtime calls.
  */
 
+/* The number of set bits in `value`. */
 pub popcount(value: u8): uint intrinsic
 pub popcount(value: u16): uint intrinsic
 pub popcount(value: u32): uint intrinsic
 pub popcount(value: u64): uint intrinsic
 
+/* The number of leading zero bits in `value`; its width when zero. */
 pub clz(value: u8): uint intrinsic
 pub clz(value: u16): uint intrinsic
 pub clz(value: u32): uint intrinsic
 pub clz(value: u64): uint intrinsic
 
+/* The number of trailing zero bits in `value`; its width when zero. */
 pub ctz(value: u8): uint intrinsic
 pub ctz(value: u16): uint intrinsic
 pub ctz(value: u32): uint intrinsic
 pub ctz(value: u64): uint intrinsic
 
+/* `value` with its bytes in reverse order. */
 pub bswap(value: u8): u8 intrinsic
 pub bswap(value: u16): u16 intrinsic
 pub bswap(value: u32): u32 intrinsic
 pub bswap(value: u64): u64 intrinsic
 
+/* `value` rotated left by `count` bits, modulo its width. */
 pub rotl(value: u8, count: uint): u8 intrinsic
 pub rotl(value: u16, count: uint): u16 intrinsic
 pub rotl(value: u32, count: uint): u32 intrinsic
 pub rotl(value: u64, count: uint): u64 intrinsic
 
+/* `value` rotated right by `count` bits, modulo its width. */
 pub rotr(value: u8, count: uint): u8 intrinsic
 pub rotr(value: u16, count: uint): u16 intrinsic
 pub rotr(value: u32, count: uint): u32 intrinsic
 pub rotr(value: u64, count: uint): u64 intrinsic
 
+/* Addition, subtraction, and multiplication wrapping modulo 2^width; they
+ * never trap or report overflow.
+ */
 pub wradd(a: u8, b: u8): u8 intrinsic
 pub wradd(a: u16, b: u16): u16 intrinsic
 pub wradd(a: u32, b: u32): u32 intrinsic

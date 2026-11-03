@@ -59,6 +59,9 @@ pub Select: struct {
     pub col: u32,
 }
 
+/* One loaded module: its identity, parsed file, and the names it exports
+ * and binds.
+ */
 pub Module: struct {
     pub canon: string,                      // realpath: the module's identity
     pub prefix: string = "",                // unique `name$` of its private identities; the root's is ""
@@ -86,6 +89,9 @@ pub Diagnostic: struct {
     pub message: string,
 }
 
+/* The module graph of one build and its diagnostics; it owns every module
+ * and string, released by `wipe`.
+ */
 pub Loader: struct {
     pub errors: int = 0,
     pub diags: array.Array[Diagnostic],     // every error reported, in order; strings in `pool`

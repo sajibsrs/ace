@@ -18,16 +18,19 @@
 import bits
 import mem
 
+/* Why a map operation failed. */
 pub MapErr: error {
     1: allocation = "map storage allocation failed",
 }
 
+/* One open-addressing slot: a key and value, live when `used`. */
 pub Slot[K, V]: struct {
     key: K,
     value: V,
     used: bool,
 }
 
+/* A hash map from `K` to `V`; it owns its slots, released by `wipe`. */
 pub Map[K, V]: struct {
     slots: []Slot[K, V] = null,
     count: usize = 0,

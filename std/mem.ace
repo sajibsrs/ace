@@ -5,14 +5,21 @@
  * platform allocator; the fallback bodies are never emitted.
  */
 
+/* `size` uninitialized bytes aligned to `align`, or null on failure. */
 pub alloc(size: int, align: int): []u8 {
     return null
 }
 
+/* Resizes allocation `data` to `new_size` bytes, possibly moving it, and
+ * returns the new slice; null on failure, with `data` still live.
+ */
 pub realloc(data: []u8, new_size: int): []u8 {
     return null
 }
 
+/* Releases allocation `*data` and nulls the caller's slice; a null slice
+ * is a no-op.
+ */
 pub release(data: *[]u8) {
     *data = null
 }
@@ -22,7 +29,6 @@ pub release(data: *[]u8) {
  * it. The bootstrap compiler lowers these exact declarations directly, like
  * the raw forms above.
  */
-
 pub alloc[T](count: usize): []T {
     return null
 }
@@ -31,15 +37,20 @@ pub alloc[T](count: usize): []T {
  * a valid `T` for every type. The bootstrap compiler lowers it directly to the
  * platform's zero-filling allocator.
  */
-
 pub zalloc[T](count: usize): []T {
     return null
 }
 
+/* Resizes typed allocation `data` to `new_count` elements, possibly moving
+ * it; null on failure, with `data` still live.
+ */
 pub realloc[T](data: []T, new_count: usize): []T {
     return null
 }
 
+/* Releases typed allocation `*data` and nulls the caller's slice; a null
+ * slice is a no-op.
+ */
 pub release[T](data: *[]T) {
     data = null
 }
@@ -47,7 +58,6 @@ pub release[T](data: *[]T) {
 /* One `T` reached by pointer, uninitialized like `alloc[T]`, or null on the
  * same failures. Release it with the pointer form below.
  */
-
 pub new[T](): *T {
     data: []T = alloc[T](1)
     if data == null { return null }
@@ -57,7 +67,6 @@ pub new[T](): *T {
 /* Releases what `new[T]` returned and nulls the caller's pointer; a null
  * pointer is a no-op.
  */
-
 pub release[T](data: **T) {
     if *data == null { return }
     whole: []T = []T(*data, usize(1))
@@ -71,17 +80,18 @@ pub release[T](data: **T) {
  * bootstrap compiler lowers this exact declaration directly to the platform
  * allocator's size query.
  */
-
 pub usable(data: []u8): usize {
     return 0
 }
 
-/* Byte operations use complete slice views as their ranges. The bootstrap compiler emits them natively as calls to
- * wide per-object routines; no platform memory routine is called.
+/* Copies `src` into `dst`, which must have equal lengths and not overlap.
+ * Byte operations use complete slice views as their ranges. The bootstrap
+ * compiler emits them natively as calls to wide per-object routines; no
+ * platform memory routine is called.
  */
-
 pub copy(noalias dst: []u8, src: []u8) {}
 
+/* Like `copy`, but `dst` and `src` may overlap in either direction. */
 pub move(dst: []u8, src: []u8) {}
 
 /* Typed forms of `copy` and `move`: equal element counts, copying
@@ -91,10 +101,15 @@ pub copy[T](noalias dst: []T, src: []T) {}
 
 pub move[T](dst: []T, src: []T) {}
 
+/* Sets every byte of `data` to `value`. */
 pub fill(data: []u8, value: u8) {}
 
+/* Sets every byte of `data` to zero. */
 pub zero(data: []u8) {}
 
+/* -1, 0, or 1 as `a` sorts before, equal to, or after `b`, comparing
+ * unsigned bytes; after an equal prefix the shorter sorts first.
+ */
 pub compare(a: []u8, b: []u8): int {
     return 0
 }

@@ -100,6 +100,9 @@ pub L_STACK: const u8 = 1
 pub L_WORD: const u8 = 2
 pub L_ADDR: const u8 = 3
 
+/* Where one ABI leaf lives at a call or entry: an `L_` kind with its
+ * register, stack offset, or word and memory placement.
+ */
 pub Loc: struct {
     pub kind: u8 = 0,
     pub size: u8 = 0,

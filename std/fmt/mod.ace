@@ -14,6 +14,9 @@ import formatting: @formatting
 /* The descriptor every output call but `printf(fd, ...)` writes to. */
 STDOUT: const i32 = 1
 
+/* Writes `text`, or `value` in its decimal or shortest round-trip form, to
+ * stdout; returns the bytes written, or the failing write's result.
+ */
 pub print(text: string): int {
     if text.len == 0 { return 0 }
     total: int = 0
@@ -343,6 +346,9 @@ pub Buffer: struct {
     mark: int,                  // bytes taken before the current printf
 }
 
+/* A buffer writing to `fd` through `storage`, which the caller owns;
+ * nothing to release.
+ */
 pub Buffer.init(fd: sys.Fd, storage: []u8): Buffer {
     return Buffer { sink = formatting.Sink.init(storage, i32(fd), write_bytes), mark = 0 }
 }
@@ -431,6 +437,7 @@ finish_line(written: int): int {
     return written + n
 }
 
+/* `print` followed by one newline. */
 pub println(text: string): int {
     if text.len == 0 { return print("\n") }
     return finish_line(print(text))

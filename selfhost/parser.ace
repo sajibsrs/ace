@@ -21,6 +21,7 @@ import lexer: "./lexer.ace"
 pub Token: type = lexer.Token
 Out: type = fmt.Buffer
 
+/* Node kinds, in src/ace.h's NODE_KINDS order. */
 pub Kind: enum u8 {
     file,
     named, ptr, slice_t, array_t, tuple_t, func_t, const_t, tparams, staticmap_t,
@@ -77,6 +78,10 @@ FLAG_NAMES: [21]string = [
 
 NOSLIT: const int = 1 // no struct literal at this expression level
 
+/* One tree node. `a` through `d` are per-kind child or value slots; the
+ * variable-length children are the run `kids`..`kids + nkids` of
+ * `Parser.kids`.
+ */
 pub Node: struct {
     pub kind: Kind,
     pub op: Token,     // binary/unary/assign/op operator
@@ -104,6 +109,9 @@ Tok: struct {
     text: string, // ident: source view; string: decoded bytes in `pool`
 }
 
+/* Parsing state over one file and the tree it builds; it owns the tree,
+ * tokens, and decoded strings, released by `wipe`.
+ */
 pub Parser: struct {
     path: string,
     pub file: string,          // what @file writes; `path`'s base name until set
@@ -262,6 +270,7 @@ pub Parser.node(const self, n: u32): *Node {
     return &self.nodes[n]
 }
 
+/* Node `n`'s variable-length child `k`. */
 pub Parser.kid(const self, n: u32, k: u32): u32 {
     return self.kids[self.nodes[n].kids + k]
 }

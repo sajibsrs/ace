@@ -222,7 +222,6 @@ pub trim(text: string): string {
  * succeeds. Both forms are specialized templates with no default body, so
  * the callable surface is exactly the per-type specializations below; any
  * other type argument is a compile-time error at the call. */
-
 pub parse[T](text: string): (T, bool) specialized
 
 pub parse[T](text: string, radix: u8): (T, bool) specialized

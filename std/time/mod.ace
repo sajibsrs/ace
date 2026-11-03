@@ -6,10 +6,12 @@ import os: "./os/darwin-arm64.ace"
 @when(_PLATFORM_ == "linux-x64")
 import os: "./os/linux-x64.ace"
 
+/* Monotonic nanoseconds since boot, advancing through system sleep. */
 pub elapsed(): u64 {
     return os.elapsed()
 }
 
+/* Monotonic nanoseconds since boot, paused while the system sleeps. */
 pub awake(): u64 {
     return os.awake()
 }

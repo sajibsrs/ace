@@ -8,6 +8,7 @@ import atomic
 @when(_PLATFORM_ == "darwin-arm64")
 import os: "./os/darwin-arm64.ace"
 
+/* A thread handle and each operation's error domain. */
 pub Thread: type = os.Thread
 pub CreateErr: type = os.CreateErr
 pub JoinErr: type = os.JoinErr

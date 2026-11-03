@@ -8,6 +8,7 @@ import os: "./os/darwin-arm64.ace"
 @when(_PLATFORM_ == "linux-x64")
 import os: "./os/linux-x64.ace"
 
+/* The queue, its readiness event, and each operation's error domain. */
 pub Queue: type = os.Queue
 pub Event: type = os.Event
 pub QueueErr: type = os.QueueErr
@@ -15,13 +16,20 @@ pub WatchErr: type = os.WatchErr
 pub UnwatchErr: type = os.UnwatchErr
 pub WaitErr: type = os.WaitErr
 
+/* The `wait` timeout that blocks until an event. */
 pub FOREVER: const u64 = 0xffffffffffffffff
 
+/* A new readiness queue, or `Queue(-1)` with the error; close it with
+ * `sys.close`. It owns no watched descriptor.
+ */
 pub queue(): (Queue, Error) {
     result: Queue, err: Error = os.queue()
     return result, err
 }
 
+/* Registers `fd` in `q`, or replaces its interest; both interests false is
+ * an error.
+ */
 pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool): Error {
     return os.watch(q, fd, readable, writable)
 }
@@ -34,10 +42,14 @@ pub watch(q: Queue, fd: sys.Fd, readable: bool, writable: bool, context: *u8): E
     return os.watch(q, fd, readable, writable, context)
 }
 
+/* Removes `fd` from `q` without closing it. */
 pub unwatch(q: Queue, fd: sys.Fd): Error {
     return os.unwatch(q, fd)
 }
 
+/* Blocks up to `timeout_ns` (0 polls, FOREVER never times out) and fills
+ * `events[0..count]`, one event per ready descriptor; zero on timeout.
+ */
 pub wait(q: Queue, events: []Event, timeout_ns: u64): (usize, Error) {
     count: usize, err: Error = os.wait(q, events, timeout_ns)
     return count, err

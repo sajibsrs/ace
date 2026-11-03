@@ -12,11 +12,13 @@
 
 import mem
 
+/* Why an array operation failed. */
 pub ArrayErr: error {
     1: allocation = "array storage allocation failed",
     2: empty = "array is empty",
 }
 
+/* A growable array of `T`; it owns its storage, released by `wipe`. */
 pub Array[T]: struct {
     items: []T = null,
     pub len: usize = 0,

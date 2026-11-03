@@ -42,6 +42,7 @@ pub Pool.join(self, parts: []string): string {
     return block[..total]
 }
 
+/* A pool-owned copy of `text`. */
 pub Pool.copy(self, text: string): string {
     return self.join([text])
 }

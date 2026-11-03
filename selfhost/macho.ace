@@ -71,6 +71,7 @@ pub Rel: struct {
     pub rtype: u8,
 }
 
+/* One section of the object: its bytes (or bss size) and relocations. */
 pub Sec: struct {
     pub sect: string,
     pub seg: string,
@@ -84,6 +85,9 @@ pub Sec: struct {
 pub FK_SUBSP: const u8 = 0
 pub FK_BRANCH: const u8 = 1
 
+/* A text word patched once its value is known: an FK_SUBSP frame size or
+ * an FK_BRANCH call target.
+ */
 pub Fixup: struct {
     pub kind: u8,
     pub site: u32,               // offset of the instruction word in __text
@@ -91,6 +95,7 @@ pub Fixup: struct {
     pub frame: u32 = 0,          // FK_SUBSP: final frame size
 }
 
+/* A DWARF line-table row: code at `addr` came from `path:line:col`. */
 pub LineRow: struct {
     pub addr: u32,
     pub line: u32,
@@ -98,12 +103,16 @@ pub LineRow: struct {
     pub path: string,
 }
 
+/* A function's DWARF extent: `size` bytes from `addr`. */
 pub DebugFn: struct {
     pub addr: u32,
     pub size: u32,
     pub name: string,
 }
 
+/* The object under construction: sections, symbols, fixups, and debug
+ * rows. It owns its strings, released by `wipe`.
+ */
 pub Obj: struct {
     pub debug: bool,
     pub secs: array.Array[Sec],
@@ -170,6 +179,7 @@ pub Obj.wipe(self) {
     self.names.wipe()
 }
 
+/* Section `k` in place; the pointer dangles once a section is added. */
 pub Obj.sec(self, k: int): *Sec {
     return &self.secs.view()[usize(k)]
 }
@@ -193,6 +203,7 @@ pub Obj.get32(self, off: usize): u32 {
     return get32(self.secs.get(SEC_TEXT).data, off)
 }
 
+/* Appends `v` to `b` as a little-endian 32-bit word. */
 pub put32(b: *array.Array[u8], v: u32) {
     for i: u32 in 0..4 { fail(b.push(u8((v >> (8 * i)) & 0xFF))) }
 }
@@ -233,11 +244,13 @@ pub Obj.define(self, name: string, ext: bool, k: int): int {
     return id
 }
 
+/* Records a relocation at `off` in section `k` against symbol `sym`. */
 pub Obj.reloc(self, k: int, off: u32, sym: int, pcrel: bool, len: u8, ext: bool, rtype: u8) {
     s: *Sec = self.sec(k)
     fail(s.rels.push(Rel { off = off, sym = sym, pcrel = pcrel, len = len, ext = ext, rtype = rtype }))
 }
 
+/* Records a fixup of the text word at `site`, resolved after emission. */
 pub Obj.fixup(self, kind: u8, site: u32, target: int) {
     fail(self.fix.push(Fixup { kind = kind, site = site, target = target }))
 }
@@ -252,6 +265,7 @@ pub Obj.line(self, addr: u32, line: u32, col: u32, path: string) {
     fail(self.lines.push(row))
 }
 
+/* Records function `name`'s extent for DWARF. */
 pub Obj.debug_fn(self, addr: u32, size: u32, name: string) {
     fail(self.debug_fns.push(DebugFn { addr = addr, size = size, name = name }))
 }

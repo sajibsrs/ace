@@ -6,10 +6,12 @@ import os: "./os/darwin-arm64.ace"
 @when(_PLATFORM_ == "linux-x64")
 import os: "./os/linux-x64.ace"
 
+/* A file descriptor, a process handle, and a finished child's status. */
 pub Fd: type = os.Fd
 pub Process: type = os.Process
 pub ProcessStatus: type = os.ProcessStatus
 
+/* Each operation's error domain; the raw errno is `errno()`. */
 pub OpenErr: type = os.OpenErr
 pub ReadErr: type = os.ReadErr
 pub WriteErr: type = os.WriteErr
@@ -29,14 +31,17 @@ pub PipeErr: type = os.PipeErr
 pub IoctlErr: type = os.IoctlErr
 pub RandomErr: type = os.RandomErr
 
+/* File metadata and directory iteration state. */
 pub FileType: type = os.FileType
 pub FileInfo: type = os.FileInfo
 pub Dir: type = os.Dir
 
+/* The standard descriptors. */
 pub stdin: const Fd = Fd(0)
 pub stdout: const Fd = Fd(1)
 pub stderr: const Fd = Fd(2)
 
+/* `open` flags. */
 pub O_RDONLY: const i32 = os.O_RDONLY
 pub O_WRONLY: const i32 = os.O_WRONLY
 pub O_RDWR: const i32 = os.O_RDWR
@@ -46,6 +51,7 @@ pub O_CREAT: const i32 = os.O_CREAT
 pub O_TRUNC: const i32 = os.O_TRUNC
 pub O_EXCL: const i32 = os.O_EXCL
 
+/* errno values callers branch on. */
 pub EINTR: const i32 = os.EINTR
 pub EAGAIN: const i32 = os.EAGAIN
 pub EWOULDBLOCK: const i32 = os.EWOULDBLOCK
@@ -55,17 +61,22 @@ pub EACCES: const i32 = os.EACCES
 pub EBUSY: const i32 = os.EBUSY
 
 @when(_PLATFORM_ == "darwin-arm64")
+/* Berkeley packet filter `ioctl` requests. */
 pub BIOCGBLEN: const uint = os.BIOCGBLEN
 
 @when(_PLATFORM_ == "darwin-arm64")
+/* Puts the packet filter in promiscuous mode. */
 pub BIOCPROMISC: const uint = os.BIOCPROMISC
 
 @when(_PLATFORM_ == "darwin-arm64")
+/* Binds the packet filter to an interface. */
 pub BIOCSETIF: const uint = os.BIOCSETIF
 
 @when(_PLATFORM_ == "darwin-arm64")
+/* Returns packets as they arrive instead of when the buffer fills. */
 pub BIOCIMMEDIATE: const uint = os.BIOCIMMEDIATE
 
+/* `mkdir` permission bits. */
 pub S_IRWXU: const u32 = os.S_IRWXU
 pub S_IRUSR: const u32 = os.S_IRUSR
 pub S_IWUSR: const u32 = os.S_IWUSR
@@ -98,26 +109,36 @@ process_env(index: usize): string {
     return null
 }
 
+/* The process argument count. */
 pub argc(): usize {
     return process_argc()
 }
 
+/* Argument `index`, which must be below `argc()`; 0 is the invocation
+ * name. The view is valid for the process lifetime.
+ */
 pub arg(index: usize): string {
     return process_arg(index)
 }
 
+/* The environment entry count, counted on every call. */
 pub envc(): usize {
     return process_envc()
 }
 
+/* Environment entry `index` as raw `KEY=VALUE` bytes; `index` must be
+ * below `envc()`.
+ */
 pub env(index: usize): string {
     return process_env(index)
 }
 
+/* Ends the process with status `code`. */
 pub exit(code: int) {
     os.exit(code)
 }
 
+/* The calling thread's last OS error; read it right after the failure. */
 pub errno(): i32 {
     return os.errno()
 }
@@ -137,35 +158,46 @@ pub random(storage: []u8): Error {
     return os.random(storage)
 }
 
+/* Duplicates the process: the child's handle in the parent, `Process(0)`
+ * in the child, or `Process(-1)` with the error.
+ */
 pub fork(): (Process, Error) {
     process: Process, err: Error = os.fork()
     return process, err
 }
 
+/* Waits for child `process` to finish and returns how it ended. */
 pub wait(process: Process): (ProcessStatus, Error) {
     status: ProcessStatus, err: Error = os.wait(process)
     return status, err
 }
 
+/* A new pipe's read and write ends. */
 pub pipe(): (Fd, Fd, Error) {
     input: Fd, output: Fd, err: Error = os.pipe()
     return input, output, err
 }
 
+/* Reads at most `buf.len` bytes from `fd`; returns the count, 0 at end of
+ * file.
+ */
 pub read(fd: Fd, buf: []u8): (int, Error) {
     count: int, err: Error = os.read(fd, buf)
     return count, err
 }
 
+/* Writes at most `data.len` bytes to `fd`; returns the count written. */
 pub write(fd: Fd, data: []u8): (int, Error) {
     count: int, err: Error = os.write(fd, data)
     return count, err
 }
 
+/* Closes `fd`. */
 pub close(fd: Fd): Error {
     return os.close(fd)
 }
 
+/* Performs device control `request` on `fd`. */
 pub ioctl(fd: Fd, request: uint): Error {
     return os.ioctl(fd, request)
 }
@@ -174,6 +206,7 @@ pub ioctl(fd: Fd, request: uint, data: []u8): Error {
     return os.ioctl(fd, request, data)
 }
 
+/* Opens `path` with `O_` `flags`. */
 pub open(path: string, flags: i32): (Fd, Error) {
     fd: Fd, err: Error = os.open(path, flags)
     return fd, err
@@ -184,26 +217,35 @@ pub open(path: string, flags: i32, mode: u32): (Fd, Error) {
     return fd, err
 }
 
+/* Metadata of the file `path` names, following symbolic links. */
 pub stat(path: string): (FileInfo, Error) {
     info: FileInfo, err: Error = os.stat(path)
     return info, err
 }
 
+/* Like `stat`, but a final symbolic link describes itself. */
 pub lstat(path: string): (FileInfo, Error) {
     info: FileInfo, err: Error = os.lstat(path)
     return info, err
 }
 
+/* Writes the absolute path of existing file `path`, with every symlink and
+ * `.`/`..` resolved, into `buf`; returns its length.
+ */
 pub canonical(path: string, buf: []u8): (usize, Error) {
     count: usize, err: Error = os.canonical(path, buf)
     return count, err
 }
 
+/* Writes the running executable's canonical path into `buf`; returns its
+ * length.
+ */
 pub executable(buf: []u8): (usize, Error) {
     count: usize, err: Error = os.executable(buf)
     return count, err
 }
 
+/* Creates directory `path` with permission bits `mode`. */
 pub mkdir(path: string, mode: u32): Error {
     return os.mkdir(path, mode)
 }
@@ -212,24 +254,31 @@ pub mkdir(path: string): Error {
     return os.mkdir(path)
 }
 
+/* Renames `old_path` to `new_path`, replacing an existing file there. */
 pub rename(old_path: string, new_path: string): Error {
     return os.rename(old_path, new_path)
 }
 
+/* Removes the directory entry `path`. */
 pub unlink(path: string): Error {
     return os.unlink(path)
 }
 
+/* Opens directory `path` for `readdir`; close it with `closedir`. */
 pub opendir(path: string): (Dir, Error) {
     dir: Dir, err: Error = os.opendir(path)
     return dir, err
 }
 
+/* The next entry of `*dir`: its name written into `name` with its length,
+ * its type, and whether iteration is done.
+ */
 pub readdir(dir: *Dir, name: []u8): (usize, FileType, bool, Error) {
     length: usize, file_type: FileType, done: bool, err: Error = os.readdir(dir, name)
     return length, file_type, done, err
 }
 
+/* Closes `*dir`. */
 pub closedir(dir: *Dir): Error {
     return os.closedir(dir)
 }

@@ -6,10 +6,12 @@ import os: "./os/darwin-arm64.ace"
 @when(_PLATFORM_ == "linux-x64")
 import os: "./os/linux-x64.ace"
 
+/* A socket, its type, and an IPv4 address with port. */
 pub Socket: type = os.Socket
 pub SocketType: type = os.SocketType
 pub Addr4: type = os.Addr4
 
+/* Each operation's error domain; the raw errno is `sys.errno()`. */
 pub SocketErr: type = os.SocketErr
 pub ReuseaddrErr: type = os.ReuseaddrErr
 pub ReuseportErr: type = os.ReuseportErr
@@ -64,6 +66,7 @@ pub parse4(endpoint: string): (Addr4, bool) {
     return address, true
 }
 
+/* A new IPv4 socket of `socket_type`; close it with `sys.close`. */
 pub socket(socket_type: SocketType): (Socket, Error) {
     result: Socket, err: Error = os.socket(socket_type)
     return result, err
@@ -71,58 +74,77 @@ pub socket(socket_type: SocketType): (Socket, Error) {
 
 /* Ends this side's sending; receiving continues until the peer closes. */
 @when(_PLATFORM_ == "darwin-arm64")
+/* Shuts down the sending half of `sock`; the peer reads end of stream. */
 pub close_write(sock: Socket): Error {
     return os.close_write(sock)
 }
 
+/* Sets SO_REUSEADDR on `sock`. */
 pub reuseaddr(sock: Socket, enabled: bool): Error {
     return os.reuseaddr(sock, enabled)
 }
 
+/* Sets SO_REUSEPORT on `sock`. */
 pub reuseport(sock: Socket, enabled: bool): Error {
     return os.reuseport(sock, enabled)
 }
 
+/* Makes operations on `sock` return EAGAIN instead of blocking. */
 pub nonblock(sock: Socket, enabled: bool): Error {
     return os.nonblock(sock, enabled)
 }
 
+/* Binds `sock` to local `address`; port 0 picks a free one. */
 pub bind(sock: Socket, address: Addr4): Error {
     return os.bind(sock, address)
 }
 
+/* Marks `sock` as accepting connections, queueing up to `backlog`. */
 pub listen(sock: Socket, backlog: usize): Error {
     return os.listen(sock, backlog)
 }
 
+/* The next connection on `listener` and its peer's address. */
 pub accept(listener: Socket): (Socket, Addr4, Error) {
     accepted: Socket, address: Addr4, err: Error = os.accept(listener)
     return accepted, address, err
 }
 
+/* Connects `sock` to `address`; nonblocking, it may fail with EINPROGRESS. */
 pub connect(sock: Socket, address: Addr4): Error {
     return os.connect(sock, address)
 }
 
+/* Takes `sock`'s pending error (SO_ERROR), as a nonblocking connect
+ * reports its outcome; null when there is none.
+ */
 pub pending_error(sock: Socket): Error {
     return os.pending_error(sock)
 }
 
+/* The local address `sock` is bound to. */
 pub local(sock: Socket): (Addr4, Error) {
     address: Addr4, err: Error = os.local(sock)
     return address, err
 }
 
+/* Receives at most `buffer.len` bytes; returns the count, 0 at end of
+ * stream.
+ */
 pub receive(sock: Socket, buffer: []u8): (int, Error) {
     count: int, err: Error = os.receive(sock, buffer)
     return count, err
 }
 
+/* Sends at most `data.len` bytes; returns the count sent. */
 pub send(sock: Socket, data: []u8): (int, Error) {
     count: int, err: Error = os.send(sock, data)
     return count, err
 }
 
+/* Resolves `host` to IPv4 addresses with `port`, writing at most
+ * `addresses.len`; returns the count written.
+ */
 pub resolve4(host: string, port: u16, addresses: []Addr4): (usize, Error) {
     count: usize, err: Error = os.resolve4(host, port, addresses)
     return count, err
