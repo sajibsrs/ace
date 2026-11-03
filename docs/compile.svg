@@ -1,15 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 224" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
-<text x="0" y="20" font-size="18" font-weight="600" fill="#888">Time to compile 20,000 functions — shorter is faster</text>
-<text x="110" y="64.0" font-size="13" fill="#888" text-anchor="end">Ace --debug</text>
-<rect x="120" y="44" width="13.4" height="30" rx="2" fill="#cc4152"/>
-<text x="141.4" y="64.0" font-size="13" font-weight="600" fill="#cc4152">0.58 s</text>
-<text x="110" y="108.0" font-size="13" fill="#888" text-anchor="end">Ace --release</text>
-<rect x="120" y="88" width="15.9" height="30" rx="2" fill="#cc4152"/>
-<text x="143.9" y="108.0" font-size="13" font-weight="600" fill="#cc4152">0.69 s</text>
-<text x="110" y="152.0" font-size="13" fill="#888" text-anchor="end">cc -O0</text>
-<rect x="120" y="132" width="83.2" height="30" rx="2" fill="#8b8f98"/>
-<text x="211.2" y="152.0" font-size="13" font-weight="600" fill="#8b8f98">3.6 s</text>
-<text x="110" y="196.0" font-size="13" fill="#888" text-anchor="end">cc -O2</text>
-<rect x="120" y="176" width="710.0" height="30" rx="2" fill="#8b8f98"/>
-<text x="838.0" y="196.0" font-size="13" font-weight="600" fill="#8b8f98">30.9 s</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 422" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<text x="0" y="20" font-size="18" font-weight="600" fill="#888">Time to compile 5,000 functions, single file — shorter is faster</text>
+<text x="0" y="50" font-size="15" font-weight="600" fill="#888">Plain C-shaped code</text>
+<text x="0" y="88" font-size="13" font-weight="600" fill="#888" fill-opacity="0.7">Debug</text>
+<text x="90" y="118.0" font-size="13" fill="#888" text-anchor="end">Ace --debug</text>
+<rect x="100" y="100" width="4.7" height="26" rx="2" fill="#cc4152"/>
+<text x="110.7" y="118.0" font-size="13" font-weight="600" fill="#cc4152">0.13 s</text>
+<text x="90" y="154.0" font-size="13" fill="#888" text-anchor="end">cc -O0</text>
+<rect x="100" y="136" width="34.0" height="26" rx="2" fill="#8b8f98"/>
+<text x="140.0" y="154.0" font-size="13" font-weight="600" fill="#8b8f98">0.94 s</text>
+<text x="90" y="190.0" font-size="13" fill="#888" text-anchor="end">clang++ -O0</text>
+<rect x="100" y="172" width="37.2" height="26" rx="2" fill="#8b8f98"/>
+<text x="143.2" y="190.0" font-size="13" font-weight="600" fill="#8b8f98">1.0 s</text>
+<text x="90" y="226.0" font-size="13" fill="#888" text-anchor="end">rustc -O0</text>
+<rect x="100" y="208" width="94.3" height="26" rx="2" fill="#8b8f98"/>
+<text x="200.3" y="226.0" font-size="13" font-weight="600" fill="#8b8f98">2.6 s</text>
+<text x="0" y="262" font-size="13" font-weight="600" fill="#888" fill-opacity="0.7">Release</text>
+<text x="90" y="292.0" font-size="13" fill="#888" text-anchor="end">Ace --release</text>
+<rect x="100" y="274" width="5.8" height="26" rx="2" fill="#cc4152"/>
+<text x="111.8" y="292.0" font-size="13" font-weight="600" fill="#cc4152">0.16 s</text>
+<text x="90" y="328.0" font-size="13" fill="#888" text-anchor="end">cc -O2</text>
+<rect x="100" y="310" width="281.1" height="26" rx="2" fill="#8b8f98"/>
+<text x="387.1" y="328.0" font-size="13" font-weight="600" fill="#8b8f98">7.8 s</text>
+<text x="90" y="364.0" font-size="13" fill="#888" text-anchor="end">clang++ -O2</text>
+<rect x="100" y="346" width="284.0" height="26" rx="2" fill="#8b8f98"/>
+<text x="390.0" y="364.0" font-size="13" font-weight="600" fill="#8b8f98">7.9 s</text>
+<text x="90" y="400.0" font-size="13" fill="#888" text-anchor="end">rustc -O2</text>
+<rect x="100" y="382" width="125.7" height="26" rx="2" fill="#8b8f98"/>
+<text x="231.7" y="400.0" font-size="13" font-weight="600" fill="#8b8f98">3.5 s</text>
+<text x="460" y="50" font-size="15" font-weight="600" fill="#888">Idiomatic generic code</text>
+<text x="460" y="88" font-size="13" font-weight="600" fill="#888" fill-opacity="0.7">Debug</text>
+<text x="550" y="118.0" font-size="13" fill="#888" text-anchor="end">Ace --debug</text>
+<rect x="560" y="100" width="3.0" height="26" rx="2" fill="#cc4152"/>
+<text x="566.7" y="118.0" font-size="13" font-weight="600" fill="#cc4152">0.31 s</text>
+<text x="550" y="154.0" font-size="13" fill="#888" text-anchor="end">cc -O0</text>
+<rect x="560" y="136" width="3.6" height="26" rx="2" fill="#8b8f98"/>
+<text x="569.6" y="154.0" font-size="13" font-weight="600" fill="#8b8f98">1.5 s</text>
+<text x="550" y="190.0" font-size="13" fill="#888" text-anchor="end">clang++ -O0</text>
+<rect x="560" y="172" width="16.1" height="26" rx="2" fill="#8b8f98"/>
+<text x="582.1" y="190.0" font-size="13" font-weight="600" fill="#8b8f98">6.8 s</text>
+<text x="550" y="226.0" font-size="13" fill="#888" text-anchor="end">rustc -O0</text>
+<rect x="560" y="208" width="14.5" height="26" rx="2" fill="#8b8f98"/>
+<text x="580.5" y="226.0" font-size="13" font-weight="600" fill="#8b8f98">6.2 s</text>
+<text x="460" y="262" font-size="13" font-weight="600" fill="#888" fill-opacity="0.7">Release</text>
+<text x="550" y="292.0" font-size="13" fill="#888" text-anchor="end">Ace --release</text>
+<rect x="560" y="274" width="3.0" height="26" rx="2" fill="#cc4152"/>
+<text x="566.9" y="292.0" font-size="13" font-weight="600" fill="#cc4152">0.39 s</text>
+<text x="550" y="328.0" font-size="13" fill="#888" text-anchor="end">cc -O2</text>
+<rect x="560" y="310" width="22.8" height="26" rx="2" fill="#8b8f98"/>
+<text x="588.8" y="328.0" font-size="13" font-weight="600" fill="#8b8f98">9.7 s</text>
+<text x="550" y="364.0" font-size="13" fill="#888" text-anchor="end">clang++ -O2</text>
+<rect x="560" y="346" width="284.0" height="26" rx="2" fill="#8b8f98"/>
+<text x="850.0" y="364.0" font-size="13" font-weight="600" fill="#8b8f98">120.8 s</text>
+<text x="550" y="400.0" font-size="13" fill="#888" text-anchor="end">rustc -O2</text>
+<rect x="560" y="382" width="30.1" height="26" rx="2" fill="#8b8f98"/>
+<text x="596.1" y="400.0" font-size="13" font-weight="600" fill="#8b8f98">12.8 s</text>
 </svg>

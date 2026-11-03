@@ -1,7 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
-<text x="44" y="20" font-size="18" font-weight="600" fill="#888">Ace runtime vs C (cc -O2) — higher is faster</text>
-<rect x="660" y="7" width="14" height="14" fill="#cc4152"/><text x="680" y="19" font-size="13" fill="#888">Ace --release</text>
-<rect x="780" y="7" width="14" height="14" fill="#8b8f98"/><text x="800" y="19" font-size="13" fill="#888">C -O2</text>
+<text x="44" y="20" font-size="18" font-weight="600" fill="#888">Runtime vs C (cc -O2) — higher is faster</text>
+<rect x="450" y="7" width="14" height="14" fill="#cc4152"/><text x="470" y="19" font-size="13" fill="#888">Ace --release</text>
+<rect x="586.2" y="7" width="14" height="14" fill="#8b8f98"/><text x="606.2" y="19" font-size="13" fill="#888">C -O2</text>
+<rect x="663.2" y="7" width="14" height="14" fill="#5b7fbf"/><text x="683.2" y="19" font-size="13" fill="#888">C++ -O2</text>
+<rect x="755.0" y="7" width="14" height="14" fill="#4a9d8f"/><text x="775.0" y="19" font-size="13" fill="#888">Rust -O2</text>
 <line x1="44" x2="892" y1="302.0" y2="302.0" stroke="#888" stroke-opacity="0.5"/>
 <text x="36" y="306.0" font-size="12" fill="#888" text-anchor="end">0x</text>
 <line x1="44" x2="892" y1="247.7" y2="247.7" stroke="#888" stroke-opacity="0.18"/>
@@ -12,36 +14,44 @@
 <text x="36" y="143.0" font-size="12" fill="#888" text-anchor="end">0.75x</text>
 <line x1="44" x2="892" y1="84.6" y2="84.6" stroke="#888" stroke-opacity="0.18"/>
 <text x="36" y="88.6" font-size="12" fill="#888" text-anchor="end">1x</text>
-<rect x="62.1" y="84.6" width="33.9" height="217.4" rx="2" fill="#cc4152"/>
-<rect x="98.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="79.0" y="78.6" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">1.00x</text>
+<rect x="53.1" y="84.6" width="21.2" height="217.4" rx="2" fill="#cc4152"/>
+<rect x="75.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="97.5" y="84.6" width="21.2" height="217.4" rx="2" fill="#5b7fbf"/>
+<rect x="119.7" y="84.6" width="21.2" height="217.4" rx="2" fill="#4a9d8f"/>
 <text x="97.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">method call</text>
-<rect x="168.1" y="84.6" width="33.9" height="217.4" rx="2" fill="#cc4152"/>
-<rect x="204.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="185.0" y="78.6" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">1.00x</text>
+<rect x="159.1" y="84.6" width="21.2" height="217.4" rx="2" fill="#cc4152"/>
+<rect x="181.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="203.5" y="84.6" width="21.2" height="217.4" rx="2" fill="#5b7fbf"/>
+<rect x="225.7" y="84.6" width="21.2" height="217.4" rx="2" fill="#4a9d8f"/>
 <text x="203.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">plain calls</text>
-<rect x="274.1" y="91.1" width="33.9" height="210.9" rx="2" fill="#cc4152"/>
-<rect x="310.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="291.0" y="85.1" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">0.97x</text>
+<rect x="265.1" y="91.1" width="21.2" height="210.9" rx="2" fill="#cc4152"/>
+<rect x="287.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="309.5" y="84.6" width="21.2" height="217.4" rx="2" fill="#5b7fbf"/>
+<rect x="331.7" y="84.6" width="21.2" height="217.4" rx="2" fill="#4a9d8f"/>
 <text x="309.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">particle vec3</text>
-<rect x="380.1" y="99.8" width="33.9" height="202.2" rx="2" fill="#cc4152"/>
-<rect x="416.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="397.0" y="93.8" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">0.93x</text>
+<rect x="371.1" y="99.8" width="21.2" height="202.2" rx="2" fill="#cc4152"/>
+<rect x="393.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="415.5" y="84.6" width="21.2" height="217.4" rx="2" fill="#5b7fbf"/>
+<rect x="437.7" y="97.7" width="21.2" height="204.3" rx="2" fill="#4a9d8f"/>
 <text x="415.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">CPU mix</text>
-<rect x="486.1" y="104.2" width="33.9" height="197.8" rx="2" fill="#cc4152"/>
-<rect x="522.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="503.0" y="98.2" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">0.91x</text>
+<rect x="477.1" y="104.2" width="21.2" height="197.8" rx="2" fill="#cc4152"/>
+<rect x="499.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="521.5" y="82.4" width="21.2" height="219.6" rx="2" fill="#5b7fbf"/>
+<rect x="543.7" y="115.0" width="21.2" height="187.0" rx="2" fill="#4a9d8f"/>
 <text x="521.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">ray tracer</text>
-<rect x="592.1" y="136.8" width="33.9" height="165.2" rx="2" fill="#cc4152"/>
-<rect x="628.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="609.0" y="130.8" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">0.76x</text>
+<rect x="583.1" y="136.8" width="21.2" height="165.2" rx="2" fill="#cc4152"/>
+<rect x="605.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="627.5" y="84.6" width="21.2" height="217.4" rx="2" fill="#5b7fbf"/>
+<rect x="649.7" y="67.2" width="21.2" height="234.8" rx="2" fill="#4a9d8f"/>
 <text x="627.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">cube</text>
-<rect x="698.1" y="154.2" width="33.9" height="147.8" rx="2" fill="#cc4152"/>
-<rect x="734.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="715.0" y="148.2" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">0.68x</text>
+<rect x="689.1" y="154.2" width="21.2" height="147.8" rx="2" fill="#cc4152"/>
+<rect x="711.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="733.5" y="84.6" width="21.2" height="217.4" rx="2" fill="#5b7fbf"/>
+<rect x="755.7" y="84.6" width="21.2" height="217.4" rx="2" fill="#4a9d8f"/>
 <text x="733.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">saxpy f32</text>
-<rect x="804.1" y="156.3" width="33.9" height="145.7" rx="2" fill="#cc4152"/>
-<rect x="840.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<text x="821.0" y="150.3" font-size="12" font-weight="600" fill="#cc4152" text-anchor="middle">0.67x</text>
+<rect x="795.1" y="156.3" width="21.2" height="145.7" rx="2" fill="#cc4152"/>
+<rect x="817.3" y="84.6" width="21.2" height="217.4" rx="2" fill="#8b8f98"/>
+<rect x="839.5" y="78.1" width="21.2" height="223.9" rx="2" fill="#5b7fbf"/>
+<rect x="861.7" y="86.8" width="21.2" height="215.2" rx="2" fill="#4a9d8f"/>
 <text x="839.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">tree walk</text>
 </svg>

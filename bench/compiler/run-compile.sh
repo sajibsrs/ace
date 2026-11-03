@@ -50,6 +50,15 @@ growth() {
         if (prev > 0) printf "%.1fx", cur / prev; else printf "-" }'
 }
 
+# Rust is optional: its columns read n/a without rustc.
+rust_ms() {
+    if command -v rustc > /dev/null; then
+        median_ms rustc --edition 2021 -C opt-level="$1" --emit=obj corpus.rs -o "corpus-rs$1.o"
+    else
+        echo n/a
+    fi
+}
+
 echo "Generated corpus: median of $runs runs, wall-clock ms per compile-to-object"
 echo "(growth = Ace debug time over the previous size; linear code growth is the size ratio)"
 printf '%-8s %8s %12s %12s %10s %10s %10s %10s %8s\n' \
@@ -68,6 +77,19 @@ for n in 100 1000 5000 20000; do
         printf "%-8s %8d %12.2f %12.2f %10.2f %10.2f %9.2fx %9.2fx %8s\n",
                n, l, ak, ar, c0, c2, ar / c0, ar / c2, g }'
     prev=$ace_debug
+done
+
+echo
+echo "Same corpus in C++ (clang++ -std=c++17) and Rust (rustc --edition 2021),"
+echo "median of $runs runs, wall-clock ms per compile-to-object"
+printf '%-8s %10s %10s %12s %12s\n' "funcs" "c++ -O0" "c++ -O2" "rustc -O0" "rustc -O2"
+for n in 100 1000 5000 20000; do
+    dir=$bench_tmp/n$n
+    cxx_o0=$(cd "$dir" && median_ms clang++ -std=c++17 -O0 -c corpus.cpp -o corpus-cxx0.o)
+    cxx_o2=$(cd "$dir" && median_ms clang++ -std=c++17 -O2 -c corpus.cpp -o corpus-cxx2.o)
+    rs_o0=$(cd "$dir" && rust_ms 0)
+    rs_o2=$(cd "$dir" && rust_ms 2)
+    printf '%-8s %10s %10s %12s %12s\n' "$n" "$cxx_o0" "$cxx_o2" "$rs_o0" "$rs_o2"
 done
 
 # Second scaling dimension: one function with many locals, and many types.
@@ -92,6 +114,22 @@ for shape in long types; do
         prev=$ace_debug
     done
 done
+
+echo
+echo "Idiomatic generic corpus (bench/compiler/generic-corpus.sh, 5000 functions):"
+echo "containers, generics, polymorphism, derived equality in each language's own"
+echo "idiom; median of $runs runs, wall-clock ms per compile-to-object"
+dir=$bench_tmp/generic5000
+./bench/compiler/generic-corpus.sh 5000 "$dir"
+printf '%-16s %10s\n' \
+    "Ace --debug" "$(cd "$dir" && median_ms "$ace" --debug -c corpus.ace)" \
+    "Ace --release" "$(cd "$dir" && median_ms "$ace" --release -c corpus.ace)" \
+    "cc -O0" "$(cd "$dir" && median_ms cc -std=c11 -O0 -c corpus.c -o c0.o)" \
+    "cc -O2" "$(cd "$dir" && median_ms cc -std=c11 -O2 -c corpus.c -o c2.o)" \
+    "clang++ -O0" "$(cd "$dir" && median_ms clang++ -std=c++20 -O0 -c corpus.cpp -o x0.o)" \
+    "clang++ -O2" "$(cd "$dir" && median_ms clang++ -std=c++20 -O2 -c corpus.cpp -o x2.o)" \
+    "rustc -O0" "$(cd "$dir" && rust_ms 0)" \
+    "rustc -O2" "$(cd "$dir" && rust_ms 2)"
 
 echo
 echo "Generated corpus code size, bytes of machine code (5000 functions)"
