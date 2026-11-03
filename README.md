@@ -17,10 +17,6 @@ headers, macros and silent conversions.
 > **Pre-alpha.** Breaking changes are expected, and neither issues nor pull
 > requests are accepted before v1.
 
-> [!NOTE]
-> Ace currently supports only macOS on Apple Silicon (AArch64). Linux and
-> Windows will follow.
-
 ```ace
 import fmt
 
@@ -37,19 +33,9 @@ main(): int {
 }
 ```
 
-## Ace vs C, C++ and Rust at a glance
-
-| | C | C++ | Rust | **Ace** |
-|---|---|---|---|---|
-| Undefined behavior | everywhere | everywhere | only in `unsafe` | none: an operation works, traps, or does exactly what the machine does |
-| Memory | manual | RAII, hidden destructors | ownership and borrow checker | manual, with `defer` and debug-build checks |
-| Errors | return codes, `errno` | exceptions | `Result` and `?` | plain values, handled where they occur |
-| Hidden costs | implicit conversions | copies, constructors, exceptions | `Drop`, implicit monomorphization | none: no implicit conversions, copies or allocations |
-| Generics | macros | templates | traits | explicit: `Array[int]` |
-| Polymorphism | hand-made function-pointer tables | inheritance, `virtual` | traits, `dyn` | contracts: explicit vtable values |
-| Code organization | headers, preprocessor | headers, preprocessor | crates | modules; no headers, any declaration order |
-| Toolchain | compiler, build system, package manager: pick each | same as C | `cargo`, LLVM | one binary: compiler, packages, tests, no LLVM |
-| Learning curve | small | huge | steep | small |
+> [!NOTE]
+> Ace currently supports only macOS on Apple Silicon (AArch64). Linux and
+> Windows will follow.
 
 ## Speed
 
@@ -66,6 +52,20 @@ Ace compiles **6x faster** than `cc -O0` and **50x faster** than `cc -O2`
 (`bench/compiler/`): it writes machine code directly, with no assembler or
 LLVM in between. `bench/chart.py` draws both charts.
 
+## Ace vs C, C++ and Rust at a glance
+
+| | C | C++ | Rust | **Ace** |
+|---|---|---|---|---|
+| Undefined behavior | everywhere | everywhere | only in `unsafe` | none: an operation works, traps, or does exactly what the machine does |
+| Memory | manual | RAII, hidden destructors | ownership and borrow checker | manual, with `defer` and debug-build checks |
+| Errors | return codes, `errno` | exceptions | `Result` and `?` | plain values, handled where they occur |
+| Hidden costs | implicit conversions | copies, constructors, exceptions | `Drop`, implicit monomorphization | none: no implicit conversions, copies or allocations |
+| Generics | macros | templates | traits | explicit: `Array[int]` |
+| Polymorphism | hand-made function-pointer tables | inheritance, `virtual` | traits, `dyn` | contracts: explicit vtable values |
+| Code organization | headers, preprocessor | headers, preprocessor | crates | modules; no headers, any declaration order |
+| Toolchain | compiler, build system, package manager: pick each | same as C | `cargo`, LLVM | one binary: compiler, packages, tests, no LLVM |
+| Learning curve | small | huge | steep | small |
+
 ## What Ace promises
 
 - **Nothing happens behind your back:** every allocation, copy, conversion and
@@ -80,11 +80,6 @@ LLVM in between. `bench/chart.py` draws both charts.
 - **Written in itself:** Ace's own compiler is written in Ace and compiles
   itself; its output matches the C compiler's byte for byte. The editor's
   language server is written in Ace too.
-
-## Not yet
-
-Pre-alpha. macOS on Apple Silicon only, with Linux and Windows planned. Ace is
-not memory-safe the way Rust is: it trusts you, and helps in debug builds.
 
 ## What's included
 
