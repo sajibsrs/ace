@@ -185,7 +185,7 @@ Decision: every place is writable; `const` opts out, in every position, and read
 ## Zero, Null & Absence
 Decision: every type has canonical zero; Ace has no optional type constructor.
 1. `null` materializes the all-bits-zero value of pointers, function values, contracts, slices, strings, `Error`, and `typeid`. It is not a numeric, boolean, enum, struct, tuple, array, or distinct value.
-2. Zero pointers may be stored, copied, compared, and replaced. Dereferencing one is invalid. Zero function and contract values likewise may be stored, copied, and compared; calling or dispatching through one is invalid. Debug builds diagnose these invalid operations; release inserts no null check and has C-level unchecked behavior.
+2. Zero pointers may be stored, copied, compared, and replaced. Dereferencing one is invalid. Zero function and contract values likewise may be stored, copied, and compared; calling or dispatching through one is invalid. Every build diagnoses these invalid operations (Safety #3, #8).
 3. A zero slice or string has zero pointer and zero length. Length queries, empty iteration, and zero-length operations are valid; indexing still requires an in-range element.
 4. Zero `Error` means success/no error; its packed domain and code bits are both zero. Zero `typeid` means no type identity; every `typeid(T)` result remains nonzero.
 5. When application data must distinguish absence from an ordinary zero value, it declares that distinction explicitly, normally as a struct containing a `present: bool` field and the value. There is no hidden tag or implicit optional ABI.

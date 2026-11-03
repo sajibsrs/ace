@@ -38,28 +38,34 @@ b0:
     %2 = const u64 3
     jmp b1
 b1: ; preds b0, b4
-    %4 = phi u64 [%1, b0], [%22, b4]
+    %4 = phi u64 [%1, b0], [%28, b4]
     %5 = lt bool %4, %2
     br %5, b2, b3
 b2: ; preds b1
     %7 = const u64 3
     %8 = lt bool %4, %7
     check %8, 16:24 bounds violation
-    %10 = padd.chk ptr %0, %4 * 1
-    %11 = load u8 [%10]
-    %12 = const u8 2
-    %13 = mul.chk u8 %11, %12
-    %14 = const u64 3
-    %15 = lt bool %4, %14
-    check %15, 16:14 bounds violation
-    %17 = padd.chk ptr %0, %4 * 1
-    store [%17], %13
+    %10 = const ptr 0
+    %11 = lt bool %10, %0
+    check %11, 16:24 null use violation
+    %13 = padd.chk ptr %0, %4 * 1
+    %14 = load u8 [%13]
+    %15 = const u8 2
+    %16 = mul.chk u8 %14, %15
+    %17 = const u64 3
+    %18 = lt bool %4, %17
+    check %18, 16:14 bounds violation
+    %20 = const ptr 0
+    %21 = lt bool %20, %0
+    check %21, 16:14 null use violation
+    %23 = padd.chk ptr %0, %4 * 1
+    store [%23], %16
     jmp b4
 b3: ; preds b1
     ret
 b4: ; preds b2
-    %21 = const u64 1
-    %22 = add u64 %4, %21
+    %27 = const u64 1
+    %28 = add u64 %4, %27
     jmp b1
 }
 

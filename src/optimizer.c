@@ -7,7 +7,8 @@
 //
 // The passes rely only on facts a debug build checks: an integer operation
 // that would trap in debug (a zero divisor, MIN / -1, a shift count outside
-// the width) is never folded, and an unused load or division is removed.
+// the width) is never folded, and an unused load or division is removed
+// unless it carries a trap release keeps (Safety & Debug Builds #3).
 #include "ir.h"
 #include "backend.h"
 
@@ -301,6 +302,35 @@ static void sccp(IrFunc* fn) {
     free(s.lat); free(s.val); free(s.exec); free(s.edge); free(s.inq); free(s.work); free(s.ustart); free(s.users);
 }
 
+// A preorder walk of the dominator tree from the entry: enter(ctx, b) on the
+// way down, leave(ctx, b) once everything b dominates has been walked.
+static void dom_walk(IrFunc* fn, const int* idom, void (*enter)(void*, int), void (*leave)(void*, int), void* ctx) {
+    int n = fn->nblocks;
+    int* cstart = xalloc((size_t)n + 1, sizeof(int));
+    for (int b = 1; b < n; b++) if (idom[b] >= 0) cstart[idom[b] + 1]++;
+    for (int b = 0; b < n; b++) cstart[b + 1] += cstart[b];
+    int* kids = xalloc((size_t)n, sizeof(int));
+    int* fill = xalloc((size_t)n, sizeof(int));
+    for (int b = 1; b < n; b++) if (idom[b] >= 0) kids[cstart[idom[b]] + fill[idom[b]]++] = b;
+    int* sb = xalloc((size_t)n, sizeof(int)); // the walk's frames: block, next child
+    int* si = xalloc((size_t)n, sizeof(int));
+    int sp = 1;
+    sb[0] = 0; si[0] = 0;
+    enter(ctx, 0);
+    while (sp) {
+        int b = sb[sp - 1];
+        if (si[sp - 1] < cstart[b + 1] - cstart[b]) {
+            int c = kids[cstart[b] + si[sp - 1]++];
+            sb[sp] = c; si[sp] = 0; sp++;
+            enter(ctx, c);
+            continue;
+        }
+        leave(ctx, b);
+        sp--;
+    }
+    free(cstart); free(kids); free(fill); free(sb); free(si);
+}
+
 // --- global value numbering -------------------------------------------------------------
 //
 // A walk of the dominator tree with a scoped table of the pure operations seen:
@@ -332,6 +362,7 @@ typedef struct {
     int*    head; // hash bucket -> newest entry, or -1
     VnEnt*  ent;
     int*    log;  // bucket of each live entry, newest last
+    int*    mark; // entries live at each walked block's entry
     int     nent, mask;
 } Vn;
 
@@ -419,8 +450,10 @@ static int simplify(const IrFunc* fn, const IrIns* x) {
     }
 }
 
-static void gvn_block(Vn* g, int b) {
+static void gvn_block(void* ctx, int b) {
+    Vn* g = ctx;
     IrFunc* fn = g->fn;
+    g->mark[b] = g->nent;
     IrBlock* bb = &fn->blocks[b];
     int k = 0;
     for (int i = 0; i < bb->nins; i++) {
@@ -447,6 +480,14 @@ static void gvn_block(Vn* g, int b) {
     bb->nins = k;
 }
 
+static void gvn_leave(void* ctx, int b) { // drop the block's entries
+    Vn* g = ctx;
+    while (g->nent > g->mark[b]) {
+        g->nent--;
+        g->head[g->log[g->nent]] = g->ent[g->head[g->log[g->nent]]].next;
+    }
+}
+
 static void gvn(IrFunc* fn) {
     Vn g;
     g.fn = fn;
@@ -460,41 +501,281 @@ static void gvn(IrFunc* fn) {
     g.repl = xalloc((size_t)fn->nins, sizeof(int));
     for (int v = 0; v < fn->nins; v++) g.repl[v] = -1;
     g.nent = 0;
+    g.mark = xalloc((size_t)n, sizeof(int));
     int* rpo, nrpo;
     int* idom = ir_dominators(fn, &rpo, &nrpo);
-    int* cstart = xalloc((size_t)n + 1, sizeof(int));
-    for (int b = 1; b < n; b++) if (idom[b] >= 0) cstart[idom[b] + 1]++;
-    for (int b = 0; b < n; b++) cstart[b + 1] += cstart[b];
-    int* kids = xalloc((size_t)n, sizeof(int));
-    int* fill = xalloc((size_t)n, sizeof(int));
-    for (int b = 1; b < n; b++) if (idom[b] >= 0) kids[cstart[idom[b]] + fill[idom[b]]++] = b;
-    int* sb = xalloc((size_t)n, sizeof(int)); // the walk's frames: block, next child, entries at entry
-    int* si = xalloc((size_t)n, sizeof(int));
-    int* sm = xalloc((size_t)n, sizeof(int));
-    int sp = 0;
-    sb[0] = 0; si[0] = 0; sm[0] = 0; sp = 1;
-    gvn_block(&g, 0);
-    while (sp) {
-        int b = sb[sp - 1];
-        if (si[sp - 1] < cstart[b + 1] - cstart[b]) {
-            int c = kids[cstart[b] + si[sp - 1]++];
-            sb[sp] = c; si[sp] = 0; sm[sp] = g.nent; sp++;
-            gvn_block(&g, c);
-            continue;
-        }
-        while (g.nent > sm[sp - 1]) { // leave the block: drop its entries
-            g.nent--;
-            g.head[g.log[g.nent]] = g.ent[g.head[g.log[g.nent]]].next;
-        }
-        sp--;
-    }
+    dom_walk(fn, idom, gvn_block, gvn_leave, &g);
     for (int b = 0; b < n; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
             for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(&g, x->args[a]);
         }
-    free(g.head); free(g.ent); free(g.log); free(g.repl);
-    free(rpo); free(idom); free(cstart); free(kids); free(fill); free(sb); free(si); free(sm);
+    free(g.head); free(g.ent); free(g.log); free(g.repl); free(g.mark);
+    free(rpo); free(idom);
+}
+
+// --- check elimination -----------------------------------------------------------------
+//
+// A walk of the dominator tree with the comparisons known to hold: a block
+// whose only predecessor branches on c knows c (or its inverse) along with
+// every block it dominates, and each check's condition holds after it. A
+// check that a known comparison implies is removed. Each fact is a < b or
+// a <= b in one signedness; a value's known bounds come from the facts that
+// compare it with a constant, and carry over to the other signedness once
+// they keep it nonnegative. A check on a constant true condition goes too,
+// and so does the null check of an access through an address that an earlier
+// check or access proved nonzero.
+
+typedef struct {
+    uint8_t  sg, strict; // signed; a < b rather than a <= b
+    uint8_t  ka, kb;     // a or b is a constant, whose value is va or vb
+    int      a, b;       // value ids, through same-width casts
+    uint64_t va, vb;
+} Fact;
+
+typedef struct {
+    IrFunc*    fn;
+    const int* idom;
+    Fact*      fact;
+    int        nfact;
+    int*       mark; // facts live at each walked block's entry
+} Chk;
+
+// v through casts that keep its bits.
+static int chk_strip(const IrFunc* fn, int v) {
+    for (;;) {
+        const IrIns* x = &fn->ins[v];
+        if (x->op != IR_CAST || !is_int(x->type) || x->type == IT_BOOL) return v;
+        IrType from = (IrType)fn->ins[x->args[0]].type;
+        if (!is_int(from) || ir_type_bits(from) != ir_type_bits((IrType)x->type)) return v;
+        v = x->args[0];
+    }
+}
+
+// The fact that comparison c is truth, or 0 when c compares no integers.
+static int chk_fact(const IrFunc* fn, int c, int truth, Fact* f) {
+    const IrIns* x = &fn->ins[c];
+    if (x->op < IR_LT || x->op > IR_GE) return 0;
+    IrType t = (IrType)fn->ins[x->args[0]].type;
+    if (!is_int(t) || t == IT_BOOL) return 0;
+    int a = x->args[0], b = x->args[1], strict = x->op == IR_LT || x->op == IR_GT;
+    if (x->op == IR_GT || x->op == IR_GE) { int s = a; a = b; b = s; }
+    if (!truth) { int s = a; a = b; b = s; strict = !strict; } // !(a < b) is b <= a
+    f->sg = (uint8_t)ir_type_signed(t);
+    f->strict = (uint8_t)strict;
+    f->ka = fn->ins[a].op == IR_CONST;
+    f->kb = fn->ins[b].op == IR_CONST;
+    f->va = f->ka ? ir_wrap(t, fn->ins[a].imm) : 0;
+    f->vb = f->kb ? ir_wrap(t, fn->ins[b].imm) : 0;
+    f->a = chk_strip(fn, a);
+    f->b = chk_strip(fn, b);
+    return 1;
+}
+
+// Signed v counts up from a nonnegative constant by 1 while v < some bound,
+// so it never wraps negative.
+static int chk_counter(const Chk* k, int v) {
+    const IrFunc* fn = k->fn;
+    const IrIns* x = &fn->ins[v];
+    if (x->op != IR_PHI || x->nargs != 2) return 0;
+    int h = x->block;
+    const IrBlock* hb = &fn->blocks[h];
+    const IrIns* br = &fn->ins[hb->ins[hb->nins - 1]];
+    Fact g;
+    if (br->op != IR_BR || !chk_fact(fn, br->args[0], 1, &g) || !g.sg || !g.strict || g.a != v) return 0;
+    int body = hb->succ[0];
+    if (body == h || fn->blocks[body].npreds != 1) return 0;
+    int start = 0, step = 0;
+    for (int i = 0; i < 2; i++) {
+        const IrIns* in = &fn->ins[x->args[i]];
+        if (in->op == IR_CONST && (int64_t)ir_wrap((IrType)x->type, in->imm) >= 0) start++;
+        else if (in->op == IR_ADD && !in->flags && in->block >= 0 && ir_dominates(k->idom, body, in->block) &&
+                 ((in->args[0] == v && is_konst(fn, in->args[1], 1)) || (in->args[1] == v && is_konst(fn, in->args[0], 1))))
+            step++;
+    }
+    return start == 1 && step == 1;
+}
+
+typedef struct { int64_t slo, shi; uint64_t ulo, uhi; } ChkRange;
+
+// The values of t's width, in each signedness.
+static ChkRange chk_full(IrType t) {
+    int bits = ir_type_bits(t);
+    uint64_t umax = bits == 64 ? UINT64_MAX : (UINT64_C(1) << bits) - 1;
+    ChkRange r = { -(int64_t)(umax >> 1) - 1, (int64_t)(umax >> 1), 0, umax };
+    return r;
+}
+
+static void chk_meet(ChkRange* r, ChkRange d) {
+    if (d.slo > r->slo) r->slo = d.slo;
+    if (d.shi < r->shi) r->shi = d.shi;
+    if (d.ulo > r->ulo) r->ulo = d.ulo;
+    if (d.uhi < r->uhi) r->uhi = d.uhi;
+}
+
+// v's bounds: its type's, the facts that compare it with a constant, and
+// (depth levels down) those of the value it is a cast of or a constant away
+// from, when every value in them maps without wrapping; a range of
+// nonnegative values holds in both signednesses.
+static ChkRange chk_range(const Chk* k, int v, int depth) {
+    const IrFunc* fn = k->fn;
+    const IrIns* x = &fn->ins[v];
+    IrType t = (IrType)x->type;
+    ChkRange full = chk_full(t), r = full;
+    for (int i = 0; i < k->nfact; i++) {
+        const Fact* f = &k->fact[i];
+        if (f->a == v && f->kb && !f->ka) { // v < vb, v <= vb
+            if (f->sg) {
+                int64_t c = (int64_t)f->vb;
+                if (f->strict && c == INT64_MIN) continue;
+                c -= f->strict;
+                if (c < r.shi) r.shi = c;
+            } else {
+                uint64_t c = f->vb;
+                if (f->strict && !c) continue;
+                c -= f->strict;
+                if (c < r.uhi) r.uhi = c;
+            }
+        } else if (f->b == v && f->ka && !f->kb) { // va < v, va <= v
+            if (f->sg) {
+                int64_t c = (int64_t)f->va;
+                if (f->strict && c == INT64_MAX) continue;
+                c += f->strict;
+                if (c > r.slo) r.slo = c;
+            } else {
+                uint64_t c = f->va;
+                if (f->strict && c == UINT64_MAX) continue;
+                c += f->strict;
+                if (c > r.ulo) r.ulo = c;
+            }
+        }
+    }
+    if (depth > 0 && x->op == IR_CAST && is_int(t) && t != IT_BOOL) {
+        IrType st = (IrType)fn->ins[x->args[0]].type;
+        if (is_int(st) && st != IT_BOOL) { // the value itself, where t holds it
+            ChkRange s = chk_range(k, x->args[0], depth - 1), d = full;
+            if (ir_type_signed(st)) {
+                if (s.slo >= full.slo && s.shi <= full.shi) { d.slo = s.slo; d.shi = s.shi; }
+                if (s.slo >= 0 && (uint64_t)s.shi <= full.uhi) { d.ulo = (uint64_t)s.slo; d.uhi = (uint64_t)s.shi; }
+            } else {
+                if (s.uhi <= full.uhi) { d.ulo = s.ulo; d.uhi = s.uhi; }
+                if (s.uhi <= (uint64_t)full.shi) { d.slo = (int64_t)s.ulo; d.shi = (int64_t)s.uhi; }
+            }
+            chk_meet(&r, d);
+        }
+    } else if (depth > 0 && (x->op == IR_ADD || x->op == IR_SUB) && !x->flags && is_int(t) && t != IT_BOOL && t != IT_PTR) {
+        int sub = x->op == IR_SUB, ki = fn->ins[x->args[1]].op == IR_CONST ? 1 : !sub && fn->ins[x->args[0]].op == IR_CONST ? 0 : -1;
+        if (ki >= 0) { // y +/- c, in each signedness where it does not wrap
+            uint64_t c = ir_wrap(t, fn->ins[x->args[ki]].imm);
+            ChkRange s = chk_range(k, x->args[1 - ki], depth - 1), d = full;
+            uint64_t uc = c & full.uhi;
+            if (!sub && s.uhi <= full.uhi - uc) { d.ulo = s.ulo + uc; d.uhi = s.uhi + uc; }
+            if (sub && s.ulo >= uc) { d.ulo = s.ulo - uc; d.uhi = s.uhi - uc; }
+            int64_t sc = (int64_t)c; // y - c as y + (-c), unless -c does not exist
+            if (!sub || sc != INT64_MIN) {
+                if (sub) sc = -sc;
+                if (sc >= 0 ? s.shi <= full.shi - sc : s.slo >= full.slo - sc) { d.slo = s.slo + sc; d.shi = s.shi + sc; }
+            }
+            chk_meet(&r, d);
+        }
+    }
+    if (r.slo < 0 && chk_counter(k, v)) r.slo = 0;
+    for (int pass = 0; pass < 2; pass++) {
+        if (r.slo >= 0) {
+            if ((uint64_t)r.slo > r.ulo) r.ulo = (uint64_t)r.slo;
+            if ((uint64_t)r.shi < r.uhi) r.uhi = (uint64_t)r.shi;
+        }
+        if (r.uhi <= (uint64_t)full.shi) {
+            if ((int64_t)r.ulo > r.slo) r.slo = (int64_t)r.ulo;
+            if ((int64_t)r.uhi < r.shi) r.shi = (int64_t)r.uhi;
+        }
+    }
+    return r;
+}
+
+// The known facts imply q.
+static int chk_implied(const Chk* k, const Fact* q) {
+    for (int i = 0; i < k->nfact; i++) {
+        const Fact* f = &k->fact[i];
+        if (f->sg == q->sg && f->ka == q->ka && f->kb == q->kb && (f->ka ? f->va == q->va : f->a == q->a) &&
+            (f->kb ? f->vb == q->vb : f->b == q->b) && (f->strict || !q->strict))
+            return 1;
+    }
+    if (q->kb && !q->ka) { // q: a <= c
+        ChkRange r = chk_range(k, q->a, 4);
+        if (q->sg) {
+            int64_t c = (int64_t)q->vb;
+            if (q->strict && c == INT64_MIN) return 0;
+            return r.shi <= c - q->strict;
+        }
+        if (q->strict && !q->vb) return 0;
+        return r.uhi <= q->vb - q->strict;
+    }
+    if (q->ka && !q->kb) { // q: c <= b
+        ChkRange r = chk_range(k, q->b, 4);
+        if (q->sg) {
+            int64_t c = (int64_t)q->va;
+            if (q->strict && c == INT64_MAX) return 0;
+            return r.slo >= c + q->strict;
+        }
+        if (q->strict && q->va == UINT64_MAX) return 0;
+        return r.ulo >= q->va + q->strict;
+    }
+    return 0;
+}
+
+static void chk_block(void* ctx, int b) {
+    Chk* k = ctx;
+    IrFunc* fn = k->fn;
+    IrBlock* bb = &fn->blocks[b];
+    k->mark[b] = k->nfact;
+    if (bb->npreds == 1) { // the edge from its only predecessor's branch
+        const IrBlock* pb = &fn->blocks[bb->preds[0]];
+        const IrIns* br = &fn->ins[pb->ins[pb->nins - 1]];
+        if (br->op == IR_BR && pb->succ[0] != pb->succ[1] &&
+            chk_fact(fn, br->args[0], pb->succ[0] == b, &k->fact[k->nfact]))
+            k->nfact++;
+    }
+    int n = 0;
+    for (int i = 0; i < bb->nins; i++) {
+        int v = bb->ins[i];
+        IrIns* x = &fn->ins[v];
+        Fact q;
+        if (x->op == IR_CHECK && fn->ins[x->args[0]].op == IR_CONST && fn->ins[x->args[0]].imm) {
+            kill_ins(fn, v); // constant propagation proved it
+            continue;
+        }
+        if (x->op == IR_CHECK && chk_fact(fn, x->args[0], 1, &q)) {
+            if (chk_implied(k, &q)) { kill_ins(fn, v); continue; }
+            k->fact[k->nfact++] = q;
+        }
+        if ((x->op == IR_LOAD || x->op == IR_STORE || x->op == IR_CALLI || x->op == IR_ATOMIC) &&
+            (x->flags & IRF_CHECKED) && x->nargs) { // its address or function value: 0 < it
+            Fact nn = { 0, 1, 1, 0, -1, chk_strip(fn, x->args[0]), 0, 0 };
+            if (chk_implied(k, &nn)) x->flags &= (uint8_t)~IRF_CHECKED;
+            else k->fact[k->nfact++] = nn;
+        }
+        bb->ins[n++] = v;
+    }
+    bb->nins = n;
+}
+
+static void chk_leave(void* ctx, int b) {
+    Chk* k = ctx;
+    k->nfact = k->mark[b];
+}
+
+static void checks(IrFunc* fn) {
+    Chk k;
+    k.fn = fn;
+    k.fact = xalloc((size_t)fn->nins + (size_t)fn->nblocks, sizeof(Fact));
+    k.nfact = 0;
+    k.mark = xalloc((size_t)fn->nblocks, sizeof(int));
+    int* rpo, nrpo;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    k.idom = idom;
+    dom_walk(fn, idom, chk_block, chk_leave, &k);
+    free(k.fact); free(k.mark); free(rpo); free(idom);
 }
 
 // --- loops ------------------------------------------------------------------------------
@@ -1718,7 +1999,8 @@ static int has_effect(const IrIns* x) {
     case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ: case IR_ASM:
     case IR_ATOMIC: case IR_PARAM: case IR_RESULT: case IR_JMP: case IR_BR: case IR_RET:
         return 1;
-    case IR_LOAD: return (x->flags & IRF_VOLATILE) != 0;
+    case IR_LOAD: return (x->flags & (IRF_VOLATILE | IRF_CHECKED)) != 0; // a null address traps
+    case IR_DIV: case IR_REM: return (x->flags & IRF_NONZERO) != 0;
     default: return 0;
     }
 }
@@ -1803,6 +2085,7 @@ static void cleanup(IrFunc* fn) {
 void ir_optimize(IrFunc* fn) {
     sccp(fn);
     gvn(fn);
+    checks(fn);
     licm(fn);
     lsr(fn);
     cleanup(fn);

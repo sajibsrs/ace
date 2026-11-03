@@ -1,50 +1,31 @@
 scale(u64): void {
 b0:
     %0 = param u64 0
-    %1 = global ptr xs
-    %2 = global ptr ys
-    %3 = const u64 0
-    %4 = const u64 1
-    %5 = const u64 2
-    %6 = shr u64 %0, %5
-    %7 = const f32 2.5
-    %8 = splat v4f32 %7
-    jmp b4
-b1: ; preds b6, b2
-    %10 = phi u64 [%37, b6], [%22, b2]
-    %11 = lt bool %10, %0
-    br %11, b2, b3
+    %1 = const u64 0
+    %2 = global ptr xs
+    %3 = global ptr ys
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi u64 [%1, b0], [%20, b2]
+    %6 = lt bool %5, %0
+    br %6, b2, b3
 b2: ; preds b1
-    %13 = padd ptr %1, %10 * 4
+    %8 = const u64 64
+    %9 = lt bool %5, %8
+    check %9, 24:41 bounds violation
+    %11 = padd ptr %2, %5 * 4
+    %12 = load f32 [%11]
+    %13 = padd ptr %3, %5 * 4
     %14 = load f32 [%13]
-    %15 = padd ptr %2, %10 * 4
-    %16 = load f32 [%15]
-    %17 = div f32 %14, %16
-    %18 = const f32 2.5
-    %19 = sub f32 %17, %18
-    store [%15], %19
-    %21 = const u64 1
-    %22 = add u64 %10, %21
+    %15 = div f32 %12, %14
+    %16 = const f32 2.5
+    %17 = sub f32 %15, %16
+    store [%13], %17
+    %19 = const u64 1
+    %20 = add u64 %5, %19
     jmp b1
 b3: ; preds b1
     ret
-b4: ; preds b0, b5
-    %25 = phi u64 [%3, b0], [%35, b5]
-    %26 = lt bool %25, %6
-    br %26, b5, b6
-b5: ; preds b4
-    %28 = padd ptr %1, %25 * 16
-    %29 = load v4f32 [%28]
-    %30 = padd ptr %2, %25 * 16
-    %31 = load v4f32 [%30]
-    %32 = div v4f32 %29, %31
-    %33 = sub v4f32 %32, %8
-    store [%30], %33
-    %35 = add u64 %25, %4
-    jmp b4
-b6: ; preds b4
-    %37 = shl u64 %25, %5
-    jmp b1
 }
 
 negate(): void {
@@ -193,19 +174,23 @@ b0:
     %5 = const i64 64
     jmp b1
 b1: ; preds b0, b2
-    %7 = phi i64 [%4, b0], [%18, b2]
+    %7 = phi i64 [%4, b0], [%22, b2]
     %8 = lt bool %7, %5
     br %8, b2, b3
 b2: ; preds b1
     %10 = cast u64 %7
-    %11 = padd ptr %0, %10 * 4
-    %12 = load f32 [%11]
-    %13 = const f32 1.0
-    %14 = add f32 %12, %13
-    %15 = padd ptr %2, %10 * 4
-    store [%15], %14
-    %17 = const i64 1
-    %18 = add i64 %7, %17
+    %11 = lt bool %10, %1
+    check %11, 48:40 bounds violation
+    %13 = padd ptr %0, %10 * 4
+    %14 = load f32 [%13]
+    %15 = const f32 1.0
+    %16 = add f32 %14, %15
+    %17 = lt bool %10, %3
+    check %17, 48:33 bounds violation
+    %19 = padd ptr %2, %10 * 4
+    store [%19], %16
+    %21 = const i64 1
+    %22 = add i64 %7, %21
     jmp b1
 b3: ; preds b1
     ret
@@ -305,57 +290,40 @@ b0:
     %5 = const f64 2.0
     %6 = splat v2f64 %5
     jmp b4
-b1: ; preds b9, b2
-    %8 = phi u64 [%49, b9], [%18, b2]
+b1: ; preds b6, b2
+    %8 = phi u64 [%34, b6], [%21, b2]
     %9 = lt bool %8, %0
     br %9, b2, b3
 b2: ; preds b1
-    %11 = padd ptr %31, %8 * 8
-    %12 = load f64 [%11]
-    %13 = neg f64 %12
-    %14 = const f64 3.0
-    %15 = div f64 %13, %14
-    store [%11], %15
-    %17 = const u64 1
-    %18 = add u64 %8, %17
+    %11 = const u64 64
+    %12 = lt bool %8, %11
+    check %12, 70:42 bounds violation
+    %14 = padd ptr %35, %8 * 8
+    %15 = load f64 [%14]
+    %16 = neg f64 %15
+    %17 = const f64 3.0
+    %18 = div f64 %16, %17
+    store [%14], %18
+    %20 = const u64 1
+    %21 = add u64 %8, %20
     jmp b1
 b3: ; preds b1
     ret
 b4: ; preds b0, b5
-    %21 = phi i64 [%2, b0], [%29, b5]
-    %22 = lt bool %21, %4
-    br %22, b5, b6
+    %24 = phi i64 [%2, b0], [%32, b5]
+    %25 = lt bool %24, %4
+    br %25, b5, b6
 b5: ; preds b4
-    %24 = cast u64 %21
-    %25 = padd ptr %1, %24 * 16
-    %26 = load v2f64 [%25]
-    %27 = mul v2f64 %26, %6
-    store [%25], %27
-    %29 = add i64 %21, %3
+    %27 = cast u64 %24
+    %28 = padd ptr %1, %27 * 16
+    %29 = load v2f64 [%28]
+    %30 = mul v2f64 %29, %6
+    store [%28], %30
+    %32 = add i64 %24, %3
     jmp b4
 b6: ; preds b4
-    %31 = global ptr ds
-    %32 = const u64 0
-    %33 = const u64 1
-    %34 = const u64 1
-    %35 = shr u64 %0, %34
-    %36 = const f64 3.0
-    %37 = splat v2f64 %36
-    jmp b7
-b7: ; preds b6, b8
-    %39 = phi u64 [%32, b6], [%47, b8]
-    %40 = lt bool %39, %35
-    br %40, b8, b9
-b8: ; preds b7
-    %42 = padd ptr %31, %39 * 16
-    %43 = load v2f64 [%42]
-    %44 = neg v2f64 %43
-    %45 = div v2f64 %44, %37
-    store [%42], %45
-    %47 = add u64 %39, %33
-    jmp b7
-b9: ; preds b7
-    %49 = shl u64 %39, %34
+    %34 = const u64 0
+    %35 = global ptr ds
     jmp b1
 }
 
@@ -520,76 +488,45 @@ b5: ; preds b2, b4
 particles(u64): void {
 b0:
     %0 = param u64 0
-    %1 = global ptr vs
-    %2 = global ptr ps
-    %3 = const u64 0
-    %4 = const u64 1
-    %5 = const u64 2
-    %6 = shr u64 %0, %5
-    %7 = const f32 0.5
-    %8 = splat v4f32 %7
-    jmp b4
-b1: ; preds b6, b2
-    %10 = phi u64 [%61, b6], [%34, b2]
-    %11 = phi ptr [%62, b6], [%35, b2]
-    %12 = phi ptr [%63, b6], [%36, b2]
-    %13 = lt bool %10, %0
-    br %13, b2, b3
+    %1 = const u64 0
+    %2 = global ptr vs
+    %3 = global ptr ps
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi u64 [%1, b0], [%32, b2]
+    %6 = phi ptr [%2, b0], [%33, b2]
+    %7 = phi ptr [%3, b0], [%34, b2]
+    %8 = lt bool %5, %0
+    br %8, b2, b3
 b2: ; preds b1
-    %15 = load f32 [%11]
-    %16 = const f32 0.5
-    %17 = mul f32 %15, %16
-    %18 = load f32 [%12]
-    %19 = add f32 %18, %17
-    store [%12], %19
-    %21 = load f32 [%11 + 4]
-    %22 = const f32 0.5
-    %23 = mul f32 %21, %22
-    %24 = load f32 [%12 + 4]
-    %25 = add f32 %24, %23
-    store [%12 + 4], %25
-    %27 = load f32 [%11 + 8]
-    %28 = const f32 0.5
-    %29 = mul f32 %27, %28
-    %30 = load f32 [%12 + 8]
-    %31 = add f32 %30, %29
-    store [%12 + 8], %31
-    %33 = const u64 1
-    %34 = add u64 %10, %33
-    %35 = padd ptr %11, %33 * 12
-    %36 = padd ptr %12, %33 * 12
+    %10 = const u64 64
+    %11 = lt bool %5, %10
+    check %11, 113:23 bounds violation
+    %13 = load f32 [%6]
+    %14 = const f32 0.5
+    %15 = mul f32 %13, %14
+    %16 = load f32 [%7]
+    %17 = add f32 %16, %15
+    store [%7], %17
+    %19 = load f32 [%6 + 4]
+    %20 = const f32 0.5
+    %21 = mul f32 %19, %20
+    %22 = load f32 [%7 + 4]
+    %23 = add f32 %22, %21
+    store [%7 + 4], %23
+    %25 = load f32 [%6 + 8]
+    %26 = const f32 0.5
+    %27 = mul f32 %25, %26
+    %28 = load f32 [%7 + 8]
+    %29 = add f32 %28, %27
+    store [%7 + 8], %29
+    %31 = const u64 1
+    %32 = add u64 %5, %31
+    %33 = padd ptr %6, %31 * 12
+    %34 = padd ptr %7, %31 * 12
     jmp b1
 b3: ; preds b1
     ret
-b4: ; preds b0, b5
-    %39 = phi u64 [%3, b0], [%59, b5]
-    %40 = lt bool %39, %6
-    br %40, b5, b6
-b5: ; preds b4
-    %42 = padd ptr %1, %39 * 48
-    %43 = padd ptr %2, %39 * 48
-    %44 = load v4f32 [%42]
-    %45 = mul v4f32 %44, %8
-    %46 = load v4f32 [%43]
-    %47 = add v4f32 %46, %45
-    store [%43], %47
-    %49 = load v4f32 [%42 + 16]
-    %50 = mul v4f32 %49, %8
-    %51 = load v4f32 [%43 + 16]
-    %52 = add v4f32 %51, %50
-    store [%43 + 16], %52
-    %54 = load v4f32 [%42 + 32]
-    %55 = mul v4f32 %54, %8
-    %56 = load v4f32 [%43 + 32]
-    %57 = add v4f32 %56, %55
-    store [%43 + 32], %57
-    %59 = add u64 %39, %4
-    jmp b4
-b6: ; preds b4
-    %61 = shl u64 %39, %5
-    %62 = padd ptr %1, %61 * 12
-    %63 = padd ptr %2, %61 * 12
-    jmp b1
 }
 
 pairs(): void {

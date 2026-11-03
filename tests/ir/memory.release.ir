@@ -38,7 +38,7 @@ apply(ptr, i64): i64 {
 b0:
     %0 = param ptr 0
     %1 = param i64 1
-    %2 = calli i64 %0(%1)
+    %2 = calli.chk i64 %0(%1)
     ret %2
 }
 
@@ -47,15 +47,15 @@ b0:
     %0 = param ptr 0
     %1 = param ptr 1
     %2 = const i64 1
-    %3 = load i64 [%0]
+    %3 = load.chk i64 [%0]
     %4 = add i64 %3, %2
     store [%0], %4
     %6 = const u64 1
     %7 = padd ptr %1, %6 * 4
-    %8 = load i32 [%7]
+    %8 = load.chk i32 [%7]
     %9 = const i32 2
     %10 = sub i32 %8, %9
-    store [%1], %10
+    store.chk [%1], %10
     ret
 }
 
@@ -130,7 +130,7 @@ b10: ; preds b9
     %56 = add i64 %48, %55
     jmp b9
 b11: ; preds b9
-    %58 = load i64 [%0]
+    %58 = load.chk i64 [%0]
     %59 = add i64 %49, %58
     ret %59
 }
@@ -149,7 +149,7 @@ b0:
     store [%0], %8
     %10 = const u64 1
     %11 = padd ptr %1, %10 * 4
-    %12 = load i32 [%11]
+    %12 = load.chk i32 [%11]
     %13 = const i32 2
     %14 = sub i32 %12, %13
     store [%1], %14

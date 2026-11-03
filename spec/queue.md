@@ -13,7 +13,8 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   - Globals, Ace and C (`extern`), are writable by default; `const` opts into
     read-only placement.
   - Defined failures: integer overflow follows one fixed rule; oversized
-    shifts are defined; bounds, null dereference, and division by zero trap;
+    shifts are defined; bounds, null dereference, and division by zero trap
+    in every build (Safety #3);
     reading uninitialized storage stays a compile error. Precedent: Go (bounds,
     nil, divide traps; wrapping overflow; defined shifts).
   - Use after free through another alias: debug builds detect it (quarantine,
@@ -29,8 +30,6 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   - [open] The overflow rule: wrap in every build, or trap in every build.
   - [open] The oversized-shift rule: mask the count (arm64 hardware), or
     yield zero / sign fill.
-  - [open] Bounds, null, and divide traps: in release too (Go), or debug only
-    with machine semantics in release (today's Safety #3, #6).
   - [open] `noalias` restated: "no other parameter, global, or pointer reaches
     the same bytes during the call", and which arguments the debug check now
     pairs, since every slice may write.

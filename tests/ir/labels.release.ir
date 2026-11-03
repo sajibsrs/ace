@@ -86,7 +86,7 @@ b7: ; preds b6
     %26 = const i64 1
     %27 = add i64 %23, %26
     %28 = const i64 3
-    %29 = rem i64 %27, %28
+    %29 = rem.nz i64 %27, %28
     %30 = const i64 0
     %31 = eq bool %29, %30
     br %31, b10, b11

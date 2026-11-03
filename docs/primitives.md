@@ -171,8 +171,8 @@ Slicing a string yields a `string`: `message[1..4]` is a zero-copy view with
 bounds defaulting to `0` and `source.len`, exactly like array and slice
 slicing ([Types](types.md)). Where the bounds are compile-time constants that
 violate `0 <= lo <= hi <= source.len`, the compiler rejects the program.
-Debug output enforces the same complete precondition for dynamic bounds;
-release output emits no guard.
+Debug and release output enforce the same complete precondition for dynamic
+bounds.
 `for-in` walks the stored bytes. Assignment and calls among `string`, `[]char`,
 and `[]u8` require no conversion and perform no work ([Types](types.md),
 [Control flow](control-flow.md)).

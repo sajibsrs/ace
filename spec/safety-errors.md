@@ -1,5 +1,6 @@
 ## Safety & Debug Builds
-Decision: checks are a development tool; release trusts the developer.
+Decision: checks are a development tool; release keeps only the traps that
+make a failure defined: bounds, null use, and division by zero.
 1. The compiler has two explicit emission modes: `--debug` and `--release`.
    They are mutually exclusive, and emitted programs default to `--release`.
    Check-only, `--tokens`, and `--ast` invocations accept either flag but emit
@@ -11,21 +12,24 @@ Decision: checks are a development tool; release trusts the developer.
    Allocator tracking diagnoses invalid/double release and leaks; arbitrary
    use-after-free access requires separate memory-access instrumentation and is
    not implied by allocation tracking.
-3. Release builds strip the guards and tracking completely; the programmer and
-   the tests own correctness. Violating a release-assumed contract has C-level
-   unchecked behavior. The mode adds no word to any value and changes no
-   language ABI or representation.
+3. Release builds keep the bounds (#2), null-use (#8), and zero-divisor (#6)
+   checks with their debug diagnostics, omitting one only where it provably
+   holds, and strip every other guard and all tracking; the programmer and the
+   tests own the remaining contracts, and violating one has C-level unchecked
+   behavior. The mode adds no word to any value and changes no language ABI or
+   representation.
 4. A violation provable from compile-time constants is a compile-time error in
    both modes. Mode selection controls only checks that depend on runtime
    values.
-5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; debug builds add bounds, overflow, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
+5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; every build traps on bounds, null use, and division by zero, and debug builds add overflow, contract, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
 6. Integer overflow checking covers the value-producing arithmetic operations
    `+`, `-`, `*`, and unary `-` on every fixed-width signed and unsigned integer
    type, including their compound-assignment forms. Debug builds diagnose a
-   result outside the destination type before it is stored. They also diagnose
-   division or remainder by zero and the signed `MIN / -1` and `MIN % -1`
-   cases. Release builds emit the target's ordinary fixed-width operations with
-   no guards; overflowing arithmetic is unchecked. Bitwise operations and
+   result outside the destination type before it is stored. Division or
+   remainder by zero traps in every build (#3); debug builds also diagnose the
+   signed `MIN / -1` and `MIN % -1` cases. Release builds otherwise emit the
+   target's ordinary fixed-width operations with no guards; overflowing
+   arithmetic is unchecked. Bitwise operations and
    explicit numeric casts are not overflow operations. A shift count must be
    nonnegative and less than the left operand's bit width; debug builds
    diagnose a false runtime precondition and release assumes it. Left shift is
@@ -47,7 +51,7 @@ Decision: checks are a development tool; release trusts the developer.
    zero contract value. Merely storing, copying, comparing, or passing a zero
    value remains valid. Zero slices and strings keep their sequence rules, so an
    indexed access fails the bounds contract rather than adding a second null
-   rule. Release emits no null-use guard.
+   rule. Release keeps these checks (#3).
 9. The checked allocator registry records each live allocation's base address,
    byte size, and required alignment. `realloc` and `release` require the exact
    live base and complete authoritative extent; an interior, truncated,

@@ -131,6 +131,7 @@ pub IRF_VOLATILE: const u8 = 2
 pub IRF_VARARGS: const u8 = 4
 pub IRF_SRET: const u8 = 8
 pub IRF_COLD: const u8 = 16
+pub IRF_NONZERO: const u8 = 32
 
 /* An aggregate of over this many leaves stays in memory. */
 pub MAX_LEAVES: const usize = 32
@@ -726,7 +727,7 @@ vector_ok(fn: Func, id: int): bool {
     a1: u8 = IT_VOID
     if v.nargs > 0 { a0 = fn.at(fn.arg(id, 0)).ty }
     if v.nargs > 1 { a1 = fn.at(fn.arg(id, 1)).ty }
-    if (v.flags & IRF_CHECKED) != 0 { return false }
+    if (v.flags & (IRF_CHECKED | IRF_NONZERO)) != 0 { return false }
     switch v.op {
         IR_PHI {
             for a: u32 in 0..v.nargs {
@@ -1030,6 +1031,7 @@ pub print(out: *Out, s: sema.Sema, fn: Func) {
             if v.ty != IT_VOID || agg { out.printf("%%%d = ", numb.get(id)) }
             out.printf("%s", OP_NAMES[v.op])
             if (v.flags & IRF_CHECKED) != 0 { out.printf(".chk") }
+            if (v.flags & IRF_NONZERO) != 0 { out.printf(".nz") }
             if (v.flags & IRF_VOLATILE) != 0 { out.printf(".vol") }
             if (v.flags & IRF_SRET) != 0 { out.printf(".mem") }
             if (v.flags & IRF_COLD) != 0 { out.printf(".cold") }

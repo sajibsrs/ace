@@ -12,13 +12,13 @@ b1: ; preds b0, b2
     br %7, b2, b3
 b2: ; preds b1
     %9 = const u32 1
-    %10 = atomic u32 add.relaxed %0, %9
+    %10 = atomic.chk u32 add.relaxed %0, %9
     atomic fence.release
     %12 = const u32 1
     %13 = add u32 %5, %12
     jmp b1
 b3: ; preds b1
-    atomic store.release %0, %6
+    atomic.chk store.release %0, %6
     %16 = const u32 0
     %17 = atomic u32 cas.seq_cst %0, %6, %16
     %18 = eq bool %17, %6

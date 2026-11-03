@@ -7,16 +7,18 @@ b0:
     %4 = const u64 0
     jmp b1
 b1: ; preds b0, b2
-    %6 = phi u64 [%4, b0], [%14, b2]
+    %6 = phi u64 [%4, b0], [%16, b2]
     %7 = lt bool %6, %1
     br %7, b2, b3
 b2: ; preds b1
-    %9 = padd ptr %2, %6 * 1
-    %10 = load u8 [%9]
-    %11 = padd ptr %0, %6 * 1
-    store [%11], %10
-    %13 = const u64 1
-    %14 = add u64 %6, %13
+    %9 = lt bool %6, %3
+    check %9, 10:22 bounds violation
+    %11 = padd ptr %2, %6 * 1
+    %12 = load u8 [%11]
+    %13 = padd ptr %0, %6 * 1
+    store [%13], %12
+    %15 = const u64 1
+    %16 = add u64 %6, %15
     jmp b1
 b3: ; preds b1
     ret
@@ -30,12 +32,21 @@ b0:
     %3 = param u64 3
     %4 = param ptr 4
     %5 = param u64 5
-    %6 = load i32 [%0]
-    %7 = load i32 [%2]
-    %8 = add i32 %6, %7
-    %9 = load i32 [%4]
-    %10 = add i32 %8, %9
-    ret %10
+    %6 = const u64 0
+    %7 = lt bool %6, %1
+    check %7, 15:16 bounds violation
+    %9 = load i32 [%0]
+    %10 = const u64 0
+    %11 = lt bool %10, %3
+    check %11, 15:23 bounds violation
+    %13 = load i32 [%2]
+    %14 = add i32 %9, %13
+    %15 = const u64 0
+    %16 = lt bool %15, %5
+    check %16, 15:30 bounds violation
+    %18 = load i32 [%4]
+    %19 = add i32 %14, %18
+    ret %19
 }
 
 scale({ptr, u64}, i32): void {
@@ -43,9 +54,12 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param i32 2
-    %3 = load i32 [%0]
-    %4 = mul i32 %3, %2
-    store [%0], %4
+    %3 = const u64 0
+    %4 = lt bool %3, %1
+    check %4, 19:8 bounds violation
+    %6 = load i32 [%0]
+    %7 = mul i32 %6, %2
+    store [%0], %7
     ret
 }
 

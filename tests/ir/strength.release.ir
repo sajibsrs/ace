@@ -139,18 +139,20 @@ b0:
     %5 = padd ptr %0, %4 * 12
     jmp b1
 b1: ; preds b0, b2
-    %7 = phi u64 [%4, b0], [%16, b2]
-    %8 = phi f32 [%2, b0], [%14, b2]
-    %9 = phi ptr [%5, b0], [%17, b2]
+    %7 = phi u64 [%4, b0], [%18, b2]
+    %8 = phi f32 [%2, b0], [%16, b2]
+    %9 = phi ptr [%5, b0], [%19, b2]
     %10 = const u64 0
     %11 = gt bool %7, %10
     br %11, b2, b3
 b2: ; preds b1
-    %13 = load f32 [%9 + 4]
-    %14 = add f32 %8, %13
-    %15 = const u64 1
-    %16 = sub u64 %7, %15
-    %17 = psub ptr %9, %15 * 12
+    %13 = lt bool %7, %1
+    check %13, 53:16 bounds violation
+    %15 = load f32 [%9 + 4]
+    %16 = add f32 %8, %15
+    %17 = const u64 1
+    %18 = sub u64 %7, %17
+    %19 = psub ptr %9, %17 * 12
     jmp b1
 b3: ; preds b1
     ret %8
@@ -167,7 +169,7 @@ b0:
     %6 = const i64 2
     jmp b1
 b1: ; preds b0, b6
-    %8 = phi i64 [%5, b0], [%34, b6]
+    %8 = phi i64 [%5, b0], [%38, b6]
     %9 = phi f32 [%4, b0], [%17, b6]
     %10 = lt bool %8, %6
     br %10, b2, b3
@@ -178,27 +180,31 @@ b2: ; preds b1
 b3: ; preds b1
     ret %9
 b4: ; preds b2, b5
-    %16 = phi i64 [%12, b2], [%29, b5]
-    %17 = phi f32 [%9, b2], [%27, b5]
-    %18 = phi ptr [%0, b2], [%31, b5]
+    %16 = phi i64 [%12, b2], [%33, b5]
+    %17 = phi f32 [%9, b2], [%31, b5]
+    %18 = phi ptr [%0, b2], [%35, b5]
     %19 = lt bool %16, %13
     br %19, b5, b6
 b5: ; preds b4
     %21 = cast u64 %16
-    %22 = load f32 [%18]
-    %23 = padd ptr %2, %21 * 8
-    %24 = load u64 [%23]
-    %25 = cast f32 %24
-    %26 = add f32 %22, %25
-    %27 = add f32 %17, %26
-    %28 = const i64 1
-    %29 = add i64 %16, %28
-    %30 = const u64 1
-    %31 = padd ptr %18, %30 * 12
+    %22 = lt bool %21, %1
+    check %22, 62:41 bounds violation
+    %24 = load f32 [%18]
+    %25 = lt bool %21, %3
+    check %25, 62:58 bounds violation
+    %27 = padd ptr %2, %21 * 8
+    %28 = load u64 [%27]
+    %29 = cast f32 %28
+    %30 = add f32 %24, %29
+    %31 = add f32 %17, %30
+    %32 = const i64 1
+    %33 = add i64 %16, %32
+    %34 = const u64 1
+    %35 = padd ptr %18, %34 * 12
     jmp b4
 b6: ; preds b4
-    %33 = const i64 1
-    %34 = add i64 %8, %33
+    %37 = const i64 1
+    %38 = add i64 %8, %37
     jmp b1
 }
 

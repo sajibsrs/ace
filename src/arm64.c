@@ -1116,13 +1116,11 @@ static void div_rem(A64* a, int v) {
         }
     }
     int rn = opnd(a, x->args[0], S0), rm = opnd(a, x->args[1], S1);
-    if (chk) {
-        fail_if_zero(a, rm, is64(t), 0);
-        if (sg && !narrow(t)) { // MIN / -1: a - 1 overflows exactly when a is MIN
-            put(a, sf | 0x3100001Fu | (1u << 10) | ((uint32_t)rm << 5));                  // cmn rm, #1
-            put(a, sf | 0x7A400800u | (1u << 16) | ((uint32_t)C_EQ << 12) | ((uint32_t)rn << 5)); // ccmp rn, #1, #0, eq
-            fail_if(a, C_VS);
-        }
+    if (chk || (x->flags & IRF_NONZERO)) fail_if_zero(a, rm, is64(t), 0);
+    if (chk && sg && !narrow(t)) { // MIN / -1: a - 1 overflows exactly when a is MIN
+        put(a, sf | 0x3100001Fu | (1u << 10) | ((uint32_t)rm << 5));                  // cmn rm, #1
+        put(a, sf | 0x7A400800u | (1u << 16) | ((uint32_t)C_EQ << 12) | ((uint32_t)rn << 5)); // ccmp rn, #1, #0, eq
+        fail_if(a, C_VS);
     }
     uint32_t div = sf | (sg ? 0x1AC00C00u : 0x1AC00800u) | ((uint32_t)rm << 16) | ((uint32_t)rn << 5);
     int rd = dst(a, v);

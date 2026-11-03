@@ -1,0 +1,18 @@
+/* Release removes a bounds check that a dominating comparison implies: a
+ * counted loop's bound, a tighter guard on an offset index, a slice's own
+ * length, a narrower counter, and a repeated index. */
+data: [64]i32
+
+sum(s: []i32): i32 {
+    t: i32 = 0
+    for i: usize in 0 .. s.len { t += s[i] }
+    return t
+}
+
+main(): int {
+    for i: usize in 0 .. 64 { data[i] = i32(i) }
+    for i: usize in 0 .. 63 { data[i] = data[i + 1] - data[i] }
+    for i: i32 in 0 .. 64 { data[i] += data[i] }
+    if sum(data[..]) != 2 * 63 + 2 * 63 { return 1 }
+    return 0
+}

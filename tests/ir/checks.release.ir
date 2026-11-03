@@ -1,0 +1,241 @@
+repeated(u64): i32 {
+b0:
+    %0 = param u64 0
+    %1 = global ptr table
+    %2 = const u64 8
+    %3 = lt bool %0, %2
+    check %3, 8:18 bounds violation
+    %5 = padd ptr %1, %0 * 4
+    %6 = load i32 [%5]
+    %7 = load i32 [%5]
+    %8 = load i32 [%5]
+    %9 = mul i32 %7, %8
+    %10 = add i32 %6, %9
+    ret %10
+}
+
+counted({ptr, u64}): i32 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = const i32 0
+    %3 = const u64 0
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi u64 [%3, b0], [%13, b2]
+    %6 = phi i32 [%2, b0], [%11, b2]
+    %7 = lt bool %5, %1
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = padd ptr %0, %5 * 4
+    %10 = load i32 [%9]
+    %11 = add i32 %6, %10
+    %12 = const u64 1
+    %13 = add u64 %5, %12
+    jmp b1
+b3: ; preds b1
+    ret %6
+}
+
+guarded(u64): i32 {
+b0:
+    %0 = param u64 0
+    %1 = const u64 8
+    %2 = lt bool %0, %1
+    br %2, b1, b2
+b1: ; preds b0
+    %4 = global ptr table
+    %5 = padd ptr %4, %0 * 4
+    %6 = load i32 [%5]
+    ret %6
+b2: ; preds b0
+    %8 = const i32 0
+    ret %8
+}
+
+early({ptr, u64}, u64): i32 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = param u64 2
+    %3 = ge bool %2, %1
+    br %3, b1, b2
+b1: ; preds b0
+    %5 = const i32 0
+    ret %5
+b2: ; preds b0
+    %7 = padd ptr %0, %2 * 4
+    %8 = load i32 [%7]
+    ret %8
+}
+
+shifted(): void {
+b0:
+    %0 = const i64 0
+    %1 = const i64 7
+    %2 = global ptr table
+    jmp b1
+b1: ; preds b0, b2
+    %4 = phi i64 [%0, b0], [%15, b2]
+    %5 = lt bool %4, %1
+    br %5, b2, b3
+b2: ; preds b1
+    %7 = cast u64 %4
+    %8 = const u64 1
+    %9 = add u64 %7, %8
+    %10 = padd ptr %2, %9 * 4
+    %11 = load i32 [%10]
+    %12 = padd ptr %2, %7 * 4
+    store [%12], %11
+    %14 = const i64 1
+    %15 = add i64 %4, %14
+    jmp b1
+b3: ; preds b1
+    ret
+}
+
+narrow(): i32 {
+b0:
+    %0 = const i32 0
+    %1 = const i64 0
+    %2 = const i64 8
+    %3 = global ptr table
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi i64 [%1, b0], [%15, b2]
+    %6 = phi i32 [%0, b0], [%13, b2]
+    %7 = lt bool %5, %2
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = cast i32 %5
+    %10 = cast u64 %9
+    %11 = padd ptr %3, %10 * 4
+    %12 = load i32 [%11]
+    %13 = add i32 %6, %12
+    %14 = const i64 1
+    %15 = add i64 %5, %14
+    jmp b1
+b3: ; preds b1
+    ret %6
+}
+
+unknown(u64): i32 {
+b0:
+    %0 = param u64 0
+    %1 = const i32 0
+    %2 = const u64 0
+    %3 = global ptr table
+    jmp b1
+b1: ; preds b0, b2
+    %5 = phi u64 [%2, b0], [%16, b2]
+    %6 = phi i32 [%1, b0], [%14, b2]
+    %7 = lt bool %5, %0
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = const u64 8
+    %10 = lt bool %5, %9
+    check %10, 39:41 bounds violation
+    %12 = padd ptr %3, %5 * 4
+    %13 = load i32 [%12]
+    %14 = add i32 %6, %13
+    %15 = const u64 1
+    %16 = add u64 %5, %15
+    jmp b1
+b3: ; preds b1
+    ret %6
+}
+
+main(): i64 {
+b0:
+    %0 = const i64 0
+    %1 = const i64 7
+    %2 = global ptr table
+    jmp b1
+b1: ; preds b0, b2
+    %4 = phi i64 [%0, b0], [%15, b2]
+    %5 = lt bool %4, %1
+    br %5, b2, b3
+b2: ; preds b1
+    %7 = cast u64 %4
+    %8 = const u64 1
+    %9 = add u64 %7, %8
+    %10 = padd ptr %2, %9 * 4
+    %11 = load i32 [%10]
+    %12 = padd ptr %2, %7 * 4
+    store [%12], %11
+    %14 = const i64 1
+    %15 = add i64 %4, %14
+    jmp b1
+b3: ; preds b1
+    %17 = const u64 1
+    %18 = global ptr table
+    %19 = padd ptr %18, %17 * 4
+    %20 = load i32 [%19]
+    %21 = load i32 [%19]
+    %22 = load i32 [%19]
+    %23 = mul i32 %21, %22
+    %24 = add i32 %20, %23
+    %25 = const u64 8
+    %26 = const i32 0
+    %27 = const u64 0
+    jmp b4
+b4: ; preds b3, b5
+    %29 = phi u64 [%27, b3], [%37, b5]
+    %30 = phi i32 [%26, b3], [%35, b5]
+    %31 = lt bool %29, %25
+    br %31, b5, b6
+b5: ; preds b4
+    %33 = padd ptr %18, %29 * 4
+    %34 = load i32 [%33]
+    %35 = add i32 %30, %34
+    %36 = const u64 1
+    %37 = add u64 %29, %36
+    jmp b4
+b6: ; preds b4
+    %39 = add i32 %24, %30
+    %40 = const u64 2
+    %41 = padd ptr %18, %40 * 4
+    %42 = load i32 [%41]
+    %43 = add i32 %39, %42
+    %44 = const i32 0
+    %45 = const i64 0
+    %46 = const i64 8
+    jmp b7
+b7: ; preds b6, b8
+    %48 = phi i64 [%45, b6], [%58, b8]
+    %49 = phi i32 [%44, b6], [%56, b8]
+    %50 = lt bool %48, %46
+    br %50, b8, b9
+b8: ; preds b7
+    %52 = cast i32 %48
+    %53 = cast u64 %52
+    %54 = padd ptr %18, %53 * 4
+    %55 = load i32 [%54]
+    %56 = add i32 %49, %55
+    %57 = const i64 1
+    %58 = add i64 %48, %57
+    jmp b7
+b9: ; preds b7
+    %60 = add i32 %43, %49
+    %61 = const u64 8
+    %62 = const i32 0
+    %63 = const u64 0
+    jmp b10
+b10: ; preds b9, b11
+    %65 = phi u64 [%63, b9], [%73, b11]
+    %66 = phi i32 [%62, b9], [%71, b11]
+    %67 = lt bool %65, %61
+    br %67, b11, b12
+b11: ; preds b10
+    %69 = padd ptr %18, %65 * 4
+    %70 = load i32 [%69]
+    %71 = add i32 %66, %70
+    %72 = const u64 1
+    %73 = add u64 %65, %72
+    jmp b10
+b12: ; preds b10
+    %75 = add i32 %60, %66
+    %76 = cast i64 %75
+    ret %76
+}
+

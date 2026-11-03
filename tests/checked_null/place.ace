@@ -1,0 +1,10 @@
+/* An array element reached through a null pointer is a null use. */
+Box: struct { pad: i64, items: [8]i64 }
+
+pick(b: *Box, i: usize): i64 {
+    return b.items[i]
+}
+
+main(): int {
+    return int(pick(null, 3))
+}

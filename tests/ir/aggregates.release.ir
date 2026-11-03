@@ -30,7 +30,7 @@ bump(ptr): void {
 b0:
     %0 = param ptr 0
     %1 = const i64 1
-    %2 = load i64 [%0]
+    %2 = load.chk i64 [%0]
     %3 = add i64 %2, %1
     store [%0], %3
     ret

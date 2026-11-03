@@ -10,7 +10,7 @@ b1: ; preds b0, b2
     %6 = ne bool %3, %5
     br %6, b2, b3
 b2: ; preds b1
-    %8 = rem u64 %4, %3
+    %8 = rem.nz u64 %4, %3
     jmp b1
 b3: ; preds b1
     ret %4

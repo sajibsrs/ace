@@ -264,3 +264,8 @@
   one wrapped through `i64` (`ut_fits_value`, C and selfhost).
 - `*U(pointer)` reinterprets any data pointer, not only plain-bits pointees;
   forging a compiler-created value through one is undefined.
+
+- Bounds, null-use, and zero-divisor checks stay in release builds with their
+  debug diagnostics (#177): lowering emits them in both modes, a release divide
+  checks only its divisor (`IRF_NONZERO`), and an element reached through a
+  pointer checks it as a located null use. C and selfhost.

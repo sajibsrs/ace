@@ -5,8 +5,14 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = load ptr [%0]
-    %3 = padd ptr %2, %1 * 4
-    ret %3
+    %3 = load u64 [%0 + 8]
+    %4 = load u64 [%0 + 16]
+    %5 = le bool %4, %3
+    check %5, 11:23 bounds violation
+    %7 = lt bool %1, %4
+    check %7, 19:30 bounds violation
+    %9 = padd ptr %2, %1 * 4
+    ret %9
 }
 
 main(): i64 {
@@ -18,7 +24,7 @@ b0:
     %4 = const u32 7
     %5 = const u64 1
     %6 = padd ptr %0, %5 * 4
-    store [%6], %4
+    store.chk [%6], %4
     %8 = load u32 [%6]
     %9 = cast i64 %8
     ret %9

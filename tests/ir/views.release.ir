@@ -38,7 +38,7 @@ b2: ; preds b0
     %7 = global ptr larger
     %8 = const i64 1
     %9 = call i64 twice(%8)
-    %10 = calli i64 %7(%6, %9)
+    %10 = calli.chk i64 %7(%6, %9)
     %11 = const i64 3
     %12 = ne bool %10, %11
     br %12, b3, b4

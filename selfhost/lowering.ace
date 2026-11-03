@@ -847,8 +847,19 @@ Lw.store(self, addr: int, off: i32, v: int, flags: u8) {
     x.flags = flags
 }
 
-/* A debug null check on an address that came from a pointer value. */
-Lw.null_checked(self): u8 {
+/* Before offsetting `addr`, a place's address checked by `flags` as a
+ * pointer value: a null one is a null use (Safety & Debug Builds #8),
+ * checked as a compare the optimizer can prove from an earlier one, reported
+ * at `site` when nonzero. The flags for the padd: debug also checks the
+ * offset (Pointers #9).
+ */
+Lw.null_start(self, addr: int, flags: u8, site: u32): u8 {
+    if (flags & ir.IRF_CHECKED) == 0 { return 0 }
+    id: int = self.emit2(ir.IR_CHECK, ir.IT_VOID, self.emit2(ir.IR_LT, ir.IT_BOOL, self.konst(ir.IT_PTR, 0), addr), -1)
+    x: *ir.IrIns = self.fn.at(id)
+    x.name = "null use violation"
+    x.has_name = true
+    if site != 0 { x.at = site }
     if self.debug { return ir.IRF_CHECKED }
     return 0
 }
@@ -857,7 +868,7 @@ Lw.null_checked(self): u8 {
 Lw.access_check(self, addr: int): u8 {
     op: u8 = self.fn.at(addr).op
     if op == ir.IR_SLOT || op == ir.IR_GLOBAL { return 0 }
-    return self.null_checked()
+    return ir.IRF_CHECKED
 }
 
 /* The address of global variable or function `s`: a function or C global
@@ -1048,11 +1059,12 @@ Lw.place_address(self, p: Place): int {
         return self.dummy()
     }
     if p.off == 0 && p.flags == 0 { return p.addr }
+    flags: u8 = self.null_start(p.addr, p.flags, 0)
     k: int = self.konst(ir.IT_U64, u64(p.off))
     id: int = self.emit2(ir.IR_PADD, ir.IT_PTR, p.addr, k)
     x: *ir.IrIns = self.fn.at(id)
     x.imm = 1
-    x.flags = p.flags
+    x.flags = flags
     return id
 }
 
@@ -1432,7 +1444,7 @@ Lw.temp_place(self, x: u32): Place {
     return Place { addr = slot, t = t }
 }
 
-/* Debug: traps through the bounds failure at `site` unless `c` holds. */
+/* Traps through the bounds failure at `site` unless `c` holds. */
 Lw.bounds_check(self, c: int, site: u32) {
     id: int = self.emit2(ir.IR_CHECK, ir.IT_VOID, c, -1)
     x: *ir.IrIns = self.fn.at(id)
@@ -1453,14 +1465,14 @@ Lw.bound(self, x: u32, site: u32, nonneg: bool): int {
 }
 
 /* The place of element x = a[i]: at a fixed offset from an array's place,
- * checked in debug unless its index is an [E]T's enum (Safety #2).
+ * checked unless its index is an [E]T's enum (Safety #2).
  */
 Lw.element(self, x: u32): Place {
     n: Node = self.node(x)
     st: u32 = self.unwrap(self.nty(n.a))
     if st != 0 && self.ty(st).kind == TypeKind.array {
         ut: SType = self.ty(st)
-        chk: bool = self.debug && (self.s.node_proof(x) & sema.PROOF_BOUNDS) == 0
+        chk: bool = (self.s.node_proof(x) & sema.PROOF_BOUNDS) == 0
         p: Place = self.array_place(n.a)
         es: u32 = self.size(ut.base)
         p.t = ut.base
@@ -1471,10 +1483,11 @@ Lw.element(self, x: u32): Place {
         }
         i: int = self.bound(n.b, x, chk)
         if chk { self.bounds_check(self.emit2(ir.IR_LT, ir.IT_BOOL, i, self.konst(ir.IT_U64, ut.count)), x) }
+        flags: u8 = self.null_start(p.addr, p.flags, x)
         id: int = self.emit2(ir.IR_PADD, ir.IT_PTR, p.addr, i) // the place's offset stays on the access
         e: *ir.IrIns = self.fn.at(id)
         e.imm = u64(es)
-        e.flags = p.flags // a null base traps here
+        e.flags = flags
         return Place { addr = id, off = p.off, t = ut.base }
     }
     if st != 0 && self.ty(st).kind == TypeKind.staticmap { return self.staticmap_place(x, st) }
@@ -1482,7 +1495,7 @@ Lw.element(self, x: u32): Place {
         self.unsupported(self.type_why(st))
         return Place { addr = self.dummy(), t = self.nty(x) }
     }
-    chk: bool = self.debug && (self.s.node_proof(x) & sema.PROOF_BOUNDS) == 0
+    chk: bool = (self.s.node_proof(x) & sema.PROOF_BOUNDS) == 0
     ptr: int, len: int = self.view_parts(n.a, chk)
     i: int = self.bound(n.b, x, chk)
     if chk { self.bounds_check(self.emit2(ir.IR_LT, ir.IT_BOOL, i, len), x) }
@@ -1857,14 +1870,14 @@ Lw.view_elem(self, st: u32): u32 {
 }
 
 /* The leaves of x = s[lo..hi] (Sequences #1-2): s's descriptor, then lo,
- * then hi; debug checks each signed bound nonnegative as it is evaluated,
+ * then hi; checks each signed bound nonnegative as it is evaluated,
  * then lo <= hi, then hi <= s.len, skipping what sema proved.
  */
 Lw.slice_leaves(self, x: u32, out: *Agg) {
     n: Node = self.node(x)
     st: u32 = self.unwrap(self.nty(n.a))
     pr: u8 = self.s.node_proof(x)
-    chk: bool = self.debug && (pr & sema.PROOF_BOUNDS) == 0
+    chk: bool = (pr & sema.PROOF_BOUNDS) == 0
     ptr: int = -1
     len: int = -1
     es: u64 = 1
@@ -2235,7 +2248,7 @@ Lw.contract_call(self, x: u32, res: *Agg, want_res: bool, dst: int): int {
     for i: u32 in 0..cn.nkids { self.call_arg(&g, self.kid(x, i), self.nty(self.kid(x, i)), false, false) }
     rt: u32 = self.nty(x)
     id: int = self.emit(ir.IR_CALLI, self.result_type(rt))
-    self.fn.at(id).flags = self.null_checked() // fn itself, at the call
+    self.fn.at(id).flags = ir.IRF_CHECKED // fn itself, at the call
     self.fn.arg_add(id, f)
     return self.call_finish(id, g, rt, res, want_res, dst)
 }
@@ -2674,7 +2687,11 @@ Lw.arith(self, op: u8, t: u8, a: int, b: int): int {
         return self.dummy()
     }
     id: int = self.emit2(op, t, a, b)
-    if self.checked_op(op, t) { self.fn.at(id).flags |= ir.IRF_CHECKED }
+    if self.checked_op(op, t) {
+        self.fn.at(id).flags |= ir.IRF_CHECKED
+    } else if (op == ir.IR_DIV || op == ir.IR_REM) && !ir.type_float(t) {
+        self.fn.at(id).flags |= ir.IRF_NONZERO
+    }
     return id
 }
 
@@ -3595,7 +3612,7 @@ Lw.atomic_call(self, x: u32, bi: u64, res: *Agg, want_res: bool): int {
     a: *ir.IrIns = self.fn.at(id)
     a.aux = kind
     a.imm = order
-    a.flags = self.null_checked()
+    a.flags = ir.IRF_CHECKED
     if kind != ir.AK_CAS || !want_res { return id }
     res.n = 2
     res.v[0] = id
@@ -4342,7 +4359,7 @@ Lw.indirect_call(self, x: u32, s: u32, res: *Agg, want_res: bool, dst: int): int
     defer g.wipe()
     for i: u32 in 0..cn.nkids { self.call_arg(&g, self.kid(x, i), self.s.param(self.ty(ft), i), false, false) }
     id: int = self.emit(ir.IR_CALLI, self.result_type(self.ty(ft).ret))
-    self.fn.at(id).flags = self.null_checked()
+    self.fn.at(id).flags = ir.IRF_CHECKED
     self.fn.arg_add(id, f) // the target, then the arguments
     return self.call_finish(id, g, self.ty(ft).ret, res, want_res, dst)
 }
@@ -4352,7 +4369,7 @@ Lw.pointer_offset(self, op: u8, pt: u32, pv: int, n: int): int {
     id: int = self.emit2(op, ir.IT_PTR, pv, n)
     x: *ir.IrIns = self.fn.at(id)
     x.imm = u64(self.ty(self.ty(self.unwrap(pt)).base).size)
-    x.flags = self.null_checked()
+    if self.debug { x.flags = ir.IRF_CHECKED } // Pointers #9
     return id
 }
 

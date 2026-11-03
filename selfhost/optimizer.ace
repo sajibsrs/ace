@@ -1,7 +1,7 @@
 /* The release-only optimizer over one function's IR, as src/optimizer.c.
  *
  * Each pass runs once, in C's order: constant propagation, value numbering,
- * loop strength reduction, dead-code and control-flow cleanup, then
+ * check elimination, loop strength reduction, dead-code and control-flow cleanup, then
  * auto-vectorization over the cleaned loops (and cleanup again after it).
  */
 
@@ -344,6 +344,55 @@ sccp(fn: *Func) {
     }
 }
 
+/* A preorder walk of the dominator tree from the entry: `w.enter(b)` on the
+ * way down, `w.leave(b)` once everything b dominates has been walked.
+ */
+dom_walk[T](fn: Func, idom: array.Array[int], w: *T) {
+    n: int = int(fn.blocks.len)
+    cstart: array.Array[int], cstart_err: Error = array.Array[int].filled(usize(n + 1), 0)
+    fail(cstart_err)
+    defer cstart.wipe()
+    cs: []int = cstart.view()
+    for b: int in 1..n { if idom.get(b) >= 0 { cs[idom.get(b) + 1] += 1 } }
+    for b: int in 0..n { cs[b + 1] += cs[b] }
+    kids: array.Array[int] = array.Array[int] {}
+    defer kids.wipe()
+    fill: array.Array[int] = array.Array[int] {}
+    defer fill.wipe()
+    for 0..n {
+        fail(kids.push(0))
+        fail(fill.push(0))
+    }
+    for b: int in 1..n {
+        d: int = idom.get(b)
+        if d < 0 { continue }
+        kids.set(usize(cs[d] + fill.get(d)), b)
+        fill.set(usize(d), fill.get(d) + 1)
+    }
+    sb: array.Array[int] = array.Array[int] {} // the walk's frames: block, next child
+    defer sb.wipe()
+    si: array.Array[int] = array.Array[int] {}
+    defer si.wipe()
+    fail(sb.push(0))
+    fail(si.push(0))
+    w.enter(0)
+    for sb.len > 0 {
+        top: usize = sb.len - 1
+        b: int = sb.get(top)
+        if si.get(top) < cs[b + 1] - cs[b] {
+            c: int = kids.get(cs[b] + si.get(top))
+            si.set(top, si.get(top) + 1)
+            fail(sb.push(c))
+            fail(si.push(0))
+            w.enter(c)
+            continue
+        }
+        w.leave(b)
+        sb.truncate(top)
+        si.truncate(top)
+    }
+}
+
 // --- global value numbering -------------------------------------------------------------
 //
 // A walk of the dominator tree with a scoped table of the pure operations seen:
@@ -374,6 +423,7 @@ Vn: struct {
     head: array.Array[int],   // hash bucket -> newest entry, or -1
     ent: array.Array[VnEnt],
     log: array.Array[int],    // bucket of each live entry, newest last
+    mark: array.Array[int],   // entries live at each walked block's entry
     mask: u64 = 0,
 }
 
@@ -382,6 +432,7 @@ Vn.wipe(self) {
     self.head.wipe()
     self.ent.wipe()
     self.log.wipe()
+    self.mark.wipe()
 }
 
 Vn.chase(self, v: int): int {
@@ -492,7 +543,8 @@ simplify(fn: Func, v: int): int {
     }
 }
 
-Vn.block(self, b: int) {
+Vn.enter(self, b: int) {
+    self.mark.set(usize(b), int(self.ent.len))
     bp: *IrBlock = self.fn.block(b)
     list: []int = bp.ins.view()
     k: usize = 0
@@ -525,8 +577,18 @@ Vn.block(self, b: int) {
     bp.ins.truncate(k)
 }
 
+/* Drops the entries of block `b`. */
+Vn.leave(self, b: int) {
+    for int(self.ent.len) > self.mark.get(b) {
+        h: usize = usize(self.log.get(self.log.len - 1))
+        self.head.set(h, self.ent.get(self.head.get(h)).next)
+        self.ent.truncate(self.ent.len - 1)
+        self.log.truncate(self.log.len - 1)
+    }
+}
+
 gvn(fn: *Func) {
-    g: Vn = Vn { fn = fn, repl = array.Array[int] {}, head = array.Array[int] {}, ent = array.Array[VnEnt] {}, log = array.Array[int] {} }
+    g: Vn = Vn { fn = fn, repl = array.Array[int] {}, head = array.Array[int] {}, ent = array.Array[VnEnt] {}, log = array.Array[int] {}, mark = array.Array[int] {} }
     defer g.wipe()
     n: int = int(fn.blocks.len)
     size: usize = 16
@@ -537,66 +599,344 @@ gvn(fn: *Func) {
     fail(err)
     g.repl, err = array.Array[int].filled(fn.ins.len, -1)
     fail(err)
+    g.mark, err = array.Array[int].filled(fn.blocks.len, 0)
+    fail(err)
     idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*fn)
     defer idom.wipe()
     defer rpo.wipe()
-    cstart: array.Array[int], cstart_err: Error = array.Array[int].filled(usize(n + 1), 0)
-    fail(cstart_err)
-    defer cstart.wipe()
-    cs: []int = cstart.view()
-    for b: int in 1..n { if idom.get(b) >= 0 { cs[idom.get(b) + 1] += 1 } }
-    for b: int in 0..n { cs[b + 1] += cs[b] }
-    kids: array.Array[int] = array.Array[int] {}
-    defer kids.wipe()
-    fill: array.Array[int] = array.Array[int] {}
-    defer fill.wipe()
-    for 0..n {
-        fail(kids.push(0))
-        fail(fill.push(0))
-    }
-    for b: int in 1..n {
-        d: int = idom.get(b)
-        if d < 0 { continue }
-        kids.set(usize(cs[d] + fill.get(d)), b)
-        fill.set(usize(d), fill.get(d) + 1)
-    }
-    sb: array.Array[int] = array.Array[int] {} // the walk's frames: block, next child, entries at entry
-    defer sb.wipe()
-    si: array.Array[int] = array.Array[int] {}
-    defer si.wipe()
-    sm: array.Array[int] = array.Array[int] {}
-    defer sm.wipe()
-    fail(sb.push(0))
-    fail(si.push(0))
-    fail(sm.push(0))
-    g.block(0)
-    for sb.len > 0 {
-        top: usize = sb.len - 1
-        b: int = sb.get(top)
-        if si.get(top) < cs[b + 1] - cs[b] {
-            c: int = kids.get(cs[b] + si.get(top))
-            si.set(top, si.get(top) + 1)
-            fail(sb.push(c))
-            fail(si.push(0))
-            fail(sm.push(int(g.ent.len)))
-            g.block(c)
-            continue
-        }
-        for int(g.ent.len) > sm.get(top) { // leave the block: drop its entries
-            h: usize = usize(g.log.get(g.ent.len - 1))
-            g.head.set(h, g.ent.get(g.head.get(h)).next)
-            g.ent.truncate(g.ent.len - 1)
-            g.log.truncate(g.log.len - 1)
-        }
-        sb.truncate(top)
-        si.truncate(top)
-        sm.truncate(top)
-    }
+    dom_walk[Vn](*fn, idom, &g)
     for b: usize in 0..fn.blocks.len {
         for id: int in fn.blocks.get(b).ins.view() {
             for a: u32 in 0..fn.at(id).nargs { fn.set_arg(id, a, g.chase(fn.arg(id, a))) }
         }
     }
+}
+
+// --- check elimination -----------------------------------------------------------------
+//
+// A walk of the dominator tree with the comparisons known to hold: a block
+// whose only predecessor branches on c knows c (or its inverse) along with
+// every block it dominates, and each check's condition holds after it. A
+// check that a known comparison implies is removed. Each fact is a < b or
+// a <= b in one signedness; a value's known bounds come from the facts that
+// compare it with a constant, and carry over to the other signedness once
+// they keep it nonnegative. A check on a constant true condition goes too,
+// and so does the null check of an access through an address that an earlier
+// check or access proved nonzero.
+
+I64_LOW: const i64 = -9223372036854775807 - 1
+I64_HIGH: const i64 = 9223372036854775807
+U64_HIGH: const u64 = 0xFFFFFFFFFFFFFFFF
+
+Fact: struct {
+    sg: bool = false,     // signed
+    strict: bool = false, // a < b rather than a <= b
+    ka: bool = false,     // a or b is a constant, whose value is va or vb
+    kb: bool = false,
+    a: int = -1,          // value ids, through same-width casts
+    b: int = -1,
+    va: u64 = 0,
+    vb: u64 = 0,
+}
+
+Chk: struct {
+    fn: *Func,
+    idom: array.Array[int],
+    fact: array.Array[Fact],
+    mark: array.Array[int], // facts live at each walked block's entry
+}
+
+Chk.wipe(self) {
+    self.fact.wipe()
+    self.mark.wipe()
+}
+
+/* `v` through casts that keep its bits. */
+chk_strip(fn: Func, v: int): int {
+    x: int = v
+    for {
+        c: IrIns = *(fn.at(x))
+        if c.op != ir.IR_CAST || !is_int(c.ty) || c.ty == ir.IT_BOOL { return x }
+        from: u8 = fn.at(fn.arg(x, 0)).ty
+        if !is_int(from) || ir.type_bits(from) != ir.type_bits(c.ty) { return x }
+        x = fn.arg(x, 0)
+    }
+    return x
+}
+
+/* The fact that comparison `c` is `truth`, or false when c compares no integers. */
+chk_fact(fn: Func, c: int, truth: bool): (Fact, bool) {
+    x: IrIns = *(fn.at(c))
+    if x.op < ir.IR_LT || x.op > ir.IR_GE { return blank(Fact), false }
+    a: int = fn.arg(c, 0)
+    b: int = fn.arg(c, 1)
+    t: u8 = fn.at(a).ty
+    if !is_int(t) || t == ir.IT_BOOL { return blank(Fact), false }
+    strict: bool = x.op == ir.IR_LT || x.op == ir.IR_GT
+    if x.op == ir.IR_GT || x.op == ir.IR_GE { a, b = b, a }
+    if !truth { // !(a < b) is b <= a
+        a, b = b, a
+        strict = !strict
+    }
+    f: Fact = Fact { sg = ir.type_signed(t), strict = strict, ka = fn.at(a).op == ir.IR_CONST, kb = fn.at(b).op == ir.IR_CONST }
+    if f.ka { f.va = ir.wrap(t, fn.at(a).imm) }
+    if f.kb { f.vb = ir.wrap(t, fn.at(b).imm) }
+    f.a = chk_strip(fn, a)
+    f.b = chk_strip(fn, b)
+    return f, true
+}
+
+/* Signed `v` counts up from a nonnegative constant by 1 while v < some
+ * bound, so it never wraps negative.
+ */
+Chk.counter(const self, v: int): bool {
+    fn: Func = *self.fn
+    x: IrIns = *(fn.at(v))
+    if x.op != ir.IR_PHI || x.nargs != 2 { return false }
+    h: int = x.block
+    hb: IrBlock = *(fn.block(h))
+    br: int = hb.ins.get(hb.ins.len - 1)
+    if fn.at(br).op != ir.IR_BR { return false }
+    g: Fact, ok: bool = chk_fact(fn, fn.arg(br, 0), true)
+    if !ok || !g.sg || !g.strict || g.a != v { return false }
+    body: int = hb.succ0
+    if body == h || fn.block(body).preds.len != 1 { return false }
+    start: int = 0
+    step: int = 0
+    for i: u32 in 0..2 {
+        a: int = fn.arg(v, i)
+        y: IrIns = *(fn.at(a))
+        if y.op == ir.IR_CONST && i64(ir.wrap(x.ty, y.imm)) >= 0 {
+            start += 1
+        } else if y.op == ir.IR_ADD && y.flags == 0 && y.block >= 0 && ir.dominates(self.idom, body, y.block) && ((fn.arg(a, 0) == v && is_konst(fn, fn.arg(a, 1), 1)) || (fn.arg(a, 1) == v && is_konst(fn, fn.arg(a, 0), 1))) {
+            step += 1
+        }
+    }
+    return start == 1 && step == 1
+}
+
+ChkRange: struct {
+    slo: i64,
+    shi: i64,
+    ulo: u64,
+    uhi: u64,
+}
+
+/* The values of `t`'s width, in each signedness. */
+chk_full(t: u8): ChkRange {
+    n: int = ir.type_bits(t)
+    umax: u64 = U64_HIGH
+    if n != 64 { umax = (u64(1) << u64(n)) - 1 }
+    return ChkRange { slo = -i64(umax >> 1) - 1, shi = i64(umax >> 1), ulo = 0, uhi = umax }
+}
+
+ChkRange.meet(self, d: ChkRange) {
+    if d.slo > self.slo { self.slo = d.slo }
+    if d.shi < self.shi { self.shi = d.shi }
+    if d.ulo > self.ulo { self.ulo = d.ulo }
+    if d.uhi < self.uhi { self.uhi = d.uhi }
+}
+
+/* `v`'s bounds: its type's, the facts that compare it with a constant, and
+ * (`depth` levels down) those of the value it is a cast of or a constant
+ * away from, when every value in them maps without wrapping; a range of
+ * nonnegative values holds in both signednesses.
+ */
+Chk.range(const self, v: int, depth: int): ChkRange {
+    fn: Func = *self.fn
+    x: IrIns = *(fn.at(v))
+    t: u8 = x.ty
+    full: ChkRange = chk_full(t)
+    r: ChkRange = full
+    for f: Fact in self.fact.view() {
+        if f.a == v && f.kb && !f.ka { // v < vb, v <= vb
+            if f.sg {
+                c: i64 = i64(f.vb)
+                if f.strict && c == I64_LOW { continue }
+                if f.strict { c -= 1 }
+                if c < r.shi { r.shi = c }
+            } else {
+                c: u64 = f.vb
+                if f.strict && c == 0 { continue }
+                if f.strict { c -= 1 }
+                if c < r.uhi { r.uhi = c }
+            }
+        } else if f.b == v && f.ka && !f.kb { // va < v, va <= v
+            if f.sg {
+                c: i64 = i64(f.va)
+                if f.strict && c == I64_HIGH { continue }
+                if f.strict { c += 1 }
+                if c > r.slo { r.slo = c }
+            } else {
+                c: u64 = f.va
+                if f.strict && c == U64_HIGH { continue }
+                if f.strict { c += 1 }
+                if c > r.ulo { r.ulo = c }
+            }
+        }
+    }
+    if depth > 0 && x.op == ir.IR_CAST && is_int(t) && t != ir.IT_BOOL {
+        st: u8 = fn.at(fn.arg(v, 0)).ty
+        if is_int(st) && st != ir.IT_BOOL { // the value itself, where t holds it
+            s: ChkRange = self.range(fn.arg(v, 0), depth - 1)
+            d: ChkRange = full
+            if ir.type_signed(st) {
+                if s.slo >= full.slo && s.shi <= full.shi {
+                    d.slo = s.slo
+                    d.shi = s.shi
+                }
+                if s.slo >= 0 && u64(s.shi) <= full.uhi {
+                    d.ulo = u64(s.slo)
+                    d.uhi = u64(s.shi)
+                }
+            } else {
+                if s.uhi <= full.uhi {
+                    d.ulo = s.ulo
+                    d.uhi = s.uhi
+                }
+                if s.uhi <= u64(full.shi) {
+                    d.slo = i64(s.ulo)
+                    d.shi = i64(s.uhi)
+                }
+            }
+            r.meet(d)
+        }
+    } else if depth > 0 && (x.op == ir.IR_ADD || x.op == ir.IR_SUB) && x.flags == 0 && is_int(t) && t != ir.IT_BOOL && t != ir.IT_PTR {
+        sub: bool = x.op == ir.IR_SUB
+        ki: int = -1
+        if fn.at(fn.arg(v, 1)).op == ir.IR_CONST { ki = 1 } else if !sub && fn.at(fn.arg(v, 0)).op == ir.IR_CONST { ki = 0 }
+        if ki >= 0 { // y +/- c, in each signedness where it does not wrap
+            c: u64 = ir.wrap(t, fn.at(fn.arg(v, u32(ki))).imm)
+            s: ChkRange = self.range(fn.arg(v, u32(1 - ki)), depth - 1)
+            d: ChkRange = full
+            uc: u64 = c & full.uhi
+            if !sub && s.uhi <= full.uhi - uc {
+                d.ulo = s.ulo + uc
+                d.uhi = s.uhi + uc
+            }
+            if sub && s.ulo >= uc {
+                d.ulo = s.ulo - uc
+                d.uhi = s.uhi - uc
+            }
+            sc: i64 = i64(c) // y - c as y + (-c), unless -c does not exist
+            if !sub || sc != I64_LOW {
+                if sub { sc = -sc }
+                fits: bool = false
+                if sc >= 0 { fits = s.shi <= full.shi - sc } else { fits = s.slo >= full.slo - sc }
+                if fits {
+                    d.slo = s.slo + sc
+                    d.shi = s.shi + sc
+                }
+            }
+            r.meet(d)
+        }
+    }
+    if r.slo < 0 && self.counter(v) { r.slo = 0 }
+    for 0..2 {
+        if r.slo >= 0 {
+            if u64(r.slo) > r.ulo { r.ulo = u64(r.slo) }
+            if u64(r.shi) < r.uhi { r.uhi = u64(r.shi) }
+        }
+        if r.uhi <= u64(full.shi) {
+            if i64(r.ulo) > r.slo { r.slo = i64(r.ulo) }
+            if i64(r.uhi) < r.shi { r.shi = i64(r.uhi) }
+        }
+    }
+    return r
+}
+
+/* The known facts imply `q`. */
+Chk.implied(const self, q: Fact): bool {
+    for f: Fact in self.fact.view() {
+        if f.sg != q.sg || f.ka != q.ka || f.kb != q.kb || (!f.strict && q.strict) { continue }
+        if f.ka { if f.va != q.va { continue } } else if f.a != q.a { continue }
+        if f.kb { if f.vb != q.vb { continue } } else if f.b != q.b { continue }
+        return true
+    }
+    if q.kb && !q.ka { // q: a <= c
+        r: ChkRange = self.range(q.a, 4)
+        if q.sg {
+            c: i64 = i64(q.vb)
+            if q.strict && c == I64_LOW { return false }
+            if q.strict { c -= 1 }
+            return r.shi <= c
+        }
+        if q.strict && q.vb == 0 { return false }
+        c: u64 = q.vb
+        if q.strict { c -= 1 }
+        return r.uhi <= c
+    }
+    if q.ka && !q.kb { // q: c <= b
+        r: ChkRange = self.range(q.b, 4)
+        if q.sg {
+            c: i64 = i64(q.va)
+            if q.strict && c == I64_HIGH { return false }
+            if q.strict { c += 1 }
+            return r.slo >= c
+        }
+        if q.strict && q.va == U64_HIGH { return false }
+        c: u64 = q.va
+        if q.strict { c += 1 }
+        return r.ulo >= c
+    }
+    return false
+}
+
+Chk.enter(self, b: int) {
+    fn: *Func = self.fn
+    self.mark.set(usize(b), int(self.fact.len))
+    bp: *IrBlock = fn.block(b)
+    if bp.preds.len == 1 { // the edge from its only predecessor's branch
+        pb: IrBlock = *(fn.block(bp.preds.get(0)))
+        br: int = pb.ins.get(pb.ins.len - 1)
+        if fn.at(br).op == ir.IR_BR && pb.succ0 != pb.succ1 {
+            f: Fact, ok: bool = chk_fact(*fn, fn.arg(br, 0), pb.succ0 == b)
+            if ok { fail(self.fact.push(f)) }
+        }
+    }
+    list: []int = bp.ins.view()
+    k: usize = 0
+    for i: usize in 0..list.len {
+        v: int = list[i]
+        x: *IrIns = fn.at(v)
+        if x.op == ir.IR_CHECK && fn.at(fn.arg(v, 0)).op == ir.IR_CONST && fn.at(fn.arg(v, 0)).imm != 0 {
+            kill_ins(fn, v) // constant propagation proved it
+            continue
+        }
+        if x.op == ir.IR_CHECK {
+            q: Fact, ok: bool = chk_fact(*fn, fn.arg(v, 0), true)
+            if ok {
+                if self.implied(q) {
+                    kill_ins(fn, v)
+                    continue
+                }
+                fail(self.fact.push(q))
+            }
+        }
+        if (x.op == ir.IR_LOAD || x.op == ir.IR_STORE || x.op == ir.IR_CALLI || x.op == ir.IR_ATOMIC) && (x.flags & ir.IRF_CHECKED) != 0 && x.nargs > 0 { // its address or function value: 0 < it
+            nn: Fact = Fact { strict = true, ka = true, b = chk_strip(*fn, fn.arg(v, 0)) }
+            if self.implied(nn) { x.flags &= ~ir.IRF_CHECKED } else { fail(self.fact.push(nn)) }
+        }
+        list[k] = v
+        k += 1
+    }
+    bp.ins.truncate(k)
+}
+
+Chk.leave(self, b: int) {
+    self.fact.truncate(usize(self.mark.get(b)))
+}
+
+checks(fn: *Func) {
+    idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*fn)
+    defer idom.wipe()
+    defer rpo.wipe()
+    k: Chk = Chk { fn = fn, idom = idom, fact = array.Array[Fact] {}, mark = array.Array[int] {} }
+    defer k.wipe()
+    err: Error = null
+    k.mark, err = array.Array[int].filled(fn.blocks.len, 0)
+    fail(err)
+    dom_walk[Chk](*fn, idom, &k)
 }
 
 // --- loops ------------------------------------------------------------------------------
@@ -2066,7 +2406,8 @@ Clean.thread_branches(self): bool {
 has_effect(x: IrIns): bool {
     switch x.op {
         ir.IR_STORE, ir.IR_ATOMIC, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_CHECK, ir.IR_PROJ, ir.IR_ASM, ir.IR_PARAM, ir.IR_RESULT, ir.IR_JMP, ir.IR_BR, ir.IR_RET { return true }
-        ir.IR_LOAD { return (x.flags & ir.IRF_VOLATILE) != 0 }
+        ir.IR_LOAD { return (x.flags & (ir.IRF_VOLATILE | ir.IRF_CHECKED)) != 0 } // a null address traps
+        ir.IR_DIV, ir.IR_REM { return (x.flags & ir.IRF_NONZERO) != 0 }
         default { return false }
     }
 }
@@ -2175,6 +2516,7 @@ cleanup(fn: *Func) {
 pub optimize(fn: *Func) {
     sccp(fn)
     gvn(fn)
+    checks(fn)
     licm(fn)
     lsr(fn)
     cleanup(fn)

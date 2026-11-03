@@ -396,7 +396,7 @@ static int vector_ok(IrFunc* fn, int id) {
     if (!any) return v->op != IR_SPLAT && v->op != IR_SELECT && v->op != IR_LANES;
     IrType a0 = v->nargs ? (IrType)fn->ins[v->args[0]].type : IT_VOID;
     IrType a1 = v->nargs > 1 ? (IrType)fn->ins[v->args[1]].type : IT_VOID;
-    if (v->flags & IRF_CHECKED) return 0;
+    if (v->flags & (IRF_CHECKED | IRF_NONZERO)) return 0;
     switch (v->op) {
     case IR_PHI:
         for (int a = 0; a < v->nargs; a++)
@@ -592,6 +592,7 @@ void ir_print(IrFunc* fn, FILE* out) {
             }
             fputs(op_name((IrOp)v->op), out);
             if (v->flags & IRF_CHECKED) fputs(".chk", out);
+            if (v->flags & IRF_NONZERO) fputs(".nz", out);
             if (v->flags & IRF_VOLATILE) fputs(".vol", out);
             if (v->flags & IRF_SRET) fputs(".mem", out);
             if (v->flags & IRF_COLD) fputs(".cold", out);

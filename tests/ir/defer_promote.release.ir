@@ -9,8 +9,8 @@ b0:
     %6 = const u64 0
     jmp b1
 b1: ; preds b0, b5
-    %8 = phi u64 [%6, b0], [%37, b5]
-    %9 = phi u64 [%5, b0], [%35, b5]
+    %8 = phi u64 [%6, b0], [%39, b5]
+    %9 = phi u64 [%5, b0], [%37, b5]
     %10 = phi u64 [%4, b0], [%31, b5]
     %11 = phi ptr [%3, b0], [%30, b5]
     %12 = lt bool %8, %2
@@ -37,38 +37,40 @@ b4: ; preds b2
 b5: ; preds b2, b4
     %30 = phi ptr [%11, b2], [%26, b4]
     %31 = phi u64 [%10, b2], [%27, b4]
-    %32 = padd ptr %30, %9 * 8
-    store [%32], %8
-    %34 = const u64 1
-    %35 = add u64 %9, %34
+    %32 = lt bool %9, %31
+    check %32, 86:16 bounds violation
+    %34 = padd ptr %30, %9 * 8
+    store [%34], %8
     %36 = const u64 1
-    %37 = add u64 %8, %36
+    %37 = add u64 %9, %36
+    %38 = const u64 1
+    %39 = add u64 %8, %38
     jmp b1
 b6: ; preds b4
-    %39 = const i64 1
+    %41 = const i64 1
     store [%1], %11
     store [%1 + 8], %10
-    %42 = load ptr [%1]
-    %43 = const ptr 0
-    %44 = ne bool %42, %43
-    br %44, b7, b8
+    %44 = load ptr [%1]
+    %45 = const ptr 0
+    %46 = ne bool %44, %45
+    br %46, b7, b8
 b7: ; preds b6
-    call @_free(%42)
+    call @_free(%44)
     jmp b8
 b8: ; preds b6, b7
-    %48 = const ptr 0
-    %49 = const u64 0
-    store [%1], %48
-    store [%1 + 8], %49
-    ret %39
+    %50 = const ptr 0
+    %51 = const u64 0
+    store [%1], %50
+    store [%1 + 8], %51
+    ret %41
 b9: ; preds b3
     call @_free(%19)
     jmp b10
 b10: ; preds b3, b9
-    %55 = const ptr 0
-    %56 = const u64 0
-    store [%0], %55
-    store [%0 + 8], %56
+    %57 = const ptr 0
+    %58 = const u64 0
+    store [%0], %57
+    store [%0 + 8], %58
     ret %16
 }
 

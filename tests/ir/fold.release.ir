@@ -36,7 +36,7 @@ keep(i64, i64): i64 {
 b0:
     %0 = param i64 0
     %1 = param i64 1
-    %2 = div i64 %0, %1
+    %2 = div.nz i64 %0, %1
     ret %2
 }
 

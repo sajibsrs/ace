@@ -30,7 +30,7 @@ b2: ; preds b1
     br %14, b9, b10
 b3: ; preds b1
     %16 = global ptr grow
-    %17 = calli i64 %16(%10)
+    %17 = calli.chk i64 %16(%10)
     ret %17
 b4: ; preds b0
     %19 = gt bool %2, %0

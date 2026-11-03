@@ -3,10 +3,15 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param i32 2
-    %3 = cast u64 %2
-    %4 = padd ptr %0, %3 * 1
-    %5 = load u8 [%4]
-    ret %5
+    %3 = const i32 0
+    %4 = ge bool %2, %3
+    check %4, 14:14 bounds violation
+    %6 = cast u64 %2
+    %7 = lt bool %6, %1
+    check %7, 14:14 bounds violation
+    %9 = padd ptr %0, %6 * 1
+    %10 = load u8 [%9]
+    ret %10
 }
 
 second({ptr, u64}, u64): i64 {
@@ -14,9 +19,11 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param u64 2
-    %3 = padd ptr %0, %2 * 16
-    %4 = load i64 [%3 + 8]
-    ret %4
+    %3 = lt bool %2, %1
+    check %3, 18:14 bounds violation
+    %5 = padd ptr %0, %2 * 16
+    %6 = load i64 [%5 + 8]
+    ret %6
 }
 
 bump({ptr, u64}, u64): void {
@@ -25,15 +32,19 @@ b0:
     %1 = param u64 1
     %2 = param u64 2
     %3 = const u8 1
-    %4 = padd ptr %0, %2 * 1
-    %5 = load u8 [%4]
-    %6 = add u8 %5, %3
-    store [%4], %6
-    %8 = load u8 [%4]
-    %9 = const u64 1
-    %10 = add u64 %2, %9
-    %11 = padd ptr %0, %10 * 1
-    store [%11], %8
+    %4 = lt bool %2, %1
+    check %4, 22:7 bounds violation
+    %6 = padd ptr %0, %2 * 1
+    %7 = load u8 [%6]
+    %8 = add u8 %7, %3
+    store [%6], %8
+    %10 = load u8 [%6]
+    %11 = const u64 1
+    %12 = add u64 %2, %11
+    %13 = lt bool %12, %1
+    check %13, 23:7 bounds violation
+    %15 = padd ptr %0, %12 * 1
+    store [%15], %10
     ret
 }
 
@@ -41,6 +52,9 @@ first({ptr, u64}): ptr {
 b0:
     %0 = param ptr 0
     %1 = param u64 1
+    %2 = const u64 0
+    %3 = lt bool %2, %1
+    check %3, 27:15 bounds violation
     ret %0
 }
 
@@ -50,9 +64,11 @@ b0:
     %1 = param u64 1
     %2 = param u32 2
     %3 = cast u64 %2
-    %4 = padd ptr %0, %3 * 16
-    %5 = load u64 [%4 + 8]
-    ret %5
+    %4 = lt bool %3, %1
+    check %4, 31:14 bounds violation
+    %6 = padd ptr %0, %3 * 16
+    %7 = load u64 [%6 + 8]
+    ret %7
 }
 
 window({ptr, u64}, i64, i64): {ptr, u64} {
@@ -61,11 +77,21 @@ b0:
     %1 = param u64 1
     %2 = param i64 2
     %3 = param i64 3
-    %4 = cast u64 %2
-    %5 = cast u64 %3
-    %6 = padd ptr %0, %4 * 1
-    %7 = sub u64 %5, %4
-    ret %6, %7
+    %4 = const i64 0
+    %5 = ge bool %2, %4
+    check %5, 35:14 bounds violation
+    %7 = cast u64 %2
+    %8 = const i64 0
+    %9 = ge bool %3, %8
+    check %9, 35:14 bounds violation
+    %11 = cast u64 %3
+    %12 = le bool %7, %11
+    check %12, 35:14 bounds violation
+    %14 = le bool %11, %1
+    check %14, 35:14 bounds violation
+    %16 = padd ptr %0, %7 * 1
+    %17 = sub u64 %11, %7
+    ret %16, %17
 }
 
 tail({ptr, u64}, u64): {ptr, u64} {
@@ -73,9 +99,11 @@ b0:
     %0 = param ptr 0
     %1 = param u64 1
     %2 = param u64 2
-    %3 = padd ptr %0, %2 * 16
-    %4 = sub u64 %1, %2
-    ret %3, %4
+    %3 = le bool %2, %1
+    check %3, 39:14 bounds violation
+    %5 = padd ptr %0, %2 * 16
+    %6 = sub u64 %1, %2
+    ret %5, %6
 }
 
 head({ptr, u64}, u8): {ptr, u64} {
@@ -84,6 +112,8 @@ b0:
     %1 = param u64 1
     %2 = param u8 2
     %3 = cast u64 %2
+    %4 = le bool %3, %1
+    check %4, 43:14 bounds violation
     ret %0, %3
 }
 

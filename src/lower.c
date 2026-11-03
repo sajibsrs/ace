@@ -703,14 +703,23 @@ static void store(Lw* l, int addr, int32_t off, int v, int flags) {
     l->fn->ins[id].flags = (uint8_t)flags;
 }
 
-// A debug null check on an address that came from a pointer value.
-static int null_checked(Lw* l) { return l->mode == EMIT_DEBUG ? IRF_CHECKED : 0; }
+// Before offsetting addr, a place's address checked by flags as a pointer
+// value: a null one is a null use (Safety & Debug Builds #8), checked as a
+// compare the optimizer can prove from an earlier one, reported at site when
+// given. The flags for the padd: debug also checks the offset (Pointers #9).
+static int null_start(Lw* l, int addr, int flags, Node* site) {
+    if (!(flags & IRF_CHECKED)) return 0;
+    int id = emit2(l, IR_CHECK, IT_VOID, emit2(l, IR_LT, IT_BOOL, konst(l, IT_PTR, 0), addr), -1);
+    l->fn->ins[id].name = "null use violation";
+    if (site) l->fn->ins[id].at = site;
+    return l->mode == EMIT_DEBUG ? IRF_CHECKED : 0;
+}
 
 // The check for an access through address value addr: none for a slot or a
 // global, which is never null.
 static int access_check(Lw* l, int addr) {
     IrOp op = (IrOp)l->fn->ins[addr].op;
-    return op == IR_SLOT || op == IR_GLOBAL ? 0 : null_checked(l);
+    return op == IR_SLOT || op == IR_GLOBAL ? 0 : IRF_CHECKED;
 }
 
 static const char* arena_name(const char* s) {
@@ -887,10 +896,11 @@ static void place_put(Lw* l, Place p, const Agg* a, int flags) {
 static int place_address(Lw* l, Place p) {
     if (p.var >= 0) unsupported(l, "address of a register value"); // scan_storage missed it
     if (!p.off && !p.flags) return p.addr;
+    int flags = null_start(l, p.addr, p.flags, NULL);
     int k = konst(l, IT_U64, (uint64_t)p.off);
     int id = emit2(l, IR_PADD, IT_PTR, p.addr, k);
     l->fn->ins[id].imm = 1;
-    l->fn->ins[id].flags = (uint8_t)p.flags;
+    l->fn->ins[id].flags = (uint8_t)flags;
     return id;
 }
 
@@ -958,6 +968,7 @@ static int arith(Lw* l, int op, IrType t, int a, int b) {
         unsupported(l, "float operator");
     int id = emit2(l, (IrOp)op, t, a, b);
     if (checked_op(l, op, t)) l->fn->ins[id].flags |= IRF_CHECKED;
+    else if ((op == IR_DIV || op == IR_REM) && !ir_type_float(t)) l->fn->ins[id].flags |= IRF_NONZERO;
     return id;
 }
 
@@ -1814,7 +1825,7 @@ static int atomic_call(Lw* l, Node* x, int bi, Agg* res) {
     for (int i = 0; i < x->nkids - 1; i++) ir_arg_add(l->fn, id, ops[i]);
     l->fn->ins[id].aux = kind;
     l->fn->ins[id].imm = (uint64_t)order;
-    l->fn->ins[id].flags = (uint8_t)null_checked(l);
+    l->fn->ins[id].flags = IRF_CHECKED;
     if (kind != AK_CAS) return id;
     int wrote = cmp(l, IR_EQ, id, ops[0]);
     if (!res) return id;
@@ -2291,7 +2302,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
                 call_arg(l, &g, x->kids[i], node_ty(x->kids[i]), 0, 0);
             SType* rt = node_ty(x);
             int id = emit(l, IR_CALLI, result_type(l, rt));
-            l->fn->ins[id].flags = (uint8_t)null_checked(l); // fn itself, at the call
+            l->fn->ins[id].flags = IRF_CHECKED; // fn itself, at the call
             ir_arg_add(l->fn, id, fn);
             return call_finish(l, id, &g, rt, res, dst);
         }
@@ -2303,7 +2314,7 @@ static int call_to(Lw* l, Node* x, int want, Agg* res, int dst) {
         for (int i = 0; i < x->nkids; i++)
             call_arg(l, &g, x->kids[i], ft->params[i], 0, 0);
         int id = emit(l, IR_CALLI, result_type(l, ft->ret));
-        l->fn->ins[id].flags = (uint8_t)null_checked(l);
+        l->fn->ins[id].flags = IRF_CHECKED;
         ir_arg_add(l->fn, id, f); // the target, then the arguments
         return call_finish(l, id, &g, ft->ret, res, dst);
     }
@@ -2345,7 +2356,7 @@ static int pointer_offset(Lw* l, IrOp op, SType* pt, int pv, int n) {
     pt = unwrap(pt);
     int id = emit2(l, op, IT_PTR, pv, n);
     l->fn->ins[id].imm = sema_size(pt->base);
-    l->fn->ins[id].flags = (uint8_t)null_checked(l);
+    l->fn->ins[id].flags = l->mode == EMIT_DEBUG ? IRF_CHECKED : 0; // Pointers #9
     return id;
 }
 
@@ -3025,7 +3036,7 @@ static void view_parts(Lw* l, Node* x, int* ptr, int* len) {
     if (len) *len = v.v[1];
 }
 
-// Debug: trap through the bounds failure at site unless c holds.
+// Trap through the bounds failure at site unless c holds.
 static void bounds_check(Lw* l, int c, Node* site) {
     int id = emit2(l, IR_CHECK, IT_VOID, c, -1);
     l->fn->ins[id].name = "bounds violation";
@@ -3161,12 +3172,12 @@ static Place staticmap_place(Lw* l, Node* x, SType* map) {
     return p;
 }
 
-// Element x = s[i] of a string or slice: its descriptor, then i, then (debug)
+// Element x = s[i] of a string or slice: its descriptor, then i, then
 // 0 <= i < s.len unless sema proved it.
 static Place element(Lw* l, Node* x) {
     static SType byte = { .kind = SK_PRIM, .prim = P_U8, .size = 1, .align = 1 };
     SType* st = unwrap(node_ty(x->a));
-    int chk = l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+    int chk = !(x->flags & F_BOUNDS_PROVEN);
     if (st && st->kind == SK_ARRAY) { // at a fixed offset from the array's place
         Place p = array_place(l, x->a);
         uint32_t es = sema_size(st->base);
@@ -3177,9 +3188,10 @@ static Place element(Lw* l, Node* x) {
         }
         int i = bound(l, x->b, x, chk);
         if (chk) bounds_check(l, emit2(l, IR_LT, IT_BOOL, i, konst(l, IT_U64, st->count)), x);
+        int flags = null_start(l, p.addr, p.flags, x);
         int id = emit2(l, IR_PADD, IT_PTR, p.addr, i); // the place's offset stays on the access
         l->fn->ins[id].imm = es;
-        l->fn->ins[id].flags = (uint8_t)p.flags; // a null base traps here
+        l->fn->ins[id].flags = (uint8_t)flags;
         Place e = { -1, id, p.off, 0, st->base };
         return e;
     }
@@ -3197,13 +3209,13 @@ static Place element(Lw* l, Node* x) {
 }
 
 // The leaves of x = s[lo..hi] (Sequences #1-2): s's descriptor, then lo,
-// then hi; debug checks each signed bound nonnegative as it is evaluated,
+// then hi; checks each signed bound nonnegative as it is evaluated,
 // then lo <= hi, then hi <= s.len, skipping what sema proved (and an
 // omitted hi's, which is s.len).
 static void slice_leaves(Lw* l, Node* x, Agg* out) {
     SType* st = unwrap(node_ty(x->a));
     uint8_t proof = x->aux ? *(uint8_t*)x->aux : 0;
-    int chk = l->mode == EMIT_DEBUG && !(x->flags & F_BOUNDS_PROVEN);
+    int chk = !(x->flags & F_BOUNDS_PROVEN);
     int ptr, len = -1;
     if (st && st->kind == SK_ARRAY) { // its place's address and its fixed length
         ptr = place_address(l, array_place(l, x->a));

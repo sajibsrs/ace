@@ -266,3 +266,8 @@
   be new in its own scope, as a single declaration, so it may shadow a
   top-level function or an outer local; the check looked through every
   enclosing scope. Fixed in the C compiler and selfhost.
+
+- Release removes a check that a dominating branch or check implies, or whose
+  condition folded to true, and a null check an earlier access proves: a
+  dominator-tree walk keeps known comparisons and derives value ranges through
+  casts, constant offsets, and `+1` counters (`checks`). 1.217x to 1.057x (#177).

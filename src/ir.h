@@ -87,9 +87,9 @@ typedef enum {
        cast (v4i32 to v4f32), load, store, and phi also take vectors,        \
        lane-wise and never checked */                                        \
     X(SPLAT, "splat") X(SELECT, "select") X(LANES, "lanes")                    \
-    X(CHECK, "check")   /* debug: bool args[0] false traps, writing "path:    \
-                           line:col: name" for site at (Safety & Debug #2),   \
-                           or the call contract failure when name is NULL */  \
+    X(CHECK, "check")   /* bool args[0] false traps, writing "path:line:col: \
+                           name" for site at (Safety & Debug #2), or the call \
+                           contract failure when name is NULL */              \
     /* terminators */                                                          \
     X(JMP, "jmp")       /* succ[0] */                                          \
     X(BR, "br")         /* args[0] ? succ[0] : succ[1] */                      \
@@ -107,16 +107,21 @@ enum {
     // (add, sub, mul, signed neg; div and rem by MIN / -1), its divisor is
     // zero, or its shift count is negative or at least the operand width
     IRF_CHECKED = 1,
-    // also IRF_CHECKED, on load, store, and calli: a null address or function
-    // value traps through the null failure routine (Safety & Debug Builds
-    // #8); on padd and psub: a null start, an overflowing scaled offset, or an
-    // address past either end of the address space (Pointers #9)
+    // also IRF_CHECKED, in every build, on load, store, and calli: a null
+    // address or function value traps through the null failure routine
+    // (Safety & Debug Builds #8); in a debug build on padd and psub: a null
+    // start, an overflowing scaled offset, or an address past either end of
+    // the address space (Pointers #9)
     IRF_VOLATILE = 2, // load, store: an access-site volatile access
     IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
     // call, calli: the result, of over IR_MAX_LEAVES leaves, goes to the
     // memory whose address is the last argument (AAPCS64 passes it in x8)
     IRF_SRET = 8,
     IRF_COLD = 16, // call: the callee is @cold, so its block is laid out last
+    // div and rem in a release build (Safety & Debug Builds #3): a zero
+    // divisor traps through the arithmetic failure routine, as IRF_CHECKED's
+    // MIN / -1 does not
+    IRF_NONZERO = 32,
 };
 
 // Aggregates are never IR values: lowering splits every struct, tuple, and

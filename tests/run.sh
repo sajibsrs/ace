@@ -1325,33 +1325,38 @@ if ! "$ACE" --debug -o /tmp/ace_checked_bounds/proven_iteration \
     echo "FAIL: proven/iteration checked fixture failed"
     fail=1
 fi
-for f in array_negative array_equal aggregate_array_equal array_slice_upper array_slice_order \
-         aggregate_slice_greater slice_greater string_equal \
-         string_write_greater slice_lower slice_upper slice_order \
-         slice_source_length; do
-    if ! "$ACE" --debug -o "/tmp/ace_checked_bounds/$f" \
-         "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>$T/errs; then
-        echo "FAIL: checked bounds fixture did not compile: $f"
-        cat $T/errs
-        fail=1
-    elif "/tmp/ace_checked_bounds/$f" >/dev/null 2>$T/errs; then
-        echo "FAIL: checked bounds fixture did not abort: $f"
-        fail=1
-    elif ! grep -qxF "/tmp/ace_checked_bounds/$f.ace:$(sed -n 's|^// expect-bounds: *||p' "tests/checked_bounds/$f.ace"): bounds violation" \
-         $T/errs; then # dash also writes its "Aborted" job line here
-        echo "FAIL: checked bounds fixture lacked its located diagnostic: $f"
-        cat $T/errs
-        fail=1
-    fi
+# bounds trap in every build (Safety #3), with the same located diagnostic
+for mode in debug release; do
+    for f in array_negative array_equal aggregate_array_equal array_slice_upper array_slice_order \
+             aggregate_slice_greater slice_greater string_equal \
+             string_write_greater slice_lower slice_upper slice_order \
+             slice_source_length; do
+        if ! "$ACE" --$mode -o "/tmp/ace_checked_bounds/${f}_$mode" \
+             "/tmp/ace_checked_bounds/$f.ace" >/dev/null 2>$T/errs; then
+            echo "FAIL: checked bounds fixture did not compile in $mode: $f"
+            cat $T/errs
+            fail=1
+        elif "/tmp/ace_checked_bounds/${f}_$mode" >/dev/null 2>$T/errs; then
+            echo "FAIL: checked bounds fixture did not abort in $mode: $f"
+            fail=1
+        elif ! grep -qxF "/tmp/ace_checked_bounds/$f.ace:$(sed -n 's|^// expect-bounds: *||p' "tests/checked_bounds/$f.ace"): bounds violation" \
+             $T/errs; then # dash also writes its "Aborted" job line here
+            echo "FAIL: checked bounds fixture lacked its located diagnostic in $mode: $f"
+            cat $T/errs
+            fail=1
+        fi
+    done
 done
+# release removes the checks that dominating comparisons imply
+if ! "$ACE" --release -o /tmp/ace_checked_bounds/eliminated \
+     /tmp/ace_checked_bounds/eliminated.ace ||
+   ! /tmp/ace_checked_bounds/eliminated; then
+    echo "FAIL: eliminated-check fixture failed"
+    fail=1
+fi
 if command -v nm >/dev/null 2>&1; then
-    if nm /tmp/ace_checked_bounds/default.o 2>/dev/null | grep -qF '_ace$bounds_fail'; then
-        echo "FAIL: default emission retains debug bounds machinery"
-        fail=1
-    fi
-    if nm /tmp/ace_checked_bounds/release.o 2>/dev/null |
-         grep -Eq '_ace\$bounds|[[:space:]]U _?(abort|write)$'; then
-        echo "FAIL: release object retains debug failure machinery"
+    if nm /tmp/ace_checked_bounds/eliminated.o 2>/dev/null | grep -qF '_ace$bounds_fail'; then
+        echo "FAIL: release retained a bounds check a dominating comparison implies"
         fail=1
     fi
     if nm /tmp/ace_checked_bounds/proven_iteration.o 2>/dev/null |
@@ -1359,11 +1364,6 @@ if command -v nm >/dev/null 2>&1; then
         echo "FAIL: proven access or direct iteration retained a bounds guard"
         fail=1
     fi
-fi
-if command -v strings >/dev/null 2>&1 &&
-   strings /tmp/ace_checked_bounds/release.o | grep -qF 'bounds violation'; then
-    echo "FAIL: release object retains bounds diagnostic metadata"
-    fail=1
 fi
 
 # Remaining debug-build contracts: arithmetic, call ranges, null use,
@@ -1392,6 +1392,14 @@ for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compoun
         fail=1
     fi
 done
+# a zero divisor traps in every build (Safety #3, #6)
+if ! "$ACE" --release -o /tmp/ace_checked_features/arithmetic_div_zero_release \
+     tests/checked_arithmetic/div_zero.ace >/dev/null 2>$T/errs ||
+   /tmp/ace_checked_features/arithmetic_div_zero_release >/dev/null 2>$T/errs ||
+   ! grep -qF "ace: arithmetic violation" $T/errs; then
+    echo "FAIL: release division by zero must trap"
+    fail=1
+fi
 # release arithmetic wraps: the same immediate-operand overflows produce the
 # fixed-width result, including narrow values computed in registers
 for f in imm_signed_add imm_unsigned_sub imm_narrow_add narrow_release; do
@@ -1462,14 +1470,18 @@ for mode in --debug --release; do
         fi
     fi
 done
-for f in pointer function c_function; do
-    if ! "$ACE" --debug -o "/tmp/ace_checked_features/null_$f" \
-         "tests/checked_null/$f.ace" >/dev/null 2>$T/errs ||
-       "/tmp/ace_checked_features/null_$f" >/dev/null 2>$T/errs ||
-       ! grep -qF "ace: null use violation" $T/errs; then
-        echo "FAIL: checked null-use fixture $f"
-        fail=1
-    fi
+for mode in debug release; do # null use traps in every build (Safety #3, #8)
+    for f in pointer function c_function place; do
+        want="ace: null use violation"
+        [ "$f" = place ] && want="tests/checked_null/place.ace:5:20: null use violation"
+        if ! "$ACE" --$mode -o "/tmp/ace_checked_features/null_${f}_$mode" \
+             "tests/checked_null/$f.ace" >/dev/null 2>$T/errs ||
+           "/tmp/ace_checked_features/null_${f}_$mode" >/dev/null 2>$T/errs ||
+           ! grep -qF "$want" $T/errs; then
+            echo "FAIL: checked null-use fixture $f in $mode"
+            fail=1
+        fi
+    done
 done
 for f in null misaligned; do
     want="ace: null use violation"
@@ -1534,8 +1546,8 @@ if ! "$ACE" --release -c -o /tmp/ace_checked_features/pointer_release \
     fail=1
 elif command -v nm >/dev/null 2>&1 &&
      nm /tmp/ace_checked_features/pointer_release.o 2>/dev/null |
-       grep -Eq '_ace\$(arithmetic|null)|[[:space:]]U _?(abort|write)$'; then
-    echo "FAIL: release pointer arithmetic retains debug machinery"
+       grep -q '_ace\$arithmetic'; then # its loads and stores keep their null checks
+    echo "FAIL: release pointer arithmetic retains its debug checks"
     fail=1
 fi
 if command -v strings >/dev/null 2>&1 &&
@@ -2549,7 +2561,7 @@ if [ -d tests/driver ]; then
     trimmed_rc=$?
     if [ "$trimmed_rc" -ne 0 ] || nm /tmp/ace_driver/libtrimmed.a | grep -qE 'unreached|never_called|println' ||
        ! nm /tmp/ace_driver/libtrimmed.a | grep -q 'trimmed_reached' ||
-       nm -u /tmp/ace_driver/libtrimmed.dylib | grep -q '_write'; then
+       nm /tmp/ace_driver/libtrimmed.dylib | grep -qE 'unreached|never_called|println'; then
         echo "FAIL: --archive and --shared should trim to what the C exports reach"
         nm /tmp/ace_driver/libtrimmed.a
         fail=1

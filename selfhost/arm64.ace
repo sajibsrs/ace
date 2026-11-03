@@ -1507,13 +1507,11 @@ A64.div_rem(self, v: int) {
     }
     rn: int = self.opnd(self.arg(v, 0), S0)
     rm: int = self.opnd(self.arg(v, 1), S1)
-    if chk {
-        self.fail_if_zero(rm, is64(t), false)
-        if sg && !narrow(t) { // MIN / -1: a - 1 overflows exactly when a is MIN
-            self.put(sf | 0x3100001F | (1 << 10) | (u32(rm) << 5)) // cmn rm, #1
-            self.put(sf | 0x7A400800 | (1 << 16) | (C_EQ << 12) | (u32(rn) << 5)) // ccmp rn, #1, #0, eq
-            self.fail_if(C_VS)
-        }
+    if chk || (x.flags & ir.IRF_NONZERO) != 0 { self.fail_if_zero(rm, is64(t), false) }
+    if chk && sg && !narrow(t) { // MIN / -1: a - 1 overflows exactly when a is MIN
+        self.put(sf | 0x3100001F | (1 << 10) | (u32(rm) << 5)) // cmn rm, #1
+        self.put(sf | 0x7A400800 | (1 << 16) | (C_EQ << 12) | (u32(rn) << 5)) // ccmp rn, #1, #0, eq
+        self.fail_if(C_VS)
     }
     div: u32 = sf | sel(sg, 0x1AC00C00, 0x1AC00800) | (u32(rm) << 16) | (u32(rn) << 5)
     rd: int = self.dst(v)

@@ -191,6 +191,15 @@ Why the rules in `spec/safety-errors.md` are shaped as they are.
   primitive and reuse abort semantics without weakening the visible distinction
   among recoverable `Error` values, broken-invariant `panic`, and caller-chosen
   `sys.exit` status.
+- Safety & Debug Builds #3: a bounds, null, or divide failure in release is
+  defined, not silent: an out-of-range read returned stale memory, `x / 0`
+  returned 0 (arm64 `sdiv`), and a null read faulted without a diagnostic. Go
+  keeps all three in every build. Measured on `bench/` (darwin-arm64), the
+  zero-divisor check costs 1.001x geomean and the null check 0.993x, both
+  noise; the three together cost 1.057x with the optimizer's check removal,
+  nearly all of it bounds checks on indices no local fact bounds. Pointer
+  arithmetic (Memory #9) and the other contracts stay debug-only: checking
+  `padd` overflow alone cost `binbox` 1.5x.
 - Errors #14: static descriptions improve diagnostics at no per-value or
   unused-program cost while preserving the packed ABI, explicit errors, and
   machine-visible allocation model.

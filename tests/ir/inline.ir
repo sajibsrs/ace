@@ -117,45 +117,48 @@ b0:
     store [%0 + 8], %6
     %8 = const i64 6
     store [%0 + 16], %8
-    %10 = const u64 0
-    %11 = padd.chk ptr %1, %10 * 1
-    %12 = load i64 [%11]
-    %13 = add.chk i64 %12, %2
-    store [%11], %13
+    %10 = const ptr 0
+    %11 = lt bool %10, %1
+    check %11, 52:5 null use violation
+    %13 = const u64 0
+    %14 = padd.chk ptr %1, %13 * 1
+    %15 = load i64 [%14]
+    %16 = add.chk i64 %15, %2
+    store [%14], %16
     jmp b1
 b1: ; preds b0
-    %16 = add.chk i64 %3, %2
+    %19 = add.chk i64 %3, %2
     jmp b2
 b2: ; preds b1
-    %18 = const i64 100
-    %19 = gt bool %2, %18
-    br %19, b5, b6
+    %21 = const i64 100
+    %22 = gt bool %2, %21
+    br %22, b5, b6
 b3: ; preds b4
-    %21 = add.chk i64 %28, %16
-    %22 = const u64 3
-    %23 = const i64 3
-    %24 = gt bool %2, %23
-    br %24, b8, b9
+    %24 = add.chk i64 %31, %19
+    %25 = const u64 3
+    %26 = const i64 3
+    %27 = gt bool %2, %26
+    br %27, b8, b9
 b4: ; preds b5, b6
-    %26 = phi i64 [%18, b5], [%2, b6]
-    %27 = const i64 2
-    %28 = mul.chk i64 %26, %27
+    %29 = phi i64 [%21, b5], [%2, b6]
+    %30 = const i64 2
+    %31 = mul.chk i64 %29, %30
     jmp b3
 b5: ; preds b2
     jmp b4
 b6: ; preds b2
     jmp b4
 b7: ; preds b8, b9
-    %32 = phi u64 [%36, b8], [%39, b9]
-    %33 = cast i64 %32
-    %34 = add.chk i64 %21, %33
-    ret %34
+    %35 = phi u64 [%39, b8], [%42, b9]
+    %36 = cast i64 %35
+    %37 = add.chk i64 %24, %36
+    ret %37
 b8: ; preds b3
-    %36 = const u64 0
+    %39 = const u64 0
     jmp b7
 b9: ; preds b3
-    %38 = const u64 1
-    %39 = sub.chk u64 %22, %38
+    %41 = const u64 1
+    %42 = sub.chk u64 %25, %41
     jmp b7
 }
 

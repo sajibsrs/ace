@@ -130,7 +130,7 @@ b3: ; preds b1
     %27 = add u64 %11, %26
     jmp b1
 b4: ; preds b2, b6
-    %29 = phi u64 [%20, b2], [%47, b6]
+    %29 = phi u64 [%20, b2], [%50, b6]
     %30 = const u64 40
     %31 = lt bool %29, %30
     br %31, b6, b5
@@ -139,81 +139,87 @@ b5: ; preds b4
     %34 = load i64 [%3 + 152]
     %35 = add i64 %33, %34
     %36 = add i64 %17, %35
-    %37 = padd ptr %6, %8 * 320
-    %38 = const u64 328
-    %39 = padd ptr %37, %38 * 1
-    %40 = const u64 0
+    %37 = const u64 2
+    %38 = lt bool %8, %37
+    check %38, 40:45 bounds violation
+    %40 = padd ptr %6, %8 * 320
+    %41 = const u64 328
+    %42 = padd ptr %40, %41 * 1
+    %43 = const u64 0
     jmp b7
 b6: ; preds b4
-    %42 = padd ptr %19, %29 * 8
-    %43 = padd ptr %3, %29 * 8
-    %44 = load u64 [%42]
-    store [%43], %44
-    %46 = const u64 1
-    %47 = add u64 %29, %46
+    %45 = padd ptr %19, %29 * 8
+    %46 = padd ptr %3, %29 * 8
+    %47 = load u64 [%45]
+    store [%46], %47
+    %49 = const u64 1
+    %50 = add u64 %29, %49
     jmp b4
 b7: ; preds b5, b9
-    %49 = phi u64 [%40, b5], [%66, b9]
-    %50 = const u64 40
-    %51 = lt bool %49, %50
-    br %51, b9, b8
+    %52 = phi u64 [%43, b5], [%69, b9]
+    %53 = const u64 40
+    %54 = lt bool %52, %53
+    br %54, b9, b8
 b8: ; preds b7
-    %53 = load i64 [%2]
-    %54 = load i64 [%2 + 152]
-    %55 = add i64 %53, %54
-    %56 = add i64 %36, %55
-    %57 = const u64 8
-    %58 = padd ptr %7, %57 * 1
-    %59 = const u64 0
+    %56 = load i64 [%2]
+    %57 = load i64 [%2 + 152]
+    %58 = add i64 %56, %57
+    %59 = add i64 %36, %58
+    %60 = const u64 8
+    %61 = padd ptr %7, %60 * 1
+    %62 = const u64 0
     jmp b10
 b9: ; preds b7
-    %61 = padd ptr %39, %49 * 8
-    %62 = padd ptr %2, %49 * 8
-    %63 = load u64 [%61]
-    store [%62], %63
-    %65 = const u64 1
-    %66 = add u64 %49, %65
+    %64 = padd ptr %42, %52 * 8
+    %65 = padd ptr %2, %52 * 8
+    %66 = load u64 [%64]
+    store [%65], %66
+    %68 = const u64 1
+    %69 = add u64 %52, %68
     jmp b7
 b10: ; preds b8, b12
-    %68 = phi u64 [%59, b8], [%85, b12]
-    %69 = const u64 40
-    %70 = lt bool %68, %69
-    br %70, b12, b11
+    %71 = phi u64 [%62, b8], [%91, b12]
+    %72 = const u64 40
+    %73 = lt bool %71, %72
+    br %73, b12, b11
 b11: ; preds b10
-    %72 = load i64 [%1]
-    %73 = load i64 [%1 + 152]
-    %74 = add i64 %72, %73
-    %75 = add i64 %56, %74
-    %76 = const u64 328
-    %77 = padd ptr %7, %76 * 1
-    %78 = const u64 0
+    %75 = load i64 [%1]
+    %76 = load i64 [%1 + 152]
+    %77 = add i64 %75, %76
+    %78 = add i64 %59, %77
+    %79 = const ptr 0
+    %80 = lt bool %79, %7
+    check %80, 40:5 null use violation
+    %82 = const u64 328
+    %83 = padd ptr %7, %82 * 1
+    %84 = const u64 0
     jmp b13
 b12: ; preds b10
-    %80 = padd ptr %58, %68 * 8
-    %81 = padd ptr %1, %68 * 8
-    %82 = load u64 [%80]
-    store [%81], %82
-    %84 = const u64 1
-    %85 = add u64 %68, %84
+    %86 = padd ptr %61, %71 * 8
+    %87 = padd ptr %1, %71 * 8
+    %88 = load.chk u64 [%86]
+    store [%87], %88
+    %90 = const u64 1
+    %91 = add u64 %71, %90
     jmp b10
 b13: ; preds b11, b15
-    %87 = phi u64 [%78, b11], [%101, b15]
-    %88 = const u64 40
-    %89 = lt bool %87, %88
-    br %89, b15, b14
+    %93 = phi u64 [%84, b11], [%107, b15]
+    %94 = const u64 40
+    %95 = lt bool %93, %94
+    br %95, b15, b14
 b14: ; preds b13
-    %91 = load i64 [%0]
-    %92 = load i64 [%0 + 152]
-    %93 = add i64 %91, %92
-    %94 = add i64 %75, %93
-    ret %94
+    %97 = load i64 [%0]
+    %98 = load i64 [%0 + 152]
+    %99 = add i64 %97, %98
+    %100 = add i64 %78, %99
+    ret %100
 b15: ; preds b13
-    %96 = padd ptr %77, %87 * 8
-    %97 = padd ptr %0, %87 * 8
-    %98 = load u64 [%96]
-    store [%97], %98
-    %100 = const u64 1
-    %101 = add u64 %87, %100
+    %102 = padd ptr %83, %93 * 8
+    %103 = padd ptr %0, %93 * 8
+    %104 = load.chk u64 [%102]
+    store [%103], %104
+    %106 = const u64 1
+    %107 = add u64 %93, %106
     jmp b13
 }
 
@@ -289,7 +295,7 @@ b10: ; preds b8, b12
     %57 = lt bool %55, %56
     br %57, b12, b11
 b11: ; preds b10
-    %59 = calli i64 %7(%2)
+    %59 = calli.chk i64 %7(%2)
     %60 = add i64 %45, %59
     %61 = const i32 0
     store [%1], %61

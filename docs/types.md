@@ -561,8 +561,8 @@ Array assignment copies all elements. Slice assignment copies only its pointer
 and length, so both values view the same backing storage; it never copies the
 elements. Slicing does not allocate. See [Memory](memory.md) for allocation and
 lifetime rules. Every element read or write requires
-`0 <= index < sequence.len`: static violations are compilation errors, debug
-output validates dynamic indices, and release output emits no guard.
+`0 <= index < sequence.len`: static violations are compilation errors, and
+debug and release output both validate dynamic indices.
 
 These layout facts are normative — code may rely on them. A slice is exactly two
 words: the element pointer at offset 0 and the element count at offset 8, giving

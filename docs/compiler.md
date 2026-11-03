@@ -28,8 +28,10 @@ Emitted programs default to `--release`; `ace pkg build` and `ace pkg run`
 follow the same default. `--debug` output dynamically validates
 sequence bounds, integer arithmetic, conversions to enums, call-boundary slice
 contracts, null use, and allocator discipline; a violation writes a concise diagnostic to standard
-error and aborts. It also enables `assert`. `--release` removes those guards,
-failure paths, tracking, assertion evaluation, and diagnostic data. The flags are mutually
+error and aborts. It also enables `assert`. `--release` keeps the sequence
+bounds, null-use, and zero-divisor checks with the same diagnostics, and
+removes the other guards, their failure paths, tracking, and assertion
+evaluation. The flags are mutually
 exclusive. Check-only, `--tokens`, and `--ast` runs accept either flag, but the
 choice cannot change their result because they emit no program.
 
@@ -93,7 +95,13 @@ of the length's bound and of the end not wrapping), then per pair with a
 arguments; its call appears again before every `ret`, last defer first.
 In release, the IR is then optimized before it prints: a value that is constant
 on every path becomes a `const`, a pure operation equal to one that dominates it
-(or an identity such as `x + 0`) is replaced by that value, a loop's pure
+(or an identity such as `x + 0`) is replaced by that value, a bounds `check`
+disappears where a dominating branch or check implies it (`i < 64` under a
+loop's `i < 64`, `i + 1 < 64` under `i < 63`, the same index checked again)
+or its condition became constant, as does the null check of an access through
+a pointer an earlier check or access proved nonzero (an element reached
+through a pointer prints that check as `lt` of `0` and the pointer before its
+`padd`), a loop's pure
 operation over values from outside it (never a division, which may trap)
 moves to the block entering the loop, as does a load from a stack object when
 the loop neither stores, calls, nor is atomic or asm, an offset into an
@@ -216,6 +224,18 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   loops free of stores and calls keeps it correct with no alias analysis.
   `map-miss` went from 2.87x to 1.47x of C and `map-get` from 1.98x to
   1.42x; the C compiler compiles 1.3% slower.
+- Compiler #2, check removal (PHILOSOPHY.md: performance first): release
+  keeps bounds checks (Safety #3), and the vectorizer refuses a loop that
+  holds one, so `for i in 0 .. N { a[i] }` over a `[N]` array lost its vector
+  loop: `saxpy-f32` ran 7.1x slower. Go's prove pass removes the same checks
+  from facts the dominating branches establish. With it, the release bounds,
+  null, and divide checks together cost 1.057x geomean over `bench/` instead
+  of 1.217x, the vectorized loops are back to 1.00x, and the rest is indices
+  no local fact bounds (map probes, regex, an index unrelated to the slice's
+  length). A null start is a `check` rather than a flag on the `padd`, so the
+  offset still takes part in value numbering, strength reduction, and address
+  folding (`binbox` 1.45x to 1.25x). It needs no alias analysis; the pass adds
+  about 1% to compiling selfhost, and the checks it keeps 6.5%.
 - Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
   every optimization written once per source shape and repeats each in a second
   backend; the compile-time cost ranks below performance, simplicity, and
