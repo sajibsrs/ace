@@ -1,0 +1,83 @@
+/* Members: a type's fields, variants or enum members, then its methods and
+ * associated functions, found from the type named at a position. Methods
+ * are declared beside the type, so they are searched in its module's files.
+ */
+
+import array
+import file
+import mem
+import str
+
+import definition: "../lsp/definition.ace"
+import lookup: "./lookup.ace"
+import module: "../selfhost/module.ace"
+import parser: "../selfhost/parser.ace"
+import path: "../selfhost/path.ace"
+
+Node: type = parser.Node
+
+/* For the type named at 1-based `line` and byte `column` of `file_path`,
+ * its declaration, each member, then each method and associated function,
+ * one `path:line: source line` per line. Without a type there, why and
+ * false. Lives in `pool`.
+ */
+pub text(pool: *path.Pool, file_path: string, line: u32, column: u32): (string, bool) {
+    canon: string, found: bool = path.canonical(pool, file_path)
+    if !found { return pool.join(["cannot open '", file_path, "'"]), false }
+    src: []u8, err: Error = file.read(canon)
+    defer mem.release[u8](&src)
+    if err != null { return pool.join(["cannot open '", file_path, "'"]), false }
+    prog: definition.Program, loaded: bool = definition.Program.new(pool, canon)
+    defer prog.wipe()
+    if !loaded || !prog.checked { return "the program does not load", false }
+    _, decl: u32, hit: bool = prog.at(pool, canon, src, line, column)
+    if !hit || decl == 0 { return "no declaration there", false }
+
+    mods: []module.Module = prog.l.mods.view()
+    p: parser.Parser = mods[0].parser // the merged tree
+    t: *Node = p.node(decl)
+    if t.kind != parser.Kind.struct && t.kind != parser.Kind.union && t.kind != parser.Kind.enum && t.kind != parser.Kind.bits && t.kind != parser.Kind.error {
+        return "not a struct, union, enum, bits or error type", false
+    }
+    home: module.Module = mods[prog.l.module_of(decl)]
+    owner: string = definition.source_name(t.text)
+
+    parts: array.Array[string] = array.Array[string] {}
+    defer parts.wipe()
+    tsrc: []u8, terr: Error = file.read(home.canon)
+    defer mem.release[u8](&tsrc)
+    if terr != null { return pool.join(["cannot open '", home.canon, "'"]), false }
+    row(pool, &parts, home.canon, tsrc, t.line)
+    last: u32 = t.line
+    for k: u32 in 0..t.nkids {
+        m: *Node = p.node(p.kid(decl, k))
+        if m.line == last { continue } // members sharing the declaration's line
+        row(pool, &parts, home.canon, tsrc, m.line)
+        last = m.line
+    }
+
+    // A directory module's files all declare into it, so search them all.
+    dir: string = path.dir(home.canon)
+    for mi: usize in 0..mods.len {
+        if !mem.equal(path.dir(mods[mi].canon), dir) { continue }
+        msrc: []u8, merr: Error = file.read(mods[mi].canon)
+        defer mem.release[u8](&msrc)
+        if merr != null { continue }
+        for k: u32 in 0..p.node(mods[mi].file).nkids {
+            id: u32 = p.kid(mods[mi].file, k)
+            if prog.l.module_of(id) != mi { continue }
+            d: *Node = p.node(id)
+            if d.kind != parser.Kind.func || (d.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 || d.d == 0 { continue }
+            if !mem.equal(definition.source_name(p.node(d.d).text), owner) { continue }
+            row(pool, &parts, mods[mi].canon, msrc, d.line)
+        }
+    }
+    return pool.join(parts.view()), true
+}
+
+/* Appends source line `line` of `src` in `file_path` as a `path:line: ` line. */
+row(pool: *path.Pool, parts: *array.Array[string], file_path: string, src: string, line: u32) {
+    num: [16]char
+    w: usize, _ = str.format(num[..], usize(line))
+    parts.push(pool.join([file_path, ":", num[..w], ": ", lookup.signature(src, line), "\n"]))
+}

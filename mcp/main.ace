@@ -17,6 +17,7 @@ import definition: "../lsp/definition.ace"
 import examples: "./examples.ace"
 import hover: "../lsp/hover.ace"
 import lookup: "./lookup.ace"
+import members: "./members.ace"
 import references: "../lsp/references.ace"
 import module: "../selfhost/module.ace"
 import spec: "./spec.ace"
@@ -181,9 +182,13 @@ call(pool: *path.Pool, req: *json.Json, name: string): (string, bool) {
     }
     line: f64 = req.number("/params/arguments/line")
     column: f64 = req.number("/params/arguments/column")
-    if !mem.equal(name, "definition") && !mem.equal(name, "hover") && !mem.equal(name, "references") && !mem.equal(name, "examples") { return "unknown tool", true }
+    if !mem.equal(name, "definition") && !mem.equal(name, "hover") && !mem.equal(name, "references") && !mem.equal(name, "examples") && !mem.equal(name, "members") { return "unknown tool", true }
     if file_path == null || line < 1.0 || column < 1.0 { return "needs file, and line and column from 1", true }
     if mem.equal(name, "references") { return uses(pool, file_path, u32(line), u32(column)) }
+    if mem.equal(name, "members") {
+        text: string, ok: bool = members.text(pool, file_path, u32(line), u32(column))
+        return text, !ok
+    }
     if mem.equal(name, "examples") {
         text: string, ok: bool = examples.text(pool, file_path, u32(line), u32(column))
         return text, !ok
@@ -292,6 +297,7 @@ main(): int {
             tool(&out, "std_lookup", "Every public std declaration a qualified name names (str.format, mem.copy, fmt.Buffer.printf), all overloads, each as file:line then its signature and doc comment in Markdown; a bare module (str) lists each public declaration as file:line and its signature line.", ["name"])
             tool(&out, "spec_section", "The spec item a reference such as 'Memory #15' names: its spec/ file:line, any [open] or [controversial] marker, its text, then each spec/queue.md and changelog/ line citing it; a bare section ('Naming') gives the whole section.", ["ref"])
             tool(&out, "references", "Every use of the declaration named at a position (or of the declaration itself, with the cursor on it) within the program rooted at that file, resolved through sema, as path:line:column lines.", ["file", "line", "column"])
+            tool(&out, "members", "The fields, variants or enum members of the type named at a position, then its methods and associated functions, each as path:line: source line.", ["file", "line", "column"])
             tool(&out, "examples", "Up to 10 real uses of the declaration named at a position, from tests/, demo/, std/, and selfhost/ in that order, each file checked as its own program so only uses sema resolves to that declaration count; each as path:line:column: source line.", ["file", "line", "column"])
             out.end()
             out.end()

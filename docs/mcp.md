@@ -55,6 +55,10 @@ tools. The first two take `file`, a 1-based `line`, and a 1-based byte
   within each, as `path:line:column: source line`. Each file holding the
   name's text is checked as the root of its own program and contributes the
   uses in that file that resolve to the declaration.
+- `members` (`file`, `line`, `column`): for the struct, union, enum, bits,
+  or error type named there, its declaration line, each member's line, then
+  each method and associated function found in the files of the type's
+  module, as `path:line: source line`. Private members are listed too.
 
 A position with no declaration, or a program that does not load, gives a
 result with `isError` set rather than a protocol error.

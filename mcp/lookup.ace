@@ -93,7 +93,7 @@ relative(canon: string, base: string): string {
 
 /* Source line `line` of `src`, trimmed and cut before the ` {` that opens
  * a body when the line ends in one. */
-signature(src: string, line: u32): string {
+pub signature(src: string, line: u32): string {
     rest: string = src
     for k: u32 in 1..line {
         nl: usize, found: bool = str.find(rest, '\n')

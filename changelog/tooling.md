@@ -271,3 +271,6 @@
 - `ace-mcp`'s `spec_section` takes a bare section (`Naming`) for the whole
   section, and `std_lookup` a bare module (`str`) for one signature line per
   public declaration; `std_lookup` paths are repository-relative.
+- `ace-mcp` adds `members`: the type named at a position (through sema, as
+  `definition` resolves it) lists its member lines from the AST, then every
+  method and associated function whose owner names it in its module's files.
