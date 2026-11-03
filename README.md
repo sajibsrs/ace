@@ -7,11 +7,19 @@ collector and no hidden allocations. It keeps C's model: you manage memory,
 you see every cost. It drops what makes C painful: undefined behavior,
 headers, macros and silent conversions.
 
-> **Status:** Pre-alpha. Breaking changes are expected, and neither issues nor
-> pull requests are accepted before v1.
+<p>
+  <a href="docs/lsp.md"><img alt="LSP supported" src="https://img.shields.io/badge/LSP-supported-2ea44f"></a>
+  <a href="docs/mcp.md"><img alt="MCP supported" src="https://img.shields.io/badge/MCP-supported-2ea44f"></a>
+  <img alt="Platform: macOS arm64" src="https://img.shields.io/badge/platform-macOS%20arm64-555">
+</p>
 
-> **Platforms:** Ace currently supports only macOS on Apple Silicon (AArch64).
-> Linux and Windows will follow.
+> [!WARNING]
+> **Pre-alpha.** Breaking changes are expected, and neither issues nor pull
+> requests are accepted before v1.
+
+> [!NOTE]
+> Ace currently supports only macOS on Apple Silicon (AArch64). Linux and
+> Windows will follow.
 
 ```ace
 import fmt
