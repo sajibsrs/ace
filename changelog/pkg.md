@@ -106,3 +106,6 @@
   exit-code app cases to `std/test` files in each package's `test/`, run by
   `ace pkg test`, as is `make test-packages` (#149). sdl no longer skips itself
   without `libSDL3`; http's compile-only API case now also runs.
+- `pkg/json`'s `escape` tests the common case (a byte written as itself) first
+  rather than after seven compares: `bench/package/json` format 1.29x
+  (15.6 → 12.1 µs per document).
