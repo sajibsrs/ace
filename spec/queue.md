@@ -61,8 +61,8 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   Package System #3, #13, and #15; remote packages through a central registry
   or resolver remain open under #9. Resume only when package implementation is
   selected.
-- x64 (linux, windows) work waits until darwin is complete, then proceeds as
-  its own effort. Atomics there are lowered (`src/x64.c`, checked by
+- Linux support (linux-x64) is added on the `linux` branch; Windows x64 waits
+  until darwin is complete. x64 atomics are lowered (`src/x64.c`, checked by
   `tests/x64_atomic` disassembly) but have never run: they execute only on a
   linux-x64 host, as does the debug null trap. A fetch-and, -or, or -xor whose
   result is read loops on `cmpxchg`, and every read-modify-write is
