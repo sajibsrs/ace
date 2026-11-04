@@ -10,7 +10,7 @@ headers, macros and silent conversions.
 <p>
   <a href="docs/lsp.md"><img alt="LSP supported" src="https://img.shields.io/badge/LSP-supported-2ea44f"></a>
   <a href="docs/mcp.md"><img alt="MCP supported" src="https://img.shields.io/badge/MCP-supported-2ea44f"></a>
-  <img alt="Platform: macOS arm64" src="https://img.shields.io/badge/platform-macOS%20arm64-555">
+  <img alt="macOS arm64 supported" src="https://img.shields.io/badge/macOS%20arm64-supported-2ea44f">
 </p>
 
 > [!WARNING]
