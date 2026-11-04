@@ -18,7 +18,6 @@ pub ReuseportErr: type = os.ReuseportErr
 pub NonblockErr: type = os.NonblockErr
 pub BindErr: type = os.BindErr
 pub ListenErr: type = os.ListenErr
-@when(_PLATFORM_ == "darwin-arm64")
 pub CloseWriteErr: type = os.CloseWriteErr
 pub AcceptErr: type = os.AcceptErr
 pub ConnectErr: type = os.ConnectErr
@@ -72,8 +71,6 @@ pub socket(socket_type: SocketType): (Socket, Error) {
     return result, err
 }
 
-/* Ends this side's sending; receiving continues until the peer closes. */
-@when(_PLATFORM_ == "darwin-arm64")
 /* Shuts down the sending half of `sock`; the peer reads end of stream. */
 pub close_write(sock: Socket): Error {
     return os.close_write(sock)
