@@ -115,12 +115,17 @@ history.
 
 ## Scoped rules
 
-Path-specific guidance lives in `.claude/rules/`:
+Before editing these paths, read the matching file in `agents/`:
 
-- `language-boundaries.md`: fixed language and compiler design boundaries.
-- `documentation.md`: documentation and editor-support requirements.
-- `testing.md`: test selection, organization, and environment caveats.
-- `binbox.md`: building, icons, toolbar, and diagram checks for `demo/binbox`.
+- `agents/language-boundaries.md` (`spec/`, `GRAMMAR.md`, `PHILOSOPHY.md`,
+  `src/`, `std/`, `tests/`, `demo/`, `bench/`, any `.ace` file): fixed
+  language and compiler design boundaries.
+- `agents/documentation.md` (`docs/`, `editors/vscode/`, `spec/`,
+  `GRAMMAR.md`): documentation and editor-support requirements.
+- `agents/testing.md` (`Makefile`, `src/`, `std/`, `pkg/`, `tests/`): test
+  selection, organization, and environment caveats.
+- `agents/binbox.md` (`demo/binbox/`): building, icons, toolbar, and diagram
+  checks.
 
 ## Commands
 

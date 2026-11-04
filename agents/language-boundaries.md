@@ -1,16 +1,3 @@
----
-paths:
-  - "spec/**/*"
-  - "GRAMMAR.md"
-  - "PHILOSOPHY.md"
-  - "src/**/*"
-  - "std/**/*"
-  - "tests/**/*"
-  - "demo/**/*"
-  - "bench/**/*"
-  - "*.ace"
----
-
 # Fixed design boundaries
 
 Follow `spec/` for exact rules; do not propose or assume away these decisions:

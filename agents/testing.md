@@ -1,12 +1,3 @@
----
-paths:
-  - "Makefile"
-  - "src/**/*"
-  - "std/**/*"
-  - "pkg/**/*"
-  - "tests/**/*"
----
-
 # Testing
 
 - Run the smallest relevant checks first; run the full suites only after
