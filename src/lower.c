@@ -1467,6 +1467,15 @@ static int registry_find(Lw* l, int ptr, int size) { // the record of a live all
     return call_routine(l, "__ace$registry_find", 0, IT_PTR, a, 2);
 }
 
+// A reallocated block's record: the registry keys records by base, so the old
+// one goes and a new one takes the new base and size with the old alignment.
+static void registry_move(Lw* l, int rec, int old, int old_size, int ptr, int size) {
+    int align = load(l, IT_U64, rec, 16, 0);
+    int a[2] = { old, old_size };
+    call_routine(l, "__ace$registry_remove", 0, IT_VOID, a, 2);
+    registry_add(l, ptr, size, align);
+}
+
 // mem.alloc(size, align): the null slice unless size > 0 and align is a power
 // of two up to 16 and the allocator succeeds.
 static int mem_alloc(Lw* l, Node* x, Agg* res) {
@@ -1502,10 +1511,7 @@ static int mem_realloc(Lw* l, Node* x, Agg* res) {
     int p = call_routine(l, "_realloc", 1, IT_PTR, a, 2);
     int got = guard(l, cmp(l, IR_NE, p, konst(l, IT_PTR, 0)));
     int n = emit2(l, IR_CAST, IT_U64, size, -1);
-    if (rec >= 0) {
-        store(l, rec, 0, p, 0);
-        store(l, rec, 8, n, 0);
-    }
+    if (rec >= 0) registry_move(l, rec, old, oldn, p, n);
     write_var(l, pv, l->cur, p);
     write_var(l, nv, l->cur, n);
     guard_end(l, got);
@@ -1530,9 +1536,9 @@ static int mem_alloc_typed(Lw* l, Node* x, int bi, Agg* res) {
     int ok = emit2(l, IR_AND, IT_BOOL, some, cmp(l, IR_LE, count, konst(l, IT_U64, UINT64_MAX / esz)));
     int valid = guard(l, ok);
     int bytes = emit2(l, IR_MUL, IT_U64, count, konst(l, IT_U64, esz));
-    int p, rec = -1;
+    int p, rec = -1, old_bytes = -1;
     if (bi == BI_MEM_REALLOC_T) {
-        int old_bytes = emit2(l, IR_MUL, IT_U64, oldn, konst(l, IT_U64, esz));
+        old_bytes = emit2(l, IR_MUL, IT_U64, oldn, konst(l, IT_U64, esz));
         if (l->mode == EMIT_DEBUG) rec = registry_find(l, old, old_bytes);
         int a[2] = { old, bytes };
         p = call_routine(l, "_realloc", 1, IT_PTR, a, 2);
@@ -1544,8 +1550,7 @@ static int mem_alloc_typed(Lw* l, Node* x, int bi, Agg* res) {
     }
     int got = guard(l, cmp(l, IR_NE, p, konst(l, IT_PTR, 0)));
     if (rec >= 0) {
-        store(l, rec, 0, p, 0);
-        store(l, rec, 8, bytes, 0);
+        registry_move(l, rec, old, old_bytes, p, bytes);
     } else if (bi != BI_MEM_REALLOC_T) {
         registry_add(l, p, bytes, konst(l, IT_U64, eal));
     }

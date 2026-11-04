@@ -2913,24 +2913,6 @@ Rt.failure(self, routine: string, msg: string, message: string) {
     self.ins(0xD4200000) // brk #0 if abort unexpectedly returns
 }
 
-Rt.helper_prologue(self) {
-    self.ins(0xA9BF7BFD) // stp x29,x30,[sp,#-16]!
-    self.ins(0x910003FD) // mov x29,sp
-    self.ins(0xD10083FF) // sub sp,sp,#32
-    self.str(19, 31, 0)
-    self.str(20, 31, 8)
-    self.str(21, 31, 16)
-}
-
-Rt.helper_epilogue(self) {
-    self.ldr(19, 31, 0)
-    self.ldr(20, 31, 8)
-    self.ldr(21, 31, 16)
-    self.ins(0x910083FF) // add sp,sp,#32
-    self.ins(0xA8C17BFD)
-    self.ins(RET)
-}
-
 /* SIMD&FP single-register LDUR/STUR (op selects b/s/d/q and direction). */
 Rt.vmem(self, op: u32, rt: int, rn: int, off: i32) {
     self.ins(op | ((u32(off) & 0x1FF) << 12) | (u32(rn) << 5) | u32(rt))
@@ -3288,8 +3270,41 @@ Rt.mem_compare(self) {
     self.ins(RET)
 }
 
-/* The debug allocator registry: a list of (ptr, size, align, next) nodes
- * under __ace$registry_head, and its find, add, remove, and leak check.
+/* A registry probe from ptr's hash (in x0) to ptr's slot or the first empty
+ * one, or for open to the first empty or removed one (ptr is not live); the
+ * slot comes back in x0. Clobbers x1-x4, x16, and x17.
+ */
+Rt.registry_probe(self, reg: int, name: string, open: bool) {
+    self.text(name)
+    self.addr_of(16, reg)
+    self.ldr(1, 16, 0)
+    self.ldr(2, 16, 8)
+    self.load_imm(true, 3, 0x9E3779B97F4A7C15)
+    self.ins(0x9B037C03) // mul x3, x0, x3
+    self.ins(0xD360FC63) // lsr x3, x3, #32
+    loop: int = self.new_label()
+    done: int = self.new_label()
+    self.bind(loop)
+    self.ins(0x8A020063) // and x3, x3, x2
+    self.ins(0x8B031431) // add x17, x1, x3, lsl #5
+    self.ldr(4, 17, 0)
+    if open {
+        self.ins(0xF100089F) // cmp x4, #2
+        self.bcond(C_LO, done)
+    } else {
+        self.cmp(4, 0)
+        self.bcond(C_EQ, done)
+        self.cbz(4, false, done)
+    }
+    self.ins(0x91000463) // add x3, x3, #1
+    self.br(loop)
+    self.bind(done)
+    self.mov(0, 17)
+    self.ins(RET)
+}
+
+/* The debug allocator registry under __ace$registry, and its find, add,
+ * remove, and leak check.
  */
 Rt.allocator(self) {
     if !self.o.allocator_used {
@@ -3301,103 +3316,153 @@ Rt.allocator(self) {
     }
     b: *macho.Sec = self.o.sec(macho.SEC_BSS)
     b.size = (b.size + 7) & ~u64(7)
-    head: int = self.o.define("__ace$registry_head", false, macho.SEC_BSS)
+    reg: int = self.o.define("__ace$registry", false, macho.SEC_BSS)
     b = self.o.sec(macho.SEC_BSS)
-    b.size += 8
+    b.size += 32
     self.failure("__ace$allocator_fail", "__ace$allocator_message", "ace: allocator violation\n")
 
-    // find(ptr,size) -> node
-    self.text("__ace$registry_find")
-    self.mov(2, 0)
-    self.mov(3, 1)
-    self.addr_of(16, head)
-    self.ldr(0, 16, 0)
-    find_loop: int = self.new_label()
-    find_next: int = self.new_label()
-    find_ok: int = self.new_label()
-    self.bind(find_loop)
-    self.cbz(0, false, find_next)
-    self.ldr(16, 0, 0)
-    self.cmp(16, 2)
-    self.bcond(C_NE, find_next)
-    self.ldr(16, 0, 8)
-    self.cmp(16, 3)
-    self.bcond(C_EQ, find_ok)
-    self.bind(find_next)
-    self.cbz(0, false, find_ok) // null reaches failure below
-    self.ldr(0, 0, 24)
-    self.br(find_loop)
-    self.bind(find_ok)
-    find_ret: int = self.new_label()
-    self.cbz(0, true, find_ret)
-    self.bl_internal("__ace$allocator_fail")
-    self.bind(find_ret)
-    self.ins(RET)
+    /* The registry is a hash table of 32-byte slots (ptr, size, align,
+     * unused), probed linearly from a multiplicative hash of ptr. A slot's ptr
+     * is 0 when empty and 1 when removed, neither a live base. __ace$registry
+     * holds the table, its mask (slots - 1), the live count, and the used
+     * (live or removed) count, kept at most half the slots.
+     */
+    self.registry_probe(reg, "__ace$registry_slot", false)
+    self.registry_probe(reg, "__ace$registry_open", true)
 
+    // find(ptr, size) -> the live slot of exactly ptr and size, else failure.
+    self.text("__ace$registry_find")
+    find_fail: int = self.new_label()
+    self.ins(0xA9BF7BFD)
+    self.ins(0x910003FD)
+    self.ins(0xF100081F) // cmp x0, #2
+    self.bcond(C_LO, find_fail)
+    self.addr_of(16, reg)
+    self.ldr(16, 16, 0)
+    self.cbz(16, false, find_fail)
+    self.mov(5, 1)
+    self.bl_internal("__ace$registry_slot")
+    self.ldr(4, 0, 0)
+    self.cbz(4, false, find_fail)
+    self.ldr(4, 0, 8)
+    self.cmp(4, 5)
+    self.bcond(C_NE, find_fail)
+    self.ins(0xA8C17BFD)
+    self.ins(RET)
+    self.bind(find_fail)
+    self.bl_internal("__ace$allocator_fail")
+
+    // add(ptr, size, align). Before passing half the slots used, the table is
+    // rebuilt without removed slots: doubled if a quarter or more is live.
     self.text("__ace$registry_add")
-    self.helper_prologue()
+    self.ins(0xA9BF7BFD)
+    self.ins(0x910003FD)
+    self.ins(0xD100C3FF) // sub sp, sp, #48
+    for r: int in 0 .. 6 { self.str(19 + r, 31, u32(r) * 8) }
     self.mov(19, 0)
     self.mov(20, 1)
     self.mov(21, 2)
-    self.load_imm(true, 0, 32)
-    self.bl_extern("_malloc")
-    add_ok: int = self.new_label()
-    self.cbz(0, true, add_ok)
-    self.bl_internal("__ace$allocator_fail")
-    self.bind(add_ok)
+    add_grow: int = self.new_label()
+    add_insert: int = self.new_label()
+    self.addr_of(16, reg)
+    self.ldr(3, 16, 0)
+    self.cbz(3, false, add_grow)
+    self.ldr(3, 16, 24)
+    self.ins(0x91000463) // add x3, x3, #1
+    self.ins(0x8B030063) // add x3, x3, x3
+    self.ldr(4, 16, 8)
+    self.ins(0x91000484) // add x4, x4, #1
+    self.cmp(3, 4)
+    self.bcond(C_HI, add_grow)
+    self.bind(add_insert)
+    self.mov(0, 19)
+    self.bl_internal("__ace$registry_open")
+    self.ldr(4, 0, 0)
     self.str(19, 0, 0)
     self.str(20, 0, 8)
     self.str(21, 0, 16)
-    self.addr_of(16, head)
-    self.ldr(17, 16, 0)
-    self.str(17, 0, 24)
-    self.str(0, 16, 0)
-    self.helper_epilogue()
-
-    self.text("__ace$registry_remove")
-    self.helper_prologue()
-    self.mov(19, 0)
-    self.mov(20, 1)
-    self.load_imm(true, 21, 0)
-    self.addr_of(16, head)
-    self.ldr(0, 16, 0)
-    rem_loop: int = self.new_label()
-    rem_next: int = self.new_label()
-    rem_found: int = self.new_label()
-    self.bind(rem_loop)
-    self.cbz(0, false, rem_next)
-    self.ldr(16, 0, 0)
-    self.cmp(16, 19)
-    self.bcond(C_NE, rem_next)
-    self.ldr(16, 0, 8)
-    self.cmp(16, 20)
-    self.bcond(C_EQ, rem_found)
-    self.bind(rem_next)
-    self.cbz(0, false, rem_found)
-    self.mov(21, 0)
-    self.ldr(0, 0, 24)
-    self.br(rem_loop)
-    self.bind(rem_found)
-    rem_present: int = self.new_label()
-    self.cbz(0, true, rem_present)
+    self.addr_of(16, reg)
+    self.ldr(3, 16, 16)
+    self.ins(0x91000463)
+    self.str(3, 16, 16)
+    add_reused: int = self.new_label()
+    self.cbz(4, true, add_reused) // a removed slot is already counted used
+    self.ldr(3, 16, 24)
+    self.ins(0x91000463)
+    self.str(3, 16, 24)
+    self.bind(add_reused)
+    for r: int in 0 .. 6 { self.ldr(19 + r, 31, u32(r) * 8) }
+    self.ins(0x9100C3FF) // add sp, sp, #48
+    self.ins(0xA8C17BFD)
+    self.ins(RET)
+    self.bind(add_grow) // x22 old table, x23 old mask, x24 new slots
+    grow_alloc: int = self.new_label()
+    grow_ok: int = self.new_label()
+    grow_loop: int = self.new_label()
+    grow_next: int = self.new_label()
+    self.addr_of(16, reg)
+    self.ldr(22, 16, 0)
+    self.ldr(23, 16, 8)
+    self.ldr(3, 16, 16)
+    self.load_imm(true, 24, 64)
+    self.cbz(22, false, grow_alloc)
+    self.ins(0x910006F8) // add x24, x23, #1
+    self.ins(0x8B030063) // add x3, x3, x3
+    self.ins(0x8B030063) // add x3, x3, x3
+    self.cmp(3, 24)
+    self.bcond(C_LO, grow_alloc)
+    self.ins(0x8B180318) // add x24, x24, x24
+    self.bind(grow_alloc)
+    self.mov(0, 24)
+    self.load_imm(true, 1, 32)
+    self.bl_extern("_calloc")
+    self.cbz(0, true, grow_ok)
     self.bl_internal("__ace$allocator_fail")
-    self.bind(rem_present)
-    self.ldr(17, 0, 24)
-    rem_nonhead: int = self.new_label()
-    rem_unlinked: int = self.new_label()
-    self.cbz(21, true, rem_nonhead)
-    self.addr_of(16, head)
-    self.str(17, 16, 0)
-    self.br(rem_unlinked)
-    self.bind(rem_nonhead)
-    self.str(17, 21, 24)
-    self.bind(rem_unlinked)
+    self.bind(grow_ok)
+    self.addr_of(16, reg)
+    self.str(0, 16, 0)
+    self.ins(0xD1000701) // sub x1, x24, #1
+    self.str(1, 16, 8)
+    self.ldr(1, 16, 16)
+    self.str(1, 16, 24)
+    self.cbz(22, false, add_insert)
+    self.ins(0x910006F8) // add x24, x23, #1
+    self.ins(0x8B1816D7) // add x23, x22, x24, lsl #5
+    self.mov(24, 22)
+    self.bind(grow_loop)
+    self.ldr(0, 24, 0)
+    self.ins(0xF100081F) // cmp x0, #2
+    self.bcond(C_LO, grow_next)
+    self.bl_internal("__ace$registry_open")
+    for off: u32 in 0 .. 24 step 8 {
+        self.ldr(1, 24, off)
+        self.str(1, 0, off)
+    }
+    self.bind(grow_next)
+    self.ins(0x91008318) // add x24, x24, #32
+    self.cmp(24, 23)
+    self.bcond(C_LO, grow_loop)
+    self.mov(0, 22)
     self.bl_extern("_free")
-    self.helper_epilogue()
+    self.br(add_insert)
+
+    // remove(ptr, size): marks the live slot removed.
+    self.text("__ace$registry_remove")
+    self.ins(0xA9BF7BFD)
+    self.ins(0x910003FD)
+    self.bl_internal("__ace$registry_find")
+    self.load_imm(true, 1, 1)
+    self.str(1, 0, 0)
+    self.addr_of(16, reg)
+    self.ldr(2, 16, 16)
+    self.ins(0xD1000442) // sub x2, x2, #1
+    self.str(2, 16, 16)
+    self.ins(0xA8C17BFD)
+    self.ins(RET)
 
     self.text("__ace$registry_leaks")
-    self.addr_of(16, head)
-    self.ldr(16, 16, 0)
+    self.addr_of(16, reg)
+    self.ldr(16, 16, 16)
     no_leaks: int = self.new_label()
     self.cbz(16, false, no_leaks)
     self.bl_internal("__ace$allocator_fail")

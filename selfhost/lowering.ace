@@ -3133,6 +3133,17 @@ Lw.registry_find(self, ptr: int, size: int): int {
     return self.call_routine("__ace$registry_find", false, ir.IT_PTR, a[..])
 }
 
+/* A reallocated block's record: the registry keys records by base, so the
+ * old one goes and a new one takes the new base and size with the old
+ * alignment.
+ */
+Lw.registry_move(self, rec: int, old: int, old_size: int, ptr: int, size: int) {
+    align: int = self.load(ir.IT_U64, rec, 16, 0)
+    a: [2]int = [old, old_size]
+    _ = self.call_routine("__ace$registry_remove", false, ir.IT_VOID, a[..])
+    self.registry_add(ptr, size, align)
+}
+
 /* A slice result's leaves from variables `pv` and `nv`, into res when wanted. */
 Lw.slice_out(self, res: *Agg, want_res: bool, pv: int, nv: int): int {
     if want_res {
@@ -3184,10 +3195,7 @@ Lw.mem_realloc(self, x: u32, res: *Agg, want_res: bool): int {
     p: int = self.call_routine("_realloc", true, ir.IT_PTR, a[..])
     got: int = self.guard(self.cmp(ir.IR_NE, p, self.konst(ir.IT_PTR, 0)))
     n: int = self.emit2(ir.IR_CAST, ir.IT_U64, size, -1)
-    if rec >= 0 {
-        self.store(rec, 0, p, 0)
-        self.store(rec, 8, n, 0)
-    }
+    if rec >= 0 { self.registry_move(rec, old, oldn, p, n) }
     self.write_var(pv, self.cur, p)
     self.write_var(nv, self.cur, n)
     self.guard_end(got)
@@ -3221,8 +3229,9 @@ Lw.mem_alloc_typed(self, x: u32, bi: u64, res: *Agg, want_res: bool): int {
     bytes: int = self.emit2(ir.IR_MUL, ir.IT_U64, count, self.konst(ir.IT_U64, esz))
     p: int = -1
     rec: int = -1
+    old_bytes: int = -1
     if bi == sema.BI_MEM_REALLOC_T {
-        old_bytes: int = self.emit2(ir.IR_MUL, ir.IT_U64, oldn, self.konst(ir.IT_U64, esz))
+        old_bytes = self.emit2(ir.IR_MUL, ir.IT_U64, oldn, self.konst(ir.IT_U64, esz))
         if self.debug { rec = self.registry_find(old, old_bytes) }
         a: [2]int = [old, bytes]
         p = self.call_routine("_realloc", true, ir.IT_PTR, a[..])
@@ -3235,8 +3244,7 @@ Lw.mem_alloc_typed(self, x: u32, bi: u64, res: *Agg, want_res: bool): int {
     }
     got: int = self.guard(self.cmp(ir.IR_NE, p, self.konst(ir.IT_PTR, 0)))
     if rec >= 0 {
-        self.store(rec, 0, p, 0)
-        self.store(rec, 8, bytes, 0)
+        self.registry_move(rec, old, old_bytes, p, bytes)
     } else if bi != sema.BI_MEM_REALLOC_T {
         self.registry_add(p, bytes, self.konst(ir.IT_U64, eal))
     }

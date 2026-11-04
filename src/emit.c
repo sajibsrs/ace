@@ -1733,24 +1733,6 @@ static void emit_null_failure_helper(Em* e) {
     ins(e, 0xD4200000u);
 }
 
-static void helper_prologue(Em* e) {
-    ins(e, 0xA9BF7BFD); // stp x29,x30,[sp,#-16]!
-    ins(e, 0x910003FD); // mov x29,sp
-    ins(e, 0xD10083FF); // sub sp,sp,#32
-    st_reg(e, 19, 31, 0, 8);
-    st_reg(e, 20, 31, 8, 8);
-    st_reg(e, 21, 31, 16, 8);
-}
-
-static void helper_epilogue(Em* e) {
-    ld_reg(e, 19, 31, 0, 8, 0);
-    ld_reg(e, 20, 31, 8, 8, 0);
-    ld_reg(e, 21, 31, 16, 8, 0);
-    ins(e, 0x910083FF); // add sp,sp,#32
-    ins(e, 0xA8C17BFD);
-    ins(e, 0xD65F03C0);
-}
-
 // SIMD&FP single-register LDUR/STUR (op selects b/s/d/q and direction).
 static void vmem(Em* e, uint32_t op, int rt, int rn, int32_t off) {
     ins(e, op | (((uint32_t)off & 0x1FFu) << 12) | ((uint32_t)rn << 5) | (uint32_t)rt);
@@ -2086,6 +2068,37 @@ static void emit_byte_helpers(Em* e) {
     patch_branches(e);
 }
 
+// A registry probe from ptr's hash (in x0) to ptr's slot or the first empty
+// one, or for open to the first empty or removed one (ptr is not live); the
+// slot comes back in x0. Clobbers x1-x4, x16, and x17.
+static void emit_registry_probe(Em* e, ESym* reg, const char* name, int open) {
+    sym_define(&e->o.syms, e->o.secs, name, (uint32_t)strlen(name), 0, &e->o.secs[SEC_TEXT]);
+    addr_of_sym(e, 16, reg);
+    ld_reg(e, 1, 16, 0, 8, 0);
+    ld_reg(e, 2, 16, 8, 8, 0);
+    load_imm(e, 1, 3, 0x9E3779B97F4A7C15u);
+    ins(e, 0x9B037C03); // mul x3, x0, x3
+    ins(e, 0xD360FC63); // lsr x3, x3, #32
+    int loop = new_label(e), done = new_label(e);
+    bind_label(e, loop);
+    ins(e, 0x8A020063); // and x3, x3, x2
+    ins(e, 0x8B031431); // add x17, x1, x3, lsl #5
+    ld_reg(e, 4, 17, 0, 8, 0);
+    if (open) {
+        ins(e, 0xF100089F); // cmp x4, #2
+        bcond_(e, C_LO, done);
+    } else {
+        ins(e, 0xEB00009F); // cmp x4, x0
+        bcond_(e, C_EQ, done);
+        cbz_(e, 1, 4, 0, done);
+    }
+    ins(e, 0x91000463); // add x3, x3, #1
+    br_(e, loop);
+    bind_label(e, done);
+    mov_int(e, 1, 0, 17);
+    ins(e, 0xD65F03C0);
+}
+
 static void emit_allocator_helpers(Em* e) {
     if (!e->o.allocator_used) {
         if (e->o.mode == EMIT_DEBUG) {
@@ -2096,8 +2109,8 @@ static void emit_allocator_helpers(Em* e) {
     }
     Sec* b = &e->o.secs[SEC_BSS];
     b->size = align_up(b->size, 8);
-    ESym* head = sym_define(&e->o.syms, e->o.secs, "__ace$registry_head", 19, 0, b);
-    b->size += 8;
+    ESym* reg = sym_define(&e->o.syms, e->o.secs, "__ace$registry", 14, 0, b);
+    b->size += 32;
 
     static const char message[] = "ace: allocator violation\n";
     Sec* c = &e->o.secs[SEC_CONST];
@@ -2110,68 +2123,129 @@ static void emit_allocator_helpers(Em* e) {
     emit_bl_extern(e, "_write", 6); emit_bl_extern(e, "_abort", 6);
     ins(e, 0xD4200000u);
 
-    /* find(ptr,size) -> node; node layout is ptr,size,align,next. */
+    /* The registry is a hash table of 32-byte slots (ptr, size, align,
+     * unused), probed linearly from a multiplicative hash of ptr. A slot's ptr
+     * is 0 when empty and 1 when removed, neither a live base. __ace$registry
+     * holds the table, its mask (slots - 1), the live count, and the used
+     * (live or removed) count, kept at most half the slots.
+     */
+    emit_registry_probe(e, reg, "__ace$registry_slot", 0);
+    emit_registry_probe(e, reg, "__ace$registry_open", 1);
+
+    // find(ptr, size) -> the live slot of exactly ptr and size, else failure.
     sym_define(&e->o.syms, e->o.secs, "__ace$registry_find", 19, 0, &e->o.secs[SEC_TEXT]);
-    mov_int(e, 1, 2, 0); mov_int(e, 1, 3, 1);
-    addr_of_sym(e, 16, head); ld_reg(e, 0, 16, 0, 8, 0);
-    int find_loop = new_label(e), find_next = new_label(e), find_ok = new_label(e);
-    bind_label(e, find_loop);
-    cbz_(e, 1, 0, 0, find_next);
-    ld_reg(e, 16, 0, 0, 8, 0);
-    ins(e, 0xEB00001Fu | (2u << 16) | (16u << 5));
-    bcond_(e, C_NE, find_next);
-    ld_reg(e, 16, 0, 8, 8, 0);
-    ins(e, 0xEB00001Fu | (3u << 16) | (16u << 5));
-    bcond_(e, C_EQ, find_ok);
-    bind_label(e, find_next);
-    cbz_(e, 1, 0, 0, find_ok); // null reaches failure below
-    ld_reg(e, 0, 0, 24, 8, 0); br_(e, find_loop);
-    bind_label(e, find_ok);
-    int find_ret = new_label(e);
-    cbz_(e, 1, 0, 1, find_ret);
+    int find_fail = new_label(e);
+    ins(e, 0xA9BF7BFD); ins(e, 0x910003FD);
+    ins(e, 0xF100081F); // cmp x0, #2
+    bcond_(e, C_LO, find_fail);
+    addr_of_sym(e, 16, reg);
+    ld_reg(e, 16, 16, 0, 8, 0);
+    cbz_(e, 1, 16, 0, find_fail);
+    mov_int(e, 1, 5, 1);
+    emit_bl_internal(e, "__ace$registry_slot", 19);
+    ld_reg(e, 4, 0, 0, 8, 0);
+    cbz_(e, 1, 4, 0, find_fail);
+    ld_reg(e, 4, 0, 8, 8, 0);
+    ins(e, 0xEB05009F); // cmp x4, x5
+    bcond_(e, C_NE, find_fail);
+    ins(e, 0xA8C17BFD); ins(e, 0xD65F03C0);
+    bind_label(e, find_fail);
     emit_bl_internal(e, "__ace$allocator_fail", 20);
-    bind_label(e, find_ret); ins(e, 0xD65F03C0);
 
+    // add(ptr, size, align). Before passing half the slots used, the table is
+    // rebuilt without removed slots: doubled if a quarter or more is live.
     sym_define(&e->o.syms, e->o.secs, "__ace$registry_add", 18, 0, &e->o.secs[SEC_TEXT]);
-    helper_prologue(e);
+    ins(e, 0xA9BF7BFD); ins(e, 0x910003FD);
+    ins(e, 0xD100C3FF); // sub sp, sp, #48
+    for (int r = 0; r < 6; r++) st_reg(e, 19 + r, 31, (uint32_t)r * 8, 8);
     mov_int(e, 1, 19, 0); mov_int(e, 1, 20, 1); mov_int(e, 1, 21, 2);
-    load_imm(e, 1, 0, 32); emit_bl_extern(e, "_malloc", 7);
-    int add_ok = new_label(e); cbz_(e, 1, 0, 1, add_ok);
-    emit_bl_internal(e, "__ace$allocator_fail", 20);
-    bind_label(e, add_ok);
+    int add_grow = new_label(e), add_insert = new_label(e);
+    addr_of_sym(e, 16, reg);
+    ld_reg(e, 3, 16, 0, 8, 0);
+    cbz_(e, 1, 3, 0, add_grow);
+    ld_reg(e, 3, 16, 24, 8, 0);
+    ins(e, 0x91000463); // add x3, x3, #1
+    ins(e, 0x8B030063); // add x3, x3, x3
+    ld_reg(e, 4, 16, 8, 8, 0);
+    ins(e, 0x91000484); // add x4, x4, #1
+    ins(e, 0xEB04007F); // cmp x3, x4
+    bcond_(e, C_HI, add_grow);
+    bind_label(e, add_insert);
+    mov_int(e, 1, 0, 19);
+    emit_bl_internal(e, "__ace$registry_open", 19);
+    ld_reg(e, 4, 0, 0, 8, 0);
     st_reg(e, 19, 0, 0, 8); st_reg(e, 20, 0, 8, 8); st_reg(e, 21, 0, 16, 8);
-    addr_of_sym(e, 16, head); ld_reg(e, 17, 16, 0, 8, 0);
-    st_reg(e, 17, 0, 24, 8); st_reg(e, 0, 16, 0, 8);
-    helper_epilogue(e);
-
-    sym_define(&e->o.syms, e->o.secs, "__ace$registry_remove", 21, 0, &e->o.secs[SEC_TEXT]);
-    helper_prologue(e);
-    mov_int(e, 1, 19, 0); mov_int(e, 1, 20, 1); load_imm(e, 1, 21, 0);
-    addr_of_sym(e, 16, head); ld_reg(e, 0, 16, 0, 8, 0);
-    int rem_loop = new_label(e), rem_next = new_label(e), rem_found = new_label(e);
-    bind_label(e, rem_loop);
-    cbz_(e, 1, 0, 0, rem_next);
-    ld_reg(e, 16, 0, 0, 8, 0);
-    ins(e, 0xEB00001Fu | (19u << 16) | (16u << 5)); bcond_(e, C_NE, rem_next);
-    ld_reg(e, 16, 0, 8, 8, 0);
-    ins(e, 0xEB00001Fu | (20u << 16) | (16u << 5)); bcond_(e, C_EQ, rem_found);
-    bind_label(e, rem_next);
-    cbz_(e, 1, 0, 0, rem_found);
-    mov_int(e, 1, 21, 0); ld_reg(e, 0, 0, 24, 8, 0); br_(e, rem_loop);
-    bind_label(e, rem_found);
-    int rem_present = new_label(e); cbz_(e, 1, 0, 1, rem_present);
+    addr_of_sym(e, 16, reg);
+    ld_reg(e, 3, 16, 16, 8, 0); ins(e, 0x91000463); st_reg(e, 3, 16, 16, 8);
+    int add_reused = new_label(e);
+    cbz_(e, 1, 4, 1, add_reused); // a removed slot is already counted used
+    ld_reg(e, 3, 16, 24, 8, 0); ins(e, 0x91000463); st_reg(e, 3, 16, 24, 8);
+    bind_label(e, add_reused);
+    for (int r = 0; r < 6; r++) ld_reg(e, 19 + r, 31, (uint32_t)r * 8, 8, 0);
+    ins(e, 0x9100C3FF); // add sp, sp, #48
+    ins(e, 0xA8C17BFD); ins(e, 0xD65F03C0);
+    bind_label(e, add_grow); // x22 old table, x23 old mask, x24 new slots
+    int grow_alloc = new_label(e), grow_ok = new_label(e), grow_loop = new_label(e), grow_next = new_label(e);
+    addr_of_sym(e, 16, reg);
+    ld_reg(e, 22, 16, 0, 8, 0);
+    ld_reg(e, 23, 16, 8, 8, 0);
+    ld_reg(e, 3, 16, 16, 8, 0);
+    load_imm(e, 1, 24, 64);
+    cbz_(e, 1, 22, 0, grow_alloc);
+    ins(e, 0x910006F8); // add x24, x23, #1
+    ins(e, 0x8B030063); // add x3, x3, x3
+    ins(e, 0x8B030063); // add x3, x3, x3
+    ins(e, 0xEB18007F); // cmp x3, x24
+    bcond_(e, C_LO, grow_alloc);
+    ins(e, 0x8B180318); // add x24, x24, x24
+    bind_label(e, grow_alloc);
+    mov_int(e, 1, 0, 24);
+    load_imm(e, 1, 1, 32);
+    emit_bl_extern(e, "_calloc", 7);
+    cbz_(e, 1, 0, 1, grow_ok);
     emit_bl_internal(e, "__ace$allocator_fail", 20);
-    bind_label(e, rem_present);
-    ld_reg(e, 17, 0, 24, 8, 0);
-    int rem_nonhead = new_label(e), rem_unlinked = new_label(e);
-    cbz_(e, 1, 21, 1, rem_nonhead);
-    addr_of_sym(e, 16, head); st_reg(e, 17, 16, 0, 8); br_(e, rem_unlinked);
-    bind_label(e, rem_nonhead); st_reg(e, 17, 21, 24, 8);
-    bind_label(e, rem_unlinked); emit_bl_extern(e, "_free", 5);
-    helper_epilogue(e);
+    bind_label(e, grow_ok);
+    addr_of_sym(e, 16, reg);
+    st_reg(e, 0, 16, 0, 8);
+    ins(e, 0xD1000701); // sub x1, x24, #1
+    st_reg(e, 1, 16, 8, 8);
+    ld_reg(e, 1, 16, 16, 8, 0);
+    st_reg(e, 1, 16, 24, 8);
+    cbz_(e, 1, 22, 0, add_insert);
+    ins(e, 0x910006F8); // add x24, x23, #1
+    ins(e, 0x8B1816D7); // add x23, x22, x24, lsl #5
+    mov_int(e, 1, 24, 22);
+    bind_label(e, grow_loop);
+    ld_reg(e, 0, 24, 0, 8, 0);
+    ins(e, 0xF100081F); // cmp x0, #2
+    bcond_(e, C_LO, grow_next);
+    emit_bl_internal(e, "__ace$registry_open", 19);
+    for (uint32_t off = 0; off < 24; off += 8) {
+        ld_reg(e, 1, 24, off, 8, 0);
+        st_reg(e, 1, 0, off, 8);
+    }
+    bind_label(e, grow_next);
+    ins(e, 0x91008318); // add x24, x24, #32
+    ins(e, 0xEB17031F); // cmp x24, x23
+    bcond_(e, C_LO, grow_loop);
+    mov_int(e, 1, 0, 22);
+    emit_bl_extern(e, "_free", 5);
+    br_(e, add_insert);
+
+    // remove(ptr, size): marks the live slot removed.
+    sym_define(&e->o.syms, e->o.secs, "__ace$registry_remove", 21, 0, &e->o.secs[SEC_TEXT]);
+    ins(e, 0xA9BF7BFD); ins(e, 0x910003FD);
+    emit_bl_internal(e, "__ace$registry_find", 19);
+    load_imm(e, 1, 1, 1);
+    st_reg(e, 1, 0, 0, 8);
+    addr_of_sym(e, 16, reg);
+    ld_reg(e, 2, 16, 16, 8, 0);
+    ins(e, 0xD1000442); // sub x2, x2, #1
+    st_reg(e, 2, 16, 16, 8);
+    ins(e, 0xA8C17BFD); ins(e, 0xD65F03C0);
 
     sym_define(&e->o.syms, e->o.secs, "__ace$registry_leaks", 20, 0, &e->o.secs[SEC_TEXT]);
-    addr_of_sym(e, 16, head); ld_reg(e, 16, 16, 0, 8, 0);
+    addr_of_sym(e, 16, reg); ld_reg(e, 16, 16, 16, 8, 0);
     int no_leaks = new_label(e); cbz_(e, 1, 16, 0, no_leaks);
     emit_bl_internal(e, "__ace$allocator_fail", 20);
     bind_label(e, no_leaks); ins(e, 0xD65F03C0);

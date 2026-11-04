@@ -627,7 +627,9 @@ The `mem` declarations are compiler-backed in the current bootstrap. Release
 calls lower directly to the platform `malloc`, `realloc`, and `free` boundary
 and add no Ace allocation header or registry. Debug builds maintain a live
 allocation registry that diagnoses invalid or repeated release/reallocation and
-reports allocations still live when `main` returns normally. It does not detect
+reports allocations still live when `main` returns normally. It is a hash table
+keyed by base address, so each allocation, reallocation, and release costs a
+constant time on average however many allocations are live. It does not detect
 arbitrary access through a dangling alias.
 
 The examples on this page are checked by

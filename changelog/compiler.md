@@ -1,5 +1,10 @@
 # Compiler
 
+- The debug allocator registry is a hash table of (base, size, alignment)
+  slots probed from a hash of the base, replacing a list scanned on every
+  release; a moving `realloc` removes the old record and adds the new one.
+  Debug `binarytrees` 1.19 s (stopped unfinished after 2 minutes before),
+  debug selfhost compiling itself 2.6x faster.
 - A struct field whose array type is rejected no longer also reports its
   default as a non-constant; the failed type is reported once, in both the C
   compiler and selfhost (#160).
