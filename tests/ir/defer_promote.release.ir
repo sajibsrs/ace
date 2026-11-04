@@ -38,7 +38,7 @@ b5: ; preds b2, b4
     %30 = phi ptr [%11, b2], [%26, b4]
     %31 = phi u64 [%10, b2], [%27, b4]
     %32 = lt bool %9, %31
-    check %32, 86:16 bounds violation
+    check %32, 88:16 bounds violation
     %34 = padd ptr %30, %9 * 8
     store [%34], %8
     %36 = const u64 1
