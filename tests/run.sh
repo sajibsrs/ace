@@ -6,6 +6,8 @@
 # full check (default mode). A sema or IR fixture's `// target: NAME` line
 # checks it for that target instead of the host's (its asm names registers).
 set -u
+# Trap fixtures abort on purpose; a core dump for each one only costs time.
+ulimit -c 0 2>/dev/null || :
 fail=0
 tab=$(printf '\t')
 ACE_BIN=${ACE_BIN:-./ace}
@@ -1573,7 +1575,7 @@ if [ "$(uname -m)" = x86_64 ] && command -v objdump >/dev/null 2>&1; then
          tests/emit/pointers/far_offset.ace ||
        ! objdump -d -M intel /tmp/ace_checked_features/far_offset.o >$T/dis ||
        grep -qF '[rbp+0x7fff' $T/dis ||
-       ! grep -qF 'lea    rax,[rbp-' $T/dis; then
+       ! grep -qE 'lea +r[a-z0-9]+,\[rbp-' $T/dis; then
         echo "FAIL: x64 far stack-object access wrapped its rbp displacement"
         fail=1
     fi

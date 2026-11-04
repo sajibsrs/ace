@@ -47,6 +47,10 @@ paths:
   `tests/definite-init-diff.sh <HEAD-ace> ./ace [count] [seed]`: random
   functions under every branch form must get byte-identical diagnostics from
   a build of `HEAD` and the change. It is not part of `make test`.
+- A change to `src/` also runs `tests/cc-diff.sh [cc-a] [cc-b]` (default
+  gcc and clang): both builds of `ace` must print the same `--ir` and write
+  the same objects for every repository `.ace` file. It is not part of
+  `make test`.
 - `tests/package_fetch.sh [compiler]`, run by `tests/run.sh`, serves a library
   on loopback to exercise `[link]` fetching.
 - Sandboxes may deny network and loopback sockets, causing `net`, `poll`, `tcp`,
