@@ -145,7 +145,7 @@ Class.negate(self) {
 }
 
 pub inline Class.has(self, byte: u8): bool {
-    return ((self.bits[usize(byte >> 6)] >> u64(byte & 63)) & 1) != 0
+    return ((self.bits[usize(byte >> 6)] >> u64(byte)) & 1) != 0
 }
 
 /* The class a Perl escape letter names: `d` digits, `w` word bytes

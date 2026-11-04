@@ -102,16 +102,12 @@ typedef enum {
 } IrOp;
 
 enum {
-    // debug build (Safety & Debug Builds #6): the operation traps through the
-    // shared arithmetic failure routine when its result is not representable
-    // (add, sub, mul, signed neg; div and rem by MIN / -1), its divisor is
-    // zero, or its shift count is negative or at least the operand width
+    // in every build, on load, store, and calli: a null address or function
+    // value traps through the null failure routine (Safety & Debug Builds
+    // #8); in a debug build on padd and psub: a null start, an overflowing
+    // scaled offset, or an address past either end of the address space
+    // (Pointers #9)
     IRF_CHECKED = 1,
-    // also IRF_CHECKED, in every build, on load, store, and calli: a null
-    // address or function value traps through the null failure routine
-    // (Safety & Debug Builds #8); in a debug build on padd and psub: a null
-    // start, an overflowing scaled offset, or an address past either end of
-    // the address space (Pointers #9)
     IRF_VOLATILE = 2, // load, store: an access-site volatile access
     IRF_VARARGS = 4,  // call: arguments from index aux on are variadic
     // call, calli: the result, of over IR_MAX_LEAVES leaves, goes to the

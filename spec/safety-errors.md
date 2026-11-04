@@ -21,14 +21,14 @@ make a failure defined: bounds, null use, and division by zero.
 4. A violation provable from compile-time constants is a compile-time error in
    both modes. Mode selection controls only checks that depend on runtime
    values.
-5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; every build traps on bounds, null use, and division by zero, and debug builds add shift-count, contract, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
+5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; every build traps on bounds, null use, and division by zero, and debug builds add contract and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
 6. Integer `+`, `-`, `*`, and unary `-` on every fixed-width signed and
    unsigned integer type, including their compound-assignment forms, wrap
    modulo 2^width in every build; signed results are two's complement. Signed
    `MIN / -1` is `MIN` and `MIN % -1` is `0`. Division or remainder by zero
-   traps in every build (#3). A shift count must be
-   nonnegative and less than the left operand's bit width; debug builds
-   diagnose a false runtime precondition and release assumes it. Left shift is
+   traps in every build (#3). A shift count is taken modulo the left
+   operand's bit width in every build, as two's complement for a negative
+   signed count: `x << n` is `x << (n & (width - 1))`. Left shift is
    otherwise a bit operation: discarded high bits are not an overflow
    diagnostic. As elsewhere, a violation provable from constants is rejected
    in every mode.

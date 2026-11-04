@@ -956,19 +956,11 @@ static int binop_of(TokKind op) {
 
 static int is_compare(int op) { return op >= IR_EQ && op <= IR_GE; }
 
-// Arithmetic that a debug build checks (Safety & Debug Builds #6): the shift
-// count; integer overflow wraps in every build.
-static int checked_op(Lw* l, int op, IrType t) {
-    if (l->mode != EMIT_DEBUG || t == IT_BOOL || ir_type_float(t)) return 0;
-    return op == IR_SHL || op == IR_SHR;
-}
-
 static int arith(Lw* l, int op, IrType t, int a, int b) {
     if (ir_type_float(t) && op != IR_ADD && op != IR_SUB && op != IR_MUL && op != IR_DIV && op != IR_NEG)
         unsupported(l, "float operator");
     int id = emit2(l, (IrOp)op, t, a, b);
-    if (checked_op(l, op, t)) l->fn->ins[id].flags |= IRF_CHECKED;
-    else if ((op == IR_DIV || op == IR_REM) && !ir_type_float(t)) l->fn->ins[id].flags |= IRF_NONZERO;
+    if ((op == IR_DIV || op == IR_REM) && !ir_type_float(t)) l->fn->ins[id].flags |= IRF_NONZERO;
     return id;
 }
 

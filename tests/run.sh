@@ -1386,7 +1386,7 @@ if ! "$ACE" --debug -o /tmp/ace_checked_features/arithmetic_valid \
     echo "FAIL: valid checked arithmetic fixture"
     fail=1
 fi
-for f in div_zero shift_count pointer_null pointer_scale pointer_add pointer_sub; do
+for f in div_zero pointer_null pointer_scale pointer_add pointer_sub; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/arithmetic_$f" \
          "tests/checked_arithmetic/$f.ace" >/dev/null 2>$T/errs ||
        "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>$T/errs ||
@@ -1403,10 +1403,11 @@ if ! "$ACE" --release -o /tmp/ace_checked_features/arithmetic_div_zero_release \
     echo "FAIL: release division by zero must trap"
     fail=1
 fi
-# integer overflow wraps in every build (Safety #6): immediate operands, narrow
-# values computed in registers, and signed MIN / -1 give the fixed-width result
+# integer overflow wraps and a shift count is taken modulo the width in every
+# build (Safety #6): immediate operands, narrow values computed in registers,
+# and signed MIN / -1 give the fixed-width result
 for m in debug release; do
-    for f in imm_signed_add imm_unsigned_sub imm_narrow_add overflow; do
+    for f in imm_signed_add imm_unsigned_sub imm_narrow_add overflow shift_count; do
         if ! "$ACE" --$m -o "/tmp/ace_checked_features/arithmetic_${f}_$m" \
              "tests/checked_arithmetic/$f.ace" ||
            ! "/tmp/ace_checked_features/arithmetic_${f}_$m"; then

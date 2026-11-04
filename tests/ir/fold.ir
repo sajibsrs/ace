@@ -23,7 +23,7 @@ wrap(): u8 {
 b0:
     %0 = const u8 31
     %1 = const u8 4
-    %2 = shl.chk u8 %0, %1
+    %2 = shl u8 %0, %1
     ret %2
 }
 

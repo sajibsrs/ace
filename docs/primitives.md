@@ -48,9 +48,11 @@ first `:` belongs to the conditional, so `[(c ? x : y) : 3]` repeats it.
 Integer `+`, `-`, `*`, and unary `-` wrap modulo 2^width in every build, with
 two's-complement signed results: `i8(127) + i8(1)` is `-128` and `u8(0) - 1`
 is `255`. The signed minimum divided by `-1` is the minimum, and its remainder
-is `0`. Division or remainder by zero aborts in every build. Shift counts must
-be nonnegative and below the left operand width; debug output aborts on a bad
-count. A constant global initializer that overflows is still a compile error.
+is `0`. Division or remainder by zero aborts in every build. A shift count is
+taken modulo the left operand's width in every build: `u8(1) << 9` is `2`,
+`u32(x) >> 32` is `x`, and a signed count of `-1` shifts by width - 1. A
+constant global initializer that overflows, or shifts by a negative count or
+one of at least the width, is still a compile error.
 
 When the divisor of `/`, `%`, `/=`, or `%=` is an integer literal or named
 constant, the compiler replaces the hardware divide with shifts and masks for
@@ -267,5 +269,12 @@ The examples are covered by `tests/sema/docs/primitive_ok.ace`.
   1.30x on `bench/std/collections`: each checked operation pins its result,
   so the optimizer cannot move, merge, or vectorize it. A debug-only trap would
   give one program two meanings. Bounds checks still catch a wrapped index.
+- A shift count is masked by width - 1, as in Java and C# and as arm64's
+  register shifts do for 32 and 64 bits, rather than Go's rule that a count of
+  at least the width gives 0 or sign fill. Masking costs no instruction at 32
+  and 64 bits and one `and` at 8 and 16 bits; Go's rule adds a compare and
+  select to every shift whose count the compiler cannot bound, measured 1.11x
+  on `sin-large` in `bench/std/math` and 1.06x on `map-miss` in
+  `bench/std/collections`, while masking left every bench within noise.
 - A conditional is not yet a compile-time constant; constant folding of it
   can be added later without changing any accepted program.

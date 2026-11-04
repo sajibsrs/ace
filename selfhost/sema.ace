@@ -1836,8 +1836,8 @@ Sema.ut_const(const self, e: u32): (i64, bool) {
                     if n.op == lexer.Token.slash { return a / b, true }
                     return a % b, true
                 }
-                lexer.Token.shl { return i64(u64(a) << (u64(b) & 63)), true }
-                lexer.Token.shr { return a >> (b & 63), true }
+                lexer.Token.shl { return i64(u64(a) << u64(b)), true }
+                lexer.Token.shr { return a >> b, true }
                 lexer.Token.amp { return a & b, true }
                 lexer.Token.pipe { return a | b, true }
                 lexer.Token.caret { return a ^ b, true }

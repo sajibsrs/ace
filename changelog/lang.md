@@ -1,5 +1,10 @@
 # Language
 
+- A shift count is taken modulo the left operand's width in every build:
+  shifts are no longer checked, arm64 masks a narrow count with one `and`, and
+  the optimizer folds with the masked count; `pkg/regex` and selfhost drop
+  their redundant `& 63`. C and selfhost.
+
 - Integer `+`, `-`, `*`, and unary `-` wrap in every build, and signed
   `MIN / -1` is `MIN`, `MIN % -1` is `0`: lowering flags only shifts as
   checked, so debug output drops its overflow traps and release is unchanged.

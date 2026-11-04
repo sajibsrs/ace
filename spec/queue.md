@@ -12,11 +12,11 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     `__TEXT`/`.rodata`.
   - Globals, Ace and C (`extern`), are writable by default; `const` opts into
     read-only placement.
-  - Defined failures: integer overflow wraps in every build (Safety #6); oversized
-    shifts are defined; bounds, null dereference, and division by zero trap
-    in every build (Safety #3);
-    reading uninitialized storage stays a compile error. Precedent: Go (bounds,
-    nil, divide traps; wrapping overflow; defined shifts).
+  - Defined failures: integer overflow wraps and a shift count is taken modulo
+    the width in every build (Safety #6); bounds, null dereference, and
+    division by zero trap in every build (Safety #3); reading uninitialized
+    storage stays a compile error. Precedent: Go (bounds,
+    nil, divide traps; wrapping overflow); Java and C# (masked shift counts).
   - Use after free through another alias: debug builds detect it (quarantine,
     guard pages) and trap, like `noalias` debug checks; release has machine
     semantics. Precedent: Zig's debug allocator, Vale.
@@ -27,8 +27,6 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     receivers (`const self`); a getter takes `const self` (Mutability #2, #6).
   Open:
   - [open] Spelling of the by-value receiver (e.g. `val self`).
-  - [open] The oversized-shift rule: mask the count (arm64 hardware), or
-    yield zero / sign fill.
   - [open] `noalias` restated: "no other parameter, global, or pointer reaches
     the same bytes during the call", and which arguments the debug check now
     pairs, since every slice may write.

@@ -505,7 +505,7 @@ sign(i32, i32): f32 {
 b0:
     %0 = param i32 0
     %1 = param i32 1
-    %2 = shr.chk i32 %0, %1
+    %2 = shr i32 %0, %1
     %3 = const i32 1
     %4 = and i32 %2, %3
     %5 = const i32 1

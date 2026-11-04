@@ -1107,8 +1107,8 @@ static void shift(A64* a, int v) {
     int sf = is64(t), sg = ir_type_signed(t), bits = ir_type_bits(t);
     int rn = opnd(a, x->args[0], S0);
     int c = x->args[1];
-    if (is_const(a, c) && ins_of(a, c)->imm < (uint64_t)bits) {
-        uint32_t k = (uint32_t)ins_of(a, c)->imm, w = sf ? 64 : 32;
+    if (is_const(a, c)) { // the count modulo the width (Safety #6)
+        uint32_t k = (uint32_t)(ins_of(a, c)->imm & (uint64_t)(bits - 1)), w = sf ? 64 : 32;
         int rd = dst(a, v);
         if (x->op == IR_SHL) // ubfm rd, rn, #(-k mod w), #(w - 1 - k)
             put(a, (sf ? 0xD3400000u : 0x53000000u) | (((w - k) & (w - 1)) << 16) | ((w - 1 - k) << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
@@ -1121,9 +1121,9 @@ static void shift(A64* a, int v) {
         return;
     }
     int rm = opnd(a, c, S1);
-    if (x->flags & IRF_CHECKED) { // a negative count is a large unsigned one
-        put(a, sfb(t) | 0x7100001Fu | ((uint32_t)bits << 10) | ((uint32_t)rm << 5));
-        fail_if(a, C_HS);
+    if (bits < 32) { // the hardware takes the count modulo 32 or 64
+        put(a, 0x12000000u | (logical_imm_field((uint64_t)bits - 1, 0) << 10) | ((uint32_t)rm << 5) | S1);
+        rm = S1;
     }
     int rd = dst(a, v);
     uint32_t op = x->op == IR_SHL ? 0x1AC02000u : sg ? 0x1AC02800u : 0x1AC02400u;

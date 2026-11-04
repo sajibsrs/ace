@@ -27,9 +27,7 @@ kill_ins(fn: *Func, v: int) {
     x.block = -1
 }
 
-/* The operation over constants, or false when it is not defined (release
- * makes those cases undefined; they stay for run time).
- */
+/* The operation over constants, or false when it stays for run time. */
 fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
     n: u64 = u64(ir.type_bits(t))
     sg: bool = ir.type_signed(t)
@@ -46,12 +44,9 @@ fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
         ir.IR_AND { return ir.wrap(t, a & b), true }
         ir.IR_OR { return ir.wrap(t, a | b), true }
         ir.IR_XOR { return ir.wrap(t, a ^ b), true }
-        ir.IR_SHL {
-            if b >= n { return 0, false }
-            return ir.wrap(t, a << b), true
-        }
+        ir.IR_SHL { return ir.wrap(t, a << (b & (n - 1))), true } // the count modulo the width (Safety #6)
         ir.IR_SHR {
-            if b >= n { return 0, false }
+            b &= n - 1
             if sg { return ir.wrap(t, u64(i64(a) >> i64(b))), true }
             return ir.wrap(t, a >> b), true
         }

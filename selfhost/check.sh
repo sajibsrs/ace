@@ -35,7 +35,7 @@ fi
 echo "self-build: stage 2 object matches stage 1"
 cp "$tmp/ace-self" "$self"
 
-# A debug build traps on shift counts, contracts, and allocator misuse the
+# A debug build traps on contracts and allocator misuse the
 # release build passes silently; compiling itself in both modes exercises every
 # pass.
 "$root/ace" --debug -o "$debug" "$here/main.ace" || exit 1

@@ -1496,8 +1496,8 @@ A64.shift(self, v: int) {
     nbits: int = ir.type_bits(t)
     rn: int = self.opnd(self.arg(v, 0), S0)
     c: int = self.arg(v, 1)
-    if self.is_const(c) && self.x(c).imm < u64(nbits) {
-        k: u32 = u32(self.x(c).imm)
+    if self.is_const(c) { // the count modulo the width (Safety #6)
+        k: u32 = u32(self.x(c).imm & u64(nbits - 1))
         w: u32 = sel(sf, 64, 32)
         rd: int = self.dst(v)
         if x.op == ir.IR_SHL { // ubfm rd, rn, #(-k mod w), #(w - 1 - k)
@@ -1512,9 +1512,9 @@ A64.shift(self, v: int) {
         return
     }
     rm: int = self.opnd(c, S1)
-    if (x.flags & ir.IRF_CHECKED) != 0 { // a negative count is a large unsigned one
-        self.put(sfb(t) | 0x7100001F | (u32(nbits) << 10) | (u32(rm) << 5))
-        self.fail_if(C_HS)
+    if nbits < 32 { // the hardware takes the count modulo 32 or 64
+        self.put(0x12000000 | (logical_imm_field(u64(nbits - 1), false) << 10) | (u32(rm) << 5) | u32(S1))
+        rm = S1
     }
     rd: int = self.dst(v)
     op: u32 = 0x1AC02400

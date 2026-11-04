@@ -43,7 +43,7 @@ b4: ; preds b2, b5
     br %15, b5, b6
 b5: ; preds b4
     %17 = const i64 3
-    %18 = shl.chk i64 %0, %17
+    %18 = shl i64 %0, %17
     %19 = add i64 %14, %18
     %20 = xor i64 %1, %0
     %21 = add i64 %19, %20

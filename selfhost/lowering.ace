@@ -2674,23 +2674,13 @@ is_compare(op: int): bool {
     return op >= int(ir.IR_EQ) && op <= int(ir.IR_GE)
 }
 
-/* Arithmetic that a debug build checks (Safety & Debug Builds #6): the shift
- * count; integer overflow wraps in every build.
- */
-Lw.checked_op(self, op: u8, t: u8): bool {
-    if !self.debug || t == ir.IT_BOOL || ir.type_float(t) { return false }
-    return op == ir.IR_SHL || op == ir.IR_SHR
-}
-
 Lw.arith(self, op: u8, t: u8, a: int, b: int): int {
     if ir.type_float(t) && op != ir.IR_ADD && op != ir.IR_SUB && op != ir.IR_MUL && op != ir.IR_DIV && op != ir.IR_NEG {
         self.unsupported("float operator")
         return self.dummy()
     }
     id: int = self.emit2(op, t, a, b)
-    if self.checked_op(op, t) {
-        self.fn.at(id).flags |= ir.IRF_CHECKED
-    } else if (op == ir.IR_DIV || op == ir.IR_REM) && !ir.type_float(t) {
+    if (op == ir.IR_DIV || op == ir.IR_REM) && !ir.type_float(t) {
         self.fn.at(id).flags |= ir.IRF_NONZERO
     }
     return id
