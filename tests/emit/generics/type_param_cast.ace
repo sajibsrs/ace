@@ -1,0 +1,30 @@
+/* T(x) casts to the type a stamping binds T to, under the ordinary cast rules. */
+
+// expect-exit: 42
+
+Meters: distinct int
+
+Level: enum u8 { low, high }
+
+mix[T](x: T, y: T): T {
+    return x * T(3) + y
+}
+
+from_count[T](n: usize): T {
+    return T(n)
+}
+
+as_view[T](b: []u8): T {
+    return T(b)
+}
+
+main(): int {
+    a: int = mix[int](4, 1)                  // 13
+    b: f64 = mix[f64](1.5, 0.5)              // 5.0
+    c: u8 = from_count[u8](usize(258))       // wraps to 2
+    d: Meters = from_count[Meters](usize(15))
+    e: Level = from_count[Level](usize(1))
+    s: string = as_view[string]("hello"[..])
+    if e != Level.high { return 1 }
+    return a + int(b) + int(c) + int(d) + int(s.len) + 2 // 13 + 5 + 2 + 15 + 5 + 2
+}

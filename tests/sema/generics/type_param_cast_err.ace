@@ -1,0 +1,23 @@
+/* T(x) follows the ordinary cast rules for each stamp, naming the instantiation. */
+
+Point: struct { x: int, y: int }
+
+scale[T](x: T): T {
+    return x * T(3)
+}
+
+pick[T](): T {
+    return T(1, 2)
+}
+
+back[R](x: int): R {
+    return R(x)
+}
+
+main(): int {
+    p: Point = Point { x = 1, y = 2 }
+    scale[Point](p)
+    pick[int]()
+    back[void](1)
+    return 0
+}

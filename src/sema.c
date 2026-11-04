@@ -4828,15 +4828,16 @@ static SType* check_call_raw(Ck* k, Node* call) {
                 callee->ty = st_prim(P_TYPEID);
                 return st_prim(P_TYPEID);
             }
-            SType* prim = prim_by_name(callee->str, callee->len);
-            Sym* ts = lookup_type(k, callee->str, callee->len);
-            if (prim || ts) { // constructor-shaped cast or contract construction
+            SType* bound = bound_type_param(k, callee); // T(x): the bound type, substituted first
+            SType* prim = bound ? NULL : prim_by_name(callee->str, callee->len);
+            Sym* ts = bound ? NULL : lookup_type(k, callee->str, callee->len);
+            if (bound || prim || ts) { // constructor-shaped cast or contract construction
                 if (ts && ts->type && ts->type->kind == SK_ERROR_DOMAIN) return check_error_construct(k, call, ts);
                 if (call->nkids != 1) {
                     ck_err(k, call, "a cast takes exactly one argument");
                     return T_ERR;
                 }
-                SType* want = prim ? prim : build_type(k, callee);
+                SType* want = bound ? bound : prim ? prim : build_type(k, callee);
                 if (want->kind == SK_CONTRACT) {
                     callee->sym = ts;
                     callee->ty = want;

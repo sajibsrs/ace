@@ -384,6 +384,17 @@ main.ace:26:17: note: in 'outer[string]' instantiated here
 A type tuple is checked once, so its error is reported at the first
 instantiation that stamps it.
 
+A type parameter is a cast like any type name: `T(x)` converts to the type
+the stamp binds `T` to, under the ordinary cast rules, so a constant or a
+runtime value reaches `T` alike. A stamp whose bound type cannot take the
+cast (`scale[Point]` below) is reported like any other body error:
+
+```ace
+scale[T](x: T, n: usize): T {
+    return x * T(n)
+}
+```
+
 A generic function becomes a function value once its type arguments are
 written. The declared function-value type never supplies them, so a bare
 `choose` is an error:

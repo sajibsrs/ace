@@ -4084,6 +4084,8 @@ Sema.check_call(self, call: u32): u32 {
         self.set_node_ival(call, u64(self.type_identity(t))) // a StaticMap key
         return self.prim(P_TYPEID)
     }
+    _, bound: bool = self.type_param_index(name) // T(x): the bound type, substituted first
+    if bound { return self.check_cast(call, 0, 0) }
     p: u32 = self.prim_by_name(name)
     ts: u32 = self.lookup_type(name)
     if p != 0 || ts != 0 { return self.check_cast(call, p, ts) }
@@ -4431,7 +4433,9 @@ Sema.type_identity(self, t: u32): u32 {
     return v
 }
 
-/* `T(x)`: a cast to primitive `p` or declared type `ts`. */
+/* `T(x)`: a cast to primitive `p`, declared type `ts`, or, both zero, a bound
+ * type parameter.
+ */
 Sema.check_cast(self, call: u32, p: u32, ts: u32): u32 {
     n: Node = self.node(call)
     if ts != 0 && self.sym(ts).ty != 0 && self.ty(self.sym(ts).ty).kind == TypeKind.error_domain {

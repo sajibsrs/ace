@@ -77,7 +77,7 @@ BEGIN {
             # Generic functions: shared sum/scale/find plus a per-function
             # generic instantiated at two types.
             u = t % 4 + 1
-            printf "mix_%d[T](x: T, y: T): T {\n    m: T = %d\n    return x * m + y\n}\n\n", k, k % 7 + 1 > ace
+            printf "mix_%d[T](x: T, y: T): T {\n    return x * T(%d) + y\n}\n\n", k, k % 7 + 1 > ace
             printf "fn_%d(): u64 {\n    xs: [8]%s = [", k, a > ace
             for (i = 0; i < 8; i++) printf "%s%d", (i ? ", " : ""), (i * mul + k) % 100 > ace
             printf "]\n    scale[%s](xs[..], %d)\n", a, k % 5 + 1 > ace

@@ -279,3 +279,7 @@
   debug diagnostics (#177): lowering emits them in both modes, a release divide
   checks only its divisor (`IRF_NONZERO`), and an element reached through a
   pointer checks it as a located null use. C and selfhost.
+- A type parameter is a cast callee (#185): while stamping, `T(x)` casts to
+  `T`'s bound type through the ordinary cast check (`bound_type_param` ahead
+  of primitive and declared types), so a runtime value converts to `T`. C and
+  selfhost.

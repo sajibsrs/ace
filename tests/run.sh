@@ -261,6 +261,10 @@ tests/sema/functions/void_type_argument_err.ace|3:16: error: 'void' (as T) is al
 tests/sema/generics/void_field_err.ace|3:25: error: 'void' (as T) is allowed only
 tests/sema/generics/void_local_err.ace|4:13: error: 'void' (as R) is allowed only
 tests/sema/generics/void_local_err.ace|12:5: note: in 'keep[void]' instantiated here
+tests/sema/generics/type_param_cast_err.ace|6:17: error: cannot cast integer literal to Point
+tests/sema/generics/type_param_cast_err.ace|19:5: note: in 'scale[Point]' instantiated here
+tests/sema/generics/type_param_cast_err.ace|10:13: error: a cast takes exactly one argument
+tests/sema/generics/type_param_cast_err.ace|14:12: error: 'void' (as R) is allowed only
 tests/sema/generics/void_field_err.ace|6:11: note: in 'Box[void]' instantiated here
 tests/sema/generics/instantiation_site_err.ace|9:12: note: in 'inner[string]' instantiated here
 tests/sema/generics/instantiation_site_err.ace|26:17: note: in 'outer[string]' instantiated here
