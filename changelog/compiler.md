@@ -1,5 +1,10 @@
 # Compiler
 
+- Lowering evaluates the IR-emitting arguments of one call into locals, left
+  to right, so gcc- and clang-built compilers print the same IR (gcc emitted
+  an atomic's debug alignment check in another order). `tests/cc-diff.sh`
+  builds `ace` with both and compares `--ir` and objects over the repository.
+
 - x64 traps on a zero divisor in release builds, as arm64 does: integer `/`
   and `%` marked non-zero by lowering branch to the arithmetic failure instead
   of yielding 0, so release and debug stop at the same division (Safety #3).

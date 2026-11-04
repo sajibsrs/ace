@@ -1708,7 +1708,8 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
     } else if (to_fd) {
         Agg v;
         value(l, dest, node_ty(dest), &v);
-        fd = widen(l, v.v[0], need_type(l, node_ty(dest)), need_type(l, open->type->params[2]));
+        IrType from = need_type(l, node_ty(dest)), to = need_type(l, open->type->params[2]);
+        fd = widen(l, v.v[0], from, to);
     } else if (fi) {
         view_parts(l, dest, &dp, &dn);
     }
@@ -1763,7 +1764,10 @@ static int format_call(Lw* l, Node* x, int fi, int to_fd, Agg* res) {
             v.v[0] = konst(l, need_type(l, vt), (unsigned char)plan->format->str[part->off]); // '%' for %%
         } else {
             v = cap[part->arg - fi - 1];
-            if (!is_agg(vt)) v.v[0] = widen(l, v.v[0], need_type(l, capt[part->arg - fi - 1]), need_type(l, vt));
+            if (!is_agg(vt)) {
+                IrType from = need_type(l, capt[part->arg - fi - 1]), to = need_type(l, vt);
+                v.v[0] = widen(l, v.v[0], from, to);
+            }
         }
         if (is_agg(vt)) {
             g.part[g.nparts++] = (IrPart){ vt, g.n, v.n, 0 };
@@ -1818,7 +1822,8 @@ static int atomic_call(Lw* l, Node* x, int bi, Agg* res) {
     IrType t = need_type(l, pt->base);
     int p = expr(l, x->kids[0], IT_PTR);
     if (l->mode == EMIT_DEBUG) {
-        int low = emit2(l, IR_AND, IT_U64, emit2(l, IR_CAST, IT_U64, p, -1), konst(l, IT_U64, ir_type_bits(t) / 8 - 1));
+        int word = emit2(l, IR_CAST, IT_U64, p, -1), mask = konst(l, IT_U64, ir_type_bits(t) / 8 - 1);
+        int low = emit2(l, IR_AND, IT_U64, word, mask);
         int id = emit2(l, IR_CHECK, IT_VOID, cmp(l, IR_EQ, low, konst(l, IT_U64, 0)), -1);
         l->fn->ins[id].name = "misaligned atomic access";
         l->fn->ins[id].at = l->at;
@@ -1907,7 +1912,8 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         case BI_MEM_ALLOC_SIZE: { // the allocator's usable size of data's allocation
             int p;
             view_parts(l, x->kids[0], &p, NULL);
-            return widen(l, call_routine(l, strcmp(ace_target, "linux-x64") == 0 ? "_malloc_usable_size" : "_malloc_size", 1, IT_U64, &p, 1), IT_U64, need_type(l, node_ty(x)));
+            int size = call_routine(l, strcmp(ace_target, "linux-x64") == 0 ? "_malloc_usable_size" : "_malloc_size", 1, IT_U64, &p, 1);
+            return widen(l, size, IT_U64, need_type(l, node_ty(x)));
         }
         case BI_MEM_COMPARE: return mem_compare(l, x);
         case BI_MEM_EQUAL: return mem_equal(l, x);
@@ -1919,8 +1925,10 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         case BI_MEM_FILL: case BI_MEM_ZERO: return mem_write(l, x, bi);
         default: return mem_alloc_typed(l, x, bi, res);
         }
-    case BI_SYS_ARGC: // an int, then (below) char** arrays: see process_word
-        return widen(l, load(l, IT_I32, process_word(l, bi), 0, 0), IT_I32, need_type(l, node_ty(x)));
+    case BI_SYS_ARGC: { // an int, then (below) char** arrays: see process_word
+        int count = load(l, IT_I32, process_word(l, bi), 0, 0);
+        return widen(l, count, IT_I32, need_type(l, node_ty(x)));
+    }
     case BI_SYS_ENVC: {
         int env = load(l, IT_PTR, process_word(l, bi), 0, 0);
         int n = var_new(l, NULL, IT_U64, -1);
@@ -3870,7 +3878,10 @@ static int inline_call(Lw* l, Node* call, Agg* out, int dst) {
         if (a->kind == N_UNARY && a->op == T_AMP && pointee_of(ps) && is_place(a->a)) {
             Place p = place(l, a->a); // a local kept in variables: *ps is those variables
             if (p.var >= 0 && unwrap(p.t) == pointee_of(ps)) ptrmap_put(&l->pointee, ps, (uintptr_t)p.var + 1);
-            else write_var(l, var_of(l, ps), l->cur, place_address(l, p));
+            else {
+                int var = var_of(l, ps), addr = place_address(l, p);
+                write_var(l, var, l->cur, addr);
+            }
             continue;
         }
         init_var(l, var_of(l, ps), ps, a);
