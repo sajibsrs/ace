@@ -6,6 +6,8 @@
 # full check (default mode). A sema or IR fixture's `// target: NAME` line
 # checks it for that target instead of the host's (its asm names registers).
 set -u
+# Trap fixtures abort on purpose; a core dump for each one only costs time.
+ulimit -c 0 2>/dev/null || :
 fail=0
 tab=$(printf '\t')
 ACE_BIN=${ACE_BIN:-./ace}
