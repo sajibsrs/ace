@@ -33,11 +33,9 @@ bits_examples(): int {
     low: uint = bits.ctz(u64(8))
     reversed: u32 = bits.bswap(u32(0x12345678))
     rotated: u8 = bits.rotl(u8(0x81), uint(1))
-    wrapped: u8 = bits.wradd(u8(250), u8(10))
 
     if bitcast(u32, bitcast(f32, raw)) != raw || ones != 8 || high != 15 ||
-       low != 3 || reversed != u32(0x78563412) || rotated != u8(3) ||
-       wrapped != u8(4) {
+       low != 3 || reversed != u32(0x78563412) || rotated != u8(3) {
         return 1
     }
     return 0

@@ -4,7 +4,6 @@
  * of the match spans, so all variants must agree on what matched.
  */
 
-import bits
 import fmt
 import mem
 import regex
@@ -36,7 +35,7 @@ fill(text: []u8) {
     x: u64 = 88172645463325252
 
     for i: usize in 0 .. text.len {
-        x = bits.wradd(bits.wrmul(x, 6364136223846793005), 1442695040888963407)
+        x = x * 6364136223846793005 + 1442695040888963407
         r: u64 = x >> 33
         kind: u64 = r % 16
 

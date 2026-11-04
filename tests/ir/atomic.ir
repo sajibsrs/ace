@@ -21,7 +21,7 @@ b2: ; preds b1
     %16 = atomic.chk u32 add.relaxed %0, %15
     atomic fence.release
     %18 = const u32 1
-    %19 = add.chk u32 %5, %18
+    %19 = add u32 %5, %18
     jmp b1
 b3: ; preds b1
     %21 = cast u64 %0

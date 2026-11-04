@@ -36,14 +36,14 @@ b0:
     check %4, 22:7 bounds violation
     %6 = padd ptr %0, %2 * 1
     %7 = load u8 [%6]
-    %8 = add.chk u8 %7, %3
+    %8 = add u8 %7, %3
     store [%6], %8
     %10 = lt bool %2, %1
     check %10, 23:18 bounds violation
     %12 = padd ptr %0, %2 * 1
     %13 = load u8 [%12]
     %14 = const u64 1
-    %15 = add.chk u64 %2, %14
+    %15 = add u64 %2, %14
     %16 = lt bool %15, %1
     check %16, 23:7 bounds violation
     %18 = padd ptr %0, %15 * 1
@@ -148,7 +148,7 @@ b2: ; preds b3
     %20 = call {2} head(%17, %18, %19)
     %21 = proj ptr %20, 0
     %22 = proj u64 %20, 1
-    %23 = add.chk u64 %16, %22
+    %23 = add u64 %16, %22
     %24 = cast i64 %23
     call @__ace$registry_leaks()
     ret %24

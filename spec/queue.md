@@ -12,7 +12,7 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     `__TEXT`/`.rodata`.
   - Globals, Ace and C (`extern`), are writable by default; `const` opts into
     read-only placement.
-  - Defined failures: integer overflow follows one fixed rule; oversized
+  - Defined failures: integer overflow wraps in every build (Safety #6); oversized
     shifts are defined; bounds, null dereference, and division by zero trap
     in every build (Safety #3);
     reading uninitialized storage stays a compile error. Precedent: Go (bounds,
@@ -27,7 +27,6 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     receivers (`const self`); a getter takes `const self` (Mutability #2, #6).
   Open:
   - [open] Spelling of the by-value receiver (e.g. `val self`).
-  - [open] The overflow rule: wrap in every build, or trap in every build.
   - [open] The oversized-shift rule: mask the count (arm64 hardware), or
     yield zero / sign fill.
   - [open] `noalias` restated: "no other parameter, global, or pointer reaches

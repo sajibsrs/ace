@@ -38,21 +38,5 @@ pub rotr(value: u16, count: uint): u16 intrinsic
 pub rotr(value: u32, count: uint): u32 intrinsic
 pub rotr(value: u64, count: uint): u64 intrinsic
 
-/* Addition, subtraction, and multiplication wrapping modulo 2^width; they
- * never trap or report overflow.
- */
-pub wradd(a: u8, b: u8): u8 intrinsic
-pub wradd(a: u16, b: u16): u16 intrinsic
-pub wradd(a: u32, b: u32): u32 intrinsic
-pub wradd(a: u64, b: u64): u64 intrinsic
-pub wrsub(a: u8, b: u8): u8 intrinsic
-pub wrsub(a: u16, b: u16): u16 intrinsic
-pub wrsub(a: u32, b: u32): u32 intrinsic
-pub wrsub(a: u64, b: u64): u64 intrinsic
-pub wrmul(a: u8, b: u8): u8 intrinsic
-pub wrmul(a: u16, b: u16): u16 intrinsic
-pub wrmul(a: u32, b: u32): u32 intrinsic
-pub wrmul(a: u64, b: u64): u64 intrinsic
-
 // The 128-bit product a * b as its high and low words.
 pub mul_wide(a: u64, b: u64): (u64, u64) intrinsic

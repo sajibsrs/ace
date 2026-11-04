@@ -5,7 +5,6 @@
  * for NaN, signed zero, infinity, and subnormal lanes. Struct arrays whose
  * fields all get the same computation vectorize as their flat fields. */
 
-import bits
 import fmt
 
 PRIME: const u64 = 1099511628211
@@ -29,15 +28,15 @@ qs: [4103]Quad
 hash(n: usize): u64 {
     h: u64 = 1469598103934665603
     for i: usize in 0 .. n {
-        h = bits.wrmul(h ^ u64(bitcast(u32, ys[i])), PRIME)
-        h = bits.wrmul(h ^ u64(u32(ks[i] + 2147483647 / 2)), PRIME)
-        h = bits.wrmul(h ^ bitcast(u64, yd[i]), PRIME)
-        h = bits.wrmul(h ^ u64(bitcast(u32, ps[i].x)) ^ (u64(bitcast(u32, ps[i].y)) << 32), PRIME)
-        h = bits.wrmul(h ^ u64(bitcast(u32, ps[i].z)), PRIME)
-        h = bits.wrmul(h ^ bitcast(u64, pd[i].a), PRIME)
-        h = bits.wrmul(h ^ bitcast(u64, pd[i].b), PRIME)
-        h = bits.wrmul(h ^ u64(u32(qs[i].a + 1000)) ^ (u64(u32(qs[i].d + 1000)) << 32), PRIME)
-        h = bits.wrmul(h ^ u64(u32(qs[i].b + 1000)) ^ (u64(u32(qs[i].c + 1000)) << 32), PRIME)
+        h = (h ^ u64(bitcast(u32, ys[i]))) * PRIME
+        h = (h ^ u64(u32(ks[i] + 2147483647 / 2))) * PRIME
+        h = (h ^ bitcast(u64, yd[i])) * PRIME
+        h = (h ^ u64(bitcast(u32, ps[i].x)) ^ (u64(bitcast(u32, ps[i].y)) << 32)) * PRIME
+        h = (h ^ u64(bitcast(u32, ps[i].z))) * PRIME
+        h = (h ^ bitcast(u64, pd[i].a)) * PRIME
+        h = (h ^ bitcast(u64, pd[i].b)) * PRIME
+        h = (h ^ u64(u32(qs[i].a + 1000)) ^ (u64(u32(qs[i].d + 1000)) << 32)) * PRIME
+        h = (h ^ u64(u32(qs[i].b + 1000)) ^ (u64(u32(qs[i].c + 1000)) << 32)) * PRIME
     }
     return h
 }

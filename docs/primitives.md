@@ -45,11 +45,12 @@ error, written with an explicit cast. A conditional inside another needs
 parentheses (`a ? b : (c ? d : e)`), and inside a repeated array literal the
 first `:` belongs to the conditional, so `[(c ? x : y) : 3]` repeats it.
 
-Debug output aborts when integer `+`, `-`, `*`, or unary `-` cannot produce a
-value of its declared type, and on division/remainder by zero or the signed
-minimum divided by `-1`. Shift counts must be nonnegative and below the left
-operand width. Release output emits direct fixed-width operations without
-guards; explicit casts and bitwise operations are not overflow-checked.
+Integer `+`, `-`, `*`, and unary `-` wrap modulo 2^width in every build, with
+two's-complement signed results: `i8(127) + i8(1)` is `-128` and `u8(0) - 1`
+is `255`. The signed minimum divided by `-1` is the minimum, and its remainder
+is `0`. Division or remainder by zero aborts in every build. Shift counts must
+be nonnegative and below the left operand width; debug output aborts on a bad
+count. A constant global initializer that overflows is still a compile error.
 
 When the divisor of `/`, `%`, `/=`, or `%=` is an integer literal or named
 constant, the compiler replaces the hardware divide with shifts and masks for
@@ -260,5 +261,11 @@ The examples are covered by `tests/sema/docs/primitive_ok.ace`.
   to the right, PHP 7 grouped it to the left), and requiring parentheses
   matches the bitwise/comparison rule above. It can later relax to C's
   right grouping without breaking code.
+- Integer overflow wraps in every build, as in Go and Java, rather than
+  trapping as in Swift or trapping only in debug as in Rust. Trapping in
+  release measured 1.18x on `spectralnorm`, 1.19x on `bench/std/string`, and
+  1.30x on `bench/std/collections`: each checked operation pins its result,
+  so the optimizer cannot move, merge, or vectorize it. A debug-only trap would
+  give one program two meanings. Bounds checks still catch a wrapped index.
 - A conditional is not yet a compile-time constant; constant folding of it
   can be added later without changing any accepted program.

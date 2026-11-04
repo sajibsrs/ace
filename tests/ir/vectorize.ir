@@ -55,16 +55,16 @@ b2: ; preds b1
     check %9, 28:43 bounds violation
     %11 = padd ptr %7, %6 * 4
     %12 = load i32 [%11]
-    %13 = neg.chk i32 %12
+    %13 = neg i32 %12
     %14 = const i32 3
-    %15 = mul.chk i32 %13, %14
+    %15 = mul i32 %13, %14
     %16 = global ptr ks
     %17 = const u64 64
     %18 = lt bool %6, %17
     check %18, 28:55 bounds violation
     %20 = padd ptr %16, %6 * 4
     %21 = load i32 [%20]
-    %22 = add.chk i32 %15, %21
+    %22 = add i32 %15, %21
     %23 = global ptr ks
     %24 = const u64 64
     %25 = lt bool %6, %24
@@ -195,7 +195,7 @@ b2: ; preds b1
     %6 = cast u64 %3
     %7 = global ptr ys
     %8 = const u64 1
-    %9 = add.chk u64 %6, %8
+    %9 = add u64 %6, %8
     %10 = const u64 64
     %11 = lt bool %9, %10
     check %11, 44:42 bounds violation
@@ -311,7 +311,7 @@ b2: ; preds b0
     %6 = const f32 0.5
     %7 = mul f32 %0, %6
     %8 = const i64 1
-    %9 = sub.chk i64 %1, %8
+    %9 = sub i64 %1, %8
     %10 = call f32 halve(%7, %9)
     ret %10
 }

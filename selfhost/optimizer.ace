@@ -34,9 +34,9 @@ fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
     n: u64 = u64(ir.type_bits(t))
     sg: bool = ir.type_signed(t)
     switch op {
-        ir.IR_ADD { return ir.wrap(t, bits.wradd(a, b)), true }
-        ir.IR_SUB { return ir.wrap(t, bits.wrsub(a, b)), true }
-        ir.IR_MUL { return ir.wrap(t, bits.wrmul(a, b)), true }
+        ir.IR_ADD { return ir.wrap(t, a + b), true }
+        ir.IR_SUB { return ir.wrap(t, a - b), true }
+        ir.IR_MUL { return ir.wrap(t, a * b), true }
         ir.IR_MULH {
             high: u64 = 0
             low: u64 = 0
@@ -64,7 +64,7 @@ fold(op: u8, t: u8, ot: u8, a: u64, b: u64): (u64, bool) {
             if op == ir.IR_DIV { return ir.wrap(t, a / b), true }
             return ir.wrap(t, a % b), true
         }
-        ir.IR_NEG { return ir.wrap(t, bits.wrsub(0, a)), true }
+        ir.IR_NEG { return ir.wrap(t, 0 - a), true }
         ir.IR_NOT {
             if t == ir.IT_BOOL { return a ^ 1, true }
             return ir.wrap(t, ~a), true
@@ -456,7 +456,7 @@ same_arg(fn: Func, a: int, b: int): bool {
 }
 
 mix(h: u64, v: u64): u64 {
-    return h ^ bits.wradd(bits.wradd(bits.wradd(v, 0x9E3779B97F4A7C15), h << 6), h >> 2)
+    return h ^ (v + 0x9E3779B97F4A7C15 + (h << 6) + (h >> 2))
 }
 
 arg_hash(fn: Func, a: int): u64 {
@@ -469,7 +469,7 @@ vn_hash(fn: Func, v: int): u64 {
     x: IrIns = *(fn.at(v))
     h: u64 = mix(mix(mix(u64(x.op), u64(x.ty)), x.imm), u64(u32(x.aux)))
     if x.op == ir.IR_GLOBAL { return mix(h, u64(x.sym)) }
-    if commutes(fn, v) { return mix(h, bits.wradd(arg_hash(fn, fn.arg(v, 0)), arg_hash(fn, fn.arg(v, 1)))) }
+    if commutes(fn, v) { return mix(h, arg_hash(fn, fn.arg(v, 0)) + arg_hash(fn, fn.arg(v, 1))) }
     for i: u32 in 0..x.nargs { h = mix(h, arg_hash(fn, fn.arg(v, i))) }
     return h
 }

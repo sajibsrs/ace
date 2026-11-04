@@ -1,7 +1,6 @@
 /* ui context — a frame's input, theme, ids and layout: what places and tracks
  * every control. */
 
-import bits
 import fmt
 import math
 import Color, Keycode from sdl
@@ -171,7 +170,7 @@ pub Context.end(self) {
 
 /* `bytes` mixed into hash `h`. */
 fnv(h: u32, bytes: []u8): u32 {
-    for i: usize in 0 .. bytes.len { h = bits.wrmul(h ^ u32(bytes[i]), FNV_PRIME) }
+    for i: usize in 0 .. bytes.len { h = (h ^ u32(bytes[i])) * FNV_PRIME }
     return h
 }
 

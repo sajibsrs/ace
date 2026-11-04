@@ -16,10 +16,10 @@ b2: ; preds b1
     %11 = load u8 [%6]
     %12 = cast i64 %11
     %13 = const u64 1
-    %14 = add.chk u64 %7, %13
+    %14 = add u64 %7, %13
     %15 = cast i64 %14
-    %16 = mul.chk i64 %12, %15
-    %17 = add.chk i64 %8, %16
+    %16 = mul i64 %12, %15
+    %17 = add i64 %8, %16
     jmp b4
 b3: ; preds b1
     ret %8
@@ -51,7 +51,7 @@ b2: ; preds b1
     %13 = padd.chk ptr %0, %4 * 1
     %14 = load u8 [%13]
     %15 = const u8 2
-    %16 = mul.chk u8 %14, %15
+    %16 = mul u8 %14, %15
     %17 = const u64 3
     %18 = lt bool %4, %17
     check %18, 16:14 bounds violation
@@ -86,8 +86,8 @@ b2: ; preds b1
     %10 = load i32 [%5 + 4]
     %11 = cast i64 %9
     %12 = cast i64 %10
-    %13 = sub.chk i64 %11, %12
-    %14 = add.chk i64 %6, %13
+    %13 = sub i64 %11, %12
+    %14 = add i64 %6, %13
     jmp b4
 b3: ; preds b1
     ret %6
@@ -132,7 +132,7 @@ b5: ; preds b2
     jmp b3
 b6: ; preds b2
     %26 = const i64 1
-    %27 = add.chk i64 %15, %26
+    %27 = add i64 %15, %26
     jmp b4
 }
 
@@ -147,12 +147,12 @@ b0:
     %6 = const i64 97
     %7 = const i64 2
     %8 = const i64 98
-    %9 = mul.chk i64 %7, %8
-    %10 = add.chk i64 %6, %9
+    %9 = mul i64 %7, %8
+    %10 = add i64 %6, %9
     %11 = const i64 3
     %12 = const i64 99
-    %13 = mul.chk i64 %11, %12
-    %14 = add.chk i64 %10, %13
+    %13 = mul i64 %11, %12
+    %14 = add i64 %10, %13
     %15 = ne bool %5, %14
     br %15, b1, b2
 b1: ; preds b0

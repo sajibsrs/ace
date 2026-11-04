@@ -8,14 +8,14 @@ b0:
     br %4, b1, b3
 b1: ; preds b0
     %6 = const i64 1
-    %7 = add.chk i64 %0, %6
+    %7 = add i64 %0, %6
     jmp b2
 b2: ; preds b1, b3
     %9 = phi i64 [%7, b1], [%12, b3]
     ret %9
 b3: ; preds b0
     %11 = const i64 1
-    %12 = sub.chk i64 %0, %11
+    %12 = sub i64 %0, %11
     jmp b2
 }
 
@@ -41,12 +41,12 @@ b1: ; preds b0, b2
     br %7, b2, b3
 b2: ; preds b1
     %9 = const i64 1
-    %10 = mul.chk i64 %5, %9
+    %10 = mul i64 %5, %9
     %11 = const i64 1
-    %12 = add.chk i64 %4, %11
+    %12 = add i64 %4, %11
     jmp b1
 b3: ; preds b1
-    %14 = add.chk i64 %0, %5
+    %14 = add i64 %0, %5
     ret %14
 }
 
@@ -55,8 +55,8 @@ b0:
     %0 = param i64 0
     %1 = param i64 1
     %2 = const i64 0
-    %3 = div.chk i64 %0, %1
-    %4 = add.chk i64 %3, %2
+    %3 = div.nz i64 %0, %1
+    %4 = add i64 %3, %2
     ret %4
 }
 

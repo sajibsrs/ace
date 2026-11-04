@@ -956,11 +956,11 @@ static int binop_of(TokKind op) {
 
 static int is_compare(int op) { return op >= IR_EQ && op <= IR_GE; }
 
-// Arithmetic that a debug build checks (Safety & Debug Builds #6).
+// Arithmetic that a debug build checks (Safety & Debug Builds #6): the shift
+// count; integer overflow wraps in every build.
 static int checked_op(Lw* l, int op, IrType t) {
-    if (l->mode != EMIT_DEBUG || t == IT_BOOL || ir_type_float(t)) return 0; // IEEE arithmetic never traps
-    return op == IR_ADD || op == IR_SUB || op == IR_MUL || op == IR_DIV || op == IR_REM ||
-           op == IR_SHL || op == IR_SHR || op == IR_NEG;
+    if (l->mode != EMIT_DEBUG || t == IT_BOOL || ir_type_float(t)) return 0;
+    return op == IR_SHL || op == IR_SHR;
 }
 
 static int arith(Lw* l, int op, IrType t, int a, int b) {
@@ -1858,12 +1858,6 @@ static int builtin(Lw* l, Node* x, int bi, Agg* res) {
         IrType ct = type_in(l, x->kids[1], IT_U64);
         int c = widen(l, expr(l, x->kids[1], ct), ct, IT_U64);
         return emit2(l, bi == BI_BITS_ROTATE_LEFT ? IR_ROTL : IR_ROTR, t, v, c);
-    }
-    case BI_BITS_WRAP_ADD: case BI_BITS_WRAP_SUB: case BI_BITS_WRAP_MUL: { // never checked
-        IrType t = need_type(l, node_ty(x));
-        int a = expr(l, x->kids[0], t);
-        return emit2(l, bi == BI_BITS_WRAP_ADD ? IR_ADD : bi == BI_BITS_WRAP_SUB ? IR_SUB : IR_MUL, t, a,
-                     expr(l, x->kids[1], t));
     }
     case BI_BITS_MUL_WIDE: { // (high, low): mulh and mul of the same operands
         int a = expr(l, x->kids[0], IT_U64), b = expr(l, x->kids[1], IT_U64);

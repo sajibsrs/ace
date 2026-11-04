@@ -71,7 +71,7 @@ b1: ; preds b2, b4, b6, b7
     %9 = phi u64 [%19, b2], [%25, b4], [%31, b6], [%2, b7]
     %10 = cast i64 %9
     %11 = const i64 100
-    %12 = mul.chk i64 %10, %11
+    %12 = mul i64 %10, %11
     %13 = const ptr 0
     %14 = const u64 0
     %15 = const u64 4294967298
@@ -103,7 +103,7 @@ b8: ; preds b9, b11, b13, b14
     %34 = phi ptr [%39, b9], [%45, b11], [%51, b13], [%13, b14]
     %35 = phi u64 [%40, b9], [%46, b11], [%52, b13], [%14, b14]
     %36 = cast i64 %35
-    %37 = add.chk i64 %12, %36
+    %37 = add i64 %12, %36
     ret %37
 b9: ; preds b1
     %39 = str ptr "no such file"

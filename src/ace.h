@@ -225,9 +225,6 @@ enum {
     BI_MATH_FLOOR = 30,
     BI_MATH_CEIL = 31,
     BI_MATH_FMA = 32,       // math.fma(a, b, c): a*b + c with one rounding
-    BI_BITS_WRAP_ADD = 33,  // bits.wradd/wrsub/wrmul: unchecked fixed-width arithmetic
-    BI_BITS_WRAP_SUB = 34,
-    BI_BITS_WRAP_MUL = 35,
     BI_MEM_ZALLOC_T = 36,   // mem.zalloc[T](count: usize): []T, zero-filled
     BI_STR_FORMAT = 37,     // str.format(destination, "format", ...): checked like fmt.printf
     BI_FMT_PRINTF_FD = 38,  // fmt.printf(fd, "format", ...): fmt.printf to a descriptor

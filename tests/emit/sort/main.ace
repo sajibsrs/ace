@@ -7,7 +7,6 @@
 
 // expect-exit: 0
 
-import bits
 import sort
 
 MUL: const u64 = 6364136223846793005
@@ -37,7 +36,7 @@ fill(data: []int, n: usize, shape: int) {
         }
         if shape == 4 { v = int(i % 13) }
         if shape >= 5 {
-            seed = bits.wradd(bits.wrmul(seed, MUL), INC)
+            seed = seed * MUL + INC
             v = int(seed >> 33)
             if shape == 5 { v = v % 10 }
         }

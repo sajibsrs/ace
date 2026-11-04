@@ -17,7 +17,7 @@ b2: ; preds b5
 b3: ; preds b6
     %12 = load i64 [%0 + 8]
     %13 = load i64 [%0 + 16]
-    %14 = add.chk i64 %12, %13
+    %14 = add i64 %12, %13
     ret %14
 b4: ; preds b6
     %16 = const i64 -1
@@ -45,21 +45,21 @@ b1: ; preds b8, b2, b3, b4, b5
     ret %6
 b2: ; preds b0
     %8 = const i64 1
-    %9 = add.chk i64 %1, %8
+    %9 = add i64 %1, %8
     jmp b1
 b3: ; preds b6
     %11 = load i64 [%0 + 8]
-    %12 = add.chk i64 %1, %11
+    %12 = add i64 %1, %11
     jmp b1
 b4: ; preds b7
     %14 = load i64 [%0 + 8]
     %15 = load i64 [%0 + 16]
-    %16 = add.chk i64 %1, %15
+    %16 = add i64 %1, %15
     jmp b1
 b5: ; preds b8
     %18 = load f64 [%0 + 8]
     %19 = const i64 100
-    %20 = add.chk i64 %1, %19
+    %20 = add i64 %1, %19
     jmp b1
 b6: ; preds b0
     %22 = const i32 3
@@ -96,7 +96,7 @@ b3: ; preds b6
 b4: ; preds b7
     %13 = load i64 [%1 + 8]
     %14 = load i64 [%1 + 16]
-    %15 = mul.chk i64 %13, %14
+    %15 = mul i64 %13, %14
     ret %15
 b5: ; preds b8
     %17 = load u64 [%1 + 8]
@@ -107,9 +107,9 @@ b5: ; preds b8
     store [%0 + 16], %21
     %23 = load i64 [%0]
     %24 = load i64 [%0 + 8]
-    %25 = add.chk i64 %23, %24
+    %25 = add i64 %23, %24
     %26 = load i64 [%0 + 16]
-    %27 = add.chk i64 %25, %26
+    %27 = add i64 %25, %26
     ret %27
 b6: ; preds b0
     %29 = const i32 1
@@ -183,7 +183,7 @@ b0:
     %2 = const u64 8
     %3 = padd ptr %0, %2 * 1
     %4 = call i64 area(%3)
-    %5 = add.chk i64 %1, %4
+    %5 = add i64 %1, %4
     ret %5
 }
 
@@ -287,12 +287,12 @@ b0:
     %4 = const u64 32
     %5 = padd ptr %0, %4 * 1
     %6 = const i64 1
-    %7 = add.chk i64 %2, %6
+    %7 = add i64 %2, %6
     call.mem make(%7, %5)
     %9 = const u64 56
     %10 = padd ptr %0, %9 * 1
     %11 = const i64 2
-    %12 = add.chk i64 %2, %11
+    %12 = add i64 %2, %11
     call.mem make(%12, %10)
     %14 = load u64 [%0]
     store [%1], %14
@@ -324,11 +324,11 @@ b0:
     %2 = const u64 32
     %3 = padd ptr %0, %2 * 1
     %4 = call i64 area(%3)
-    %5 = add.chk i64 %1, %4
+    %5 = add i64 %1, %4
     %6 = const u64 56
     %7 = padd ptr %0, %6 * 1
     %8 = call i64 area(%7)
-    %9 = add.chk i64 %5, %8
+    %9 = add i64 %5, %8
     ret %9
 }
 
@@ -553,11 +553,11 @@ b26: ; preds b27
     %179 = call i64 total(%6)
     %180 = const i64 1
     %181 = const i64 3
-    %182 = add.chk i64 %180, %181
+    %182 = add i64 %180, %181
     %183 = const i64 7
-    %184 = add.chk i64 %182, %183
+    %184 = add i64 %182, %183
     %185 = const i64 -1
-    %186 = add.chk i64 %184, %185
+    %186 = add i64 %184, %185
     %187 = ne bool %179, %186
     br %187, b28, b29
 b27: ; preds b24
@@ -585,11 +585,11 @@ b29: ; preds b26
     %208 = call i64 total(%6)
     %209 = const i64 1
     %210 = const i64 3
-    %211 = add.chk i64 %209, %210
+    %211 = add i64 %209, %210
     %212 = const i64 7
-    %213 = add.chk i64 %211, %212
+    %213 = add i64 %211, %212
     %214 = const i64 8
-    %215 = add.chk i64 %213, %214
+    %215 = add i64 %213, %214
     %216 = ne bool %208, %215
     br %216, b30, b31
 b30: ; preds b29

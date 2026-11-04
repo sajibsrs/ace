@@ -20,9 +20,9 @@ b0:
     %10 = calli.chk i32 %9(%8)
     %11 = cast i64 %10
     %12 = const i64 2
-    %13 = mul.chk i64 %11, %12
+    %13 = mul i64 %11, %12
     %14 = const i64 42
-    %15 = sub.chk i64 %13, %14
+    %15 = sub i64 %13, %14
     call @__ace$registry_leaks()
     ret %15
 }

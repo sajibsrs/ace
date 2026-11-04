@@ -5,8 +5,6 @@
  * truncated sequences, and unexpected continuation bytes are invalid.
  */
 
-import bits
-
 /* Returns the encoded byte width of `value` (1-4), or 0 when it is not a
  * Unicode scalar value.
  */
@@ -90,7 +88,7 @@ inline span(text: string, at: usize): usize {
     if text.len - at < n { return 0 }
     row: u8 = lead >> 4
 
-    if bits.wrsub(text[at + 1], ACCEPT_LOW[row]) >= ACCEPT_COUNT[row] { return 0 }
+    if text[at + 1] - ACCEPT_LOW[row] >= ACCEPT_COUNT[row] { return 0 }
 
     if n >= 3 && (text[at + 2] & 0xC0) != 0x80 { return 0 }
 

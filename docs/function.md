@@ -182,7 +182,7 @@ the one it fits, by kind and value. Every argument must agree on a single
 candidate; otherwise the call is an error and a cast selects:
 
 ```ace
-bits.wrmul(rem, 2)     // rem: u64 selects the u64 overload, and 2 fits it
+bits.rotl(rem, 2)      // rem: u64 selects the u64 overload, and 2 fits its count
 atomic.add(&count, 1)  // count: u32 likewise
 bits.clz(1)            // error: four widths fit and none is the default
 bits.clz(u64(1))       // the cast selects
@@ -903,7 +903,7 @@ Why the rules in `spec/compiler.md`, C Interop (`spec/modules-packages.md`), and
   `inline`. With `mem.grow` cold, `bench/std` array-push went from 1.35x to
   1.0x of C.
 - Names & Scoping #6 (constants in overload sets): a constant has no type to
-  match, so requiring its default type would force `bits.wrmul(rem, u64(2))`
+  match, so requiring its default type would force `atomic.add(&count, u32(1))`
   or an extra overload per width, while a fallback list as in C++'s conversion
   ranks would let `bits.clz(1)` pick a width and return a count nobody asked
   for. Taking the sole candidate a constant fits does neither: the typed

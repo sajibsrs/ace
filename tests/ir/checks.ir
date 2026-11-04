@@ -19,8 +19,8 @@ b0:
     check %15, 8:40 bounds violation
     %17 = padd ptr %13, %0 * 4
     %18 = load i32 [%17]
-    %19 = mul.chk i32 %12, %18
-    %20 = add.chk i32 %6, %19
+    %19 = mul i32 %12, %18
+    %20 = add i32 %6, %19
     ret %20
 }
 
@@ -41,7 +41,7 @@ b2: ; preds b1
     check %9, 13:41 bounds violation
     %11 = padd ptr %0, %5 * 4
     %12 = load i32 [%11]
-    %13 = add.chk i32 %6, %12
+    %13 = add i32 %6, %12
     jmp b4
 b3: ; preds b1
     ret %6
@@ -101,7 +101,7 @@ b2: ; preds b1
     %6 = cast u64 %3
     %7 = global ptr table
     %8 = const u64 1
-    %9 = add.chk u64 %6, %8
+    %9 = add u64 %6, %8
     %10 = const u64 8
     %11 = lt bool %9, %10
     check %11, 28:47 bounds violation
@@ -145,7 +145,7 @@ b2: ; preds b1
     check %15, 33:39 bounds violation
     %17 = padd ptr %9, %13 * 4
     %18 = load i32 [%17]
-    %19 = add.chk i32 %5, %18
+    %19 = add i32 %5, %18
     jmp b4
 b3: ; preds b1
     ret %5
@@ -173,7 +173,7 @@ b2: ; preds b1
     check %10, 39:41 bounds violation
     %12 = padd ptr %8, %4 * 4
     %13 = load i32 [%12]
-    %14 = add.chk i32 %5, %13
+    %14 = add i32 %5, %13
     jmp b4
 b3: ; preds b1
     ret %5
@@ -191,20 +191,20 @@ b0:
     %3 = global ptr table
     %4 = const u64 8
     %5 = call i32 counted(%3, %4)
-    %6 = add.chk i32 %2, %5
+    %6 = add i32 %2, %5
     %7 = const u64 9
     %8 = call i32 guarded(%7)
-    %9 = add.chk i32 %6, %8
+    %9 = add i32 %6, %8
     %10 = global ptr table
     %11 = const u64 8
     %12 = const u64 2
     %13 = call i32 early(%10, %11, %12)
-    %14 = add.chk i32 %9, %13
+    %14 = add i32 %9, %13
     %15 = call i32 narrow()
-    %16 = add.chk i32 %14, %15
+    %16 = add i32 %14, %15
     %17 = const u64 8
     %18 = call i32 unknown(%17)
-    %19 = add.chk i32 %16, %18
+    %19 = add i32 %16, %18
     %20 = cast i64 %19
     call @__ace$registry_leaks()
     ret %20

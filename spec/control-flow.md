@@ -55,9 +55,8 @@ Decision: one view model across arrays, slices, and strings; `string`, `[]char`,
     debug mode, while release assumes the precondition. A checked comparison
     of a signed index tests negativity before any unsigned widening, preserving
     the lower-bound violation rather than reclassifying it as an oversized
-    index. Unsigned arithmetic underflow is independently an integer-overflow
-    violation in debug mode; however an oversized unsigned index produced by
-    any path is still rejected by the index upper-bound check.
+    index. An oversized unsigned index produced by any path, wrapped
+    arithmetic included, is rejected by the index upper-bound check.
 
 Standard library #10 addendum (implemented): `sys.pipe(): (Fd, Fd, Error)`
 creates one unidirectional byte pipe and returns its read end, write end, then
