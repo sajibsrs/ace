@@ -657,7 +657,7 @@ static void div_rem(X64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
     int sg = ir_type_signed(t), chk = x->flags & IRF_CHECKED, rem = x->op == IR_REM;
-    int bits = ir_type_bits(t);
+    int trap = chk || (x->flags & IRF_NONZERO), bits = ir_type_bits(t);
     IrIns* y = ins_of(a, x->args[1]);
     if (y->op == IR_CONST && const_divide(a, x->op, x->args[0], canon(t, y->imm), t)) {
         store_val(a, v, RAX); // a quotient or remainder of canonical values is canonical
@@ -667,7 +667,7 @@ static void div_rem(X64* a, int v) {
     load_val(a, RCX, x->args[1]);
     uint32_t zero = 0, minus = 0, done_at[2] = { 0, 0 };
     test_rr(a, RCX);
-    if (chk) {
+    if (trap) {
         fail_if(a, CC_E, FAIL);
     } else {
         put(a, 0x75); put(a, 0); zero = here(a); // jnz over: a zero divisor yields 0
@@ -694,7 +694,7 @@ static void div_rem(X64* a, int v) {
         rr(a, 1, (const uint8_t[]){ 0xF7 }, 1, 6, RCX);       // div rcx
     }
     if (rem) mov_rr(a, RAX, RDX);
-    if (!chk) a->t->d[done_at[0] - 1] = (uint8_t)(here(a) - done_at[0]);
+    if (!trap) a->t->d[done_at[0] - 1] = (uint8_t)(here(a) - done_at[0]);
     if (sg) a->t->d[done_at[1] - 1] = (uint8_t)(here(a) - done_at[1]);
     normalize(a, t, RAX);
     store_val(a, v, RAX);
