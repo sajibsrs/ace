@@ -44,26 +44,8 @@ SQUARE: const usize = 22
 TRIANGLE: const usize = 33
 CROSS: const usize = 42
 
-INK: const u32 = 0xdddddd
-WINDOW_BG: const u32 = 0x0a0b0c
-PANEL: const u32 = 0x16191c
-
-theme(): ui.Theme {
-    return ui.Theme {
-        text = ui.color(INK),
-        muted = ui.color(0x888888),
-        header = ui.color(0x0f1215),
-        button = ui.Fill { rest = ui.color(0x2c3238), hover = ui.color(0x3d4f63), press = ui.color(0x4e6680) },
-        selected = ui.color(0x3d4f63),
-        field = ui.color(0x22262b),
-        radius = 4.0,
-        padding = 8.0,
-        gap = 4.0,
-        icon = 18.0,
-    }
-}
-
 SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
+TOOLS: [3]string = ["Box", "Wedge", "Tick"]
 FRUIT: [10]string = ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew", "kiwi", "lemon"]
 
 /* Everything the controls edit. */
@@ -95,30 +77,24 @@ controls(s: *State, box: ui.Rect) {
     l: *fmt.Buffer = ui.line()
     l.printf("clicked %d times", s.clicks)
     ui.muted(l.text())
-    ui.row(3)
-    for i: usize in 0 .. 3 {
-        shape: usize = SQUARE
-        if i == 1 { shape = TRIANGLE } else if i == 2 { shape = CHECK }
-        ui.push_id(u32(i))
-        if ui.button(icon(shape), "Tool", s.tool == i) { s.tool = i }
-        ui.pop_id()
-    }
+    ui.picker(TOOLS[0..], &s.tool)
     ui.button(icon(CROSS), "Danger", ui.Fill { rest = ui.color(0xa84242), hover = ui.color(0xda4b4b), press = ui.color(0x7c3030) })
 
     ui.heading("Toggles")
-    ui.row(2)
-    ui.toggle(icon(CHECK), "Bold", &s.bold)
+    toggles: ui.Area = ui.card(3)
+    ui.toggle("Bold", &s.bold)
     ui.toggle(icon(SQUARE), &s.grid)
     ui.checkbox("Snap to grid", &s.snap)
+    toggles.end()
 
     ui.heading("Sliders")
+    sliders: ui.Area = ui.card(2)
     ui.slider(&s.level, 0.0, 1.0)
+    ui.slider(&s.stop, 0, 9)
+    sliders.end()
     l = ui.line()
-    l.printf("%d Hz", s.stop + 1)
-    ui.slider(&s.stop, 0, 9, l.text())
-    l = ui.line()
-    l.printf("level %d%%", int(s.level * 100.0))
-    ui.readout(l.text())
+    l.printf("level %d%%, %d Hz", int(s.level * 100.0), s.stop + 1)
+    ui.muted(l.text())
 
     ui.heading("Swatches")
     ui.row(SWATCHES.len)
@@ -129,20 +105,22 @@ controls(s: *State, box: ui.Rect) {
     }
 
     ui.heading("Field")
+    named: ui.Area = ui.card(1)
     ui.field(&s.name, "")
+    named.end()
     if ui.last().submit { s.submitted += 1 }
     l = ui.line()
     l.printf("\"%s\", Enter pressed %d times", s.name.text(), s.submitted)
     ui.muted(l.text())
 
     ui.heading("List")
-    ui.list(FRUIT[0..], &s.chosen, 5, &s.scroll)
+    ui.list(FRUIT[0..], &s.chosen, 3, &s.scroll)
     ui.text(FRUIT[s.chosen])
     col.end()
 }
 
 /* The middle column: rows, grids, widths, spacing, across areas and popups. */
-layouts(s: *State, c: *ui.Canvas, box: ui.Rect) {
+layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
     col: ui.Area = ui.area(box)
     ui.heading("row(n)")
     ui.row(4)
@@ -171,10 +149,8 @@ layouts(s: *State, c: *ui.Canvas, box: ui.Rect) {
     ui.heading("place + track")
     spot: ui.Rect = ui.place(box.w, 40.0)
     res: ui.Response = ui.track(ui.id("spot"), spot)
-    shade: u32 = 0x22262b
-    if res.held { shade = 0x4e6680 } else if res.hover { shade = 0x3d4f63 }
-    c.fill(spot, 4.0, ui.color(shade))
-    c.text(spot, "hover or hold me", ui.color(INK), ui.Align.center)
+    c.fill(spot, t.radius, t.button.shade(res))
+    c.text(spot, "hover or hold me", t.text, ui.Align.center)
     ui.heading("text alignment")
     ui.text("left")
     ui.text("center", ui.Align.center)
@@ -186,8 +162,8 @@ layouts(s: *State, c: *ui.Canvas, box: ui.Rect) {
 }
 
 /* The right column: canvas primitives drawn straight, outside any area. */
-drawing(c: *ui.Canvas, box: ui.Rect) {
-    ink: Color = ui.color(INK)
+drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
+    ink: Color = t.text
     accent: Color = ui.color(SWATCHES[3])
     c.text(ui.Rect { x = box.x, y = box.y, w = box.w, h = 24.0 }, "Canvas", ink, ui.Align.left)
     row: ui.Rect = ui.Rect { x = box.x, y = box.y + 32.0, w = 60.0, h = 60.0 }
@@ -214,7 +190,7 @@ drawing(c: *ui.Canvas, box: ui.Rect) {
     }
     y += 70.0
     line: ui.Rect = ui.Rect { x = box.x, y = y, w = box.w, h = 24.0 }
-    c.fill(line, ui.color(0x22262b))
+    c.fill(line, t.button.rest)
     c.text(line, "left", ink, ui.Align.left)
     c.text(line, "center", ink, ui.Align.center)
     c.text(line, "right", ink, ui.Align.right)
@@ -230,7 +206,7 @@ fail(context: string): int {
 main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
-    window: Window = Window.new("ui gallery", 1180, 820, WindowFlags { resizable = 1 })
+    window: Window = Window.new("ui gallery", 1180, 900, WindowFlags { resizable = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
     window.start_text_input()
@@ -242,11 +218,11 @@ main(): int {
     renderer.blend(BLEND_ALPHA)
 
     canvas: ui.Canvas = ui.Canvas.init(renderer)
-    ctx: ui.Context = ui.Context { canvas = &canvas, theme = theme() }
+    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.dark) }
     s: State = State {}
     s.name = ui.TextInput { buffer = s.bytes[0..] }
     w: f32 = 1180.0
-    h: f32 = 820.0
+    h: f32 = 900.0
     running: bool = true
     for running {
         rw: i32, rh: i32, sized: bool = renderer.size()
@@ -273,22 +249,21 @@ main(): int {
             wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()
             if is_wheel { ctx.mouse.wheel += wh.y }
         }
-        renderer.color(Color.hex(WINDOW_BG))
+        renderer.color(ctx.theme.window)
         renderer.clear()
         ctx.begin()
         col_w: f32 = (w - 4.0 * 24.0) / 3.0
         for i: usize in 0 .. 3 {
             panel: ui.Rect = ui.Rect { x = 24.0 + f32(i) * (col_w + 24.0) - 12.0, y = 12.0, w = col_w + 24.0, h = h - 24.0 }
-            canvas.fill(panel, 6.0, ui.color(PANEL))
+            canvas.fill(panel, 6.0, ctx.theme.card)
         }
         controls(&s, ui.Rect { x = 24.0, y = 24.0, w = col_w, h = h - 48.0 })
-        layouts(&s, &canvas, ui.Rect { x = 48.0 + col_w, y = 24.0, w = col_w, h = h - 48.0 })
-        drawing(&canvas, ui.Rect { x = 72.0 + 2.0 * col_w, y = 24.0, w = col_w, h = h - 48.0 })
+        layouts(&s, &canvas, &ctx.theme, ui.Rect { x = 48.0 + col_w, y = 24.0, w = col_w, h = h - 48.0 })
+        drawing(&canvas, &ctx.theme, ui.Rect { x = 72.0 + 2.0 * col_w, y = 24.0, w = col_w, h = h - 48.0 })
         if s.popup {
             frame: ui.Rect = ui.Rect { x = w / 2.0 - 200.0, y = h / 2.0 - 80.0, w = 400.0, h = 160.0 }
-            pop: ui.Area = ui.popup(frame)
-            ui.heading("A modal popup")
-            body: ui.Area = ui.area(frame.inset(ui.Insets { top = 36.0, left = 12.0, right = 12.0, bottom = 12.0 }))
+            pop: ui.Area = ui.popup(frame, "A modal popup")
+            body: ui.Area = ui.area(frame.inset(ui.Insets { left = 12.0, top = ctx.theme.title() + 12.0, right = 12.0, bottom = 12.0 }))
             ui.text("Only these controls take the pointer.")
             ui.muted("Escape also closes it.")
             body.end()

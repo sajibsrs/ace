@@ -1,8 +1,9 @@
 /* speed — how fast Auto ticks: a slider stop and the rate it stands for.
  *
- * The slider has STOPS equal zones. The first nine step 1 .. 9 Hz and every
- * decade after steps nine times by its power of ten (10 .. 90, 100 .. 900,
- * 1000 .. 9000, and so on to 900000); the last is the top of the last decade, 1 MHz.
+ * The slider has STOPS stops; a drag takes the one nearest the pointer. The
+ * first nine step 1 .. 9 Hz and every decade after steps nine times by its
+ * power of ten (10 .. 90, 100 .. 900, 1000 .. 9000, and so on to 900000); the
+ * last is the top of the last decade, 1 MHz.
  */
 
 import fmt

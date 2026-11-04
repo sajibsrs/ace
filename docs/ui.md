@@ -53,7 +53,13 @@ height, the next `theme.gap` further on.
   `Response`: `hover` and `held`, which last, and `press` and `click`, which
   hold for one frame.
 
-A control is a frame `theme.icon + 2 * theme.gap` high; a line of text is
+`ui.card(cells)` places a card of `cells` cells, each 40 high, across the
+area, hairlines between them, and opens a down area over it, closed by
+`end()`: each control, or each `row` line, takes one cell, inset `padding` at
+the sides and centered on the cell's height. A debug build aborts when more
+are placed than it has cells.
+
+A control and a heading are `theme.height` high; a line of text is
 `TEXT_SIZE` high. `ui.last()` gives the last control's `Item`: `hovered`,
 `held`, its `rect`, and a field's `submit`.
 
@@ -63,19 +69,43 @@ forms place a box within one.
 
 ## Drawing
 
-`Canvas` batches triangles for one layer: `fill` (with an optional radius),
-`outline`, `outline_dashed` (its gaps evened so a dash holds every corner),
-`stroke`, `icon`, and `text`, placed by a pad or an `Align`. Everything lands in draw order; `flush` submits the layer. Icons
+`Canvas` batches triangles for one layer: `fill` and `outline` (each with an
+optional radius, and `fill(box, top, bottom, color)` with its own top and
+bottom corners; an outline under a pixel thick draws a pixel's width at that
+fraction of its alpha), `outline_dashed` (its gaps evened so a dash holds every
+corner), `shadow(box, radius, blur, color)` (a soft shadow fading across
+`blur` either side of the box's edge; the caller offsets the box), `stroke`,
+`icon`, and `text`, placed by a pad or an `Align`. Everything lands in draw order; `flush` submits the layer. Icons
 are baked point data passed as an `Icon`. The font is Lilex SemiBold,
 printable ASCII, 16 px; regenerate `inc/font.ace` with
 `python3 -I font/bake.py` from `pkg/ui`.
 
 ## Theme
 
-Controls draw from `Context.theme`: `text`, `muted`, `header`, `button` (a
-`Fill` for rest, hover and press), `selected`, `field`, `radius`, `padding`,
-`gap` and `icon` (an icon's side). Set it once. For a variant, copy it, change
-a field for the controls that follow, and assign the copy back after.
+Controls draw from `Context.theme`, plain data. Its colors are `window` (for
+the application's clear), `text`, `muted`, `button` (a `Fill` for rest, hover
+and press, behind buttons, unticked boxes, a picker's track, fields, headings
+and the hovered list row), `accent` (a toggle that is on, a ticked box, a
+slider's fill, the chosen row, a focus ring), `on_accent` (text on it), `card`
+(a popup, card, list or focused field), `edge` (the rim just inside a card),
+`shadow` (a popup's shadow), `separator` (between a card's cells, round an
+unticked box), `track` (a switch that is off, a slider's track and ticks),
+`on` (a switch that is on), `knob` (a switch's and slider's knob), `segment`
+(a picker's chosen segment), `lift` (the shadow a knob or segment casts) and
+`contact` (the shadow 1 below a knob, segment or card). Its sizes are `height` (a control's), `radius`, `padding`, `gap` and
+`icon` (an icon's side). Set it once, usually from
+`Theme.init(Scheme.light)` or `Theme.init(Scheme.dark)`, which differ only in
+color. For a variant, copy it, change a field for the controls that follow,
+and assign the copy back after.
+
+There is one look, in `inc/look.ace`: flat rounded fills; cards and lists
+rounder than a control, on a 1 px contact shadow and a half-pixel rim; knobs
+and a picker's segment raised by a shadow 2 below, blurred 6; and a popup
+rounder still, raised by a shadow 18 below it, blurred 48. The theme changes
+its colors and sizes; a different look is an edit to that file alone, since
+where a control goes, its id, and what it does with the pointer and keyboard
+live elsewhere. A control of an application's own builds on `place`, `track`
+and `Context.canvas` and draws itself.
 
 ## Controls
 
@@ -83,46 +113,58 @@ Controls return `bool`: a button whether it was clicked, a value control
 whether its value changed.
 
 - `button(label)`, `button(icon, label)`, `button(icon)`; `button(icon,
-  label, on)` rests in `selected` while `on`; `button(icon, label, fill)`
+  label, on)` rests on `accent` while `on`; `button(icon, label, fill)`
   uses its own `Fill`. A button's icon and label are centered together,
   however wide it is placed.
 - `toggle(icon, label, &value)` and `toggle(icon, &value)` flip a `bool` and
-  rest in `selected` while it is set.
+  rest on `accent` while it is set.
+- `toggle(label, &value)` is a switch: `label`, then a track at the far end,
+  on `on` with its knob right while the `bool` is set. A click anywhere on it
+  flips the `bool`.
 - `checkbox(label, &value)` ticks a box before its label; a click anywhere on
   it flips the `bool`.
-- `slider(&value, min, max)` drags an `f32` across its bar and shows it.
-  `slider(&value, min, max, text)` drags an `int` over equal zones, one for
-  each whole number, fills to the far edge of the value's zone, and shows
-  `text`. Across an area a slider is twelve glyphs wide unless `width` sets
-  it.
+- `picker(items, &chosen)` shows equal segments on a track, the one at
+  `chosen` raised; a click (a release on the pressed segment) picks one, and
+  it returns whether `chosen` changed. Across an area it is as wide as its
+  labels, padded.
+- `slider(&value, min, max)` drags a knob along a track for an `f32`, the
+  track filled up to it; `slider(&value, min, max)` with `int`s stops at each
+  whole number, the one nearest the pointer, with a tick under each when stops
+  are 6 px apart or more. The knob stays inside the slider's box. A slider
+  shows no value: the caller prints it, as a muted line beside or above it.
+  Across an area a slider is twelve glyphs wide unless `width` sets it.
 - `field(&input, allow)` edits a caller's `TextInput` in one line, as wide as
-  its buffer across an area. A click or `ui.focus()` before it gives it the
+  its buffer across an area; focused, it sits on `card` inside an `accent`
+  ring and a faint glow, with an `accent` caret. A click or `ui.focus()` before it gives it the
   keyboard, and a press elsewhere takes it away; the application may also set
   `Context.focus`. Focused, it consumes every key and the frame's text, so an
   owner reads its own keys (Esc) first; within a frame, keys apply before
   text. `allow` lists the bytes it accepts. Enter sets `last().submit`.
 - `list(items, &chosen, rows, &scroll)` shows `rows` of `items` from row
-  `scroll` on, every other row on `field`. A press on a row picks it. Under
+  `scroll` on, inset 4 on its own card, the chosen one on an `accent` pill and
+  the hovered one on a `button` pill. A press on a row picks it. Under
   the pointer and overflowing, it consumes the wheel, a row a notch, and draws
-  a thumb; otherwise the wheel passes on. `rows(n)` gives the height of
-  `n` rows, for sizing what holds it; `Theme.row()` is one row's.
-- `swatch(icon, color, selected)`: an icon in its own color, on `selected`
+  a thumb; otherwise the wheel passes on. `rows(n)` gives the height of a
+  list of `n` rows, its card's padding included, for sizing what holds it; `Theme.row()` is one row's.
+- `swatch(icon, color, selected)`: an icon in its own color, on `accent`
   while chosen; the pointer changes nothing. Square, a column wide in a grid.
 - `text(s)` and `muted(s)` show a line, and `text(s, align)` and
   `muted(s, align)` one at `Align.left`, `center`, or `right` across the area;
-  `heading(s)` and `heading(s, align)` a section title on a
-  `header` strip that reaches half the padding past the area's sides;
-  `readout(s)` a value centered on `header`.
-- `popup(box)` opens a modal area filled as a button rests: while it is up,
+  `heading(s)` and `heading(s, align)` a section title on a strip filled as
+  a button rests, which reaches half the padding past the area's sides;
+  `readout(s)` a value centered on that fill.
+- `popup(box)` opens a modal area on `card`: while it is up,
   from the next frame on, only controls inside it take the pointer.
+  `popup(box, title)` adds a title strip `theme.title()` high across its top,
+  flush with its edges, and opens the area below it.
 - `key(code)` consumes a press of `code` with no modifiers.
 
 `ui.line()` gives the context's scratch `fmt.Buffer`, emptied, for formatted
 text: `l.printf(...)`, then `ui.text(l.text())`. The next call empties it.
 
 A control is named by its label, by its icon when it shows no label, or by
-the address of the value it edits: a toggle's, checkbox's or slider's value,
-a field's buffer, a list's scroll. So a control keeps its id while its label
+the address of the value it edits: a toggle's, switch's, checkbox's or
+slider's value, a picker's `chosen`, a field's buffer, a list's scroll. So a control keeps its id while its label
 changes. `push_id(n)` opens a scope in which the same name names a different
 control, as in a loop; `pop_id` closes it. `ui.id(...)` gives an id. A debug
 build aborts when two controls share an id in one frame.
@@ -142,9 +184,11 @@ with an id from `id`, and draws on `Context.canvas` from `Context.theme`;
 
 `mod.ace` is the module's surface: type aliases and the functions above.
 `inc/canvas.ace` holds rectangles and drawing, `inc/input.ace` the frame's
-input, `inc/context.ace` the context with its ids and layout, and
-`inc/controls.ace` the controls, which reach the context through
-module-internal functions.
+input, `inc/theme.ace` the theme, `inc/context.ace` the context with its ids
+and layout, and `inc/controls.ace` the controls, which reach the context
+through module-internal functions. Each control places and tracks itself,
+then calls its drawing in `inc/look.ace`, which sees only the canvas, the
+theme, and what the control passes it.
 
 ## Design rationale
 
@@ -185,3 +229,53 @@ rather than a callback, since filtering by set needs no state. A list
 scrolls by whole rows and does not clip, because batched triangles would have
 to flush around a clip. `line` exists because a library function cannot
 forward a `printf` format: `printf` is lowered at its call site.
+
+Drawing sits in one file, apart from behavior, rather than behind a choice
+of looks: one look is all the package draws, and keeping it in `inc/look.ace`
+makes changing it an edit to one file with direct calls and no indirection.
+If code outside the package ever needs to swap the drawing at run time, the
+functions there can become a table of function values the context holds, as
+Qt's `QStyle` is. `inc/theme.ace` sits apart from the context so `look.ace`
+can import `Theme` without an import cycle.
+
+Control fills are one neutral gray at an alpha rather than opaque colors, as
+Apple's fill colors are: the same `button` reads on the window, a card, or a
+popup, a tint of whatever is under it, so no surface needs its own control
+color and the light and dark schemes differ only in the gray's alpha. A
+scheme is an enum, not a `bool`, so a call site reads `Scheme.dark`, SDL's
+`SDL_GetSystemTheme` maps onto it directly, and a high-contrast scheme can
+join it. `height` is its own token rather than `icon` plus twice `gap`, as
+it was: controls keep a fixed height on the 8-point grid whatever icon or
+spacing a caller picks, and widening the gap no longer grows them.
+
+A shadow is rings of the rounded box's outline at fixed distances from its
+edge, joined by bands whose vertex colors SDL blends, rather than a blurred
+texture: it batches with everything else and needs no render target or
+shader. Five rings, at 0, 1 and 2 standard deviations either side of the
+edge, follow the normal distribution's cover to within about 2% of the color, for
+534 vertices; a single feathered band costs 174 but shows its ends. A
+rounded outline is the same rings 2 to 4 deep, 240 or 360 vertices, and its
+outer fade lands on the fill's, so a rim meets its card with no seam and no
+larger fill behind it. A popup drawn with both adds 774 vertices to a frame;
+ui-gallery's popup frame then drew 149,064. A popup sets itself off by its
+shadow rather than by dimming the window, as the mockup's sheet does with a
+light scrim, so a scrim, if wanted, is the application's.
+
+The 1 px contact shadow under knobs, segments and cards is a plain rounded
+fill 1 below the shape (174 vertices) rather than `shadow` with blur 1 (534):
+a fill's own 1 px feathered edge is that blur. A knob's center travels from
+half a knob inside one end of the slider's box to half inside the other, so
+the knob never leaves the box a layout gave it, and a stepped slider takes the
+stop nearest the pointer rather than equal zones, since the knob sits on stop
+`i / (n - 1)` of that travel and an equal zone would put each stop's knob off
+its zone's center. A slider draws no value: under the knob there is no room
+for text, and a value beside it would make the travel depend on the text's
+width, so a drag would feed back on itself; GTK's `Scale` (`draw_value` off
+by default), Qt's `QSlider` and AppKit's `NSSlider` leave it to the caller
+too. A list sits on its own padded card with pills for the chosen and hovered
+rows, as a table inside a sheet, so it reads as one control wherever it is
+placed; `rows(n)` includes the padding so a caller sizing a popup for it
+stays exact. The switch is a `toggle` overload because `switch` is a keyword.
+The step 3 controls add about 5,550 vertices to ui-gallery's frame (4.5%):
+130,173 against 124,623 with the same five-row list, the bulk being knob and
+segment shadows.

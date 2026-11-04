@@ -22,7 +22,7 @@ pub WIDTH: const f32 = 16.0 * 40.0
 
 /* The Save-as panel's size; it sits centered in the window. */
 pub PANEL_W: const f32 = 440.0
-pub PANEL_H: const f32 = 72.0
+pub PANEL_H: const f32 = 76.0
 
 /* What the left mouse button does on the board in Edit: place the selected
  * block, box-select blocks and drag them, or pick the block clicked. */
@@ -107,5 +107,5 @@ pub BLOCK_ICON: [grid.Block]icon.Id = [
 
 /* The Open list's width, and the space above and below its rows. */
 pub LIST_W: const f32 = 296.0
-pub LIST_TOP: const f32 = 4.0
+pub LIST_TOP: const f32 = 12.0
 pub LIST_BOTTOM: const f32 = 12.0

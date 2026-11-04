@@ -12,6 +12,7 @@ import fmt
 import Color, Keycode from sdl
 import canvas: "./inc/canvas.ace"
 import input: "./inc/input.ace"
+import theme: "./inc/theme.ace"
 import context: "./inc/context.ace"
 import controls: "./inc/controls.ace"
 
@@ -24,12 +25,16 @@ pub Key: type = input.Key
 pub Mouse: type = input.Mouse
 pub Keyboard: type = input.Keyboard
 pub Context: type = context.Context
-pub Theme: type = context.Theme
-pub Fill: type = context.Fill
+pub Theme: type = theme.Theme
+
+/* Which palette `Theme.init` builds: `light` or `dark` surroundings. */
+pub Scheme: type = theme.Scheme
+
+pub Fill: type = theme.Fill
 pub Flow: type = context.Flow
 pub Area: type = context.Area
 pub Item: type = context.Item
-pub Response: type = context.Response
+pub Response: type = theme.Response
 pub TextInput: type = controls.TextInput
 
 /* Text size, in pixels per em. */
@@ -55,9 +60,17 @@ pub area(box: Rect): Area { return context.area(box) }
  * content and centered on the area's height. */
 pub area(box: Rect, flow: Flow): Area { return context.area(box, flow) }
 
-/* A modal area over `box`, filled as a button rests: from the next frame on,
+/* A modal area over `box`, on the card color: from the next frame on,
  * only the controls inside it take the pointer. */
 pub popup(box: Rect): Area { return context.popup(box) }
+
+/* A popup over `box` titled `title` on a strip across its top; its
+ * controls go down the rest. */
+pub popup(box: Rect, title: string): Area { return context.popup(box, title) }
+
+/* A card of `cells` 40-high cells across the area, separated by hairlines:
+ * down it each control, or `row` line, takes a cell. Close it with `end`. */
+pub card(cells: usize): Area { return context.card(cells) }
 
 /* The next `n` controls share a line in equal columns; the line ends after
  * them. */
@@ -125,41 +138,50 @@ pub button(shape: Icon, label: string): bool { return controls.button(shape, lab
 /* An icon alone, which names it. */
 pub button(shape: Icon): bool { return controls.button(shape) }
 
-/* A button that rests in the selected color while `on`. */
+/* A button that rests on the accent while `on`. */
 pub button(shape: Icon, label: string, on: bool): bool { return controls.button(shape, label, on) }
 
 /* A button in `fill` rather than the theme's. */
 pub button(shape: Icon, label: string, fill: Fill): bool { return controls.button(shape, label, fill) }
 
-/* A button that flips `value` and rests selected while it is set; true when it
+/* A button that flips `value` and rests on the accent while it is set; true when it
  * flipped. */
 pub toggle(shape: Icon, label: string, value: *bool): bool { return controls.toggle(shape, label, value) }
 
 /* A toggle showing its icon alone. */
 pub toggle(shape: Icon, value: *bool): bool { return controls.toggle(shape, value) }
 
+/* `label` then a switch, on while `value` is set; a click on either flips
+ * it. True when it flipped. */
+pub toggle(label: string, value: *bool): bool { return controls.toggle(label, value) }
+
+/* Equal segments showing `items`, the one at `*chosen` raised; a click picks
+ * one. True when `*chosen` changed. */
+pub picker(items: []string, chosen: *usize): bool { return controls.picker(items, chosen) }
+
 /* A box ticked while `value` is set, then `label`; true when it flipped. */
 pub checkbox(label: string, value: *bool): bool { return controls.checkbox(label, value) }
 
-/* A bar dragged to set `value` from `min` to `max`; true when it changed. */
+/* A knob dragged along a track to set `value` from `min` to `max`; true when
+ * it changed. */
 pub slider(value: *f32, min: f32, max: f32): bool { return controls.slider(value, min, max) }
 
-/* A bar of equal zones, one for each whole number from `min` to `max`,
- * showing `text`; true when `value` changed. */
-pub slider(value: *int, min: int, max: int, text: string): bool { return controls.slider(value, min, max, text) }
+/* A knob that stops at each whole number from `min` to `max`, ticked when
+ * the stops have room; true when `value` changed. */
+pub slider(value: *int, min: int, max: int): bool { return controls.slider(value, min, max) }
 
 /* A one-line field over `input` taking the bytes in `allow` (any when empty);
  * true when the text changed. Enter sets `last().submit`. */
 pub field(input: *TextInput, allow: string): bool { return controls.field(input, allow) }
 
-/* `rows` of `items` from row `*scroll` on; a press on a row sets `*chosen`.
+/* `rows` of `items` on a card from row `*scroll` on; a press on a row sets `*chosen`.
  * True when a row was pressed. */
 pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool { return controls.list(items, chosen, rows, scroll) }
 
-/* The height of `n` rows. */
+/* The height of a list of `n` rows. */
 pub rows(n: usize): f32 { return controls.rows(n) }
 
-/* A square showing `shape` in `color`, on the selected color while `selected`;
+/* A square showing `shape` in `color`, on the accent while `selected`;
  * true when clicked. */
 pub swatch(shape: Icon, color: Color, selected: bool): bool { return controls.swatch(shape, color, selected) }
 
@@ -175,11 +197,11 @@ pub muted(s: string) { controls.muted(s) }
 /* A line of secondary text at `align` across the area. */
 pub muted(s: string, align: Align) { controls.muted(s, align) }
 
-/* A section's title on a header strip. */
+/* A section's title on a strip a control high. */
 pub heading(s: string) { controls.heading(s) }
 
 /* A section's title at `align` on its strip. */
 pub heading(s: string, align: Align) { controls.heading(s, align) }
 
-/* `s` centered on the header color: a value shown, not edited. */
+/* `s` centered on a resting button's fill: a value shown, not edited. */
 pub readout(s: string) { controls.readout(s) }

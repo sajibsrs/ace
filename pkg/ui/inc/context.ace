@@ -3,18 +3,11 @@
 
 import fmt
 import math
-import Color, Keycode from sdl
-import Rect, Canvas, Icon, TEXT_SIZE, GLYPH_WIDTH from "./canvas.ace"
+import Keycode from sdl
+import Rect, Insets, Canvas, Icon, GLYPH_WIDTH from "./canvas.ace"
 import Mouse, Keyboard from "./input.ace"
-
-/* What the pointer did to a control, from `track`. `hover` and `held` last
- * while true; `press` and `click` hold for one frame. */
-pub Response: struct {
-    pub hover: bool = false,
-    pub press: bool = false,
-    pub held: bool = false,
-    pub click: bool = false,
-}
+import Theme, Response from "./theme.ace"
+import look: "./look.ace"
 
 /* The last control placed: whether the pointer is over it or holds it, where
  * it is, and, for a field, whether Enter was pressed in it. */
@@ -25,48 +18,6 @@ pub Item: struct {
     pub submit: bool = false,
 }
 
-/* A control's fill in each state. */
-pub Fill: struct {
-    pub rest: Color = Color {},
-    pub hover: Color = Color {},
-    pub press: Color = Color {},
-}
-
-/* The fill for the state `res` reports. */
-pub Fill.shade(const self, res: Response): Color {
-    if res.held { return self.press }
-    if res.hover { return self.hover }
-    return self.rest
-}
-
-/* How every control looks. A caller copies it, changes a field for the
- * controls that follow, and assigns the copy back after. */
-pub Theme: struct {
-    /* Body text, and icons. */
-    pub text: Color = Color {},
-    /* Secondary text: captions, hints, labels. */
-    pub muted: Color = Color {},
-    /* A heading's strip, and a readout's background. */
-    pub header: Color = Color {},
-    /* A button's background. */
-    pub button: Fill = Fill {},
-    /* A selected or toggled-on control, and a slider's filled part. */
-    pub selected: Color = Color {},
-    /* A text field's background. */
-    pub field: Color = Color {},
-    /* Corner radius. */
-    pub radius: f32 = 0.0,
-    /* Inside a control, around its content. */
-    pub padding: f32 = 0.0,
-    /* Between controls, and between a control's icon and label. */
-    pub gap: f32 = 0.0,
-    /* An icon's side. */
-    pub icon: f32 = 0.0,
-}
-
-/* A row's height: a line of text with a gap above and below. */
-pub Theme.row(const self): f32 { return TEXT_SIZE + 2.0 * self.gap }
-
 /* Nested `push_id` scopes and areas, and the ids a debug build checks for
  * repeats in one frame; past that many it checks no more. */
 SCOPES_MAX: const usize = 16
@@ -75,6 +26,9 @@ SEEN_MAX: const usize = 256
 
 /* The bytes `line` formats into. */
 LINE_MAX: const usize = 256
+
+/* A card's cell. */
+CELL: const f32 = 40.0
 
 /* FNV-1a, 32-bit, from the scope's hash. */
 FNV_PRIME: const u32 = 0x0100_0193
@@ -104,6 +58,9 @@ Layout: struct {
     far: bool = false,
     /* In a popup, which a popup shown last frame leaves under the pointer. */
     modal: bool = false,
+    /* In a card, the height of the cell each control or line takes, centered
+     * on it; 0 elsewhere. */
+    cell: f32 = 0.0,
     /* A `grid`'s columns, the controls it has left to place, the column the
      * next takes, and the height of its line so far. */
     cols: usize = 0,
@@ -262,13 +219,38 @@ pub area(box: Rect): Area { return current.open(box, Flow.down, false) }
  * as its content and centered on the area's height. */
 pub area(box: Rect, flow: Flow): Area { return current.open(box, flow, false) }
 
-/* A modal area over `box`, filled as a button rests: while it is up, only
+/* A modal area over `box`, on the card color: while it is up, only
  * the controls inside it take the pointer. Its controls go down it. */
 pub popup(box: Rect): Area {
     c: *Context = current
     c.modal = true
-    c.canvas.fill(box, c.theme.radius, c.theme.button.rest)
+    look.popup(c.canvas, &c.theme, box)
     return c.open(box, Flow.down, true)
+}
+
+/* A popup over `box` titled `s` on a strip `Theme.title` high across its top;
+ * its controls go down the rest. */
+pub popup(box: Rect, s: string): Area {
+    c: *Context = current
+    c.modal = true
+    look.popup(c.canvas, &c.theme, box)
+    h: f32 = c.theme.title()
+    look.title(c.canvas, &c.theme, box, h, s)
+    return c.open(Rect { x = box.x, y = box.y + h, w = box.w, h = box.h - h }, Flow.down, true)
+}
+
+/* A card of `cells` cells across the area, with separators between them.
+ * Down it each control, or `row` line, takes a cell, inset the padding at the
+ * sides and centered on the cell's height. */
+pub card(cells: usize): Area {
+    c: *Context = current
+    t: *Theme = &c.theme
+    box: Rect = c.place(c.span(), f32(cells) * CELL)
+    look.card(c.canvas, t, box)
+    look.separators(c.canvas, t, box, CELL)
+    area: Area = c.open(box.inset(Insets { left = t.padding, right = t.padding }), Flow.down, false)
+    c.top().cell = CELL
+    return area
 }
 
 Context.open(self, box: Rect, flow: Flow, modal: bool): Area {
@@ -283,6 +265,8 @@ Context.open(self, box: Rect, flow: Flow, modal: bool): Area {
 pub Area.end(const self) {
     c: *Context = current
     assert(c.level == self.level)
+    l: *Layout = c.top()
+    assert(l.cell == 0.0 || l.at <= l.box.h)
     c.level -= 1
 }
 
@@ -353,17 +337,23 @@ Context.place(self, w: f32, h: f32): Rect {
         w = self.span()
         box = Rect { x = l.box.x + f32(l.col) * (w + gap), y = l.box.y + l.at, w = w, h = h }
         l.line = math.max[f32](l.line, h)
+        if l.cell > 0.0 { box.y += (l.cell - h) / 2.0 }
         l.col += 1
         l.left -= 1
         if l.col == l.cols || l.left == 0 {
-            l.at += l.line + gap
+            if l.cell > 0.0 { l.at += l.cell } else { l.at += l.line + gap }
             l.col = 0
             l.line = 0.0
             if l.left == 0 { l.cols = 0 }
         }
     } else if l.flow == Flow.down {
         box = Rect { x = l.box.x, y = l.box.y + l.at, w = self.span(), h = h }
-        l.at += h + gap
+        if l.cell > 0.0 {
+            box.y += (l.cell - h) / 2.0
+            l.at += l.cell
+        } else {
+            l.at += h + gap
+        }
     } else {
         x: f32 = l.box.x + l.at
         if l.far { x = l.box.x + l.box.w - l.at - w }
@@ -375,8 +365,8 @@ Context.place(self, w: f32, h: f32): Rect {
     return box
 }
 
-/* A control's height: an icon with a gap above and below. */
-Context.frame(const self): f32 { return self.theme.icon + 2.0 * self.theme.gap }
+/* A control's height. */
+Context.frame(const self): f32 { return self.theme.height }
 
 /* How wide a button is across an area: its label, or `width`'s stand-in,
  * padded, after its icon; an icon alone is square. */

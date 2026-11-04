@@ -1,0 +1,151 @@
+/* ui theme — the colors and sizes controls are drawn with, and what the
+ * pointer did to a control. */
+
+import Color from sdl
+
+/* What the pointer did to a control, from `track`. `hover` and `held` last
+ * while true; `press` and `click` hold for one frame. */
+pub Response: struct {
+    pub hover: bool = false,
+    pub press: bool = false,
+    pub held: bool = false,
+    pub click: bool = false,
+}
+
+/* A control's fill in each state. */
+pub Fill: struct {
+    pub rest: Color = Color {},
+    pub hover: Color = Color {},
+    pub press: Color = Color {},
+}
+
+/* The fill for the state `res` reports. */
+pub Fill.shade(const self, res: Response): Color {
+    if res.held { return self.press }
+    if res.hover { return self.hover }
+    return self.rest
+}
+
+/* The fill of a control that is on: the accent, lighter under the pointer
+ * and darker held. */
+pub Theme.chosen(const self): Fill {
+    return Fill { rest = self.accent, hover = mix(self.accent, 1.0, 0.12), press = mix(self.accent, 0.0, 0.15) }
+}
+
+/* `c` moved `by` (0 to 1) toward the gray `to`, keeping its alpha. */
+mix(c: Color, to: f32, by: f32): Color {
+    return Color { r = c.r + (to - c.r) * by, g = c.g + (to - c.g) * by, b = c.b + (to - c.b) * by, a = c.a }
+}
+
+/* Which palette `Theme.init` builds: light or dark surroundings, as SDL's
+ * system theme reports. */
+pub Scheme: enum { light, dark }
+
+/* How every control looks. A caller copies it, changes a field for the
+ * controls that follow, and assigns the copy back after. */
+pub Theme: struct {
+    /* The window behind every area. */
+    pub window: Color = Color {},
+    /* Body text, and icons. */
+    pub text: Color = Color {},
+    /* Secondary text: captions, hints, headings. */
+    pub muted: Color = Color {},
+    /* A control's background: buttons, unticked boxes, a picker's track,
+     * unfocused fields, the hovered list row and heading strips, a neutral
+     * gray that lets what is under it show. */
+    pub button: Fill = Fill {},
+    /* A toggled-on control, a slider's filled part, a chosen row. */
+    pub accent: Color = Color {},
+    /* Text on an accent fill. */
+    pub on_accent: Color = Color {},
+    /* A popup's, card's, list's and focused field's background, raised off
+     * the window. */
+    pub card: Color = Color {},
+    /* The rim drawn just inside a card's edge. */
+    pub edge: Color = Color {},
+    /* A popup's shadow, where the popup covers it fully. */
+    pub shadow: Color = Color {},
+    /* The hairline between a card's cells, and round an unticked box. */
+    pub separator: Color = Color {},
+    /* A switch that is off, a slider's track and its ticks. */
+    pub track: Color = Color {},
+    /* A switch that is on. */
+    pub on: Color = Color {},
+    /* A switch's and a slider's knob. */
+    pub knob: Color = Color {},
+    /* A picker's chosen segment, raised off its track. */
+    pub segment: Color = Color {},
+    /* The shadow a knob or segment casts, 2 below it and blurred 6. */
+    pub lift: Color = Color {},
+    /* The shadow 1 below a knob, a segment or a card, where it touches what
+     * is under it. */
+    pub contact: Color = Color {},
+    /* A control's height. */
+    pub height: f32 = 0.0,
+    /* Corner radius. */
+    pub radius: f32 = 0.0,
+    /* Inside a control, around its content. */
+    pub padding: f32 = 0.0,
+    /* Between controls, and between a control's icon and label. */
+    pub gap: f32 = 0.0,
+    /* An icon's side. */
+    pub icon: f32 = 0.0,
+}
+
+/* `rgb` at opacity `a`, 0 to 1. */
+alpha(rgb: u32, a: f32): Color {
+    c: Color = Color.hex(rgb)
+    c.a = a
+    return c
+}
+
+/* The palette for `scheme`, with the sizes every scheme shares. */
+pub Theme.init(scheme: Scheme): Theme {
+    t: Theme = Theme {
+        window = Color.hex(0x161618),
+        text = alpha(0xffffff, 0.92),
+        muted = alpha(0xebebf5, 0.60),
+        button = Fill { rest = alpha(0x787880, 0.24), hover = alpha(0x787880, 0.34), press = alpha(0x787880, 0.44) },
+        accent = Color.hex(0x3f86d6),
+        on_accent = Color.hex(0xffffff),
+        card = Color.hex(0x232325),
+        edge = alpha(0xffffff, 0.10),
+        shadow = alpha(0x000000, 0.60),
+        separator = alpha(0x545458, 0.55),
+        track = alpha(0x787880, 0.32),
+        on = Color.hex(0x30d158),
+        knob = Color.hex(0xffffff),
+        segment = Color.hex(0x5b5b60),
+        lift = alpha(0x000000, 0.35),
+        contact = alpha(0x000000, 0.20),
+        height = 28.0,
+        radius = 4.0,
+        padding = 12.0,
+        gap = 8.0,
+        icon = 15.0,
+    }
+    if scheme == Scheme.light {
+        t.window = Color.hex(0xebebf0)
+        t.text = alpha(0x000000, 0.88)
+        t.muted = alpha(0x3c3c43, 0.62)
+        t.button = Fill { rest = alpha(0x787880, 0.16), hover = alpha(0x787880, 0.24), press = alpha(0x787880, 0.32) }
+        t.accent = Color.hex(0x007aff)
+        t.card = Color.hex(0xffffff)
+        t.edge = alpha(0x000000, 0.16)
+        t.shadow = alpha(0x000000, 0.22)
+        t.separator = alpha(0x3c3c43, 0.16)
+        t.track = alpha(0x787880, 0.26)
+        t.on = Color.hex(0x34c759)
+        t.segment = Color.hex(0xffffff)
+        t.lift = alpha(0x000000, 0.18)
+        t.contact = alpha(0x000000, 0.08)
+    }
+    return t
+}
+
+/* A list row's height: a control's. */
+pub Theme.row(const self): f32 { return self.height }
+
+/* A popup's title strip: a control high, plus a third of the padding above
+ * and below. */
+pub Theme.title(const self): f32 { return self.height + 2.0 * self.padding / 3.0 }
