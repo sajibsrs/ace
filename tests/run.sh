@@ -1578,7 +1578,7 @@ if [ "$(uname -m)" = x86_64 ] && command -v objdump >/dev/null 2>&1; then
          tests/emit/pointers/far_offset.ace ||
        ! objdump -d -M intel /tmp/ace_checked_features/far_offset.o >$T/dis ||
        grep -qF '[rbp+0x7fff' $T/dis ||
-       ! grep -qF 'lea    rax,[rbp-' $T/dis; then
+       ! grep -qE 'lea +r[a-z0-9]+,\[rbp-' $T/dis; then
         echo "FAIL: x64 far stack-object access wrapped its rbp displacement"
         fail=1
     fi
