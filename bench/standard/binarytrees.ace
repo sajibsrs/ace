@@ -1,0 +1,61 @@
+// Benchmarks Game binary-trees, shared with binarytrees.c, binarytrees.cpp,
+// and binarytrees.rs: perfect binary trees built one heap node at a time,
+// walked, and released, at depths from MIN_DEPTH to MAX_DEPTH. The checksum
+// sums every walk's node count.
+import fmt
+import mem
+import time
+
+MIN_DEPTH: const int = 4
+MAX_DEPTH: const int = 16
+
+Node: struct { left: *Node, right: *Node }
+
+make(depth: int): *Node {
+    node: *Node = mem.new[Node]()
+    if node == null { panic("out of memory") }
+    if depth > 0 {
+        node.left = make(depth - 1)
+        node.right = make(depth - 1)
+    } else {
+        node.left = null
+        node.right = null
+    }
+    return node
+}
+
+check(node: *Node): int {
+    if node.left == null { return 1 }
+    return 1 + check(node.left) + check(node.right)
+}
+
+free(node: *Node) {
+    if node.left != null {
+        free(node.left)
+        free(node.right)
+    }
+    mem.release[Node](&node)
+}
+
+main(): int {
+    started: u64 = time.awake()
+    stretch: *Node = make(MAX_DEPTH + 1)
+    total: int = check(stretch)
+    free(stretch)
+
+    long_lived: *Node = make(MAX_DEPTH)
+    for depth: int in MIN_DEPTH .. MAX_DEPTH + 1 step 2 {
+        iterations: int = 1 << (MAX_DEPTH - depth + MIN_DEPTH)
+        for 0 .. iterations {
+            tree: *Node = make(depth)
+            total += check(tree)
+            free(tree)
+        }
+    }
+    total += check(long_lived)
+    free(long_lived)
+    elapsed: u64 = time.awake() - started
+
+    fmt.printf("max depth: %d\nelapsed ns: %u\nchecksum: %d\n", MAX_DEPTH, usize(elapsed), total)
+    return 0
+}

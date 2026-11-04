@@ -15,6 +15,7 @@ reference where one exists.
 | `core/` | generated code for language features | `run-calls.sh`, `run-cpu.sh`, `run-hotloop.sh`, `run-raytrace.sh`, `run-tree.sh` |
 | `std/` | standard-library operations | `run-string.sh`, `run-collections.sh`, `run-math.sh`, `run-memory.sh`, `run-poll.sh` |
 | `package/` | first-party packages, built as packages | `run-regex.sh`, `run-json.sh`, `run-binbox.sh` |
+| `standard/` | published cross-language programs | `run-standard.sh` |
 
 ## First-run cost
 
@@ -56,6 +57,13 @@ over the previous size's time; linear code growth is 10x for 100 to 1,000 and
 4x for the later steps shown), then times the scaling shapes in debug mode
 against both `cc` levels, reports machine-code bytes, and times a few real
 programs.
+
+The corpus also comes in C++ and Rust, and `bench/compiler/generic-corpus.sh
+<functions> <dir>` writes a 5,000-function program in each language's own
+idiom (containers, generics, polymorphism, derived equality); the README charts
+that one. Every compiler runs at its defaults: `rustc` splits code generation
+into 16 parallel units, while `cc`, `clang++`, and Ace compile the file on one
+thread.
 
 The small-size comparison against `cc` flatters Ace: `cc` pays process startup
 and header parsing that a 100-function corpus barely amortizes, so the growth
@@ -1467,3 +1475,43 @@ Three runs at the change adding the benchmark (medians):
 | `format` | 21,140 | 7.20 |
 | `parse` | 26,963 | 9.19 |
 | `lookup` | 81.57 | - |
+
+## Standard
+
+Run five Benchmarks Game programs in Ace, C, C++, and Rust:
+
+```sh
+./bench/standard/run-standard.sh
+```
+
+`nbody` integrates the Jovian planets' orbits in `f64`, `spectralnorm` takes
+the spectral norm of an infinite matrix by power iteration, `fannkuch` flips
+every permutation of 0..10, `binarytrees` builds, walks, and releases perfect
+binary trees one heap node at a time, and `mandelbrot` packs a 4000 x 4000
+bitmap of the set eight points to a byte. Each prints one checksum (the energy,
+norm, flip checksum, node count, or a hash of the bitmap's bytes), and the
+runner fails unless every variant prints the same one; `nbody`, `spectralnorm`,
+`fannkuch`, and `mandelbrot` agree with the published reference outputs at
+these sizes. Sizes are cut from the published ones (`nbody` 10 million steps,
+`spectralnorm` 4,000, `fannkuch` 10, `binarytrees` depth 16) so C `-O2` runs
+each in about 0.25 to 1 second.
+
+The programs follow Are-We-Fast-Yet's rules rather than the Benchmarks Game's
+fastest submissions: every language runs the same algorithm over the same data
+structures with its usual containers (slices in Ace, pointers in C, `std::vector`
+in C++, `Vec` and `Box` in Rust), single-threaded, with no SIMD, intrinsics,
+`unsafe`, or hand unrolling; Rust keeps its bounds checks. C and C++ build with
+`-ffp-contract=off`: clang otherwise fuses a multiply and an add into one
+rounding, which Ace and Rust never do, so every variant computes the same float
+operations. The other flags are `bench/core`'s.
+
+Elapsed time against C `-O2`, one warm run each at the change adding the
+benchmark:
+
+| bench | Ace debug | Ace release | C `-O0` | C++ `-O2` | Rust |
+|---|---|---|---|---|---|
+| `nbody` | 1.34x | 1.04x | 2.96x | 1.00x | 1.10x |
+| `spectralnorm` | 1.81x | 1.18x | 3.09x | 1.00x | 1.01x |
+| `fannkuch` | 1.54x | 1.25x | 1.74x | 0.99x | 1.04x |
+| `binarytrees` | 2.96x | 1.17x | 1.19x | 1.14x | 1.13x |
+| `mandelbrot` | 1.05x | 1.05x | 4.44x | 0.99x | 0.99x |

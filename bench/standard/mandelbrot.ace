@@ -1,0 +1,47 @@
+// Benchmarks Game mandelbrot, shared with mandelbrot.c, mandelbrot.cpp, and
+// mandelbrot.rs: SIZE x SIZE points of [-1.5, 0.5] x [-1, 1], each in the set
+// when 50 iterations stay within radius 2, packed eight to a byte as the
+// bitmap's rows. The checksum hashes the bytes instead of writing the image.
+import fmt
+import mem
+import time
+
+SIZE: const usize = 4000
+ITERATIONS: const int = 50
+MODULUS: const u64 = 1000000007
+
+main(): int {
+    row: []u8 = mem.alloc[u8](SIZE / 8)
+    defer mem.release[u8](&row)
+    if row == null { return 1 }
+    checksum: u64 = 0
+
+    started: u64 = time.awake()
+    for y: usize in 0 .. SIZE {
+        ci: f64 = 2.0 * f64(y) / f64(SIZE) - 1.0
+        for x: usize in 0 .. SIZE step 8 {
+            bits: u8 = 0
+            for dx: usize in 0 .. 8 {
+                cr: f64 = 2.0 * f64(x + dx) / f64(SIZE) - 1.5
+                zr: f64 = 0.0
+                zi: f64 = 0.0
+                tr: f64 = 0.0
+                ti: f64 = 0.0
+                for i: int = 0; i < ITERATIONS && tr + ti <= 4.0; i += 1 {
+                    zi = 2.0 * zr * zi + ci
+                    zr = tr - ti + cr
+                    tr = zr * zr
+                    ti = zi * zi
+                }
+                bits = bits << 1
+                if tr + ti <= 4.0 { bits = bits | 1 }
+            }
+            row[x / 8] = bits
+        }
+        for b: u8 in row { checksum = (checksum * 31 + u64(b)) % MODULUS }
+    }
+    elapsed: u64 = time.awake() - started
+
+    fmt.printf("size: %u\nelapsed ns: %u\nchecksum: %u\n", SIZE, usize(elapsed), checksum)
+    return 0
+}

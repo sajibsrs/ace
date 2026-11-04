@@ -41,16 +41,20 @@ main(): int {
 
 ![Ace speed vs C](docs/speed.svg)
 
-Same algorithms in both languages (`bench/core/`), on Apple Silicon, against
-plain `cc -O2` with inlining and auto-vectorization on. Ace's own optimizer
-is young: it ties C on calls and stays within 10% on most workloads, and
-closing the rest is ongoing work.
+Five Benchmarks Game programs (`bench/standard/`), each running the same
+algorithm in every language, single-threaded, with no SIMD or intrinsics, on
+Apple Silicon, against `cc -O2`. Ace's own optimizer is young: it stays
+within 5% of C on `nbody` and `mandelbrot` and runs the rest at 80–85% of
+C's speed; closing the gap is ongoing work.
 
-![Time to compile 20,000 functions](docs/compile.svg)
+![Time to compile 5,000 idiomatic generic functions](docs/compile.svg)
 
-Ace compiles **6x faster** than `cc -O0` and **50x faster** than `cc -O2`
+Ace compiles **5x faster** than `cc -O0` and **25x faster** than `cc -O2`
 (`bench/compiler/`): it writes machine code directly, with no assembler or
-LLVM in between. `bench/chart.py` draws both charts.
+LLVM in between. Each language's code uses its own containers, generics, and
+polymorphism, built with its compiler's defaults: `rustc` splits code
+generation into 16 parallel units, while `cc`, `clang++`, and Ace compile the
+file on one thread. `bench/chart.py` draws the charts.
 
 ## Ace vs C, C++ and Rust at a glance
 

@@ -1,0 +1,63 @@
+// Benchmarks Game spectral-norm, shared with spectralnorm.c, spectralnorm.cpp,
+// and spectralnorm.rs: the spectral norm of an infinite matrix A, truncated to
+// N x N, by ten power-method rounds of A transpose times A. The checksum is
+// the norm.
+import fmt
+import math
+import mem
+import time
+
+N: const usize = 4000
+
+eval_a(i: usize, j: usize): f64 {
+    return 1.0 / f64((i + j) * (i + j + 1) / 2 + i + 1)
+}
+
+times(out: []f64, v: []f64) {
+    for i: usize in 0 .. out.len {
+        sum: f64 = 0.0
+        for j: usize in 0 .. v.len { sum += eval_a(i, j) * v[j] }
+        out[i] = sum
+    }
+}
+
+times_transpose(out: []f64, v: []f64) {
+    for i: usize in 0 .. out.len {
+        sum: f64 = 0.0
+        for j: usize in 0 .. v.len { sum += eval_a(j, i) * v[j] }
+        out[i] = sum
+    }
+}
+
+times_ata(out: []f64, v: []f64, scratch: []f64) {
+    times(scratch, v)
+    times_transpose(out, scratch)
+}
+
+main(): int {
+    u: []f64 = mem.alloc[f64](N)
+    defer mem.release[f64](&u)
+    v: []f64 = mem.alloc[f64](N)
+    defer mem.release[f64](&v)
+    scratch: []f64 = mem.alloc[f64](N)
+    defer mem.release[f64](&scratch)
+    if u == null || v == null || scratch == null { return 1 }
+    for i: usize in 0 .. N { u[i] = 1.0 }
+
+    started: u64 = time.awake()
+    for 0 .. 10 {
+        times_ata(v, u, scratch)
+        times_ata(u, v, scratch)
+    }
+    vbv: f64 = 0.0
+    vv: f64 = 0.0
+    for i: usize in 0 .. N {
+        vbv += u[i] * v[i]
+        vv += v[i] * v[i]
+    }
+    norm: f64 = math.sqrt(vbv / vv)
+    elapsed: u64 = time.awake() - started
+
+    fmt.printf("n: %u\nelapsed ns: %u\nchecksum: %.9f\n", N, usize(elapsed), norm)
+    return 0
+}

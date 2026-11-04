@@ -1,0 +1,64 @@
+// Benchmarks Game fannkuch-redux, shared with fannkuch.c, fannkuch.cpp, and
+// fannkuch.rs: every permutation of 0 .. N, each flipped by reversing its
+// first perm[0] + 1 elements until 0 leads. The checksum alternately adds and
+// subtracts each permutation's flip count.
+import fmt
+import time
+
+N: const i32 = 10
+
+main(): int {
+    perm: [N]i32
+    perm1: [N]i32
+    count: [N]i32
+    for i: i32 in 0 .. N {
+        perm1[i] = i
+        count[i] = 0
+    }
+    max_flips: i32 = 0
+    checksum: i32 = 0
+    permutations: i32 = 0
+    r: i32 = N
+
+    started: u64 = time.awake()
+    done: for {
+        for r != 1 {
+            count[r - 1] = r
+            r -= 1
+        }
+
+        for i: i32 in 0 .. N { perm[i] = perm1[i] }
+        flips: i32 = 0
+        k: i32 = perm[0]
+        for k != 0 {
+            i: i32 = 0
+            j: i32 = k
+            for i < j {
+                t: i32 = perm[i]
+                perm[i] = perm[j]
+                perm[j] = t
+                i += 1
+                j -= 1
+            }
+            flips += 1
+            k = perm[0]
+        }
+        if flips > max_flips { max_flips = flips }
+        if permutations % 2 == 0 { checksum += flips } else { checksum -= flips }
+
+        for {
+            if r == N { break done }
+            perm0: i32 = perm1[0]
+            for i: i32 in 0 .. r { perm1[i] = perm1[i + 1] }
+            perm1[r] = perm0
+            count[r] -= 1
+            if count[r] > 0 { break }
+            r += 1
+        }
+        permutations += 1
+    }
+    elapsed: u64 = time.awake() - started
+
+    fmt.printf("max flips: %d\nelapsed ns: %u\nchecksum: %d\n", int(max_flips), usize(elapsed), int(checksum))
+    return 0
+}
