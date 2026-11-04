@@ -37,8 +37,14 @@ history.
 - Target darwin-arm64 only. x64 (linux, windows) work is paused: add or extend
   no x64 lowering, tests, or limitations in any topic, and leave existing x64
   code as it is. It resumes as its own separate effort once darwin is complete.
+- Each target has its own development branch, named for the host
+  (`darwin-arm64`, `linux-x64`, `windows-x64`); `master` is the integration
+  branch. Work only on the branch matching the host (`uname -sm`); before the
+  first edit, check `git branch --show-current` and stop and ask if it
+  differs. Never check out, commit to, merge, cherry-pick, or push any other
+  branch, `master` included; the owner moves changes between branches.
 - Implement every code change (`src/`, `std/`, `pkg/`, `tests/`, `bench/`)
-  directly in the working tree on `master`, never in a throwaway prototype, and
+  directly in that branch's working tree, never in a throwaway prototype, and
   leave it uncommitted. Implement, test, and measure there against `HEAD`, then
   present the result with viable alternatives for the owner's review. This
   holds even when the change is already agreed in principle (e.g. an open
