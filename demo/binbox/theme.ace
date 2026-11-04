@@ -1,46 +1,20 @@
 /* theme — the bar and panel colors, and each block's name and colors. */
 
 import grid: "./grid.ace"
-import ui
-import style: "./style.ace"
 
 /* Bar and panel colors. */
 pub CHROME: const u32 = 0x22262b
 /* A panel's or widget's header, deeper than the panel under it. */
 pub DEEP: const u32 = 0x0f1215
-/* The board panel's background, and what shows between the panels. */
+/* The board panel's background. */
 pub PANEL: const u32 = 0x101214
-pub WINDOW: const u32 = 0x0a0b0c
-pub BUTTON: const u32 = 0x2c3238
-pub ACTIVE: const u32 = 0x3d4f63
-/* A control while it is held down. */
-pub PRESS: const u32 = 0x4e6680
-/* Every other row of a list, a shade darker than BUTTON. */
-pub STRIPE: const u32 = 0x252a2f
 /* The Edit button, and the Simulate button: resting, then lit (current
  * phase or under the pointer). */
 pub EDIT: const u32 = 0xa84242
 pub EDIT_LIT: const u32 = 0xda4b4b
 pub SIM: const u32 = 0x3d9a66
 pub SIM_LIT: const u32 = 0x41bb77
-pub INK: const u32 = 0xdddddd
 pub DIM: const u32 = 0x888888
-
-/* The look of the bars' and panels' controls. */
-pub controls(): ui.Theme {
-    return ui.Theme {
-        text = ui.color(INK),
-        muted = ui.color(DIM),
-        header = ui.color(DEEP),
-        button = ui.Fill { rest = ui.color(BUTTON), hover = ui.color(ACTIVE), press = ui.color(PRESS) },
-        selected = ui.color(ACTIVE),
-        field = ui.color(CHROME),
-        radius = style.RADIUS,
-        padding = 8.0,
-        gap = 4.0,
-        icon = 18.0,
-    }
-}
 
 /* An empty cell's gap, which lets the grid show. */
 pub CELL_GAP: const f32 = 1.0

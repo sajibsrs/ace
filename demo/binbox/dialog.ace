@@ -48,9 +48,7 @@ pub SaveDialog.draw(self) {
     g: *app.App = self.g
     if ui.key(Keycode.escape) { g.mode = app.Mode.none }
     panel: ui.Rect = g.view.panel()
-    /* A one-pixel border around the box. */
-    g.ui.canvas.fill(panel, style.RADIUS, ui.color(theme.DIM))
-    box: ui.Area = ui.popup(panel.inset(ui.Insets.all(1.0)))
+    box: ui.Area = ui.popup(panel)
     defer box.end()
     inside: ui.Area = ui.area(panel.inset(ui.Insets.all(style.DIALOG_PAD)))
     defer inside.end()

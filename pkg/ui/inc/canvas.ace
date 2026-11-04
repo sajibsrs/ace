@@ -157,30 +157,36 @@ ROUND_C: [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
 ROUND_S: [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
 
 /* `box` with corners of `radius`, its edge fading out over one pixel. */
-pub Canvas.fill(self, box: Rect, radius: f32, color: Color) {
+pub Canvas.fill(self, box: Rect, radius: f32, color: Color) { self.fill(box, radius, radius, color) }
+
+/* `box` with top corners of `top` and bottom corners of `bottom`, its edge
+ * fading out over one pixel. */
+pub Canvas.fill(self, box: Rect, top: f32, bottom: f32, color: Color) {
     if box.w <= 0.0 || box.h <= 0.0 { return }
-    rad: f32 = math.min[f32](radius, math.min[f32](box.w, box.h) / 2.0)
-    if rad <= 0.5 {
+    most: f32 = math.min[f32](box.w, box.h) / 2.0
+    rad: f32 = math.min[f32](top, most)
+    low: f32 = math.min[f32](bottom, most)
+    if rad <= 0.5 && low <= 0.5 {
         self.fill(box, color)
         return
     }
+    /* A square corner is one of half a pixel: its inner points meet at the
+     * corner, so the fan does not fold over itself. */
+    rad = math.max[f32](rad, 0.5)
+    low = math.max[f32](low, 0.5)
     n: usize = ROUND_POINTS
     if self.count + 9 * n > self.vertices.len { self.flush() }
     clear: Color = Color { r = color.r, g = color.g, b = color.b, a = 0.0 }
     inner: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
     outer: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
-    x0: f32 = box.x + rad
-    y0: f32 = box.y + rad
-    x1: f32 = box.x + box.w - rad
-    y1: f32 = box.y + box.h - rad
     /* Clockwise on screen from the top-left corner's left end. */
     for k: usize in 0 .. ROUND_STEPS {
         c: f32 = ROUND_C[k]
         s: f32 = ROUND_S[k]
-        self.arc(inner[..], outer[..], k, x0, y0, -c, -s, rad)
-        self.arc(inner[..], outer[..], k + ROUND_STEPS, x1, y0, s, -c, rad)
-        self.arc(inner[..], outer[..], k + 2 * ROUND_STEPS, x1, y1, c, s, rad)
-        self.arc(inner[..], outer[..], k + 3 * ROUND_STEPS, x0, y1, -s, c, rad)
+        self.arc(inner[..], outer[..], k, box.x + rad, box.y + rad, -c, -s, rad)
+        self.arc(inner[..], outer[..], k + ROUND_STEPS, box.x + box.w - rad, box.y + rad, s, -c, rad)
+        self.arc(inner[..], outer[..], k + 2 * ROUND_STEPS, box.x + box.w - low, box.y + box.h - low, c, s, low)
+        self.arc(inner[..], outer[..], k + 3 * ROUND_STEPS, box.x + low, box.y + box.h - low, -s, c, low)
     }
     for k: usize in 1 .. n - 1 { self.triangle(inner[0], inner[k], inner[k + 1], color) }
     for k: usize in 0 .. n {
@@ -207,6 +213,105 @@ pub Canvas.quad(self, a: Vertex, b: Vertex, c: Vertex, d: Vertex) {
     self.vertices[self.count + 4] = c
     self.vertices[self.count + 5] = d
     self.count += 6
+}
+
+/* The ring `d` outside the edge of `box`, whose corners are `rad`, into `pts`
+ * (inside when `d` is negative): its corners round by `rad` + `d`, or are
+ * square once that reaches 0. Clockwise on screen from the top-left corner's
+ * left end, as `fill` runs. */
+ring(pts: []Point, box: Rect, rad: f32, d: f32) {
+    r: f32 = math.max[f32](rad + d, 0.0)
+    x0: f32 = box.x - d + r
+    y0: f32 = box.y - d + r
+    x1: f32 = box.x + box.w + d - r
+    y1: f32 = box.y + box.h + d - r
+    for k: usize in 0 .. ROUND_STEPS {
+        c: f32 = ROUND_C[k]
+        s: f32 = ROUND_S[k]
+        pts[k] = Point { x = x0 - c * r, y = y0 - s * r }
+        pts[k + ROUND_STEPS] = Point { x = x1 + s * r, y = y0 - c * r }
+        pts[k + 2 * ROUND_STEPS] = Point { x = x1 + c * r, y = y1 + s * r }
+        pts[k + 3 * ROUND_STEPS] = Point { x = x0 - s * r, y = y1 + c * r }
+    }
+}
+
+/* The band between rings `a` and `b`, shading from `ca` to `cb`. */
+Canvas.band(self, a: []Point, ca: Color, b: []Point, cb: Color) {
+    n: usize = a.len
+    for k: usize in 0 .. n {
+        j: usize = (k + 1) % n
+        self.quad(Vertex { position = a[k], color = ca }, Vertex { position = a[j], color = ca },
+            Vertex { position = b[j], color = cb }, Vertex { position = b[k], color = cb })
+    }
+}
+
+/* `color` at `a` times its alpha. */
+fade(color: Color, a: f32): Color { return Color { r = color.r, g = color.g, b = color.b, a = color.a * a } }
+
+/* A blur's edge: its cover `d` inside the edge of what casts it, for a blur
+ * reaching `blur` each way, the normal distribution's at 0, 1 and 2 standard
+ * deviations and straight between. */
+cover(d: f32, blur: f32): f32 {
+    x: f32 = math.min[f32](math.max[f32](d / blur, -1.0), 1.0)
+    if x < -0.5 { return 0.32 * (x + 1.0) }
+    if x < 0.5 { return 0.5 + 0.68 * x }
+    return 0.84 + 0.32 * (x - 0.5)
+}
+
+/* The soft shadow of `box`, whose corners are `radius`: `color` where `box`
+ * covers fully, fading out across `blur` either side of its edge, as a
+ * Gaussian blur of standard deviation `blur` / 2 does. A box narrower than
+ * twice `blur` casts a fainter, tighter shadow. The caller offsets `box`. */
+pub Canvas.shadow(self, box: Rect, radius: f32, blur: f32, color: Color) {
+    if box.w <= 0.0 || box.h <= 0.0 { return }
+    if blur <= 0.5 {
+        self.fill(box, radius, color)
+        return
+    }
+    half: f32 = math.min[f32](box.w, box.h) / 2.0
+    rad: f32 = math.min[f32](radius, half)
+    b: f32 = math.min[f32](blur, half)
+    peak: Color = fade(color, 2.0 * cover(half, blur) - 1.0)
+    if self.count + 3 * (ROUND_POINTS - 2) + 24 * ROUND_POINTS > self.vertices.len { self.flush() }
+    core: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    inner: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    edge: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    outer: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    rim: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    ring(core[..], box, rad, -b)
+    ring(inner[..], box, rad, -b / 2.0)
+    ring(edge[..], box, rad, 0.0)
+    ring(outer[..], box, rad, b / 2.0)
+    ring(rim[..], box, rad, b)
+    for k: usize in 1 .. ROUND_POINTS - 1 { self.triangle(core[0], core[k], core[k + 1], peak) }
+    self.band(core[..], peak, inner[..], fade(peak, 0.84))
+    self.band(inner[..], fade(peak, 0.84), edge[..], fade(peak, 0.5))
+    self.band(edge[..], fade(peak, 0.5), outer[..], fade(peak, 0.16))
+    self.band(outer[..], fade(peak, 0.16), rim[..], fade(peak, 0.0))
+}
+
+/* A `thick` outline just inside `box`, with corners of `radius`, its edges
+ * fading out over one pixel straddling them, as `fill`'s does. Thinner than a
+ * pixel, it draws a pixel's width at `thick` of `color`'s alpha. */
+pub Canvas.outline(self, box: Rect, radius: f32, thick: f32, color: Color) {
+    if box.w <= 0.0 || box.h <= 0.0 || thick <= 0.0 { return }
+    half: f32 = math.min[f32](box.w, box.h) / 2.0
+    rad: f32 = math.min[f32](radius, half)
+    w: f32 = math.min[f32](math.max[f32](thick, 1.0), half)
+    ink: Color = fade(color, math.min[f32](thick, 1.0))
+    clear: Color = fade(color, 0.0)
+    if self.count + 18 * ROUND_POINTS > self.vertices.len { self.flush() }
+    outer: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    a: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    b: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    inner: [ROUND_POINTS]Point = [Point {} : ROUND_POINTS]
+    ring(outer[..], box, rad, 0.5)
+    ring(a[..], box, rad, -0.5)
+    ring(b[..], box, rad, 0.5 - w)
+    ring(inner[..], box, rad, -0.5 - w)
+    self.band(outer[..], clear, a[..], ink)
+    if w > 1.0 { self.band(a[..], ink, b[..], ink) }
+    self.band(b[..], ink, inner[..], clear)
 }
 
 /* Most points of one icon or glyph polygon. */

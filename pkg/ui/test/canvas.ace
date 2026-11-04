@@ -1,0 +1,26 @@
+import test
+import ui: "../mod.ace"
+import Color from sdl
+
+/* No window: drawing only fills the layer, which these never fill. */
+canvas: ui.Canvas
+
+/* Shadows and rounded outlines of every size draw in place: boxes narrower
+ * than the blur or the outline, square corners, and nothing at all. */
+pub depth(t: *test.T) {
+    ink: Color = Color { a = 0.5 }
+    boxes: [5]ui.Rect = [
+        ui.Rect { x = 10.0, y = 10.0, w = 400.0, h = 160.0 },
+        ui.Rect { x = 10.0, y = 10.0, w = 20.0, h = 300.0 },
+        ui.Rect { x = 10.0, y = 10.0, w = 1.0, h = 1.0 },
+        ui.Rect { x = 10.0, y = 10.0, w = 0.0, h = 40.0 },
+        ui.Rect { x = 10.0, y = 10.0, w = 40.0, h = -1.0 },
+    ]
+    for box: ui.Rect in boxes {
+        canvas.shadow(box, 12.0, 48.0, ink)
+        canvas.shadow(box, 0.0, 0.25, ink)
+        canvas.outline(box, 12.0, 0.5, ink)
+        canvas.outline(box, 0.0, 30.0, ink)
+    }
+    t.equal(true, true, @file, @line)
+}

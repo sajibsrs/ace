@@ -72,7 +72,7 @@ main(): int {
 
     editor: app.App = app.App { s = sim.Sim.new(grid.Grid {}) }
     defer editor.wipe()
-    editor.ui.theme = theme.controls()
+    editor.ui.theme = ui.Theme.init(ui.Scheme.dark)
     if editor.store.locate() != null {
         fmt.println("binbox: cannot find the executable's path")
         return 1

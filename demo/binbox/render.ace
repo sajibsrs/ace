@@ -305,7 +305,7 @@ pub draw(g: *app.App, canvas: *ui.Canvas, r: Renderer, bloom: *Bloom) {
     g.ui.canvas = canvas
     g.ui.mouse.x = g.mx
     g.ui.mouse.y = g.my
-    r.color(Color.hex(theme.WINDOW))
+    r.color(g.ui.theme.window)
     r.clear()
     draw_board(g, canvas, r, bloom)
     draw_bars(g, canvas, r)

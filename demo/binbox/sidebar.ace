@@ -60,7 +60,7 @@ Sidebar.blocks(self) {
     g.ui.theme = plain
 }
 
-/* The clock widget's slider, filled up to its span. */
+/* The clock widget: its span in a muted line over the slider. */
 Sidebar.clock(self) {
     g: *app.App = self.g
     ticks: *fmt.Buffer = ui.line()
@@ -69,10 +69,12 @@ Sidebar.clock(self) {
     } else {
         ticks.printf("%d ticks", 1 << g.clock)
     }
-    ui.slider(&g.clock, 0, grid.SPANS - 1, ticks.text())
+    ui.muted(ticks.text())
+    ui.slider(&g.clock, 0, grid.SPANS - 1)
 }
 
-/* The simulation widget: Step, Play/Pause, Reset and the speed slider. */
+/* The simulation widget: Step, Play/Pause, Reset, and the speed in a muted
+ * line over its slider. */
 Sidebar.sim(self) {
     g: *app.App = self.g
     ui.row(2)
@@ -83,10 +85,11 @@ Sidebar.sim(self) {
         ui.toggle(bar.shape(icon.Id.run), "Play", &g.auto)
     }
     if ui.button(bar.shape(icon.Id.reset), "Reset") { g.reset() }
-    ui.muted("Speed")
     setting: *fmt.Buffer = ui.line()
+    setting.printf("Speed ")
     speed.show(setting, speed.hz(g.stop))
-    ui.slider(&g.stop, 0, speed.STOPS - 1, setting.text())
+    ui.muted(setting.text())
+    ui.slider(&g.stop, 0, speed.STOPS - 1)
 }
 
 /* The info widget: the cell under the cursor, its block and level, and the
@@ -129,7 +132,7 @@ pub Sidebar.draw(self) {
     fold_icon: icon.Id = icon.Id.panel_right
     if g.view.shut { fold_icon = icon.Id.panel_left }
     plain: ui.Theme = g.ui.theme
-    g.ui.theme.button.rest = g.ui.theme.header
+    g.ui.theme.button.rest = ui.color(theme.DEEP)
     if ui.button(bar.shape(fold_icon)) { g.view.fold() }
     g.ui.theme = plain
     edit: bool = g.phase == app.Phase.edit

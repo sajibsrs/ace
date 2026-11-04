@@ -3,9 +3,6 @@
 /* Between groups in the toolbar. */
 pub GROUP_GAP: const f32 = 24.0
 
-/* The corners of controls and dialogs. */
-pub RADIUS: const f32 = 4.0
-
 /* Before the panel's title. */
 pub HEADING_PAD: const f32 = 8.0
 

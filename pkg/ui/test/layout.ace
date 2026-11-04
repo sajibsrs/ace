@@ -6,8 +6,8 @@ import Keycode from sdl
 /* No window: drawing only fills the layer. */
 canvas: ui.Canvas
 
-/* Controls 26 high: an 18 icon with 4 above and below. */
-THEME: const ui.Theme = ui.Theme { padding = 8.0, gap = 4.0, icon = 18.0 }
+/* Controls and list rows 26 high, an 18 icon. */
+THEME: const ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0, icon = 18.0 }
 
 /* A context over `canvas`, its frame begun. */
 frame(c: *ui.Context) {
@@ -77,6 +77,26 @@ pub rows(t: *test.T) {
     fourth: ui.Rect = ui.place(0.0, 10.0)
     t.equal(fourth.x == 0.0 && fourth.y == 58.0 && fourth.w == 32.0, true, @file, @line)
     t.equal(ui.place(0.0, 10.0).y == 72.0, true, @file, @line)
+    column.end()
+    c.end()
+}
+
+/* Down a card each control takes a 40-high cell, centered on it and inset
+ * the padding at the sides; a `row` splits a cell. */
+pub card(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    column: ui.Area = ui.area(ui.Rect { w = 110.0, h = 200.0 })
+    cells: ui.Area = ui.card(3)
+    a: ui.Rect = ui.place(0.0, 26.0)
+    t.equal(a.x == 8.0 && a.w == 94.0 && a.y == 7.0, true, @file, @line)
+    t.equal(ui.place(0.0, 26.0).y == 47.0, true, @file, @line)
+    ui.row(2)
+    l: ui.Rect = ui.place(0.0, 20.0)
+    r: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(l.x == 8.0 && l.w == 45.0 && r.x == 57.0 && l.y == 90.0 && r.y == 90.0, true, @file, @line)
+    cells.end()
+    t.equal(ui.place(0.0, 10.0).y == 124.0, true, @file, @line)
     column.end()
     c.end()
 }

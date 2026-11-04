@@ -116,3 +116,15 @@
   `Align.right` with `text`, `muted`, and `heading` overloads taking an
   `Align`, and evens `outline_dashed`'s gaps so each corner holds a dash.
   `demo/ui-gallery` shows every control, layout call, and primitive.
+- `pkg/ui` draws every control from `inc/look.ace`, apart from its placement,
+  id and tracking; `Theme`, `Fill` and `Response` move to `inc/theme.ace`.
+  `Theme.init(Scheme)` builds a light or dark palette: translucent gray fills,
+  an accent and a card color, and a 28 px control `height` on an 8 px grid.
+  `Canvas.shadow` and a rounded `outline` draw from rings of vertex-colored
+  bands; a popup gets a shadow and an `edge` rim from the theme, and
+  `popup(box, title)` a flush title strip, drawn by `fill(box, top, bottom,
+  color)`. New controls: a switch (`toggle(label, &value)`), `picker`, and
+  `card(cells)` for 40 px cells; sliders drop their text for a knob, stop dots
+  and the nearest stop, and lists draw pills on a padded card. A control that
+  is on fills with `Theme.chosen()`; a label on an opaque fill takes white or
+  black by the fill's luminance.

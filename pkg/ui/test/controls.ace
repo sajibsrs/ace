@@ -5,8 +5,8 @@ import Keycode from sdl
 /* No window: drawing only fills the layer. */
 canvas: ui.Canvas
 
-/* Controls 26 high: an 18 icon with 4 above and below. */
-THEME: const ui.Theme = ui.Theme { padding = 8.0, gap = 4.0, icon = 18.0 }
+/* Controls and list rows 26 high, an 18 icon. */
+THEME: const ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0, icon = 18.0 }
 
 /* Begins a frame of `c` and opens a column 110 wide at the origin. */
 open(c: *ui.Context): ui.Area {
@@ -42,37 +42,85 @@ drag(c: *ui.Context, x: f32): ui.Area {
     return open(c)
 }
 
-/* A whole-number slider has one equal zone per value; a fraction slider
- * follows the pointer. */
+/* A whole-number slider takes the stop nearest the pointer along the knob's
+ * travel, 10 to 100 in the column; a fraction slider follows the pointer. */
 pub slider(t: *test.T) {
     c: ui.Context = ui.Context {}
     stop: int = 3
     column: ui.Area = open(&c)
-    t.equal(ui.slider(&stop, 0, 54, "3"), false, @file, @line)
+    t.equal(ui.slider(&stop, 0, 54), false, @file, @line)
     close(&c, column)
     column = drag(&c, 0.0)
-    t.equal(ui.slider(&stop, 0, 54, ""), true, @file, @line)
+    t.equal(ui.slider(&stop, 0, 54), true, @file, @line)
     t.equal(stop, 0, @file, @line)
     close(&c, column)
     column = drag(&c, 109.9)
-    ui.slider(&stop, 0, 54, "")
+    ui.slider(&stop, 0, 54)
     t.equal(stop, 54, @file, @line)
     close(&c, column)
     column = drag(&c, 55.0)
-    ui.slider(&stop, 0, 54, "")
+    ui.slider(&stop, 0, 54)
     t.equal(stop, 27, @file, @line)
     close(&c, column)
     /* Held, it follows the pointer past its ends. */
     c.mouse.x = -50.0
     column = open(&c)
-    ui.slider(&stop, 0, 54, "")
+    ui.slider(&stop, 0, 54)
     t.equal(stop, 0, @file, @line)
+    close(&c, column)
+
+    /* Stops at 10, 55 and 100: 34 is nearer the middle one, though in the
+     * first third of the travel. */
+    three: int = 0
+    column = drag(&c, 34.0)
+    ui.slider(&three, 0, 2)
+    t.equal(three, 1, @file, @line)
     close(&c, column)
 
     level: f32 = 0.0
     column = drag(&c, 55.0)
     t.equal(ui.slider(&level, 0.0, 10.0), true, @file, @line)
     t.equal(level == 5.0, true, @file, @line)
+    close(&c, column)
+}
+
+/* A click anywhere on a switch flips its value. */
+pub switch_toggle(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
+    on: bool = false
+    column: ui.Area = open(&c)
+    t.equal(ui.toggle("Bold", &on), true, @file, @line)
+    t.equal(on, true, @file, @line)
+    close(&c, column)
+    c.mouse = ui.Mouse { x = 100.0, y = 5.0, pressed = true, released = true }
+    column = open(&c)
+    t.equal(ui.toggle("Bold", &on), true, @file, @line)
+    t.equal(on, false, @file, @line)
+    close(&c, column)
+}
+
+/* A click picks the segment under it; a press released on another segment
+ * picks neither. Three segments share the column's 110. */
+pub picker(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 50.0, y = 5.0, pressed = true, released = true } }
+    items: [3]string = ["A", "B", "C"]
+    chosen: usize = 0
+    column: ui.Area = open(&c)
+    t.equal(ui.picker(items[..], &chosen), true, @file, @line)
+    t.equal(chosen, 1, @file, @line)
+    close(&c, column)
+    column = open(&c)
+    t.equal(ui.picker(items[..], &chosen), false, @file, @line)
+    close(&c, column)
+
+    c.mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true }
+    column = open(&c)
+    t.equal(ui.picker(items[..], &chosen), false, @file, @line)
+    close(&c, column)
+    c.mouse = ui.Mouse { x = 100.0, y = 5.0, released = true }
+    column = open(&c)
+    t.equal(ui.picker(items[..], &chosen), false, @file, @line)
+    t.equal(chosen, 1, @file, @line)
     close(&c, column)
 }
 
@@ -141,7 +189,8 @@ pub field(t: *test.T) {
 }
 
 /* A press picks a row; the wheel scrolls a row a notch, only under the
- * pointer and when the list overflows. Rows are 24 high. */
+ * pointer and when the list overflows. Rows are 26 high, inset 4 on the
+ * list's card. */
 pub list(t: *test.T) {
     c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 30.0, pressed = true } }
     items: [5]string = ["a", "b", "c", "d", "e"]
@@ -150,7 +199,7 @@ pub list(t: *test.T) {
     column: ui.Area = open(&c)
     t.equal(ui.list(items[..], &chosen, 2, &scroll), true, @file, @line)
     t.equal(chosen, 1, @file, @line)
-    t.equal(ui.last().rect.h == 48.0, true, @file, @line)
+    t.equal(ui.last().rect.h == 60.0 && ui.rows(2) == 60.0, true, @file, @line)
     close(&c, column)
 
     c.mouse = ui.Mouse { x = 5.0, y = 5.0, wheel = -2.0 }
