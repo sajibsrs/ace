@@ -1,8 +1,8 @@
 #!/bin/sh
-# Emit equivalent Ace and C sources with N call-chained functions into DIR
-# (DIR/corpus.ace, DIR/corpus.c). Three function shapes alternate — a bounded
+# Emit equivalent Ace, C, C++ and Rust sources with N call-chained functions
+# into DIR (DIR/corpus.ace, .c, .cpp, .rs). Three function shapes alternate — a bounded
 # loop with branches, by-value struct passing, and early-return branches — and
-# main prints one checksum so the two programs can be checked for equivalence.
+# main prints one checksum so the programs can be checked for equivalence.
 set -eu
 
 if [ "$#" -ne 2 ]; then
@@ -19,6 +19,7 @@ function call2(k) { return k > 0 ? "fn_" (k - 1) "(t & 255, b + 1)" : "b" }
 BEGIN {
     ace = dir "/corpus.ace"
     c = dir "/corpus.c"
+    rs = dir "/corpus.rs"
 
     print "import fmt\n\nMASK: const usize = 0x7FFFFFFF\n" > ace
     print "Pair: struct {\n    a: usize,\n    b: usize,\n}\n" > ace
@@ -29,6 +30,10 @@ BEGIN {
     print "typedef struct { usize a, b; } Pair;\n" > c
     print "Pair step(Pair p) { return (Pair){(p.a * 48271 + p.b) & MASK, (p.b + 1) & MASK}; }\n" > c
     for (k = 0; k < n; k++) print "usize fn_" k "(usize a, usize b);" > c
+
+    print "const MASK: usize = 0x7FFFFFFF;\n" > rs
+    print "#[derive(Clone, Copy)]\nstruct Pair {\n    a: usize,\n    b: usize,\n}\n" > rs
+    print "fn step(p: Pair) -> Pair {\n    Pair { a: (p.a * 48271 + p.b) & MASK, b: (p.b + 1) & MASK }\n}\n" > rs
     print "" > c
 
     for (k = 0; k < n; k++) {
@@ -46,6 +51,12 @@ BEGIN {
             printf "            s = (s * 7 + b) & MASK;\n        } else {\n", k > c
             printf "            s = (s + i * %d) & MASK;\n        }\n    }\n", mul > c
             printf "    return (s + %s) & MASK;\n}\n\n", call(k) > c
+
+            printf "fn fn_%d(a: usize, b: usize) -> usize {\n    let mut s = a;\n", k > rs
+            printf "    for i in 0..8usize {\n        if (s + i) %% 3 == 0 {\n", k > rs
+            printf "            s = (s * 7 + b) & MASK;\n        } else {\n", k > rs
+            printf "            s = (s + i * %d) & MASK;\n        }\n    }\n", mul > rs
+            printf "    (s + %s) & MASK\n}\n\n", call(k) > rs
         } else if (m == 1) {
             printf "fn_%d(a: usize, b: usize): usize {\n", k > ace
             printf "    p: Pair = Pair {a = a, b = b}\n    p = step(p)\n    q: Pair = step(p)\n", k > ace
@@ -56,6 +67,11 @@ BEGIN {
             printf "    Pair p = {a, b};\n    p = step(p);\n    Pair q = step(p);\n", k > c
             printf "    usize s = (p.a + q.b) & MASK;\n", k > c
             printf "    return (s + %s) & MASK;\n}\n\n", call(k) > c
+
+            printf "fn fn_%d(a: usize, b: usize) -> usize {\n", k > rs
+            printf "    let p = step(Pair { a, b });\n    let q = step(p);\n", k > rs
+            printf "    let s = (p.a + q.b) & MASK;\n", k > rs
+            printf "    (s + %s) & MASK\n}\n\n", call(k) > rs
         } else {
             printf "fn_%d(a: usize, b: usize): usize {\n", k > ace
             printf "    t: usize = (a * %d + b) & MASK\n    if t < 1000 {\n", mul > ace
@@ -68,10 +84,22 @@ BEGIN {
             printf "        return (t + %s) & MASK;\n    }\n", call2(k) > c
             printf "    if (t < 100000) {\n        return ((t >> 3) + %s) & MASK;\n    }\n", call2(k) > c
             printf "    return (t >> 7) & MASK;\n}\n\n" > c
+
+            printf "fn fn_%d(a: usize, b: usize) -> usize {\n", k > rs
+            printf "    let t = (a * %d + b) & MASK;\n    if t < 1000 {\n", mul > rs
+            printf "        return (t + %s) & MASK;\n    }\n", call2(k) > rs
+            printf "    if t < 100000 {\n        return ((t >> 3) + %s) & MASK;\n    }\n", call2(k) > rs
+            printf "    (t >> 7) & MASK\n}\n\n" > rs
         }
     }
 
     printf "main(): int {\n    result: usize = fn_%d(12345, 678)\n    fmt.printf(\"checksum: %%u\\n\", result)\n    return 0\n}\n", n - 1 > ace
     printf "int main(void) {\n    printf(\"checksum: %%llu\\n\", (unsigned long long)fn_%d(12345, 678));\n    return 0;\n}\n", n - 1 > c
+    printf "fn main() {\n    println!(\"checksum: {}\", fn_%d(12345, 678));\n}\n", n - 1 > rs
 }
 '
+
+# C++ is the C source with C++ headers and a braced initializer in place of
+# C's compound literal.
+sed -e 's/<stdint.h>/<cstdint>/' -e 's/<stdio.h>/<cstdio>/' -e 's/(Pair){/Pair{/' \
+    "$dir/corpus.c" > "$dir/corpus.cpp"

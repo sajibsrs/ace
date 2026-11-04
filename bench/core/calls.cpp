@@ -1,0 +1,181 @@
+/* Call-overhead benchmark paired with calls.ace and calls.c, ported to C++
+ * as written. Functions have external
+ * linkage and, unless ALLOW_INLINE is defined, `noinline`, so -O2 keeps each
+ * call and cannot specialise it on constant arguments. Defining ALLOW_INLINE
+ * gives the inlined reference, which Ace has no way to match.
+ */
+#include "../awake.h"
+#include <cstdint>
+#include <cstdio>
+
+#ifdef ALLOW_INLINE
+#define NOINLINE
+#else
+#define NOINLINE __attribute__((noinline))
+#endif
+
+#define MASK 0x7FFFFFFFull
+#define ITERATIONS 10000000ull
+#define FIB_INPUT 32ull
+#define FIB_CALLS 7049155ull
+#define TAIL_DEPTH 10000ull
+#define TAIL_ROUNDS 1000ull
+
+using usize = std::uint64_t;
+
+struct Small { usize v; };
+struct Pair { usize a, b; };
+struct Triple { usize a, b, c; };
+struct Octet { usize a, b, c, d, e, f, g, h; };
+struct Vec3 { double x, y, z; };
+struct Counter { usize value; };
+struct Divmod { usize first, second; };
+
+NOINLINE usize call1(usize a) { return (a * 48271 + 1) & MASK; }
+
+NOINLINE usize call4(usize a, usize b, usize c, usize d) {
+    return (a * 3 + b * 5 + c * 7 + d) & MASK;
+}
+
+NOINLINE usize call8(usize a, usize b, usize c, usize d, usize e, usize f,
+                     usize g, usize h) {
+    return (a + b * 2 + c * 3 + d * 5 + e * 7 + f * 11 + g * 13 + h * 17) & MASK;
+}
+
+NOINLINE usize fib(usize n) {
+    if (n < 2) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+NOINLINE usize sum_tail(usize n, usize acc) {
+    if (n == 0) return acc;
+    return sum_tail(n - 1, (acc + n) & MASK);
+}
+
+NOINLINE Small small_step(Small s) {
+    return Small{(s.v * 48271 + 1) & MASK};
+}
+
+NOINLINE Pair pair_step(Pair p) {
+    return Pair{(p.a * 48271 + p.b) & MASK, (p.b + 1) & MASK};
+}
+
+NOINLINE Triple triple_step(Triple t) {
+    return Triple{(t.a * 48271 + t.b) & MASK, (t.b + t.c) & MASK,
+                    (t.c + 1) & MASK};
+}
+
+NOINLINE Octet octet_step(Octet o) {
+    return Octet{(o.a * 48271 + o.h) & MASK, (o.b + o.a) & MASK,
+                   (o.c + o.b) & MASK, (o.d + o.c) & MASK, (o.e + o.d) & MASK,
+                   (o.f + o.e) & MASK, (o.g + o.f) & MASK, (o.h + 1) & MASK};
+}
+
+NOINLINE Vec3 vec_add(Vec3 a, Vec3 b) {
+    return Vec3{a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+NOINLINE double dot3(Vec3 a, Vec3 b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+NOINLINE Divmod divmod(usize a, usize b) { return Divmod{a / b, a % b}; }
+
+NOINLINE void counter_add(Counter* self, usize amount) {
+    self->value = (self->value + amount) & MASK;
+}
+
+static usize (*volatile callback_slot)(usize) = call1;
+
+static void report(const char* name, std::uint64_t elapsed, usize operations,
+                   usize checksum) {
+    std::printf("%s %llu %llu %llu\n", name, (unsigned long long)elapsed,
+           (unsigned long long)operations, (unsigned long long)checksum);
+}
+
+int main() {
+    usize state = 1;
+    std::uint64_t started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) state = call1(state + i);
+    report("call-1", awake() - started, ITERATIONS, state);
+
+    state = 1;
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) state = call4(state, i, state >> 3, 1);
+    report("call-4", awake() - started, ITERATIONS, state);
+
+    state = 1;
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++)
+        state = call8(state, i, 1, 2, 3, 4, 5, 6);
+    report("call-8", awake() - started, ITERATIONS, state);
+
+    started = awake();
+    state = fib(FIB_INPUT);
+    report("fib-recursive", awake() - started, FIB_CALLS, state);
+
+    state = 1;
+    started = awake();
+    for (usize i = 0; i < TAIL_ROUNDS; i++) state = sum_tail(TAIL_DEPTH, state);
+    report("tail-recursive", awake() - started, TAIL_ROUNDS * TAIL_DEPTH, state);
+
+    Small small = {1};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) small = small_step(small);
+    report("struct-8", awake() - started, ITERATIONS, small.v);
+
+    Pair pair = {1, 1};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) pair = pair_step(pair);
+    report("struct-16", awake() - started, ITERATIONS, (pair.a + pair.b) & MASK);
+
+    Triple triple = {1, 1, 1};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) triple = triple_step(triple);
+    report("struct-24", awake() - started, ITERATIONS,
+           (triple.a + triple.b + triple.c) & MASK);
+
+    Octet octet = {1, 1, 1, 1, 1, 1, 1, 1};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) octet = octet_step(octet);
+    report("struct-64", awake() - started, ITERATIONS,
+           (octet.a + octet.b + octet.c + octet.d + octet.e + octet.f + octet.g +
+            octet.h) & MASK);
+
+    Vec3 acc = {0.0, 0.0, 0.0};
+    Vec3 step = {1.0, 2.0, 3.0};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) acc = vec_add(acc, step);
+    report("struct-hfa", awake() - started, ITERATIONS,
+           (usize)(acc.x + acc.y + acc.z));
+
+    double total = 0.0;
+    Vec3 probe = {0.0, 2.0, 3.0};
+    Vec3 weights = {4.0, 5.0, 6.0};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) {
+        probe.x = (double)(i & 15);
+        total = total + dot3(probe, weights);
+    }
+    report("float-acc", awake() - started, ITERATIONS, (usize)total);
+
+    state = 1;
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) {
+        Divmod result = divmod(state + i + 1, 97);
+        state = (result.first * 3 + result.second) & MASK;
+    }
+    report("tuple-return", awake() - started, ITERATIONS, state);
+
+    Counter counter = {1};
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) counter_add(&counter, i);
+    report("method", awake() - started, ITERATIONS, counter.value);
+
+    usize (*callback)(usize) = callback_slot;
+    state = 1;
+    started = awake();
+    for (usize i = 0; i < ITERATIONS; i++) state = callback(state + i);
+    report("function-value", awake() - started, ITERATIONS, state);
+    return 0;
+}
