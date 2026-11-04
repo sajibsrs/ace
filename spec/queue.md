@@ -12,11 +12,11 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     `__TEXT`/`.rodata`.
   - Globals, Ace and C (`extern`), are writable by default; `const` opts into
     read-only placement.
-  - Defined failures: integer overflow follows one fixed rule; oversized
-    shifts are defined; bounds, null dereference, and division by zero trap
-    in every build (Safety #3);
-    reading uninitialized storage stays a compile error. Precedent: Go (bounds,
-    nil, divide traps; wrapping overflow; defined shifts).
+  - Defined failures: integer overflow wraps and a shift count is taken modulo
+    the width in every build (Safety #6); bounds, null dereference, and
+    division by zero trap in every build (Safety #3); reading uninitialized
+    storage stays a compile error. Precedent: Go (bounds,
+    nil, divide traps; wrapping overflow); Java and C# (masked shift counts).
   - Use after free through another alias: debug builds detect it (quarantine,
     guard pages) and trap, like `noalias` debug checks; release has machine
     semantics. Precedent: Zig's debug allocator, Vale.
@@ -27,9 +27,6 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     receivers (`const self`); a getter takes `const self` (Mutability #2, #6).
   Open:
   - [open] Spelling of the by-value receiver (e.g. `val self`).
-  - [open] The overflow rule: wrap in every build, or trap in every build.
-  - [open] The oversized-shift rule: mask the count (arm64 hardware), or
-    yield zero / sign fill.
   - [open] `noalias` restated: "no other parameter, global, or pointer reaches
     the same bytes during the call", and which arguments the debug check now
     pairs, since every slice may write.
@@ -61,8 +58,8 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
   Package System #3, #13, and #15; remote packages through a central registry
   or resolver remain open under #9. Resume only when package implementation is
   selected.
-- Linux support (linux-x64) is added on the `linux` branch; Windows x64 waits
-  until darwin is complete. x64 atomics are lowered (`src/x64.c`, checked by
+- linux-x64 is developed on the `linux-x64` branch; windows-x64 is not yet
+  started. x64 atomics are lowered (`src/x64.c`, checked by
   `tests/x64_atomic` disassembly) but have never run: they execute only on a
   linux-x64 host, as does the debug null trap. A fetch-and, -or, or -xor whose
   result is read loops on `cmpxchg`, and every read-modify-write is

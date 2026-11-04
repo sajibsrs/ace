@@ -21,7 +21,7 @@
       | `fence()` | seq_cst, `_acquire`, `_release` |
 
     - `exchange` and the arithmetic and bitwise forms return the previous
-      value. `add` and `sub` wrap modulo 2^width, as `bits.wradd` does, and
+      value. `add` and `sub` wrap modulo 2^width, as `+` and `-` do, and
       never report overflow. `cas` writes `desired` only when the location holds
       `expected`, and returns the value it observed with whether it wrote; it
       never fails spuriously.

@@ -34,11 +34,16 @@ history.
 ## Process
 
 - Work on one topic at a time in Decision Queue order.
-- Target darwin-arm64 on `master`. Linux support (linux-x64) is added on the
-  `linux` branch (plan: `.claude/plans/linux-plan.md`), which stands in for
-  `master` below. Windows x64 waits until darwin is complete.
+- Each target has its own development branch, named for the host;
+  `darwin-arm64` and `linux-x64` are active, and `windows-x64` is not yet
+  started. Add no lowering, tests, or limitations for another target on a
+  host's branch. `master` is the integration branch. Work only on
+  the branch matching the host (`uname -sm`); before the first edit, check
+  `git branch --show-current` and stop and ask if it differs. Never check
+  out, commit to, merge, cherry-pick, or push any other branch, `master`
+  included; the owner moves changes between branches.
 - Implement every code change (`src/`, `std/`, `pkg/`, `tests/`, `bench/`)
-  directly in the working tree on `master`, never in a throwaway prototype, and
+  directly in that branch's working tree, never in a throwaway prototype, and
   leave it uncommitted. Implement, test, and measure there against `HEAD`, then
   present the result with viable alternatives for the owner's review. This
   holds even when the change is already agreed in principle (e.g. an open
@@ -110,12 +115,17 @@ history.
 
 ## Scoped rules
 
-Path-specific guidance lives in `.claude/rules/`:
+Before editing these paths, read the matching file in `agents/`:
 
-- `language-boundaries.md`: fixed language and compiler design boundaries.
-- `documentation.md`: documentation and editor-support requirements.
-- `testing.md`: test selection, organization, and environment caveats.
-- `binbox.md`: building, icons, toolbar, and diagram checks for `demo/binbox`.
+- `agents/language-boundaries.md` (`spec/`, `GRAMMAR.md`, `PHILOSOPHY.md`,
+  `src/`, `std/`, `tests/`, `demo/`, `bench/`, any `.ace` file): fixed
+  language and compiler design boundaries.
+- `agents/documentation.md` (`docs/`, `editors/vscode/`, `spec/`,
+  `GRAMMAR.md`): documentation and editor-support requirements.
+- `agents/testing.md` (`Makefile`, `src/`, `std/`, `pkg/`, `tests/`): test
+  selection, organization, and environment caveats.
+- `agents/binbox.md` (`demo/binbox/`): building, icons, toolbar, and diagram
+  checks.
 
 ## Commands
 

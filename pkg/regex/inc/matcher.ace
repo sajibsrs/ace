@@ -170,7 +170,7 @@ Matcher.scan_first(self, code: Program) {
 
             switch insts[usize(pc)] {
                 Inst.byte(byte: u8) {
-                    self.first.bits[usize(byte >> 6)] |= u64(1) << u64(byte & 63)
+                    self.first.bits[usize(byte >> 6)] |= u64(1) << u64(byte)
                 }
                 Inst.any {
                     for w: usize in 0 .. 4 { self.first.bits[w] = 0xFFFFFFFFFFFFFFFF }

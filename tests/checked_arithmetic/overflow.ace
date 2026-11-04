@@ -1,0 +1,47 @@
+/* Integer overflow wraps in every build: +, -, *, unary -, and signed
+ * MIN / -1 give the fixed-width result, including narrow values computed in
+ * registers, before any store.
+ */
+
+id8(v: i8): i8 {
+    return v
+}
+
+idu8(v: u8): u8 {
+    return v
+}
+
+idi16(v: i16): i16 {
+    return v
+}
+
+idi32(v: i32): i32 {
+    return v
+}
+
+idi64(v: i64): i64 {
+    return v
+}
+
+idu64(v: u64): u64 {
+    return v
+}
+
+main(): int {
+    if id8(127) + id8(1) != -128 || idu8(0) - idu8(1) != 255 { return 1 }
+    if idu8(16) * idu8(16) != 0 || idi16(32767) + idi16(1) != -32768 { return 2 }
+    if -id8(-128) != -128 { return 3 }
+    if idu8(250) + 10 != 4 { return 4 }
+    if idi16(300) * idi16(300) != 24464 { return 5 }
+    if idi64(0x7fffffffffffffff) + 1 != -0x7fffffffffffffff - 1 { return 6 }
+    if idu64(0xffffffffffffffff) * 2 != 0xfffffffffffffffe { return 7 }
+    if -idi64(-0x7fffffffffffffff - 1) != -0x7fffffffffffffff - 1 { return 8 }
+    n: u8 = idu8(255)
+    n += 1
+    if n != 0 { return 9 }
+    if id8(-128) / id8(-1) != -128 || id8(-128) % id8(-1) != 0 { return 10 }
+    if idi32(-2147483647 - 1) / idi32(-1) != -2147483647 - 1 || idi32(-2147483647 - 1) % idi32(-1) != 0 { return 11 }
+    min: i64 = idi64(-0x7fffffffffffffff - 1)
+    if min / idi64(-1) != min || min % idi64(-1) != 0 { return 12 }
+    return 0
+}

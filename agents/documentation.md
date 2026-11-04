@@ -1,11 +1,3 @@
----
-paths:
-  - "docs/**/*"
-  - "editors/vscode/**/*"
-  - "spec/**/*"
-  - "GRAMMAR.md"
----
-
 # Documentation and editor support
 
 - Keep `docs/` consistent with `spec/`. Compiler-visible changes should update

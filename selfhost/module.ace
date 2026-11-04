@@ -576,9 +576,6 @@ BI_MATH_SQRT: const u64 = 29
 BI_MATH_FLOOR: const u64 = 30
 BI_MATH_CEIL: const u64 = 31
 BI_MATH_FMA: const u64 = 32
-BI_BITS_WRAP_ADD: const u64 = 33
-BI_BITS_WRAP_SUB: const u64 = 34
-BI_BITS_WRAP_MUL: const u64 = 35
 BI_MEM_ZALLOC_T: const u64 = 36
 BI_STR_FORMAT: const u64 = 37
 BI_FMT_PRINTF_FD: const u64 = 38
@@ -687,9 +684,6 @@ builtin(m: string, p: parser.Parser, id: u32): u64 {
         if mem.equal(name, "bswap") { return BI_BITS_BYTE_SWAP }
         if mem.equal(name, "rotl") { return BI_BITS_ROTATE_LEFT }
         if mem.equal(name, "rotr") { return BI_BITS_ROTATE_RIGHT }
-        if mem.equal(name, "wradd") { return BI_BITS_WRAP_ADD }
-        if mem.equal(name, "wrsub") { return BI_BITS_WRAP_SUB }
-        if mem.equal(name, "wrmul") { return BI_BITS_WRAP_MUL }
         if mem.equal(name, "mul_wide") { return BI_BITS_MUL_WIDE }
         return 0
     }

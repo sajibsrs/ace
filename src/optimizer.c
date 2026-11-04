@@ -5,9 +5,8 @@
 // cleanup, then auto-vectorization over the cleaned loops (and cleanup again
 // after it rewrites any).
 //
-// The passes rely only on facts a debug build checks: an integer operation
-// that would trap in debug (a zero divisor, MIN / -1, a shift count outside
-// the width) is never folded, and an unused load or division is removed
+// The passes rely only on facts a debug build checks: a division by a zero
+// or -1 constant is never folded, and an unused load or division is removed
 // unless it carries a trap release keeps (Safety & Debug Builds #3).
 #include "ir.h"
 #include "backend.h"
@@ -97,8 +96,7 @@ static void take(Sccp* s, int b, int slot) {
     for (int i = 0; i < tb->nins && s->fn->ins[tb->ins[i]].op == IR_PHI; i++) push(s, tb->ins[i]);
 }
 
-// The operation over constants, or 0 when it is not defined (release makes
-// those cases undefined; they stay for run time).
+// The operation over constants, or 0 when it stays for run time.
 static int fold(IrOp op, IrType t, IrType ot, uint64_t a, uint64_t b, uint64_t* out) {
     int bits = ir_type_bits(t), sg = ir_type_signed(t);
     switch (op) {
@@ -109,12 +107,11 @@ static int fold(IrOp op, IrType t, IrType ot, uint64_t a, uint64_t b, uint64_t* 
     case IR_AND: *out = ir_wrap(t, a & b); return 1;
     case IR_OR:  *out = ir_wrap(t, a | b); return 1;
     case IR_XOR: *out = ir_wrap(t, a ^ b); return 1;
-    case IR_SHL:
-        if (b >= (uint64_t)bits) return 0;
-        *out = ir_wrap(t, a << b);
+    case IR_SHL: // the count is taken modulo the width (Safety #6)
+        *out = ir_wrap(t, a << (b & (uint64_t)(bits - 1)));
         return 1;
     case IR_SHR:
-        if (b >= (uint64_t)bits) return 0;
+        b &= (uint64_t)(bits - 1);
         *out = ir_wrap(t, sg ? (uint64_t)((int64_t)a >> b) : a >> b);
         return 1;
     case IR_DIV: case IR_REM:

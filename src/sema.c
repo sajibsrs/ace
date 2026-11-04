@@ -2059,10 +2059,6 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             r->kind == SK_PRIM && r->prim == ip->prim &&
             (f->ival == BI_BITS_ROTATE_LEFT ||
              f->ival == BI_BITS_ROTATE_RIGHT);
-        int bit_wrap = fixed_unsigned && ft->nparams == 2 && r &&
-            ft->params[1]->kind == SK_PRIM && ft->params[1]->prim == ip->prim &&
-            r->kind == SK_PRIM && r->prim == ip->prim &&
-            f->ival >= BI_BITS_WRAP_ADD && f->ival <= BI_BITS_WRAP_MUL;
         int is_u64 = ip && ip->kind == SK_PRIM && ip->prim == P_U64;
         int bit_wide = f->ival == BI_BITS_MUL_WIDE && is_u64 && ft->nparams == 2 && ft->params[1]->kind == SK_PRIM &&
             ft->params[1]->prim == P_U64 && r && r->kind == SK_TUPLE && r->nfields == 2 &&
@@ -2078,7 +2074,7 @@ static int resolve_func(Ck* k, Sym* s, Sym* head) {
             ft->params[2]->kind == SK_PRIM && ft->params[2]->prim == ip->prim;
         int atomic_ok = f->ival >= BI_ATOMIC && atomic_signature(ft, (f->ival - BI_ATOMIC) / 8, (f->ival - BI_ATOMIC) % 8);
         if (!(load64 || bit_count ||
-              bit_transform || bit_rotate || bit_wrap || bit_wide || math_exact || math_fused || atomic_ok))
+              bit_transform || bit_rotate || bit_wide || math_exact || math_fused || atomic_ok))
             ck_err(k, f, "intrinsic declaration '%.*s' does not match a compiler-provided signature",
                    (int)f->len, f->str);
     }

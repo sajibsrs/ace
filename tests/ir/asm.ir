@@ -19,7 +19,7 @@ b0:
     %5 = proj i64 %4, 0
     %6 = asm {1} "nop" x9=%0 -> x9, clobbers 0x200
     %7 = proj i64 %6, 0
-    %8 = add.chk i64 %5, %7
+    %8 = add i64 %5, %7
     ret %8
 }
 

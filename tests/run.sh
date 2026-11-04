@@ -1388,15 +1388,7 @@ if ! "$ACE" --debug -o /tmp/ace_checked_features/arithmetic_valid \
     echo "FAIL: valid checked arithmetic fixture"
     fail=1
 fi
-if ! "$ACE" --debug -o /tmp/ace_checked_features/arithmetic_wrap \
-     tests/checked_arithmetic/wrap.ace ||
-   ! /tmp/ace_checked_features/arithmetic_wrap; then
-    echo "FAIL: bits wrapping arithmetic must not trap in debug builds"
-    fail=1
-fi
-for f in signed_add unsigned_mul narrow_mul div_zero neg_min shift_count compound \
-         imm_signed_add imm_unsigned_sub imm_narrow_add \
-         pointer_null pointer_scale pointer_add pointer_sub; do
+for f in div_zero pointer_null pointer_scale pointer_add pointer_sub; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/arithmetic_$f" \
          "tests/checked_arithmetic/$f.ace" >/dev/null 2>$T/errs ||
        "/tmp/ace_checked_features/arithmetic_$f" >/dev/null 2>$T/errs ||
@@ -1413,15 +1405,18 @@ if ! "$ACE" --release -o /tmp/ace_checked_features/arithmetic_div_zero_release \
     echo "FAIL: release division by zero must trap"
     fail=1
 fi
-# release arithmetic wraps: the same immediate-operand overflows produce the
-# fixed-width result, including narrow values computed in registers
-for f in imm_signed_add imm_unsigned_sub imm_narrow_add narrow_release; do
-    if ! "$ACE" --release -o "/tmp/ace_checked_features/arithmetic_${f}_release" \
-         "tests/checked_arithmetic/$f.ace" ||
-       ! "/tmp/ace_checked_features/arithmetic_${f}_release"; then
-        echo "FAIL: release arithmetic fixture $f must wrap"
-        fail=1
-    fi
+# integer overflow wraps and a shift count is taken modulo the width in every
+# build (Safety #6): immediate operands, narrow values computed in registers,
+# and signed MIN / -1 give the fixed-width result
+for m in debug release; do
+    for f in imm_signed_add imm_unsigned_sub imm_narrow_add overflow shift_count; do
+        if ! "$ACE" --$m -o "/tmp/ace_checked_features/arithmetic_${f}_$m" \
+             "tests/checked_arithmetic/$f.ace" ||
+           ! "/tmp/ace_checked_features/arithmetic_${f}_$m"; then
+            echo "FAIL: $m arithmetic fixture $f must wrap"
+            fail=1
+        fi
+    done
 done
 for f in noalias copy_length copy_overlap copy_typed_length copy_typed_overlap; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/contract_$f" \
@@ -1544,7 +1539,7 @@ if "$ACE" tests/assert/false_err.ace >/dev/null 2>$T/errs ||
     fail=1
 fi
 if ! "$ACE" --release -c -o /tmp/ace_checked_features/release \
-     tests/checked_arithmetic/signed_add.ace; then
+     tests/checked_arithmetic/imm_signed_add.ace; then
     echo "FAIL: release checked-feature object"
     fail=1
 elif command -v nm >/dev/null 2>&1 &&
@@ -2015,8 +2010,8 @@ if [ -d tests/emit ]; then
             }
             fn ~ /^__ace\$fn\$arith\$/ && $2 == "mov" && n == 1 &&
                 $3 ~ /^[xw][0-8],$/ { bad = 1 }
-            fn ~ /^__ace\$fn\$arith\$/ && $2 ~ /^(add|sub)s$/ && n == 2 { arith = 1 }
-            fn ~ /^__ace\$fn\$narrow\$/ && $2 == "cmp" && n == 2 { cmp = 1 }
+            fn ~ /^__ace\$fn\$arith\$/ && $2 ~ /^(add|sub)$/ && n == 2 { arith = 1 }
+            fn ~ /^__ace\$fn\$narrow\$/ && $2 == "cmp" && n >= 1 { cmp = 1 }
             fn ~ /^__ace\$fn\$narrow\$/ && $2 ~ /^cbn?z$/ && n == 1 { test = 1 }
             fn ~ /^__ace\$fn\$indexed\$/ && $2 == "add" && $NF == "#3" && n == 1 { idx = 1 }
             fn ~ /^__ace\$fn\$indexed\$/ && $2 == "ldr" && $NF == "#3]" &&

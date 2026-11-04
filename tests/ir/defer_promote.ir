@@ -40,7 +40,7 @@ b5: ; preds b8, b7
     br %31, b10, b11
 b6: ; preds b2
     %33 = const u64 1
-    %34 = add.chk u64 %9, %33
+    %34 = add u64 %9, %33
     %35 = call.cold {3} mem$grow(%11, %10, %34)
     %36 = proj ptr %35, 0
     %37 = proj u64 %35, 1
@@ -54,7 +54,7 @@ b7: ; preds b2, b9
     %44 = padd ptr %40, %9 * 8
     store [%44], %8
     %46 = const u64 1
-    %47 = add.chk u64 %9, %46
+    %47 = add u64 %9, %46
     %48 = const u64 0
     jmp b5
 b8: ; preds b6

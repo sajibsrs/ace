@@ -3,7 +3,6 @@
  */
 
 import ascii
-import bits
 import fmt
 import mem
 import str
@@ -169,7 +168,7 @@ main(): int {
 
     for i: usize in 0 .. iterations {
         value: int, ok: bool = str.parse[int](decimal_ints[i % 8])
-        if ok { raw_sum = bits.wradd(raw_sum, u64(value)) }
+        if ok { raw_sum += u64(value) }
     }
     report("parse-int", now() - started, iterations, usize(raw_sum))
     hex_ints: [8]string = ["ff", "DEADbeef", "7fffffffffffffff", "10", "0", "abc123", "FFFFFFFFFFFFFFFF", "1234abcd"]
@@ -178,7 +177,7 @@ main(): int {
 
     for i: usize in 0 .. iterations {
         value: uint, ok: bool = str.parse[uint](hex_ints[i % 8], u8(16))
-        if ok { raw_sum = bits.wradd(raw_sum, u64(value)) }
+        if ok { raw_sum += u64(value) }
     }
     report("parse-hex", now() - started, iterations, usize(raw_sum))
     padded: [4]string = ["   hello, world   ", "\t\r\nkey: value\n", "no-padding-at-all", "        \t  indented line"]

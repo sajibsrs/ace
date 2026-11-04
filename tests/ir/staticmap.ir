@@ -154,7 +154,7 @@ b2: ; preds b0, b4
     %36 = padd ptr %35, %34 * 8
     %37 = load u32 [%36]
     %38 = load u32 [%36 + 4]
-    %39 = add.chk u32 %37, %38
+    %39 = add u32 %37, %38
     ret %39
 b3: ; preds b1
     jmp b4

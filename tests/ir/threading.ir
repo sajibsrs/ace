@@ -45,7 +45,7 @@ b6: ; preds b5
     ret %35
 b7: ; preds b5
     %37 = const i64 1
-    %38 = add.chk i64 %4, %37
+    %38 = add i64 %4, %37
     jmp b1
 }
 
@@ -95,12 +95,12 @@ b3: ; preds b1
     ret %7
 b4: ; preds b6
     %39 = const i64 1
-    %40 = add.chk i64 %7, %39
+    %40 = add i64 %7, %39
     jmp b5
 b5: ; preds b6, b4
     %42 = phi i64 [%7, b6], [%40, b4]
     %43 = const i64 1
-    %44 = add.chk i64 %6, %43
+    %44 = add i64 %6, %43
     jmp b1
 b6: ; preds b10, b12, b9
     %46 = phi bool [%65, b10], [%79, b12], [%63, b9]
@@ -146,7 +146,7 @@ b12: ; preds b11
     jmp b6
 b13: ; preds b11
     %81 = const i64 1
-    %82 = add.chk i64 %48, %81
+    %82 = add i64 %48, %81
     jmp b7
 }
 

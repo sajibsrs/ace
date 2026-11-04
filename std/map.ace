@@ -54,53 +54,53 @@ inline home(h: u64, n: usize): usize {
  */
 inline mix(value: u64): u64 {
     x: u64 = value
-    x = bits.wrmul(x ^ (x >> 30), 0xbf58476d1ce4e5b9)
-    x = bits.wrmul(x ^ (x >> 27), 0x94d049bb133111eb)
+    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9
+    x = (x ^ (x >> 27)) * 0x94d049bb133111eb
     return x ^ (x >> 31)
 }
 
 inline hash[i8](key: i8): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[i16](key: i16): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[i32](key: i32): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[i64](key: i64): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[int](key: int): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[uint](key: uint): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[u8](key: u8): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[u16](key: u16): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[u32](key: u32): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[u64](key: u64): u64 {
-    return bits.wrmul(key, FIB)
+    return key * FIB
 }
 
 inline hash[usize](key: usize): u64 {
-    return bits.wrmul(u64(key), FIB)
+    return u64(key) * FIB
 }
 
 inline hash[bool](key: bool): u64 {
@@ -111,7 +111,7 @@ inline hash[bool](key: bool): u64 {
 /* FNV-1a over the bytes, then the finalizer. */
 inline hash[string](key: string): u64 {
     h: u64 = 0xcbf29ce484222325
-    for i: usize in 0 .. key.len { h = bits.wrmul(h ^ u64(key[i]), 0x100000001b3) }
+    for i: usize in 0 .. key.len { h = (h ^ u64(key[i])) * 0x100000001b3 }
     return mix(h)
 }
 

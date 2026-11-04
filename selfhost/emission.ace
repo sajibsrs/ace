@@ -337,16 +337,16 @@ wide(op: Token, a: u64, b: u64, sg: bool): (u64, bool) {
     ia: i64 = bitcast(i64, a)
     ib: i64 = bitcast(i64, b)
     if op == Token.plus {
-        r: u64 = bits.wradd(a, b)
+        r: u64 = a + b
         if !sg { return r, r < a }
         return r, (ia >= 0) == (ib >= 0) && (bitcast(i64, r) >= 0) != (ia >= 0)
     }
     if op == Token.minus {
-        r: u64 = bits.wrsub(a, b)
+        r: u64 = a - b
         if !sg { return r, a < b }
         return r, (ia >= 0) != (ib >= 0) && (bitcast(i64, r) >= 0) != (ia >= 0)
     }
-    r: u64 = bits.wrmul(a, b)
+    r: u64 = a * b
     if !sg { return r, a != 0 && r / a != b }
     if ia == 0 { return r, false }
     if (ia == -1 && b == I64_MIN) || (ib == -1 && a == I64_MIN) { return r, true }

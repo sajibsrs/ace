@@ -1,8 +1,3 @@
----
-paths:
-  - "demo/binbox/**/*"
----
-
 # binbox
 
 The user-facing guide is `demo/binbox/README.md` (blocks, rules, controls,

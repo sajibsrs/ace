@@ -15,7 +15,6 @@
  */
 
 import array
-import bits
 import fmt
 import map
 import mem
@@ -432,7 +431,7 @@ Lw.literal(self, ty: u8, x: u32, neg: bool): int {
         self.unsupported("float literal at an integer type")
         return self.dummy()
     }
-    if neg { return self.konst(ty, bits.wrsub(0, n.ival)) }
+    if neg { return self.konst(ty, 0 - n.ival) }
     return self.konst(ty, n.ival)
 }
 
@@ -2256,9 +2255,9 @@ Lw.contract_call(self, x: u32, res: *Agg, want_res: bool, dst: int): int {
 // --- static maps ------------------------------------------------------------
 
 map_hash_int(x: u64, seed: u64): u64 {
-    z: u64 = bits.wradd(bits.wradd(x, seed), 0x9e3779b97f4a7c15)
-    z = bits.wrmul(z ^ (z >> 30), 0xbf58476d1ce4e5b9)
-    z = bits.wrmul(z ^ (z >> 27), 0x94d049bb133111eb)
+    z: u64 = x + seed + 0x9e3779b97f4a7c15
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+    z = (z ^ (z >> 27)) * 0x94d049bb133111eb
     return z ^ (z >> 31)
 }
 
@@ -2266,7 +2265,7 @@ map_hash_string(p: string, seed: u64): u64 {
     h: u64 = 1469598103934665603 ^ seed
     for c: u8 in p {
         h ^= u64(c)
-        h = bits.wrmul(h, 1099511628211)
+        h *= 1099511628211
     }
     return h
 }
@@ -2675,21 +2674,13 @@ is_compare(op: int): bool {
     return op >= int(ir.IR_EQ) && op <= int(ir.IR_GE)
 }
 
-/* Arithmetic that a debug build checks (Safety & Debug Builds #6). */
-Lw.checked_op(self, op: u8, t: u8): bool {
-    if !self.debug || t == ir.IT_BOOL || ir.type_float(t) { return false }
-    return op == ir.IR_ADD || op == ir.IR_SUB || op == ir.IR_MUL || op == ir.IR_DIV || op == ir.IR_REM || op == ir.IR_SHL || op == ir.IR_SHR || op == ir.IR_NEG
-}
-
 Lw.arith(self, op: u8, t: u8, a: int, b: int): int {
     if ir.type_float(t) && op != ir.IR_ADD && op != ir.IR_SUB && op != ir.IR_MUL && op != ir.IR_DIV && op != ir.IR_NEG {
         self.unsupported("float operator")
         return self.dummy()
     }
     id: int = self.emit2(op, t, a, b)
-    if self.checked_op(op, t) {
-        self.fn.at(id).flags |= ir.IRF_CHECKED
-    } else if (op == ir.IR_DIV || op == ir.IR_REM) && !ir.type_float(t) {
+    if (op == ir.IR_DIV || op == ir.IR_REM) && !ir.type_float(t) {
         self.fn.at(id).flags |= ir.IRF_NONZERO
     }
     return id
@@ -3648,13 +3639,6 @@ Lw.builtin(self, x: u32, bi: u64, res: *Agg, want_res: bool): int {
         op: u8 = ir.IR_ROTR
         if bi == sema.BI_BITS_ROTATE_LEFT { op = ir.IR_ROTL }
         return self.emit2(op, t, v, c)
-    }
-    if bi == sema.BI_BITS_WRAP_ADD || bi == sema.BI_BITS_WRAP_SUB || bi == sema.BI_BITS_WRAP_MUL { // never checked
-        t: u8 = self.need_type(self.nty(x))
-        a: int = self.expr(self.kid(x, 0), int(t))
-        op: u8 = ir.IR_MUL
-        if bi == sema.BI_BITS_WRAP_ADD { op = ir.IR_ADD } else if bi == sema.BI_BITS_WRAP_SUB { op = ir.IR_SUB }
-        return self.emit2(op, t, a, self.expr(self.kid(x, 1), int(t)))
     }
     if bi == sema.BI_BITS_MUL_WIDE { // (high, low): mulh and mul of the same operands
         a: int = self.expr(self.kid(x, 0), int(ir.IT_U64))

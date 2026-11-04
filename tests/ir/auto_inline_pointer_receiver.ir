@@ -16,19 +16,19 @@ b0:
     %6 = padd.chk ptr %1, %5 * 1
     %7 = call u32 O.O$m(%6)
     %8 = const u32 1
-    %9 = add.chk u32 %7, %8
+    %9 = add u32 %7, %8
     %10 = const u32 1
-    %11 = add.chk u32 %9, %10
+    %11 = add u32 %9, %10
     %12 = const u32 1
-    %13 = add.chk u32 %11, %12
+    %13 = add u32 %11, %12
     %14 = const u32 1
-    %15 = add.chk u32 %13, %14
+    %15 = add u32 %13, %14
     %16 = const u32 1
-    %17 = add.chk u32 %15, %16
+    %17 = add u32 %15, %16
     %18 = const u32 1
-    %19 = add.chk u32 %17, %18
+    %19 = add u32 %17, %18
     %20 = const u32 1
-    %21 = add.chk u32 %19, %20
+    %21 = add u32 %19, %20
     ret %21
 }
 

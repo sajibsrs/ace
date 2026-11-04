@@ -15,7 +15,7 @@ b4: ; preds b0
     %8 = lt bool %0, %1
     br %8, b1, b3
 b5: ; preds b3, b7
-    %10 = neg.chk i64 %0
+    %10 = neg i64 %0
     jmp b6
 b6: ; preds b7, b5
     %12 = phi i64 [%0, b7], [%10, b5]

@@ -27,6 +27,6 @@ main(): int {
     n: u16 = 1
     if typed(n, 1) != 2 { return 6 }
     rem: u64 = 3
-    if bits.wrmul(rem, 2) != 6 { return 7 }
+    if bits.rotl(rem, 2) != 12 { return 7 }
     return 0
 }

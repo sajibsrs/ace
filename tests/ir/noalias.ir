@@ -46,13 +46,13 @@ b0:
     check %12, 15:23 bounds violation
     %14 = padd ptr %2, %11 * 4
     %15 = load i32 [%14]
-    %16 = add.chk i32 %10, %15
+    %16 = add i32 %10, %15
     %17 = const u64 0
     %18 = lt bool %17, %5
     check %18, 15:30 bounds violation
     %20 = padd ptr %4, %17 * 4
     %21 = load i32 [%20]
-    %22 = add.chk i32 %16, %21
+    %22 = add i32 %16, %21
     ret %22
 }
 
@@ -66,7 +66,7 @@ b0:
     check %4, 19:8 bounds violation
     %6 = padd ptr %0, %3 * 8
     %7 = load i32 [%6]
-    %8 = mul.chk i32 %7, %2
+    %8 = mul i32 %7, %2
     store [%6], %8
     ret
 }

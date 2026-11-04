@@ -11,7 +11,6 @@
  */
 
 import array
-import bits
 import fmt
 import map
 import mem
@@ -1819,7 +1818,7 @@ Sema.ut_const(const self, e: u32): (i64, bool) {
         Kind.unary {
             v: i64, ok: bool = self.ut_const(n.a)
             if !ok { return 0, false }
-            if n.op == lexer.Token.minus { return i64(bits.wrsub(0, u64(v))), true } // unsigned negate: defined at i64 min
+            if n.op == lexer.Token.minus { return i64(0 - u64(v)), true } // unsigned negate: defined at i64 min
             if n.op == lexer.Token.tilde { return ~v, true }
             return 0, false
         }
@@ -1829,16 +1828,16 @@ Sema.ut_const(const self, e: u32): (i64, bool) {
             b: i64, bok: bool = self.ut_const(n.b)
             if !bok { return 0, false }
             switch n.op {
-                lexer.Token.plus { return i64(bits.wradd(u64(a), u64(b))), true }
-                lexer.Token.minus { return i64(bits.wrsub(u64(a), u64(b))), true }
-                lexer.Token.star { return i64(bits.wrmul(u64(a), u64(b))), true }
+                lexer.Token.plus { return i64(u64(a) + u64(b)), true }
+                lexer.Token.minus { return i64(u64(a) - u64(b)), true }
+                lexer.Token.star { return i64(u64(a) * u64(b)), true }
                 lexer.Token.slash, lexer.Token.percent {
                     if b == 0 || (a == I64_MIN && b == -1) { return 0, false }
                     if n.op == lexer.Token.slash { return a / b, true }
                     return a % b, true
                 }
-                lexer.Token.shl { return i64(u64(a) << (u64(b) & 63)), true }
-                lexer.Token.shr { return a >> (b & 63), true }
+                lexer.Token.shl { return i64(u64(a) << u64(b)), true }
+                lexer.Token.shr { return a >> b, true }
                 lexer.Token.amp { return a & b, true }
                 lexer.Token.pipe { return a | b, true }
                 lexer.Token.caret { return a ^ b, true }
@@ -5659,7 +5658,7 @@ Sema.check_enum(self, decl: u32, id: u32) {
         value: i64 = 0
         valid: bool = true
         next: i64 = 0
-        if i > 0 { next = i64(bits.wradd(u64(previous), 1)) }
+        if i > 0 { next = i64(u64(previous) + 1) }
         if m.a != 0 {
             _ = self.expr_type(m.a)
             v: i64, ok: bool = self.ut_const(m.a)
@@ -7197,7 +7196,7 @@ Sema.check_bits_const(self, owner: u32, index: u32, rhs: u32) {
     f: SField = self.field(self.ty(owner), index)
     ok: bool = false
     if f.bit_signed {
-        lo: i64 = i64(bits.wrsub(0, u64(1) << u64(f.bit_width - 1)))
+        lo: i64 = i64(0 - (u64(1) << u64(f.bit_width - 1)))
         hi: i64 = i64((u64(1) << u64(f.bit_width - 1)) - 1)
         if f.bit_width == 64 {
             lo = i64(u64(1) << 63)
@@ -9019,11 +9018,8 @@ pub BI_BITS_ROTATE_RIGHT: const u64 = 27
 pub BI_MATH_SQRT: const u64 = 29
 pub BI_MATH_CEIL: const u64 = 31
 pub BI_MATH_FMA: const u64 = 32
-pub BI_BITS_WRAP_ADD: const u64 = 33
-pub BI_BITS_WRAP_MUL: const u64 = 35
 pub BI_BITS_LEAD_ZEROS: const u64 = 23
 pub BI_MATH_FLOOR: const u64 = 30
-pub BI_BITS_WRAP_SUB: const u64 = 34
 pub BI_SYS_ARGC: const u64 = 14
 pub BI_SYS_ARG: const u64 = 15
 pub BI_SYS_ENVC: const u64 = 16
@@ -9152,7 +9148,6 @@ Sema.intrinsic_fits(self, ft: u32, id: u64): bool {
     if id == BI_BITS_ROTATE_LEFT || id == BI_BITS_ROTATE_RIGHT {
         return fixed && np == 2 && self.is_prim(p1, P_UINT) && self.same_prim(r, p0)
     }
-    if id >= BI_BITS_WRAP_ADD && id <= BI_BITS_WRAP_MUL { return fixed && np == 2 && self.same_prim(p1, p0) && self.same_prim(r, p0) }
     if id == BI_BITS_MUL_WIDE {
         if np != 2 || !self.is_prim(p0, P_U64) || !self.is_prim(p1, P_U64) || r == 0 { return false }
         rt: SType = self.ty(r)

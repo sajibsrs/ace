@@ -1,7 +1,57 @@
-count(): i32 {
-    return 32
+/* A shift count is taken modulo the left operand's width in every build:
+ * runtime counts at every width, including narrow values computed in 32-bit
+ * registers and negative signed counts, constant counts the backend encodes,
+ * and constant operands the release optimizer folds.
+ */
+
+idu8(v: u8): u8 {
+    return v
+}
+
+idi8(v: i8): i8 {
+    return v
+}
+
+idu16(v: u16): u16 {
+    return v
+}
+
+idi16(v: i16): i16 {
+    return v
+}
+
+idu32(v: u32): u32 {
+    return v
+}
+
+idi32(v: i32): i32 {
+    return v
+}
+
+idu64(v: u64): u64 {
+    return v
+}
+
+idi64(v: i64): i64 {
+    return v
 }
 
 main(): int {
-    return int(i32(1) << count())
+    if idu8(0xF1) << idu8(9) != 0xE2 || idu8(0xF1) >> idu8(9) != 0x78 { return 1 }
+    if idi8(-100) >> idi8(40) != -100 || idi8(-100) >> idi8(-1) != -1 { return 2 }
+    if idi8(3) << idi8(-1) != -128 { return 3 }
+    if idu16(0xF001) << idu16(17) != 0xE002 || idu16(0xF001) >> idu16(33) != 0x7800 { return 4 }
+    if idi16(-2) >> idi16(16) != -2 || idi16(1) << idi16(-1) != -0x8000 { return 5 }
+    if idu32(0xF0000001) << idu32(33) != 0xE0000002 || idu32(0xF0000001) >> idu32(32) != 0xF0000001 { return 6 }
+    if idi32(-8) >> idi32(-1) != -1 || idi32(1) << idi32(32) != 1 { return 7 }
+    if idu64(0xF000000000000001) << idu64(65) != 0xE000000000000002 { return 8 }
+    if idu64(0xF000000000000001) >> idu64(64) != 0xF000000000000001 { return 9 }
+    if idi64(-8) >> idi64(-63) != -4 || idi64(3) << idi64(-1) != -0x7fffffffffffffff - 1 { return 10 }
+    n: u8 = idu8(1)
+    n <<= idu8(12)
+    if n != 16 { return 11 }
+    w: u32 = idu32(5)
+    if w << 33 != 10 || w >> 34 != 1 { return 12 }
+    if i32(1) << 33 != 2 || u8(0x81) >> 9 != 0x40 { return 13 }
+    return 0
 }

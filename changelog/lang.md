@@ -1,5 +1,18 @@
 # Language
 
+- A shift count is taken modulo the left operand's width in every build:
+  shifts are no longer checked, arm64 masks a narrow count with one `and`, and
+  the optimizer folds with the masked count; `pkg/regex` and selfhost drop
+  their redundant `& 63`. C and selfhost.
+
+- Integer `+`, `-`, `*`, and unary `-` wrap in every build, and signed
+  `MIN / -1` is `MIN`, `MIN % -1` is `0`: lowering flags only shifts as
+  checked, so debug output drops its overflow traps and release is unchanged.
+  C and selfhost.
+
+- `bits.wradd`, `wrsub`, and `wrmul` are removed: the operators wrap the same
+  way. Their call sites in `std`, `pkg`, and selfhost use `+`, `-`, and `*`.
+
 - Definite initialization checks a deferred call's arguments at the `defer`
   statement, where they are snapshotted, within the deferred block's scope:
   an uninitialized argument is an error, and `&x` or a by-address receiver

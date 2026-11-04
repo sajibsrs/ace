@@ -335,13 +335,6 @@ static void fail_if_zero(A64* a, int reg, int sf, int nz) {
     branch_if(a, (Cond){ 1, 0, (uint8_t)reg, (uint8_t)sf, (uint8_t)nz }, FAIL);
 }
 
-// cmp wd, wd, sxtb (etc.): a narrow result that its extension changes is out of range
-static void check_narrow(A64* a, IrType t, int rd) {
-    static const uint32_t opt[] = { [IT_I8] = 4, [IT_I16] = 5, [IT_U8] = 0, [IT_U16] = 1 };
-    put(a, 0x6B20001Fu | ((uint32_t)rd << 16) | (opt[t] << 13) | ((uint32_t)rd << 5));
-    fail_if(a, C_NE);
-}
-
 // --- operands ---------------------------------------------------------------------------
 
 // The register holding v for reading; a constant or spilled value goes to
@@ -714,13 +707,13 @@ static void fuse(A64* a) {
                 if (is_compare(fn->ins[c].op) && a->ra.nuse[c] == 1 && fn->ins[c].block == b) a->ra.fused[c] = 1;
             } else if (x->op == IR_LOAD || x->op == IR_STORE) {
                 if (fold_address(a, u)) a->ra.fused[x->args[0]] = 1;
-            } else if ((x->op == IR_ADD || x->op == IR_SUB) && !(x->flags & IRF_CHECKED) &&
-                       !is_fp((IrType)x->type) && !is_vec((IrType)x->type)) { // a float multiply-add is never contracted
+            } else if ((x->op == IR_ADD || x->op == IR_SUB) && !is_fp((IrType)x->type) &&
+                       !is_vec((IrType)x->type)) { // a float multiply-add is never contracted
                 for (int k = x->op == IR_ADD ? 0 : 1; k < 2; k++) { // multiply-add, multiply-subtract
                     int m = x->args[k];
                     IrIns* mx = &fn->ins[m];
                     // a constant addend would need a register: mul + add #imm is no longer
-                    if (mx->op != IR_MUL || (mx->flags & IRF_CHECKED) || a->ra.nuse[m] != 1 || mx->block != b ||
+                    if (mx->op != IR_MUL || a->ra.nuse[m] != 1 || mx->block != b ||
                         fn->ins[x->args[1 - k]].op == IR_CONST)
                         continue;
                     a->ra.fused[m] = 1;
@@ -1032,7 +1025,7 @@ static void add_sub(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
     uint32_t sf = sfb(t);
-    int chk = x->flags & IRF_CHECKED, sub = x->op == IR_SUB;
+    int sub = x->op == IR_SUB;
     if (a->madd[v]) { // rd = other ± m0 * m1
         int k = a->madd[v] - 1;
         IrIns* m = ins_of(a, x->args[k]);
@@ -1047,48 +1040,27 @@ static void add_sub(A64* a, int v) {
     if (!sub && is_const(a, l) && !is_const(a, r)) { int s = l; l = r; r = s; }
     uint32_t imm;
     int form = arith_imm(a, r, t, &imm);
-    int flags = chk && !narrow(t); // adds/subs set the overflow flags
     int rn = opnd(a, l, S0);
     if (form) {
         if (form < 0) sub = !sub;
         int rd = dst(a, v);
-        put(a, sf | (sub ? 0x51000000u : 0x11000000u) | (flags ? 0x20000000u : 0) | (imm << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
+        put(a, sf | (sub ? 0x51000000u : 0x11000000u) | (imm << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
         rn = rd;
     } else {
         int rm = opnd(a, r, S1), rd = dst(a, v);
-        put(a, sf | (sub ? 0x4B000000u : 0x0B000000u) | (flags ? 0x20000000u : 0) | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd);
+        put(a, sf | (sub ? 0x4B000000u : 0x0B000000u) | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd);
         rn = rd;
     }
-    if (chk && narrow(t)) check_narrow(a, t, rn);
-    else if (chk) fail_if(a, ir_type_signed(t) ? C_VS : sub ? C_LO : C_HS);
-    else wrap(a, t, rn);
+    wrap(a, t, rn);
     dst_done(a, v, rn);
 }
 
 static void mul(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
-    int sg = ir_type_signed(t);
     int rn = opnd(a, x->args[0], S0), rm = opnd(a, x->args[1], S1), rd = dst(a, v);
-    uint32_t nm = ((uint32_t)rm << 16) | ((uint32_t)rn << 5);
-    if (!(x->flags & IRF_CHECKED) || narrow(t)) {
-        put(a, sfb(t) | 0x1B007C00u | nm | (uint32_t)rd);
-        if (x->flags & IRF_CHECKED) check_narrow(a, t, rd);
-        else wrap(a, t, rd);
-    } else if (!is64(t)) { // the exact 64-bit product must be its 32-bit extension
-        put(a, (sg ? 0x9B207C00u : 0x9BA07C00u) | nm | (uint32_t)rd); // smull / umull
-        put(a, 0xEB20001Fu | ((uint32_t)rd << 16) | ((sg ? 6u : 2u) << 13) | ((uint32_t)rd << 5));
-        fail_if(a, C_NE);
-    } else if (sg) { // the high half must be the low half's sign
-        put(a, 0x9B407C00u | nm | S2);                  // smulh x15
-        put(a, 0x9B007C00u | nm | (uint32_t)rd);
-        put(a, 0xEB80001Fu | ((uint32_t)rd << 16) | (63u << 10) | (S2 << 5)); // cmp x15, rd, asr #63
-        fail_if(a, C_NE);
-    } else {
-        put(a, 0x9BC07C00u | nm | S2);                  // umulh x15
-        put(a, 0x9B007C00u | nm | (uint32_t)rd);
-        fail_if_zero(a, S2, 1, 1);
-    }
+    put(a, sfb(t) | 0x1B007C00u | ((uint32_t)rm << 16) | ((uint32_t)rn << 5) | (uint32_t)rd);
+    wrap(a, t, rd);
     dst_done(a, v, rd);
 }
 
@@ -1104,7 +1076,7 @@ static void div_rem(A64* a, int v) {
     IrIns* x = ins_of(a, v);
     IrType t = (IrType)x->type;
     uint32_t sf = sfb(t);
-    int sg = ir_type_signed(t), chk = x->flags & IRF_CHECKED;
+    int sg = ir_type_signed(t);
     if (is_const(a, x->args[1])) {
         uint64_t c = ins_of(a, x->args[1])->imm;
         int64_t sd = is64(t) ? (int64_t)c : (int64_t)(int32_t)(uint32_t)c;
@@ -1116,23 +1088,14 @@ static void div_rem(A64* a, int v) {
         }
     }
     int rn = opnd(a, x->args[0], S0), rm = opnd(a, x->args[1], S1);
-    if (chk || (x->flags & IRF_NONZERO)) fail_if_zero(a, rm, is64(t), 0);
-    if (chk && sg && !narrow(t)) { // MIN / -1: a - 1 overflows exactly when a is MIN
-        put(a, sf | 0x3100001Fu | (1u << 10) | ((uint32_t)rm << 5));                  // cmn rm, #1
-        put(a, sf | 0x7A400800u | (1u << 16) | ((uint32_t)C_EQ << 12) | ((uint32_t)rn << 5)); // ccmp rn, #1, #0, eq
-        fail_if(a, C_VS);
-    }
+    if (x->flags & IRF_NONZERO) fail_if_zero(a, rm, is64(t), 0);
     uint32_t div = sf | (sg ? 0x1AC00C00u : 0x1AC00800u) | ((uint32_t)rm << 16) | ((uint32_t)rn << 5);
     int rd = dst(a, v);
     if (x->op == IR_DIV) {
         put(a, div | (uint32_t)rd);
-        if (sg && narrow(t)) {
-            if (chk) check_narrow(a, t, rd); // MIN / -1 leaves the range
-            else wrap(a, t, rd);
-        }
+        if (sg && narrow(t)) wrap(a, t, rd); // MIN / -1 leaves the range
     } else {
         put(a, div | S2);
-        if (chk && sg && narrow(t)) check_narrow(a, t, S2);
         put(a, sf | 0x1B008000u | ((uint32_t)rm << 16) | ((uint32_t)rn << 10) | (S2 << 5) | (uint32_t)rd); // msub
     }
     dst_done(a, v, rd);
@@ -1144,8 +1107,8 @@ static void shift(A64* a, int v) {
     int sf = is64(t), sg = ir_type_signed(t), bits = ir_type_bits(t);
     int rn = opnd(a, x->args[0], S0);
     int c = x->args[1];
-    if (is_const(a, c) && ins_of(a, c)->imm < (uint64_t)bits) {
-        uint32_t k = (uint32_t)ins_of(a, c)->imm, w = sf ? 64 : 32;
+    if (is_const(a, c)) { // the count modulo the width (Safety #6)
+        uint32_t k = (uint32_t)(ins_of(a, c)->imm & (uint64_t)(bits - 1)), w = sf ? 64 : 32;
         int rd = dst(a, v);
         if (x->op == IR_SHL) // ubfm rd, rn, #(-k mod w), #(w - 1 - k)
             put(a, (sf ? 0xD3400000u : 0x53000000u) | (((w - k) & (w - 1)) << 16) | ((w - 1 - k) << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);
@@ -1158,9 +1121,9 @@ static void shift(A64* a, int v) {
         return;
     }
     int rm = opnd(a, c, S1);
-    if (x->flags & IRF_CHECKED) { // a negative count is a large unsigned one
-        put(a, sfb(t) | 0x7100001Fu | ((uint32_t)bits << 10) | ((uint32_t)rm << 5));
-        fail_if(a, C_HS);
+    if (bits < 32) { // the hardware takes the count modulo 32 or 64
+        put(a, 0x12000000u | (logical_imm_field((uint64_t)bits - 1, 0) << 10) | ((uint32_t)rm << 5) | S1);
+        rm = S1;
     }
     int rd = dst(a, v);
     uint32_t op = x->op == IR_SHL ? 0x1AC02000u : sg ? 0x1AC02800u : 0x1AC02400u;
@@ -1197,11 +1160,8 @@ static void unary(A64* a, int v) {
     uint32_t sf = sfb(t);
     int rn = opnd(a, x->args[0], S0), rd = dst(a, v);
     if (x->op == IR_NEG) {
-        int flags = (x->flags & IRF_CHECKED) && !narrow(t);
-        put(a, sf | (flags ? 0x6B0003E0u : 0x4B0003E0u) | ((uint32_t)rn << 16) | (uint32_t)rd);
-        if (flags) fail_if(a, C_VS);
-        else if (x->flags & IRF_CHECKED) check_narrow(a, t, rd);
-        else wrap(a, t, rd);
+        put(a, sf | 0x4B0003E0u | ((uint32_t)rn << 16) | (uint32_t)rd);
+        wrap(a, t, rd);
     } else if (t == IT_BOOL || t == IT_U8 || t == IT_U16) { // eor with the type's ones
         uint64_t ones = t == IT_BOOL ? 1 : t == IT_U8 ? 0xFF : 0xFFFF;
         put(a, 0x52000000u | (logical_imm_field(ones, 0) << 10) | ((uint32_t)rn << 5) | (uint32_t)rd);

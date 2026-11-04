@@ -406,9 +406,6 @@ static void mark_bits_intrinsics(Loader* L, Module* m) {
         else if (text_is(n->str, n->len, "bswap")) n->ival = BI_BITS_BYTE_SWAP;
         else if (text_is(n->str, n->len, "rotl")) n->ival = BI_BITS_ROTATE_LEFT;
         else if (text_is(n->str, n->len, "rotr")) n->ival = BI_BITS_ROTATE_RIGHT;
-        else if (text_is(n->str, n->len, "wradd")) n->ival = BI_BITS_WRAP_ADD;
-        else if (text_is(n->str, n->len, "wrsub")) n->ival = BI_BITS_WRAP_SUB;
-        else if (text_is(n->str, n->len, "wrmul")) n->ival = BI_BITS_WRAP_MUL;
         else if (text_is(n->str, n->len, "mul_wide")) n->ival = BI_BITS_MUL_WIDE;
     }
 }

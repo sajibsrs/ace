@@ -40,16 +40,6 @@ overload as usual, so `uint` uses the `u64` overload on Apple arm64. Like the
 float representation operations, these operations allocate nothing, make no
 runtime-library call, and remain usable through exact function values.
 
-`wradd`, `wrsub`, and `wrmul` take two operands of one of the same four
-types and return that type modulo 2^width. The ordinary `+`, `-`, and `*`
-operators abort on overflow in debug builds; these never do, in any build mode:
-
-```ace
-h: u32 = u32(2166136261)
-h = bits.wrmul(h ^ u32(byte), 16777619) // FNV-1a step
-tail: u8 = bits.wradd(u8(250), u8(10))       // 4
-```
-
 `mul_wide` takes two `u64` operands and returns their exact 128-bit product
 as its high and low words, lowering to `umulh` and `mul` on arm64 and to one
 `mul` on x64. Narrower products already fit a `u64`, so it has no other

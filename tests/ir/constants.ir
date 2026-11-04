@@ -5,14 +5,14 @@ b0:
     %2 = global ptr C
     %3 = load u32 [%2]
     %4 = cast i64 %3
-    %5 = add.chk i64 %1, %4
+    %5 = add i64 %1, %4
     %6 = global ptr D
     %7 = load i64 [%6]
-    %8 = add.chk i64 %5, %7
+    %8 = add i64 %5, %7
     %9 = global ptr E
     %10 = load f64 [%9]
     %11 = cast i64 %10
-    %12 = add.chk i64 %8, %11
+    %12 = add i64 %8, %11
     ret %12
 }
 

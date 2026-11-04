@@ -17,7 +17,7 @@ check(t: *test.T, n: usize) {
 
 main(): int {
     rem: u64 = 3
-    _ = bits.wrmul(rem, 2)
+    _ = bits.rotl(rem, 2)
     c: u32 = 0
     _ = atomic.add(&c, 1)
     _ = either(1, 70000)

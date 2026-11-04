@@ -10,8 +10,8 @@ b1: ; preds b0
     ret %1
 b2: ; preds b0
     %7 = const u64 1
-    %8 = sub.chk u64 %0, %7
-    %9 = add.chk u64 %1, %2
+    %8 = sub u64 %0, %7
+    %9 = add u64 %1, %2
     %10 = call u64 sum(%8, %9, %2)
     ret %10
 }

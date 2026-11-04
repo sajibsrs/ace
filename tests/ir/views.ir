@@ -20,7 +20,7 @@ twice(i64): i64 {
 b0:
     %0 = param i64 0
     %1 = const i64 3
-    %2 = mul.chk i64 %0, %1
+    %2 = mul i64 %0, %1
     ret %2
 }
 
@@ -64,7 +64,7 @@ b4: ; preds b2
     ret %29
 b5: ; preds b2
     %32 = const u64 3
-    %33 = add.chk u64 %7, %32
+    %33 = add u64 %7, %32
     %34 = cast i64 %33
     call @__ace$registry_leaks()
     ret %34

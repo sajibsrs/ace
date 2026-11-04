@@ -8,7 +8,7 @@ make a failure defined: bounds, null use, and division by zero.
 2. Debug builds diagnose dynamic contract violations and then abort; bounds
    diagnostics include the source file, line, and column of the failing access.
    The diagnostic is best-effort on standard error and is not a recoverable error
-   channel. Array, slice, and string bounds and integer overflow are on. A conversion to a closed enum, `E(n)`, checks that `n` is a member's discriminant (one range compare for a dense enum), so an enum value is always a member and indexing `[E]T` needs no check. A constant taking an enum type, explicitly (`E(7)`) or implicitly (`e: E = 7`, an `E` argument), must name a member at compile time.
+   channel. Array, slice, and string bounds are on. A conversion to a closed enum, `E(n)`, checks that `n` is a member's discriminant (one range compare for a dense enum), so an enum value is always a member and indexing `[E]T` needs no check. A constant taking an enum type, explicitly (`E(7)`) or implicitly (`e: E = 7`, an `E` argument), must name a member at compile time.
    Allocator tracking diagnoses invalid/double release and leaks; arbitrary
    use-after-free access requires separate memory-access instrumentation and is
    not implied by allocation tracking.
@@ -21,18 +21,14 @@ make a failure defined: bounds, null use, and division by zero.
 4. A violation provable from compile-time constants is a compile-time error in
    both modes. Mode selection controls only checks that depend on runtime
    values.
-5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; every build traps on bounds, null use, and division by zero, and debug builds add overflow, contract, and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
-6. Integer overflow checking covers the value-producing arithmetic operations
-   `+`, `-`, `*`, and unary `-` on every fixed-width signed and unsigned integer
-   type, including their compound-assignment forms. Debug builds diagnose a
-   result outside the destination type before it is stored. Division or
-   remainder by zero traps in every build (#3); debug builds also diagnose the
-   signed `MIN / -1` and `MIN % -1` cases. Release builds otherwise emit the
-   target's ordinary fixed-width operations with no guards; overflowing
-   arithmetic is unchecked. Bitwise operations and
-   explicit numeric casts are not overflow operations. A shift count must be
-   nonnegative and less than the left operand's bit width; debug builds
-   diagnose a false runtime precondition and release assumes it. Left shift is
+5. Safety is intentionally minimal and local: type checking and definite initialization improve on C at zero runtime cost; every build traps on bounds, null use, and division by zero, and debug builds add contract and allocator diagnostics. Ace rejects Rust-style ownership, lifetime, borrow, and whole-program safety analysis under the priority stack.
+6. Integer `+`, `-`, `*`, and unary `-` on every fixed-width signed and
+   unsigned integer type, including their compound-assignment forms, wrap
+   modulo 2^width in every build; signed results are two's complement. Signed
+   `MIN / -1` is `MIN` and `MIN % -1` is `0`. Division or remainder by zero
+   traps in every build (#3). A shift count is taken modulo the left
+   operand's bit width in every build, as two's complement for a negative
+   signed count: `x << n` is `x << (n & (width - 1))`. Left shift is
    otherwise a bit operation: discarded high bits are not an overflow
    diagnostic. As elsewhere, a violation provable from constants is rejected
    in every mode.

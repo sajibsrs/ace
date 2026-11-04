@@ -35,8 +35,9 @@ fi
 echo "self-build: stage 2 object matches stage 1"
 cp "$tmp/ace-self" "$self"
 
-# A debug build traps on integer overflow and bounds violations the release
-# build passes silently; compiling itself in both modes exercises every pass.
+# A debug build traps on contracts and allocator misuse the
+# release build passes silently; compiling itself in both modes exercises every
+# pass.
 "$root/ace" --debug -o "$debug" "$here/main.ace" || exit 1
 for mode in --debug --release; do
     if ! (cd "$tmp" && "$debug" $mode -c "$here/main.ace" >/dev/null); then
