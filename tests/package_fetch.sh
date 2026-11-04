@@ -69,7 +69,9 @@ check "damaged cache redownloads" 0 "$(build)"
 dep 0000000000000000000000000000000000000000000000000000000000000000 ""
 check "wrong hash fails" 1 "$(build)"
 check "wrong hash reports" 1 "$(grep -c 'does not match its sha256' "$tmp/err")"
-dep "$hash2" ": linux-x64"
+other=linux-x64
+[ "$(uname -s)" = Linux ] && other=darwin-arm64
+dep "$hash2" ": $other"
 check "no section for the target fails" 1 "$(build)"
 check "no section reports" 1 "$(grep -c 'no \[link\] section' "$tmp/err")"
 mkdir -p "$tmp/app/vendor"

@@ -1,5 +1,10 @@
 # Standard library
 
+- `net.close_write` and `tcp.close_write` exist on linux-x64 (`shutdown` with
+  `SHUT_WR`, Linux errno numbering in `CloseWriteErr`), so `pkg/http` builds
+  there; `tests/emit/tcp/close_write.ace` covers the half-close and the
+  unconnected error.
+
 - Darwin `poll.wait` is no longer capped at 64 events (#167): it collects
   kevents in the caller's storage when that holds more than the stack buffer,
   leaving the suffix unspecified, and merges one fd's filters through an
