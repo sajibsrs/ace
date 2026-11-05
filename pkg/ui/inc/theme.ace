@@ -12,13 +12,15 @@ pub Response: struct {
     pub click: bool = false,
 }
 
-/* A control's fill in each state, and the color of an outline around it,
- * drawn only when its alpha is above 0. */
+/* A control's fill in each state, the color of an outline around it, and the
+ * color of its label and icon: the outline and the label are drawn only when
+ * their alpha is above 0, else the label is picked to read on the fill. */
 pub Fill: struct {
     pub rest: Color = Color {},
     pub hover: Color = Color {},
     pub press: Color = Color {},
     pub edge: Color = Color { a = 0.0 },
+    pub ink: Color = Color { a = 0.0 },
 }
 
 /* The fill for the state `res` reports. */
@@ -31,7 +33,7 @@ pub Fill.shade(const self, res: Response): Color {
 /* The fill of a control that is on: the accent, lighter under the pointer
  * and darker held. */
 pub Theme.chosen(const self): Fill {
-    return Fill { rest = self.accent, hover = mix(self.accent, 1.0, 0.12), press = mix(self.accent, 0.0, 0.15) }
+    return Fill { rest = self.accent, hover = mix(self.accent, 1.0, 0.12), press = mix(self.accent, 0.0, 0.08) }
 }
 
 /* `c` moved `by` (0 to 1) toward the gray `to`, keeping its alpha. */
@@ -60,6 +62,9 @@ pub Theme: struct {
     pub accent: Color = Color {},
     /* Text on an accent fill. */
     pub on_accent: Color = Color {},
+    /* A popup's title strip, darker than the popup, and its white text. */
+    pub header: Color = Color {},
+    pub on_header: Color = Color {},
     /* A popup's, card's, list's and focused field's background, raised off
      * the window. */
     pub card: Color = Color {},
@@ -118,6 +123,8 @@ pub Theme.init(scheme: Scheme): Theme {
         accent = Color.hex(0x3f86d6),
         on_accent = Color.hex(0xffffff),
         card = Color.hex(0x232325),
+        header = Color.hex(0x3a3a3f),
+        on_header = Color.hex(0xffffff),
         shadow = alpha(0x000000, 0.60),
         separator = alpha(0x545458, 0.55),
         track = alpha(0x787880, 0.32),
@@ -137,8 +144,9 @@ pub Theme.init(scheme: Scheme): Theme {
         t.text = flat(0x000000, 0.88, 0xebebf0)
         t.muted = flat(0x3c3c43, 0.62, 0xebebf0)
         t.button = Fill { rest = alpha(0x787880, 0.16), hover = alpha(0x787880, 0.24), press = alpha(0x787880, 0.32) }
-        t.accent = Color.hex(0x007aff)
+        t.accent = Color.hex(0x2f74e0)
         t.card = Color.hex(0xffffff)
+        t.header = Color.hex(0x6e6e78)
         t.shadow = alpha(0x000000, 0.22)
         t.separator = alpha(0x3c3c43, 0.16)
         t.track = alpha(0x787880, 0.26)

@@ -99,7 +99,8 @@ Controls draw from `Context.theme`, plain data. Its colors are `window` (for
 the application's clear), `text`, `muted`, `button` (a `Fill` for rest, hover
 and press, behind buttons, unticked boxes, a picker's track, fields, headings
 and the hovered list row), `accent` (a toggle that is on, a ticked box, a
-slider's fill, the chosen row, a caret), `on_accent` (text on it), `card`
+slider's fill, the chosen row, a caret), `on_accent` (text on it), `header` and `on_header` (a popup's darker title
+strip and its white text), `card`
 (a popup, card, list or focused field), `shadow` (a popup's shadow),
 `separator` (between a card's cells), `track` (a switch that is off, a
 slider's track and ticks),
@@ -128,7 +129,8 @@ whether its value changed.
 - `button(label)`, `button(icon, label)`, `button(icon)`; `button(icon,
   label, on)` rests on `accent` while `on`; `button(label, fill)` and
   `button(icon, label, fill)` use their own `Fill`, outlined in its `edge`
-  when that has an alpha. A button's icon and label are centered together,
+  and labeled in its `ink` when those have an alpha (else the label is
+  near-black on a light fill and white on a dark one). A button's icon and label are centered together,
   however wide it is placed.
 - `toggle(icon, label, &value)` and `toggle(icon, &value)` flip a `bool` and
   rest on `accent` while it is set.
@@ -159,8 +161,8 @@ whether its value changed.
   the pointer and overflowing, it consumes the wheel, a row a notch, and draws
   a thumb; otherwise the wheel passes on. `rows(n)` gives the height of a
   list of `n` rows, its card's padding included, for sizing what holds it; `Theme.row()` is one row's.
-- `swatch(icon, color, selected)`: an icon in its own color, on `accent`
-  while chosen; the pointer changes nothing. Square, a column wide in a grid.
+- `swatch(icon, color, selected)`: an icon in its own color, on the
+  `button` rest gray while chosen; the pointer changes nothing. Square, a column wide in a grid.
 - `text(s)` and `muted(s)` show a line, and `text(s, align)` and
   `muted(s, align)` one at `Align.left`, `center`, or `right` across the area;
   `heading(s)` and `heading(s, align)` a section title on a strip filled as

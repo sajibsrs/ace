@@ -1,6 +1,7 @@
 import test
 import fmt
 import ui: "../mod.ace"
+import Color from sdl
 import Keycode from sdl
 
 /* No window: drawing only fills the layer. */
@@ -120,6 +121,8 @@ pub buttons(t: *test.T) {
     ui.height(40.0)
     ui.button("Tall")
     t.equal(ui.last().rect.h == 40.0, true, @file, @line)
+    ui.button("Inked", ui.Fill { ink = Color { r = 1.0, g = 1.0, b = 1.0 } })
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Inked"), true, @file, @line)
     ui.button("Next")
     t.equal(ui.last().rect.h == 26.0, true, @file, @line)
     bar.end()

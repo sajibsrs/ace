@@ -47,6 +47,8 @@ TRIANGLE: const usize = 33
 CROSS: const usize = 42
 
 SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
+/* The toggle group's options: ten icons, each in its own color. */
+GROUP: [10]u32 = [0xda4b4b, 0xe8833a, 0xeac22d, 0x8cc63f, 0x41bb77, 0x2fb3b3, 0x3f86d6, 0x5b6ee1, 0xa685fd, 0xd96aa7]
 TOOLS: [3]string = ["Box", "Wedge", "Tick"]
 FRUIT: [10]string = ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew", "kiwi", "lemon"]
 
@@ -73,10 +75,14 @@ section(t: *ui.Theme, title: string, align: ui.Align) {
     ui.heading(title, align)
 }
 
-/* A button fill from three solid colors. */
-tone(rest: u32, hover: u32, press: u32): ui.Fill {
-    return ui.Fill { rest = ui.color(rest), hover = ui.color(hover), press = ui.color(press) }
+/* A button fill from three solid colors, with `ink` on it when it is not
+ * transparent. */
+tone(rest: u32, hover: u32, press: u32, ink: Color): ui.Fill {
+    return ui.Fill { rest = ui.color(rest), hover = ui.color(hover), press = ui.color(press), ink = ink }
 }
+
+/* Whether `t` is the light theme. */
+light(t: *ui.Theme): bool { return t.window.r > 0.5 }
 
 /* Everything the controls edit. */
 State: struct {
@@ -133,10 +139,23 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     ui.grid(2, 10)
     ui.button("Secondary")
     ui.button(icon(CHECK), "Primary", true)
-    ui.button(icon(CROSS), "Danger", tone(0xa84242, 0xda4b4b, 0x7c3030))
-    ui.button(icon(CHECK), "Success", tone(0x2f8f5b, 0x41bb77, 0x236c44))
-    ui.button(icon(TRIANGLE), "Warning", tone(0xb8901c, 0xeac22d, 0x8a6c14))
-    ui.button(icon(SQUARE), "Info", tone(0x2f6db3, 0x3f86d6, 0x235185))
+    /* One family: the same saturation and weight in every hue, white labels in the light theme, dark ones in the dark. */
+    ink: Color = Color { r = 0.1, g = 0.1, b = 0.1 }
+    danger: ui.Fill = tone(0xee5a50, 0xf56e65, 0xe04b41, ink)
+    success: ui.Fill = tone(0x3bb35e, 0x4cc46f, 0x32a053, ink)
+    warning: ui.Fill = tone(0xe5a02b, 0xf0b040, 0xcf8d1f, ink)
+    info: ui.Fill = tone(0x4aa3d8, 0x62b4e4, 0x3b92c7, ink)
+    if light(t) {
+        ink = Color { r = 1.0, g = 1.0, b = 1.0 }
+        danger = tone(0xdc392e, 0xe44e44, 0xc72e24, ink)
+        success = tone(0x2f9e4f, 0x3bb05d, 0x278a42, ink)
+        warning = tone(0xe08a1e, 0xea9a36, 0xc97a14, ink)
+        info = tone(0x2f86c9, 0x4398dc, 0x2873b0, ink)
+    }
+    ui.button(icon(CROSS), "Danger", danger)
+    ui.button(icon(CHECK), "Success", success)
+    ui.button(icon(TRIANGLE), "Warning", warning)
+    ui.button(icon(SQUARE), "Info", info)
     ui.button("Outline", ui.Fill { rest = Color { a = 0.0 }, hover = t.button.rest, press = t.button.hover, edge = t.accent })
     ui.button("Ghost", ui.Fill { rest = Color { a = 0.0 }, hover = t.button.rest, press = t.button.hover })
     ui.disable()
@@ -160,11 +179,12 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     l.printf("level %d%%, %d Hz", int(s.level * 100.0), s.stop + 1)
     ui.muted(l.text())
 
-    section(t, "Swatches")
-    ui.row(SWATCHES.len)
-    for i: usize in 0 .. SWATCHES.len {
+    section(t, "Toggle group")
+    ui.row(GROUP.len)
+    shapes: [5]usize = [PLUS, CHECK, SQUARE, TRIANGLE, CROSS]
+    for i: usize in 0 .. GROUP.len {
         ui.push_id(u32(i))
-        if ui.swatch(icon(SQUARE), ui.color(SWATCHES[i]), s.color == i) { s.color = i }
+        if ui.swatch(icon(shapes[i % 5]), ui.color(GROUP[i]), s.color == i) { s.color = i }
         ui.pop_id()
     }
 

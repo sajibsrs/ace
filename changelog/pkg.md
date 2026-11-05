@@ -1,5 +1,11 @@
 # Packages
 
+- `pkg/ui` popup titles sit on a darker `Theme.header` strip in white
+  `Theme.on_header` bold text.
+- `pkg/ui` `Fill` gains `ink`, the label and icon color a style sets (when it
+  has an alpha; else `look.on` picks), so the light gallery's Danger, Success,
+  Warning and Info buttons carry white labels on saturated fills. `look.on`
+  goes white below luma 0.44, and a held `chosen` fill darkens 8%.
 - `pkg/ui` follows Dear ImGui's model: controls, value controls included
   (`checkbox`, `slider`, `field`, `list`), are free functions on the context
   current between `begin` and `end`, placed in `Area`s and drawn from

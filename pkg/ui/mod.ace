@@ -204,7 +204,7 @@ pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool { ret
 /* The height of a list of `n` rows. */
 pub rows(n: usize): f32 { return controls.rows(n) }
 
-/* A square showing `shape` in `color`, on the accent while `selected`;
+/* A square showing `shape` in `color`, on a gray while `selected`;
  * true when clicked. */
 pub swatch(shape: Icon, color: Color, selected: bool): bool { return controls.swatch(shape, color, selected) }
 

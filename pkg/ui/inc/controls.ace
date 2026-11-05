@@ -172,7 +172,7 @@ pub readout(s: string) {
     look.readout(c.canvas, t, box, s)
 }
 
-/* A square showing `shape` in `color`, on the accent while `selected`; the
+/* A square showing `shape` in `color`, on a gray while `selected`; the
  * pointer changes nothing. Its icon names it. True when clicked. */
 pub swatch(shape: Icon, color: Color, selected: bool): bool {
     c: *Context = context.current

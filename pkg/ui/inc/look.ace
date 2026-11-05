@@ -88,10 +88,11 @@ raised(cv: *Canvas, t: *Theme, box: Rect, radius: f32, color: Color) {
 
 /* A button at `box` in `fill`'s shade for `res`, its icon `shape` when
  * `icon`, and `label`; the icon and label are centered together, however wide
- * the button. Outlined when `fill` has an edge, faint when `off`. */
+ * the button. Outlined when `fill` has an edge, in its own ink when it has one, faint when `off`. */
 pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: bool, label: string, fill: Fill, off: bool) {
     shade: Color = fill.shade(res)
     ink: Color = on(t, shade)
+    if fill.ink.a > 0.0 { ink = fill.ink }
     edge: Color = fill.edge
     if off {
         shade = fade(shade, OFF_ALPHA)
@@ -116,7 +117,7 @@ pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: 
  * dark and near-black when it is light. */
 on(t: *Theme, fill: Color): Color {
     if fill.a < 1.0 { return t.text }
-    if 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b < 0.5 { return t.on_accent }
+    if 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b < 0.44 { return t.on_accent }
     return Color { r = 0.1, g = 0.1, b = 0.1, a = 1.0 }
 }
 
@@ -139,9 +140,9 @@ pub readout(cv: *Canvas, t: *Theme, box: Rect, s: string) {
     cv.text(box, s, t.text, Align.center)
 }
 
-/* `shape` in `color`, on the accent while `selected`. */
+/* `shape` in `color`, on a button's resting gray while `selected`. */
 pub swatch(cv: *Canvas, t: *Theme, box: Rect, shape: Icon, color: Color, selected: bool) {
-    if selected { cv.fill(box, t.radius, t.accent) }
+    if selected { cv.fill(box, t.radius, t.button.rest) }
     cv.icon(shape, box.square(t.icon), color)
 }
 
@@ -273,10 +274,10 @@ pub popup(cv: *Canvas, t: *Theme, box: Rect) {
     cv.fill(box, POPUP_RADIUS, t.card)
 }
 
-/* A popup's title `s` in muted text on a strip, filled as a button rests,
+/* A popup's title `s` in white text on the darker header strip,
  * across the top of the popup at `box` and `h` high. */
 pub title(cv: *Canvas, t: *Theme, box: Rect, h: f32, s: string) {
     strip: Rect = Rect { x = box.x, y = box.y, w = box.w, h = h }
-    cv.fill(strip, POPUP_RADIUS, 0.0, t.button.rest)
-    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, Align.left)
+    cv.fill(strip, POPUP_RADIUS, 0.0, t.header)
+    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.on_header, Align.left, Weight.bold)
 }
