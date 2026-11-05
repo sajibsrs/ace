@@ -128,3 +128,18 @@
   and the nearest stop, and lists draw pills on a padded card. A control that
   is on fills with `Theme.chosen()`; a label on an opaque fill takes white or
   black by the fill's luminance.
+- `pkg/ui` sets its text in Lato Light, Regular, and Bold instead of the
+  monospaced Lilex: `font/bake.py` bakes all three with per-glyph advances,
+  `text_width(s, w)` replaces `GLYPH_WIDTH`, and `Canvas.text` takes an
+  optional `Weight`. `heading` is bold; a field or slider
+  still sizes by `0.6 * text_size()` per character.
+  `font/bake.py` bakes only flattened outlines and advances. Text is drawn
+  from a size-independent glyph atlas: `set_text_size(px)` replaces the 16 px
+  `TEXT_SIZE`, and each glyph is rasterized by exact area coverage per
+  weight, size and quarter-pixel phase (x-height fitted to whole rows, 15%
+  stem darkening) into one RGBA texture that also serves untextured
+  geometry through a white texel. `set_text_density(d)` rasterizes for a
+  scaled renderer's device pixels. `Texture.image`, `Texture.update`,
+  `Renderer.geometry(texture, ...)` and `Renderer.flush` in `pkg/sdl`.
+  Theme text colors are opaque (`flat`): a glyph's triangles overlap a little,
+  and a translucent color showed the overlaps as dark dots.

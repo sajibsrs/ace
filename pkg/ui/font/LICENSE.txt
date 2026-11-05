@@ -1,6 +1,6 @@
-Lilex SemiBold (font/Lilex-SemiBold.ttf), from https://github.com/mishamyrt/Lilex
+Lato Light, Regular, and Bold (font/Lato-*.ttf), from https://www.latofonts.com
 
-Copyright 2019 The Lilex Project Authors (https://github.com/mishamyrt/Lilex)
+Copyright (c) 2010-2011 by tyPoland Lukasz Dziedzic (http://www.typoland.com/) with Reserved Font Name "Lato".
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://openfontlicense.org
 

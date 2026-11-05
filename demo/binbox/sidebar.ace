@@ -86,7 +86,7 @@ Sidebar.sim(self) {
     }
     if ui.button(bar.shape(icon.Id.reset), "Reset") { g.reset() }
     setting: *fmt.Buffer = ui.line()
-    setting.printf("Speed ")
+    setting.printf("Speed: ")
     speed.show(setting, speed.hz(g.stop))
     ui.muted(setting.text())
     ui.slider(&g.stop, 0, speed.STOPS - 1)

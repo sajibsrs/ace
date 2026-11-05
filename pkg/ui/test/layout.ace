@@ -109,14 +109,14 @@ pub buttons(t: *test.T) {
     shape: ui.Icon = ui.Icon {}
     bar: ui.Area = ui.area(ui.Rect { w = 400.0, h = 30.0 }, ui.Flow.across)
     ui.button("Save")
-    t.equal(ui.last().rect.w == 16.0 + 4.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Save"), true, @file, @line)
     ui.button(shape, "Open")
-    t.equal(ui.last().rect.w == 16.0 + 18.0 + 4.0 + 4.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Open") + 22.0, true, @file, @line)
     ui.button(shape)
     t.equal(ui.last().rect.w == 26.0 && ui.last().rect.h == 26.0, true, @file, @line)
     ui.width("Simulate")
     ui.button(shape, "Edit")
-    t.equal(ui.last().rect.w == 16.0 + 18.0 + 4.0 + 8.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Simulate") + 22.0, true, @file, @line)
     bar.end()
     c.end()
 }
@@ -223,4 +223,16 @@ pub line(t: *test.T) {
     t.equal(l.text(), "8 ticks", @file, @line)
     t.equal(ui.line().text(), "", @file, @line)
     c.end()
+}
+
+/* Text measures in proportion to the text size, which is kept between 6 and 96. */
+pub size(t: *test.T) {
+    ui.set_text_size(16.0)
+    w16: f32 = ui.text_width("Hamburg")
+    ui.set_text_size(32.0)
+    w32: f32 = ui.text_width("Hamburg")
+    t.equal(ui.text_size() == 32.0 && w32 - 2.0 * w16 < 0.01 && 2.0 * w16 - w32 < 0.01, true, @file, @line)
+    ui.set_text_size(1000.0)
+    t.equal(ui.text_size() == 96.0, true, @file, @line)
+    ui.set_text_size(16.0)
 }

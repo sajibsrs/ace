@@ -3,7 +3,7 @@
 
 import math
 import Color, Keycode from sdl
-import Rect, Insets, Icon, Align, TEXT_SIZE, GLYPH_WIDTH from "./canvas.ace"
+import Rect, Insets, Icon, Align, Weight, text_size, cell, text_width from "./canvas.ace"
 import Keyboard, KEY_DELETE, KEY_HOME, KEY_END from "./input.ace"
 import context: "./context.ace"
 import Context, Item from "./context.ace"
@@ -80,7 +80,7 @@ pub toggle(shape: Icon, value: *bool): bool { return toggle(shape, "", value) }
 pub toggle(label: string, value: *bool): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(f32(label.len) * GLYPH_WIDTH + t.gap + look.SWITCH_W, context.frame())
+    box: Rect = context.place(text_width(label, Weight.regular) + t.gap + look.SWITCH_W, context.frame())
     res: Response = context.track(context.claim(context.id(usize(value))), box)
     if res.click { *value = !*value }
     look.toggle(c.canvas, t, box, *value, label)
@@ -95,7 +95,7 @@ pub picker(items: []string, chosen: *usize): bool {
     t: *Theme = &c.theme
     assert(items.len > 0)
     w: f32 = 0.0
-    for i: usize in 0 .. items.len { w += f32(items[i].len) * GLYPH_WIDTH + 2.0 * t.padding }
+    for i: usize in 0 .. items.len { w += text_width(items[i], Weight.regular) + 2.0 * t.padding }
     box: Rect = context.place(w, context.frame())
     base: u32 = context.claim(context.id(usize(chosen)))
     each: f32 = box.w / f32(items.len)
@@ -115,26 +115,26 @@ pub picker(items: []string, chosen: *usize): bool {
 
 /* `s` in `color`, a text line high, at `align` in its place: as wide as it,
  * or the area's width when not left. */
-print(s: string, color: Color, align: Align) {
-    w: f32 = f32(s.len) * GLYPH_WIDTH
+print(s: string, color: Color, align: Align, weight: Weight) {
+    w: f32 = text_width(s, weight)
     if align != Align.left && !context.across() { w = context.span() }
-    box: Rect = context.place(w, TEXT_SIZE)
+    box: Rect = context.place(w, text_size())
     context.record(Item { rect = box })
     c: *Context = context.current
-    look.text(c.canvas, &c.theme, box, s, color, align)
+    look.text(c.canvas, &c.theme, box, s, color, align, weight)
 }
 
 /* A line of body text. */
-pub text(s: string) { print(s, context.current.theme.text, Align.left) }
+pub text(s: string) { print(s, context.current.theme.text, Align.left, Weight.regular) }
 
 /* A line of body text at `align`. */
-pub text(s: string, align: Align) { print(s, context.current.theme.text, align) }
+pub text(s: string, align: Align) { print(s, context.current.theme.text, align, Weight.regular) }
 
 /* A line of secondary text. */
-pub muted(s: string) { print(s, context.current.theme.muted, Align.left) }
+pub muted(s: string) { print(s, context.current.theme.muted, Align.left, Weight.regular) }
 
 /* A line of secondary text at `align`. */
-pub muted(s: string, align: Align) { print(s, context.current.theme.muted, align) }
+pub muted(s: string, align: Align) { print(s, context.current.theme.muted, align, Weight.regular) }
 
 /* A section's title in muted text on a strip a control high, which reaches
  * half the padding past the area's sides. */
@@ -144,7 +144,7 @@ pub heading(s: string) { heading(s, Align.left) }
 pub heading(s: string, align: Align) {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(f32(s.len) * GLYPH_WIDTH + 2.0 * t.padding, t.height)
+    box: Rect = context.place(text_width(s, Weight.bold) + 2.0 * t.padding, t.height)
     context.record(Item { rect = box })
     look.heading(c.canvas, t, box, s, align)
 }
@@ -154,7 +154,7 @@ pub heading(s: string, align: Align) {
 pub readout(s: string) {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(f32(s.len) * GLYPH_WIDTH + 2.0 * t.padding, context.frame())
+    box: Rect = context.place(text_width(s, Weight.regular) + 2.0 * t.padding, context.frame())
     context.record(Item { rect = box })
     look.readout(c.canvas, t, box, s)
 }
@@ -176,7 +176,7 @@ pub swatch(shape: Icon, color: Color, selected: bool): bool {
 pub checkbox(label: string, value: *bool): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(look.CHECK_SIDE + t.gap + f32(label.len) * GLYPH_WIDTH, context.frame())
+    box: Rect = context.place(look.CHECK_SIDE + t.gap + text_width(label, Weight.regular), context.frame())
     res: Response = context.track(context.claim(context.id(usize(value))), box)
     if res.click { *value = !*value }
     look.checkbox(c.canvas, t, box, res, *value, label)
@@ -191,7 +191,7 @@ SLIDER_GLYPHS: const f32 = 12.0
  * not held. */
 grab(address: usize): f32 {
     c: *Context = context.current
-    box: Rect = context.place(SLIDER_GLYPHS * GLYPH_WIDTH + 2.0 * c.theme.padding, context.frame())
+    box: Rect = context.place(SLIDER_GLYPHS * cell() + 2.0 * c.theme.padding, context.frame())
     res: Response = context.track(context.claim(context.id(address)), box)
     if !res.held { return -1.0 }
     travel: f32 = box.w - look.SLIDER_KNOB
@@ -261,7 +261,7 @@ pub field(input: *TextInput, allow: string): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
     assert(input.buffer.len > 0)
-    box: Rect = context.place(2.0 * t.padding + f32(input.buffer.len) * GLYPH_WIDTH, context.frame())
+    box: Rect = context.place(2.0 * t.padding + f32(input.buffer.len) * cell(), context.frame())
     me: u32 = context.claim(context.id(usize(&input.buffer[0])))
     res: Response = context.track(me, box)
     if context.focusing() || res.press {

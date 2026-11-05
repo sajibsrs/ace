@@ -38,10 +38,24 @@ pub Response: type = theme.Response
 pub TextInput: type = controls.TextInput
 
 /* Text size, in pixels per em. */
-pub TEXT_SIZE: const f32 = canvas.TEXT_SIZE
+pub text_size(): f32 { return canvas.text_size() }
 
-/* Advance of one glyph, the font being monospaced: 0.6 of TEXT_SIZE. */
-pub GLYPH_WIDTH: const f32 = canvas.GLYPH_WIDTH
+/* Sets the text size to `px` pixels per em, between 6 and 96; layout, text and
+ * measurements follow it from the next call. */
+pub set_text_size(px: f32) { canvas.set_text_size(px) }
+
+/* Sets the device pixels per window point, as the renderer's scale, so text is
+ * rasterized for the display's own pixels (1 to 4, default 1). */
+pub set_text_density(d: f32) { canvas.set_text_density(d) }
+
+/* The weights of the font: light, regular, and bold. */
+pub Weight: type = canvas.Weight
+
+/* How wide `s` is, in pixels, in weight `w`. */
+pub text_width(s: string, w: Weight): f32 { return canvas.text_width(s, w) }
+
+/* How wide `s` is, in pixels, in the regular weight. */
+pub text_width(s: string): f32 { return canvas.text_width(s, Weight.regular) }
 
 /* Modifier groups, each either side's key, as SDL_KMOD_* bits. */
 pub MOD_SHIFT: const u16 = input.MOD_SHIFT

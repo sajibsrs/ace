@@ -99,12 +99,21 @@ alpha(rgb: u32, a: f32): Color {
     return c
 }
 
+/* `rgb` at opacity `a` over `under`, as the opaque color it looks. Text is
+ * opaque: its glyphs overlap a little where their triangles meet, and a
+ * translucent color would show the overlaps as dark dots. */
+flat(rgb: u32, a: f32, under: u32): Color {
+    fg: Color = Color.hex(rgb)
+    bg: Color = Color.hex(under)
+    return Color { r = fg.r * a + bg.r * (1.0 - a), g = fg.g * a + bg.g * (1.0 - a), b = fg.b * a + bg.b * (1.0 - a) }
+}
+
 /* The palette for `scheme`, with the sizes every scheme shares. */
 pub Theme.init(scheme: Scheme): Theme {
     t: Theme = Theme {
         window = Color.hex(0x161618),
-        text = alpha(0xffffff, 0.92),
-        muted = alpha(0xebebf5, 0.60),
+        text = flat(0xffffff, 0.92, 0x161618),
+        muted = flat(0xebebf5, 0.60, 0x161618),
         button = Fill { rest = alpha(0x787880, 0.24), hover = alpha(0x787880, 0.34), press = alpha(0x787880, 0.44) },
         accent = Color.hex(0x3f86d6),
         on_accent = Color.hex(0xffffff),
@@ -126,8 +135,8 @@ pub Theme.init(scheme: Scheme): Theme {
     }
     if scheme == Scheme.light {
         t.window = Color.hex(0xebebf0)
-        t.text = alpha(0x000000, 0.88)
-        t.muted = alpha(0x3c3c43, 0.62)
+        t.text = flat(0x000000, 0.88, 0xebebf0)
+        t.muted = flat(0x3c3c43, 0.62, 0xebebf0)
         t.button = Fill { rest = alpha(0x787880, 0.16), hover = alpha(0x787880, 0.24), press = alpha(0x787880, 0.32) }
         t.accent = Color.hex(0x007aff)
         t.card = Color.hex(0xffffff)

@@ -15,7 +15,7 @@ import str
 pub InitFlags: bits u32 { _: 5, video: 1, _: 8, events: 1, _: 17 }
 
 // SDL_WindowFlags: window properties chosen at creation.
-pub WindowFlags: bits u64 { _: 5, resizable: 1, _: 58 }
+pub WindowFlags: bits u64 { _: 5, resizable: 1, _: 7, high_pixel_density: 1, _: 50 }
 
 // SDL_GPUShaderFormat: the shader code formats a GPU renderer accepts, or the
 // one format a Shader's code is in.
@@ -108,6 +108,9 @@ pub BLEND_ADD: const u32 = 2
 // SDL_PIXELFORMAT_RGBA64_FLOAT and SDL_TEXTUREACCESS_TARGET.
 FORMAT_RGBA64_FLOAT: const u32 = 0x1a204008
 ACCESS_TARGET: const i32 = 2
+// SDL_PIXELFORMAT_RGBA32 (bytes r, g, b, a in memory) and SDL_TEXTUREACCESS_STATIC.
+FORMAT_RGBA32: const u32 = 0x16762004
+ACCESS_STATIC: const i32 = 0
 
 // Longest text, in bytes, that Window.new, a render driver name, and
 // Renderer.debug_text accept.
@@ -330,6 +333,7 @@ extern "c" {
     c_get_error(): *u8 as "SDL_GetError"
     c_create_window(title: *u8, w: i32, h: i32, flags: u64): *SDL_Window as "SDL_CreateWindow"
     c_destroy_window(window: *SDL_Window) as "SDL_DestroyWindow"
+    c_get_window_pixel_density(window: *SDL_Window): f32 as "SDL_GetWindowPixelDensity"
     c_set_window_title(window: *SDL_Window, title: *u8): bool as "SDL_SetWindowTitle"
     c_start_text_input(window: *SDL_Window): bool as "SDL_StartTextInput"
     c_stop_text_input(window: *SDL_Window): bool as "SDL_StopTextInput"
@@ -353,6 +357,8 @@ extern "c" {
     c_destroy_texture(texture: *SDL_Texture) as "SDL_DestroyTexture"
     c_set_texture_blend_mode(texture: *SDL_Texture, mode: u32): bool as "SDL_SetTextureBlendMode"
     c_set_texture_alpha_mod_float(texture: *SDL_Texture, alpha: f32): bool as "SDL_SetTextureAlphaModFloat"
+    c_update_texture(texture: *SDL_Texture, rect: *i32, pixels: *u8, pitch: i32): bool as "SDL_UpdateTexture"
+    c_flush_renderer(renderer: *SDL_Renderer): bool as "SDL_FlushRenderer"
     c_set_render_target(renderer: *SDL_Renderer, texture: *SDL_Texture): bool as "SDL_SetRenderTarget"
     c_render_texture(renderer: *SDL_Renderer, texture: *SDL_Texture, src: *f32, dst: *f32): bool as "SDL_RenderTexture"
     c_get_ticks(): u64 as "SDL_GetTicks"
@@ -462,6 +468,10 @@ pub Window.refresh(const self): f32 {
     return mode.refresh_rate
 }
 
+// Render pixels per window point: 2.0 on a Retina display when the window was
+// made with `high_pixel_density`, else 1.0, or 0.0 on failure.
+pub Window.density(const self): f32 { return c_get_window_pixel_density(self.handle) }
+
 // Turns text-input events on or off for the window; they start off.
 pub Window.start_text_input(self): bool { return c_start_text_input(self.handle) }
 pub Window.stop_text_input(self): bool { return c_stop_text_input(self.handle) }
@@ -540,6 +550,9 @@ pub Renderer.clip(self, x: i32, y: i32, w: i32, h: i32): bool {
 
 // Draws everywhere again.
 pub Renderer.unclip(self): bool { return c_set_render_clip_rect(self.handle, null) }
+
+// Sends every queued draw to the GPU now, so a texture they sample may change.
+pub Renderer.flush(self): bool { return c_flush_renderer(self.handle) }
 pub Renderer.present(self): bool { return c_render_present(self.handle) }
 
 // The current output size in render pixels, which follows window resizes.
@@ -559,6 +572,32 @@ pub Renderer.geometry(self, vertices: []Vertex, indices: []i32): bool {
         return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), null, 0)
     }
     return c_render_geometry(self.handle, null, &vertices[0], i32(vertices.len), &indices[0], i32(indices.len))
+}
+
+// Like geometry, but each vertex also samples `texture` at its tex_coord
+// (0..1 across the texture) and multiplies it into the vertex color.
+pub Renderer.geometry(self, texture: Texture, vertices: []Vertex, indices: []i32): bool {
+    if vertices.len == 0 { return indices.len == 0 }
+    if indices.len == 0 {
+        return c_render_geometry(self.handle, texture.handle, &vertices[0], i32(vertices.len), null, 0)
+    }
+    return c_render_geometry(self.handle, texture.handle, &vertices[0], i32(vertices.len), &indices[0], i32(indices.len))
+}
+
+// A w x h texture of 8-bit r, g, b, a pixels, blank until `update` fills it;
+// it blends by alpha and samples linearly when stretched.
+pub Texture.image(renderer: Renderer, w: i32, h: i32): Texture {
+    t: Texture = Texture { handle = c_create_texture(renderer.handle, FORMAT_RGBA32, ACCESS_STATIC, w, h) }
+    if t.handle != null { c_set_texture_blend_mode(t.handle, BLEND_ALPHA) }
+    return t
+}
+
+// Replaces the w x h pixels at (x, y) with `pixels`, 4 bytes (r, g, b, a) each,
+// row after row; fewer than w * h * 4 bytes fail.
+pub Texture.update(self, x: i32, y: i32, w: i32, h: i32, pixels: []u8): bool {
+    if w <= 0 || h <= 0 || pixels.len < usize(w) * usize(h) * 4 { return false }
+    rect: [4]i32 = [x, y, w, h]
+    return c_update_texture(self.handle, &rect[0], &pixels[0], w * 4)
 }
 
 // A w x h floating-point texture to draw into with Renderer.target; it samples

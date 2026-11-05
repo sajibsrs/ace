@@ -60,7 +60,7 @@ the sides and centered on the cell's height. A debug build aborts when more
 are placed than it has cells.
 
 A control and a heading are `theme.height` high; a line of text is
-`TEXT_SIZE` high. `ui.last()` gives the last control's `Item`: `hovered`,
+`text_size()` high. `ui.last()` gives the last control's `Item`: `hovered`,
 `held`, its `rect`, and a field's `submit`.
 
 Below areas, `Rect.cut_left` and `cut_top` cut a strip from a rectangle,
@@ -76,9 +76,18 @@ fraction of its alpha), `outline_dashed` (its gaps evened so a dash holds every
 corner), `shadow(box, radius, blur, color)` (a soft shadow fading across
 `blur` either side of the box's edge; the caller offsets the box), `stroke`,
 `icon`, and `text`, placed by a pad or an `Align`. Everything lands in draw order; `flush` submits the layer. Icons
-are baked point data passed as an `Icon`. The font is Lilex SemiBold,
-printable ASCII, 16 px; regenerate `inc/font.ace` with
-`python3 -I font/bake.py` from `pkg/ui`.
+are baked point data passed as an `Icon`. The font is Lato Light, Regular,
+and Bold (`Weight`), printable ASCII, each glyph advancing by its own
+width (`text_width(s, w)` measures a line; no kerning). `set_text_size(px)` sets
+the size in pixels per em (6 to 96, default 16) and layout follows it. Text is drawn
+from a glyph atlas: each glyph is rasterized on first use at the current size
+by exact area coverage (the baked outlines' x-height fitted to whole rows, a
+quarter-pixel x phase, edges darkened 15%) and drawn as a textured quad; the
+atlas is one 1024 px texture shared with every other shape, cleared when
+full. `set_text_density(d)`, called with the renderer's scale, rasterizes at
+size × `d` device pixels and draws at 1 / `d`, so text stays sharp on a
+high-density display. Regenerate `inc/font.ace` (flattened
+outlines) with `python3 -I font/bake.py` from `pkg/ui`.
 
 ## Theme
 
@@ -132,7 +141,7 @@ whether its value changed.
   whole number, the one nearest the pointer, with a tick under each when stops
   are 6 px apart or more. The knob stays inside the slider's box. A slider
   shows no value: the caller prints it, as a muted line beside or above it.
-  Across an area a slider is twelve glyphs wide unless `width` sets it.
+  Across an area a slider is 115 px wide unless `width` sets it.
 - `field(&input, allow)` edits a caller's `TextInput` in one line, as wide as
   its buffer across an area; focused, it sits on `card` inside an `accent`
   ring and a faint glow, with an `accent` caret. A click or `ui.focus()` before it gives it the

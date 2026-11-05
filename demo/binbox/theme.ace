@@ -10,8 +10,8 @@ pub DEEP: const u32 = 0x0f1215
 pub PANEL: const u32 = 0x101214
 /* The Edit button, and the Simulate button: resting, then lit (current
  * phase or under the pointer). */
-pub EDIT: const u32 = 0xa84242
-pub EDIT_LIT: const u32 = 0xda4b4b
+pub EDIT: const u32 = 0xe56b6b
+pub EDIT_LIT: const u32 = 0xf58282
 pub SIM: const u32 = 0x3d9a66
 pub SIM_LIT: const u32 = 0x41bb77
 pub DIM: const u32 = 0x888888

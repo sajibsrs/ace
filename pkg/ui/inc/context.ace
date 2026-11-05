@@ -4,7 +4,7 @@
 import fmt
 import math
 import Keycode from sdl
-import Rect, Insets, Canvas, Icon, GLYPH_WIDTH from "./canvas.ace"
+import Rect, Insets, Canvas, Icon, Weight, text_width from "./canvas.ace"
 import Mouse, Keyboard from "./input.ace"
 import Theme, Response from "./theme.ace"
 import look: "./look.ace"
@@ -375,7 +375,7 @@ Context.measure(const self, icon: bool, label: string): f32 {
     text: string = label
     if self.fitting { text = self.fit }
     if text.len == 0 { return self.frame() }
-    w: f32 = 2.0 * t.padding + f32(text.len) * GLYPH_WIDTH
+    w: f32 = 2.0 * t.padding + text_width(text, Weight.regular)
     if icon { w += t.icon + t.gap }
     return w
 }

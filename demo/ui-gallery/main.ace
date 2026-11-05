@@ -196,6 +196,20 @@ drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
     c.text(line, "right", ink, ui.Align.right)
     line.y += 32.0
     c.text(line, 12.0, "padded 12 from the left", ink)
+    /* The same line in each swatch color and in each weight. */
+    names: [5]string = ["Red text, 0123", "Yellow text, 0123", "Green text, 0123", "Blue text, 0123", "Violet text, 0123"]
+    for i: usize in 0 .. 5 {
+        line.y += 26.0
+        c.text(line, 12.0, names[i], ui.color(SWATCHES[i]))
+    }
+    weights: [3]ui.Weight = [ui.Weight.light, ui.Weight.regular, ui.Weight.bold]
+    wnames: [3]string = ["Light weight", "Regular weight", "Bold weight"]
+    line.y += 32.0
+    for i: usize in 0 .. 3 {
+        c.text(line, 12.0, wnames[i], ink, ui.Weight.regular)
+        c.text(line, wnames[i], ink, ui.Align.right, weights[i])
+        line.y += 26.0
+    }
 }
 
 fail(context: string): int {
@@ -206,7 +220,7 @@ fail(context: string): int {
 main(): int {
     if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
     defer quit()
-    window: Window = Window.new("ui gallery", 1180, 900, WindowFlags { resizable = 1 })
+    window: Window = Window.new("ui gallery", 1180, 900, WindowFlags { resizable = 1, high_pixel_density = 1 })
     defer window.wipe()
     if !window.ok() { return fail("SDL_CreateWindow") }
     window.start_text_input()
@@ -218,7 +232,7 @@ main(): int {
     renderer.blend(BLEND_ALPHA)
 
     canvas: ui.Canvas = ui.Canvas.init(renderer)
-    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.dark) }
+    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.light) }
     s: State = State {}
     s.name = ui.TextInput { buffer = s.bytes[0..] }
     w: f32 = 1180.0
@@ -226,9 +240,14 @@ main(): int {
     running: bool = true
     for running {
         rw: i32, rh: i32, sized: bool = renderer.size()
+        /* Drawing and mouse coordinates are window points; the scale maps them to the display's pixels. */
+        d: f32 = window.density()
+        if d < 1.0 { d = 1.0 }
+        renderer.scale(d, d)
+        ui.set_text_density(d)
         if sized {
-            w = f32(rw)
-            h = f32(rh)
+            w = f32(rw) / d
+            h = f32(rh) / d
         }
         event: Event
         for event.poll() {

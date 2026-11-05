@@ -24,14 +24,13 @@ pub OpenList.draw(self, live: bool) {
     if !live { g.ui.mouse.pressed = false }
     names: []string = g.store.list.names[0..g.store.list.count]
     /* The rows that fit under the toolbar, at least one. */
-    room: f32 = g.view.height() - (bar.GAP + bar.BAR) - bar.LIST_TOP - bar.LIST_BOTTOM
+    room: f32 = g.view.height() - (bar.GAP + bar.BAR)
     rows: usize = names.len
     for rows > 1 && ui.rows(rows) > room { rows -= 1 }
     if rows == 0 { rows = 1 }
-    panel: ui.Rect = ui.Rect { x = g.opener.x, y = bar.GAP + bar.BAR, w = bar.LIST_W, h = ui.rows(rows) + bar.LIST_TOP + bar.LIST_BOTTOM }
+    panel: ui.Rect = ui.Rect { x = g.opener.x, y = bar.GAP + bar.BAR, w = bar.LIST_W, h = ui.rows(rows) }
     list: ui.Area = ui.popup(panel)
     defer list.end()
-    ui.space(bar.LIST_TOP)
     chosen: usize = names.len
     if names.len == 0 { ui.muted("no diagrams in diagram/") }
     if ui.list(names, &chosen, rows, &g.scroll) { g.load(names[chosen]) }
@@ -59,7 +58,7 @@ pub SaveDialog.draw(self) {
     g.draft.len = input.len
     g.draft.at = input.caret
     /* The extension, dimmed: it is added, not typed. */
-    g.ui.canvas.text(ui.last().rect, g.ui.theme.padding + ui.GLYPH_WIDTH * f32(g.draft.len), diagram.EXTENSION, ui.color(theme.DIM))
+    g.ui.canvas.text(ui.last().rect, g.ui.theme.padding + ui.text_width(string(g.draft.bytes[0..g.draft.len])), diagram.EXTENSION, ui.color(theme.DIM))
     if ui.last().submit && g.draft.len > 0 {
         g.mode = app.Mode.none
         g.write()

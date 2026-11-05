@@ -4,7 +4,7 @@
  * this file alone; the sizes it exports are the ones placement reads. */
 
 import Point, Color from sdl
-import Rect, Insets, Canvas, Icon, Align, GLYPH_WIDTH from "./canvas.ace"
+import Rect, Insets, Canvas, Icon, Align, Weight, text_width from "./canvas.ace"
 import Theme, Fill, Response from "./theme.ace"
 
 /* The text field's caret. */
@@ -90,7 +90,7 @@ pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: 
     if label.len == 0 {
         cv.icon(shape, box.square(t.icon), ink)
     } else if icon {
-        at: f32 = (box.w - t.icon - t.gap - f32(label.len) * GLYPH_WIDTH) / 2.0
+        at: f32 = (box.w - t.icon - t.gap - text_width(label, Weight.regular)) / 2.0
         cv.icon(shape, box.square(at, t.icon), ink)
         cv.text(box, at + t.icon + t.gap, label, ink)
     } else {
@@ -104,12 +104,12 @@ pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: 
 on(t: *Theme, fill: Color): Color {
     if fill.a < 1.0 { return t.text }
     if 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b < 0.5 { return t.on_accent }
-    return Color { r = 0.0, g = 0.0, b = 0.0, a = 0.88 }
+    return Color { r = 0.1, g = 0.1, b = 0.1, a = 1.0 }
 }
 
-/* A line `s` in `color` at `align` in `box`. */
-pub text(cv: *Canvas, t: *Theme, box: Rect, s: string, color: Color, align: Align) {
-    cv.text(box, s, color, align)
+/* A line `s` in `color` and weight `w` at `align` in `box`. */
+pub text(cv: *Canvas, t: *Theme, box: Rect, s: string, color: Color, align: Align, w: Weight) {
+    cv.text(box, s, color, align, w)
 }
 
 /* A section's title `s` in muted text at `align` on a strip, filled as a
@@ -117,7 +117,7 @@ pub text(cv: *Canvas, t: *Theme, box: Rect, s: string, color: Color, align: Alig
 pub heading(cv: *Canvas, t: *Theme, box: Rect, s: string, align: Align) {
     strip: Rect = Rect { x = box.x - t.padding / 2.0, y = box.y, w = box.w + t.padding, h = box.h }
     cv.fill(strip, t.radius, t.button.rest)
-    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, align)
+    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, align, Weight.bold)
 }
 
 /* `s` centered on a fill like a resting button's. */
@@ -233,7 +233,7 @@ pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, focused: bool, caret:
     cv.fill(box, t.radius, t.card)
     cv.outline(grow(box, RING), t.radius + RING, RING, t.accent)
     cv.text(box, t.padding, text, t.text)
-    x: f32 = box.x + t.padding + f32(caret) * GLYPH_WIDTH
+    x: f32 = box.x + t.padding + text_width(text[0..caret], Weight.regular)
     cv.fill(Rect { x = x - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, t.accent)
 }
 

@@ -1,0 +1,272 @@
+/* ui glyphs — the text size, and an atlas of glyph coverage bitmaps rasterized
+ * from `font`'s outlines at that size, one texture the canvas draws text and
+ * shapes from in one geometry call. */
+
+import math
+import Renderer, Texture from sdl
+import font: "./font.ace"
+
+/* The text size, in pixels per em, and what it is kept between. */
+SIZE_MIN: const f32 = 6.0
+SIZE_MAX: const f32 = 96.0
+px_size: f32 = 16.0
+/* Device pixels per window point, which glyphs are rasterized for. */
+scale: f32 = 1.0
+
+/* The text size, in pixels per em. */
+pub size(): f32 { return px_size }
+
+/* Sets the text size to `px` pixels per em, kept between SIZE_MIN and SIZE_MAX;
+ * glyphs of another size are rasterized when first drawn. */
+pub set_size(px: f32) { px_size = math.min[f32](math.max[f32](px, SIZE_MIN), SIZE_MAX) }
+
+/* Device pixels per layout unit. */
+pub density(): f32 { return scale }
+
+/* Sets the device pixels per layout unit, as the renderer's scale: glyphs are
+ * rasterized at size * `d` pixels and drawn 1 / `d` the size, so they stay
+ * sharp on a high-density display. Kept between 1 and 4. */
+pub set_density(d: f32) { scale = math.min[f32](math.max[f32](d, 1.0), 4.0) }
+
+/* Coverage added to every edge pixel, a stem darkening: coverage `a` becomes
+ * the fraction `a` of a pixel spread over 1 + DARKEN of it. */
+DARKEN: f32 = 0.15
+
+/* The atlas texture's side, in pixels, and the most slots in use. */
+pub SIDE: const i32 = 1024
+SLOTS: const usize = 2048
+LIMIT: const usize = 1536
+
+/* The most pixels a glyph bitmap may span; a larger glyph draws nothing. */
+BITMAP_MAX: const usize = 384
+
+/* The slot index that stands for no slot. */
+pub MISS: const usize = SLOTS
+
+/* Where one glyph's bitmap sits in the atlas, and where it lies against the
+ * pen: `left` pixels right of the pen's whole pixel, `top` below the baseline
+ * (negative above). A zero `w` is a glyph with nothing to draw. */
+pub Slot: struct {
+    pub key: u32 = 0,
+    pub x: i32 = 0,
+    pub y: i32 = 0,
+    pub w: i32 = 0,
+    pub h: i32 = 0,
+    pub left: i32 = 0,
+    pub top: i32 = 0,
+}
+
+slots: [SLOTS]Slot = [Slot {} : SLOTS]
+used: usize = 0
+/* The shelf being filled: where the next bitmap goes and the tallest on it. The
+ * atlas's top-left 4 x 4 pixels are opaque white, what untextured geometry
+ * samples. */
+shelf_x: i32 = 4
+shelf_y: i32 = 0
+shelf_h: i32 = 4
+tex: Texture = Texture { handle = null }
+owner: Renderer = Renderer { handle = null }
+
+/* Scratch for one glyph: signed area per pixel, then its RGBA pixels. */
+acc: [(BITMAP_MAX + 2) * BITMAP_MAX]f32
+pix: [4 * BITMAP_MAX * BITMAP_MAX]u8
+
+/* Makes the atlas for `r` when it has none; with a null renderer, none. */
+pub ensure(r: Renderer) {
+    if r.handle == null { return }
+    if tex.handle != null && owner.handle == r.handle { return }
+    tex = Texture.image(r, SIDE, SIDE)
+    owner = r
+    reset()
+    if tex.handle == null { return }
+    white: [64]u8 = [255 : 64]
+    tex.update(0, 0, 4, 4, white[..])
+}
+
+/* The atlas texture; a null handle before `ensure` succeeds. */
+pub texture(): Texture { return tex }
+
+/* Forgets every glyph. The caller flushes what it drew from the atlas first. */
+pub reset() {
+    for k: usize in 0 .. SLOTS { slots[k].key = 0 }
+    used = 0
+    shelf_x = 4
+    shelf_y = 0
+    shelf_h = 4
+}
+
+/* Slot `k`. */
+pub slot(k: usize): Slot { return slots[k] }
+
+/* The slot where `key` is, or the empty one it belongs in. */
+probe(key: u32): usize {
+    k: usize = usize((key * 2654435761) >> 21)
+    for slots[k].key != 0 && slots[k].key != key { k = (k + 1) % SLOTS }
+    return k
+}
+
+/* The slot of weight `wi`'s glyph for `ch`, `phase` quarter pixels right of
+ * its whole pixel, at the text size; rasterized if new. MISS when the atlas is
+ * full, after which the caller flushes, resets, and asks again. */
+pub lookup(wi: usize, ch: usize, phase: usize): usize {
+    qsize: u32 = u32(px_size * scale * 4.0 + 0.5)
+    key: u32 = ((qsize * 4 + u32(phase)) * 128 + u32(ch)) * 4 + u32(wi) + 1
+    k: usize = probe(key)
+    if slots[k].key == key { return k }
+    if used >= LIMIT { return MISS }
+    return make(k, key, wi, ch, f32(phase) / 4.0)
+}
+
+/* |x|; math.abs does not take a float against the literal 0. */
+magnitude(x: f32): f32 {
+    if x < 0.0 { return -x }
+    return x
+}
+
+/* Adds one area-coverage line to `acc`: the signed area between the segment
+ * and the pixel row's left edge, row by row, so a running sum along a row
+ * gives coverage. Rows are `stride` apart; `rows` of them. */
+line(ax: f32, ay: f32, bx: f32, by: f32, stride: usize, rows: usize) {
+    if ay == by { return }
+    dir: f32 = 1.0
+    x0: f32 = ax
+    y0: f32 = ay
+    x1: f32 = bx
+    y1: f32 = by
+    if ay > by {
+        dir = -1.0
+        x0 = bx
+        y0 = by
+        x1 = ax
+        y1 = ay
+    }
+    dxdy: f32 = (x1 - x0) / (y1 - y0)
+    x: f32 = x0
+    last: usize = usize(math.ceil(y1))
+    if last > rows { last = rows }
+    for y: usize in usize(y0) .. last {
+        at: usize = y * stride
+        dy: f32 = math.min[f32](f32(y + 1), y1) - math.max[f32](f32(y), y0)
+        xn: f32 = x + dxdy * dy
+        d: f32 = dy * dir
+        xa: f32 = math.min[f32](x, xn)
+        xb: f32 = math.max[f32](x, xn)
+        fa: f32 = math.floor(xa)
+        i0: usize = usize(fa)
+        cb: f32 = math.ceil(xb)
+        i1: usize = usize(cb)
+        if i1 <= i0 + 1 {
+            mid: f32 = 0.5 * (x + xn) - fa
+            acc[at + i0] += d - d * mid
+            acc[at + i0 + 1] += d * mid
+        } else {
+            s: f32 = 1.0 / (xb - xa)
+            f0: f32 = xa - fa
+            a0: f32 = 0.5 * s * (1.0 - f0) * (1.0 - f0)
+            f1: f32 = xb - cb + 1.0
+            am: f32 = 0.5 * s * f1 * f1
+            acc[at + i0] += d * a0
+            if i1 == i0 + 2 {
+                acc[at + i0 + 1] += d * (1.0 - a0 - am)
+            } else {
+                a1: f32 = s * (1.5 - f0)
+                acc[at + i0 + 1] += d * (a1 - a0)
+                for xi: usize in i0 + 2 .. i1 - 1 { acc[at + xi] += d * s }
+                a2: f32 = a1 + f32(i1 - i0 - 3) * s
+                acc[at + i1 - 1] += d * (1.0 - a2 - am)
+            }
+            acc[at + i1] += d * am
+        }
+        x = xn
+    }
+}
+
+/* Rasterizes weight `wi`'s glyph for `ch` into slot `k` under `key`. The glyph
+ * is scaled to the text size, its y scaled about the baseline so the x-height
+ * fills whole rows, and shifted `phase` pixels right. */
+make(k: usize, key: u32, wi: usize, ch: usize, phase: f32): usize {
+    data: []f32 = font.POINTS[0..]
+    n: usize = font.LAST - font.FIRST + 1
+    g: usize = wi * n + (ch - font.FIRST)
+    sx: f32 = px_size * scale / font.EM
+    sy: f32 = sx
+    xh: f32 = font.XHEIGHT[wi] * sx
+    if xh >= 1.0 { sy = sx * math.floor(xh + 0.5) / xh }
+    /* The outline's extent. */
+    lo_x: f32 = 100000.0
+    lo_y: f32 = 100000.0
+    hi_x: f32 = -100000.0
+    hi_y: f32 = -100000.0
+    i: usize = usize(font.START[g])
+    for data[i] != -9.0 {
+        m: usize = usize(data[i])
+        i += 1
+        for p: usize in 0 .. m {
+            px: f32 = data[i + 2 * p] * sx + phase
+            py: f32 = data[i + 2 * p + 1] * sy
+            lo_x = math.min[f32](lo_x, px)
+            hi_x = math.max[f32](hi_x, px)
+            lo_y = math.min[f32](lo_y, py)
+            hi_y = math.max[f32](hi_y, py)
+        }
+        i += 2 * m
+    }
+    out: Slot = Slot { key = key }
+    if lo_x <= hi_x {
+        left: i32 = i32(math.floor(lo_x)) - 1
+        top: i32 = i32(math.floor(lo_y)) - 1
+        w: i32 = i32(math.ceil(hi_x)) + 1 - left
+        h: i32 = i32(math.ceil(hi_y)) + 1 - top
+        if usize(w) <= BITMAP_MAX && usize(h) <= BITMAP_MAX {
+            if shelf_x + w > SIDE {
+                shelf_y += shelf_h
+                shelf_x = 0
+                shelf_h = 0
+            }
+            if shelf_y + h > SIDE { return MISS }
+            out.x = shelf_x
+            out.y = shelf_y
+            out.w = w
+            out.h = h
+            out.left = left
+            out.top = top
+            shelf_x += w
+            shelf_h = math.max[i32](shelf_h, h)
+            stride: usize = usize(w) + 2
+            for e: usize in 0 .. stride * usize(h) { acc[e] = 0.0 }
+            ox: f32 = f32(left)
+            oy: f32 = f32(top)
+            i = usize(font.START[g])
+            for data[i] != -9.0 {
+                m: usize = usize(data[i])
+                i += 1
+                bx: f32 = data[i + 2 * (m - 1)] * sx + phase - ox
+                by: f32 = data[i + 2 * (m - 1) + 1] * sy - oy
+                for p: usize in 0 .. m {
+                    cx: f32 = data[i + 2 * p] * sx + phase - ox
+                    cy: f32 = data[i + 2 * p + 1] * sy - oy
+                    line(bx, by, cx, cy, stride, usize(h))
+                    bx = cx
+                    by = cy
+                }
+                i += 2 * m
+            }
+            for y: usize in 0 .. usize(h) {
+                sum: f32 = 0.0
+                for x: usize in 0 .. usize(w) {
+                    sum += acc[y * stride + x]
+                    a: f32 = math.min[f32](magnitude(sum) * (1.0 + DARKEN), 1.0)
+                    at: usize = 4 * (y * usize(w) + x)
+                    pix[at] = 255
+                    pix[at + 1] = 255
+                    pix[at + 2] = 255
+                    pix[at + 3] = u8(a * 255.0 + 0.5)
+                }
+            }
+            tex.update(out.x, out.y, w, h, pix[0 .. 4 * usize(w) * usize(h)])
+        }
+    }
+    slots[k] = out
+    used += 1
+    return k
+}
