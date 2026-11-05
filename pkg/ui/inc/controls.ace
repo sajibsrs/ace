@@ -3,7 +3,7 @@
 
 import math
 import Color, Keycode from sdl
-import Rect, Insets, Icon, Align, Weight, text_size, cell, text_width from "./canvas.ace"
+import Rect, Insets, Icon, Align, Weight, text_size, set_text_size, cell, text_width from "./canvas.ace"
 import Keyboard, KEY_DELETE, KEY_HOME, KEY_END from "./input.ace"
 import context: "./context.ace"
 import Context, Item from "./context.ace"
@@ -19,7 +19,7 @@ THUMB_MIN: const f32 = 16.0
 press(id: u32, shape: Icon, icon: bool, label: string, fill: Fill): bool {
     c: *Context = context.current
     off: bool = context.disabled()
-    box: Rect = context.place(context.measure(icon, label), context.frame())
+    box: Rect = context.place(context.measure(icon, label), context.frame() + 2.0 * look.BUTTON_PAD)
     res: Response = Response {}
     if !off { res = context.track(context.claim(id), box) }
     look.button(c.canvas, &c.theme, box, res, shape, icon, label, fill, off)
@@ -109,7 +109,7 @@ pub picker(items: []string, chosen: *usize): bool {
     assert(items.len > 0)
     w: f32 = 0.0
     for i: usize in 0 .. items.len { w += text_width(items[i], Weight.regular) + 2.0 * t.padding }
-    box: Rect = context.place(w, context.frame())
+    box: Rect = context.place(w, context.frame() + 2.0 * look.BUTTON_PAD)
     base: u32 = context.claim(context.id(usize(chosen)))
     each: f32 = box.w / f32(items.len)
     changed: bool = false
@@ -149,17 +149,22 @@ pub muted(s: string) { print(s, context.current.theme.muted, Align.left, Weight.
 /* A line of secondary text at `align`. */
 pub muted(s: string, align: Align) { print(s, context.current.theme.muted, align, Weight.regular) }
 
-/* A section's title in muted text on a strip a control high, which reaches
- * half the padding past the area's sides. */
+HEADING_SIZE: const f32 = 18.0
+
+/* A section's title: bold, HEADING_SIZE pixels per em, in the heading color,
+ * on no background. */
 pub heading(s: string) { heading(s, Align.left) }
 
-/* A section's title at `align` on its strip. */
+/* A section's title at `align`. */
 pub heading(s: string, align: Align) {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(text_width(s, Weight.bold) + 2.0 * t.padding, t.height)
+    keep: f32 = text_size()
+    set_text_size(HEADING_SIZE)
+    box: Rect = context.place(text_width(s, Weight.bold), HEADING_SIZE)
     context.record(Item { rect = box })
     look.heading(c.canvas, t, box, s, align)
+    set_text_size(keep)
 }
 
 /* `s` centered on a fill like a resting button's: a value shown, not
@@ -338,7 +343,7 @@ allowed(allow: string, c: u8): bool {
 /* The height of a list of `n` rows, its card's padding included. */
 pub rows(n: usize): f32 { return f32(n) * context.current.theme.row() + 2.0 * look.LIST_PAD }
 
-/* A list of `items` on a card, `rows` of them showing from row `*scroll`
+/* A list of `items` with a faint line under each, `rows` of them showing from row `*scroll`
  * on, `*chosen` on an accent pill and the row under the pointer on a pill
  * filled as a button. A press
  * on a row sets `*chosen` to it; true when a row was pressed. Under the
@@ -350,7 +355,6 @@ pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
     h: f32 = t.row()
     box: Rect = context.place(context.span(), f32(rows) * h + 2.0 * look.LIST_PAD)
     inner: Rect = box.inset(Insets.all(look.LIST_PAD))
-    look.card(c.canvas, t, box)
     base: u32 = context.claim(context.id(usize(scroll)))
     most: f32 = 0.0
     if items.len > rows { most = f32(items.len - rows) }

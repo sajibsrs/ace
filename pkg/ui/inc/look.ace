@@ -7,15 +7,21 @@ import Point, Color from sdl
 import Rect, Insets, Canvas, Icon, Align, Weight, text_width from "./canvas.ace"
 import Theme, Fill, Response from "./theme.ace"
 
+/* The room a button adds above and below its frame. */
+pub BUTTON_PAD: const f32 = 2.0
+
+/* The accent line round a focused field. */
+FOCUS_W: const f32 = 1.0
+
 /* The text field's caret. */
 CARET_W: const f32 = 2.0
 CARET_PAD: const f32 = 6.0
 
 /* A popup's corner radius, rounder than a control's; a card's, and a chosen
  * list row's. */
-POPUP_RADIUS: const f32 = 8.0
-CARD_RADIUS: const f32 = 6.0
-PILL_RADIUS: const f32 = 4.0
+POPUP_RADIUS: const f32 = 14.0
+CARD_RADIUS: const f32 = 10.0
+PILL_RADIUS: const f32 = 8.0
 
 /* How far a popup's shadow falls below it, and how far it blurs. */
 SHADOW_DROP: const f32 = 18.0
@@ -47,7 +53,7 @@ DASH_INSET: const f32 = 0.25
 
 /* A checkbox's box, its corners, and its tick's stroke. */
 pub CHECK_SIDE: const f32 = 16.0
-CHECK_RADIUS: const f32 = 4.0
+CHECK_RADIUS: const f32 = 6.0
 CHECK_STROKE: const f32 = 1.75
 
 /* A slider's knob, a circle as tall as a switch's, which stays inside the slider, so
@@ -88,10 +94,10 @@ raised(cv: *Canvas, t: *Theme, box: Rect, radius: f32, color: Color) {
 
 /* A button at `box` in `fill`'s shade for `res`, its icon `shape` when
  * `icon`, and `label`; the icon and label are centered together, however wide
- * the button. Outlined when `fill` has an edge, in its own ink when it has one, faint when `off`. */
+ * the button. The label is picked from the resting shade, so it stays put on hover. Outlined when `fill` has an edge, in its own ink when it has one, faint when `off`. */
 pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: bool, label: string, fill: Fill, off: bool) {
     shade: Color = fill.shade(res)
-    ink: Color = on(t, shade)
+    ink: Color = on(t, fill.rest)
     if fill.ink.a > 0.0 { ink = fill.ink }
     edge: Color = fill.edge
     if off {
@@ -126,12 +132,9 @@ pub text(cv: *Canvas, t: *Theme, box: Rect, s: string, color: Color, align: Alig
     cv.text(box, s, color, align, w)
 }
 
-/* A section's title `s` in muted text at `align` on a strip, filled as a
- * button rests, that reaches half the padding past `box`'s sides. */
+/* A section's title `s` in the heading color at `align` in `box`. */
 pub heading(cv: *Canvas, t: *Theme, box: Rect, s: string, align: Align) {
-    strip: Rect = Rect { x = box.x - t.padding / 2.0, y = box.y, w = box.w + t.padding, h = box.h }
-    cv.fill(strip, t.radius, t.button.rest)
-    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, align, Weight.bold)
+    cv.text(box, s, t.heading, align, Weight.bold)
 }
 
 /* `s` centered on a fill like a resting button's. */
@@ -245,6 +248,7 @@ pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, focused: bool, caret:
         return
     }
     cv.fill(box, t.radius, t.card)
+    cv.outline(box, t.radius, FOCUS_W, t.accent)
     cv.text(box, t.padding, text, t.text)
     x: f32 = box.x + t.padding + text_width(text[0..caret], Weight.regular)
     cv.fill(Rect { x = x - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, t.accent)
@@ -255,6 +259,7 @@ pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, focused: bool, caret:
  * the padding from the list's card. */
 pub row(cv: *Canvas, t: *Theme, box: Rect, res: Response, chosen: bool, item: string) {
     pad: f32 = t.padding - LIST_PAD
+    cv.fill(Rect { x = box.x, y = box.y + box.h - 1.0, w = box.w, h = 1.0 }, fade(t.separator, EDGE))
     if chosen {
         cv.fill(box, PILL_RADIUS, t.accent)
         cv.text(box, pad, item, t.on_accent)

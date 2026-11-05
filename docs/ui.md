@@ -63,7 +63,7 @@ area, hairlines between them, and opens a down area over it, closed by
 the sides and centered on the cell's height. A debug build aborts when more
 are placed than it has cells.
 
-A control and a heading are `theme.height` high; a line of text is
+A control is `theme.height` high (a button 4 more, 2 above and below), a heading 18; a line of text is
 `text_size()` high. `ui.last()` gives the last control's `Item`: `hovered`,
 `held`, its `rect`, and a field's `submit`.
 
@@ -96,12 +96,12 @@ outlines) with `python3 -I font/bake.py` from `pkg/ui`.
 ## Theme
 
 Controls draw from `Context.theme`, plain data. Its colors are `window` (for
-the application's clear), `text`, `muted`, `button` (a `Fill` for rest, hover
-and press, behind buttons, unticked boxes, a picker's track, fields, headings
-and the hovered list row), `accent` (a toggle that is on, a ticked box, a
+the application's clear), `text`, `muted`, `heading` (section titles: black in light), `button` (a `Fill` for rest, hover
+and press, behind buttons, unticked boxes, a picker's track, fields and
+the hovered list row), `accent` (a toggle that is on, a ticked box, a
 slider's fill, the chosen row, a caret), `on_accent` (text on it), `header` and `on_header` (a popup's darker title
 strip and its white text), `card`
-(a popup, card, list or focused field), `shadow` (a popup's shadow),
+(a popup, card or focused field), `shadow` (a popup's shadow),
 `separator` (between a card's cells), `track` (a switch that is off, a
 slider's track and ticks),
 `on` (a switch that is on), `knob` (a switch's and slider's knob), `segment`
@@ -112,7 +112,7 @@ slider's track and ticks),
 color. For a variant, copy it, change a field for the controls that follow,
 and assign the copy back after.
 
-There is one look, in `inc/look.ace`: flat rounded fills; cards and lists
+There is one look, in `inc/look.ace`: flat rounded fills; cards
 rounder than a control, on a 1 px contact shadow; knobs
 and a picker's segment raised by a shadow 2 below, blurred 6; and a popup
 rounder still, raised by a shadow 18 below it, blurred 48. The theme changes
@@ -156,17 +156,17 @@ whether its value changed.
   owner reads its own keys (Esc) first; within a frame, keys apply before
   text. `allow` lists the bytes it accepts. Enter sets `last().submit`.
 - `list(items, &chosen, rows, &scroll)` shows `rows` of `items` from row
-  `scroll` on, inset 4 on its own card, the chosen one on an `accent` pill and
+  `scroll` on, inset 4 with a faint line under each row, the chosen one on an `accent` pill and
   the hovered one on a `button` pill. A press on a row picks it. Under
   the pointer and overflowing, it consumes the wheel, a row a notch, and draws
   a thumb; otherwise the wheel passes on. `rows(n)` gives the height of a
-  list of `n` rows, its card's padding included, for sizing what holds it; `Theme.row()` is one row's.
+  list of `n` rows, its inset included, for sizing what holds it; `Theme.row()` is one row's.
 - `swatch(icon, color, selected)`: an icon in its own color, on the
   `button` rest gray while chosen; the pointer changes nothing. Square, a column wide in a grid.
 - `text(s)` and `muted(s)` show a line, and `text(s, align)` and
   `muted(s, align)` one at `Align.left`, `center`, or `right` across the area;
-  `heading(s)` and `heading(s, align)` a section title on a strip filled as
-  a button rests, which reaches half the padding past the area's sides;
+  `heading(s)` and `heading(s, align)` a bold 18 px section title
+  with no background;
   `readout(s)` a value centered on that fill.
 - `popup(box)` opens a modal area on `card`: while it is up,
   from the next frame on, only controls inside it take the pointer.
@@ -234,9 +234,7 @@ A current context lets calls read `ui.button("Save")` instead of passing the
 context through every drawing function; the application still owns it, and
 `begin` and `end` bound when it is current. A popup blocks from its second
 frame, because what lies under it was drawn first; ImGui's modals have the
-same one-frame lag. A heading reaches into the area's padding as ImGui's
-collapsing header does, so headers stand out from their content without a
-second area.
+same one-frame lag.
 
 Consuming input instead of routing it needs no event tree: call order is the
 priority, so widgets go before shortcuts. Fields take an `allow` byte set

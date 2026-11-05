@@ -50,7 +50,6 @@ SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
 /* The toggle group's options: ten icons, each in its own color. */
 GROUP: [10]u32 = [0xda4b4b, 0xe8833a, 0xeac22d, 0x8cc63f, 0x41bb77, 0x2fb3b3, 0x3f86d6, 0x5b6ee1, 0xa685fd, 0xd96aa7]
 TOOLS: [3]string = ["Box", "Wedge", "Tick"]
-FRUIT: [10]string = ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew", "kiwi", "lemon"]
 
 /* How far one wheel notch scrolls the page, in points. */
 NOTCH: const f32 = 48.0
@@ -64,15 +63,21 @@ PANEL_PAD: const f32 = 12.0
 /* The empty space between one section and the next. */
 SECTION_GAP: const f32 = 40.0
 
+/* The empty space between a heading and what follows it, counting the
+ * layout's own gap. */
+HEADING_GAP: const f32 = 20.0
+
 /* Starts a section: the gap after the one before, then its `title`. */
 section(t: *ui.Theme, title: string) {
     ui.space(SECTION_GAP - t.gap)
     ui.heading(title)
+    ui.space(HEADING_GAP - t.gap)
 }
 
 section(t: *ui.Theme, title: string, align: ui.Align) {
     ui.space(SECTION_GAP - t.gap)
     ui.heading(title, align)
+    ui.space(HEADING_GAP - t.gap)
 }
 
 /* A button fill from three solid colors, with `ink` on it when it is not
@@ -93,8 +98,6 @@ State: struct {
     level: f32 = 0.4,
     stop: int = 3,
     color: usize = 1,
-    chosen: usize = 2,
-    scroll: f32 = 0.0,
     page: f32 = 0.0,
     content: f32 = 0.0,
     bytes: [16]u8 = [0 : 16],
@@ -108,6 +111,7 @@ State: struct {
 controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     col: ui.Area = ui.area(box)
     ui.heading("Buttons")
+    ui.space(HEADING_GAP - t.gap)
     ui.row(3)
     if ui.button("Click") { s.clicks += 1 }
     if ui.button(icon(PLUS), "Add") { s.clicks += 1 }
@@ -115,9 +119,11 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     l: *fmt.Buffer = ui.line()
     l.printf("clicked %d times", s.clicks)
     ui.muted(l.text())
+
+    section(t, "Tabs")
     ui.picker(TOOLS[0..], &s.tool)
 
-    section(t, "Button sizes")
+    section(t, "Button Sizes")
     ui.row(4)
     ui.height(20.0)
     ui.button("Mini")
@@ -135,7 +141,7 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     ui.width(160.0)
     ui.button(icon(PLUS), "Wide and tall")
 
-    section(t, "Button styles")
+    section(t, "Button Styles")
     ui.grid(2, 10)
     ui.button("Secondary")
     ui.button(icon(CHECK), "Primary", true)
@@ -164,22 +170,18 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     ui.button(icon(CHECK), "Disabled", true)
 
     section(t, "Toggles")
-    toggles: ui.Area = ui.card(3)
     ui.toggle("Bold", &s.bold)
     ui.toggle(icon(SQUARE), &s.grid)
     ui.checkbox("Snap to grid", &s.snap)
-    toggles.end()
 
     section(t, "Sliders")
-    sliders: ui.Area = ui.card(2)
     ui.slider(&s.level, 0.0, 1.0)
     ui.slider(&s.stop, 0, 9)
-    sliders.end()
     l = ui.line()
     l.printf("level %d%%, %d Hz", int(s.level * 100.0), s.stop + 1)
     ui.muted(l.text())
 
-    section(t, "Toggle group")
+    section(t, "Toggle Group")
     ui.row(GROUP.len)
     shapes: [5]usize = [PLUS, CHECK, SQUARE, TRIANGLE, CROSS]
     for i: usize in 0 .. GROUP.len {
@@ -189,17 +191,11 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     }
 
     section(t, "Field")
-    named: ui.Area = ui.card(1)
     ui.field(&s.name, "")
-    named.end()
     if ui.last().submit { s.submitted += 1 }
     l = ui.line()
     l.printf("\"%s\", Enter pressed %d times", s.name.text(), s.submitted)
     ui.muted(l.text())
-
-    section(t, "List")
-    ui.list(FRUIT[0..], &s.chosen, 3, &s.scroll)
-    ui.text(FRUIT[s.chosen])
     bottom: f32 = ui.last().rect.y + ui.last().rect.h
     col.end()
     return bottom
@@ -209,20 +205,21 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
  * Returns the bottom of its last control. */
 layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
     col: ui.Area = ui.area(box)
-    ui.heading("row(n)")
+    ui.heading("Row (n)")
+    ui.space(HEADING_GAP - t.gap)
     ui.row(4)
     ui.button("A")
     ui.button("B")
     ui.button("C")
     ui.button("D")
-    section(t, "grid(3, 7)")
+    section(t, "Grid (3, 7)")
     ui.grid(3, 7)
     for i: usize in 0 .. 7 {
         l: *fmt.Buffer = ui.line()
         l.printf("%d", int(i + 1))
         ui.button(l.text())
     }
-    section(t, "width, space, fill")
+    section(t, "Width, Space, Fill")
     bar: ui.Rect = ui.place(box.w, 34.0)
     across: ui.Area = ui.area(bar, ui.Flow.across)
     ui.button("Left")
@@ -233,17 +230,17 @@ layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
     ui.width("Widest")
     ui.button("Right")
     across.end()
-    section(t, "place + track")
+    section(t, "Place & Track")
     spot: ui.Rect = ui.place(box.w, 40.0)
     res: ui.Response = ui.track(ui.id("spot"), spot)
     c.fill(spot, t.radius, t.button.shade(res))
     c.text(spot, "hover or hold me", t.text, ui.Align.center)
-    section(t, "text alignment")
+    section(t, "Text Alignment")
     ui.text("left")
     ui.text("center", ui.Align.center)
     ui.muted("right", ui.Align.right)
-    section(t, "centered heading", ui.Align.center)
-    section(t, "popup")
+    section(t, "Centered Heading", ui.Align.center)
+    section(t, "Popup")
     if ui.button("Popup") { s.popup = true }
     bottom: f32 = ui.last().rect.y + ui.last().rect.h
     col.end()
@@ -255,8 +252,12 @@ layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
 drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
     ink: Color = t.text
     accent: Color = ui.color(SWATCHES[3])
-    c.text(ui.Rect { x = box.x, y = box.y, w = box.w, h = 24.0 }, "Canvas", ink, ui.Align.left)
-    row: ui.Rect = ui.Rect { x = box.x, y = box.y + 32.0, w = 60.0, h = 60.0 }
+    keep: f32 = ui.text_size()
+    ui.set_text_size(18.0)
+    c.text(ui.Rect { x = box.x, y = box.y, w = box.w, h = 18.0 }, "Canvas", t.heading, ui.Align.left, ui.Weight.bold)
+    ui.set_text_size(keep)
+    top: f32 = box.y + 38.0
+    row: ui.Rect = ui.Rect { x = box.x, y = top, w = 60.0, h = 60.0 }
     c.fill(row, ui.color(SWATCHES[0]))
     row.x += 72.0
     c.fill(row, 14.0, ui.color(SWATCHES[2]))
@@ -264,7 +265,7 @@ drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
     c.outline(row, 2.0, accent)
     row.x += 72.0
     c.outline_dashed(row, 2.0, ui.color(SWATCHES[1]), box)
-    y: f32 = box.y + 110.0
+    y: f32 = top + 78.0
     c.triangle(Point { x = box.x + 30.0, y = y }, Point { x = box.x + 60.0, y = y + 52.0 }, Point { x = box.x, y = y + 52.0 }, ui.color(SWATCHES[4]))
     wave: [7]Point
     for i: usize in 0 .. 7 {

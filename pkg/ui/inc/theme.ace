@@ -54,6 +54,8 @@ pub Theme: struct {
     pub text: Color = Color {},
     /* Secondary text: captions, hints, headings. */
     pub muted: Color = Color {},
+    /* A section heading's text: muted in dark, black in light. */
+    pub heading: Color = Color {},
     /* A control's background: buttons, unticked boxes, a picker's track,
      * unfocused fields, the hovered list row and heading strips, a neutral
      * gray that lets what is under it show. */
@@ -119,6 +121,7 @@ pub Theme.init(scheme: Scheme): Theme {
         window = Color.hex(0x161618),
         text = flat(0xffffff, 0.92, 0x161618),
         muted = flat(0xebebf5, 0.60, 0x161618),
+        heading = flat(0xebebf5, 0.60, 0x161618),
         button = Fill { rest = alpha(0x787880, 0.24), hover = alpha(0x787880, 0.34), press = alpha(0x787880, 0.44) },
         accent = Color.hex(0x3f86d6),
         on_accent = Color.hex(0xffffff),
@@ -134,7 +137,7 @@ pub Theme.init(scheme: Scheme): Theme {
         lift = alpha(0x000000, 0.35),
         contact = alpha(0x000000, 0.20),
         height = 28.0,
-        radius = 4.0,
+        radius = 8.0,
         padding = 12.0,
         gap = 8.0,
         icon = 15.0,
@@ -143,6 +146,7 @@ pub Theme.init(scheme: Scheme): Theme {
         t.window = Color.hex(0xebebf0)
         t.text = flat(0x000000, 0.88, 0xebebf0)
         t.muted = flat(0x3c3c43, 0.62, 0xebebf0)
+        t.heading = Color.hex(0x000000)
         t.button = Fill { rest = alpha(0x787880, 0.16), hover = alpha(0x787880, 0.24), press = alpha(0x787880, 0.32) }
         t.accent = Color.hex(0x2f74e0)
         t.card = Color.hex(0xffffff)

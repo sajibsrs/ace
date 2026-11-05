@@ -1,5 +1,10 @@
 # Packages
 
+- `pkg/ui` headings are bold 18 px text in `Theme.heading` (black in light)
+  with no strip; buttons and pickers are 4 px taller (`look.BUTTON_PAD`), a
+  button's label is picked from its resting fill so hover keeps it, a focused
+  field has a 1 px accent outline, `list` rows have a faint line under each,
+  and radii follow iOS (controls 8, checkbox 6, card 10, popup 14).
 - `pkg/ui` popup titles sit on a darker `Theme.header` strip in white
   `Theme.on_header` bold text.
 - `pkg/ui` `Fill` gains `ink`, the label and icon color a style sets (when it
