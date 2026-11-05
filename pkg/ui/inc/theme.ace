@@ -122,7 +122,7 @@ pub Theme.init(scheme: Scheme): Theme {
         text = flat(0xffffff, 0.92, 0x161618),
         muted = flat(0xebebf5, 0.60, 0x161618),
         heading = flat(0xebebf5, 0.60, 0x161618),
-        button = Fill { rest = alpha(0x787880, 0.24), hover = alpha(0x787880, 0.34), press = alpha(0x787880, 0.44) },
+        button = Fill { rest = alpha(0x787880, 0.36), hover = alpha(0x787880, 0.46), press = alpha(0x787880, 0.56) },
         accent = Color.hex(0x3f86d6),
         on_accent = Color.hex(0xffffff),
         card = Color.hex(0x232325),
@@ -147,7 +147,7 @@ pub Theme.init(scheme: Scheme): Theme {
         t.text = flat(0x000000, 0.88, 0xebebf0)
         t.muted = flat(0x3c3c43, 0.62, 0xebebf0)
         t.heading = Color.hex(0x000000)
-        t.button = Fill { rest = alpha(0x787880, 0.16), hover = alpha(0x787880, 0.24), press = alpha(0x787880, 0.32) }
+        t.button = Fill { rest = alpha(0x787880, 0.28), hover = alpha(0x787880, 0.36), press = alpha(0x787880, 0.44) }
         t.accent = Color.hex(0x2f74e0)
         t.card = Color.hex(0xffffff)
         t.header = Color.hex(0x6e6e78)

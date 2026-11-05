@@ -1,6 +1,7 @@
 /* ui controls — buttons, toggles, value controls and text, each placed in the
  * current area and tracked here, and drawn by `look.ace`. */
 
+import fmt
 import math
 import Color, Keycode from sdl
 import Rect, Insets, Icon, Align, Weight, text_size, set_text_size, cell, text_width from "./canvas.ace"
@@ -244,13 +245,59 @@ pub slider(value: *int, min: int, max: int): bool {
     return *value != before
 }
 
+/* Places a block slider as wide as its area and tracks it: where the pointer
+ * holds it across its width, 0 to 1, or -1 while it is not held. */
+block(address: usize, ticks: bool): f32 {
+    c: *Context = context.current
+    h: f32 = context.frame() + 2.0 * look.BUTTON_PAD
+    if ticks { h += look.BAR_TICKS }
+    box: Rect = context.place(context.span(), h)
+    res: Response = context.track(context.claim(context.id(address)), box)
+    if !res.held || box.w <= 0.0 { return -1.0 }
+    return math.max[f32](0.0, math.min[f32](1.0, (c.mouse.x - box.x) / box.w))
+}
+
+/* A block filled with the accent up to `value`, from `min` to `max`, with the
+ * value, to two places, centered inside; dragging across it sets `value`,
+ * whose address names it. True when it changed. */
+pub bar(value: *f32, min: f32, max: f32): bool {
+    c: *Context = context.current
+    at: f32 = block(usize(value), false)
+    before: f32 = *value
+    if at >= 0.0 { *value = min + at * (max - min) }
+    bytes: [32]u8 = [0 : 32]
+    b: fmt.Buffer = fmt.Buffer.init(bytes[..])
+    b.printf("%.2f", *value)
+    look.bar(c.canvas, &c.theme, context.last().rect, (*value - min) / (max - min), 0, b.text())
+    return *value != before
+}
+
+/* A block slider that stops at each whole number from `min` to `max`, set to
+ * the stop nearest the pointer, with a tick at each stop when they have room. */
+pub bar(value: *int, min: int, max: int): bool {
+    c: *Context = context.current
+    n: int = max - min
+    at: f32 = block(usize(value), n > 0)
+    before: int = *value
+    if at >= 0.0 { *value = min + int(at * f32(n) + 0.5) }
+    shown: f32 = 0.0
+    if n > 0 { shown = f32(*value - min) / f32(n) }
+    bytes: [32]u8 = [0 : 32]
+    b: fmt.Buffer = fmt.Buffer.init(bytes[..])
+    b.printf("%d", *value)
+    look.bar(c.canvas, &c.theme, context.last().rect, shown, n + 1, b.text())
+    return *value != before
+}
+
 /* Caller storage for a field: the first `len` bytes of `buffer` are in use,
  * with the caret before byte `caret`. `buffer` stays put from frame to frame:
- * its address names the field. */
+ * its address names the field. While empty, it shows `hint` in the muted
+ * color. */
 pub TextInput: struct {
     pub buffer: []u8 = [],
     pub len: usize = 0,
     pub caret: usize = 0,
+    pub hint: string = "",
 }
 
 /* The text in use. */
@@ -327,7 +374,7 @@ pub field(input: *TextInput, allow: string): bool {
             changed = true
         }
     }
-    look.field(c.canvas, t, box, input.text(), c.focus == me, input.caret)
+    look.field(c.canvas, t, box, input.text(), input.hint, c.focus == me, input.caret)
     return changed
 }
 

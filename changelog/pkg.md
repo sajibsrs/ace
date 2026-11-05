@@ -158,3 +158,7 @@
   the next button faint and deaf to the pointer, `Fill.edge` outlines a button,
   and `button(label, fill)` styles a text-only one. The gallery shows button
   sizes and styles and scrolls the whole page with the wheel.
+- `pkg/ui` adds `bar(&value, min, max)`, a block slider showing its value,
+  ticked under it for `int`s, its fill masked to the block's shape by
+  `Canvas.fill_until`; `TextInput.hint` placeholders; a glow round a focused
+  field; and darker button fills. The gallery adds a menu bar with a submenu.

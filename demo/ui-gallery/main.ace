@@ -5,7 +5,7 @@
  *   ace pkg run
  *
  * The left column has the controls, the middle one the layouts, and the right
- * one the canvas. The wheel scrolls the whole page when no list takes it.
+ * one a menu bar, a field, and the canvas. The wheel scrolls the whole page when no list takes it.
  * "Popup" opens a modal area; Escape closes it. Cmd+Q quits.
  */
 import fmt
@@ -51,12 +51,26 @@ SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
 GROUP: [10]u32 = [0xda4b4b, 0xe8833a, 0xeac22d, 0x8cc63f, 0x41bb77, 0x2fb3b3, 0x3f86d6, 0x5b6ee1, 0xa685fd, 0xd96aa7]
 TOOLS: [3]string = ["Box", "Wedge", "Tick"]
 
+/* The menu's items, "" for a divider; the one at SORT_BY opens SORTS beside
+ * it, and the one at DELETE is destructive. */
+ITEMS: [6]string = ["New File", "Duplicate", "", "Sort By", "", "Delete"]
+SORT_BY: const usize = 3
+DELETE: const usize = 5
+SORTS: [3]string = ["Name", "Date Modified", "Size"]
+
+/* A menu's width, its inset around the rows, a divider's height, and the
+ * room left of a row's text for a checkmark. */
+MENU_W: const f32 = 180.0
+MENU_PAD: const f32 = 5.0
+DIVIDER_H: const f32 = 9.0
+MENU_INDENT: const f32 = 24.0
+
 /* How far one wheel notch scrolls the page, in points. */
 NOTCH: const f32 = 48.0
 
 /* The empty space between the three columns, the panel's distance from the
  * window's edge, and the columns' inset from its own. */
-COLUMN_GAP: const f32 = 40.0
+COLUMN_GAP: const f32 = 80.0
 PANEL_EDGE: const f32 = 12.0
 PANEL_PAD: const f32 = 12.0
 
@@ -97,6 +111,8 @@ State: struct {
     snap: bool = true,
     level: f32 = 0.4,
     stop: int = 3,
+    amount: f32 = 0.6,
+    count: int = 3,
     color: usize = 1,
     page: f32 = 0.0,
     content: f32 = 0.0,
@@ -105,6 +121,90 @@ State: struct {
     submitted: int = 0,
     tool: usize = 0,
     popup: bool = false,
+    /* The menu is open, under the button at `menu_at`, with its submenu
+     * open when `sub`; `action` is the last item chosen. */
+    menu: bool = false,
+    sub: bool = false,
+    menu_at: ui.Rect = ui.Rect {},
+    action: string = "none",
+    sort: usize = 0,
+}
+
+/* A chevron in `box`, pointing down when `down`, else right. */
+chevron(c: *ui.Canvas, box: ui.Rect, down: bool, color: Color) {
+    x: f32 = box.x + box.w / 2.0
+    y: f32 = box.y + box.h / 2.0
+    pts: [3]Point = [Point { x = x - 3.0, y = y - 1.5 }, Point { x = x, y = y + 1.5 }, Point { x = x + 3.0, y = y - 1.5 }]
+    if !down { pts = [Point { x = x - 1.5, y = y - 3.0 }, Point { x = x + 1.5, y = y }, Point { x = x - 1.5, y = y + 3.0 }] }
+    c.stroke(pts[0..], false, 1.5, color)
+}
+
+/* A menu row at `at` showing `label`, highlighted on the accent while `hot`,
+ * with a check when `checked`. */
+menu_row(c: *ui.Canvas, t: *ui.Theme, at: ui.Rect, label: string, ink: Color, hot: bool, checked: bool) {
+    if hot {
+        c.fill(at, 5.0, t.accent)
+        ink = t.on_accent
+    }
+    if checked { c.icon(icon(CHECK), ui.Rect { x = at.x + 5.0, y = at.y + at.h / 2.0 - 7.0, w = 14.0, h = 14.0 }, ink) }
+    c.text(at, MENU_INDENT, label, ink)
+}
+
+/* A menu's panel `n` rows and `dividers` dividers high, at `x`, `y`. */
+menu_frame(t: *ui.Theme, x: f32, y: f32, n: usize, dividers: usize): ui.Rect {
+    return ui.Rect { x = x, y = y, w = MENU_W, h = 2.0 * MENU_PAD + f32(n) * t.row() + f32(dividers) * DIVIDER_H }
+}
+
+/* The open menu, over everything: hovering "Sort By" opens its submenu
+ * beside it; a click on an item, outside, or Escape closes both. */
+menu(s: *State, c: *ui.Canvas, t: *ui.Theme, m: ui.Mouse) {
+    h: f32 = t.row()
+    frame: ui.Rect = menu_frame(t, s.menu_at.x, s.menu_at.y + s.menu_at.h + 4.0, 4, 2)
+    pop: ui.Area = ui.popup(frame)
+    y: f32 = frame.y + MENU_PAD
+    branch: f32 = 0.0
+    for i: usize in 0 .. ITEMS.len {
+        if ITEMS[i].len == 0 {
+            c.fill(ui.Rect { x = frame.x + 2.0 * MENU_PAD, y = y + DIVIDER_H / 2.0, w = frame.w - 4.0 * MENU_PAD, h = 1.0 }, t.separator)
+            y += DIVIDER_H
+        } else {
+            at: ui.Rect = ui.Rect { x = frame.x + MENU_PAD, y = y, w = frame.w - 2.0 * MENU_PAD, h = h }
+            res: ui.Response = ui.track(ui.id(ITEMS[i]), at)
+            if res.hover { s.sub = i == SORT_BY }
+            hot: bool = res.hover || (i == SORT_BY && s.sub)
+            ink: Color = t.text
+            if i == DELETE { ink = ui.color(0xdc392e) }
+            menu_row(c, t, at, ITEMS[i], ink, hot, false)
+            if i == SORT_BY {
+                branch = y
+                if hot { ink = t.on_accent }
+                chevron(c, ui.Rect { x = at.x + at.w - 20.0, y = at.y, w = 16.0, h = h }, false, ink)
+            } else if res.click {
+                s.action = ITEMS[i]
+                s.menu = false
+            }
+            y += h
+        }
+    }
+    pop.end()
+    over: bool = m.over(frame)
+    if s.sub {
+        side: ui.Rect = menu_frame(t, frame.x + frame.w + 2.0, branch - MENU_PAD, SORTS.len, 0)
+        sub: ui.Area = ui.popup(side)
+        for i: usize in 0 .. SORTS.len {
+            at: ui.Rect = ui.Rect { x = side.x + MENU_PAD, y = side.y + MENU_PAD + f32(i) * h, w = side.w - 2.0 * MENU_PAD, h = h }
+            res: ui.Response = ui.track(ui.id(SORTS[i]), at)
+            menu_row(c, t, at, SORTS[i], t.text, res.hover, s.sort == i)
+            if res.click {
+                s.sort = i
+                s.menu = false
+            }
+        }
+        sub.end()
+        over = over || m.over(side)
+    }
+    if (m.pressed && !over) || ui.key(Keycode.escape) { s.menu = false }
+    if !s.menu { s.sub = false }
 }
 
 /* The left column: every control. Returns the bottom of its last one. */
@@ -181,6 +281,10 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     l.printf("level %d%%, %d Hz", int(s.level * 100.0), s.stop + 1)
     ui.muted(l.text())
 
+    section(t, "Bars")
+    ui.bar(&s.amount, 0.0, 1.0)
+    ui.bar(&s.count, 0, 8)
+
     section(t, "Toggle Group")
     ui.row(GROUP.len)
     shapes: [5]usize = [PLUS, CHECK, SQUARE, TRIANGLE, CROSS]
@@ -189,6 +293,34 @@ controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
         if ui.swatch(icon(shapes[i % 5]), ui.color(GROUP[i]), s.color == i) { s.color = i }
         ui.pop_id()
     }
+    bottom: f32 = ui.last().rect.y + ui.last().rect.h
+    col.end()
+    return bottom
+}
+
+/* The menu bar: plain items, then one that opens the menu. */
+BAR: [3]string = ["File", "Edit", "View"]
+
+/* The right column's top: a menu bar and a field. Returns the bottom of its
+ * last control. */
+inputs(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
+    col: ui.Area = ui.area(box)
+    ui.heading("Menu")
+    ui.space(HEADING_GAP - t.gap)
+    ghost: ui.Fill = ui.Fill { rest = Color { a = 0.0 }, hover = t.button.rest, press = t.button.hover }
+    bar: ui.Rect = ui.place(box.w, 34.0)
+    across: ui.Area = ui.area(bar, ui.Flow.across)
+    for i: usize in 0 .. BAR.len {
+        if ui.button(BAR[i], ghost) { s.action = BAR[i] }
+    }
+    ui.width(100.0)
+    if ui.button("Actions", ghost) { s.menu = true }
+    s.menu_at = ui.last().rect
+    chevron(c, ui.Rect { x = s.menu_at.x + s.menu_at.w - 22.0, y = s.menu_at.y, w = 16.0, h = s.menu_at.h }, true, t.text)
+    across.end()
+    l: *fmt.Buffer = ui.line()
+    l.printf("chose %s, sorted by %s", s.action, SORTS[s.sort])
+    ui.muted(l.text())
 
     section(t, "Field")
     ui.field(&s.name, "")
@@ -324,9 +456,9 @@ main(): int {
     renderer.blend(BLEND_ALPHA)
 
     canvas: ui.Canvas = ui.Canvas.init(renderer)
-    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.dark) }
+    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.light) }
     s: State = State {}
-    s.name = ui.TextInput { buffer = s.bytes[0..] }
+    s.name = ui.TextInput { buffer = s.bytes[0..], hint = "Hello, Ace" }
     w: f32 = 1180.0
     h: f32 = 900.0
     running: bool = true
@@ -373,16 +505,19 @@ main(): int {
         x0: f32 = PANEL_EDGE + PANEL_PAD
         left: f32 = controls(&s, &ctx.theme, ui.Rect { x = x0, y = top, w = col_w, h = page_h })
         middle: f32 = layouts(&s, &canvas, &ctx.theme, ui.Rect { x = x0 + col_w + COLUMN_GAP, y = top, w = col_w, h = page_h })
-        right: f32 = drawing(&canvas, &ctx.theme, ui.Rect { x = x0 + 2.0 * (col_w + COLUMN_GAP), y = top, w = col_w, h = page_h })
+        rx: f32 = x0 + 2.0 * (col_w + COLUMN_GAP)
+        above: f32 = inputs(&s, &canvas, &ctx.theme, ui.Rect { x = rx, y = top, w = col_w, h = page_h })
+        right: f32 = drawing(&canvas, &ctx.theme, ui.Rect { x = rx, y = above + SECTION_GAP, w = col_w, h = page_h })
         s.content = math.max[f32](left, math.max[f32](middle, right)) + s.page
         /* What no list took scrolls the page; the popup is modal, so it keeps the wheel. */
-        if !s.popup { s.page -= ctx.mouse.wheel * NOTCH }
+        if !s.popup && !s.menu { s.page -= ctx.mouse.wheel * NOTCH }
         if page_h > h {
             track: f32 = h - 24.0
             thumb: f32 = math.max[f32](24.0, track * h / page_h)
             at: f32 = 12.0 + (track - thumb) * s.page / (page_h - h)
             canvas.fill(ui.Rect { x = w - 8.0, y = at, w = 4.0, h = thumb }, 2.0, Color { r = 0.5, g = 0.5, b = 0.5, a = 0.5 })
         }
+        if s.menu { menu(&s, &canvas, &ctx.theme, ctx.mouse) }
         if s.popup {
             frame: ui.Rect = ui.Rect { x = w / 2.0 - 200.0, y = h / 2.0 - 80.0, w = 400.0, h = 160.0 }
             pop: ui.Area = ui.popup(frame, "A modal popup")

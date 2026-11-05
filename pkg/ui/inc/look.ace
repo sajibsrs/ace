@@ -3,6 +3,7 @@
  * by soft shadows, and popups raised further. A different look is an edit to
  * this file alone; the sizes it exports are the ones placement reads. */
 
+import math
 import Point, Color from sdl
 import Rect, Insets, Canvas, Icon, Align, Weight, text_width from "./canvas.ace"
 import Theme, Fill, Response from "./theme.ace"
@@ -10,8 +11,10 @@ import Theme, Fill, Response from "./theme.ace"
 /* The room a button adds above and below its frame. */
 pub BUTTON_PAD: const f32 = 2.0
 
-/* The accent line round a focused field. */
-FOCUS_W: const f32 = 1.0
+/* The accent glow round a focused field: how far it spreads, and its
+ * opacity at the edge. */
+FOCUS_BLUR: const f32 = 6.0
+FOCUS_GLOW: const f32 = 0.7
 
 /* The text field's caret. */
 CARET_W: const f32 = 2.0
@@ -204,6 +207,30 @@ pub slider(cv: *Canvas, t: *Theme, box: Rect, at: f32, stops: int) {
     raised(cv, t, knob, r, t.knob)
 }
 
+/* The room a stepped block slider leaves under its block for the ticks. */
+pub BAR_TICKS: const f32 = TICK_DROP + TICK_H
+
+/* A block slider at `box`: a block filled as a button rests, the accent
+ * across it up to `at` (0 to 1), the block's own shape masked to a flat
+ * front, and `s` centered on it. When `stops` is 2 or more the
+ * block leaves BAR_TICKS under it, with a tick there at each stop when they
+ * have room. */
+pub bar(cv: *Canvas, t: *Theme, box: Rect, at: f32, stops: int, s: string) {
+    if stops >= 2 { box.h -= BAR_TICKS }
+    cv.fill(box, t.radius, t.button.rest)
+    w: f32 = box.w * at
+    r: f32 = math.min[f32](t.radius, box.h / 2.0)
+    cv.fill_until(box, r, box.x + w, t.accent)
+    if stops >= 2 && box.w / f32(stops - 1) >= TICK_ROOM {
+        for i: int in 0 .. stops {
+            tx: f32 = box.x + box.w * f32(i) / f32(stops - 1)
+            tx = math.max[f32](box.x + DIVIDER_W / 2.0, math.min[f32](tx, box.x + box.w - DIVIDER_W / 2.0))
+            cv.fill(Rect { x = tx - DIVIDER_W / 2.0, y = box.y + box.h + TICK_DROP, w = DIVIDER_W, h = TICK_H }, t.track)
+        }
+    }
+    cv.text(box, s, t.text, Align.center, Weight.regular)
+}
+
 /* A picker at `box`: `items` in equal segments on a track filled as a
  * button rests, the one at `chosen` on a raised segment, and a short vertical
  * dash on each boundary the raised segment does not touch. */
@@ -239,17 +266,13 @@ pub separators(cv: *Canvas, t: *Theme, box: Rect, cell: f32) {
     }
 }
 
-/* A field at `box` showing `text`, with a caret before byte `caret` while
- * `focused`. Focused, it sits on the card color. */
-pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, focused: bool, caret: usize) {
-    if !focused {
-        cv.fill(box, t.radius, t.button.rest)
-        cv.text(box, t.padding, text, t.text)
-        return
-    }
-    cv.fill(box, t.radius, t.card)
-    cv.outline(box, t.radius, FOCUS_W, t.accent)
-    cv.text(box, t.padding, text, t.text)
+/* A field at `box` showing `text`, or `hint` muted while it is empty, with a
+ * caret before byte `caret` while `focused`. Focused, it sits on the card color in an accent glow. */
+pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, hint: string, focused: bool, caret: usize) {
+    if focused { cv.shadow(box, t.radius, FOCUS_BLUR, fade(t.accent, FOCUS_GLOW)) }
+    if focused { cv.fill(box, t.radius, t.card) } else { cv.fill(box, t.radius, t.button.rest) }
+    if text.len == 0 { cv.text(box, t.padding, hint, t.muted) } else { cv.text(box, t.padding, text, t.text) }
+    if !focused { return }
     x: f32 = box.x + t.padding + text_width(text[0..caret], Weight.regular)
     cv.fill(Rect { x = x - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, t.accent)
 }

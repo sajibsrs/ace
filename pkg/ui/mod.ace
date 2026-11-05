@@ -193,6 +193,13 @@ pub slider(value: *f32, min: f32, max: f32): bool { return controls.slider(value
  * the stops have room; true when `value` changed. */
 pub slider(value: *int, min: int, max: int): bool { return controls.slider(value, min, max) }
 
+/* A block filled up to `value`, from `min` to `max`, showing it inside;
+ * dragging across it sets it. True when it changed. */
+pub bar(value: *f32, min: f32, max: f32): bool { return controls.bar(value, min, max) }
+
+/* A block slider that stops at each whole number from `min` to `max`. */
+pub bar(value: *int, min: int, max: int): bool { return controls.bar(value, min, max) }
+
 /* A one-line field over `input` taking the bytes in `allow` (any when empty);
  * true when the text changed. Enter sets `last().submit`. */
 pub field(input: *TextInput, allow: string): bool { return controls.field(input, allow) }

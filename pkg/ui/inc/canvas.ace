@@ -196,13 +196,20 @@ pub Canvas.fill(self, box: Rect, radius: f32, color: Color) { self.fill(box, rad
 
 /* `box` with top corners of `top` and bottom corners of `bottom`, its edge
  * fading out over one pixel. */
-pub Canvas.fill(self, box: Rect, top: f32, bottom: f32, color: Color) {
-    if box.w <= 0.0 || box.h <= 0.0 { return }
+pub Canvas.fill(self, box: Rect, top: f32, bottom: f32, color: Color) { self.fill(box, top, bottom, box.x + box.w, color) }
+
+/* `box` with corners of `radius`, masked to the part left of `cut`: its
+ * shape stays the box's, and the cut edge is straight and fades out over
+ * one pixel as the rest does. */
+pub Canvas.fill_until(self, box: Rect, radius: f32, cut: f32, color: Color) { self.fill(box, radius, radius, cut, color) }
+
+Canvas.fill(self, box: Rect, top: f32, bottom: f32, cut: f32, color: Color) {
+    if box.w <= 0.0 || box.h <= 0.0 || cut <= box.x { return }
     most: f32 = math.min[f32](box.w, box.h) / 2.0
     rad: f32 = math.min[f32](top, most)
     low: f32 = math.min[f32](bottom, most)
     if rad <= 0.5 && low <= 0.5 {
-        self.fill(box, color)
+        self.fill(Rect { x = box.x, y = box.y, w = math.min[f32](box.w, cut - box.x), h = box.h }, color)
         return
     }
     /* A square corner is one of half a pixel: its inner points meet at the
@@ -222,6 +229,14 @@ pub Canvas.fill(self, box: Rect, top: f32, bottom: f32, color: Color) {
         self.arc(inner[..], outer[..], k + ROUND_STEPS, box.x + box.w - rad, box.y + rad, s, -c, rad)
         self.arc(inner[..], outer[..], k + 2 * ROUND_STEPS, box.x + box.w - low, box.y + box.h - low, c, s, low)
         self.arc(inner[..], outer[..], k + 3 * ROUND_STEPS, box.x + low, box.y + box.h - low, -s, c, low)
+    }
+    /* The mask: points past `cut` move onto it, which turns the outline
+     * there into a straight edge. */
+    if cut < box.x + box.w {
+        for k: usize in 0 .. n {
+            inner[k].x = math.min[f32](inner[k].x, cut - 0.5)
+            outer[k].x = math.min[f32](outer[k].x, cut + 0.5)
+        }
     }
     for k: usize in 1 .. n - 1 { self.triangle(inner[0], inner[k], inner[k + 1], color) }
     for k: usize in 0 .. n {

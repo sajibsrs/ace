@@ -75,7 +75,8 @@ forms place a box within one.
 
 `Canvas` batches triangles for one layer: `fill` and `outline` (each with an
 optional radius, and `fill(box, top, bottom, color)` with its own top and
-bottom corners; an outline under a pixel thick draws a pixel's width at that
+bottom corners, and `fill_until(box, radius, cut, color)` masked to the part
+left of `cut`, with a straight edge there; an outline under a pixel thick draws a pixel's width at that
 fraction of its alpha), `outline_dashed` (its gaps evened so a dash holds every
 corner), `shadow(box, radius, blur, color)` (a soft shadow fading across
 `blur` either side of the box's edge; the caller offsets the box), `stroke`,
@@ -149,9 +150,13 @@ whether its value changed.
   are 6 px apart or more. The knob stays inside the slider's box. A slider
   shows no value: the caller prints it, as a muted line beside or above it.
   Across an area a slider is 115 px wide unless `width` sets it.
+- `bar(&value, min, max)` is a block as wide as its area, filled with the
+  accent up to the value and showing it inside (two places for an `f32`);
+  a drag across it sets the value. With `int`s it stops at each whole number,
+  with a tick under the block at each stop when they have room.
 - `field(&input, allow)` edits a caller's `TextInput` in one line, as wide as
-  its buffer across an area; focused, it sits on `card` with an `accent`
-  caret. A click or `ui.focus()` before it gives it the keyboard, and a press elsewhere takes it away; the application may also set
+  its buffer across an area; focused, it sits on `card` in an `accent` glow
+  with an `accent` caret. While empty it shows `TextInput.hint` in `muted`. A click or `ui.focus()` before it gives it the keyboard, and a press elsewhere takes it away; the application may also set
   `Context.focus`. Focused, it consumes every key and the frame's text, so an
   owner reads its own keys (Esc) first; within a frame, keys apply before
   text. `allow` lists the bytes it accepts. Enter sets `last().submit`.
