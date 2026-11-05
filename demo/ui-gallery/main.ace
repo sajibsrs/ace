@@ -5,9 +5,11 @@
  *   ace pkg run
  *
  * The left column has the controls, the middle one the layouts, and the right
- * one the canvas. "Popup" opens a modal area; Escape closes it. Cmd+Q quits.
+ * one the canvas. The wheel scrolls the whole page when no list takes it.
+ * "Popup" opens a modal area; Escape closes it. Cmd+Q quits.
  */
 import fmt
+import math
 import (
     init, quit, error, Window, Renderer, Event, EventType, InitFlags, WindowFlags, MouseButton, Keycode, Point, Color,
     KeyboardEvent, MouseButtonEvent, MouseMotionEvent, MouseWheelEvent, BLEND_ALPHA,
@@ -48,6 +50,34 @@ SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
 TOOLS: [3]string = ["Box", "Wedge", "Tick"]
 FRUIT: [10]string = ["apple", "banana", "cherry", "date", "elderberry", "fig", "grape", "honeydew", "kiwi", "lemon"]
 
+/* How far one wheel notch scrolls the page, in points. */
+NOTCH: const f32 = 48.0
+
+/* The empty space between the three columns, the panel's distance from the
+ * window's edge, and the columns' inset from its own. */
+COLUMN_GAP: const f32 = 40.0
+PANEL_EDGE: const f32 = 12.0
+PANEL_PAD: const f32 = 12.0
+
+/* The empty space between one section and the next. */
+SECTION_GAP: const f32 = 40.0
+
+/* Starts a section: the gap after the one before, then its `title`. */
+section(t: *ui.Theme, title: string) {
+    ui.space(SECTION_GAP - t.gap)
+    ui.heading(title)
+}
+
+section(t: *ui.Theme, title: string, align: ui.Align) {
+    ui.space(SECTION_GAP - t.gap)
+    ui.heading(title, align)
+}
+
+/* A button fill from three solid colors. */
+tone(rest: u32, hover: u32, press: u32): ui.Fill {
+    return ui.Fill { rest = ui.color(rest), hover = ui.color(hover), press = ui.color(press) }
+}
+
 /* Everything the controls edit. */
 State: struct {
     clicks: int = 0,
@@ -59,6 +89,8 @@ State: struct {
     color: usize = 1,
     chosen: usize = 2,
     scroll: f32 = 0.0,
+    page: f32 = 0.0,
+    content: f32 = 0.0,
     bytes: [16]u8 = [0 : 16],
     name: ui.TextInput = ui.TextInput {},
     submitted: int = 0,
@@ -66,8 +98,8 @@ State: struct {
     popup: bool = false,
 }
 
-/* The left column: every control. */
-controls(s: *State, box: ui.Rect) {
+/* The left column: every control. Returns the bottom of its last one. */
+controls(s: *State, t: *ui.Theme, box: ui.Rect): f32 {
     col: ui.Area = ui.area(box)
     ui.heading("Buttons")
     ui.row(3)
@@ -78,16 +110,48 @@ controls(s: *State, box: ui.Rect) {
     l.printf("clicked %d times", s.clicks)
     ui.muted(l.text())
     ui.picker(TOOLS[0..], &s.tool)
-    ui.button(icon(CROSS), "Danger", ui.Fill { rest = ui.color(0xa84242), hover = ui.color(0xda4b4b), press = ui.color(0x7c3030) })
 
-    ui.heading("Toggles")
+    section(t, "Button sizes")
+    ui.row(4)
+    ui.height(20.0)
+    ui.button("Mini")
+    ui.height(26.0)
+    ui.button("Default")
+    ui.height(36.0)
+    ui.button("Large")
+    ui.height(48.0)
+    ui.button("Huge")
+    ui.height(36.0)
+    ui.button(icon(PLUS), "Add")
+    ui.height(36.0)
+    ui.button(icon(CHECK))
+    ui.height(48.0)
+    ui.width(160.0)
+    ui.button(icon(PLUS), "Wide and tall")
+
+    section(t, "Button styles")
+    ui.grid(2, 10)
+    ui.button("Secondary")
+    ui.button(icon(CHECK), "Primary", true)
+    ui.button(icon(CROSS), "Danger", tone(0xa84242, 0xda4b4b, 0x7c3030))
+    ui.button(icon(CHECK), "Success", tone(0x2f8f5b, 0x41bb77, 0x236c44))
+    ui.button(icon(TRIANGLE), "Warning", tone(0xb8901c, 0xeac22d, 0x8a6c14))
+    ui.button(icon(SQUARE), "Info", tone(0x2f6db3, 0x3f86d6, 0x235185))
+    ui.button("Outline", ui.Fill { rest = Color { a = 0.0 }, hover = t.button.rest, press = t.button.hover, edge = t.accent })
+    ui.button("Ghost", ui.Fill { rest = Color { a = 0.0 }, hover = t.button.rest, press = t.button.hover })
+    ui.disable()
+    ui.button("Disabled")
+    ui.disable()
+    ui.button(icon(CHECK), "Disabled", true)
+
+    section(t, "Toggles")
     toggles: ui.Area = ui.card(3)
     ui.toggle("Bold", &s.bold)
     ui.toggle(icon(SQUARE), &s.grid)
     ui.checkbox("Snap to grid", &s.snap)
     toggles.end()
 
-    ui.heading("Sliders")
+    section(t, "Sliders")
     sliders: ui.Area = ui.card(2)
     ui.slider(&s.level, 0.0, 1.0)
     ui.slider(&s.stop, 0, 9)
@@ -96,7 +160,7 @@ controls(s: *State, box: ui.Rect) {
     l.printf("level %d%%, %d Hz", int(s.level * 100.0), s.stop + 1)
     ui.muted(l.text())
 
-    ui.heading("Swatches")
+    section(t, "Swatches")
     ui.row(SWATCHES.len)
     for i: usize in 0 .. SWATCHES.len {
         ui.push_id(u32(i))
@@ -104,7 +168,7 @@ controls(s: *State, box: ui.Rect) {
         ui.pop_id()
     }
 
-    ui.heading("Field")
+    section(t, "Field")
     named: ui.Area = ui.card(1)
     ui.field(&s.name, "")
     named.end()
@@ -113,14 +177,17 @@ controls(s: *State, box: ui.Rect) {
     l.printf("\"%s\", Enter pressed %d times", s.name.text(), s.submitted)
     ui.muted(l.text())
 
-    ui.heading("List")
+    section(t, "List")
     ui.list(FRUIT[0..], &s.chosen, 3, &s.scroll)
     ui.text(FRUIT[s.chosen])
+    bottom: f32 = ui.last().rect.y + ui.last().rect.h
     col.end()
+    return bottom
 }
 
-/* The middle column: rows, grids, widths, spacing, across areas and popups. */
-layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
+/* The middle column: rows, grids, widths, spacing, across areas and popups.
+ * Returns the bottom of its last control. */
+layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
     col: ui.Area = ui.area(box)
     ui.heading("row(n)")
     ui.row(4)
@@ -128,14 +195,14 @@ layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
     ui.button("B")
     ui.button("C")
     ui.button("D")
-    ui.heading("grid(3, 7)")
+    section(t, "grid(3, 7)")
     ui.grid(3, 7)
     for i: usize in 0 .. 7 {
         l: *fmt.Buffer = ui.line()
         l.printf("%d", int(i + 1))
         ui.button(l.text())
     }
-    ui.heading("width, space, fill")
+    section(t, "width, space, fill")
     bar: ui.Rect = ui.place(box.w, 34.0)
     across: ui.Area = ui.area(bar, ui.Flow.across)
     ui.button("Left")
@@ -146,23 +213,26 @@ layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
     ui.width("Widest")
     ui.button("Right")
     across.end()
-    ui.heading("place + track")
+    section(t, "place + track")
     spot: ui.Rect = ui.place(box.w, 40.0)
     res: ui.Response = ui.track(ui.id("spot"), spot)
     c.fill(spot, t.radius, t.button.shade(res))
     c.text(spot, "hover or hold me", t.text, ui.Align.center)
-    ui.heading("text alignment")
+    section(t, "text alignment")
     ui.text("left")
     ui.text("center", ui.Align.center)
     ui.muted("right", ui.Align.right)
-    ui.heading("centered heading", ui.Align.center)
-    ui.heading("popup")
+    section(t, "centered heading", ui.Align.center)
+    section(t, "popup")
     if ui.button("Popup") { s.popup = true }
+    bottom: f32 = ui.last().rect.y + ui.last().rect.h
     col.end()
+    return bottom
 }
 
-/* The right column: canvas primitives drawn straight, outside any area. */
-drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
+/* The right column: canvas primitives drawn straight, outside any area.
+ * Returns the bottom of the last line. */
+drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
     ink: Color = t.text
     accent: Color = ui.color(SWATCHES[3])
     c.text(ui.Rect { x = box.x, y = box.y, w = box.w, h = 24.0 }, "Canvas", ink, ui.Align.left)
@@ -210,6 +280,7 @@ drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect) {
         c.text(line, wnames[i], ink, ui.Align.right, weights[i])
         line.y += 26.0
     }
+    return line.y
 }
 
 fail(context: string): int {
@@ -232,7 +303,7 @@ main(): int {
     renderer.blend(BLEND_ALPHA)
 
     canvas: ui.Canvas = ui.Canvas.init(renderer)
-    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.light) }
+    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(ui.Scheme.dark) }
     s: State = State {}
     s.name = ui.TextInput { buffer = s.bytes[0..] }
     w: f32 = 1180.0
@@ -271,14 +342,26 @@ main(): int {
         renderer.color(ctx.theme.window)
         renderer.clear()
         ctx.begin()
-        col_w: f32 = (w - 4.0 * 24.0) / 3.0
-        for i: usize in 0 .. 3 {
-            panel: ui.Rect = ui.Rect { x = 24.0 + f32(i) * (col_w + 24.0) - 12.0, y = 12.0, w = col_w + 24.0, h = h - 24.0 }
-            canvas.fill(panel, 6.0, ctx.theme.card)
+        /* One card panel across the window, the three columns COLUMN_GAP apart inside it. */
+        col_w: f32 = (w - 2.0 * (PANEL_EDGE + PANEL_PAD) - 2.0 * COLUMN_GAP) / 3.0
+        /* The page is as tall as its longest column, or the window. */
+        page_h: f32 = math.max[f32](h, s.content + 24.0)
+        s.page = math.max[f32](0.0, math.min[f32](s.page, page_h - h))
+        top: f32 = 24.0 - s.page
+        canvas.fill(ui.Rect { x = PANEL_EDGE, y = 12.0 - s.page, w = w - 2.0 * PANEL_EDGE, h = page_h - 24.0 }, 6.0, ctx.theme.card)
+        x0: f32 = PANEL_EDGE + PANEL_PAD
+        left: f32 = controls(&s, &ctx.theme, ui.Rect { x = x0, y = top, w = col_w, h = page_h })
+        middle: f32 = layouts(&s, &canvas, &ctx.theme, ui.Rect { x = x0 + col_w + COLUMN_GAP, y = top, w = col_w, h = page_h })
+        right: f32 = drawing(&canvas, &ctx.theme, ui.Rect { x = x0 + 2.0 * (col_w + COLUMN_GAP), y = top, w = col_w, h = page_h })
+        s.content = math.max[f32](left, math.max[f32](middle, right)) + s.page
+        /* What no list took scrolls the page; the popup is modal, so it keeps the wheel. */
+        if !s.popup { s.page -= ctx.mouse.wheel * NOTCH }
+        if page_h > h {
+            track: f32 = h - 24.0
+            thumb: f32 = math.max[f32](24.0, track * h / page_h)
+            at: f32 = 12.0 + (track - thumb) * s.page / (page_h - h)
+            canvas.fill(ui.Rect { x = w - 8.0, y = at, w = 4.0, h = thumb }, 2.0, Color { r = 0.5, g = 0.5, b = 0.5, a = 0.5 })
         }
-        controls(&s, ui.Rect { x = 24.0, y = 24.0, w = col_w, h = h - 48.0 })
-        layouts(&s, &canvas, &ctx.theme, ui.Rect { x = 48.0 + col_w, y = 24.0, w = col_w, h = h - 48.0 })
-        drawing(&canvas, &ctx.theme, ui.Rect { x = 72.0 + 2.0 * col_w, y = 24.0, w = col_w, h = h - 48.0 })
         if s.popup {
             frame: ui.Rect = ui.Rect { x = w / 2.0 - 200.0, y = h / 2.0 - 80.0, w = 400.0, h = 160.0 }
             pop: ui.Area = ui.popup(frame, "A modal popup")

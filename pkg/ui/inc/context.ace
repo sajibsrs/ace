@@ -91,6 +91,10 @@ pub Context: struct {
     level: usize = 0,
     /* The next control's width from `width`, or its label's stand-in. */
     next_w: f32 = 0.0,
+    /* The next control's height from `height`, and whether `disable` made it
+     * unable to take the pointer. */
+    next_h: f32 = 0.0,
+    next_off: bool = false,
     fit: string = "",
     fitting: bool = false,
     last: Item = Item {},
@@ -287,6 +291,15 @@ pub grid(n: usize, count: usize) {
 /* The next control is `w` wide, down an area as across one. */
 pub width(w: f32) { current.next_w = w }
 
+/* The next control is `h` high. */
+pub height(h: f32) { current.next_h = h }
+
+/* The next button is drawn faint and takes no pointer. */
+pub disable() { current.next_off = true }
+
+/* Whether the next control was made unable to take the pointer. */
+pub disabled(): bool { return current.next_off }
+
 /* The next control is as wide as it would be showing `label`. */
 pub width(label: string) {
     current.fit = label
@@ -361,12 +374,17 @@ Context.place(self, w: f32, h: f32): Rect {
         l.at += w + gap
     }
     self.next_w = 0.0
+    self.next_h = 0.0
+    self.next_off = false
     self.fitting = false
     return box
 }
 
-/* A control's height. */
-Context.frame(const self): f32 { return self.theme.height }
+/* A control's height: the theme's, unless `height` set it. */
+Context.frame(const self): f32 {
+    if self.next_h > 0.0 { return self.next_h }
+    return self.theme.height
+}
 
 /* How wide a button is across an area: its label, or `width`'s stand-in,
  * padded, after its icon; an icon alone is square. */

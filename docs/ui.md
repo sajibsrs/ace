@@ -45,6 +45,10 @@ height, the next `theme.gap` further on.
 - `ui.width(w)` sets the next control's width; `ui.width(label)` makes it as
   wide as it would be showing `label`, so a button whose label changes keeps
   its size.
+- `ui.height(h)` sets the next control's height, for a taller or shorter
+  button than the theme's `height`.
+- `ui.disable()` draws the next button faint; it takes no pointer and never
+  reports a click.
 - `ui.space(w)` moves the next control `w` further on.
 - `ui.fill()` puts the rest of an across area at its far edge, the first
   control after it at the edge.
@@ -95,10 +99,10 @@ Controls draw from `Context.theme`, plain data. Its colors are `window` (for
 the application's clear), `text`, `muted`, `button` (a `Fill` for rest, hover
 and press, behind buttons, unticked boxes, a picker's track, fields, headings
 and the hovered list row), `accent` (a toggle that is on, a ticked box, a
-slider's fill, the chosen row, a focus ring), `on_accent` (text on it), `card`
-(a popup, card, list or focused field), `edge` (the rim just inside a card),
-`shadow` (a popup's shadow), `separator` (between a card's cells, round an
-unticked box), `track` (a switch that is off, a slider's track and ticks),
+slider's fill, the chosen row, a caret), `on_accent` (text on it), `card`
+(a popup, card, list or focused field), `shadow` (a popup's shadow),
+`separator` (between a card's cells), `track` (a switch that is off, a
+slider's track and ticks),
 `on` (a switch that is on), `knob` (a switch's and slider's knob), `segment`
 (a picker's chosen segment), `lift` (the shadow a knob or segment casts) and
 `contact` (the shadow 1 below a knob, segment or card). Its sizes are `height` (a control's), `radius`, `padding`, `gap` and
@@ -108,7 +112,7 @@ color. For a variant, copy it, change a field for the controls that follow,
 and assign the copy back after.
 
 There is one look, in `inc/look.ace`: flat rounded fills; cards and lists
-rounder than a control, on a 1 px contact shadow and a half-pixel rim; knobs
+rounder than a control, on a 1 px contact shadow; knobs
 and a picker's segment raised by a shadow 2 below, blurred 6; and a popup
 rounder still, raised by a shadow 18 below it, blurred 48. The theme changes
 its colors and sizes; a different look is an edit to that file alone, since
@@ -122,16 +126,17 @@ Controls return `bool`: a button whether it was clicked, a value control
 whether its value changed.
 
 - `button(label)`, `button(icon, label)`, `button(icon)`; `button(icon,
-  label, on)` rests on `accent` while `on`; `button(icon, label, fill)`
-  uses its own `Fill`. A button's icon and label are centered together,
+  label, on)` rests on `accent` while `on`; `button(label, fill)` and
+  `button(icon, label, fill)` use their own `Fill`, outlined in its `edge`
+  when that has an alpha. A button's icon and label are centered together,
   however wide it is placed.
 - `toggle(icon, label, &value)` and `toggle(icon, &value)` flip a `bool` and
   rest on `accent` while it is set.
 - `toggle(label, &value)` is a switch: `label`, then a track at the far end,
-  on `on` with its knob right while the `bool` is set. A click anywhere on it
-  flips the `bool`.
-- `checkbox(label, &value)` ticks a box before its label; a click anywhere on
-  it flips the `bool`.
+  on `on` with its knob right while the `bool` is set. A click on the label
+  or the track flips the `bool`, not the space between.
+- `checkbox(label, &value)` ticks a box before its label; a click on the box or
+  the label flips the `bool`, not the space after it.
 - `picker(items, &chosen)` shows equal segments on a track, the one at
   `chosen` raised; a click (a release on the pressed segment) picks one, and
   it returns whether `chosen` changed. Across an area it is as wide as its
@@ -143,9 +148,8 @@ whether its value changed.
   shows no value: the caller prints it, as a muted line beside or above it.
   Across an area a slider is 115 px wide unless `width` sets it.
 - `field(&input, allow)` edits a caller's `TextInput` in one line, as wide as
-  its buffer across an area; focused, it sits on `card` inside an `accent`
-  ring and a faint glow, with an `accent` caret. A click or `ui.focus()` before it gives it the
-  keyboard, and a press elsewhere takes it away; the application may also set
+  its buffer across an area; focused, it sits on `card` with an `accent`
+  caret. A click or `ui.focus()` before it gives it the keyboard, and a press elsewhere takes it away; the application may also set
   `Context.focus`. Focused, it consumes every key and the frame's text, so an
   owner reads its own keys (Esc) first; within a frame, keys apply before
   text. `allow` lists the bytes it accepts. Enter sets `last().submit`.

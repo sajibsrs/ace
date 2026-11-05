@@ -15,12 +15,14 @@ THUMB_W: const f32 = 4.0
 THUMB_MIN: const f32 = 16.0
 
 /* Places and draws a button in `fill`, with an icon when `icon`, and says
- * whether it was clicked. */
+ * whether it was clicked; never when `disable` came before it. */
 press(id: u32, shape: Icon, icon: bool, label: string, fill: Fill): bool {
     c: *Context = context.current
+    off: bool = context.disabled()
     box: Rect = context.place(context.measure(icon, label), context.frame())
-    res: Response = context.track(context.claim(id), box)
-    look.button(c.canvas, &c.theme, box, res, shape, icon, label, fill)
+    res: Response = Response {}
+    if !off { res = context.track(context.claim(id), box) }
+    look.button(c.canvas, &c.theme, box, res, shape, icon, label, fill, off)
     return res.click
 }
 
@@ -50,6 +52,11 @@ pub button(shape: Icon, label: string, on: bool): bool {
     return press(name(shape, label), shape, true, label, fill)
 }
 
+/* A button showing `label` alone in `fill`. */
+pub button(label: string, fill: Fill): bool {
+    return press(context.id(label), Icon {}, false, label, fill)
+}
+
 /* A button in `fill` rather than the theme's. */
 pub button(shape: Icon, label: string, fill: Fill): bool {
     return press(name(shape, label), shape, true, label, fill)
@@ -75,13 +82,19 @@ pub toggle(shape: Icon, label: string, value: *bool): bool {
 /* A toggle showing its icon alone. */
 pub toggle(shape: Icon, value: *bool): bool { return toggle(shape, "", value) }
 
-/* `label` then a switch that is on while `value` is set; a click anywhere on
- * it flips `value`, whose address names it. True when it flipped. */
+/* `label` then a switch that is on while `value` is set; a click on the label
+ * or the switch flips `value`, whose address names it. True when it flipped. */
 pub toggle(label: string, value: *bool): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
     box: Rect = context.place(text_width(label, Weight.regular) + t.gap + look.SWITCH_W, context.frame())
-    res: Response = context.track(context.claim(context.id(usize(value))), box)
+    id: u32 = context.claim(context.id(usize(value)))
+    word: Rect = Rect { x = box.x, y = box.y, w = text_width(label, Weight.regular), h = box.h }
+    pill: Rect = Rect { x = box.x + box.w - look.SWITCH_W, y = box.y, w = look.SWITCH_W, h = box.h }
+    res: Response = context.track(id, word)
+    on_switch: Response = context.track(id, pill)
+    res.hover = res.hover || on_switch.hover
+    res.click = res.click || on_switch.click
     if res.click { *value = !*value }
     look.toggle(c.canvas, t, box, *value, label)
     return res.click
@@ -171,13 +184,14 @@ pub swatch(shape: Icon, color: Color, selected: bool): bool {
     return res.click
 }
 
-/* A box ticked while `value` is set, then `label`; a click anywhere on it
- * flips `value`, whose address names it. True when it flipped. */
+/* A box ticked while `value` is set, then `label`; a click on the box or the
+ * label flips `value`, whose address names it. True when it flipped. */
 pub checkbox(label: string, value: *bool): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(look.CHECK_SIDE + t.gap + text_width(label, Weight.regular), context.frame())
-    res: Response = context.track(context.claim(context.id(usize(value))), box)
+    w: f32 = look.CHECK_SIDE + t.gap + text_width(label, Weight.regular)
+    box: Rect = context.place(w, context.frame())
+    res: Response = context.track(context.claim(context.id(usize(value))), Rect { x = box.x, y = box.y, w = w, h = box.h })
     if res.click { *value = !*value }
     look.checkbox(c.canvas, t, box, res, *value, label)
     return res.click

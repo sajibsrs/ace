@@ -29,24 +29,35 @@ CONTACT_DROP: const f32 = 1.0
 /* A popup's and a card's rim, half a pixel. */
 EDGE: const f32 = 0.5
 
-/* A switch's track; its knob is inset KNOB_INSET all round. */
-pub SWITCH_W: const f32 = 38.0
+/* A switch's track; its knob is inset KNOB_INSET all round, and is 1.5 times
+ * as wide as it is tall, so it is a pill and not a circle. The track is twice
+ * as wide as the knob. */
 SWITCH_H: const f32 = 22.0
 KNOB_INSET: const f32 = 2.0
+KNOB_H: const f32 = SWITCH_H - 2.0 * KNOB_INSET
+KNOB_W: const f32 = 1.0 * KNOB_H
+pub SWITCH_W: const f32 = 2.0 * KNOB_W
+
+/* The width of a picker's boundary dash and of a slider's stop line. */
+DIVIDER_W: const f32 = 1.0
+
+/* A picker's boundary dash, left clear this fraction of a segment's height
+ * at each end. */
+DASH_INSET: const f32 = 0.25
 
 /* A checkbox's box, its corners, and its tick's stroke. */
 pub CHECK_SIDE: const f32 = 16.0
 CHECK_RADIUS: const f32 = 4.0
 CHECK_STROKE: const f32 = 1.75
 
-/* A slider's knob, as big as a switch's, which stays inside the slider, so
+/* A slider's knob, a circle as tall as a switch's, which stays inside the slider, so
  * its center travels from half of it in from one end to half of it in from
  * the other. */
-pub SLIDER_KNOB: const f32 = SWITCH_H - 2.0 * KNOB_INSET
+pub SLIDER_KNOB: const f32 = KNOB_H
 TRACK_H: const f32 = 8.0
-/* A stepped slider's stops, as dots TICK_DOT across, TICK_DROP under its
- * track, drawn only when the stops are at least TICK_ROOM apart. */
-TICK_DOT: const f32 = 3.0
+/* A stepped slider's stops, as lines DIVIDER_W wide and TICK_H high, TICK_DROP
+ * under its track, drawn only when the stops are at least TICK_ROOM apart. */
+TICK_H: const f32 = 4.0
 TICK_DROP: const f32 = 4.0
 TICK_ROOM: const f32 = 6.0
 
@@ -56,20 +67,15 @@ SEGMENT_PAD: const f32 = 2.0
 /* A list's card, around its rows. */
 pub LIST_PAD: const f32 = 4.0
 
-/* A focused field's ring, and the glow outside it at GLOW_ALPHA of the
- * accent. */
-RING: const f32 = 1.0
-GLOW: const f32 = 3.0
-GLOW_ALPHA: const f32 = 0.3
+/* A disabled button's alpha, and an outlined button's line. */
+OFF_ALPHA: const f32 = 0.4
+EDGE_W: const f32 = 1.0
 
 /* `color` at `a` times its alpha. */
 fade(color: Color, a: f32): Color { return Color { r = color.r, g = color.g, b = color.b, a = color.a * a } }
 
 /* `box` moved `dy` down. */
 lower(box: Rect, dy: f32): Rect { return Rect { x = box.x, y = box.y + dy, w = box.w, h = box.h } }
-
-/* `box` grown by `d` on every side. */
-grow(box: Rect, d: f32): Rect { return box.inset(Insets.all(-d)) }
 
 /* `box` in `color` with corners of `radius`, raised off what is under it by a
  * lift shadow and a contact shadow: a knob or a picker's segment. The contact
@@ -82,11 +88,18 @@ raised(cv: *Canvas, t: *Theme, box: Rect, radius: f32, color: Color) {
 
 /* A button at `box` in `fill`'s shade for `res`, its icon `shape` when
  * `icon`, and `label`; the icon and label are centered together, however wide
- * the button. */
-pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: bool, label: string, fill: Fill) {
+ * the button. Outlined when `fill` has an edge, faint when `off`. */
+pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: bool, label: string, fill: Fill, off: bool) {
     shade: Color = fill.shade(res)
     ink: Color = on(t, shade)
+    edge: Color = fill.edge
+    if off {
+        shade = fade(shade, OFF_ALPHA)
+        ink = fade(ink, OFF_ALPHA)
+        edge = fade(edge, OFF_ALPHA)
+    }
     cv.fill(box, t.radius, shade)
+    if edge.a > 0.0 { cv.outline(box, t.radius, EDGE_W, edge) }
     if label.len == 0 {
         cv.icon(shape, box.square(t.icon), ink)
     } else if icon {
@@ -148,7 +161,6 @@ pub checkbox(cv: *Canvas, t: *Theme, box: Rect, res: Response, on: bool, label: 
         cv.stroke(mark[..], false, CHECK_STROKE, t.on_accent)
     } else {
         cv.fill(tick, CHECK_RADIUS, t.button.shade(res))
-        cv.outline(tick, CHECK_RADIUS, EDGE, t.separator)
     }
     cv.text(box, side + t.gap, label, t.text)
 }
@@ -162,10 +174,9 @@ pub toggle(cv: *Canvas, t: *Theme, box: Rect, on: bool, label: string) {
     color: Color = t.track
     if on { color = t.on }
     cv.fill(track, SWITCH_H / 2.0, color)
-    side: f32 = SWITCH_H - 2.0 * KNOB_INSET
-    knob: Rect = Rect { x = track.x + KNOB_INSET, y = track.y + KNOB_INSET, w = side, h = side }
-    if on { knob.x = track.x + track.w - KNOB_INSET - side }
-    raised(cv, t, knob, side / 2.0, t.knob)
+    knob: Rect = Rect { x = track.x + KNOB_INSET, y = track.y + KNOB_INSET, w = KNOB_W, h = KNOB_H }
+    if on { knob.x = track.x + track.w - KNOB_INSET - KNOB_W }
+    raised(cv, t, knob, KNOB_H / 2.0, t.knob)
     cv.text(box, 0.0, label, t.text)
 }
 
@@ -182,7 +193,7 @@ pub slider(cv: *Canvas, t: *Theme, box: Rect, at: f32, stops: int) {
     if stops >= 2 && travel / f32(stops - 1) >= TICK_ROOM {
         for i: int in 0 .. stops {
             tx: f32 = box.x + r + travel * f32(i) / f32(stops - 1)
-            cv.fill(Rect { x = tx - TICK_DOT / 2.0, y = track.y + track.h + TICK_DROP, w = TICK_DOT, h = TICK_DOT }, TICK_DOT / 2.0, t.track)
+            cv.fill(Rect { x = tx - DIVIDER_W / 2.0, y = track.y + track.h + TICK_DROP, w = DIVIDER_W, h = TICK_H }, t.track)
         }
     }
     knob: Rect = Rect { x = x - r, y = box.y + (box.h - SLIDER_KNOB) / 2.0, w = SLIDER_KNOB, h = SLIDER_KNOB }
@@ -190,7 +201,8 @@ pub slider(cv: *Canvas, t: *Theme, box: Rect, at: f32, stops: int) {
 }
 
 /* A picker at `box`: `items` in equal segments on a track filled as a
- * button rests, the one at `chosen` on a raised segment. */
+ * button rests, the one at `chosen` on a raised segment, and a short vertical
+ * dash on each boundary the raised segment does not touch. */
 pub picker(cv: *Canvas, t: *Theme, box: Rect, items: []string, chosen: usize) {
     inner: Rect = box.inset(Insets.all(SEGMENT_PAD))
     w: f32 = inner.w / f32(items.len)
@@ -198,17 +210,20 @@ pub picker(cv: *Canvas, t: *Theme, box: Rect, items: []string, chosen: usize) {
     if chosen < items.len {
         raised(cv, t, Rect { x = inner.x + f32(chosen) * w, y = inner.y, w = w, h = inner.h }, PILL_RADIUS, t.segment)
     }
+    for i: usize in 1 .. items.len {
+        if i == chosen || i == chosen + 1 { continue }
+        cv.fill(Rect { x = inner.x + f32(i) * w - DIVIDER_W / 2.0, y = inner.y + inner.h * DASH_INSET, w = DIVIDER_W, h = inner.h * (1.0 - 2.0 * DASH_INSET) }, t.separator)
+    }
     for i: usize in 0 .. items.len {
         cv.text(Rect { x = inner.x + f32(i) * w, y = box.y, w = w, h = box.h }, items[i], t.text, Align.center)
     }
 }
 
 /* A card at `box`: the card color, rounder than a control, set off by a
- * contact shadow and a rim. */
+ * contact shadow. */
 pub card(cv: *Canvas, t: *Theme, box: Rect) {
     cv.fill(lower(box, CONTACT_DROP), CARD_RADIUS, t.contact)
     cv.fill(box, CARD_RADIUS, t.card)
-    cv.outline(box, CARD_RADIUS, EDGE, t.edge)
 }
 
 /* Half-pixel separators between `box`'s cells, each `cell` high, inset the
@@ -221,17 +236,14 @@ pub separators(cv: *Canvas, t: *Theme, box: Rect, cell: f32) {
 }
 
 /* A field at `box` showing `text`, with a caret before byte `caret` while
- * `focused`. Focused, it sits on the card color inside an accent ring and a
- * fainter glow outside that. */
+ * `focused`. Focused, it sits on the card color. */
 pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, focused: bool, caret: usize) {
     if !focused {
         cv.fill(box, t.radius, t.button.rest)
         cv.text(box, t.padding, text, t.text)
         return
     }
-    cv.outline(grow(box, RING + GLOW), t.radius + RING + GLOW, GLOW, fade(t.accent, GLOW_ALPHA))
     cv.fill(box, t.radius, t.card)
-    cv.outline(grow(box, RING), t.radius + RING, RING, t.accent)
     cv.text(box, t.padding, text, t.text)
     x: f32 = box.x + t.padding + text_width(text[0..caret], Weight.regular)
     cv.fill(Rect { x = x - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, t.accent)
@@ -255,11 +267,10 @@ pub row(cv: *Canvas, t: *Theme, box: Rect, res: Response, chosen: bool, item: st
 pub thumb(cv: *Canvas, t: *Theme, box: Rect) { cv.fill(box, box.w / 2.0, t.text) }
 
 /* A popup's background at `box`: a card raised off what is under it by a
- * shadow below and a rim. */
+ * shadow below. */
 pub popup(cv: *Canvas, t: *Theme, box: Rect) {
     cv.shadow(lower(box, SHADOW_DROP), POPUP_RADIUS, SHADOW_BLUR, t.shadow)
     cv.fill(box, POPUP_RADIUS, t.card)
-    cv.outline(box, POPUP_RADIUS, EDGE, t.edge)
 }
 
 /* A popup's title `s` in muted text on a strip, filled as a button rests,

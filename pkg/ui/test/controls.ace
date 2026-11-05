@@ -22,14 +22,16 @@ close(c: *ui.Context, column: ui.Area) {
     c.end()
 }
 
-/* A click anywhere on a checkbox flips its value. */
+/* A click on a checkbox's box or label flips its value; one in the empty
+ * space after the label, out to the column's edge, does not. */
 pub checkbox(t: *test.T) {
-    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 60.0, y = 5.0, pressed = true, released = true } }
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
     on: bool = false
     column: ui.Area = open(&c)
     t.equal(ui.checkbox("Grid", &on), true, @file, @line)
     t.equal(on, true, @file, @line)
     close(&c, column)
+    c.mouse = ui.Mouse { x = 100.0, y = 5.0, pressed = true, released = true }
     column = open(&c)
     t.equal(ui.checkbox("Grid", &on), false, @file, @line)
     t.equal(on, true, @file, @line)
@@ -84,7 +86,8 @@ pub slider(t: *test.T) {
     close(&c, column)
 }
 
-/* A click anywhere on a switch flips its value. */
+/* A click on a switch's label or the switch flips its value; one in the space
+ * between them does not. */
 pub switch_toggle(t: *test.T) {
     c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
     on: bool = false
@@ -95,6 +98,11 @@ pub switch_toggle(t: *test.T) {
     c.mouse = ui.Mouse { x = 100.0, y = 5.0, pressed = true, released = true }
     column = open(&c)
     t.equal(ui.toggle("Bold", &on), true, @file, @line)
+    t.equal(on, false, @file, @line)
+    close(&c, column)
+    c.mouse = ui.Mouse { x = 60.0, y = 5.0, pressed = true, released = true }
+    column = open(&c)
+    t.equal(ui.toggle("Bold", &on), false, @file, @line)
     t.equal(on, false, @file, @line)
     close(&c, column)
 }

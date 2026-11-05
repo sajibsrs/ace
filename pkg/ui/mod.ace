@@ -96,6 +96,12 @@ pub grid(n: usize, count: usize) { context.grid(n, count) }
 /* The next control is `w` wide. */
 pub width(w: f32) { context.width(w) }
 
+/* The next control is `h` high. */
+pub height(h: f32) { context.height(h) }
+
+/* The next button is drawn faint and takes no pointer. */
+pub disable() { context.disable() }
+
 /* The next control is as wide as it would be showing `label`. */
 pub width(label: string) { context.width(label) }
 
@@ -154,6 +160,9 @@ pub button(shape: Icon): bool { return controls.button(shape) }
 
 /* A button that rests on the accent while `on`. */
 pub button(shape: Icon, label: string, on: bool): bool { return controls.button(shape, label, on) }
+
+/* A button showing `label` alone in `fill` rather than the theme's. */
+pub button(label: string, fill: Fill): bool { return controls.button(label, fill) }
 
 /* A button in `fill` rather than the theme's. */
 pub button(shape: Icon, label: string, fill: Fill): bool { return controls.button(shape, label, fill) }

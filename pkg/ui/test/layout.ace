@@ -117,7 +117,29 @@ pub buttons(t: *test.T) {
     ui.width("Simulate")
     ui.button(shape, "Edit")
     t.equal(ui.last().rect.w == 16.0 + ui.text_width("Simulate") + 22.0, true, @file, @line)
+    ui.height(40.0)
+    ui.button("Tall")
+    t.equal(ui.last().rect.h == 40.0, true, @file, @line)
+    ui.button("Next")
+    t.equal(ui.last().rect.h == 26.0, true, @file, @line)
     bar.end()
+    c.end()
+}
+
+/* A disabled button takes no click, and only the one after `disable`. */
+pub disabled(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
+    frame(&c)
+    col: ui.Area = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
+    ui.disable()
+    t.equal(ui.button("Off"), false, @file, @line)
+    col.end()
+    c.end()
+    c.mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true }
+    frame(&c)
+    col = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
+    t.equal(ui.button("On"), true, @file, @line)
+    col.end()
     c.end()
 }
 

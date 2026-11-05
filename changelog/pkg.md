@@ -143,3 +143,7 @@
   `Renderer.geometry(texture, ...)` and `Renderer.flush` in `pkg/sdl`.
   Theme text colors are opaque (`flat`): a glyph's triangles overlap a little,
   and a translucent color showed the overlaps as dark dots.
+- `pkg/ui` buttons: `ui.height(h)` sizes the next control, `ui.disable()` draws
+  the next button faint and deaf to the pointer, `Fill.edge` outlines a button,
+  and `button(label, fill)` styles a text-only one. The gallery shows button
+  sizes and styles and scrolls the whole page with the wheel.
