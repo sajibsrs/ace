@@ -4,63 +4,60 @@
 import fmt
 import math
 import Color, Keycode from sdl
-import Rect, Insets, Icon, Align, Weight, text_size, set_text_size, cell, text_width from "./canvas.ace"
+import Rect, Insets, Icon, Align, Text, text_width from "./canvas.ace"
 import Keyboard, KEY_DELETE, KEY_HOME, KEY_END from "./input.ace"
 import context: "./context.ace"
 import Context, Item from "./context.ace"
-import Fill, Theme, Response from "./theme.ace"
+import Theme, States, Graphical, Labeled, Ruled, Response from "./theme.ace"
 import look: "./look.ace"
 
 /* A list's scroll thumb, inside its right edge. */
 THUMB_W: const f32 = 4.0
 THUMB_MIN: const f32 = 16.0
 
-/* Places and draws a button in `fill`, with an icon when `icon`, and says
- * whether it was clicked; never when `disable` came before it. */
-press(id: u32, shape: Icon, icon: bool, label: string, fill: Fill): bool {
+/* Places and draws a button in `st`, on while `on`, with an icon from
+ * `shapes` when `icon`, and says whether it was clicked; never when `disable`
+ * came before it. */
+press(id: u32, shapes: States[Icon], icon: bool, label: string, st: const *Graphical, on: bool): bool {
     c: *Context = context.current
     off: bool = context.disabled()
-    box: Rect = context.place(context.measure(icon, label), context.frame() + 2.0 * look.BUTTON_PAD)
+    box: Rect = context.place(context.measure(st, icon, label), context.frame() + 2.0 * look.BUTTON_PAD)
     res: Response = Response {}
     if !off { res = context.track(context.claim(id), box) }
-    look.button(c.canvas, &c.theme, box, res, shape, icon, label, fill, off)
+    look.button(c.canvas, st, box, res, shapes, icon, label, on, off)
     return res.click
 }
 
-/* A button showing `label`, which names it; true when clicked. */
+/* A button showing `label`, which names it, in `st`; true when clicked. */
+pub button(label: string, st: const *Graphical): bool {
+    return press(context.id(label), States[Icon].all(Icon {}), false, label, st, false)
+}
+
+/* A button showing `label`, in the theme's button style. */
 pub button(label: string): bool {
-    c: *Context = context.current
-    return press(context.id(label), Icon {}, false, label, c.theme.button)
+    return button(label, &context.current.theme.button)
 }
 
-/* An icon and `label`, which names it. */
+/* A button in `st`, on while `on`, as a chosen tool is: an icon from `shapes`
+ * for its state, then `label`; an icon alone, square, when `label` is empty.
+ * The label names it, or the resting icon when it has none. */
+pub button(shapes: States[Icon], label: string, on: bool, st: const *Graphical): bool {
+    return press(name(shapes.rest, label), shapes, true, label, st, on)
+}
+
+/* The full button in the theme's button style. */
+pub button(shapes: States[Icon], label: string, on: bool): bool {
+    return button(shapes, label, on, &context.current.theme.button)
+}
+
+/* An icon, the same in every state, and `label`, in `st`. */
+pub button(shape: Icon, label: string, st: const *Graphical): bool {
+    return button(States[Icon].all(shape), label, false, st)
+}
+
+/* An icon and `label` in the theme's button style. */
 pub button(shape: Icon, label: string): bool {
-    c: *Context = context.current
-    return press(name(shape, label), shape, true, label, c.theme.button)
-}
-
-/* An icon alone, which names it. */
-pub button(shape: Icon): bool {
-    c: *Context = context.current
-    return press(context.id(shape), shape, true, "", c.theme.button)
-}
-
-/* A button that rests on the accent while `on`, as a chosen tool does. */
-pub button(shape: Icon, label: string, on: bool): bool {
-    c: *Context = context.current
-    fill: Fill = c.theme.button
-    if on { fill = c.theme.chosen() }
-    return press(name(shape, label), shape, true, label, fill)
-}
-
-/* A button showing `label` alone in `fill`. */
-pub button(label: string, fill: Fill): bool {
-    return press(context.id(label), Icon {}, false, label, fill)
-}
-
-/* A button in `fill` rather than the theme's. */
-pub button(shape: Icon, label: string, fill: Fill): bool {
-    return press(name(shape, label), shape, true, label, fill)
+    return button(States[Icon].all(shape), label, false)
 }
 
 /* The id of a button: its label's, or its icon's when it has none. */
@@ -69,47 +66,39 @@ name(shape: Icon, label: string): u32 {
     return context.id(label)
 }
 
-/* A button that flips `value` when clicked and rests on the accent while it
- * is set; `value`'s address names it. True when it flipped. */
-pub toggle(shape: Icon, label: string, value: *bool): bool {
-    c: *Context = context.current
-    fill: Fill = c.theme.button
-    if *value { fill = c.theme.chosen() }
-    if !press(context.id(usize(value)), shape, true, label, fill) { return false }
+/* A button in `st` that flips `value` when clicked and is on while it is
+ * set: an icon from `shapes` for its state, then `label`, or the icon alone
+ * when `label` is empty. `value`'s address names it. True when it flipped. */
+pub toggle(shapes: States[Icon], label: string, value: *bool, st: const *Graphical): bool {
+    if !press(context.id(usize(value)), shapes, true, label, st, *value) { return false }
     *value = !*value
     return true
 }
 
-/* A toggle showing its icon alone. */
-pub toggle(shape: Icon, value: *bool): bool { return toggle(shape, "", value) }
+/* The toggle in the theme's toggle style. */
+pub toggle(shapes: States[Icon], label: string, value: *bool): bool {
+    return toggle(shapes, label, value, &context.current.theme.toggle)
+}
 
-/* `label` then a switch that is on while `value` is set; a click on the label
- * or the switch flips `value`, whose address names it. True when it flipped. */
-pub toggle(label: string, value: *bool): bool {
-    c: *Context = context.current
-    t: *Theme = &c.theme
-    box: Rect = context.place(text_width(label, Weight.regular) + t.gap + look.SWITCH_W, context.frame())
-    id: u32 = context.claim(context.id(usize(value)))
-    word: Rect = Rect { x = box.x, y = box.y, w = text_width(label, Weight.regular), h = box.h }
-    pill: Rect = Rect { x = box.x + box.w - look.SWITCH_W, y = box.y, w = look.SWITCH_W, h = box.h }
-    res: Response = context.track(id, word)
-    on_switch: Response = context.track(id, pill)
-    res.hover = res.hover || on_switch.hover
-    res.click = res.click || on_switch.click
-    if res.click { *value = !*value }
-    look.toggle(c.canvas, t, box, *value, label)
-    return res.click
+/* A toggle whose icon is the same in every state, in `st`. */
+pub toggle(shape: Icon, label: string, value: *bool, st: const *Graphical): bool {
+    return toggle(States[Icon].all(shape), label, value, st)
+}
+
+/* A toggle whose icon is the same in every state. */
+pub toggle(shape: Icon, label: string, value: *bool): bool {
+    return toggle(States[Icon].all(shape), label, value)
 }
 
 /* Equal segments showing `items`, the one at `*chosen` raised; a click on a
  * segment sets `*chosen` to it. `chosen`'s address names it. True when
  * `*chosen` changed. */
-pub picker(items: []string, chosen: *usize): bool {
+pub picker(items: []string, chosen: *usize, st: const *Labeled): bool {
     c: *Context = context.current
-    t: *Theme = &c.theme
     assert(items.len > 0)
     w: f32 = 0.0
-    for i: usize in 0 .. items.len { w += text_width(items[i], Weight.regular) + 2.0 * t.padding }
+    p: f32 = st.box.padding.left + st.box.padding.right
+    for i: usize in 0 .. items.len { w += text_width(items[i], st.label) + p }
     box: Rect = context.place(w, context.frame() + 2.0 * look.BUTTON_PAD)
     base: u32 = context.claim(context.id(usize(chosen)))
     each: f32 = box.w / f32(items.len)
@@ -122,50 +111,34 @@ pub picker(items: []string, chosen: *usize): bool {
             changed = true
         }
     }
-    look.picker(c.canvas, t, box, items, *chosen)
+    look.picker(c.canvas, st, box, items, *chosen)
     context.record(Item { hovered = context.reachable() && c.mouse.over(box), rect = box })
     return changed
 }
 
-/* `s` in `color`, a text line high, at `align` in its place: as wide as it,
- * or the area's width when not left. */
-print(s: string, color: Color, align: Align, weight: Weight) {
-    w: f32 = text_width(s, weight)
-    if align != Align.left && !context.across() { w = context.span() }
-    box: Rect = context.place(w, text_size())
-    context.record(Item { rect = box })
-    c: *Context = context.current
-    look.text(c.canvas, &c.theme, box, s, color, align, weight)
+pub picker(items: []string, chosen: *usize): bool {
+    return picker(items, chosen, &context.current.theme.picker)
 }
 
-/* A line of body text. */
-pub text(s: string) { print(s, context.current.theme.text, Align.left, Weight.regular) }
+/* Width the layout allots a character of a field, or a twelfth of a slider:
+ * 0.6 of the theme's text size. */
+cell(): f32 {
+    return 0.6 * context.current.theme.font.size
+}
 
-/* A line of body text at `align`. */
-pub text(s: string, align: Align) { print(s, context.current.theme.text, align, Weight.regular) }
-
-/* A line of secondary text. */
-pub muted(s: string) { print(s, context.current.theme.muted, Align.left, Weight.regular) }
-
-/* A line of secondary text at `align`. */
-pub muted(s: string, align: Align) { print(s, context.current.theme.muted, align, Weight.regular) }
-
-HEADING_SIZE: const f32 = 18.0
-
-/* A section's title: bold, HEADING_SIZE pixels per em, in the heading color,
- * on no background. */
-pub heading(s: string) { heading(s, Align.left) }
-
-/* A section's title at `align`. */
-pub heading(s: string, align: Align) {
-    c: *Context = context.current
-    t: *Theme = &c.theme
-    keep: f32 = text_size()
-    set_text_size(HEADING_SIZE)
-    box: Rect = context.place(text_width(s, Weight.bold), HEADING_SIZE)
+/* A line of `s` in `style`, its size high, placed by its alignment: as wide as
+ * it, or the area's width when not left. */
+pub text(s: string, style: Text) {
+    w: f32 = text_width(s, style)
+    if style.align != Align.left && !context.across() { w = context.span() }
+    box: Rect = context.place(w, style.size)
     context.record(Item { rect = box })
-    look.heading(c.canvas, t, box, s, align)
-    set_text_size(keep)
+    context.current.canvas.text(box, s, style)
+}
+
+/* A line of `s` in the theme's text. */
+pub text(s: string) {
+    text(s, context.current.theme.font)
 }
 
 /* `s` centered on a fill like a resting button's: a value shown, not
@@ -173,120 +146,103 @@ pub heading(s: string, align: Align) {
 pub readout(s: string) {
     c: *Context = context.current
     t: *Theme = &c.theme
-    box: Rect = context.place(text_width(s, Weight.regular) + 2.0 * t.padding, context.frame())
+    box: Rect = context.place(text_width(s, t.button.label) + 2.0 * t.padding, context.frame())
     context.record(Item { rect = box })
     look.readout(c.canvas, t, box, s)
 }
 
-/* A square showing `shape` in `color`, on a gray while `selected`; the
- * pointer changes nothing. Its icon names it. True when clicked. */
-pub swatch(shape: Icon, color: Color, selected: bool): bool {
+/* A square in `st` showing the icon `shapes` has for its state, in `color`,
+ * on while `selected`. Its resting icon names it. True when clicked. */
+pub swatch(shapes: States[Icon], color: Color, selected: bool, st: const *Graphical): bool {
     c: *Context = context.current
     side: f32 = context.frame()
     if !context.across() { side = context.span() }
     box: Rect = context.place(side, side)
-    res: Response = context.track(context.claim(context.id(shape)), box)
-    look.swatch(c.canvas, &c.theme, box, shape, color, selected)
+    res: Response = context.track(context.claim(context.id(shapes.rest)), box)
+    look.swatch(c.canvas, st, box, res, shapes, color, selected)
     return res.click
+}
+
+pub swatch(shape: Icon, color: Color, selected: bool, st: const *Graphical): bool {
+    return swatch(States[Icon].all(shape), color, selected, st)
+}
+pub swatch(shapes: States[Icon], color: Color, selected: bool): bool {
+    return swatch(shapes, color, selected, &context.current.theme.swatch)
+}
+pub swatch(shape: Icon, color: Color, selected: bool): bool {
+    return swatch(States[Icon].all(shape), color, selected)
 }
 
 /* A box ticked while `value` is set, then `label`; a click on the box or the
  * label flips `value`, whose address names it. True when it flipped. */
-pub checkbox(label: string, value: *bool): bool {
+pub checkbox(label: string, value: *bool, st: const *Graphical): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
-    w: f32 = look.CHECK_SIDE + t.gap + text_width(label, Weight.regular)
+    w: f32 = st.graphic.size + st.graphic.gap + text_width(label, st.label)
     box: Rect = context.place(w, context.frame())
     res: Response = context.track(context.claim(context.id(usize(value))), Rect { x = box.x, y = box.y, w = w, h = box.h })
     if res.click { *value = !*value }
-    look.checkbox(c.canvas, t, box, res, *value, label)
+    look.checkbox(c.canvas, st, t.glyphs.check, box, res, *value, label)
     return res.click
+}
+
+pub checkbox(label: string, value: *bool): bool {
+    return checkbox(label, value, &context.current.theme.check)
 }
 
 /* A slider's width across an area, unless `width` sets it. */
 SLIDER_GLYPHS: const f32 = 12.0
 
-/* Places a slider for the value at `address` and tracks it: where the
- * pointer holds its knob's center along its travel, 0 to 1, or -1 while it is
- * not held. */
-grab(address: usize): f32 {
+/* Places a slider for the value at `address`, with room for ticks under it
+ * when `ticks`, and tracks it: where the pointer holds it, 0 to 1, or -1
+ * while it is not held. */
+grab(address: usize, ticks: bool, st: const *Ruled): f32 {
     c: *Context = context.current
-    box: Rect = context.place(SLIDER_GLYPHS * cell() + 2.0 * c.theme.padding, context.frame())
-    res: Response = context.track(context.claim(context.id(address)), box)
-    if !res.held { return -1.0 }
-    travel: f32 = box.w - look.SLIDER_KNOB
-    if travel <= 0.0 { return 0.0 }
-    return math.max[f32](0.0, math.min[f32](1.0, (c.mouse.x - box.x - look.SLIDER_KNOB / 2.0) / travel))
-}
-
-/* A knob dragged along a track to set `value` from `min` to `max`, the track
- * filled up to it; `value`'s address names it. True when it changed. */
-pub slider(value: *f32, min: f32, max: f32): bool {
-    c: *Context = context.current
-    at: f32 = grab(usize(value))
-    before: f32 = *value
-    if at >= 0.0 { *value = min + at * (max - min) }
-    look.slider(c.canvas, &c.theme, context.last().rect, (*value - min) / (max - min), 0)
-    return *value != before
-}
-
-/* A knob that stops at each whole number from `min` to `max`, set to the
- * stop nearest the pointer, with a tick at each stop when they have room;
- * `value`'s address names it. True when it changed. */
-pub slider(value: *int, min: int, max: int): bool {
-    c: *Context = context.current
-    n: int = max - min
-    at: f32 = grab(usize(value))
-    before: int = *value
-    if at >= 0.0 { *value = min + int(at * f32(n) + 0.5) }
-    shown: f32 = 0.0
-    if n > 0 { shown = f32(*value - min) / f32(n) }
-    look.slider(c.canvas, &c.theme, context.last().rect, shown, n + 1)
-    return *value != before
-}
-
-/* Places a block slider as wide as its area and tracks it: where the pointer
- * holds it across its width, 0 to 1, or -1 while it is not held. */
-block(address: usize, ticks: bool): f32 {
-    c: *Context = context.current
-    h: f32 = context.frame() + 2.0 * look.BUTTON_PAD
-    if ticks { h += look.BAR_TICKS }
-    box: Rect = context.place(context.span(), h)
+    h: f32 = context.frame()
+    if ticks { h += st.rule.gap + look.TICK_H }
+    box: Rect = context.place(SLIDER_GLYPHS * cell() + st.box.padding.left + st.box.padding.right, h)
     res: Response = context.track(context.claim(context.id(address)), box)
     if !res.held || box.w <= 0.0 { return -1.0 }
     return math.max[f32](0.0, math.min[f32](1.0, (c.mouse.x - box.x) / box.w))
 }
 
-/* A block filled with the accent up to `value`, from `min` to `max`, with the
- * value, to two places, centered inside; dragging across it sets `value`,
- * whose address names it. True when it changed. */
-pub bar(value: *f32, min: f32, max: f32): bool {
+/* A bar dragged across to set `value` from `min` to `max`, filled up to it
+ * and showing it to two places; `value`'s address names it. True when it
+ * changed. */
+pub slider(value: *f32, min: f32, max: f32, st: const *Ruled): bool {
     c: *Context = context.current
-    at: f32 = block(usize(value), false)
+    at: f32 = grab(usize(value), false, st)
     before: f32 = *value
     if at >= 0.0 { *value = min + at * (max - min) }
-    bytes: [32]u8 = [0 : 32]
-    b: fmt.Buffer = fmt.Buffer.init(bytes[..])
-    b.printf("%.2f", *value)
-    look.bar(c.canvas, &c.theme, context.last().rect, (*value - min) / (max - min), 0, b.text())
+    l: *fmt.Buffer = context.line()
+    l.printf("%.2f", *value)
+    look.slider(c.canvas, st, context.last().rect, (*value - min) / (max - min), 0, l.text())
     return *value != before
 }
 
-/* A block slider that stops at each whole number from `min` to `max`, set to
- * the stop nearest the pointer, with a tick at each stop when they have room. */
-pub bar(value: *int, min: int, max: int): bool {
+/* A bar that stops at each whole number from `min` to `max`, set to the
+ * stop nearest the pointer and showing it, with a tick under each stop when
+ * they have room;
+ * `value`'s address names it. True when it changed. */
+pub slider(value: *int, min: int, max: int, st: const *Ruled): bool {
     c: *Context = context.current
     n: int = max - min
-    at: f32 = block(usize(value), n > 0)
+    at: f32 = grab(usize(value), n > 0, st)
     before: int = *value
     if at >= 0.0 { *value = min + int(at * f32(n) + 0.5) }
     shown: f32 = 0.0
     if n > 0 { shown = f32(*value - min) / f32(n) }
-    bytes: [32]u8 = [0 : 32]
-    b: fmt.Buffer = fmt.Buffer.init(bytes[..])
-    b.printf("%d", *value)
-    look.bar(c.canvas, &c.theme, context.last().rect, shown, n + 1, b.text())
+    l: *fmt.Buffer = context.line()
+    l.printf("%d", *value)
+    look.slider(c.canvas, st, context.last().rect, shown, n + 1, l.text())
     return *value != before
+}
+
+pub slider(value: *f32, min: f32, max: f32): bool {
+    return slider(value, min, max, &context.current.theme.slider)
+}
+pub slider(value: *int, min: int, max: int): bool {
+    return slider(value, min, max, &context.current.theme.slider)
 }
 
 /* Caller storage for a field: the first `len` bytes of `buffer` are in use,
@@ -301,7 +257,9 @@ pub TextInput: struct {
 }
 
 /* The text in use. */
-pub TextInput.text(const self): string { return string(self.buffer[0..self.len]) }
+pub TextInput.text(const self): string {
+    return string(self.buffer[0..self.len])
+}
 
 /* Removes the byte at `i`. */
 TextInput.remove(self, i: usize) {
@@ -323,11 +281,11 @@ TextInput.insert(self, c: u8) {
  * for its owner first; a frame's keys apply before its text. It adds only the
  * printable ASCII bytes in `allow`, or any when `allow` is empty. True when
  * the text changed; Enter sets `last().submit`. */
-pub field(input: *TextInput, allow: string): bool {
+pub field(input: *TextInput, allow: string, st: const *Labeled): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
     assert(input.buffer.len > 0)
-    box: Rect = context.place(2.0 * t.padding + f32(input.buffer.len) * cell(), context.frame())
+    box: Rect = context.place(st.box.padding.left + st.box.padding.right + f32(input.buffer.len) * cell(), context.frame())
     me: u32 = context.claim(context.id(usize(&input.buffer[0])))
     res: Response = context.track(me, box)
     if context.focusing() || res.press {
@@ -374,8 +332,12 @@ pub field(input: *TextInput, allow: string): bool {
             changed = true
         }
     }
-    look.field(c.canvas, t, box, input.text(), input.hint, c.focus == me, input.caret)
+    look.field(c.canvas, st, box, input.text(), input.hint, t.muted, c.focus == me, input.caret)
     return changed
+}
+
+pub field(input: *TextInput, allow: string): bool {
+    return field(input, allow, &context.current.theme.field)
 }
 
 /* Whether `allow` lets `c` in. */
@@ -388,7 +350,14 @@ allowed(allow: string, c: u8): bool {
 }
 
 /* The height of a list of `n` rows, its card's padding included. */
-pub rows(n: usize): f32 { return f32(n) * context.current.theme.row() + 2.0 * look.LIST_PAD }
+pub rows(n: usize): f32 {
+    t: *Theme = &context.current.theme
+    return f32(n) * t.row() + t.list.box.padding.top + t.list.box.padding.bottom
+}
+
+pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
+    return list(items, chosen, rows, scroll, &context.current.theme.list)
+}
 
 /* A list of `items` with a faint line under each, `rows` of them showing from row `*scroll`
  * on, `*chosen` on an accent pill and the row under the pointer on a pill
@@ -396,12 +365,12 @@ pub rows(n: usize): f32 { return f32(n) * context.current.theme.row() + 2.0 * lo
  * on a row sets `*chosen` to it; true when a row was pressed. Under the
  * pointer and longer than `rows`, it consumes the wheel, a row a notch, and
  * draws a thumb at its right edge. `scroll`'s address names it. */
-pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
+pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32, st: const *Labeled): bool {
     c: *Context = context.current
     t: *Theme = &c.theme
     h: f32 = t.row()
-    box: Rect = context.place(context.span(), f32(rows) * h + 2.0 * look.LIST_PAD)
-    inner: Rect = box.inset(Insets.all(look.LIST_PAD))
+    box: Rect = context.place(context.span(), f32(rows) * h + st.box.padding.top + st.box.padding.bottom)
+    inner: Rect = box.inset(st.box.padding)
     base: u32 = context.claim(context.id(usize(scroll)))
     most: f32 = 0.0
     if items.len > rows { most = f32(items.len - rows) }
@@ -419,13 +388,13 @@ pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
             *chosen = i
             pressed = true
         }
-        look.row(c.canvas, t, at, res, i == *chosen, items[i])
+        look.row(c.canvas, st, at, res, i == *chosen, t.padding - st.box.padding.left, items[i])
     }
     if most > 0.0 {
         thumb: f32 = math.max[f32](inner.h * f32(rows) / f32(items.len), THUMB_MIN)
         y: f32 = inner.y + (inner.h - thumb) * *scroll / most
         bounds: Rect = Rect { x = inner.x + inner.w - THUMB_W, y = y, w = THUMB_W, h = thumb }
-        look.thumb(c.canvas, t, bounds)
+        look.thumb(c.canvas, st, bounds)
     }
     context.record(Item { hovered = context.reachable() && c.mouse.over(box), rect = box })
     return pressed

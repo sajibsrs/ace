@@ -3,44 +3,62 @@
 
 import math
 import Renderer, Texture, Vertex, Point, Color from sdl
-import font: "./font.ace"
+import Font from "./face.ace"
+import mono from "./font.ace"
 import glyphs: "./glyphs.ace"
-
-/* The text size, in pixels per em. */
-pub text_size(): f32 { return glyphs.size() }
-
-/* Sets the text size to `px` pixels per em, between 6 and 96. */
-pub set_text_size(px: f32) { glyphs.set_size(px) }
 
 /* Sets the device pixels per window point, as the renderer's scale, so text is
  * rasterized for the display's own pixels; 1 by default. */
-pub set_text_density(d: f32) { glyphs.set_density(d) }
-
-/* Width the layout allots a character of a field, or a twelfth of a slider: 0.6
- * of the text size. */
-pub cell(): f32 { return 0.6 * glyphs.size() }
-
-/* The weights of the font, in the order of `font`'s tables. */
-pub Weight: enum {
-    light,
-    regular,
-    bold,
+pub set_text_density(d: f32) {
+    glyphs.set_density(d)
 }
 
-/* Where weight `w`'s glyph for byte `c` sits in `font`'s tables; a byte outside
- * the printable ASCII range takes a space's place. */
-glyph(w: Weight, c: u8): usize {
-    n: usize = font.LAST - font.FIRST + 1
+/* How a line of text looks: its font (pkg/ui's `mono` while empty), `size` in pixels per em (kept between 6
+ * and 96), its color, `spacing` pixels added after each character, and where
+ * it sits in its box. A weight is a font of its own. */
+pub Text: struct {
+    pub font: Font = Font {},
+    pub size: f32 = 16.0,
+    pub color: Color = Color {},
+    pub spacing: f32 = 0.0,
+    pub align: Align = Align.left,
+}
+
+/* This style in `color`. */
+pub Text.in(const self, color: Color): Text {
+    t: Text = self
+    t.color = color
+    return t
+}
+
+/* This style at `align`. */
+pub Text.at(const self, align: Align): Text {
+    t: Text = self
+    t.align = align
+    return t
+}
+
+/* Where `f`'s glyph for byte `c` sits in its tables; a byte it lacks takes a
+ * space's place. */
+glyph(f: *Font, c: u8): usize {
     k: usize = usize(c)
-    if k < font.FIRST || k > font.LAST { k = font.FIRST }
-    return usize(w) * n + k - font.FIRST
+    if k < f.first || k > f.last { k = f.first }
+    return k - f.first
 }
 
-/* How wide `text` is, in pixels, set at TEXT_SIZE in weight `w`. */
-pub text_width(text: string, w: Weight): f32 {
+/* `style` with its font, `mono` while it has none. */
+pub Text.resolve(const self): Text {
+    t: Text = self
+    if t.font.points.len == 0 { t.font = mono() }
+    return t
+}
+
+/* How wide `text` is, in pixels, in `style`. */
+pub text_width(text: string, style: Text): f32 {
+    style = style.resolve()
     sum: f32 = 0.0
-    for k: usize in 0 .. text.len { sum += font.ADVANCE[glyph(w, text[k])] }
-    return sum * glyphs.size() / font.EM
+    for k: usize in 0 .. text.len { sum += style.font.advance[glyph(&style.font, text[k])] }
+    return sum * glyphs.clamp(style.size) / style.font.em + style.spacing * f32(text.len)
 }
 
 /* A rectangle in window pixels: its top-left corner (x, y), width, and height. */
@@ -74,9 +92,9 @@ pub Rect.inset(const self, by: Insets): Rect {
     return Rect { x = self.x + by.left, y = self.y + by.top, w = self.w - by.left - by.right, h = self.h - by.top - by.bottom }
 }
 
-/* The baseline that centers capital letters in the rectangle. */
-Rect.baseline(const self): f32 {
-    return self.y + (self.h + font.CAP * glyphs.size() / font.EM) / 2.0
+/* The baseline that centers `style`'s capital letters in the rectangle. */
+Rect.baseline(const self, style: Text): f32 {
+    return self.y + (self.h + style.font.cap * glyphs.clamp(style.size) / style.font.em) / 2.0
 }
 
 /* Removes a strip `w` wide from the left and returns it. */
@@ -192,16 +210,22 @@ ROUND_C: [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
 ROUND_S: [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
 
 /* `box` with corners of `radius`, its edge fading out over one pixel. */
-pub Canvas.fill(self, box: Rect, radius: f32, color: Color) { self.fill(box, radius, radius, color) }
+pub Canvas.fill(self, box: Rect, radius: f32, color: Color) {
+    self.fill(box, radius, radius, color)
+}
 
 /* `box` with top corners of `top` and bottom corners of `bottom`, its edge
  * fading out over one pixel. */
-pub Canvas.fill(self, box: Rect, top: f32, bottom: f32, color: Color) { self.fill(box, top, bottom, box.x + box.w, color) }
+pub Canvas.fill(self, box: Rect, top: f32, bottom: f32, color: Color) {
+    self.fill(box, top, bottom, box.x + box.w, color)
+}
 
 /* `box` with corners of `radius`, masked to the part left of `cut`: its
  * shape stays the box's, and the cut edge is straight and fades out over
  * one pixel as the rest does. */
-pub Canvas.fill_until(self, box: Rect, radius: f32, cut: f32, color: Color) { self.fill(box, radius, radius, cut, color) }
+pub Canvas.fill_until(self, box: Rect, radius: f32, cut: f32, color: Color) {
+    self.fill(box, radius, radius, cut, color)
+}
 
 Canvas.fill(self, box: Rect, top: f32, bottom: f32, cut: f32, color: Color) {
     if box.w <= 0.0 || box.h <= 0.0 || cut <= box.x { return }
@@ -296,7 +320,9 @@ Canvas.band(self, a: []Point, ca: Color, b: []Point, cb: Color) {
 }
 
 /* `color` at `a` times its alpha. */
-fade(color: Color, a: f32): Color { return Color { r = color.r, g = color.g, b = color.b, a = color.a * a } }
+fade(color: Color, a: f32): Color {
+    return Color { r = color.r, g = color.g, b = color.b, a = color.a * a }
+}
 
 /* A blur's edge: its cover `d` inside the edge of what casts it, for a blur
  * reaching `blur` each way, the normal distribution's at 0, 1 and 2 standard
@@ -580,32 +606,40 @@ pub Canvas.flush(self) {
 }
 
 /* `rgb` as a vertex color. */
-pub color(rgb: u32): Color { return Color.hex(rgb) }
+pub color(rgb: u32): Color {
+    return Color.hex(rgb)
+}
 
-/* `text` in weight `w` with its baseline at window point (x, y), in this layer.
+/* `text` in `style` with its baseline at window point (x, y), in this layer.
  * The baseline sits on a whole pixel; each glyph sits on a whole pixel plus a
  * quarter-pixel phase, from the atlas, so spacing stays even. */
-Canvas.print(self, x: f32, y: f32, text: string, color: Color, w: Weight) {
+Canvas.print(self, x: f32, y: f32, text: string, style: Text) {
+    f: *Font = &style.font
     glyphs.ensure(self.r)
     if glyphs.texture().handle == null { return }
+    size: f32 = glyphs.clamp(style.size)
+    color: Color = style.color
     d: f32 = glyphs.density()
-    unit: f32 = glyphs.size() / font.EM * d
+    unit: f32 = size / f.em * d
     base: f32 = math.floor(y * d + 0.5)
     pen: f32 = x * d
+    fi: usize = glyphs.face(f)
     for k: usize in 0 .. text.len {
-        g: usize = glyph(w, text[k])
+        g: usize = glyph(f, text[k])
         c: usize = usize(text[k])
-        if c > font.FIRST && c <= font.LAST {
+        if c > f.first && c <= f.last {
             whole: f32 = math.floor(pen)
             phase: usize = usize((pen - whole) * 4.0)
             if phase > 3 { phase = 3 }
-            at: usize = glyphs.lookup(usize(w), c, phase)
+            at: usize = glyphs.MISS
+            if fi != glyphs.FULL { at = glyphs.lookup(fi, f, size, c, phase) }
             if at == glyphs.MISS {
                 /* Full: draw what refers to the old atlas, then start over. */
                 self.flush()
                 self.r.flush()
                 glyphs.reset()
-                at = glyphs.lookup(usize(w), c, phase)
+                fi = glyphs.face(f)
+                at = glyphs.lookup(fi, f, size, c, phase)
             }
             s: glyphs.Slot = glyphs.slot(at)
             if s.w > 0 {
@@ -624,7 +658,7 @@ Canvas.print(self, x: f32, y: f32, text: string, color: Color, w: Weight) {
                     Vertex { position = Point { x = x0, y = y1 }, color = color, tex_coord = Point { x = u0, y = v1 } })
             }
         }
-        pen += font.ADVANCE[g] * unit
+        pen += f.advance[g] * unit + style.spacing * d
     }
 }
 
@@ -635,25 +669,11 @@ pub Align: enum {
     right,
 }
 
-/* `text` aligned in `box`, in this layer. */
-pub Canvas.text(self, box: Rect, text: string, color: Color, align: Align) {
-    self.text(box, text, color, align, Weight.regular)
-}
-
-/* `text` in weight `w` aligned in `box`, in this layer. */
-pub Canvas.text(self, box: Rect, text: string, color: Color, align: Align, w: Weight) {
+/* `text` in `style`, placed in `box` by its alignment, in this layer. */
+pub Canvas.text(self, box: Rect, text: string, style: Text) {
+    style = style.resolve()
     pad: f32 = 0.0
-    if align == Align.center { pad = (box.w - text_width(text, w)) / 2.0 }
-    if align == Align.right { pad = box.w - text_width(text, w) }
-    self.print(box.x + pad, box.baseline(), text, color, w)
-}
-
-/* `text` left-aligned in `box`, `pad` pixels in, in this layer. */
-pub Canvas.text(self, box: Rect, pad: f32, text: string, color: Color) {
-    self.text(box, pad, text, color, Weight.regular)
-}
-
-/* `text` in weight `w` left-aligned in `box`, `pad` pixels in, in this layer. */
-pub Canvas.text(self, box: Rect, pad: f32, text: string, color: Color, w: Weight) {
-    self.print(box.x + pad, box.baseline(), text, color, w)
+    if style.align == Align.center { pad = (box.w - text_width(text, style)) / 2.0 }
+    if style.align == Align.right { pad = box.w - text_width(text, style) }
+    self.print(box.x + pad, box.baseline(style), text, style)
 }

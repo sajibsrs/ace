@@ -12,9 +12,12 @@ pub Toolbar: struct {
     pub g: *app.App = null,
 }
 
-/* A fill resting in `rest` and `bright` under the pointer. */
-lit(rest: u32, bright: u32): ui.Fill {
-    return ui.Fill { rest = ui.color(rest), hover = ui.color(bright), press = ui.color(rest) }
+/* `t`'s button resting in `rest` and `bright` under the pointer, its label
+ * and icon picked to read on `rest`. */
+lit(t: *ui.Theme, rest: u32, bright: u32): ui.Graphical {
+    st: ui.Graphical = t.button
+    st.box.look = t.states(ui.color(rest), ui.color(bright), ui.color(rest))
+    return st
 }
 
 /* Groups of buttons, each after its title, with the diagram's name at the far
@@ -24,39 +27,41 @@ pub Toolbar.draw(self) {
     g: *app.App = self.g
     row: ui.Area = ui.area(g.view.head().inset(ui.Insets { left = bar.EDGE, right = bar.EDGE }), ui.Flow.across)
     defer row.end()
-    ui.muted("File")
+    ui.text("File", style.muted(&g.ui.theme))
     if ui.button(bar.shape(icon.Id.new), "New") { g.clear() }
-    if ui.button(bar.shape(icon.Id.open), "Open", g.mode == app.Mode.open) { g.browse() }
+    if ui.button(ui.Icons.all(bar.shape(icon.Id.open)), "Open", g.mode == app.Mode.open) { g.browse() }
     g.opener = ui.last().rect
     if ui.button(bar.shape(icon.Id.save), "Save") { g.save() }
     if ui.button(bar.shape(icon.Id.save_as), "Save as") { g.ask() }
 
     ui.space(style.GROUP_GAP)
-    ui.muted("Mode")
+    ui.text("Mode", style.muted(&g.ui.theme))
     ui.width("Simulate")
+    edit: ui.Graphical = lit(&g.ui.theme, theme.EDIT, theme.EDIT_LIT)
+    sim: ui.Graphical = lit(&g.ui.theme, theme.SIM, theme.SIM_LIT)
     if g.phase == app.Phase.run {
-        if ui.button(bar.shape(icon.Id.edit), "Edit", lit(theme.EDIT, theme.EDIT_LIT)) { g.switch(app.Phase.edit) }
-    } else if ui.button(bar.shape(icon.Id.run), "Simulate", lit(theme.SIM, theme.SIM_LIT)) {
+        if ui.button(bar.shape(icon.Id.edit), "Edit", &edit) { g.switch(app.Phase.edit) }
+    } else if ui.button(bar.shape(icon.Id.run), "Simulate", &sim) {
         g.switch(app.Phase.run)
     }
 
     ui.space(style.GROUP_GAP)
-    ui.muted("Zoom")
+    ui.text("Zoom", style.muted(&g.ui.theme))
     ui.width(bar.ZOOM_W)
     level: *fmt.Buffer = ui.line()
     level.printf("%.3g", g.view.level())
     ui.readout(level.text())
     /* The zoom buttons zoom about the board area's center. */
     a: ui.Rect = g.view.area()
-    if ui.button(bar.shape(icon.Id.zoom_out)) { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
-    if ui.button(bar.shape(icon.Id.zoom_in)) { g.view.zoom(1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    if ui.button(bar.shape(icon.Id.zoom_out), "") { g.view.zoom(-1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
+    if ui.button(bar.shape(icon.Id.zoom_in), "") { g.view.zoom(1.0, a.x + a.w / 2.0, a.y + a.h / 2.0) }
 
     ui.space(style.GROUP_GAP)
-    ui.muted("Depth")
-    ui.toggle(bar.shape(icon.Id.depth), &g.depth)
+    ui.text("Depth", style.muted(&g.ui.theme))
+    ui.toggle(bar.shape(icon.Id.depth), "", &g.depth)
     ui.space(style.GROUP_GAP)
-    ui.muted("Snap")
-    ui.toggle(bar.shape(icon.Id.snap), &g.snap)
+    ui.text("Snap", style.muted(&g.ui.theme))
+    ui.toggle(bar.shape(icon.Id.snap), "", &g.snap)
 
     title: string = g.name.text()
     if title.len == 0 { title = "untitled" }

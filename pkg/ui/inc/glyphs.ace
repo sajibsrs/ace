@@ -1,32 +1,33 @@
-/* ui glyphs — the text size, and an atlas of glyph coverage bitmaps rasterized
- * from `font`'s outlines at that size, one texture the canvas draws text and
- * shapes from in one geometry call. */
+/* ui glyphs — an atlas of glyph coverage bitmaps rasterized from fonts'
+ * outlines at the sizes drawn, one texture the canvas draws text and shapes
+ * from in one geometry call. */
 
 import math
 import Renderer, Texture from sdl
-import font: "./font.ace"
+import Font from "./face.ace"
 
-/* The text size, in pixels per em, and what it is kept between. */
+/* What a text size is kept between, in pixels per em. */
 SIZE_MIN: const f32 = 6.0
 SIZE_MAX: const f32 = 96.0
-px_size: f32 = 16.0
 /* Device pixels per window point, which glyphs are rasterized for. */
 scale: f32 = 1.0
 
-/* The text size, in pixels per em. */
-pub size(): f32 { return px_size }
-
-/* Sets the text size to `px` pixels per em, kept between SIZE_MIN and SIZE_MAX;
- * glyphs of another size are rasterized when first drawn. */
-pub set_size(px: f32) { px_size = math.min[f32](math.max[f32](px, SIZE_MIN), SIZE_MAX) }
+/* `px` kept between SIZE_MIN and SIZE_MAX. */
+pub clamp(px: f32): f32 {
+    return math.min[f32](math.max[f32](px, SIZE_MIN), SIZE_MAX)
+}
 
 /* Device pixels per layout unit. */
-pub density(): f32 { return scale }
+pub density(): f32 {
+    return scale
+}
 
 /* Sets the device pixels per layout unit, as the renderer's scale: glyphs are
  * rasterized at size * `d` pixels and drawn 1 / `d` the size, so they stay
  * sharp on a high-density display. Kept between 1 and 4. */
-pub set_density(d: f32) { scale = math.min[f32](math.max[f32](d, 1.0), 4.0) }
+pub set_density(d: f32) {
+    scale = math.min[f32](math.max[f32](d, 1.0), 4.0)
+}
 
 /* Coverage added to every edge pixel, a stem darkening: coverage `a` becomes
  * the fraction `a` of a pixel spread over 1 + DARKEN of it. */
@@ -42,6 +43,13 @@ BITMAP_MAX: const usize = 384
 
 /* The slot index that stands for no slot. */
 pub MISS: const usize = SLOTS
+
+/* The fonts with glyphs in the atlas, by the address of their outlines; a
+ * slot's key holds the index. */
+FACES: const usize = 4
+pub FULL: const usize = FACES
+faces: [FACES]usize = [0 : FACES]
+nfaces: usize = 0
 
 /* Where one glyph's bitmap sits in the atlas, and where it lies against the
  * pen: `left` pixels right of the pen's whole pixel, `top` below the baseline
@@ -84,19 +92,24 @@ pub ensure(r: Renderer) {
 }
 
 /* The atlas texture; a null handle before `ensure` succeeds. */
-pub texture(): Texture { return tex }
+pub texture(): Texture {
+    return tex
+}
 
 /* Forgets every glyph. The caller flushes what it drew from the atlas first. */
 pub reset() {
     for k: usize in 0 .. SLOTS { slots[k].key = 0 }
     used = 0
+    nfaces = 0
     shelf_x = 4
     shelf_y = 0
     shelf_h = 4
 }
 
 /* Slot `k`. */
-pub slot(k: usize): Slot { return slots[k] }
+pub slot(k: usize): Slot {
+    return slots[k]
+}
 
 /* The slot where `key` is, or the empty one it belongs in. */
 probe(key: u32): usize {
@@ -105,16 +118,30 @@ probe(key: u32): usize {
     return k
 }
 
-/* The slot of weight `wi`'s glyph for `ch`, `phase` quarter pixels right of
- * its whole pixel, at the text size; rasterized if new. MISS when the atlas is
- * full, after which the caller flushes, resets, and asks again. */
-pub lookup(wi: usize, ch: usize, phase: usize): usize {
-    qsize: u32 = u32(px_size * scale * 4.0 + 0.5)
-    key: u32 = ((qsize * 4 + u32(phase)) * 128 + u32(ch)) * 4 + u32(wi) + 1
+/* The index `f` has in the atlas, given one if new; FULL when FACES fonts
+ * already have one, after which the caller flushes, resets, and asks again. */
+pub face(f: *Font): usize {
+    at: usize = usize(&f.points[0])
+    for i: usize in 0 .. nfaces {
+        if faces[i] == at { return i }
+    }
+    if nfaces == FACES { return FULL }
+    faces[nfaces] = at
+    nfaces += 1
+    return nfaces - 1
+}
+
+/* The slot of `f`'s glyph for `ch`, `phase` quarter pixels right of its whole
+ * pixel, at `size` pixels per em; `fi` is `face(f)`. Rasterized if new. MISS
+ * when the atlas is full, after which the caller flushes, resets, and asks
+ * again. */
+pub lookup(fi: usize, f: *Font, size: f32, ch: usize, phase: usize): usize {
+    qsize: u32 = u32(size * scale * 4.0 + 0.5)
+    key: u32 = ((qsize * 4 + u32(phase)) * 128 + u32(ch)) * 4 + u32(fi) + 1
     k: usize = probe(key)
     if slots[k].key == key { return k }
     if used >= LIMIT { return MISS }
-    return make(k, key, wi, ch, f32(phase) / 4.0)
+    return make(k, key, f, size, ch, f32(phase) / 4.0)
 }
 
 /* |x|; math.abs does not take a float against the literal 0. */
@@ -181,23 +208,22 @@ line(ax: f32, ay: f32, bx: f32, by: f32, stride: usize, rows: usize) {
     }
 }
 
-/* Rasterizes weight `wi`'s glyph for `ch` into slot `k` under `key`. The glyph
- * is scaled to the text size, its y scaled about the baseline so the x-height
- * fills whole rows, and shifted `phase` pixels right. */
-make(k: usize, key: u32, wi: usize, ch: usize, phase: f32): usize {
-    data: []f32 = font.POINTS[0..]
-    n: usize = font.LAST - font.FIRST + 1
-    g: usize = wi * n + (ch - font.FIRST)
-    sx: f32 = px_size * scale / font.EM
+/* Rasterizes `f`'s glyph for `ch` into slot `k` under `key`. The glyph is
+ * scaled to `size`, its y scaled about the baseline so the x-height fills
+ * whole rows, and shifted `phase` pixels right. */
+make(k: usize, key: u32, f: *Font, size: f32, ch: usize, phase: f32): usize {
+    data: []f32 = f.points
+    g: usize = ch - f.first
+    sx: f32 = size * scale / f.em
     sy: f32 = sx
-    xh: f32 = font.XHEIGHT[wi] * sx
+    xh: f32 = f.xheight * sx
     if xh >= 1.0 { sy = sx * math.floor(xh + 0.5) / xh }
     /* The outline's extent. */
     lo_x: f32 = 100000.0
     lo_y: f32 = 100000.0
     hi_x: f32 = -100000.0
     hi_y: f32 = -100000.0
-    i: usize = usize(font.START[g])
+    i: usize = usize(f.start[g])
     for data[i] != -9.0 {
         m: usize = usize(data[i])
         i += 1
@@ -236,7 +262,7 @@ make(k: usize, key: u32, wi: usize, ch: usize, phase: f32): usize {
             for e: usize in 0 .. stride * usize(h) { acc[e] = 0.0 }
             ox: f32 = f32(left)
             oy: f32 = f32(top)
-            i = usize(font.START[g])
+            i = usize(f.start[g])
             for data[i] != -9.0 {
                 m: usize = usize(data[i])
                 i += 1

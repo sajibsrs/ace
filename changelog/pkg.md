@@ -5,6 +5,10 @@
   button's label is picked from its resting fill so hover keeps it, a focused
   field has a 1 px accent outline, `list` rows have a faint line under each,
   and radii follow iOS (controls 8, checkbox 6, card 10, popup 14).
+  `Theme` is now tokens plus a style per component (`Labeled`, `Graphical`,
+  `Ruled`, from `Box` with a `States[Look]`) that `derive()` fills, hover and
+  press stepping 10/255 from `control`; each control takes an optional style
+  (`&t.primary`), and `Fill`, `lift`/`drop`/`focus` and the flat colors go.
 - `pkg/ui` popup titles sit on a darker `Theme.header` strip in white
   `Theme.on_header` bold text.
 - `pkg/ui` `Fill` gains `ink`, the label and icon color a style sets (when it
@@ -162,3 +166,13 @@
   ticked under it for `int`s, its fill masked to the block's shape by
   `Canvas.fill_until`; `TextInput.hint` placeholders; a glow round a focused
   field; and darker button fills. The gallery adds a menu bar with a submenu.
+- `pkg/ui` is a skeleton: plain opaque light/dark palettes in Lilex SemiBold
+  (`ui.mono()`), `Text` styles carrying a `Font`, and `Theme` effects as data
+  (`surface`, `border_w`, `panel_radius`, `lift`/`drop`/`focus` `Shadow`s).
+  The pill switch and the knob slider moved to `demo/ui-fancy` (was ui-gallery), whose
+  `fancy.ace` restores the old look from the public API; `bake.py` bakes any font.
+  `ui.slider` is a filled bar showing its value, ticked under for `int`s, and
+  `ui.popup(box, title)` adds a `header` strip in `title_text`, and
+  `ui.tooltip(text)` labels the last control after a half-second rest, in
+  `tip` and `tip_text`. `demo/ui-default` shows the
+  default look, Cmd+D toggling light and dark.

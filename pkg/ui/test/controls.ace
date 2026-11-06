@@ -6,12 +6,19 @@ import Keycode from sdl
 canvas: ui.Canvas
 
 /* Controls and list rows 26 high, an 18 icon. */
-THEME: const ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0, icon = 18.0 }
+/* The theme's sizes, derived, with icons 18 on buttons and toggles. */
+theme(): ui.Theme {
+    th: ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0 }
+    th.derive()
+    th.button.graphic.size = 18.0
+    th.toggle.graphic.size = 18.0
+    return th
+}
 
 /* Begins a frame of `c` and opens a column 110 wide at the origin. */
 open(c: *ui.Context): ui.Area {
     c.canvas = &canvas
-    c.theme = THEME
+    c.theme = theme()
     c.begin()
     return ui.area(ui.Rect { w = 110.0, h = 200.0 })
 }
@@ -44,8 +51,8 @@ drag(c: *ui.Context, x: f32): ui.Area {
     return open(c)
 }
 
-/* A whole-number slider takes the stop nearest the pointer along the knob's
- * travel, 10 to 100 in the column; a fraction slider follows the pointer. */
+/* A whole-number slider takes the stop nearest the pointer across the
+ * bar, 0 to 110 in the column; a fraction slider follows the pointer. */
 pub slider(t: *test.T) {
     c: ui.Context = ui.Context {}
     stop: int = 3
@@ -71,8 +78,8 @@ pub slider(t: *test.T) {
     t.equal(stop, 0, @file, @line)
     close(&c, column)
 
-    /* Stops at 10, 55 and 100: 34 is nearer the middle one, though in the
-     * first third of the travel. */
+    /* Stops at 0, 55 and 110: 34 is nearer the middle one, though in the
+     * first third of the bar. */
     three: int = 0
     column = drag(&c, 34.0)
     ui.slider(&three, 0, 2)
@@ -83,27 +90,6 @@ pub slider(t: *test.T) {
     column = drag(&c, 55.0)
     t.equal(ui.slider(&level, 0.0, 10.0), true, @file, @line)
     t.equal(level == 5.0, true, @file, @line)
-    close(&c, column)
-}
-
-/* A click on a switch's label or the switch flips its value; one in the space
- * between them does not. */
-pub switch_toggle(t: *test.T) {
-    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
-    on: bool = false
-    column: ui.Area = open(&c)
-    t.equal(ui.toggle("Bold", &on), true, @file, @line)
-    t.equal(on, true, @file, @line)
-    close(&c, column)
-    c.mouse = ui.Mouse { x = 100.0, y = 5.0, pressed = true, released = true }
-    column = open(&c)
-    t.equal(ui.toggle("Bold", &on), true, @file, @line)
-    t.equal(on, false, @file, @line)
-    close(&c, column)
-    c.mouse = ui.Mouse { x = 60.0, y = 5.0, pressed = true, released = true }
-    column = open(&c)
-    t.equal(ui.toggle("Bold", &on), false, @file, @line)
-    t.equal(on, false, @file, @line)
     close(&c, column)
 }
 

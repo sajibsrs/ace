@@ -1,0 +1,588 @@
+/* ui-default: every pkg/ui control, layout call and canvas primitive in one
+ * window, in pkg/ui's own default look: ui.Theme.init unchanged and ui.mono()
+ * text throughout (demo/ui-fancy shows a styled look built on the same API).
+ *
+ * Build and run from this directory (Homebrew SDL3 on Apple arm64):
+ *   ace pkg run
+ *
+ * The left column has the controls, the middle one the layouts, and the right
+ * one a menu bar, a field, and the canvas. The wheel scrolls the whole page when no list takes it.
+ * "Popup" opens a modal area; Escape closes it. Cmd+D switches light and dark;
+ * Cmd+Q quits.
+ */
+import fmt
+import math
+import (
+    init, quit, error, Window, Renderer, Event, EventType, InitFlags, WindowFlags, MouseButton, Keycode, Point, Color,
+    KeyboardEvent, MouseButtonEvent, MouseMotionEvent, MouseWheelEvent, BLEND_ALPHA,
+) from sdl
+import ui
+
+/* Hand-written icons on the 24 x 24 grid: -1 an open line, -3 a closed one,
+ * each tag followed by its point count and points; -9 ends the icon. */
+POINTS: [55]f32 = [
+    /* plus, at 0 */
+    -1.0, 2.0, 12.0, 5.0, 12.0, 19.0,
+    -1.0, 2.0, 5.0, 12.0, 19.0, 12.0,
+    -9.0,
+    /* check, at 13 */
+    -1.0, 3.0, 5.0, 12.5, 10.0, 17.5, 19.0, 6.5,
+    -9.0,
+    /* square, at 22 */
+    -3.0, 4.0, 5.0, 5.0, 19.0, 5.0, 19.0, 19.0, 5.0, 19.0,
+    -9.0,
+    /* triangle, at 33 */
+    -3.0, 3.0, 12.0, 4.0, 20.0, 19.0, 4.0, 19.0,
+    -9.0,
+    /* cross, at 42 */
+    -1.0, 2.0, 6.0, 6.0, 18.0, 18.0,
+    -1.0, 2.0, 18.0, 6.0, 6.0, 18.0,
+    -9.0,
+]
+
+icon(start: usize): ui.Icon {
+    return ui.Icon { points = POINTS[0..], start = start }
+}
+
+PLUS: const usize = 0
+CHECK: const usize = 13
+SQUARE: const usize = 22
+TRIANGLE: const usize = 33
+CROSS: const usize = 42
+
+SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
+/* The swatches: ten icons, each in its own color. */
+GROUP: [10]u32 = [0xda4b4b, 0xe8833a, 0xeac22d, 0x8cc63f, 0x41bb77, 0x2fb3b3, 0x3f86d6, 0x5b6ee1, 0xa685fd, 0xd96aa7]
+TOOLS: [3]string = ["Box", "Wedge", "Tick"]
+
+/* The menu's items, "" for a divider; the one at SORT_BY opens SORTS beside
+ * it, and the one at DELETE is destructive. */
+ITEMS: [6]string = ["New File", "Duplicate", "", "Sort By", "", "Delete"]
+SORT_BY: const usize = 3
+DELETE: const usize = 5
+SORTS: [3]string = ["Name", "Date Modified", "Size"]
+
+/* A menu's width, its inset around the rows, a divider's height, and the
+ * room left of a row's text for a checkmark. */
+MENU_W: const f32 = 180.0
+MENU_PAD: const f32 = 5.0
+
+/* How far one wheel notch scrolls the page, in points. */
+NOTCH: const f32 = 48.0
+
+/* The empty space between the three columns, the panel's distance from the
+ * window's edge, and the columns' inset from its own. */
+COLUMN_GAP: const f32 = 80.0
+PANEL_EDGE: const f32 = 12.0
+PANEL_PAD: const f32 = 12.0
+
+/* The empty space between one section and the next. */
+SECTION_GAP: const f32 = 40.0
+
+/* The empty space between a heading and what follows it, counting the
+ * layout's own gap. */
+HEADING_GAP: const f32 = 20.0
+
+/* A heading's style: the theme's text, 18 high. */
+heading(t: *ui.Theme): ui.Text {
+    h: ui.Text = t.font
+    h.size = 18.0
+    return h
+}
+
+/* The theme's text in its muted color. */
+muted(t: *ui.Theme): ui.Text {
+    return t.font.in(t.muted)
+}
+
+/* Starts a section: the gap after the one before, then its `title`. */
+section(t: *ui.Theme, title: string) {
+    section(t, title, ui.Align.left)
+}
+
+section(t: *ui.Theme, title: string, align: ui.Align) {
+    ui.space(SECTION_GAP - t.gap)
+    ui.text(title, heading(t).at(align))
+    ui.space(HEADING_GAP - t.gap)
+}
+
+/* `s` in `style`, `pad` in from `box`'s left. */
+padded(c: *ui.Canvas, box: ui.Rect, pad: f32, s: string, style: ui.Text) {
+    c.text(box.inset(ui.Insets { left = pad }), s, style.at(ui.Align.left))
+}
+
+/* `t`'s button filled in three solid colors, its label and icon in `ink`. */
+tone(t: *ui.Theme, rest: u32, hover: u32, press: u32, ink: Color): ui.Graphical {
+    st: ui.Graphical = t.button
+    st.box.look = t.states(ui.color(rest), ui.color(hover), ui.color(press), ink)
+    return st
+}
+
+/* `t`'s button resting clear, filled as a button rests under the pointer and
+ * as it hovers held; outlined in `edge` when it is not clear. */
+ghost(t: *ui.Theme, edge: Color): ui.Graphical {
+    st: ui.Graphical = t.button
+    clear: ui.Look = ui.Look { text = t.text, tint = t.text, border = edge }
+    st.box.border = 1.0
+    st.box.look = ui.Looks.all(clear)
+    st.box.look.hover.fill = t.button.box.look.rest.fill
+    st.box.look.press.fill = t.button.box.look.hover.fill
+    st.box.look.off = clear.fade(0.4)
+    return st
+}
+
+/* Whether `t` is the light theme. */
+light(t: *ui.Theme): bool {
+    return t.window.r > 0.5
+}
+
+/* Everything the controls edit. */
+State: struct {
+    clicks: int = 0,
+    grid: bool = false,
+    snap: bool = true,
+    level: f32 = 0.4,
+    stop: int = 3,
+    color: usize = 1,
+    page: f32 = 0.0,
+    content: f32 = 0.0,
+    bytes: [16]u8 = [0 : 16],
+    name: ui.TextInput = ui.TextInput {},
+    submitted: int = 0,
+    tool: usize = 0,
+    popup: bool = false,
+    /* The menu is open, under the button at `menu_at`, with its submenu
+     * open when `sub`; `action` is the last item chosen. */
+    menu: bool = false,
+    sub: bool = false,
+    menu_at: ui.Rect = ui.Rect {},
+    action: string = "none",
+    sort: usize = 0,
+}
+
+/* A chevron pointing right in `box`: the theme's chevron points down. */
+chevron(c: *ui.Canvas, box: ui.Rect, color: Color) {
+    x: f32 = box.x + box.w / 2.0
+    y: f32 = box.y + box.h / 2.0
+    pts: [3]Point = [Point { x = x - 1.5, y = y - 3.0 }, Point { x = x + 1.5, y = y }, Point { x = x - 1.5, y = y + 3.0 }]
+    c.stroke(pts[0..], false, 1.5, color)
+}
+
+/* A menu row at `at` showing `label` in the theme's menu item style, on
+ * while `hot`, in `ink` at rest, with the theme's check when `checked`. */
+menu_row(c: *ui.Canvas, t: *ui.Theme, at: ui.Rect, label: string, ink: Color, hot: bool, checked: bool) {
+    st: *ui.Ruled = &t.menu
+    l: ui.Look = st.box.look.rest
+    l.text = ink
+    l.tint = ink
+    if hot { l = st.box.on.rest }
+    if l.fill.a > 0.0 { c.fill(at, st.box.radius, l.fill) }
+    if checked { c.icon(t.glyphs.check, ui.Rect { x = at.x + 5.0, y = at.y + at.h / 2.0 - 7.0, w = 14.0, h = 14.0 }, l.tint) }
+    padded(c, at, st.box.padding.left, label, st.label.in(l.text))
+}
+
+/* A menu's panel `n` rows and `dividers` dividers high, at `x`, `y`. */
+menu_frame(t: *ui.Theme, x: f32, y: f32, n: usize, dividers: usize): ui.Rect {
+    return ui.Rect { x = x, y = y, w = MENU_W, h = 2.0 * MENU_PAD + f32(n) * t.row() + f32(dividers) * t.menu.rule.room }
+}
+
+/* The open menu, over everything: hovering "Sort By" opens its submenu
+ * beside it; a click on an item, outside, or Escape closes both. */
+menu(s: *State, c: *ui.Canvas, t: *ui.Theme, m: ui.Mouse) {
+    h: f32 = t.row()
+    frame: ui.Rect = menu_frame(t, s.menu_at.x, s.menu_at.y + s.menu_at.h + 4.0, 4, 2)
+    pop: ui.Area = ui.popup(frame)
+    y: f32 = frame.y + MENU_PAD
+    branch: f32 = 0.0
+    for i: usize in 0 .. ITEMS.len {
+        if ITEMS[i].len == 0 {
+            rule: ui.Rule = t.menu.rule
+            c.fill(ui.Rect { x = frame.x + rule.gap, y = y + rule.room / 2.0, w = frame.w - 2.0 * rule.gap, h = rule.w }, t.border)
+            y += rule.room
+        } else {
+            at: ui.Rect = ui.Rect { x = frame.x + MENU_PAD, y = y, w = frame.w - 2.0 * MENU_PAD, h = h }
+            res: ui.Response = ui.track(ui.id(ITEMS[i]), at)
+            if res.hover { s.sub = i == SORT_BY }
+            hot: bool = res.hover || (i == SORT_BY && s.sub)
+            ink: Color = t.text
+            if i == DELETE { ink = ui.color(0xdc392e) }
+            menu_row(c, t, at, ITEMS[i], ink, hot, false)
+            if i == SORT_BY {
+                branch = y
+                if hot { ink = t.menu.box.on.rest.tint }
+                chevron(c, ui.Rect { x = at.x + at.w - 20.0, y = at.y, w = 16.0, h = h }, ink)
+            } else if res.click {
+                s.action = ITEMS[i]
+                s.menu = false
+            }
+            y += h
+        }
+    }
+    pop.end()
+    over: bool = m.over(frame)
+    if s.sub {
+        side: ui.Rect = menu_frame(t, frame.x + frame.w + 2.0, branch - MENU_PAD, SORTS.len, 0)
+        sub: ui.Area = ui.popup(side)
+        for i: usize in 0 .. SORTS.len {
+            at: ui.Rect = ui.Rect { x = side.x + MENU_PAD, y = side.y + MENU_PAD + f32(i) * h, w = side.w - 2.0 * MENU_PAD, h = h }
+            res: ui.Response = ui.track(ui.id(SORTS[i]), at)
+            menu_row(c, t, at, SORTS[i], t.text, res.hover, s.sort == i)
+            if res.click {
+                s.sort = i
+                s.menu = false
+            }
+        }
+        sub.end()
+        over = over || m.over(side)
+    }
+    if (m.pressed && !over) || ui.key(Keycode.escape) { s.menu = false }
+    if !s.menu { s.sub = false }
+}
+
+/* The left column: every control. Returns the bottom of its last one. */
+controls(s: *State, x: *ui.Context, box: ui.Rect): f32 {
+    t: *ui.Theme = &x.theme
+    col: ui.Area = ui.area(box)
+    ui.text("Buttons", heading(t))
+    ui.space(HEADING_GAP - t.gap)
+    ui.row(3)
+    if ui.button("Click") { s.clicks += 1 }
+    if ui.button(icon(PLUS), "Add") { s.clicks += 1 }
+    if ui.button(icon(CROSS), "") { s.clicks = 0 }
+    l: *fmt.Buffer = ui.line()
+    l.printf("clicked %d times", s.clicks)
+    ui.text(l.text(), muted(t))
+
+    section(t, "Picker")
+    ui.picker(TOOLS[0..], &s.tool)
+
+    section(t, "Button Sizes")
+    ui.row(4)
+    ui.height(20.0)
+    ui.button("Mini")
+    ui.height(26.0)
+    ui.button("Default")
+    ui.height(36.0)
+    ui.button("Large")
+    ui.height(48.0)
+    ui.button("Huge")
+    ui.height(36.0)
+    ui.button(icon(PLUS), "Add")
+    ui.height(36.0)
+    ui.button(icon(CHECK), "")
+    ui.height(48.0)
+    ui.width(160.0)
+    ui.button(icon(PLUS), "Wide and tall")
+
+    section(t, "Button Styles")
+    ui.grid(2, 10)
+    ui.button("Secondary")
+    ui.button(icon(CHECK), "Primary", &t.primary)
+    /* One family: the same saturation and weight in every hue, white labels in the light theme, dark ones in the dark. */
+    ink: Color = Color { r = 0.1, g = 0.1, b = 0.1 }
+    danger: ui.Graphical = tone(t, 0xee5a50, 0xf56e65, 0xe04b41, ink)
+    success: ui.Graphical = tone(t, 0x3bb35e, 0x4cc46f, 0x32a053, ink)
+    warning: ui.Graphical = tone(t, 0xe5a02b, 0xf0b040, 0xcf8d1f, ink)
+    info: ui.Graphical = tone(t, 0x4aa3d8, 0x62b4e4, 0x3b92c7, ink)
+    if light(t) {
+        ink = Color { r = 1.0, g = 1.0, b = 1.0 }
+        danger = tone(t, 0xdc392e, 0xe44e44, 0xc72e24, ink)
+        success = tone(t, 0x2f9e4f, 0x3bb05d, 0x278a42, ink)
+        warning = tone(t, 0xe08a1e, 0xea9a36, 0xc97a14, ink)
+        info = tone(t, 0x2f86c9, 0x4398dc, 0x2873b0, ink)
+    }
+    ui.button(icon(CROSS), "Danger", &danger)
+    ui.button(icon(CHECK), "Success", &success)
+    ui.button(icon(TRIANGLE), "Warning", &warning)
+    ui.button(icon(SQUARE), "Info", &info)
+    outline: ui.Graphical = ghost(t, t.accent)
+    ui.button("Outline", &outline)
+    plain: ui.Graphical = ghost(t, Color { a = 0.0 })
+    ui.button("Ghost", &plain)
+    ui.disable()
+    ui.button("Disabled")
+    ui.disable()
+    ui.button(icon(CHECK), "Disabled", &t.primary)
+
+    section(t, "Toggles")
+    ui.toggle(icon(SQUARE), "", &s.grid)
+    ui.checkbox("Snap to grid", &s.snap)
+
+    section(t, "Sliders")
+    ui.slider(&s.level, 0.0, 1.0)
+    ui.slider(&s.stop, 0, 9)
+    l = ui.line()
+    l.printf("level %d%%, %d Hz", int(s.level * 100.0), s.stop + 1)
+    ui.text(l.text(), muted(t))
+
+    section(t, "Swatches")
+    ui.row(GROUP.len)
+    shapes: [5]usize = [PLUS, CHECK, SQUARE, TRIANGLE, CROSS]
+    for i: usize in 0 .. GROUP.len {
+        ui.push_id(u32(i))
+        if ui.swatch(icon(shapes[i % 5]), ui.color(GROUP[i]), s.color == i) { s.color = i }
+        ui.pop_id()
+    }
+    bottom: f32 = ui.last().rect.y + ui.last().rect.h
+    col.end()
+    return bottom
+}
+
+/* The menu bar: plain items, then one that opens the menu. */
+BAR: [3]string = ["File", "Edit", "View"]
+
+/* The right column's top: a menu bar and a field. Returns the bottom of its
+ * last control. */
+inputs(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
+    col: ui.Area = ui.area(box)
+    ui.text("Menu", heading(t))
+    ui.space(HEADING_GAP - t.gap)
+    clear: ui.Graphical = ghost(t, Color { a = 0.0 })
+    bar: ui.Rect = ui.place(box.w, 34.0)
+    across: ui.Area = ui.area(bar, ui.Flow.across)
+    for i: usize in 0 .. BAR.len {
+        if ui.button(BAR[i], &clear) { s.action = BAR[i] }
+    }
+    ui.width(100.0)
+    if ui.button("Actions", &clear) { s.menu = true }
+    s.menu_at = ui.last().rect
+    c.icon(t.glyphs.chevron, ui.Rect { x = s.menu_at.x + s.menu_at.w - 22.0, y = s.menu_at.y, w = 16.0, h = s.menu_at.h }, t.text)
+    across.end()
+    l: *fmt.Buffer = ui.line()
+    l.printf("chose %s, sorted by %s", s.action, SORTS[s.sort])
+    ui.text(l.text(), muted(t))
+
+    section(t, "Field")
+    ui.field(&s.name, "")
+    if ui.last().submit { s.submitted += 1 }
+    l = ui.line()
+    l.printf("\"%s\", Enter pressed %d times", s.name.text(), s.submitted)
+    ui.text(l.text(), muted(t))
+    bottom: f32 = ui.last().rect.y + ui.last().rect.h
+    col.end()
+    return bottom
+}
+
+/* The middle column: rows, grids, widths, spacing, across areas and popups.
+ * Returns the bottom of its last control. */
+layouts(s: *State, c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
+    col: ui.Area = ui.area(box)
+    ui.text("Row (n)", heading(t))
+    ui.space(HEADING_GAP - t.gap)
+    ui.row(4)
+    ui.button("A")
+    ui.button("B")
+    ui.button("C")
+    ui.button("D")
+    section(t, "Grid (3, 7)")
+    ui.grid(3, 7)
+    for i: usize in 0 .. 7 {
+        l: *fmt.Buffer = ui.line()
+        l.printf("%d", int(i + 1))
+        ui.button(l.text())
+    }
+    section(t, "Width, Space, Fill")
+    bar: ui.Rect = ui.place(box.w, 34.0)
+    across: ui.Area = ui.area(bar, ui.Flow.across)
+    ui.button("Left")
+    ui.space(12.0)
+    ui.width(80.0)
+    ui.button("80 wide")
+    ui.fill()
+    ui.width("Widest")
+    ui.button("Right")
+    across.end()
+    section(t, "Place & Track")
+    spot: ui.Rect = ui.place(box.w, 40.0)
+    res: ui.Response = ui.track(ui.id("spot"), spot)
+    c.fill(spot, t.radius, t.button.box.look.pick(res, false).fill)
+    c.text(spot, "hover or hold me", t.font.at(ui.Align.center))
+    section(t, "Text Alignment")
+    ui.text("left")
+    ui.text("center", t.font.at(ui.Align.center))
+    ui.text("right", muted(t).at(ui.Align.right))
+    section(t, "Centered Heading", ui.Align.center)
+    section(t, "Tooltip")
+    ui.row(3)
+    ui.button("Hover me")
+    ui.tooltip("Shown after half a second")
+    ui.button(icon(PLUS), "")
+    ui.tooltip("Add")
+    ui.button(icon(CROSS), "")
+    ui.tooltip("Remove")
+    section(t, "Popup")
+    if ui.button("Popup") { s.popup = true }
+    bottom: f32 = ui.last().rect.y + ui.last().rect.h
+    col.end()
+    return bottom
+}
+
+/* The right column: canvas primitives drawn straight, outside any area.
+ * Returns the bottom of the last line. */
+drawing(c: *ui.Canvas, t: *ui.Theme, box: ui.Rect): f32 {
+    body: ui.Text = t.font
+    accent: Color = ui.color(SWATCHES[3])
+    c.text(ui.Rect { x = box.x, y = box.y, w = box.w, h = 18.0 }, "Canvas", heading(t))
+    top: f32 = box.y + 38.0
+    row: ui.Rect = ui.Rect { x = box.x, y = top, w = 60.0, h = 60.0 }
+    c.fill(row, ui.color(SWATCHES[0]))
+    row.x += 72.0
+    c.fill(row, 14.0, ui.color(SWATCHES[2]))
+    row.x += 72.0
+    c.outline(row, 2.0, accent)
+    row.x += 72.0
+    c.outline_dashed(row, 2.0, ui.color(SWATCHES[1]), box)
+    y: f32 = top + 78.0
+    c.triangle(Point { x = box.x + 30.0, y = y }, Point { x = box.x + 60.0, y = y + 52.0 }, Point { x = box.x, y = y + 52.0 }, ui.color(SWATCHES[4]))
+    wave: [7]Point
+    for i: usize in 0 .. 7 {
+        dy: f32 = 0.0
+        if i % 2 == 1 { dy = 40.0 }
+        wave[i] = Point { x = box.x + 84.0 + f32(i) * 30.0, y = y + 6.0 + dy }
+    }
+    c.stroke(wave[0..], false, 3.0, accent)
+    y += 80.0
+    shapes: [5]usize = [PLUS, CHECK, SQUARE, TRIANGLE, CROSS]
+    for i: usize in 0 .. 5 {
+        c.icon(icon(shapes[i]), ui.Rect { x = box.x + f32(i) * 56.0, y = y, w = 48.0, h = 48.0 }, ui.color(SWATCHES[i]))
+    }
+    y += 70.0
+    line: ui.Rect = ui.Rect { x = box.x, y = y, w = box.w, h = 24.0 }
+    c.fill(line, t.control)
+    c.text(line, "left", body.at(ui.Align.left))
+    c.text(line, "center", body.at(ui.Align.center))
+    c.text(line, "right", body.at(ui.Align.right))
+    line.y += 32.0
+    padded(c, line, 12.0, "padded 12 from the left", body)
+    /* The same line in each swatch color and in each weight. */
+    names: [5]string = ["Red text, 0123", "Yellow text, 0123", "Green text, 0123", "Blue text, 0123", "Violet text, 0123"]
+    for i: usize in 0 .. 5 {
+        line.y += 26.0
+        padded(c, line, 12.0, names[i], body.in(ui.color(SWATCHES[i])))
+    }
+    /* The package's one font, then letter spacing. */
+    line.y += 32.0
+    mono: ui.Text = body.at(ui.Align.right)
+    mono.font = ui.mono()
+    padded(c, line, 12.0, "ui.mono()", body)
+    c.text(line, "Lilex SemiBold", mono)
+    line.y += 26.0
+    spaced: ui.Text = body
+    spaced.spacing = 3.0
+    padded(c, line, 12.0, "spacing 3", spaced)
+    line.y += 26.0
+    return line.y
+}
+
+fail(context: string): int {
+    fmt.printf("%s: %s\n", context, error())
+    return 1
+}
+
+main(): int {
+    if !init(InitFlags { video = 1 }) { return fail("SDL_Init") }
+    defer quit()
+    window: Window = Window.new("ui default", 1180, 900, WindowFlags { resizable = 1, high_pixel_density = 1 })
+    defer window.wipe()
+    if !window.ok() { return fail("SDL_CreateWindow") }
+    window.start_text_input()
+    defer window.stop_text_input()
+    renderer: Renderer = Renderer.new(window)
+    defer renderer.wipe()
+    if !renderer.ok() { return fail("SDL_CreateRenderer") }
+    renderer.vsync(1)
+    renderer.blend(BLEND_ALPHA)
+
+    scheme: ui.Scheme = ui.Scheme.light
+    canvas: ui.Canvas = ui.Canvas.init(renderer)
+    ctx: ui.Context = ui.Context { canvas = &canvas, theme = ui.Theme.init(scheme) }
+    s: State = State {}
+    s.name = ui.TextInput { buffer = s.bytes[0..], hint = "Hello, Ace" }
+    w: f32 = 1180.0
+    h: f32 = 900.0
+    running: bool = true
+    for running {
+        rw: i32, rh: i32, sized: bool = renderer.size()
+        /* Drawing and mouse coordinates are window points; the scale maps them to the display's pixels. */
+        d: f32 = window.density()
+        if d < 1.0 { d = 1.0 }
+        renderer.scale(d, d)
+        ui.set_text_density(d)
+        if sized {
+            w = f32(rw) / d
+            h = f32(rh) / d
+        }
+        event: Event
+        for event.poll() {
+            if event.type == EventType.quit || event.type == EventType.window_close_requested { running = false }
+            key: KeyboardEvent, is_key: bool = event.key()
+            if is_key && key.down { ctx.keyboard.add(key.key, key.mod, key.repeat) }
+            text: string, is_text: bool = event.text_input()
+            if is_text { ctx.keyboard.add(text) }
+            b: MouseButtonEvent, is_button: bool = event.mouse_button()
+            if is_button && b.button == MouseButton.left {
+                if b.down { ctx.mouse.pressed = true } else { ctx.mouse.released = true }
+            }
+            m: MouseMotionEvent, is_motion: bool = event.mouse_motion()
+            if is_motion {
+                ctx.mouse.x = m.x
+                ctx.mouse.y = m.y
+            }
+            wh: MouseWheelEvent, is_wheel: bool = event.mouse_wheel()
+            if is_wheel { ctx.mouse.wheel += wh.y }
+        }
+        renderer.color(ctx.theme.window)
+        renderer.clear()
+        ctx.begin()
+        /* One card panel across the window, the three columns COLUMN_GAP apart inside it. */
+        col_w: f32 = (w - 2.0 * (PANEL_EDGE + PANEL_PAD) - 2.0 * COLUMN_GAP) / 3.0
+        /* The page is as tall as its longest column, or the window. */
+        page_h: f32 = math.max[f32](h, s.content + 24.0)
+        s.page = math.max[f32](0.0, math.min[f32](s.page, page_h - h))
+        top: f32 = 24.0 - s.page
+        canvas.fill(ui.Rect { x = PANEL_EDGE, y = 12.0 - s.page, w = w - 2.0 * PANEL_EDGE, h = page_h - 24.0 }, ctx.theme.card.box.radius, ctx.theme.surface)
+        x0: f32 = PANEL_EDGE + PANEL_PAD
+        left: f32 = controls(&s, &ctx, ui.Rect { x = x0, y = top, w = col_w, h = page_h })
+        middle: f32 = layouts(&s, &canvas, &ctx.theme, ui.Rect { x = x0 + col_w + COLUMN_GAP, y = top, w = col_w, h = page_h })
+        rx: f32 = x0 + 2.0 * (col_w + COLUMN_GAP)
+        above: f32 = inputs(&s, &canvas, &ctx.theme, ui.Rect { x = rx, y = top, w = col_w, h = page_h })
+        right: f32 = drawing(&canvas, &ctx.theme, ui.Rect { x = rx, y = above + SECTION_GAP, w = col_w, h = page_h })
+        s.content = math.max[f32](left, math.max[f32](middle, right)) + s.page
+        /* What no list took scrolls the page; the popup is modal, so it keeps the wheel. */
+        if !s.popup && !s.menu { s.page -= ctx.mouse.wheel * NOTCH }
+        if page_h > h {
+            track: f32 = h - 24.0
+            thumb: f32 = math.max[f32](24.0, track * h / page_h)
+            at: f32 = 12.0 + (track - thumb) * s.page / (page_h - h)
+            canvas.fill(ui.Rect { x = w - 8.0, y = at, w = 4.0, h = thumb }, 2.0, Color { r = 0.5, g = 0.5, b = 0.5, a = 0.5 })
+        }
+        if s.menu { menu(&s, &canvas, &ctx.theme, ctx.mouse) }
+        if s.popup {
+            frame: ui.Rect = ui.Rect { x = w / 2.0 - 200.0, y = h / 2.0 - 80.0, w = 400.0, h = 160.0 }
+            pop: ui.Area = ui.popup(frame, "A modal popup")
+            body: ui.Area = ui.area(ui.Rect { x = frame.x + 12.0, y = frame.y + ctx.theme.title() + 8.0, w = frame.w - 24.0, h = 60.0 })
+            ui.text("Only these controls take the pointer.")
+            ui.text("Escape also closes it.", muted(&ctx.theme))
+            body.end()
+            /* Close: a button centered on the popup's bottom edge. */
+            foot: ui.Area = ui.area(ui.Rect { x = frame.x + frame.w / 2.0 - 50.0, y = frame.y + frame.h - 42.0, w = 100.0, h = 30.0 })
+            if ui.button("Close") { s.popup = false }
+            foot.end()
+            pop.end()
+            if ui.key(Keycode.escape) { s.popup = false }
+        }
+        /* Shortcuts read what the controls left unused. */
+        for i: usize in 0 .. ctx.keyboard.count {
+            k: ui.Key = ctx.keyboard.keys[i]
+            if !k.used && (k.mod & ui.MOD_GUI) != 0 && k.code == Keycode.q { running = false }
+            if !k.used && (k.mod & ui.MOD_GUI) != 0 && k.code == Keycode.d {
+                if scheme == ui.Scheme.light { scheme = ui.Scheme.dark } else { scheme = ui.Scheme.light }
+                ctx.theme = ui.Theme.init(scheme)
+            }
+        }
+        ctx.end()
+        canvas.flush()
+        renderer.present()
+    }
+    return 0
+}

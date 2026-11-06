@@ -15,6 +15,8 @@ import input: "./inc/input.ace"
 import theme: "./inc/theme.ace"
 import context: "./inc/context.ace"
 import controls: "./inc/controls.ace"
+import face: "./inc/face.ace"
+import font: "./inc/font.ace"
 
 pub Rect: type = canvas.Rect
 pub Insets: type = canvas.Insets
@@ -26,36 +28,59 @@ pub Mouse: type = input.Mouse
 pub Keyboard: type = input.Keyboard
 pub Context: type = context.Context
 pub Theme: type = theme.Theme
+pub Shadow: type = theme.Shadow
 
 /* Which palette `Theme.init` builds: `light` or `dark` surroundings. */
 pub Scheme: type = theme.Scheme
 
-pub Fill: type = theme.Fill
+pub States[T]: type = theme.States[T]
+
+/* An icon for each state, as the `States[Icon]` overloads take. */
+pub Icons: type = theme.States[canvas.Icon]
+
+/* A look for each state, as a `Box` holds. */
+pub Looks: type = theme.States[theme.Look]
+pub Look: type = theme.Look
+pub Box: type = theme.Box
+pub Fit: type = theme.Fit
+pub Graphic: type = theme.Graphic
+pub Rule: type = theme.Rule
+pub Labeled: type = theme.Labeled
+pub Graphical: type = theme.Graphical
+pub Ruled: type = theme.Ruled
+pub Glyphs: type = theme.Glyphs
 pub Flow: type = context.Flow
 pub Area: type = context.Area
 pub Item: type = context.Item
 pub Response: type = theme.Response
 pub TextInput: type = controls.TextInput
 
-/* Text size, in pixels per em. */
-pub text_size(): f32 { return canvas.text_size() }
-
-/* Sets the text size to `px` pixels per em, between 6 and 96; layout, text and
- * measurements follow it from the next call. */
-pub set_text_size(px: f32) { canvas.set_text_size(px) }
-
 /* Sets the device pixels per window point, as the renderer's scale, so text is
  * rasterized for the display's own pixels (1 to 4, default 1). */
-pub set_text_density(d: f32) { canvas.set_text_density(d) }
+pub set_text_density(d: f32) {
+    canvas.set_text_density(d)
+}
 
-/* The weights of the font: light, regular, and bold. */
-pub Weight: type = canvas.Weight
+/* A font baked by pkg/ui/font/bake.py. */
+pub Font: type = face.Font
 
-/* How wide `s` is, in pixels, in weight `w`. */
-pub text_width(s: string, w: Weight): f32 { return canvas.text_width(s, w) }
+/* How a line of text looks: font, size, color, spacing, alignment. */
+pub Text: type = canvas.Text
 
-/* How wide `s` is, in pixels, in the regular weight. */
-pub text_width(s: string): f32 { return canvas.text_width(s, Weight.regular) }
+/* pkg/ui's own font: Lilex SemiBold, monospaced. */
+pub mono(): Font {
+    return font.mono()
+}
+
+/* How wide `s` is, in pixels, in `style`. */
+pub text_width(s: string, style: Text): f32 {
+    return canvas.text_width(s, style)
+}
+
+/* How wide `s` is, in pixels, in the theme's text. */
+pub text_width(s: string): f32 {
+    return canvas.text_width(s, context.current.theme.font)
+}
 
 /* Modifier groups, each either side's key, as SDL_KMOD_* bits. */
 pub MOD_SHIFT: const u16 = input.MOD_SHIFT
@@ -64,174 +89,282 @@ pub MOD_ALT: const u16 = input.MOD_ALT
 pub MOD_GUI: const u16 = input.MOD_GUI
 
 /* `rgb` as a vertex color. */
-pub color(rgb: u32): Color { return canvas.color(rgb) }
+pub color(rgb: u32): Color {
+    return canvas.color(rgb)
+}
 
 /* An area over `box` whose controls go down it, each as wide as it. Close it
  * with `end`. */
-pub area(box: Rect): Area { return context.area(box) }
+pub area(box: Rect): Area {
+    return context.area(box)
+}
 
 /* An area over `box` whose controls follow `flow`: across, each as wide as its
  * content and centered on the area's height. */
-pub area(box: Rect, flow: Flow): Area { return context.area(box, flow) }
+pub area(box: Rect, flow: Flow): Area {
+    return context.area(box, flow)
+}
 
-/* A modal area over `box`, on the card color: from the next frame on,
+/* A modal area over `box`, on the surface: from the next frame on,
  * only the controls inside it take the pointer. */
-pub popup(box: Rect): Area { return context.popup(box) }
+pub popup(box: Rect): Area {
+    return context.popup(box)
+}
 
-/* A popup over `box` titled `title` on a strip across its top; its
- * controls go down the rest. */
-pub popup(box: Rect, title: string): Area { return context.popup(box, title) }
+/* A popup over `box` titled `s` on a header strip across its top. */
+pub popup(box: Rect, s: string): Area {
+    return context.popup(box, s)
+}
 
 /* A card of `cells` 40-high cells across the area, separated by hairlines:
  * down it each control, or `row` line, takes a cell. Close it with `end`. */
-pub card(cells: usize): Area { return context.card(cells) }
+pub card(cells: usize): Area {
+    return context.card(cells)
+}
 
 /* The next `n` controls share a line in equal columns; the line ends after
  * them. */
-pub row(n: usize) { context.row(n) }
+pub row(n: usize) {
+    context.row(n)
+}
 
 /* The next `count` controls go in lines of `n` equal columns. */
-pub grid(n: usize, count: usize) { context.grid(n, count) }
+pub grid(n: usize, count: usize) {
+    context.grid(n, count)
+}
 
 /* The next control is `w` wide. */
-pub width(w: f32) { context.width(w) }
+pub width(w: f32) {
+    context.width(w)
+}
 
 /* The next control is `h` high. */
-pub height(h: f32) { context.height(h) }
+pub height(h: f32) {
+    context.height(h)
+}
 
 /* The next button is drawn faint and takes no pointer. */
-pub disable() { context.disable() }
+pub disable() {
+    context.disable()
+}
 
 /* The next control is as wide as it would be showing `label`. */
-pub width(label: string) { context.width(label) }
+pub width(label: string) {
+    context.width(label)
+}
 
 /* Moves the next control `w` further on. */
-pub space(w: f32) { context.space(w) }
+pub space(w: f32) {
+    context.space(w)
+}
 
 /* Puts the rest of an across area at its far edge, the next control at the
  * edge. */
-pub fill() { context.fill() }
+pub fill() {
+    context.fill()
+}
 
 /* Reserves the next control's rectangle, `w` wide across an area (down one it
  * takes the area's or column's width) and `h` high. */
-pub place(w: f32, h: f32): Rect { return context.place(w, h) }
+pub place(w: f32, h: f32): Rect {
+    return context.place(w, h)
+}
 
 /* What the pointer did to the control `id` at `box`; it becomes `last`. */
-pub track(id: u32, box: Rect): Response { return context.track(id, box) }
+pub track(id: u32, box: Rect): Response {
+    return context.track(id, box)
+}
 
 /* The last control placed: hovered, held, its rect, a field's submit. */
-pub last(): Item { return context.last() }
+pub last(): Item {
+    return context.last()
+}
+
+/* Shows `s` by the pointer, over everything, once it has rested on the last
+ * control for half a second; a press hides it until the pointer leaves. */
+pub tooltip(s: string) {
+    context.tooltip(s)
+}
 
 /* The id of the control `label` names in the current scope. */
-pub id(label: string): u32 { return context.id(label) }
+pub id(label: string): u32 {
+    return context.id(label)
+}
 
 /* The id of the icon-only control that shows `shape`. */
-pub id(shape: Icon): u32 { return context.id(shape) }
+pub id(shape: Icon): u32 {
+    return context.id(shape)
+}
 
 /* The id of the control that edits the value at `address`, as `usize(&v)`. */
-pub id(address: usize): u32 { return context.id(address) }
+pub id(address: usize): u32 {
+    return context.id(address)
+}
 
 /* Opens a scope `n` names, in which the same name names a different control.
  * `pop_id` closes it. */
-pub push_id(n: u32) { context.push_id(n) }
+pub push_id(n: u32) {
+    context.push_id(n)
+}
 
 /* Closes the scope the last `push_id` opened. */
-pub pop_id() { context.pop_id() }
+pub pop_id() {
+    context.pop_id()
+}
 
 /* Consumes a press of `code` with no modifiers, and says whether there was
  * one. */
-pub key(code: Keycode): bool { return context.key(code) }
+pub key(code: Keycode): bool {
+    return context.key(code)
+}
 
 /* The context's scratch buffer, emptied, for formatted text: `l.printf(...)`,
  * then `ui.text(l.text())`. */
-pub line(): *fmt.Buffer { return context.line() }
+pub line(): *fmt.Buffer {
+    return context.line()
+}
 
 /* The next field takes the keyboard. */
-pub focus() { context.focus() }
+pub focus() {
+    context.focus()
+}
+
+/* Each control has an overload taking its style, a const pointer such as
+ * `&theme.primary`, after its other arguments; without one it uses its own
+ * style in the context's theme. A button or toggle with an icon alone takes
+ * an empty label. */
 
 /* A button showing `label`, which names it; true when clicked. */
-pub button(label: string): bool { return controls.button(label) }
+pub button(label: string): bool {
+    return controls.button(label)
+}
 
-/* An icon and `label`, which names it. */
-pub button(shape: Icon, label: string): bool { return controls.button(shape, label) }
+pub button(label: string, st: const *Graphical): bool {
+    return controls.button(label, st)
+}
 
-/* An icon alone, which names it. */
-pub button(shape: Icon): bool { return controls.button(shape) }
+/* An icon and `label`, which names it, or the icon when `label` is empty. */
+pub button(shape: Icon, label: string): bool {
+    return controls.button(shape, label)
+}
 
-/* A button that rests on the accent while `on`. */
-pub button(shape: Icon, label: string, on: bool): bool { return controls.button(shape, label, on) }
+pub button(shape: Icon, label: string, st: const *Graphical): bool {
+    return controls.button(shape, label, st)
+}
 
-/* A button showing `label` alone in `fill` rather than the theme's. */
-pub button(label: string, fill: Fill): bool { return controls.button(label, fill) }
+/* An icon from `shapes` for the button's state, and `label`; on while `on`,
+ * as a chosen tool is. */
+pub button(shapes: Icons, label: string, on: bool): bool {
+    return controls.button(shapes, label, on)
+}
 
-/* A button in `fill` rather than the theme's. */
-pub button(shape: Icon, label: string, fill: Fill): bool { return controls.button(shape, label, fill) }
+pub button(shapes: Icons, label: string, on: bool, st: const *Graphical): bool {
+    return controls.button(shapes, label, on, st)
+}
 
-/* A button that flips `value` and rests on the accent while it is set; true when it
- * flipped. */
-pub toggle(shape: Icon, label: string, value: *bool): bool { return controls.toggle(shape, label, value) }
+/* A button that flips `value` and is on while it is set, its icon alone when
+ * `label` is empty; true when it flipped. */
+pub toggle(shape: Icon, label: string, value: *bool): bool {
+    return controls.toggle(shape, label, value)
+}
 
-/* A toggle showing its icon alone. */
-pub toggle(shape: Icon, value: *bool): bool { return controls.toggle(shape, value) }
+pub toggle(shape: Icon, label: string, value: *bool, st: const *Graphical): bool {
+    return controls.toggle(shape, label, value, st)
+}
 
-/* `label` then a switch, on while `value` is set; a click on either flips
- * it. True when it flipped. */
-pub toggle(label: string, value: *bool): bool { return controls.toggle(label, value) }
+/* A toggle with an icon from `shapes` for its state. */
+pub toggle(shapes: Icons, label: string, value: *bool): bool {
+    return controls.toggle(shapes, label, value)
+}
 
-/* Equal segments showing `items`, the one at `*chosen` raised; a click picks
+pub toggle(shapes: Icons, label: string, value: *bool, st: const *Graphical): bool {
+    return controls.toggle(shapes, label, value, st)
+}
+
+/* Equal segments showing `items`, the one at `*chosen` on; a click picks
  * one. True when `*chosen` changed. */
-pub picker(items: []string, chosen: *usize): bool { return controls.picker(items, chosen) }
+pub picker(items: []string, chosen: *usize): bool {
+    return controls.picker(items, chosen)
+}
+pub picker(items: []string, chosen: *usize, st: const *Labeled): bool {
+    return controls.picker(items, chosen, st)
+}
 
 /* A box ticked while `value` is set, then `label`; true when it flipped. */
-pub checkbox(label: string, value: *bool): bool { return controls.checkbox(label, value) }
+pub checkbox(label: string, value: *bool): bool {
+    return controls.checkbox(label, value)
+}
+pub checkbox(label: string, value: *bool, st: const *Graphical): bool {
+    return controls.checkbox(label, value, st)
+}
 
-/* A knob dragged along a track to set `value` from `min` to `max`; true when
- * it changed. */
-pub slider(value: *f32, min: f32, max: f32): bool { return controls.slider(value, min, max) }
+/* A bar dragged across to set `value` from `min` to `max`; true when it
+ * changed. */
+pub slider(value: *f32, min: f32, max: f32): bool {
+    return controls.slider(value, min, max)
+}
+pub slider(value: *f32, min: f32, max: f32, st: const *Ruled): bool {
+    return controls.slider(value, min, max, st)
+}
 
-/* A knob that stops at each whole number from `min` to `max`, ticked when
+/* A bar that stops at each whole number from `min` to `max`, ticked when
  * the stops have room; true when `value` changed. */
-pub slider(value: *int, min: int, max: int): bool { return controls.slider(value, min, max) }
-
-/* A block filled up to `value`, from `min` to `max`, showing it inside;
- * dragging across it sets it. True when it changed. */
-pub bar(value: *f32, min: f32, max: f32): bool { return controls.bar(value, min, max) }
-
-/* A block slider that stops at each whole number from `min` to `max`. */
-pub bar(value: *int, min: int, max: int): bool { return controls.bar(value, min, max) }
+pub slider(value: *int, min: int, max: int): bool {
+    return controls.slider(value, min, max)
+}
+pub slider(value: *int, min: int, max: int, st: const *Ruled): bool {
+    return controls.slider(value, min, max, st)
+}
 
 /* A one-line field over `input` taking the bytes in `allow` (any when empty);
  * true when the text changed. Enter sets `last().submit`. */
-pub field(input: *TextInput, allow: string): bool { return controls.field(input, allow) }
+pub field(input: *TextInput, allow: string): bool {
+    return controls.field(input, allow)
+}
+pub field(input: *TextInput, allow: string, st: const *Labeled): bool {
+    return controls.field(input, allow, st)
+}
 
 /* `rows` of `items` on a card from row `*scroll` on; a press on a row sets `*chosen`.
  * True when a row was pressed. */
-pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool { return controls.list(items, chosen, rows, scroll) }
+pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32): bool {
+    return controls.list(items, chosen, rows, scroll)
+}
+pub list(items: []string, chosen: *usize, rows: usize, scroll: *f32, st: const *Labeled): bool {
+    return controls.list(items, chosen, rows, scroll, st)
+}
 
 /* The height of a list of `n` rows. */
-pub rows(n: usize): f32 { return controls.rows(n) }
+pub rows(n: usize): f32 {
+    return controls.rows(n)
+}
 
-/* A square showing `shape` in `color`, on a gray while `selected`;
- * true when clicked. */
-pub swatch(shape: Icon, color: Color, selected: bool): bool { return controls.swatch(shape, color, selected) }
+/* A square showing `shape` in `color`, on while `selected`; true when
+ * clicked. */
+pub swatch(shape: Icon, color: Color, selected: bool): bool {
+    return controls.swatch(shape, color, selected)
+}
+pub swatch(shapes: States[Icon], color: Color, selected: bool): bool {
+    return controls.swatch(shapes, color, selected)
+}
+pub swatch(shape: Icon, color: Color, selected: bool, st: const *Graphical): bool {
+    return controls.swatch(shape, color, selected, st)
+}
+pub swatch(shapes: States[Icon], color: Color, selected: bool, st: const *Graphical): bool {
+    return controls.swatch(shapes, color, selected, st)
+}
 
-/* A line of body text. */
-pub text(s: string) { controls.text(s) }
+/* A line of `s` in the theme's text. */
+pub text(s: string) {
+    controls.text(s)
+}
 
-/* A line of body text at `align` across the area. */
-pub text(s: string, align: Align) { controls.text(s, align) }
-
-/* A line of secondary text. */
-pub muted(s: string) { controls.muted(s) }
-
-/* A line of secondary text at `align` across the area. */
-pub muted(s: string, align: Align) { controls.muted(s, align) }
-
-/* A section's title on a strip a control high. */
-pub heading(s: string) { controls.heading(s) }
-
-/* A section's title at `align` on its strip. */
-pub heading(s: string, align: Align) { controls.heading(s, align) }
+/* A line of `s` in `style`, placed by its alignment across the area. */
+pub text(s: string, style: Text) {
+    controls.text(s, style)
+}
 
 /* `s` centered on a resting button's fill: a value shown, not edited. */
-pub readout(s: string) { controls.readout(s) }
+pub readout(s: string) {
+    controls.readout(s)
+}

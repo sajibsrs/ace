@@ -8,12 +8,19 @@ import Keycode from sdl
 canvas: ui.Canvas
 
 /* Controls and list rows 26 high, an 18 icon. */
-THEME: const ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0, icon = 18.0 }
+/* The theme's sizes, derived, with icons 18 on buttons and toggles. */
+theme(): ui.Theme {
+    th: ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0 }
+    th.derive()
+    th.button.graphic.size = 18.0
+    th.toggle.graphic.size = 18.0
+    return th
+}
 
 /* A context over `canvas`, its frame begun. */
 frame(c: *ui.Context) {
     c.canvas = &canvas
-    c.theme = THEME
+    c.theme = theme()
     c.begin()
 }
 
@@ -113,7 +120,7 @@ pub buttons(t: *test.T) {
     t.equal(ui.last().rect.w == 16.0 + ui.text_width("Save"), true, @file, @line)
     ui.button(shape, "Open")
     t.equal(ui.last().rect.w == 16.0 + ui.text_width("Open") + 22.0, true, @file, @line)
-    ui.button(shape)
+    ui.button(shape, "")
     t.equal(ui.last().rect.w == 26.0 && ui.last().rect.h == 26.0, true, @file, @line)
     ui.width("Simulate")
     ui.button(shape, "Edit")
@@ -121,8 +128,12 @@ pub buttons(t: *test.T) {
     ui.height(40.0)
     ui.button("Tall")
     t.equal(ui.last().rect.h == 40.0, true, @file, @line)
-    ui.button("Inked", ui.Fill { ink = Color { r = 1.0, g = 1.0, b = 1.0 } })
-    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Inked"), true, @file, @line)
+    th: ui.Theme = theme()
+    ui.button("Styled", &th.primary)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Styled"), true, @file, @line)
+    swap: ui.Icons = ui.Icons.all(shape)
+    ui.button(swap, "Swapped", false)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Swapped") + 22.0, true, @file, @line)
     ui.button("Next")
     t.equal(ui.last().rect.h == 26.0, true, @file, @line)
     bar.end()
@@ -217,7 +228,7 @@ pub toggle(t: *test.T) {
     on: bool = false
     frame(&c)
     bar: ui.Area = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
-    t.equal(ui.toggle(ui.Icon {}, &on), true, @file, @line)
+    t.equal(ui.toggle(ui.Icon {}, "", &on), true, @file, @line)
     t.equal(on, true, @file, @line)
     bar.end()
     c.end()
@@ -250,14 +261,16 @@ pub line(t: *test.T) {
     c.end()
 }
 
-/* Text measures in proportion to the text size, which is kept between 6 and 96. */
+/* Text measures in proportion to its size, which is kept between 6 and 96,
+ * plus its spacing after each character. */
 pub size(t: *test.T) {
-    ui.set_text_size(16.0)
-    w16: f32 = ui.text_width("Hamburg")
-    ui.set_text_size(32.0)
-    w32: f32 = ui.text_width("Hamburg")
-    t.equal(ui.text_size() == 32.0 && w32 - 2.0 * w16 < 0.01 && 2.0 * w16 - w32 < 0.01, true, @file, @line)
-    ui.set_text_size(1000.0)
-    t.equal(ui.text_size() == 96.0, true, @file, @line)
-    ui.set_text_size(16.0)
+    style: ui.Text = ui.Text { size = 16.0 }
+    w16: f32 = ui.text_width("Hamburg", style)
+    style.size = 32.0
+    w32: f32 = ui.text_width("Hamburg", style)
+    t.equal(w32 - 2.0 * w16 < 0.01 && 2.0 * w16 - w32 < 0.01, true, @file, @line)
+    style.size = 1000.0
+    t.equal(ui.text_width("Hamburg", style) == ui.text_width("Hamburg", ui.Text { size = 96.0 }), true, @file, @line)
+    style = ui.Text { size = 16.0, spacing = 2.0 }
+    t.equal(ui.text_width("Hamburg", style) - w16 == 14.0, true, @file, @line)
 }

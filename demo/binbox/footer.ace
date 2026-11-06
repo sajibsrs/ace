@@ -3,6 +3,7 @@
 import fmt
 import bar: "./bar.ace"
 import theme: "./theme.ace"
+import style: "./style.ace"
 import speed: "./speed.ace"
 import ui
 import app: "./app.ace"
@@ -34,5 +35,5 @@ pub Footer.draw(self) {
     }
     ui.text(status.text())
     ui.fill()
-    ui.muted(g.status())
+    ui.text(g.status(), style.muted(&g.ui.theme))
 }

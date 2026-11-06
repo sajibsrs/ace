@@ -32,7 +32,7 @@ pub OpenList.draw(self, live: bool) {
     list: ui.Area = ui.popup(panel)
     defer list.end()
     chosen: usize = names.len
-    if names.len == 0 { ui.muted("no diagrams in diagram/") }
+    if names.len == 0 { ui.text("no diagrams in diagram/", style.muted(&g.ui.theme)) }
     if ui.list(names, &chosen, rows, &g.scroll) { g.load(names[chosen]) }
     if g.ui.mouse.pressed { g.mode = app.Mode.none }
 }
@@ -58,7 +58,8 @@ pub SaveDialog.draw(self) {
     g.draft.len = input.len
     g.draft.at = input.caret
     /* The extension, dimmed: it is added, not typed. */
-    g.ui.canvas.text(ui.last().rect, g.ui.theme.padding + ui.text_width(string(g.draft.bytes[0..g.draft.len])), diagram.EXTENSION, ui.color(theme.DIM))
+    pad: f32 = g.ui.theme.field.box.padding.left + ui.text_width(string(g.draft.bytes[0..g.draft.len]))
+    g.ui.canvas.text(ui.last().rect.inset(ui.Insets { left = pad }), diagram.EXTENSION, g.ui.theme.font.in(ui.color(theme.DIM)))
     if ui.last().submit && g.draft.len > 0 {
         g.mode = app.Mode.none
         g.write()
