@@ -1,5 +1,9 @@
 # Packages
 
+- `pkg/ui` lays out responsively: `area_width`/`area_height` give the open
+  area's size for breakpoints, and `row([1, 2, 1])`, `row(cols)` and
+  `grid(cols, count)` share a line by weight, each `Col` held between its
+  `min` and `max` while the rest is shared again, as CSS flex resolves it.
 - `pkg/ui` headings are bold 18 px text in `Theme.heading` (black in light)
   with no strip; buttons and pickers are 4 px taller (`look.BUTTON_PAD`), a
   button's label is picked from its resting fill so hover keeps it, a focused

@@ -22,6 +22,9 @@ pub Item: struct {
  * repeats in one frame; past that many it checks no more. */
 SCOPES_MAX: const usize = 16
 AREAS_MAX: const usize = 8
+
+/* The columns a weighted `row` or `grid` takes. */
+COLS_MAX: const usize = 16
 SEEN_MAX: const usize = 256
 
 /* The bytes `line` formats into. */
@@ -48,6 +51,14 @@ pub Flow: enum {
     across,
 }
 
+/* A weighted column: its share of a line beside the others, like CSS `fr`,
+ * and the least and most it takes; 0 is no limit. */
+pub Col: struct {
+    pub fr: f32 = 1.0,
+    pub min: f32 = 0.0,
+    pub max: f32 = 0.0,
+}
+
 /* An open area, closed by `end`. */
 pub Area: struct {
     level: usize = 0,
@@ -72,6 +83,11 @@ Layout: struct {
     left: usize = 0,
     col: usize = 0,
     line: f32 = 0.0,
+    /* A weighted grid's columns: each one's left, from the area's edge, and
+     * width; `weighted` false for equal columns. */
+    weighted: bool = false,
+    xs: [COLS_MAX]f32 = [0.0 : COLS_MAX],
+    ws: [COLS_MAX]f32 = [0.0 : COLS_MAX],
 }
 
 /* The frame's input, who holds it, and where controls go. A widget that uses
@@ -338,7 +354,82 @@ pub grid(n: usize, count: usize) {
     l.left = count
     l.col = 0
     l.line = 0.0
+    l.weighted = false
     if count == 0 { l.cols = 0 }
+}
+
+/* The next controls share a line in columns weighted by `weights`. */
+pub row(weights: []int) {
+    cols: [COLS_MAX]Col = [Col {} : COLS_MAX]
+    assert(weights.len <= COLS_MAX)
+    for i: usize in 0 .. weights.len { cols[i].fr = f32(weights[i]) }
+    grid(cols[0 .. weights.len], weights.len)
+}
+
+/* The next controls share a line in `cols`. */
+pub row(cols: []Col) {
+    grid(cols, cols.len)
+}
+
+/* The next `count` controls go in lines of `cols`: the area's width, less
+ * the gaps, is shared by weight, and a column its share would take past its
+ * `min` or `max` is held there while the others share the rest, as CSS flex
+ * resolves it. Minimums wider than the area overflow it. */
+pub grid(cols: []Col, count: usize) {
+    n: usize = cols.len
+    assert(n > 0 && n <= COLS_MAX)
+    grid(n, count)
+    l: *Layout = current.top()
+    l.weighted = true
+    gap: f32 = current.theme.gap
+    room: f32 = l.box.w - gap * f32(n - 1)
+    held: [COLS_MAX]bool = [false : COLS_MAX]
+    for pass: usize in 0 .. n + 1 {
+        free: f32 = room
+        fr: f32 = 0.0
+        for i: usize in 0 .. n {
+            if held[i] { free -= l.ws[i] } else { fr += cols[i].fr }
+        }
+        /* Each free column's share, and how far its limits move it. */
+        off: f32 = 0.0
+        for i: usize in 0 .. n {
+            if held[i] { continue }
+            w: f32 = 0.0
+            if fr > 0.0 { w = math.max[f32](free, 0.0) * cols[i].fr / fr }
+            l.ws[i] = w
+            if cols[i].max > 0.0 && w > cols[i].max { w = cols[i].max }
+            if w < cols[i].min { w = cols[i].min }
+            off += w - l.ws[i]
+        }
+        if off == 0.0 { break }
+        /* Hold only the columns pushed the way the total moved. */
+        for i: usize in 0 .. n {
+            if held[i] { continue }
+            w: f32 = l.ws[i]
+            if off > 0.0 && w < cols[i].min {
+                l.ws[i] = cols[i].min
+                held[i] = true
+            } else if off < 0.0 && cols[i].max > 0.0 && w > cols[i].max {
+                l.ws[i] = cols[i].max
+                held[i] = true
+            }
+        }
+    }
+    x: f32 = 0.0
+    for i: usize in 0 .. n {
+        l.xs[i] = x
+        x += l.ws[i] + gap
+    }
+}
+
+/* The open area's width and height, inside a card's padding: what an
+ * application branches on to lay out by the room it has. */
+pub area_width(): f32 {
+    return current.top().box.w
+}
+
+pub area_height(): f32 {
+    return current.top().box.h
 }
 
 /* The next control is `w` wide, down an area as across one. */
@@ -390,6 +481,7 @@ Context.top(self): *Layout {
 Context.span(self): f32 {
     if self.next_w > 0.0 { return self.next_w }
     l: *Layout = self.top()
+    if l.weighted { return l.ws[l.col] }
     if l.cols > 0 { return (l.box.w - self.theme.gap * f32(l.cols - 1)) / f32(l.cols) }
     return l.box.w
 }
@@ -413,7 +505,9 @@ Context.place(self, w: f32, h: f32): Rect {
     box: Rect = Rect {}
     if l.cols > 0 {
         w = self.span()
-        box = Rect { x = l.box.x + f32(l.col) * (w + gap), y = l.box.y + l.at, w = w, h = h }
+        x: f32 = l.box.x + f32(l.col) * (w + gap)
+        if l.weighted { x = l.box.x + l.xs[l.col] }
+        box = Rect { x = x, y = l.box.y + l.at, w = w, h = h }
         l.line = math.max[f32](l.line, h)
         if l.cell > 0.0 { box.y += (l.cell - h) / 2.0 }
         l.col += 1
@@ -422,7 +516,10 @@ Context.place(self, w: f32, h: f32): Rect {
             if l.cell > 0.0 { l.at += l.cell } else { l.at += l.line + gap }
             l.col = 0
             l.line = 0.0
-            if l.left == 0 { l.cols = 0 }
+            if l.left == 0 {
+                l.cols = 0
+                l.weighted = false
+            }
         }
     } else if l.flow == Flow.down {
         box = Rect { x = l.box.x, y = l.box.y + l.at, w = self.span(), h = h }

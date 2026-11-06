@@ -47,6 +47,16 @@ height, the next `theme.gap` further on.
   line ends after them.
 - `ui.grid(n, count)` puts the next `count` controls in lines of `n` equal
   columns.
+- `ui.row([1, 2, 1])` weights the columns instead, like CSS `fr`: the width
+  less the gaps is shared by weight. `ui.row(cols)` and `ui.grid(cols, count)`
+  take `ui.Col { fr, min, max }` (`0` no limit, at most 16 columns): a column
+  whose share falls outside its limits is held there and the others share the
+  rest, as CSS flex resolves it; minimums wider than the area overflow it.
+  `ui.row([ui.Col { fr = 1.0, min = 180.0 }, ui.Col { fr = 3.0 }])` is a
+  quarter-width sidebar never under 180.
+- `ui.area_width()` and `ui.area_height()` are the open area's size, inside a
+  card's padding. The UI is rebuilt each frame, so a breakpoint is an `if`:
+  `if ui.area_width() < 600.0 { ui.row(1) } else { ui.row(3) }`.
 - `ui.width(w)` sets the next control's width; `ui.width(label)` makes it as
   wide as it would be showing `label`, so a button whose label changes keeps
   its size.

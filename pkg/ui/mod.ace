@@ -51,6 +51,7 @@ pub Ruled: type = theme.Ruled
 pub Glyphs: type = theme.Glyphs
 pub Flow: type = context.Flow
 pub Area: type = context.Area
+pub Col: type = context.Col
 pub Item: type = context.Item
 pub Response: type = theme.Response
 pub TextInput: type = controls.TextInput
@@ -131,6 +132,34 @@ pub row(n: usize) {
 /* The next `count` controls go in lines of `n` equal columns. */
 pub grid(n: usize, count: usize) {
     context.grid(n, count)
+}
+
+/* The next controls share a line in columns weighted by `weights`, like CSS
+ * `fr`. */
+pub row(weights: []int) {
+    context.row(weights)
+}
+
+/* The next controls share a line in `cols`, each weighted and held between
+ * its `min` and `max`. */
+pub row(cols: []Col) {
+    context.row(cols)
+}
+
+/* The next `count` controls go in lines of `cols`. */
+pub grid(cols: []Col, count: usize) {
+    context.grid(cols, count)
+}
+
+/* The open area's width, inside a card's padding: branch on it to lay out by
+ * the room there is. */
+pub area_width(): f32 {
+    return context.area_width()
+}
+
+/* The open area's height, inside a card's padding. */
+pub area_height(): f32 {
+    return context.area_height()
 }
 
 /* The next control is `w` wide. */

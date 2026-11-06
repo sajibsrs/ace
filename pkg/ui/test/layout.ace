@@ -274,3 +274,37 @@ pub size(t: *test.T) {
     style = ui.Text { size = 16.0, spacing = 2.0 }
     t.equal(ui.text_width("Hamburg", style) - w16 == 14.0, true, @file, @line)
 }
+
+/* A weighted `row` shares the width less its gaps by weight; `min` and `max`
+ * hold a column while the others share the rest; `area_width` is the room. */
+pub weighted(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    column: ui.Area = ui.area(ui.Rect { x = 10.0, w = 408.0, h = 200.0 })
+    t.equal(ui.area_width() == 408.0 && ui.area_height() == 200.0, true, @file, @line)
+    ui.row([1, 2, 1])
+    a: ui.Rect = ui.place(0.0, 20.0)
+    b: ui.Rect = ui.place(0.0, 20.0)
+    d: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(a.x == 10.0 && a.w == 100.0 && b.x == 114.0 && b.w == 200.0, true, @file, @line)
+    t.equal(d.x == 318.0 && d.w == 100.0 && d.y == 0.0, true, @file, @line)
+    after: ui.Rect = ui.place(0.0, 10.0)
+    t.equal(after.w == 408.0 && after.y == 24.0, true, @file, @line)
+
+    /* A quarter, 101, is under its 180 minimum; the rest takes 224. */
+    ui.row([ui.Col { fr = 1.0, min = 180.0 }, ui.Col { fr = 3.0 }])
+    e: ui.Rect = ui.place(0.0, 20.0)
+    f: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(e.w == 180.0 && f.x == 194.0 && f.w == 224.0, true, @file, @line)
+
+    /* Halves, 202, past a 100 maximum; the other takes 304. */
+    ui.grid([ui.Col { max = 100.0 }, ui.Col {}], 4)
+    g: ui.Rect = ui.place(0.0, 20.0)
+    h: ui.Rect = ui.place(0.0, 20.0)
+    i: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(g.w == 100.0 && h.w == 304.0 && i.w == 100.0 && i.y == g.y + 24.0, true, @file, @line)
+    ui.place(0.0, 20.0)
+    t.equal(ui.place(0.0, 10.0).w == 408.0, true, @file, @line)
+    column.end()
+    c.end()
+}
