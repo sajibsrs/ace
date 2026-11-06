@@ -247,6 +247,8 @@ whether its value changed.
   with the accent up to it and showing it to two places; with `int`s it stops
   at each whole number, the one nearest the pointer, shows it, and has a tick
   under each stop when they are 6 px apart or more.
+  `slider(&value, min, max, label)` shows `label` in place of the number,
+  for a stop that stands for something else, such as a rate.
   Across an area a slider is 115 px wide unless `width` sets it.
 - `field(&input, allow)` edits a caller's `TextInput` in one line, as wide as
   its buffer across an area; focused, it draws its `on` look (`surface`, an

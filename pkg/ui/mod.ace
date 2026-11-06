@@ -345,6 +345,15 @@ pub slider(value: *int, min: int, max: int, st: const *Ruled): bool {
     return controls.slider(value, min, max, st)
 }
 
+/* The same, showing `label` in place of the number, such as the rate a stop
+ * stands for. */
+pub slider(value: *int, min: int, max: int, label: string): bool {
+    return controls.slider(value, min, max, label)
+}
+pub slider(value: *int, min: int, max: int, label: string, st: const *Ruled): bool {
+    return controls.slider(value, min, max, label, st)
+}
+
 /* A one-line field over `input` taking the bytes in `allow` (any when empty);
  * true when the text changed. Enter sets `last().submit`. */
 pub field(input: *TextInput, allow: string): bool {

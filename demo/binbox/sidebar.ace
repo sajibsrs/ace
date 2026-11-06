@@ -60,7 +60,7 @@ Sidebar.blocks(self) {
     }
 }
 
-/* The clock widget: its span in a muted line over the slider. */
+/* The clock widget: a slider showing its span. */
 Sidebar.clock(self) {
     g: *app.App = self.g
     ticks: *fmt.Buffer = ui.line()
@@ -69,8 +69,7 @@ Sidebar.clock(self) {
     } else {
         ticks.printf("%d ticks", 1 << g.clock)
     }
-    ui.text(ticks.text(), style.muted(&g.ui.theme))
-    ui.slider(&g.clock, 0, grid.SPANS - 1)
+    ui.slider(&g.clock, 0, grid.SPANS - 1, ticks.text())
 }
 
 /* The simulation widget: Step, Play/Pause, Reset, and the speed in a muted
@@ -85,11 +84,10 @@ Sidebar.sim(self) {
         ui.toggle(bar.shape(icon.Id.run), "Play", &g.auto)
     }
     if ui.button(bar.shape(icon.Id.reset), "Reset") { g.reset() }
-    setting: *fmt.Buffer = ui.line()
-    setting.printf("Speed: ")
-    speed.show(setting, speed.hz(g.stop))
-    ui.text(setting.text(), style.muted(&g.ui.theme))
-    ui.slider(&g.stop, 0, speed.STOPS - 1)
+    ui.text("Speed", style.muted(&g.ui.theme))
+    rate: *fmt.Buffer = ui.line()
+    speed.show(rate, speed.hz(g.stop))
+    ui.slider(&g.stop, 0, speed.STOPS - 1, rate.text())
 }
 
 /* The info widget: the cell under the cursor, its block and level, and the

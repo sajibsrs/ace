@@ -1,5 +1,8 @@
 # Packages
 
+- `pkg/ui`'s `int` slider takes an optional `label` shown in place of the
+  stop number; binbox's Speed and Clock sliders show their rate (4 Hz) and
+  span (8 ticks) with it.
 - `pkg/ui` lays out responsively: `area_width`/`area_height` give the open
   area's size for breakpoints, and `row([1, 2, 1])`, `row(cols)` and
   `grid(cols, count)` share a line by weight, each `Col` held between its

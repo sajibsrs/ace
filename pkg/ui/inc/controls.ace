@@ -225,6 +225,12 @@ pub slider(value: *f32, min: f32, max: f32, st: const *Ruled): bool {
  * they have room;
  * `value`'s address names it. True when it changed. */
 pub slider(value: *int, min: int, max: int, st: const *Ruled): bool {
+    return slider(value, min, max, "", st)
+}
+
+/* The same, showing `label` in place of the number: what a stop stands for,
+ * such as a rate. */
+pub slider(value: *int, min: int, max: int, label: string, st: const *Ruled): bool {
     c: *Context = context.current
     n: int = max - min
     at: f32 = grab(usize(value), n > 0, st)
@@ -232,9 +238,12 @@ pub slider(value: *int, min: int, max: int, st: const *Ruled): bool {
     if at >= 0.0 { *value = min + int(at * f32(n) + 0.5) }
     shown: f32 = 0.0
     if n > 0 { shown = f32(*value - min) / f32(n) }
-    l: *fmt.Buffer = context.line()
-    l.printf("%d", *value)
-    look.slider(c.canvas, st, context.last().rect, shown, n + 1, l.text())
+    if label.len == 0 {
+        l: *fmt.Buffer = context.line()
+        l.printf("%d", *value)
+        label = l.text()
+    }
+    look.slider(c.canvas, st, context.last().rect, shown, n + 1, label)
     return *value != before
 }
 
@@ -243,6 +252,9 @@ pub slider(value: *f32, min: f32, max: f32): bool {
 }
 pub slider(value: *int, min: int, max: int): bool {
     return slider(value, min, max, &context.current.theme.slider)
+}
+pub slider(value: *int, min: int, max: int, label: string): bool {
+    return slider(value, min, max, label, &context.current.theme.slider)
 }
 
 /* Caller storage for a field: the first `len` bytes of `buffer` are in use,
