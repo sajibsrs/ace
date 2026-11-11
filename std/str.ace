@@ -81,7 +81,7 @@ pub compare(a: string, b: string): int {
 /* Copies the complete text into destination[0..text.len]; a shorter
  * destination is unchanged and fails, and the unused suffix is untouched.
  */
-pub copy(text: string, noalias destination: []char): bool {
+pub copy(text: string, destination: []char): bool {
     if text.len > destination.len { return false }
     for i: usize in 0 .. text.len { destination[i] = text[i] }
     return true
@@ -92,7 +92,7 @@ pub copy(text: string, noalias destination: []char): bool {
  * text holds a NUL byte, which C would read as its end; the destination's
  * contents are then unspecified. The unused suffix is untouched.
  */
-pub cstring(text: string, noalias destination: []char): bool {
+pub cstring(text: string, destination: []char): bool {
     if text.len >= destination.len { return false }
     for i: usize in 0 .. text.len {
         if text[i] == 0 { return false }

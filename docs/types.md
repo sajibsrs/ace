@@ -1033,7 +1033,7 @@ with no allocation, object metadata, subtype relation, or runtime search.
 - Type inference and implicit generic instantiation are not implemented.
 - Generic aliases are not implemented by the current compiler; generic structs
   are supported.
-- Debug-build sequence bounds, integer arithmetic, `noalias`/length,
+- Debug-build sequence bounds, integer arithmetic, `mem.copy` overlap/length,
   null-use, and allocator diagnostics are implemented and stripped in release.
 
 The examples are covered by `tests/sema/docs/type_ok.ace`.

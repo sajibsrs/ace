@@ -106,7 +106,7 @@ boundary only behind a pointer. On a field, `@offset` comes before `@align`.
 
 Memory has no dynamic type. Reading storage as `T` reads its `sizeof(T)` bytes
 as `T`, and the compiler never assumes two accesses are disjoint just because
-their types differ; only `noalias` and `const` parameters state non-overlap.
+their types differ; only `const` parameters state non-overlap.
 
 Plain-bits types are those where every byte pattern is a value: integers,
 `char`, floating types, enums, bits types, data pointers, C function values, and structs,
@@ -179,7 +179,7 @@ share one total order.
 A data race is two accesses to overlapping bytes, at least one a write and at
 least one not atomic (a volatile access is not atomic), with no such ordering
 between them. It is programmer error and the value read is unspecified; no build
-checks it. The `noalias` and `const`-parameter facts hold for the whole call
+checks it. The `const`-parameter facts hold for the whole call
 across every context, so another context writing that storage during the call is
 a data race. The compiler never removes, combines, or duplicates an atomic
 operation, and never moves an ordinary access across one in a direction its
@@ -469,7 +469,7 @@ part of this surface.
 The same module exports allocation-free operations over byte-slice views:
 
 ```ace
-mem.copy(noalias dst: []u8, src: []u8)
+mem.copy(dst: []u8, src: []u8)
 mem.move(dst: []u8, src: []u8)
 mem.fill(data: []u8, value: u8)
 mem.zero(data: []u8)
@@ -483,7 +483,7 @@ counts, and copy `len * sizeof(T)` bytes through the same routines and debug
 checks:
 
 ```ace
-mem.copy[T](noalias dst: []T, src: []T)
+mem.copy[T](dst: []T, src: []T)
 mem.move[T](dst: []T, src: []T)
 ```
 
@@ -505,8 +505,7 @@ mem.copy(target, source)
 ```
 
 `copy` requires the complete source and destination ranges not to overlap.
-Its `noalias` destination states that optimizer fact in the declaration; it is
-not repeated at the call site. Use `move` whenever the ranges might overlap.
+Debug builds check it at the call, with the equal lengths. Use `move` whenever the ranges might overlap.
 `move` preserves the source bytes correctly in either overlap direction.
 
 `fill` writes `value` to every byte in its slice; `zero` writes zero to every
@@ -705,6 +704,11 @@ Why the rules in `spec/memory.md` are shaped as they are.
   points, never where the descriptor is held, so requiring a local binding
   first would add nothing but position dependence. Go draws the same line:
   `f()[i] = v` is legal for a slice and illegal for an array.
+- No aliasing marker (Mutability #8): a general `noalias` parameter fact
+  needed a check per pair of arguments, blocked inlining, and gave the
+  optimizer nothing it used. Non-overlap is instead part of the one call that
+  needs it, `mem.copy`, checked like its equal lengths. Precedent: Go and Java
+  have no aliasing marker; C's `memcpy` states non-overlap as its own rule.
 - Mutability (Philosophy #3, #10): every place is writable, and write
   protection comes only from read-only placement (`const` globals and
   literals in read-only memory, enforced by the MMU), as in Go, Odin, and C

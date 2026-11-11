@@ -7898,9 +7898,6 @@ static void check_inline_decl(Ck* k, Node* f) {
         ck_err(k, f, "the entry function cannot be 'inline'");
         return;
     }
-    for (int i = 0; i < f->nkids; i++)
-        if (f->kids[i]->flags & F_NOALIAS)
-            ck_err(k, f->kids[i], "inline function '%.*s' cannot take a noalias parameter", nl, f->str);
     Node* bad = inline_body_bad(f->b);
     if (bad)
         ck_err(k, bad, "inline function '%.*s' cannot contain %s", nl, f->str,

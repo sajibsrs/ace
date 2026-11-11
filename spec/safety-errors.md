@@ -32,16 +32,11 @@ make a failure defined: bounds, null use, and division by zero.
    otherwise a bit operation: discarded high bits are not an overflow
    diagnostic. As elsewhere, a violation provable from constants is rejected
    in every mode.
-7. Checked `noalias` enforcement is deliberately local. At a call boundary,
-   every slice argument corresponding to a `noalias` parameter is compared
-   against the byte range of every other slice argument whose parameter may
-   reach writable storage; nonempty ranges must be disjoint. Computing a byte
-   range that is not representable is itself a violation. The compiler performs
+7. Checked call contracts are deliberately local: the equal lengths required
+   by `mem.copy` and `mem.move`, and `mem.copy`'s nonempty ranges being
+   representable and disjoint, are checked at the call. The compiler performs
    no pointee-graph walk, ownership inference, or general pointer provenance
-   analysis; promises outside directly represented slice ranges remain the
-   programmer's responsibility. Separately stated call contracts such as the
-   equal lengths required by `mem.copy` and `mem.move` are checked at the same
-   boundary. Release emits none of these comparisons.
+   analysis. Release emits none of these comparisons.
 8. Checked null-use diagnostics cover explicit or automatic dereference of a
    zero pointer, a call through a zero function value, and dispatch through a
    zero contract value. Merely storing, copying, comparing, or passing a zero

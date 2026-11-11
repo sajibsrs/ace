@@ -18,18 +18,18 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     storage stays a compile error. Precedent: Go (bounds,
     nil, divide traps; wrapping overflow); Java and C# (masked shift counts).
   - Use after free through another alias: debug builds detect it (quarantine,
-    guard pages) and trap, like `noalias` debug checks; release has machine
+    guard pages) and trap, like the other debug checks; release has machine
     semantics. Precedent: Zig's debug allocator, Vale.
   - Data races (Memory, concurrency) and a C `longjmp` across an Ace frame
     (C Interop #7) are restated under machine semantics; "undefined
     behavior" and "unspecified" leave the spec.
   - Parameters are writable local values and `const` opts out, as do
     receivers (`const self`); a getter takes `const self` (Mutability #2, #6).
+  - There is no by-value receiver: a method that needs a copy makes a local
+    from `self`. Precedent: Swift, C++ `this`.
+  - There is no aliasing marker; `mem.copy` checks its ranges' non-overlap as
+    a call contract (Mutability #8). Precedent: Go, Java, C `memcpy`.
   Open:
-  - [open] Spelling of the by-value receiver (e.g. `val self`).
-  - [open] `noalias` restated: "no other parameter, global, or pointer reaches
-    the same bytes during the call", and which arguments the debug check now
-    pairs, since every slice may write.
   - [open] Whether `const` globals remain distinct types (a read-only `*T`
     from `&CONST`) or only a placement, so a write through a pointer to one
     faults at run time.

@@ -195,8 +195,7 @@ takes `u8`, so `f(['\r', '\n', 0])` selects `f(xs: []u8)`, and a value that
 does not fit (`['a', 300]`) is an error, never truncated. An empty literal
 has no element type, so a cast names its type: `f([]int([]))`, or `f([2]int([x, y]))` for an array parameter.
 
-Return types do not distinguish overloads. `noalias` also does not distinguish
-them.
+Return types do not distinguish overloads.
 
 Transparent aliases do not distinguish overloads. In particular, `char`/`u8`
 and `string`/`[]char`/`[]u8` variations are duplicate declarations.
@@ -555,8 +554,7 @@ The function still has an ordinary symbol, so it can be used as a function
 value, and a `defer` of it calls that symbol at exit. Generic templates,
 methods, associated functions, and specializations may be `inline`; each
 specialization carries its own marker. An inline function may return any type,
-structs, tuples, and type parameters included; it must not take a
-`noalias` parameter, and must not contain `defer` or inline assembly. `intrinsic`
+structs, tuples, and type parameters included; it must not contain `defer` or inline assembly. `intrinsic`
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
 Release builds also expand small functions on their own: a body of at

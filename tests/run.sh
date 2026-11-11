@@ -184,7 +184,6 @@ tests/sema/discard/mixed_typed_err.ace|7:5: error: '_' in a binding list takes n
 tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]int
 tests/sema/shadowing/module_member_err.ace|5:12: note: local 'mem' hides the imported module 'mem'
 tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
-tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
 tests/sema/defer/block_exit_err.ace|7:25: error: break cannot leave a deferred block
 tests/sema/defer/block_exit_err.ace|8:25: error: continue cannot leave a deferred block
@@ -1418,7 +1417,7 @@ for m in debug release; do
         fi
     done
 done
-for f in noalias copy_length copy_overlap copy_typed_length copy_typed_overlap; do
+for f in copy_length copy_overlap copy_typed_length copy_typed_overlap; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/contract_$f" \
          "tests/checked_contracts/$f.ace" >/dev/null 2>$T/errs ||
        "/tmp/ace_checked_features/contract_$f" >/dev/null 2>$T/errs ||

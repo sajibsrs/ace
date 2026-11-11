@@ -39,7 +39,6 @@ pub Kind: enum u8 {
 pub F_PUB: const u32 = 1
 pub F_EXPO: const u32 = 2
 pub F_BYADDR: const u32 = 4
-pub F_NOALIAS: const u32 = 8
 pub F_CONST: const u32 = 16
 pub F_DEFAULT: const u32 = 32
 pub F_VARARGS: const u32 = 64
@@ -64,13 +63,13 @@ pub F_THREADLOCAL: const u32 = 1073741824 // a module variable with one copy per
 pub F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
 
 /* Flag dump names, in `ace --ast` order. */
-FLAG_BITS: [21]u32 = [
-    F_PUB, F_EXPO, F_BYADDR, F_NOALIAS, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
+FLAG_BITS: [20]u32 = [
+    F_PUB, F_EXPO, F_BYADDR, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
     F_ASSOC, F_SELECT, F_EMBED, F_SPECIALIZED, F_INTRINSIC, F_INLINE, F_COLD,
     F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED, F_OPEN, F_THREADLOCAL,
 ]
-FLAG_NAMES: [21]string = [
-    " pub", " extern-c", " byaddr", " noalias", " const", " default", " varargs",
+FLAG_NAMES: [20]string = [
+    " pub", " extern-c", " byaddr", " const", " default", " varargs",
     " method", " assoc", " select", " embed", " specialized", " intrinsic",
     " inline", " cold", " packed", " volatile", " c_abi", " shadowed", " open",
     " threadlocal",
@@ -1890,7 +1889,6 @@ Parser.params(self, closer: string, self_ok: bool) {
     if !self.at(Token.rparen) {
         for {
             pa: u32 = self.nd(Kind.param)
-            if self.eat(Token.noalias) { self.nodes[pa].flags |= F_NOALIAS }
             if self.at(Token.const) && self.kth(1) == Token.self {
                 self.nodes[pa].flags |= F_CONST // a receiver the method does not write
                 self.i += 1
@@ -1898,7 +1896,6 @@ Parser.params(self, closer: string, self_ok: bool) {
             if self.at(Token.self) {
                 if !self_ok { self.fail("'self' is only the receiver of a method declaration") }
                 if self.nstack != mark { self.fail("'self' must be the first parameter") }
-                if (self.nodes[pa].flags & F_NOALIAS) != 0 { self.fail("'noalias' does not apply to the receiver 'self'") }
                 self.nodes[pa].flags |= F_BYADDR // every receiver is the caller's storage, by address
                 self.i += 1
                 if self.at(Token.colon) { self.fail("'self' takes no type; its type is the method's owner") }

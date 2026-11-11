@@ -662,12 +662,6 @@ Sema.check_inline_decl(self, f: u32) {
         self.err(f, ["the entry function cannot be 'inline'"])
         return
     }
-    for i: u32 in 0..n.nkids {
-        p: u32 = self.kid(f, i)
-        if (self.node(p).flags & parser.F_NOALIAS) != 0 {
-            self.err(p, ["inline function '", n.text, "' cannot take a noalias parameter"])
-        }
-    }
     bad: u32 = self.inline_body_bad(n.b)
     if bad != 0 {
         what: string = "inline assembly"

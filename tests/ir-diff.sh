@@ -24,8 +24,8 @@
 # default) sit among the statements, and some functions defer notes of their
 # parameters, and tagged unions (one nested, one of over 16 bytes) are built,
 # passed, returned, copied, compared, and switched on (with a binder and a
-# default), and held in a struct member and an array, and calls with a noalias slice
-# parameter compare their slice windows, and for-in loops read them (and
+# default), and held in a struct member and an array, and calls pass slice
+# windows, and for-in loops read them (and
 # index loops change them). A labeled block restarts, a computed
 # global constant is read, and an Error's name and message are looked up. Some functions bind an
 # address-taken local in an asm statement (a host register), read from its home. Each
@@ -690,7 +690,7 @@ BEGIN {
     print "mkb(k: i64, v: i64): UB {\n    return UB { k = k, e = mk(k, v), t = u8(v) }\n}\n"
     print "sumb(b: UB): i64 {\n    return b.k + eval(b.e) + i64(b.t)\n}\n"
     print "echob(b: UB): UB {\n    return b\n}\n"
-    print "nblit(noalias d: []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
+    print "nblit(d: []u8, s: []u8): int {\n    if d.len > 0 && s.len > 0 { return int(d[0]) + int(s[0]) }\n    return int(d.len) + int(s.len)\n}\n"
     print "GK: const int = 3 * 5 + 1\n"
     print "DomErr: error {\n    3: three = \"the third\",\n    9: nine = \"nine\",\n}\n"
     print "derr(k: i64): Error {\n    if k == 0 { return null }\n    if k == 1 { return DomErr(3) }\n    if k == 2 { return DomErr(9) }\n    return DomErr(i32(k))\n}\n"

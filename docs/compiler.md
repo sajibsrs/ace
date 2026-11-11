@@ -87,11 +87,7 @@ constant prints as a `load` of its storage, `typeid(T)` as a `u64` constant,
 and an Error's `name` or `message` as a chain of comparisons of the packed
 value with each declared domain (name) or entry (message), each matching one
 loading its string; nothing matching leaves the empty string. `panic(message)`
-prints as a `write` of the message to descriptor 2 and a call of `abort`. In
-debug, a call of a function with a `noalias` parameter prints the range
-checks before the call: per slice argument a representability check (`check`
-of the length's bound and of the end not wrapping), then per pair with a
-`noalias` member a guarded `check` that the ranges are disjoint. A `defer` prints as nothing at its statement beyond the evaluation of its
+prints as a `write` of the message to descriptor 2 and a call of `abort`. A `defer` prints as nothing at its statement beyond the evaluation of its
 arguments; its call appears again before every `ret`, last defer first.
 In release, the IR is then optimized before it prints: a value that is constant
 on every path becomes a `const`, a pure operation equal to one that dominates it

@@ -296,3 +296,7 @@
   `T`'s bound type through the ordinary cast check (`bound_type_param` ahead
   of primitive and declared types), so a runtime value converts to `T`. C and
   selfhost.
+- `noalias` is removed (#181): it is no longer a keyword or parameter marker,
+  and the per-pair debug range check and its inlining block go with it.
+  `mem.copy` keeps its overlap check as a call contract; `str.copy` and
+  `str.cstring` copy overlapping ranges front to back. C and selfhost.
