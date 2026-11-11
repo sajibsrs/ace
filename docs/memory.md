@@ -208,6 +208,12 @@ order with no metadata and no inter-element padding: `sizeof([N]T)` is
 `N * sizeof(T)` with the element's alignment. Strings are never NUL-terminated,
 and a string literal's bytes sit in read-only memory.
 
+A `const` global sits in read-only memory too. Assigning it is an error, but it
+gives ordinary views, as a string literal does: `&N` is `*T`, `K[..]` is `[]T`,
+so a lookup table passes to any function that reads it. A write through such a
+view faults on the read-only page, in every build. A local `const` has no
+read-only page, so `&c` and `c[lo..hi]` of one are rejected at compile time.
+
 ## Thread-local variables
 
 A module variable marked `threadlocal` has one copy per thread:
@@ -715,7 +721,9 @@ Why the rules in `spec/memory.md` are shaped as they are.
   without `const`. A type-level permission layer (`mut` views, call-site
   marks) doubled every view type and API signature, and still could not
   protect memory reached through a pointer; the platform already does that
-  at no cost.
+  at no cost. A `const` global therefore gives ordinary views: rejecting them
+  left a constant table unusable by any function, and the read-only page
+  already catches the write.
 - Thread-local variables (Values & Passing #13): per-thread state otherwise
   needs a context pointer through every call or a `pthread_key` created at
   runtime, and Ace has no module-init hook to create one. C11 `_Thread_local`

@@ -20,7 +20,7 @@ import ui
 
 /* Hand-written icons on the 24 x 24 grid: -1 an open line, -3 a closed one,
  * each tag followed by its point count and points; -9 ends the icon. */
-POINTS: [55]f32 = [
+POINTS: const [55]f32 = [
     /* plus, at 0 */
     -1.0, 2.0, 12.0, 5.0, 12.0, 19.0,
     -1.0, 2.0, 5.0, 12.0, 19.0, 12.0,
@@ -50,17 +50,17 @@ SQUARE: const usize = 22
 TRIANGLE: const usize = 33
 CROSS: const usize = 42
 
-SWATCHES: [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
+SWATCHES: const [5]u32 = [0xda4b4b, 0xeac22d, 0x41bb77, 0x3f86d6, 0xa685fd]
 /* The swatches: ten icons, each in its own color. */
-GROUP: [10]u32 = [0xda4b4b, 0xe8833a, 0xeac22d, 0x8cc63f, 0x41bb77, 0x2fb3b3, 0x3f86d6, 0x5b6ee1, 0xa685fd, 0xd96aa7]
-TOOLS: [3]string = ["Box", "Wedge", "Tick"]
+GROUP: const [10]u32 = [0xda4b4b, 0xe8833a, 0xeac22d, 0x8cc63f, 0x41bb77, 0x2fb3b3, 0x3f86d6, 0x5b6ee1, 0xa685fd, 0xd96aa7]
+TOOLS: const [3]string = ["Box", "Wedge", "Tick"]
 
 /* The menu's items, "" for a divider; the one at SORT_BY opens SORTS beside
  * it, and the one at DELETE is destructive. */
-ITEMS: [6]string = ["New File", "Duplicate", "", "Sort By", "", "Delete"]
+ITEMS: const [6]string = ["New File", "Duplicate", "", "Sort By", "", "Delete"]
 SORT_BY: const usize = 3
 DELETE: const usize = 5
-SORTS: [3]string = ["Name", "Date Modified", "Size"]
+SORTS: const [3]string = ["Name", "Date Modified", "Size"]
 
 /* A menu's width, its inset around the rows, a divider's height, and the
  * room left of a row's text for a checkmark. */
@@ -329,7 +329,7 @@ controls(s: *State, x: *ui.Context, box: ui.Rect): f32 {
 }
 
 /* The menu bar: plain items, then one that opens the menu. */
-BAR: [3]string = ["File", "Edit", "View"]
+BAR: const [3]string = ["File", "Edit", "View"]
 
 /* The right column's top: a menu bar and a field. Returns the bottom of its
  * last control. */

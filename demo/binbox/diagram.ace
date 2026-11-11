@@ -63,7 +63,7 @@ CODE: [grid.Block]u8 = [
 ]
 
 /* The block of each code, by code. */
-BLOCK: [24]grid.Block = [
+BLOCK: const [24]grid.Block = [
     grid.Block.empty, grid.Block.source, grid.Block.source, grid.Block.wire,
     grid.Block.read, grid.Block.write, grid.Block.and, grid.Block.or,
     grid.Block.not, grid.Block.led, grid.Block.nand, grid.Block.nor,

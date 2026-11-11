@@ -206,8 +206,8 @@ pub Canvas.outline_dashed(self, box: Rect, thick: f32, color: Color, view: Rect)
 /* Each corner's arc, a quarter turn in ROUND_STEPS even steps. */
 ROUND_STEPS: const usize = 5
 ROUND_POINTS: const usize = 4 * ROUND_STEPS
-ROUND_C: [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
-ROUND_S: [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
+ROUND_C: const [ROUND_STEPS]f32 = [1.0, 0.9239, 0.7071, 0.3827, 0.0]
+ROUND_S: const [ROUND_STEPS]f32 = [0.0, 0.3827, 0.7071, 0.9239, 1.0]
 
 /* `box` with corners of `radius`, its edge fading out over one pixel. */
 pub Canvas.fill(self, box: Rect, radius: f32, color: Color) {

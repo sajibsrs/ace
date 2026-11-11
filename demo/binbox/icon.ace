@@ -7,7 +7,7 @@
 pub Id: enum u8 { source, wire, read, write, and, or, not, nand, nor, xor, xnor, led, bridge, clock, toggle, new, open, save, save_as, edit, run, pause, step, reset, zoom_out, zoom_in, select, dropper, depth, snap, panel_left, panel_right }
 
 /* Where each icon starts in POINTS. */
-pub START: [Id]u16 = [
+pub START: const [Id]u16 = [
     Id.source = 0,
     Id.wire = 47,
     Id.read = 58,
@@ -42,7 +42,7 @@ pub START: [Id]u16 = [
     Id.panel_right = 2515,
 ]
 
-pub POINTS: [2761]f32 = [
+pub POINTS: const [2761]f32 = [
     -1.0, 2.0, 12.0, 3.0, 12.0, 11.0, -1.0, 19.0,
     6.3, 7.0, 5.04, 8.66, 4.26, 10.59, 4.0, 12.65,
     4.28, 14.72, 5.09, 16.64, 6.36, 18.28, 8.01, 19.55,

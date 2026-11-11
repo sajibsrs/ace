@@ -139,9 +139,9 @@ pub Glyphs: struct {
  * writable slice): open strokes (-1), each its count of
  * points, then -9. The check fills a CHECK_SIDE box's middle 12 pixels with a
  * 1.75 stroke. */
-CHECK: [9]f32 = [-1.0, 3.0, 5.28, 12.64, 10.08, 17.44, 18.72, 7.2, -9.0]
-CHEVRON: [9]f32 = [-1.0, 3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 9.0, -9.0]
-CLOSE: [13]f32 = [-1.0, 2.0, 6.0, 6.0, 18.0, 18.0, -1.0, 2.0, 18.0, 6.0, 6.0, 18.0, -9.0]
+CHECK: const [9]f32 = [-1.0, 3.0, 5.28, 12.64, 10.08, 17.44, 18.72, 7.2, -9.0]
+CHEVRON: const [9]f32 = [-1.0, 3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 9.0, -9.0]
+CLOSE: const [13]f32 = [-1.0, 2.0, 6.0, 6.0, 18.0, 18.0, -1.0, 2.0, 18.0, 6.0, 6.0, 18.0, -9.0]
 
 /* The default glyphs. */
 pub Glyphs.init(): Glyphs {

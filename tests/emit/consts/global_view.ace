@@ -1,0 +1,23 @@
+/* A const global gives ordinary views (Mutability #4): `&N`, `K[..]`, and a
+ * const receiver reach its read-only storage, and reads through them work. */
+
+// expect-exit: 42
+
+K: const [4]int = [1, 2, 3, 4]
+N: const int = 7
+Pt: struct { x: int }
+P: const Pt = Pt { x = 25 }
+
+Pt.get(const self): int { return self.x }
+
+sum(xs: const []int): int {
+    t: int = 0
+    for i: usize in 0..xs.len { t += xs[i] }
+    return t
+}
+
+main(): int {
+    p: *int = &N
+    view: []int = K[..]
+    return sum(view) + *p + P.get()
+}

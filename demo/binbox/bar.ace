@@ -28,7 +28,7 @@ pub PANEL_H: const f32 = 76.0
  * block, box-select blocks and drag them, or pick the block clicked. */
 pub Tool: enum u8 { pencil, select, dropper }
 
-pub STRIP_ICON: [Tool]icon.Id = [
+pub STRIP_ICON: const [Tool]icon.Id = [
     Tool.pencil = icon.Id.edit,
     Tool.select = icon.Id.select,
     Tool.dropper = icon.Id.dropper,

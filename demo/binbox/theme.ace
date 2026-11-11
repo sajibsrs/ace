@@ -79,4 +79,4 @@ pub HIGH: [grid.Block]u32 = [
 
 /* The panel icon colors of the wire and the bridge: under the pointer (wire,
  * bridge), then selected (wire, bridge). */
-pub PANEL_BRIGHT: [4]u32 = [0x3f86d6, 0x8a5fd6, 0x59a8ff, 0xa87bff]
+pub PANEL_BRIGHT: const [4]u32 = [0x3f86d6, 0x8a5fd6, 0x59a8ff, 0xa87bff]

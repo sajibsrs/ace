@@ -3697,8 +3697,9 @@ static void finish_direct_call(Ck* k, Node* call, Sym* s) {
     call->ty = s->type->ret;
 }
 
-/* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
- * writable method call on `c` (receivers are by address) are rejected; a plain
+/* A local or parameter const never gains a writable view: `&c`, `c[lo..hi]`,
+ * and a writable method call on `c` (receivers are by address) are rejected.
+ * A const global's view is ordinary; its read-only page faults a write. A plain
  * parameter's view marks it written. A path through a pointer reaches other
  * storage and is not checked. */
 static void reject_const_view(Ck* k, Node* at, Node* e) {
@@ -3710,7 +3711,7 @@ static void reject_const_view(Ck* k, Node* at, Node* e) {
     }
     if (!e || e->kind != N_IDENT) return;
     Sym* s = lookup_val(k, e->str, e->len);
-    if (s && s->kind == SYM_VAR && s->is_const)
+    if (s && s->kind == SYM_VAR && s->is_const && !s->is_global)
         ck_err(k, at, "const '%.*s' cannot give a writable view", (int)e->len, e->str);
     else if (s && s->kind == SYM_VAR && s->is_param) s->is_written = 1;
 }

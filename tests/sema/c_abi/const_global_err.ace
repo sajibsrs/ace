@@ -1,5 +1,5 @@
-/* A const C global (C Interop #6) rejects assignment and writable views,
- * like an Ace const global.
+/* A const C global (C Interop #6) rejects assignment, like an Ace const
+ * global; `&limit` is an ordinary view of its read-only storage.
  */
 
 extern "c" {

@@ -19,8 +19,8 @@ import group: "./group.ace"
 
 pub Level: enum u8 { low, high, error }
 
-DX: [4]int = [0, 1, 0, -1]
-DY: [4]int = [-1, 0, 1, 0]
+DX: const [4]int = [0, 1, 0, -1]
+DY: const [4]int = [-1, 0, 1, 0]
 
 /* Cells on the board. */
 CELLS: const int = grid.CELLS
@@ -32,12 +32,12 @@ LOW: const int = 2 * CELLS
 SINK: const int = CELLS
 
 /* The share of a pin's reading in a tally: one pin, plus one high or one error. */
-WEIGHT: [Level]u64 = [Level.low = 1, Level.high = 1 + (1 << 16), Level.error = 1 + (1 << 32)]
+WEIGHT: const [Level]u64 = [Level.low = 1, Level.high = 1 + (1 << 16), Level.error = 1 + (1 << 32)]
 /* One bit per level, so joining drivers is an or. */
-BIT: [Level]u8 = [Level.low = 1, Level.high = 2, Level.error = 4]
+BIT: const [Level]u8 = [Level.low = 1, Level.high = 2, Level.error = 4]
 /* The level of a net from the bits of its drivers: none or low is low, high
  * alone is high, any mix is an error. */
-JOINED: [8]Level = [
+JOINED: const [8]Level = [
     Level.low, Level.low, Level.high, Level.error,
     Level.error, Level.error, Level.error, Level.error,
 ]

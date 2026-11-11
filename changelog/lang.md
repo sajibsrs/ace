@@ -300,3 +300,7 @@
   and the per-pair debug range check and its inlining block go with it.
   `mem.copy` keeps its overlap check as a call contract; `str.copy` and
   `str.cstring` copy overlapping ranges front to back. C and selfhost.
+- A `const` global gives ordinary views (#181): `&g`, `g[lo..hi]`, and
+  receiver calls type-check as for any global, and a write through one faults
+  on its read-only page. Assignment to it, and views of a local or parameter
+  `const`, stay compile errors. C and selfhost.

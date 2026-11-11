@@ -29,10 +29,10 @@ once in `changelog/`; uncommitted candidates are tracked as GitHub issues.
     from `self`. Precedent: Swift, C++ `this`.
   - There is no aliasing marker; `mem.copy` checks its ranges' non-overlap as
     a call contract (Mutability #8). Precedent: Go, Java, C `memcpy`.
-  Open:
-  - [open] Whether `const` globals remain distinct types (a read-only `*T`
-    from `&CONST`) or only a placement, so a write through a pointer to one
-    faults at run time.
+  - A `const` global is a placement, not a type: it is not assigned, but it
+    gives ordinary views, and a write through one faults on its read-only
+    page (Mutability #1, #4). A local `const` has no such page, so its views
+    stay rejected. Precedent: C `.rodata`, Ace string literals.
 
 ### Trigger-gated
 

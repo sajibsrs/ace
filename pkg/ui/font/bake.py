@@ -253,14 +253,14 @@ def main():
         "",
         f'import Font from "{imp}"' if imp.startswith(".") else f"import Font from {imp}",
         "",
-        f"pub ADVANCE: [{len(adv)}]f32 = [",
+        f"pub ADVANCE: const [{len(adv)}]f32 = [",
     ]
     for i in range(0, len(adv), 12):
         lines.append("    " + ", ".join(repr(float(v)) for v in adv[i:i + 12]) + ",")
-    lines += ["]", "", f"pub START: [{len(start)}]u32 = ["]
+    lines += ["]", "", f"pub START: const [{len(start)}]u32 = ["]
     for i in range(0, len(start), 12):
         lines.append("    " + ", ".join(str(v) for v in start[i:i + 12]) + ",")
-    lines += ["]", "", f"pub POINTS: [{len(flat)}]f32 = ["]
+    lines += ["]", "", f"pub POINTS: const [{len(flat)}]f32 = ["]
     for i in range(0, len(flat), 8):
         lines.append("    " + ", ".join(repr(float(v)) for v in flat[i:i + 8]) + ",")
     lines += [

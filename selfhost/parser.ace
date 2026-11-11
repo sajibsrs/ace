@@ -63,12 +63,12 @@ pub F_THREADLOCAL: const u32 = 1073741824 // a module variable with one copy per
 pub F_TEXT: const u32 = 0x80000000 // `text` is set (it may still be empty)
 
 /* Flag dump names, in `ace --ast` order. */
-FLAG_BITS: [20]u32 = [
+FLAG_BITS: const [20]u32 = [
     F_PUB, F_EXPO, F_BYADDR, F_CONST, F_DEFAULT, F_VARARGS, F_METHOD,
     F_ASSOC, F_SELECT, F_EMBED, F_SPECIALIZED, F_INTRINSIC, F_INLINE, F_COLD,
     F_PACKED, F_VOLATILE, F_CABI, F_SHADOWED, F_OPEN, F_THREADLOCAL,
 ]
-FLAG_NAMES: [20]string = [
+FLAG_NAMES: const [20]string = [
     " pub", " extern-c", " byaddr", " const", " default", " varargs",
     " method", " assoc", " select", " embed", " specialized", " intrinsic",
     " inline", " cold", " packed", " volatile", " c_abi", " shadowed", " open",
