@@ -91,7 +91,7 @@ across: f32 = math.cos(single)
 
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 6 ns per call for `exp` and
-8 ns for `log`, about 4 ns for `sin` and `cos` up to 1.6e6 (about 3.5 ns for
+8 ns for `log` (2.4 ns and 3.4 ns for `f32`), about 4 ns for `sin` and `cos` up to 1.6e6 (about 3.5 ns for
 `f32` `sin` and `cos`, which reduce by pi and take one polynomial whatever the
 quadrant, so no branch depends on the argument below 4.2e8), about 7.5 ns for
 `f64` arguments beyond 1.6e6, and
@@ -101,8 +101,12 @@ two 128-entry tables: a logarithm table of `invc` and `log(c)`, and a table of
 `2^(j/128)`. `pow` forms `log(x)` as a high and low word, multiplies by the
 exponent in extended precision, and rebuilds the result from the powers-of-2
 table; `exp` and `log` return one rounded double each, so they keep only the
-single compensation term that arithmetic needs. `pow`'s `f32` kernel runs the
-same tables in plain `f64` with a shorter series. `sin` and `cos` write the
+single compensation term that arithmetic needs. The `f32` `exp`, `log`, and
+`pow` kernels run the same tables in plain `f64` with shorter series (a
+degree-3 exponential, a logarithm series to `r^5`) and round once into `f32`;
+every `f32`, subnormals included, is a normal `f64`, so only zero, infinite,
+NaN, and negative operands leave the main path. The worst `f32` error over all
+inputs is 0.504 ULP for `exp` and 0.501 ULP for `log`. `sin` and `cos` write the
 argument as `n * pi/64 + r` with `|r| <= pi/128`, read `S = sin(k * pi/64)` and
 `C = cos(k * pi/64)` from one 128-entry table (the cosine is the same table 32
 entries on), and return `S + C*r + (S*(cos(r) - 1) + C*(sin(r) - r))`, the two

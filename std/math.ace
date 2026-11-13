@@ -10,7 +10,8 @@
  * separate plain-f64 kernel over the same tables. sin and cos reduce by pi/64 onto a 128-entry table
  * of sin(k*pi/64) in `math_tables` and add two short series, with no branch on the argument, the
  * Payne-Hanek range included; the f32 sin and cos reduce by pi in f64 and take one branch-free
- * polynomial; the f32 exp and log round the f64 result.
+ * polynomial; the f32 exp and log run the same tables in plain f64 with a degree-3 exponential and a
+ * series to r^5, rounding once into f32.
  */
 
 import bits
@@ -230,9 +231,22 @@ pub exp(value: f64): f64 {
     return fma(scale, correction, scale) * bitcast(f64, u64(23) << 52)
 }
 
-/* e raised to `value`, computed in f64. */
-pub inline exp(value: f32): f32 {
-    return f32(exp(f64(value)))
+/* e raised to `value`: infinity on overflow, 0 on underflow, NaN for NaN. */
+pub exp(value: f32): f32 {
+    // Below |x| = 128 the f64 scale stays normal and the final conversion rounds once into infinity,
+    // the f32 subnormals, or zero; beyond it the result is already one of those, or a NaN.
+    if (bitcast(u32, value) & 0x7FFFFFFF) >= 0x43000000 {
+        if value > 0.0 { return bitcast(f32, u32(0x7F800000)) }
+        if value < 0.0 { return 0.0 }
+        return value + value
+    }
+    // The f64 reduction with a single-word ln2/128 and a degree-3 correction: |r| <= ln2/256 keeps the
+    // relative error near 2^-38, far inside the half f32 ulp the conversion adds.
+    shifted: f64 = fma(f64(value), EXP_INV_LN2N, EXP_SHIFT)
+    n: i64 = i64(bitcast(u64, shifted)) - EXP_SHIFT_BITS
+    r: f64 = fma(shifted - EXP_SHIFT, -EXP_LN2_N, f64(value))
+    scale: f64 = bitcast(f64, u64(i64(table.two_bits[u64(n) & 127]) + ((n >> 7) << 52)))
+    return f32(fma(scale, fma(r * r, fma(r, EXP_C3, 0.5), r), scale))
 }
 
 /* The natural logarithm of `value`: negative infinity at 0, NaN below 0 or
@@ -265,9 +279,21 @@ pub log(value: f64): f64 {
     return t + ((w - t + r) + (fma(f64(offset >> 52), LOG_LN2_LO, table.log[i].logctail) + r2 * q))
 }
 
-/* The natural logarithm of `value`, computed in f64. */
-pub inline log(value: f32): f32 {
-    return f32(log(f64(value)))
+/* The natural logarithm of `value`: negative infinity at 0, NaN below 0 or
+ * for NaN.
+ */
+pub log(value: f32): f32 {
+    // Zero, negative, infinite, and NaN operands take the f64 path; every other f32, subnormals
+    // included, is a normal f64, so the main path needs no rescaling.
+    if bitcast(u32, value) - 1 >= 0x7F7FFFFF { return f32(log(f64(value))) }
+    // The f64 table reduction with no tail word and a series to r^5: |r| <= 0.00585 keeps the error
+    // near 2^-40 relative to the result, far inside the half f32 ulp the conversion adds.
+    xs: i64 = i64(bitcast(u64, f64(value)))
+    offset: i64 = xs - LOG_OFF
+    i: u64 = u64(offset >> 45) & 127
+    r: f64 = fma(bitcast(f64, u64(xs - (offset & -4503599627370496))), table.log[i].invc, -1.0)
+    return f32(fma(f64(offset >> 52), LOG_LN2, table.log[i].logc) + r +
+        r * r * fma(r, fma(r, fma(r, LOG_C5, LOG_C4), LOG_C3), -0.5))
 }
 
 // Parity of the finite non-zero exponent with bits `raw`: 0 fractional, 1 odd, 2 even.

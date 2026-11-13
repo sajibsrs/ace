@@ -1,5 +1,12 @@
 # Standard library
 
+- `math`'s `f32` `exp` and `log` run their own kernels over the shared tables in
+  plain `f64` (single-word ln2/128 and a degree-3 exponential; a series to `r^5`
+  with no tail word), one guard sending special operands to the `f64` path.
+  Worst error over all inputs 0.504 / 0.501 ULP; `bench/std` exp-f32 3.85 to
+  2.40 ns, log-f32 4.3 to 3.4 ns on Apple arm64 (1.60x / 1.48x to 1.00x / 1.17x
+  of libm) (#48, #72).
+
 - `math`'s `f64` `sin` and `cos` from 1647099 read the Payne-Hanek product onto
   the pi/64 table (top seven bits the index, the rest a fixed-point offset): no
   branch on the argument, 2/pi a byte table read unaligned, `f32` sharing it.
