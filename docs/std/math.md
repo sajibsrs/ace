@@ -92,7 +92,9 @@ across: f32 = math.cos(single)
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 6 ns per call for `exp` and
 8 ns for `log`, 11–12 ns for `sin` and `cos` once the argument needs reducing
-and about 4 ns below pi/4 (about 5 ns for `f32` `sin` and `cos`), several
+and about 4 ns below pi/4 (about 3.5 ns for `f32` `sin` and `cos`, which reduce
+by pi and take one polynomial whatever the quadrant, so no branch depends on
+the argument below 4.2e8), several
 hundred ns for arguments beyond 1.6e6, and
 about 23 ns for `pow(f64)` (12 ns for `pow(f32)`, about 7 ns for the exponents
 2, 1, -1, and 0.5). `exp`, `log`, and `pow` are all table-driven over the same

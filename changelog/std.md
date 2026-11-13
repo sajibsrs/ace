@@ -1,5 +1,11 @@
 # Standard library
 
+- `math`'s `f32` `sin` and `cos` reduce by pi through two `fma`s and take one
+  odd polynomial on [-pi/2, pi/2], the quotient's parity setting the sign bit,
+  so no branch depends on the argument below 2^28 * pi/2. Worst error over all
+  finite inputs 0.511 ULP; `bench/std` sin-f32 5.45 to 3.4 ns, cos-f32 5.59 to
+  3.6 ns on Apple arm64 (1.70x and 1.48x to 1.03x and 0.94x of libm) (#72).
+
 - `net.close_write` and `tcp.close_write` exist on linux-x64 (`shutdown` with
   `SHUT_WR`, Linux errno numbering in `CloseWriteErr`), so `pkg/http` builds
   there; `tests/emit/tcp/close_write.ace` covers the half-close and the

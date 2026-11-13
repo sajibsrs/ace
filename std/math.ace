@@ -7,8 +7,8 @@
  * pow runs both halves back to back, carrying its logarithm as a high and low double because the
  * value must survive multiplication by the exponent; exp and log return one rounded double and so
  * keep only the single compensation term the cancelling add needs. The f32 pow overload is a
- * separate plain-f64 kernel over the same tables, and the f32 sin and cos use shorter f64 kernels
- * after a two-word reduction; the f32 exp and log round the f64 result.
+ * separate plain-f64 kernel over the same tables, and the f32 sin and cos reduce by pi in f64 and
+ * take one branch-free polynomial; the f32 exp and log round the f64 result.
  */
 
 import bits
@@ -60,9 +60,9 @@ COS_C4: const f64 = -2.75573143513906633035e-07
 COS_C5: const f64 = 2.08757232129817482790e-09
 COS_C6: const f64 = -1.13596475577881948265e-11
 
-// The f32 sin and cos work in f64: musl's shorter kernels hold an f32 result to 1 ULP on
-// [-pi/4, pi/4], and pi/2 in a 25-bit head and a tail reduces exactly while n * PIO2F_1 fits in
-// 53 bits, below F32_LARGE_BITS (2^28 * pi/2). Bit bounds are those of the f32 magnitude.
+// The f32 sin and cos work in f64. Past F32_LARGE_BITS (2^28 * pi/2, a bound on the f32 magnitude's
+// bits) they follow the Payne-Hanek reduction with musl's shorter kernels, which hold an f32 result
+// to 1 ULP on [-pi/4, pi/4].
 SINF_S1: const f64 = -0.16666666641626524
 SINF_S2: const f64 = 0.008333329385889463
 SINF_S3: const f64 = -0.00019839334836096632
@@ -71,10 +71,18 @@ COSF_C0: const f64 = -0.499999997251031
 COSF_C1: const f64 = 0.04166662332373906
 COSF_C2: const f64 = -0.001388676377460993
 COSF_C3: const f64 = 2.439044879627741e-05
-PIO2F_1: const f64 = 1.5707963109016418
-PIO2F_1T: const f64 = 1.5893254773528196e-08
-F32_PIO4_BITS: const u32 = 0x3F490FDA
-F32_SMALL_BITS: const u32 = 0x39800000
+// Below F32_LARGE_BITS the f32 sin and cos reduce by pi instead, as PI_HI + PI_LO through two fmas,
+// and take one odd polynomial on [-pi/2, pi/2]: the Taylor series through y^13, whose remainder there
+// is under 7e-10, about 0.01 ULP of an f32 result.
+INV_PI: const f64 = 3.183098861837907e-01
+PI_HI: const f64 = 3.141592653589793
+PI_LO: const f64 = 1.2246467991473532e-16
+SINF_P3: const f64 = -1.6666666666666666e-01
+SINF_P5: const f64 = 8.333333333333333e-03
+SINF_P7: const f64 = -1.984126984126984e-04
+SINF_P9: const f64 = 2.7557319223985893e-06
+SINF_P11: const f64 = -2.505210838544172e-08
+SINF_P13: const f64 = 1.6059043836821613e-10
 F32_LARGE_BITS: const u32 = 0x4DC90FDB
 F32_INF_BITS: const u32 = 0x7F800000
 
@@ -630,29 +638,32 @@ reduce_large32(value: f32): (f64, int) {
     return y0 + y1, quarter
 }
 
+/* sin(y) * (-1)^n for |y| <= pi/2. One polynomial serves every quadrant, so the result's sign is the
+ * only thing the quotient decides, and it goes in as a bit: no branch depends on the argument.
+ */
+inline sin_signed32(y: f64, n: f64): f32 {
+    z: f64 = y * y
+    poly: f64 = fma(z, fma(z, fma(z, fma(z, fma(z, SINF_P13, SINF_P11), SINF_P9), SINF_P7), SINF_P5), SINF_P3)
+    return f32(bitcast(f64, bitcast(u64, fma(y * z, poly, y)) ^ (u64(int(n)) << 63)))
+}
+
 /* The sine of `value` radians; NaN for an infinity or NaN. */
 pub sin(value: f32): f32 {
     bits: u32 = bitcast(u32, value) & u32(0x7FFFFFFF)
-    if bits <= F32_PIO4_BITS {
-        if bits < F32_SMALL_BITS { return value }
-        return f32(sin_kernel32(f64(value)))
-    }
-    if bits >= F32_INF_BITS { return value - value }
-    y: f64 = 0.0
-    quarter: int = 0
-    if bits < F32_LARGE_BITS {
-        // Inline, as in the f64 forms; adding and removing 1.5 * 2^52 rounds to the nearest integer.
-        x: f64 = f64(value)
-        n: f64 = x * INV_PIO2 + EXP_SHIFT - EXP_SHIFT
-        y = x - n * PIO2F_1 - n * PIO2F_1T
-        quarter = int(n) & 3
-    } else {
+    if bits >= F32_LARGE_BITS {
+        if bits >= F32_INF_BITS { return value - value }
+        y: f64 = 0.0
+        quarter: int = 0
         y, quarter = reduce_large32(value)
+        if quarter == 0 { return f32(sin_kernel32(y)) }
+        if quarter == 1 { return f32(cos_kernel32(y)) }
+        if quarter == 2 { return f32(sin_kernel32(-y)) }
+        return f32(-cos_kernel32(y))
     }
-    if quarter == 0 { return f32(sin_kernel32(y)) }
-    if quarter == 1 { return f32(cos_kernel32(y)) }
-    if quarter == 2 { return f32(sin_kernel32(-y)) }
-    return f32(-cos_kernel32(y))
+    // x = n * pi + y; adding and removing 1.5 * 2^52 rounds to the nearest integer.
+    x: f64 = f64(value)
+    n: f64 = x * INV_PI + EXP_SHIFT - EXP_SHIFT
+    return sin_signed32(fma(-n, PI_LO, fma(-n, PI_HI, x)), n)
 }
 
 /* The cosine of `value` radians; NaN for an infinity or NaN. */
@@ -733,24 +744,18 @@ pub cos(value: f64): f64 {
 /* The cosine of `value` radians; NaN for an infinity or NaN. */
 pub cos(value: f32): f32 {
     bits: u32 = bitcast(u32, value) & u32(0x7FFFFFFF)
-    if bits <= F32_PIO4_BITS {
-        if bits < F32_SMALL_BITS { return 1.0 }
-        return f32(cos_kernel32(f64(value)))
-    }
-    if bits >= F32_INF_BITS { return value - value }
-    y: f64 = 0.0
-    quarter: int = 0
-    if bits < F32_LARGE_BITS {
-        // Inline, as in the f64 forms; adding and removing 1.5 * 2^52 rounds to the nearest integer.
-        x: f64 = f64(value)
-        n: f64 = x * INV_PIO2 + EXP_SHIFT - EXP_SHIFT
-        y = x - n * PIO2F_1 - n * PIO2F_1T
-        quarter = int(n) & 3
-    } else {
+    if bits >= F32_LARGE_BITS {
+        if bits >= F32_INF_BITS { return value - value }
+        y: f64 = 0.0
+        quarter: int = 0
         y, quarter = reduce_large32(value)
+        if quarter == 0 { return f32(cos_kernel32(y)) }
+        if quarter == 1 { return f32(sin_kernel32(-y)) }
+        if quarter == 2 { return f32(-cos_kernel32(y)) }
+        return f32(sin_kernel32(y))
     }
-    if quarter == 0 { return f32(cos_kernel32(y)) }
-    if quarter == 1 { return f32(sin_kernel32(-y)) }
-    if quarter == 2 { return f32(-cos_kernel32(y)) }
-    return f32(sin_kernel32(y))
+    // cos(x) = sin(x + pi/2), so x = (n - 1/2) * pi + y with n = x/pi + 1/2 rounded to nearest.
+    x: f64 = f64(value)
+    n: f64 = x * INV_PI + 0.5 + EXP_SHIFT - EXP_SHIFT
+    return sin_signed32(fma(0.5 - n, PI_LO, fma(0.5 - n, PI_HI, x)), n)
 }
