@@ -78,7 +78,8 @@ area, hairlines between them, and opens a down area over it, closed by
 the sides and centered on the cell's height. A debug build aborts when more
 are placed than it has cells.
 
-A control is `theme.height` high (a button 4 more, 2 above and below); a line of text is
+A control is `theme.height` high (a button or picker 4 more, 2 above and below,
+unless `ui.height` set it; an icon-only button is as wide as it is high); a line of text is
 its style's `size` high. `ui.last()` gives the last control's `Item`: `hovered`,
 `held`, its `rect`, and a field's `submit`.
 

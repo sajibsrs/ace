@@ -1,5 +1,8 @@
 # Packages
 
+- `pkg/ui`'s `ui.height(h)` sets a button's or picker's height exactly, with
+  no `look.BUTTON_PAD` added, and an icon-only button is square at the padded
+  height (`Context.tall`).
 - `pkg/ui`'s `int` slider takes an optional `label` shown in place of the
   stop number; binbox's Speed and Clock sliders show their rate (4 Hz) and
   span (8 ticks) with it.

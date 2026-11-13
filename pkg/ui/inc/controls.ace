@@ -21,7 +21,7 @@ THUMB_MIN: const f32 = 16.0
 press(id: u32, shapes: States[Icon], icon: bool, label: string, st: const *Graphical, on: bool): bool {
     c: *Context = context.current
     off: bool = context.disabled()
-    box: Rect = context.place(context.measure(st, icon, label), context.frame() + 2.0 * look.BUTTON_PAD)
+    box: Rect = context.place(context.measure(st, icon, label), context.tall())
     res: Response = Response {}
     if !off { res = context.track(context.claim(id), box) }
     look.button(c.canvas, st, box, res, shapes, icon, label, on, off)
@@ -99,7 +99,7 @@ pub picker(items: []string, chosen: *usize, st: const *Labeled): bool {
     w: f32 = 0.0
     p: f32 = st.box.padding.left + st.box.padding.right
     for i: usize in 0 .. items.len { w += text_width(items[i], st.label) + p }
-    box: Rect = context.place(w, context.frame() + 2.0 * look.BUTTON_PAD)
+    box: Rect = context.place(w, context.tall())
     base: u32 = context.claim(context.id(usize(chosen)))
     each: f32 = box.w / f32(items.len)
     changed: bool = false

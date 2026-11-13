@@ -548,12 +548,19 @@ Context.frame(const self): f32 {
     return self.theme.height
 }
 
+/* A button's height: `BUTTON_PAD` above and below the theme's, unless
+ * `height` set it. */
+Context.tall(const self): f32 {
+    if self.next_h > 0.0 { return self.next_h }
+    return self.theme.height + 2.0 * look.BUTTON_PAD
+}
+
 /* How wide a button is across an area: its label, or `width`'s stand-in,
  * padded, after its icon; an icon alone is square. */
 Context.measure(const self, st: const *Graphical, icon: bool, label: string): f32 {
     text: string = label
     if self.fitting { text = self.fit }
-    if text.len == 0 { return self.frame() }
+    if text.len == 0 { return self.tall() }
     w: f32 = st.box.padding.left + st.box.padding.right + text_width(text, st.label)
     if icon { w += st.graphic.size + st.graphic.gap }
     return w
@@ -594,6 +601,11 @@ pub reachable(): bool {
 /* A control's height. */
 pub frame(): f32 {
     return current.frame()
+}
+
+/* A button's height. */
+pub tall(): f32 {
+    return current.tall()
 }
 
 /* How wide a button is across an area. */

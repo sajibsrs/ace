@@ -109,8 +109,9 @@ pub card(t: *test.T) {
     c.end()
 }
 
-/* A button is as wide as its content across an area, an icon alone square,
- * and `width` can size it for another label. */
+/* A button is as wide as its content across an area and 4 higher than the
+ * theme's height, an icon alone square; `width` can size it for another
+ * label and `height` sets its height exactly. */
 pub buttons(t: *test.T) {
     c: ui.Context = ui.Context {}
     frame(&c)
@@ -121,7 +122,7 @@ pub buttons(t: *test.T) {
     ui.button(shape, "Open")
     t.equal(ui.last().rect.w == 16.0 + ui.text_width("Open") + 22.0, true, @file, @line)
     ui.button(shape, "")
-    t.equal(ui.last().rect.w == 26.0 && ui.last().rect.h == 26.0, true, @file, @line)
+    t.equal(ui.last().rect.w == 30.0 && ui.last().rect.h == 30.0, true, @file, @line)
     ui.width("Simulate")
     ui.button(shape, "Edit")
     t.equal(ui.last().rect.w == 16.0 + ui.text_width("Simulate") + 22.0, true, @file, @line)
@@ -135,7 +136,7 @@ pub buttons(t: *test.T) {
     ui.button(swap, "Swapped", false)
     t.equal(ui.last().rect.w == 16.0 + ui.text_width("Swapped") + 22.0, true, @file, @line)
     ui.button("Next")
-    t.equal(ui.last().rect.h == 26.0, true, @file, @line)
+    t.equal(ui.last().rect.h == 30.0, true, @file, @line)
     bar.end()
     c.end()
 }
