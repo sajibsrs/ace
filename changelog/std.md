@@ -1,5 +1,9 @@
 # Standard library
 
+- `math`'s `f64` `sin` and `cos` from 1647099 read the Payne-Hanek product onto
+  the pi/64 table (top seven bits the index, the rest a fixed-point offset): no
+  branch on the argument, 2/pi a byte table read unaligned, `f32` sharing it.
+  Worst error 0.543 ULP; `sin-large` 15.3 to 7.5 ns (0.96x libm) (#146).
 - `math`'s `f64` `sin` and `cos` reduce by pi/64 onto a 128-entry table of
   `sin(k*pi/64)` (high and low words, full period) plus two three-term series,
   so quadrant and sign are the table index and no branch depends on the

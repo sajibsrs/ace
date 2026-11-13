@@ -8,12 +8,13 @@
  * value must survive multiplication by the exponent; exp and log return one rounded double and so
  * keep only the single compensation term the cancelling add needs. The f32 pow overload is a
  * separate plain-f64 kernel over the same tables. sin and cos reduce by pi/64 onto a 128-entry table
- * of sin(k*pi/64) in `math_tables` and add two short series, with no branch on the argument below
- * the Payne-Hanek range; the f32 sin and cos reduce by pi in f64 and take one branch-free
+ * of sin(k*pi/64) in `math_tables` and add two short series, with no branch on the argument, the
+ * Payne-Hanek range included; the f32 sin and cos reduce by pi in f64 and take one branch-free
  * polynomial; the f32 exp and log round the f64 result.
  */
 
 import bits
+import load: @byte_load
 import table: @math_tables
 
 /* The correctly rounded square root of `value`; NaN for a negative one. */
@@ -38,8 +39,10 @@ EXP_UNDERFLOW: const f64 = -7.45133219101941108420e+02
 // sin and cos (f64) from SMALL_BITS (2^-27; below it they return the argument or 1) reduce by pi/64
 // onto the `math_tables` sine table: PI64_1 + PI64_2 through fmas, with PI64_3 once the remainder
 // drops under NEAR_GRID_BITS (2^-22) and so has cancelled. SIN_R and COS_R carry sin(r) - r from r^3
-// and cos(r) - 1 from r^4 for |r| <= pi/128. From MEDIUM_BITS (1647099.0) the Payne-Hanek reduction
-// by pi/2 = PIO2_A + PIO2_B takes over, finished by the SIN_S and COS_C kernels on [-pi/4, pi/4].
+// and cos(r) - 1 from r^4 for |r| <= pi/128. From MEDIUM_BITS (1647099.0) the Payne-Hanek product
+// gives the grid index and the offset as a fixed-point fraction of pi/64: LARGE_1 + LARGE_2 are
+// pi/64 scaled by 2^-63 for the fraction's rounded high word, LARGE_3 by 2^-128 for the rest, and
+// TWO_64 is 2^64.
 SMALL_BITS: const u64 = 0x3E40000000000000
 MEDIUM_BITS: const u64 = 0x413921FB00000000
 NEAR_GRID_BITS: const u64 = 0x3E90000000000000
@@ -52,26 +55,17 @@ SIN_R5: const f64 = 8.333333333333333e-03
 SIN_R7: const f64 = -1.984126984126984e-04
 COS_R4: const f64 = 4.1666666666666664e-02
 COS_R6: const f64 = -1.388888888888889e-03
-PIO2_A: const f64 = 1.5707963267948966
-PIO2_B: const f64 = 6.123233995736766e-17
-
-SIN_S1: const f64 = -1.66666666666666324348e-01
-SIN_S2: const f64 = 8.33333333332248946124e-03
-SIN_S3: const f64 = -1.98412698298579493134e-04
-SIN_S4: const f64 = 2.75573137070700676789e-06
-SIN_S5: const f64 = -2.50507602534068634195e-08
-SIN_S6: const f64 = 1.58969099521155010221e-10
-
-COS_C1: const f64 = 4.16666666666666019037e-02
-COS_C2: const f64 = -1.38888888888741095749e-03
-COS_C3: const f64 = 2.48015872894767294178e-05
-COS_C4: const f64 = -2.75573143513906633035e-07
-COS_C5: const f64 = 2.08757232129817482790e-09
-COS_C6: const f64 = -1.13596475577881948265e-11
+LARGE_1: const f64 = 5.322064968885241e-21
+LARGE_2: const f64 = 2.0746323752546555e-37
+LARGE_3: const f64 = 1.4425486003435943e-40
+TWO_64: const f64 = 1.8446744073709552e+19
 
 // The f32 sin and cos work in f64. Past F32_LARGE_BITS (2^28 * pi/2, a bound on the f32 magnitude's
 // bits) they follow the Payne-Hanek reduction with musl's shorter kernels, which hold an f32 result
-// to 1 ULP on [-pi/4, pi/4].
+// to 1 ULP on [-pi/4, pi/4]; PIO2_M64 (pi/2 * 2^-64) and TWO_M64 (2^-64) scale the product's
+// fraction.
+PIO2_M64: const f64 = 8.515303950216386e-20
+TWO_M64: const f64 = 5.421010862427522e-20
 SINF_S1: const f64 = -0.16666666641626524
 SINF_S2: const f64 = 0.008333329385889463
 SINF_S3: const f64 = -0.00019839334836096632
@@ -482,97 +476,70 @@ pub pow(x: f32, y: f32): f32 {
 
 
 
-exponent_field(x: f64): int {
-    return int((bitcast(u64, x) >> 52) & u64(0x7FF))
-}
-
-/* The 64 bits of 2/pi from bit k + 1 on (bit 1 weighs 1/2), for k >= -64. */
-inline two_over_pi_bits(k: int): u64 {
-    i: usize = usize((k + 64) >> 5)
-    shift: u64 = u64(k & 31)
-    pair: u64 = (u64(table.two_over_pi[i]) << 32) | u64(table.two_over_pi[i + 1])
-    return (pair << shift) | (u64(table.two_over_pi[i + 2]) >> (32 - shift))
-}
-
-/* Payne-Hanek reduction for x >= 2^20 * pi/2. With x = m * 2^e (m a 53-bit
- * integer), a bit of 2/pi at weight 2^-k adds m * 2^(e-k) to x * 2/pi, a
- * multiple of 4 once k <= e - 2, so only the 192 bits from k = e - 1 matter.
- * Their product with m, taken mod 2^192, puts the quotient in its top two bits
- * at a fixed position; dropping 2/pi past those 192 bits costs under 2^-137,
- * against a fraction no f64 brings below 2^-62.
+/* x * 2/pi mod 4 for a magnitude x from MEDIUM_BITS, as 192 bits most significant word first: two
+ * integer bits, then the fraction. With x = m * 2^e (m a 53-bit integer), a bit of 2/pi at weight
+ * 2^-j adds m * 2^(e-j), a multiple of 4 once j <= e - 2, so only the 192 bits from j = e - 1
+ * matter. The table is read at the byte boundary up to seven bits above them and m shifted left to
+ * match, which leaves the product in place and zeroes at most its last seven bits. The product
+ * drops less than 2^-125 of a pi/64 step, and the closest any f64 comes to a multiple of pi/64 is
+ * 2^-61.5 of a step (at 0x1.6ac5b262ca1ffp+844).
  */
-inline reduce_large(x: f64): (f64, f64, int) {
-    raw: u64 = bitcast(u64, x)
-    e: int = exponent_field(x) - 1075
-    m: u64 = (raw & u64(0x000FFFFFFFFFFFFF)) | u64(0x0010000000000000)
-    w0: u64 = two_over_pi_bits(e - 2)
-    w1: u64 = two_over_pi_bits(e + 62)
-    w2: u64 = two_over_pi_bits(e + 126)
-    // m * (w0 * 2^128 + w1 * 2^64 + w2) mod 2^192, most significant word first.
+inline large_product(magnitude: u64): (u64, u64, u64) {
+    k: int = int(magnitude >> 52) - 1013
+    m: u64 = ((magnitude & u64(0x000FFFFFFFFFFFFF)) | u64(0x0010000000000000)) << u64(k & 7)
+    at: usize = usize(160 - (k >> 3))
     high2: u64 = 0
     p0: u64 = 0
     high1: u64 = 0
     low1: u64 = 0
-    high2, p0 = bits.mul_wide(m, w2)
-    high1, low1 = bits.mul_wide(m, w1)
+    high2, p0 = bits.mul_wide(m, load.unaligned_u64(table.two_over_pi[..], at - 16))
+    high1, low1 = bits.mul_wide(m, load.unaligned_u64(table.two_over_pi[..], at - 8))
     p1: u64 = high2 + low1
-    p2: u64 = high1 + m * w0
-    if p1 < low1 { p2 += 1 }
-    quotient: int = int(p2 >> 62)
-    // The fraction as a signed 192-bit number with its sign at 1/2: one at or
-    // above 1/2 rounds the quotient up and becomes its (ones') complement.
-    f2: u64 = (p2 << 2) | (p1 >> 62)
-    f1: u64 = (p1 << 2) | (p0 >> 62)
-    f0: u64 = p0 << 2
-    negative: bool = (f2 >> 63) == 1
-    if negative {
-        quotient = quotient + 1
-        f2 = ~f2
-        f1 = ~f1
-        f0 = ~f0
-    }
-    // The fraction is at least 2^-62, so its leading bit is in f2.
-    shift: u64 = u64(bits.clz(f2))
-    top: u64 = (f2 << shift) | ((f1 >> 1) >> (63 - shift))
-    next: u64 = (f1 << shift) | ((f0 >> 1) >> (63 - shift))
-    // The fraction as two exact 53-bit pieces, most significant first.
-    fh: f64 = f64(top >> 11) * bitcast(f64, u64(1023 - 53 - int(shift)) << 52)
-    fl: f64 = f64(((top & u64(0x7FF)) << 42) | (next >> 22)) * bitcast(f64, u64(1023 - 106 - int(shift)) << 52)
-    // (fh + fl) * pi/2 as a double-double, using pi/2 = A + B + (C, negligible).
-    p: f64 = fh * PIO2_A
-    t: f64 = fma(fh, PIO2_A, -p) + (fh * PIO2_B + fl * PIO2_A)
-    y0: f64 = p + t
-    y1: f64 = t - (y0 - p)
-    if negative { return -y0, -y1, quotient & 3 }
-    return y0, y1, quotient & 3
+    p2: u64 = high1 + m * load.unaligned_u64(table.two_over_pi[..], at) + u64(p1 < low1)
+    return p2, p1, p0
 }
 
-/* sin(y0 + y1) for |y0| <= pi/4, y1 the tail of a reduced argument. */
-inline sin_kernel(y0: f64, y1: f64): f64 {
-    z: f64 = y0 * y0
-    v: f64 = z * y0
-    poly: f64 = fma(z, fma(z, fma(z, fma(z, SIN_S6, SIN_S5), SIN_S4), SIN_S3), SIN_S2)
-    return y0 - ((z * (0.5 * y1 - v * poly) - y1) - v * SIN_S1)
+/* sin(k * pi/64 + rh + rl) for |rh| <= pi/128 or a little over, rl its tail. With S = sin(k * pi/64)
+ * and C = cos(k * pi/64) read from the table at k and k + 32,
+ * sin(k * pi/64 + r) = S + C*r + (S * (cos(r) - 1) + C * (sin(r) - r)). The table spans a full
+ * period, so quadrant and sign are its index and no branch depends on the argument.
+ */
+inline grid_kernel(rh: f64, rl: f64, k: usize): f64 {
+    i: usize = k & 127
+    j: usize = (k + 32) & 127
+    sh: f64 = table.sin_high[i]
+    ch: f64 = table.sin_high[j]
+    z: f64 = rh * rh
+    sp: f64 = (rh * z) * fma(z, fma(z, SIN_R7, SIN_R5), SIN_R3)
+    cp: f64 = z * fma(z, fma(z, COS_R6, COS_R4), -0.5)
+    // S + C*r rounded once; S - s is exact, so e is what that rounding dropped.
+    s: f64 = fma(ch, rh, sh)
+    e: f64 = fma(ch, rh, sh - s)
+    return s + (e + fma(sh, cp, fma(ch, sp + rl, fma(table.sin_low[j], rh, table.sin_low[i]))))
 }
 
-/* cos(y0 + y1) for |y0| <= pi/4, y1 the tail of a reduced argument. */
-inline cos_kernel(y0: f64, y1: f64): f64 {
-    z: f64 = y0 * y0
-    r: f64 = z * fma(z, fma(z, fma(z, fma(z, fma(z, COS_C6, COS_C5), COS_C4), COS_C3), COS_C2), COS_C1)
-    reduced: f64 = bitcast(f64, bitcast(u64, y0) & ABS_BITS)
-    if reduced < 0.3 { return 1.0 - (0.5 * z - (z * r - y0 * y1)) }
-    qx: f64 = 0.28125
-    // y0/4 truncated to its high word, so the subtraction below stays exact.
-    if reduced <= 0.78125 { qx = bitcast(f64, ((bitcast(u64, reduced) >> 32) - u64(0x00200000)) << 32) }
-    return (1.0 - qx) - ((0.5 * z - qx) - (z * r - y0 * y1))
+/* sin(x + shift * pi/64) for a magnitude x from MEDIUM_BITS. The product's top seven bits, rounded,
+ * are the grid index, and the rest, read as signed, is the offset from that grid point in steps of
+ * pi/64: hi holds its first 64 bits. hi converts halved, so that the rounded a cannot reach 2^63,
+ * and d, what that rounding dropped, joins the next 64 bits in b.
+ */
+inline sin_large(magnitude: u64, shift: usize): f64 {
+    p2: u64 = 0
+    p1: u64 = 0
+    p0: u64 = 0
+    p2, p1, p0 = large_product(magnitude)
+    hi: i64 = i64((p2 << 7) | (p1 >> 57))
+    a: f64 = f64(hi >> 1)
+    d: i64 = hi - (i64(a) << 1)
+    b: f64 = fma(f64(d), TWO_64, f64((p1 << 7) | (p0 >> 57)))
+    rh: f64 = a * LARGE_1
+    rl: f64 = fma(a, LARGE_1, -rh) + fma(b, LARGE_3, a * LARGE_2)
+    return grid_kernel(rh, rl, usize((p2 + u64(0x0100000000000000)) >> 57) + shift)
 }
 
 /* sin(value + shift * pi/64) for SMALL_BITS <= |value| < MEDIUM_BITS: a shift of 0 is the sine and
- * 32 the cosine. value = n * pi/64 + r with |r| <= pi/128, and with S = sin(k * pi/64) and
- * C = cos(k * pi/64) read from the table at k = n + shift and k + 32,
- * sin(k * pi/64 + r) = S + C*r + (S * (cos(r) - 1) + C * (sin(r) - r)). The table spans a full
- * period, so quadrant and sign are its index and no branch depends on the argument. Every rare
- * path stays inline: a call would make each caller save its float registers on entry.
+ * 32 the cosine. value = n * pi/64 + r with |r| <= pi/128. Every rare path stays inline: a call
+ * would make each caller save its float registers on entry.
  */
 inline sin_grid(value: f64, shift: int): f64 {
     n: f64 = value * INV_PI64 + EXP_SHIFT - EXP_SHIFT
@@ -590,18 +557,7 @@ inline sin_grid(value: f64, shift: int): f64 {
         rh = a + low
         rl = (a - rh) + low
     }
-    k: usize = usize(int(n) + shift)
-    i: usize = k & 127
-    j: usize = (k + 32) & 127
-    sh: f64 = table.sin_high[i]
-    ch: f64 = table.sin_high[j]
-    z: f64 = rh * rh
-    sp: f64 = (rh * z) * fma(z, fma(z, SIN_R7, SIN_R5), SIN_R3)
-    cp: f64 = z * fma(z, fma(z, COS_R6, COS_R4), -0.5)
-    // S + C*r rounded once; S - s is exact, so e is what that rounding dropped.
-    s: f64 = fma(ch, rh, sh)
-    e: f64 = fma(ch, rh, sh - s)
-    return s + (e + fma(sh, cp, fma(ch, sp + rl, fma(table.sin_low[j], rh, table.sin_low[i]))))
+    return grid_kernel(rh, rl, usize(int(n) + shift))
 }
 
 /* The sine of `value` radians; NaN for an infinity or NaN. */
@@ -610,17 +566,8 @@ pub sin(value: f64): f64 {
     if magnitude - SMALL_BITS >= MEDIUM_BITS - SMALL_BITS {
         if magnitude < SMALL_BITS { return value }
         if magnitude >= INF_BITS { return bitcast(f64, u64(0x7FF8000000000000)) }
-        y0: f64 = 0.0
-        y1: f64 = 0.0
-        quarter: int = 0
-        y0, y1, quarter = reduce_large(bitcast(f64, magnitude))
-        // An even quarter takes the sine kernel and an odd one the cosine kernel; the second bit of
-        // the quarter carries the sign, and sin is odd, so a negative argument flips it once more.
-        result: f64 = 0.0
-        if (quarter & 1) == 0 { result = sin_kernel(y0, y1) } else { result = cos_kernel(y0, y1) }
-        if (quarter & 2) != 0 { result = -result }
-        if value < 0.0 { return -result }
-        return result
+        // sin is odd: the sign goes back on as a bit.
+        return bitcast(f64, bitcast(u64, sin_large(magnitude, 0)) ^ (bitcast(u64, value) & ~ABS_BITS))
     }
     return sin_grid(value, 0)
 }
@@ -638,15 +585,18 @@ inline cos_kernel32(x: f64): f64 {
     return ((1.0 + z * COSF_C0) + w * COSF_C1) + (w * z) * (COSF_C2 + z * COSF_C3)
 }
 
-/* x - n * pi/2 for an f32 x beyond F32_LARGE_BITS, as the reduced value and the quarter n & 3. */
+/* x - n * pi/2 for an f32 x beyond F32_LARGE_BITS, as the reduced value and the quarter n & 3: the
+ * product's top two bits, rounded, and the rest as a signed fraction of pi/2.
+ */
 reduce_large32(value: f32): (f64, int) {
-    x: f64 = f64(value)
-    y0: f64 = 0.0
-    y1: f64 = 0.0
-    quarter: int = 0
-    y0, y1, quarter = reduce_large(bitcast(f64, bitcast(u64, x) & ABS_BITS))
-    if value < 0.0 { return -(y0 + y1), (4 - quarter) & 3 }
-    return y0 + y1, quarter
+    p2: u64 = 0
+    p1: u64 = 0
+    p0: u64 = 0
+    p2, p1, p0 = large_product(bitcast(u64, f64(value)) & ABS_BITS)
+    quarter: int = int((p2 + u64(0x2000000000000000)) >> 62)
+    y: f64 = fma(f64((p1 << 2) | (p0 >> 62)), TWO_M64, f64(i64((p2 << 2) | (p1 >> 62)))) * PIO2_M64
+    if value < 0.0 { return -y, (4 - quarter) & 3 }
+    return y, quarter
 }
 
 /* sin(y) * (-1)^n for |y| <= pi/2. One polynomial serves every quadrant, so the result's sign is the
@@ -683,16 +633,7 @@ pub cos(value: f64): f64 {
     if magnitude - SMALL_BITS >= MEDIUM_BITS - SMALL_BITS {
         if magnitude < SMALL_BITS { return 1.0 }
         if magnitude >= INF_BITS { return bitcast(f64, u64(0x7FF8000000000000)) }
-        y0: f64 = 0.0
-        y1: f64 = 0.0
-        quarter: int = 0
-        y0, y1, quarter = reduce_large(bitcast(f64, magnitude))
-        // The quarters run cos, -sin, -cos, sin, and cos is even, so the argument's sign never
-        // reaches the result.
-        result: f64 = 0.0
-        if (quarter & 1) == 0 { result = cos_kernel(y0, y1) } else { result = sin_kernel(y0, y1) }
-        if quarter == 1 || quarter == 2 { return -result }
-        return result
+        return sin_large(magnitude, 32)
     }
     return sin_grid(value, 32)
 }

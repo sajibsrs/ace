@@ -44,7 +44,10 @@ main(): int {
     }
 
     // sin, f64 (regular, negative, huge, and worst-case arguments; the three bit patterns before 2000000
-    // are the doubles nearest 5, 1000003, and 33333333 times pi/64, where the table reduction cancels)
+    // are the doubles nearest 5, 1000003, and 33333333 times pi/64, where the table reduction cancels;
+    // the last eleven take the Payne-Hanek path: its boundary, the benchmark's range, 0x1.5p+100 and
+    // 0x1.5p+103, which read 2/pi at different bytes with different shifts, and 0x74B6AC5B262CA1FF,
+    // the double closest to a multiple of pi/64, with its neighbours and two from the families above)
     if !close64(math.sin(0.1), u64(0x3fb98eaecb8bcb2c)) ||
        !close64(math.sin(0.5), u64(0x3fdeaee8744b05f0)) ||
        !close64(math.sin(0.7853981633974483), u64(0x3fe6a09e667f3bcc)) ||
@@ -96,7 +99,18 @@ main(): int {
        !close64(math.sin(bitcast(f64, u64(0x483504CAC51F1EAF))), u64(0x3c50cb604d34f341)) ||
        !close64(math.sin(bitcast(f64, u64(0x66583009E2E9E2EB))), u64(0x3ff0000000000000)) ||
        !close64(math.sin(bitcast(f64, u64(0x68B29888128E5D23))), u64(0x3ff0000000000000)) ||
-       !close64(math.sin(bitcast(f64, u64(0x45305A5ACABF7F18))), u64(0xbd15d2c235373e42)) {
+       !close64(math.sin(bitcast(f64, u64(0x45305A5ACABF7F18))), u64(0xbd15d2c235373e42)) ||
+       !close64(math.sin(1.0e7), u64(0x3fdaea414a8a3352)) ||
+       !close64(math.sin(1.0e12), u64(0xbfe38f4477984352)) ||
+       !close64(math.sin(1647099.0), u64(0xbfd4b02e5be91e9e)) ||
+       !close64(math.sin(-12345678.9), u64(0x3fecb6bcc6c2b873)) ||
+       !close64(math.sin(bitcast(f64, u64(0x4635000000000000))), u64(0x3fef7ba2e7555ada)) ||
+       !close64(math.sin(bitcast(f64, u64(0x4665000000000000))), u64(0x3fefba178c187be8)) ||
+       !close64(math.sin(bitcast(f64, u64(0x74A6AC5B262CA1FF))), u64(0xbfeed740e7684963)) ||
+       !close64(math.sin(bitcast(f64, u64(0x74B6AC5B262CA1FF))), u64(0x3fe073879922ffee)) ||
+       !close64(math.sin(bitcast(f64, u64(0x74C6AC5B262CA1FF))), u64(0xbfec38b2f180bdb1)) ||
+       !close64(math.sin(bitcast(f64, u64(0x47D504CAC51F1EAF))), u64(0x3fee212104f686e5)) ||
+       !close64(math.sin(bitcast(f64, u64(0x7D9E009C53148BE1))), u64(0x3fe073879922ffee)) {
         return 4
     }
     // cos, f64
@@ -151,7 +165,18 @@ main(): int {
        !close64(math.cos(bitcast(f64, u64(0x483504CAC51F1EAF))), u64(0xbff0000000000000)) ||
        !close64(math.cos(bitcast(f64, u64(0x66583009E2E9E2EB))), u64(0xbc5104830400912a)) ||
        !close64(math.cos(bitcast(f64, u64(0x68B29888128E5D23))), u64(0xbcc1a1b3ceaa69db)) ||
-       !close64(math.cos(bitcast(f64, u64(0x45305A5ACABF7F18))), u64(0x3ff0000000000000)) {
+       !close64(math.cos(bitcast(f64, u64(0x45305A5ACABF7F18))), u64(0x3ff0000000000000)) ||
+       !close64(math.cos(1.0e7), u64(0xbfed085be7a8f4a1)) ||
+       !close64(math.cos(1.0e12), u64(0x3fe9538731dff223)) ||
+       !close64(math.cos(1647099.0), u64(0x3fee4831257a62da)) ||
+       !close64(math.cos(-12345678.9), u64(0x3fdc4004c876f9c8)) ||
+       !close64(math.cos(bitcast(f64, u64(0x4635000000000000))), u64(0xbfc6eaafdfd0eadd)) ||
+       !close64(math.cos(bitcast(f64, u64(0x4665000000000000))), u64(0x3fc0afbdc432b381)) ||
+       !close64(math.cos(bitcast(f64, u64(0x74A6AC5B262CA1FF))), u64(0xbfd111d262b1f677)) ||
+       !close64(math.cos(bitcast(f64, u64(0x74B6AC5B262CA1FF))), u64(0xbfeb728345196e3e)) ||
+       !close64(math.cos(bitcast(f64, u64(0x74C6AC5B262CA1FF))), u64(0x3fde2b5d3806f63b)) ||
+       !close64(math.cos(bitcast(f64, u64(0x47D504CAC51F1EAF))), u64(0xbfd58f9a75ab1fdd)) ||
+       !close64(math.cos(bitcast(f64, u64(0x7D9E009C53148BE1))), u64(0xbfeb728345196e3e)) {
         return 5
     }
     // sin, f32
