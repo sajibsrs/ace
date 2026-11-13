@@ -3031,6 +3031,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             if ((u == T_UT_INT && is_int(want)) || (u == T_UT_FLOAT && is_float(want))) {
                 if (!coerce(k, e->kids[i], want)) return T_ERR;
                 u = want;
+            } else if (u == T_UT_INT && is_float(want)) {
+                // A lone integer literal meets a float operand, as in arithmetic.
+                if (!ut_fits(k, e->kids[i], operand_fit_type(e->kids[i], want))) return T_ERR;
+                if (!settle_operand(k, e->kids[i], want)) return T_ERR;
+                u = want;
             }
             if (!same_type(u, want) || !is_num(want)) {
                 ck_err(k, e, "comparison chain needs one numeric type, got %s and %s", type_name(want), type_name(u));

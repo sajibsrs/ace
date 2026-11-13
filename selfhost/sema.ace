@@ -2690,6 +2690,11 @@ Sema.check_cmpchain(self, e: u32): u32 {
         if (u == self.t_ut_int && self.is_int(want)) || (u == self.t_ut_float && self.is_float(want)) {
             if !self.coerce(k, want) { return self.t_err }
             u = want
+        } else if u == self.t_ut_int && self.is_float(want) {
+            // A lone integer literal meets a float operand, as in arithmetic.
+            if !self.ut_fits(k, self.operand_fit_type(k, want)) { return self.t_err }
+            if !self.settle_operand(k, want) { return self.t_err }
+            u = want
         }
         if !self.same_type(u, want) || !self.is_num(want) {
             self.err(e, ["comparison chain needs one numeric type, got ", self.type_name(want), " and ", self.type_name(u)])

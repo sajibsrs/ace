@@ -1,5 +1,10 @@
 # Language
 
+- An ordering comparison (`<`, `<=`, `>`, `>=`, and chains of them) lets a lone
+  integer literal meet a float operand, as arithmetic and `==` already did, so
+  `x < 0` and `math.abs[f64]` compile; a compound integer constant still needs
+  a cast. C and selfhost.
+
 - A shift count is taken modulo the left operand's width in every build:
   shifts are no longer checked, arm64 masks a narrow count with one `and`, and
   the optimizer folds with the masked count; `pkg/regex` and selfhost drop
