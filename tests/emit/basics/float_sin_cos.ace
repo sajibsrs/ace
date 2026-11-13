@@ -43,7 +43,8 @@ main(): int {
         return 3
     }
 
-    // sin, f64 (regular, negative, huge, and worst-case arguments)
+    // sin, f64 (regular, negative, huge, and worst-case arguments; the three bit patterns before 2000000
+    // are the doubles nearest 5, 1000003, and 33333333 times pi/64, where the table reduction cancels)
     if !close64(math.sin(0.1), u64(0x3fb98eaecb8bcb2c)) ||
        !close64(math.sin(0.5), u64(0x3fdeaee8744b05f0)) ||
        !close64(math.sin(0.7853981633974483), u64(0x3fe6a09e667f3bcc)) ||
@@ -64,6 +65,9 @@ main(): int {
        !close64(math.sin(1000000.0), u64(0xbfd6664b2568d867)) ||
        !close64(math.sin(1647098.9), u64(0xbfdaa193ef3e2661)) ||
        !close64(math.sin(1647099.5), u64(0x3fc5c2b9114232e8)) ||
+       !close64(math.sin(bitcast(f64, u64(0x3FCF6A7A2955385E))), u64(0x3fcf19f97b215f1a)) ||
+       !close64(math.sin(bitcast(f64, u64(0x40E7F7F10A07F45E))), u64(0xbfc2c8106e8d5783)) ||
+       !close64(math.sin(bitcast(f64, u64(0x4138F796284A3389))), u64(0xbfeb728345114300)) ||
        !close64(math.sin(2000000.0), u64(0xbfe4fb9c969ba6ef)) ||
        !close64(math.sin(1000000000.0), u64(0x3fe1778cae83c69b)) ||
        !close64(math.sin(1000000000000000.0), u64(0x3feb76f88136ceba)) ||
@@ -116,6 +120,9 @@ main(): int {
        !close64(math.cos(1000000.0), u64(0x3fedf9df9906d32c)) ||
        !close64(math.cos(1647098.9), u64(0x3fed19186ae7de36)) ||
        !close64(math.cos(1647099.5), u64(0x3fef88c02ffc9f9e)) ||
+       !close64(math.cos(bitcast(f64, u64(0x3FCF6A7A2955385E))), u64(0x3fef0a7efb9230d7)) ||
+       !close64(math.cos(bitcast(f64, u64(0x40E7F7F10A07F45E))), u64(0xbfefa7557f08aef1)) ||
+       !close64(math.cos(bitcast(f64, u64(0x4138F796284A3389))), u64(0xbfe073879930a0f4)) ||
        !close64(math.cos(2000000.0), u64(0x3fe82908d6687144)) ||
        !close64(math.cos(1000000000.0), u64(0x3feacff8c7364234)) ||
        !close64(math.cos(1000000000000000.0), u64(0xbfe06c154609d33f)) ||

@@ -1,5 +1,11 @@
 # Standard library
 
+- `math`'s `f64` `sin` and `cos` reduce by pi/64 onto a 128-entry table of
+  `sin(k*pi/64)` (high and low words, full period) plus two three-term series,
+  so quadrant and sign are the table index and no branch depends on the
+  argument below 1647099; Payne-Hanek above it is unchanged. Worst error found
+  0.545 ULP; `bench/std` sin-f64 7.2 to 4.0 ns, cos-f64 6.8 to 4.1 ns on Apple
+  arm64 (1.5x to 0.82x and 0.90x of libm) (#72).
 - `math`'s `f32` `sin` and `cos` reduce by pi through two `fma`s and take one
   odd polynomial on [-pi/2, pi/2], the quotient's parity setting the sign bit,
   so no branch depends on the argument below 2^28 * pi/2. Worst error over all
