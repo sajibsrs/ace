@@ -203,3 +203,7 @@
   compiler keeps its own copy while it bootstraps.
 - `Array.view` is `inline`, as `get` is: it counts one node in a caller's
   auto-inline budget, so accessors over it (selfhost's `A64.x`) still expand.
+- Float parsing scans the integer and fraction digits in separate runs, eight
+  at a time and then singly, with no per-digit flag or count test; leading zeros
+  are discounted only past 19 digits. `parse-f64-long` fell from 54 to 36 ns
+  (1.72x to 1.1x C `strtod`) and `parse-f64-short` from 34 to 29 ns.

@@ -109,5 +109,35 @@ main(): int {
     if !fok || bitcast(u32, f) != u32(0x00000000) { return 47 }
     f, fok = str.parse[f32]("-0e9999")
     if !fok || bitcast(u32, f) != u32(0x80000000) { return 48 }
+    // Syntax the scan rejects or accepts around a missing part.
+    d, ok = str.parse[f64]("-")
+    if ok { return 49 }
+    d, ok = str.parse[f64](".")
+    if ok { return 50 }
+    d, ok = str.parse[f64]("infx")
+    if ok { return 51 }
+    d, ok = str.parse[f64]("1.")
+    if !ok || bitcast(u64, d) != u64(0x3FF0000000000000) { return 52 }
+    // Leading zeros past 19 digits leave the fast tiers to the significant
+    // digits; 19 significant digits stay fast and 20 do not.
+    d, ok = str.parse[f64]("0.000000000000000000000012345678901234567")
+    if !ok || bitcast(u64, d) != u64(0x3B2DD99AE89EB84B) { return 53 }
+    d, ok = str.parse[f64]("00000000000000000000001234567890123456789")
+    if !ok || bitcast(u64, d) != u64(0x43B12210F47DE981) { return 54 }
+    d, ok = str.parse[f64]("1234567890123456789")
+    if !ok || bitcast(u64, d) != u64(0x43B12210F47DE981) { return 55 }
+    d, ok = str.parse[f64]("12345678901234567891")
+    if !ok || bitcast(u64, d) != u64(0x43E56A95319D63E1) { return 56 }
+    f, fok = str.parse[f32]("0.00000000000000000000001234567890123")
+    if !fok || bitcast(u32, f) != u32(0x196ECCD7) { return 57 }
+    // Eight-digit words end exactly at, before, and after the dot.
+    d, ok = str.parse[f64]("12345678.87654321")
+    if !ok || bitcast(u64, d) != u64(0x41678C29DC0CA459) { return 58 }
+    d, ok = str.parse[f64]("1234567.123456789")
+    if !ok || bitcast(u64, d) != u64(0x4132D6871F9ADD37) { return 59 }
+    d, ok = str.parse[f64]("123456789.1234567")
+    if !ok || bitcast(u64, d) != u64(0x419D6F34547E6B6F) { return 60 }
+    f, fok = str.parse[f32]("12345678.87654321")
+    if !fok || bitcast(u32, f) != u32(0x4B3C614F) { return 61 }
     return 0
 }
