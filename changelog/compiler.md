@@ -293,3 +293,7 @@
   operations, plain loads, checks): a copy of the header ends the preheader
   and the latch, when the body's first block dominates every header value's
   use; layout keeps such a latch in place. `map` get 1.25x, miss 1.03x (#72).
+- Release removes a check on an index counting down (`s[j - 1]`, the
+  decrement guarded), fuses a branch pair bounding one integer at both ends
+  into one unsigned compare, and gives a loop's equal back edges one latch,
+  laid out before the header. `str.trim` 1.46x, `parse-int` 1.10x (#72).

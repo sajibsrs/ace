@@ -69,6 +69,12 @@ repeated in each additional backend.
   preheader and the latch; each header value becomes a phi of its two
   copies in the first body block, which takes every use. `regalloc.c`'s
   layout leaves such a loop's header in place.
+  Range fusion runs before the first cleanup: a branch on one compare of `x`
+  with a constant into a block holding only a second such compare, both
+  sharing one other successor, becomes one branch on `(x - lo) <= hi - lo`
+  over `u32` or `u64`. After the last cleanup, a header's back edges that
+  carry equal values into each phi are merged into one new latch block,
+  which `regalloc.c`'s layout places before the header.
 - **`arm64.c`** (passes 7-10, the AArch64 target) — instruction selection
   (including fused forms such as integer `madd`), leaving SSA (phis become
   copies, with coalescing), linear-scan register allocation, block layout,

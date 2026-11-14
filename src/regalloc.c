@@ -51,7 +51,10 @@ void ra_split_critical_edges(IrFunc* fn) {
 // ends in the test's own conditional branch to the body instead of a jump to
 // the test, then a jump to the body once at entry. A loop whose latch is
 // only a split edge from a test leaving the loop (one pass 6 rotated) already
-// ends each iteration in a conditional branch and stays. This only reorders the
+// ends each iteration in a conditional branch and stays. A latch that is only
+// a jump, entered from several blocks of the body, goes before the header
+// instead: each enters it by a branch back, then falls through the header's
+// test into the body, one branch an iteration. This only reorders the
 // blocks emission walks (a->layout); analysis (a->order, a->bfirst, a->idx,
 // liveness, allocation, coalescing) keeps every value's position as if
 // nothing moved, so none of their ordering assumptions change.
@@ -63,11 +66,12 @@ static void emission_order(Ra* a) {
     memcpy(a->layout, a->order, (size_t)n * sizeof(int));
     int* pos = xcalloc((size_t)n, sizeof(int));
     int* after = xcalloc((size_t)n, sizeof(int)); // latch -> its deferred header, or -1
+    int* before = xcalloc((size_t)n, sizeof(int)); // header -> its deferred latch, or -1
     uint8_t* deferred = xcalloc((size_t)n, 1);
     uint8_t* in = xcalloc((size_t)n, 1);
     int* stack = xcalloc((size_t)n, sizeof(int));
     int moved = 0;
-    for (int b = 0; b < n; b++) after[b] = -1;
+    for (int b = 0; b < n; b++) after[b] = before[b] = -1;
     for (int i = 0; i < n; i++) pos[a->layout[i]] = i;
     for (int i = 1; i < n; i++) { // the entry stays first
         int h = a->layout[i];
@@ -98,8 +102,13 @@ static void emission_order(Ra* a) {
             IrBlock* tb = &fn->blocks[lb->preds[0]];
             if (tb->succ[1] >= 0 && !in[tb->succ[tb->succ[0] == latch]]) continue;
         }
-        after[latch] = h;
-        deferred[h] = 1;
+        if (lb->nins == 1 && lb->npreds > 1) { // a bare latch of several back edges goes before h instead
+            before[h] = latch;
+            deferred[latch] = 1;
+        } else {
+            after[latch] = h;
+            deferred[h] = 1;
+        }
         moved++;
     }
     if (moved) {
@@ -109,6 +118,7 @@ static void emission_order(Ra* a) {
         for (int i = 0; i < n; i++) {
             int b = old[i];
             if (deferred[b]) continue;
+            if (before[b] >= 0) a->layout[k++] = before[b];
             a->layout[k++] = b;
             if (after[b] >= 0) a->layout[k++] = after[b];
         }
@@ -140,7 +150,7 @@ static void emission_order(Ra* a) {
         free(old);
     }
     for (int i = 0; i < n; i++) a->eix[a->layout[i]] = i;
-    free(pos); free(after); free(deferred); free(in); free(stack);
+    free(pos); free(after); free(before); free(deferred); free(in); free(stack);
 }
 
 // Each block's innermost natural loop, as its header's body (body[h][b]: b

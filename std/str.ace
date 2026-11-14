@@ -192,24 +192,11 @@ pub trim(text: string, part: char, suffix: bool): (string, bool) {
  * zero-copy view; no Unicode whitespace processing happens.
  */
 pub trim(text: string): string {
-    start: usize = text.len
-
-    for i: usize in 0 .. text.len {
-        if !space_byte(text[i]) {
-            start = i
-            break
-        }
-    }
+    start: usize = 0
     end: usize = text.len
 
-    if start < text.len {
-        for i: usize in 0 .. text.len - start {
-            if !space_byte(text[text.len - 1 - i]) {
-                end = text.len - i
-                break
-            }
-        }
-    }
+    for start < end && space_byte(text[start]) { start += 1 }
+    for end > start && space_byte(text[end - 1]) { end -= 1 }
     return text[start..end]
 }
 

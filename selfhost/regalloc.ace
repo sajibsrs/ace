@@ -148,8 +148,9 @@ pub split_critical_edges(fn: *Func) {
  * loop, one outside) and whose one back edge is a plain jump: its header moves
  * after its latch in emission order, so an iteration ends in the test's own
  * conditional branch. A loop whose latch is only a split edge from a test
- * leaving the loop (one the optimizer rotated) already does and stays. Then
- * a @cold call's arm moves last. Only layout and eix
+ * leaving the loop (one the optimizer rotated) already does and stays. A
+ * latch that is only a jump, entered from several blocks of the body, goes
+ * before the header instead. Then a @cold call's arm moves last. Only layout and eix
  * change; analysis keeps every position.
  */
 emission_order(a: *Ra, fn: Func) {
@@ -166,6 +167,9 @@ emission_order(a: *Ra, fn: Func) {
     after: array.Array[int], after_err: Error = array.Array[int].filled(usize(n), -1) // latch -> its deferred header, or -1
     fail(after_err)
     defer after.wipe()
+    before: array.Array[int], before_err: Error = array.Array[int].filled(usize(n), -1) // header -> its deferred latch, or -1
+    fail(before_err)
+    defer before.wipe()
     deferred: array.Array[bool], deferred_err: Error = array.Array[bool].filled(usize(n), false)
     fail(deferred_err)
     defer deferred.wipe()
@@ -213,8 +217,13 @@ emission_order(a: *Ra, fn: Func) {
             if tb.succ0 == latch { other = tb.succ1 }
             if tb.succ1 >= 0 && !inl.get(other) { continue }
         }
-        after.set(usize(latch), h)
-        deferred.set(usize(h), true)
+        if lb.ins.len == 1 && lb.preds.len > 1 { // a bare latch of several back edges goes before h instead
+            before.set(usize(h), latch)
+            deferred.set(usize(latch), true)
+        } else {
+            after.set(usize(latch), h)
+            deferred.set(usize(h), true)
+        }
         moved += 1
     }
     if moved > 0 {
@@ -225,6 +234,10 @@ emission_order(a: *Ra, fn: Func) {
         k: usize = 0
         for b: int in old.view() {
             if deferred.get(b) { continue }
+            if before.get(b) >= 0 {
+                a.layout.set(k, before.get(b))
+                k += 1
+            }
             a.layout.set(k, b)
             k += 1
             if after.get(b) >= 0 {

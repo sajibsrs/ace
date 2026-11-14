@@ -745,6 +745,61 @@ static ChkRange chk_range(const Chk* k, int v, int depth) {
     return r;
 }
 
+// Unsigned y exceeds some value where block b runs: an edge into b or a
+// block dominating it takes a branch proving z < y, so y - 1 does not wrap.
+static int chk_positive(const Chk* k, int y, int b) {
+    const IrFunc* fn = k->fn;
+    for (;;) {
+        const IrBlock* bb = &fn->blocks[b];
+        if (bb->npreds == 1) {
+            const IrBlock* pb = &fn->blocks[bb->preds[0]];
+            const IrIns* br = &fn->ins[pb->ins[pb->nins - 1]];
+            Fact f;
+            if (br->op == IR_BR && pb->succ[0] != pb->succ[1] && chk_fact(fn, br->args[0], pb->succ[0] == b, &f) &&
+                !f.sg && f.strict && !f.kb && f.b == y)
+                return 1;
+        }
+        if (b == 0) return 0;
+        b = k->idom[b];
+    }
+}
+
+// x is a decrement y - 1 that does not wrap, so x < y; y, or -1.
+static int chk_decrement(const Chk* k, int x) {
+    const IrFunc* fn = k->fn;
+    const IrIns* d = &fn->ins[x];
+    if (d->op != IR_SUB || d->flags || d->type == IT_PTR || !is_int(d->type) || d->type == IT_BOOL ||
+        ir_type_signed((IrType)d->type) || !is_konst(fn, d->args[1], 1))
+        return -1;
+    int y = chk_strip(fn, d->args[0]);
+    return chk_positive(k, y, d->block) ? y : -1;
+}
+
+// Unsigned x < b (strict) or x <= b, neither a constant, from the facts, a
+// non-wrapping decrement (x - 1 < x), and a phi of values each below b
+// defined before its loop, or its own non-wrapping decrement, where b is
+// defined before the phi's block: a counter stepping down from below b.
+static int chk_below(const Chk* k, int x, int b, int strict, int depth) {
+    const IrFunc* fn = k->fn;
+    if (x == b) return !strict;
+    for (int i = 0; i < k->nfact; i++) {
+        const Fact* f = &k->fact[i];
+        if (!f->sg && !f->ka && !f->kb && f->a == x && f->b == b && (f->strict || !strict)) return 1;
+    }
+    if (depth == 0) return 0;
+    int y = chk_decrement(k, x);
+    if (y >= 0) return chk_below(k, y, b, 0, depth - 1);
+    const IrIns* p = &fn->ins[x];
+    int pb = p->block, bb = fn->ins[b].block;
+    if (p->op != IR_PHI || bb < 0 || bb == pb || !ir_dominates(k->idom, bb, pb)) return 0;
+    for (int i = 0; i < p->nargs; i++) {
+        int a = chk_strip(fn, p->args[i]), ab = fn->ins[a].block;
+        if (chk_decrement(k, a) == x) continue; // below x, which is below b
+        if (ab < 0 || ab == pb || !ir_dominates(k->idom, ab, pb) || !chk_below(k, a, b, strict, depth - 1)) return 0;
+    }
+    return 1;
+}
+
 // The known facts imply q.
 static int chk_implied(const Chk* k, const Fact* q) {
     for (int i = 0; i < k->nfact; i++) {
@@ -773,6 +828,7 @@ static int chk_implied(const Chk* k, const Fact* q) {
         if (q->strict && q->va == UINT64_MAX) return 0;
         return r.ulo >= q->va + q->strict;
     }
+    if (!q->ka && !q->kb && !q->sg) return chk_below(k, q->a, q->b, q->strict, 4);
     return 0;
 }
 
@@ -2190,6 +2246,203 @@ static void cleanup(IrFunc* fn) {
     free(c.repl);
 }
 
+// --- range-compare fusion ------------------------------------------------------------
+//
+// `x >= A && x <= B`, and its complement `x < A || x > B`, lowers to a branch
+// on one compare of x into a block b4 that b0 alone enters, holding only
+// constants and a second compare of x against a constant whose branch shares
+// the other successor F with b0's. When the two facts that reach b4's other
+// successor T bound x to [lo, hi] at both ends, b0 instead branches on one
+// unsigned compare, (x - lo) <= hi - lo, as GCC's and LLVM's switch and
+// range-check lowering do. The subtraction is at 32 or 64 bits, where a cast
+// from x's own type costs nothing on arm64 and no narrow wrap is needed; b4's
+// constants and compare move to b0, where the next cleanup drops them.
+
+// x op k for integer type t, as an interval [*lo, *hi] of biased keys: the
+// value sign-flipped when signed, so unsigned order is t's order. 0 when empty.
+static int range_of(IrOp op, IrType t, uint64_t k, uint64_t* lo, uint64_t* hi) {
+    int n = ir_type_bits(t);
+    uint64_t mask = n == 64 ? ~UINT64_C(0) : (UINT64_C(1) << n) - 1;
+    k &= mask;
+    if (ir_type_signed(t)) k ^= UINT64_C(1) << (n - 1); // biased: min 0, max mask
+    *lo = 0;
+    *hi = mask;
+    switch (op) {
+    case IR_LT: if (k == 0) return 0; *hi = k - 1; return 1;
+    case IR_LE: *hi = k; return 1;
+    case IR_GT: if (k == mask) return 0; *lo = k + 1; return 1;
+    case IR_GE: *lo = k; return 1;
+    default: return 0;
+    }
+}
+
+// Branch condition c's fact on taking the edge where it is `truth`, as x and
+// the interval it places x in. 0 when c is no ordering compare of an integer
+// (not bool or ptr) against a constant.
+static int range_fact(const IrFunc* fn, int c, int truth, int* x, uint64_t* lo, uint64_t* hi) {
+    const IrIns* ci = &fn->ins[c];
+    if (ci->op < IR_LT || ci->op > IR_GE || ci->nargs != 2) return 0;
+    IrOp op = (IrOp)ci->op;
+    int a = ci->args[0], k = ci->args[1];
+    if (fn->ins[a].op == IR_CONST) { // k op x: x flipped op k
+        int s = a; a = k; k = s;
+        op = op == IR_LT ? IR_GT : op == IR_GT ? IR_LT : op == IR_LE ? IR_GE : IR_LE;
+    }
+    IrType t = (IrType)fn->ins[a].type;
+    if (fn->ins[k].op != IR_CONST || fn->ins[a].op == IR_CONST || !is_int(t) || t == IT_BOOL || t == IT_PTR) return 0;
+    if (!truth) op = op == IR_LT ? IR_GE : op == IR_GE ? IR_LT : op == IR_LE ? IR_GT : IR_LE;
+    *x = a;
+    return range_of(op, t, fn->ins[k].imm, lo, hi);
+}
+
+// Fuse b0's branch with the one in its successor i4.
+static int fuse_range(IrFunc* fn, int b0, int i4) {
+    IrBlock* bb = &fn->blocks[b0];
+    if (bb->succ[1] < 0) return 0;
+    int br0 = bb->ins[bb->nins - 1];
+    if (fn->ins[br0].op != IR_BR) return 0;
+    int b4 = bb->succ[i4], f = bb->succ[1 - i4];
+    IrBlock* b4b = &fn->blocks[b4];
+    if (b4 == b0 || b4 == f || b4b->npreds != 1 || b4b->preds[0] != b0 || b4b->succ[1] < 0) return 0;
+    int br1 = b4b->ins[b4b->nins - 1], j4 = b4b->succ[0] == f ? 1 : 0, t = b4b->succ[j4];
+    if (b4b->succ[1 - j4] != f || t == f || t == b4) return 0;
+    for (int i = 0; i < b4b->nins - 1; i++) {
+        const IrIns* y = &fn->ins[b4b->ins[i]];
+        if (y->op != IR_CONST && b4b->ins[i] != fn->ins[br1].args[0]) return 0;
+    }
+    int x0, x1;
+    uint64_t lo0, hi0, lo1, hi1;
+    if (!range_fact(fn, fn->ins[br0].args[0], i4 == 0, &x0, &lo0, &hi0) ||
+        !range_fact(fn, fn->ins[br1].args[0], j4 == 0, &x1, &lo1, &hi1) || x0 != x1)
+        return 0;
+    IrType xt = (IrType)fn->ins[x0].type;
+    int n = ir_type_bits(xt);
+    uint64_t lo = lo0 > lo1 ? lo0 : lo1, hi = hi0 < hi1 ? hi0 : hi1;
+    uint64_t max = n == 64 ? ~UINT64_C(0) : (UINT64_C(1) << n) - 1;
+    if (lo > hi || lo == 0 || hi == max) return 0; // empty, or bounded at one end only
+    IrBlock* fb = &fn->blocks[f]; // F's phis take one value from b0 and b4
+    int p0 = -1, p4 = -1;
+    for (int i = 0; i < fb->npreds; i++) {
+        if (fb->preds[i] == b0) p0 = i;
+        if (fb->preds[i] == b4) p4 = i;
+    }
+    for (int k = 0; k < fb->nins && fn->ins[fb->ins[k]].op == IR_PHI; k++)
+        if (fn->ins[fb->ins[k]].args[p0] != fn->ins[fb->ins[k]].args[p4]) return 0;
+
+    // b4's constants and compare move to b0, ahead of the new test.
+    for (int i = 0; i < b4b->nins - 1; i++) {
+        int v = b4b->ins[i];
+        bb = &fn->blocks[b0];
+        bb->ins = xgrow(bb->ins, &bb->cins, bb->nins + 1, sizeof(int));
+        bb->ins[bb->nins] = bb->ins[bb->nins - 1];
+        bb->ins[bb->nins - 1] = v;
+        bb->nins++;
+        fn->ins[v].block = b0;
+    }
+    uint64_t sign = ir_type_signed(xt) ? UINT64_C(1) << (n - 1) : 0;
+    IrType wt = n == 64 ? IT_U64 : IT_U32;
+    uint64_t wmask = n == 64 ? ~UINT64_C(0) : 0xFFFFFFFFu;
+    uint64_t lov = lo ^ sign; // lo's n-bit value, sign-extended to wt
+    if (sign && (lov & sign)) lov |= ~max;
+    int w = x0;
+    if (xt != wt) {
+        w = ins_before_term(fn, b0, IR_CAST, wt);
+        ir_arg_add(fn, w, x0);
+    }
+    int neg = sign && (lov & (wmask ^ (wmask >> 1))); // lo < 0: add -lo, an immediate where -lo is small
+    int kl = konst_in(fn, b0, wt, (neg ? 0 - lov : lov) & wmask), d = ins_before_term(fn, b0, neg ? IR_ADD : IR_SUB, wt);
+    ir_arg_add(fn, d, w);
+    ir_arg_add(fn, d, kl);
+    int kw = konst_in(fn, b0, wt, hi - lo), c = ins_before_term(fn, b0, IR_LE, IT_BOOL);
+    ir_arg_add(fn, c, d);
+    ir_arg_add(fn, c, kw);
+    fn->ins[br0].args[0] = c;
+
+    // b0 goes to t in b4's place. b4, left with its branch and no
+    // predecessor, is in no successor's list: unreachable.
+    bb = &fn->blocks[b0];
+    bb->succ[0] = t;
+    bb->succ[1] = f;
+    IrBlock* tb = &fn->blocks[t];
+    for (int i = 0; i < tb->npreds; i++) if (tb->preds[i] == b4) tb->preds[i] = b0;
+    drop_pred(fn, f, b4);
+    b4b = &fn->blocks[b4];
+    b4b->ins[0] = br1;
+    b4b->nins = 1;
+    b4b->npreds = 0;
+    return 1;
+}
+
+// Returns whether any branch pair fused, leaving unreachable blocks for the
+// cleanup that follows.
+static int fuse_ranges(IrFunc* fn) {
+    int any = 0;
+    for (int b = 0; b < fn->nblocks; b++)
+        any |= fuse_range(fn, b, 0) || fuse_range(fn, b, 1);
+    return any;
+}
+
+// --- single latch ----------------------------------------------------------------------
+//
+// A loop header entered by several back edges that carry the same value into
+// each of its phis (`for ... && (a || b)`, both arms continuing) gets one new
+// latch block, a jump to the header, that they all enter instead, as LLVM's
+// loop-simplify does. With one back edge the emission order places the header
+// after that latch, so an iteration ends in the header's conditional branch.
+// The cleanup's jump threading would undo it, so this runs after the last one.
+
+static int single_latch(IrFunc* fn) {
+    int any = 0, nrpo;
+    int* rpo;
+    int* idom = NULL;
+    int nb = fn->nblocks;
+    for (int h = 1; h < nb; h++) {
+        if (fn->blocks[h].npreds < 3) continue;
+        if (!idom) idom = ir_dominators(fn, &rpo, &nrpo);
+        IrBlock* hb = &fn->blocks[h];
+        int first = -1, nback = 0, ok = idom[h] >= 0;
+        for (int i = 0; i < hb->npreds && ok; i++) {
+            int p = hb->preds[i];
+            if (idom[p] < 0 || !ir_dominates(idom, h, p)) continue;
+            ok = fn->blocks[p].succ[0] != fn->blocks[p].succ[1];
+            if (first < 0) first = i;
+            for (int k = 0; k < hb->nins && fn->ins[hb->ins[k]].op == IR_PHI && ok; k++)
+                ok = fn->ins[hb->ins[k]].args[i] == fn->ins[hb->ins[k]].args[first];
+            nback++;
+        }
+        if (!ok || nback < 2) continue;
+        int l = ir_block_new(fn); // fn->blocks may move
+        ir_ins_new(fn, l, IR_JMP, IT_VOID);
+        hb = &fn->blocks[h];
+        IrBlock* lb = &fn->blocks[l];
+        lb->succ[0] = h;
+        int k = 0;
+        for (int i = 0; i < hb->npreds; i++) { // back edges leave the lists, l comes in at first's place
+            int p = hb->preds[i];
+            if (idom[p] < 0 || !ir_dominates(idom, h, p) || i == first) {
+                if (i == first) {
+                    lb->preds = xgrow(lb->preds, &lb->cpreds, lb->npreds + 1, sizeof(int));
+                    lb->preds[lb->npreds++] = p;
+                    fn->blocks[p].succ[fn->blocks[p].succ[1] == h] = l;
+                    hb->preds[i] = l;
+                }
+                for (int q = 0; q < hb->nins && fn->ins[hb->ins[q]].op == IR_PHI; q++)
+                    fn->ins[hb->ins[q]].args[k] = fn->ins[hb->ins[q]].args[i];
+                hb->preds[k++] = hb->preds[i];
+                continue;
+            }
+            lb->preds = xgrow(lb->preds, &lb->cpreds, lb->npreds + 1, sizeof(int));
+            lb->preds[lb->npreds++] = p;
+            fn->blocks[p].succ[fn->blocks[p].succ[1] == h] = l;
+        }
+        for (int q = 0; q < hb->nins && fn->ins[hb->ins[q]].op == IR_PHI; q++) fn->ins[hb->ins[q]].nargs = k;
+        hb->npreds = k;
+        any = 1;
+    }
+    if (idom) { free(idom); free(rpo); }
+    return any;
+}
+
 // --- loop rotation -------------------------------------------------------------------
 //
 // A natural loop whose header only tests and reads memory (pure operations,
@@ -2367,7 +2620,9 @@ void ir_optimize(IrFunc* fn) {
     checks(fn);
     licm(fn);
     lsr(fn);
+    fuse_ranges(fn);
     cleanup(fn);
     if (vectorize(fn)) cleanup(fn); // over the merged blocks, which it then tidies
     if (rotate(fn)) cleanup(fn);
+    single_latch(fn);
 }

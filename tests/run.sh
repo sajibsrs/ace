@@ -1252,6 +1252,23 @@ for mode in --debug --release; do
         fail=1
     fi
 done
+# A bare latch shared by several back edges goes before its loop's header, so
+# each continuing branch in the body goes back to it and an iteration takes
+# one branch: in release, every conditional branch after untrailed's load
+# points backward.
+mkdir -p /tmp/ace_latch
+if [ "$(uname -m)" = arm64 ]; then
+    if ! "$ACE" --release -o /tmp/ace_latch/ranges tests/ir/ranges.ace ||
+       ! otool -tv /tmp/ace_latch/ranges |
+         awk -F '\t' '/^__ace\$fn\$untrailed\$.*:$/ { on = 1; next } on && /:$/ { exit }
+              on && $2 == "ldrb" { load = 1 }
+              on && load && $2 ~ /^b\./ { from = $1; to = $3; sub(/^0+/, "", from); sub(/^0x0*/, "", to)
+                  n++; bad += !(length(to) < length(from) || (length(to) == length(from) && to < from)) }
+              END { exit !(n && !bad) }'; then
+        echo "FAIL: a shared latch should precede its loop header"
+        fail=1
+    fi
+fi
 # auto-vectorization: release (vectorized) and debug (scalar) print the same bits
 mkdir -p /tmp/ace_vectorize
 if ! "$ACE" --release -o /tmp/ace_vectorize/release tests/vectorize/lanes.ace ||

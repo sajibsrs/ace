@@ -1,0 +1,186 @@
+letters({ptr, u64}): i64 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    %2 = const i64 0
+    %3 = const u64 0
+    jmp b1
+b1: ; preds b0, b5
+    %5 = phi u64 [%3, b0], [%23, b5]
+    %6 = phi i64 [%2, b0], [%21, b5]
+    %7 = lt bool %5, %1
+    br %7, b2, b3
+b2: ; preds b1
+    %9 = padd ptr %0, %5 * 1
+    %10 = load u8 [%9]
+    %11 = cast u32 %10
+    %12 = const u32 97
+    %13 = sub u32 %11, %12
+    %14 = const u32 25
+    %15 = le bool %13, %14
+    br %15, b4, b5
+b3: ; preds b1
+    ret %6
+b4: ; preds b2
+    %18 = const i64 1
+    %19 = add i64 %6, %18
+    jmp b5
+b5: ; preds b2, b4
+    %21 = phi i64 [%6, b2], [%19, b4]
+    %22 = const u64 1
+    %23 = add u64 %5, %22
+    jmp b1
+}
+
+clamp(i32): i32 {
+b0:
+    %0 = param i32 0
+    %1 = cast u32 %0
+    %2 = const u32 5
+    %3 = add u32 %1, %2
+    %4 = const u32 10
+    %5 = le bool %3, %4
+    br %5, b2, b1
+b1: ; preds b0
+    %7 = const i32 0
+    ret %7
+b2: ; preds b0
+    ret %0
+}
+
+wide(i64): i64 {
+b0:
+    %0 = param i64 0
+    %1 = cast u64 %0
+    %2 = const u64 100
+    %3 = sub u64 %1, %2
+    %4 = const u64 100
+    %5 = le bool %3, %4
+    br %5, b1, b2
+b1: ; preds b0
+    %7 = const i64 1
+    ret %7
+b2: ; preds b0
+    %9 = const i64 2
+    ret %9
+}
+
+above(u16): i64 {
+b0:
+    %0 = param u16 0
+    %1 = const u16 3
+    %2 = gt bool %0, %1
+    br %2, b3, b2
+b1: ; preds b3
+    %4 = const i64 1
+    ret %4
+b2: ; preds b0, b3
+    %6 = const i64 0
+    ret %6
+b3: ; preds b0
+    %8 = const u16 9
+    %9 = ge bool %0, %8
+    br %9, b1, b2
+}
+
+chained(u8, u8): i64 {
+b0:
+    %0 = param u8 0
+    %1 = param u8 1
+    %2 = const u8 3
+    %3 = eq bool %0, %2
+    br %3, b3, b1
+b1: ; preds b0, b4
+    %5 = const i64 1
+    ret %5
+b2: ; preds b3, b4
+    %7 = const i64 0
+    ret %7
+b3: ; preds b0
+    %9 = cast u32 %1
+    %10 = const u32 2
+    %11 = sub u32 %9, %10
+    %12 = const u32 7
+    %13 = le bool %11, %12
+    br %13, b2, b4
+b4: ; preds b3
+    %15 = const u8 12
+    %16 = ge bool %1, %15
+    br %16, b2, b1
+}
+
+space(u8): bool {
+b0:
+    %0 = param u8 0
+    %1 = cast u32 %0
+    %2 = const u32 9
+    %3 = sub u32 %1, %2
+    %4 = const u32 4
+    %5 = le bool %3, %4
+    br %5, b2, b1
+b1: ; preds b0
+    %7 = const u8 32
+    %8 = eq bool %0, %7
+    jmp b3
+b2: ; preds b0
+    %10 = const bool true
+    jmp b3
+b3: ; preds b1, b2
+    %12 = phi bool [%8, b1], [%10, b2]
+    ret %12
+}
+
+untrailed({ptr, u64}): u64 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    jmp b1
+b1: ; preds b0, b5
+    %3 = phi u64 [%1, b0], [%9, b5]
+    %4 = const u64 0
+    %5 = gt bool %3, %4
+    br %5, b3, b2
+b2: ; preds b1, b4
+    ret %3
+b3: ; preds b1
+    %8 = const u64 1
+    %9 = sub u64 %3, %8
+    %10 = padd ptr %0, %9 * 1
+    %11 = load u8 [%10]
+    %12 = cast u32 %11
+    %13 = const u32 9
+    %14 = sub u32 %12, %13
+    %15 = const u32 4
+    %16 = le bool %14, %15
+    br %16, b5, b4
+b4: ; preds b3
+    %18 = const u8 32
+    %19 = eq bool %11, %18
+    br %19, b5, b2
+b5: ; preds b4, b3
+    jmp b1
+}
+
+main(): i64 {
+b0:
+    %0 = str ptr "abc"
+    %1 = const u64 3
+    %2 = call i64 letters(%0, %1)
+    %3 = const i64 3
+    %4 = add i64 %2, %3
+    %5 = const i64 1
+    %6 = add i64 %4, %5
+    %7 = const i64 1
+    %8 = add i64 %6, %7
+    %9 = str ptr "a \x0a"
+    %10 = const u64 3
+    %11 = call u64 untrailed(%9, %10)
+    %12 = cast i64 %11
+    %13 = add i64 %8, %12
+    %14 = const u8 3
+    %15 = const u8 10
+    %16 = call i64 chained(%14, %15)
+    %17 = add i64 %13, %16
+    ret %17
+}
+

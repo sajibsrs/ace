@@ -4,7 +4,7 @@ b0:
     %1 = global ptr table
     %2 = const u64 8
     %3 = lt bool %0, %2
-    check %3, 8:18 bounds violation
+    check %3, 9:18 bounds violation
     %5 = padd ptr %1, %0 * 4
     %6 = load i32 [%5]
     %7 = mul i32 %6, %6
@@ -117,6 +117,28 @@ b3: ; preds b1
     ret %6
 }
 
+trailing({ptr, u64}): u64 {
+b0:
+    %0 = param ptr 0
+    %1 = param u64 1
+    jmp b1
+b1: ; preds b0, b3
+    %3 = phi u64 [%1, b0], [%9, b3]
+    %4 = const u64 0
+    %5 = gt bool %3, %4
+    br %5, b3, b2
+b2: ; preds b1, b3
+    ret %3
+b3: ; preds b1
+    %8 = const u64 1
+    %9 = sub u64 %3, %8
+    %10 = padd ptr %0, %9 * 4
+    %11 = load i32 [%10]
+    %12 = const i32 0
+    %13 = eq bool %11, %12
+    br %13, b1, b2
+}
+
 unknown(u64): i32 {
 b0:
     %0 = param u64 0
@@ -132,7 +154,7 @@ b1: ; preds b0, b2
 b2: ; preds b1
     %9 = const u64 8
     %10 = lt bool %5, %9
-    check %10, 39:41 bounds violation
+    check %10, 46:41 bounds violation
     %12 = padd ptr %3, %5 * 4
     %13 = load i32 [%12]
     %14 = add i32 %6, %13
@@ -214,24 +236,28 @@ b8: ; preds b7
 b9: ; preds b7
     %58 = add i32 %41, %47
     %59 = const u64 8
-    %60 = const i32 0
-    %61 = const u64 0
+    %60 = call u64 trailing(%18, %59)
+    %61 = cast i32 %60
+    %62 = add i32 %58, %61
+    %63 = const u64 8
+    %64 = const i32 0
+    %65 = const u64 0
     jmp b10
 b10: ; preds b9, b11
-    %63 = phi u64 [%61, b9], [%71, b11]
-    %64 = phi i32 [%60, b9], [%69, b11]
-    %65 = lt bool %63, %59
-    br %65, b11, b12
+    %67 = phi u64 [%65, b9], [%75, b11]
+    %68 = phi i32 [%64, b9], [%73, b11]
+    %69 = lt bool %67, %63
+    br %69, b11, b12
 b11: ; preds b10
-    %67 = padd ptr %18, %63 * 4
-    %68 = load i32 [%67]
-    %69 = add i32 %64, %68
-    %70 = const u64 1
-    %71 = add u64 %63, %70
+    %71 = padd ptr %18, %67 * 4
+    %72 = load i32 [%71]
+    %73 = add i32 %68, %72
+    %74 = const u64 1
+    %75 = add u64 %67, %74
     jmp b10
 b12: ; preds b10
-    %73 = add i32 %58, %64
-    %74 = cast i64 %73
-    ret %74
+    %77 = add i32 %62, %68
+    %78 = cast i64 %77
+    ret %78
 }
 

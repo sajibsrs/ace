@@ -246,6 +246,22 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   keeps a rotated loop's header in place: its latch, a split edge from the
   exit test, already ends each iteration in a conditional branch, so the
   move would only add a jump at entry.
+- Compiler #2, down-counting checks, range fusion, and single latch
+  (PHILOSOPHY.md: performance first): a reverse scan written as C writes
+  it, `for end > start && space(s[end - 1]) { end -= 1 }`, kept its bounds
+  check, tested `c >= 9 && c <= 13` in two branches, and took two jumps per
+  iteration, its `||` leaving two back edges. The check pass now proves an
+  unsigned index below a bound from a counter that steps down from that
+  bound with its decrement guarded on a dominating edge, the facts taken
+  where each value is computed rather than at the check, since a fact there
+  describes the current iteration. Range fusion is GCC's and LLVM's
+  `(x - lo) <= hi - lo`, subtracting at 32 or 64 bits so arm64 needs no
+  narrow rewrap, with `add` for a negative `lo` since arm64 immediates are
+  unsigned. Back edges carrying equal phi operands share one latch, as LLVM's
+  loop-simplify does, which pass 10 lays out before the header; the latch
+  alone gained nothing until that layout made each iteration one taken
+  branch. `str.trim` 1.46x (1.04x of C), `parse-int` 1.10x; compiling
+  selfhost costs no measurable time.
 - Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
   every optimization written once per source shape and repeats each in a second
   backend; the compile-time cost ranks below performance, simplicity, and

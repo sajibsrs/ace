@@ -1,6 +1,7 @@
 /* Release removes a bounds check that a dominating comparison implies: the
  * same index checked again, a loop bound, a guard on either branch edge, an
- * offset index under a tighter bound, and a narrower counter. A check the
+ * offset index under a tighter bound, a narrower counter, and an index one
+ * below a counter stepping down under a lower bound. A check the
  * comparisons do not imply stays: an unknown loop bound over a fixed array. */
 table: [8]i32
 
@@ -34,6 +35,12 @@ narrow(): i32 {
     return t
 }
 
+trailing(s: []i32): usize {
+    end: usize = s.len
+    for end > 0 && s[end - 1] == 0 { end -= 1 }
+    return end
+}
+
 unknown(n: usize): i32 {
     t: i32 = 0
     for i: usize in 0 .. n { t += table[i] }
@@ -42,5 +49,5 @@ unknown(n: usize): i32 {
 
 main(): int {
     shifted()
-    return int(repeated(1) + counted(table[..]) + guarded(9) + early(table[..], 2) + narrow() + unknown(8))
+    return int(repeated(1) + counted(table[..]) + guarded(9) + early(table[..], 2) + narrow() + i32(trailing(table[..])) + unknown(8))
 }
