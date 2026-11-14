@@ -184,7 +184,6 @@ tests/sema/discard/mixed_typed_err.ace|7:5: error: '_' in a binding list takes n
 tests/sema/arrays/arithmetic_err.ace|6:19: error: operator * does not apply to [2]int
 tests/sema/shadowing/module_member_err.ace|5:12: note: local 'mem' hides the imported module 'mem'
 tests/sema/associated/value_receiver_err.ace|9:22: error: 'new' is an associated function, called on the type: Router.new(...)
-tests/sema/inline/noalias_err.ace|inline function 'sum' cannot take a noalias parameter
 tests/sema/inline/defer_err.ace|4:5: error: inline function 'guarded' cannot contain 'defer'
 tests/sema/defer/block_exit_err.ace|7:25: error: break cannot leave a deferred block
 tests/sema/defer/block_exit_err.ace|8:25: error: continue cannot leave a deferred block
@@ -278,7 +277,6 @@ tests/sema/generics/alias_recursive_err.ace|5:21: note: in 'Loop[int]' instantia
 tests/sema/generics/field_stamp_note_err.ace|6:27: note: in 'Inner[[4]u8]' instantiated here
 tests/sema/generics/field_stamp_note_err.ace|8:25: note: in 'Outer[[4]u8]' instantiated here
 tests/sema/c_abi/const_global_err.ace|12:5: error: cannot assign to const 'limit'
-tests/sema/c_abi/const_global_err.ace|13:10: error: const 'limit' cannot give a writable view
 tests/sema/c_abi/function_pointer_err.ace|7:33: error: C function-pointer parameter type [2]u8 is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|7:40: error: C function-pointer return type string is not C-ABI compatible
 tests/sema/c_abi/function_pointer_err.ace|8:29: error: C function-pointer parameter type *Fat is not C-ABI compatible
@@ -1254,6 +1252,23 @@ for mode in --debug --release; do
         fail=1
     fi
 done
+# A bare latch shared by several back edges goes before its loop's header, so
+# each continuing branch in the body goes back to it and an iteration takes
+# one branch: in release, every conditional branch after untrailed's load
+# points backward.
+mkdir -p /tmp/ace_latch
+if [ "$(uname -m)" = arm64 ]; then
+    if ! "$ACE" --release -o /tmp/ace_latch/ranges tests/ir/ranges.ace ||
+       ! otool -tv /tmp/ace_latch/ranges |
+         awk -F '\t' '/^__ace\$fn\$untrailed\$.*:$/ { on = 1; next } on && /:$/ { exit }
+              on && $2 == "ldrb" { load = 1 }
+              on && load && $2 ~ /^b\./ { from = $1; to = $3; sub(/^0+/, "", from); sub(/^0x0*/, "", to)
+                  n++; bad += !(length(to) < length(from) || (length(to) == length(from) && to < from)) }
+              END { exit !(n && !bad) }'; then
+        echo "FAIL: a shared latch should precede its loop header"
+        fail=1
+    fi
+fi
 # auto-vectorization: release (vectorized) and debug (scalar) print the same bits
 mkdir -p /tmp/ace_vectorize
 if ! "$ACE" --release -o /tmp/ace_vectorize/release tests/vectorize/lanes.ace ||
@@ -1418,7 +1433,7 @@ for m in debug release; do
         fi
     done
 done
-for f in noalias copy_length copy_overlap copy_typed_length copy_typed_overlap; do
+for f in copy_length copy_overlap copy_typed_length copy_typed_overlap; do
     if ! "$ACE" --debug -o "/tmp/ace_checked_features/contract_$f" \
          "tests/checked_contracts/$f.ace" >/dev/null 2>$T/errs ||
        "/tmp/ace_checked_features/contract_$f" >/dev/null 2>$T/errs ||

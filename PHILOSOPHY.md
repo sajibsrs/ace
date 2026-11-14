@@ -56,7 +56,7 @@ Distilled from the closed philosophy decisions; operative rules live in spec/.
 8. Modules are explicit compilation boundaries; modularity must not require hidden runtime machinery or whole-program analysis.
 9. No undefined behavior. Every operation is boolean: it works, or it definitely fails — never "maybe". A failure the language can define at no cost is defined (one fixed result, or a trap); where catching it would need a runtime check in release, the operation has machine semantics (it happens as written, and the compiler never assumes it cannot); debug builds add detection on top.
 10. Memory permissions belong to the platform. The compiler and linker only choose sections — literals and `const` globals go in read-only memory — the OS loader maps page protections, and the MMU faults on a violating write. The type system adds no write-permission layer.
-11. The optimizer uses only facts the hardware guarantees or the programmer stated explicitly (`noalias`, `volatile`, atomics). It never derives facts from types (no type-based aliasing) or from the absence of undefined behavior.
+11. The optimizer uses only facts the hardware guarantees or the programmer stated explicitly (`const` parameters, `volatile`, atomics). It never derives facts from types (no type-based aliasing) or from the absence of undefined behavior.
 
 ## Considerations
 1. Start strict, relax later: adding convenience later is backward-compatible; removing it is a break. Explicitness-first is the safe default (applies to types, syntax, stdlib).

@@ -12,7 +12,7 @@ import json
 
 PATH: string = "output.json"
 
-SENSORS: [4]string = ["north", "east", "south", "west"]
+SENSORS: const [4]string = ["north", "east", "south", "west"]
 
 main(): int {
     doc: json.Json = json.Json.new()

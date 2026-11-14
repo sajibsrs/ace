@@ -1,0 +1,48 @@
+/* Release fuses two branches comparing one integer against constants, which
+ * bound it at both ends, into one unsigned test of its offset from the low
+ * end, at 32 bits (a narrow value) or 64: an `&&` range, an `||` complement
+ * with a negative low end (an add), and a 64-bit range. A loop whose header
+ * two back edges enter with the same values gets one latch they share.
+ * Two compares bounding one end only stay apart. A fused range followed by
+ * another test of the same value leaves its second block alone. */
+letters(s: []u8): int {
+    n: int = 0
+    for i: usize in 0 .. s.len {
+        if s[i] >= 'a' && s[i] <= 'z' { n += 1 }
+    }
+    return n
+}
+
+clamp(x: i32): i32 {
+    if x < -5 || x > 5 { return 0 }
+    return x
+}
+
+wide(x: i64): i64 {
+    if x >= 100 && x <= 200 { return 1 }
+    return 2
+}
+
+above(x: u16): int {
+    if x > 3 && x >= 9 { return 1 }
+    return 0
+}
+
+chained(k: u8, p: u8): int {
+    if !(k == 3 && ((p >= 2 && p <= 9) || p >= 12)) { return 1 }
+    return 0
+}
+
+inline space(c: u8): bool {
+    return (c >= '\t' && c <= '\r') || c == ' '
+}
+
+untrailed(s: string): usize {
+    end: usize = s.len
+    for end > 0 && space(s[end - 1]) { end -= 1 }
+    return end
+}
+
+main(): int {
+    return letters("abc"[..]) + int(clamp(3)) + int(wide(150)) + above(10) + int(untrailed("a \n")) + chained(3, 10)
+}

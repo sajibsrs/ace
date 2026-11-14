@@ -10,6 +10,8 @@ must be corrected.
 
 ## Language guide
 
+- [Features at a glance](features.md) — the implemented features in one
+  page, grouped by what they give a C programmer.
 - [Primitives](primitives.md) — implemented scalar types, literals, casts,
   platform words, and strings.
 - [Types and declarations](types.md) — explicit typed declarations,

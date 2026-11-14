@@ -1,0 +1,13 @@
+/* A write through a view of a const global faults on its read-only page
+ * (Mutability #4), in every build: 138 is SIGBUS on Darwin. */
+
+// expect-exit: 138
+
+K: const [4]int = [1, 2, 3, 4]
+
+poke(xs: []int) { xs[0] = 9 }
+
+main(): int {
+    poke(K[..])
+    return K[0]
+}

@@ -1,18 +1,26 @@
 import test
 import fmt
 import ui: "../mod.ace"
+import Color from sdl
 import Keycode from sdl
 
 /* No window: drawing only fills the layer. */
 canvas: ui.Canvas
 
 /* Controls and list rows 26 high, an 18 icon. */
-THEME: const ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0, icon = 18.0 }
+/* The theme's sizes, derived, with icons 18 on buttons and toggles. */
+theme(): ui.Theme {
+    th: ui.Theme = ui.Theme { height = 26.0, padding = 8.0, gap = 4.0 }
+    th.derive()
+    th.button.graphic.size = 18.0
+    th.toggle.graphic.size = 18.0
+    return th
+}
 
 /* A context over `canvas`, its frame begun. */
 frame(c: *ui.Context) {
     c.canvas = &canvas
-    c.theme = THEME
+    c.theme = theme()
     c.begin()
 }
 
@@ -101,23 +109,52 @@ pub card(t: *test.T) {
     c.end()
 }
 
-/* A button is as wide as its content across an area, an icon alone square,
- * and `width` can size it for another label. */
+/* A button is as wide as its content across an area and 4 higher than the
+ * theme's height, an icon alone square; `width` can size it for another
+ * label and `height` sets its height exactly. */
 pub buttons(t: *test.T) {
     c: ui.Context = ui.Context {}
     frame(&c)
     shape: ui.Icon = ui.Icon {}
     bar: ui.Area = ui.area(ui.Rect { w = 400.0, h = 30.0 }, ui.Flow.across)
     ui.button("Save")
-    t.equal(ui.last().rect.w == 16.0 + 4.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Save"), true, @file, @line)
     ui.button(shape, "Open")
-    t.equal(ui.last().rect.w == 16.0 + 18.0 + 4.0 + 4.0 * ui.GLYPH_WIDTH, true, @file, @line)
-    ui.button(shape)
-    t.equal(ui.last().rect.w == 26.0 && ui.last().rect.h == 26.0, true, @file, @line)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Open") + 22.0, true, @file, @line)
+    ui.button(shape, "")
+    t.equal(ui.last().rect.w == 30.0 && ui.last().rect.h == 30.0, true, @file, @line)
     ui.width("Simulate")
     ui.button(shape, "Edit")
-    t.equal(ui.last().rect.w == 16.0 + 18.0 + 4.0 + 8.0 * ui.GLYPH_WIDTH, true, @file, @line)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Simulate") + 22.0, true, @file, @line)
+    ui.height(40.0)
+    ui.button("Tall")
+    t.equal(ui.last().rect.h == 40.0, true, @file, @line)
+    th: ui.Theme = theme()
+    ui.button("Styled", &th.primary)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Styled"), true, @file, @line)
+    swap: ui.Icons = ui.Icons.all(shape)
+    ui.button(swap, "Swapped", false)
+    t.equal(ui.last().rect.w == 16.0 + ui.text_width("Swapped") + 22.0, true, @file, @line)
+    ui.button("Next")
+    t.equal(ui.last().rect.h == 30.0, true, @file, @line)
     bar.end()
+    c.end()
+}
+
+/* A disabled button takes no click, and only the one after `disable`. */
+pub disabled(t: *test.T) {
+    c: ui.Context = ui.Context { mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true } }
+    frame(&c)
+    col: ui.Area = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
+    ui.disable()
+    t.equal(ui.button("Off"), false, @file, @line)
+    col.end()
+    c.end()
+    c.mouse = ui.Mouse { x = 5.0, y = 5.0, pressed = true, released = true }
+    frame(&c)
+    col = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
+    t.equal(ui.button("On"), true, @file, @line)
+    col.end()
     c.end()
 }
 
@@ -192,7 +229,7 @@ pub toggle(t: *test.T) {
     on: bool = false
     frame(&c)
     bar: ui.Area = ui.area(ui.Rect { w = 100.0, h = 30.0 }, ui.Flow.across)
-    t.equal(ui.toggle(ui.Icon {}, &on), true, @file, @line)
+    t.equal(ui.toggle(ui.Icon {}, "", &on), true, @file, @line)
     t.equal(on, true, @file, @line)
     bar.end()
     c.end()
@@ -222,5 +259,53 @@ pub line(t: *test.T) {
     l.printf("%d ticks", 8)
     t.equal(l.text(), "8 ticks", @file, @line)
     t.equal(ui.line().text(), "", @file, @line)
+    c.end()
+}
+
+/* Text measures in proportion to its size, which is kept between 6 and 96,
+ * plus its spacing after each character. */
+pub size(t: *test.T) {
+    style: ui.Text = ui.Text { size = 16.0 }
+    w16: f32 = ui.text_width("Hamburg", style)
+    style.size = 32.0
+    w32: f32 = ui.text_width("Hamburg", style)
+    t.equal(w32 - 2.0 * w16 < 0.01 && 2.0 * w16 - w32 < 0.01, true, @file, @line)
+    style.size = 1000.0
+    t.equal(ui.text_width("Hamburg", style) == ui.text_width("Hamburg", ui.Text { size = 96.0 }), true, @file, @line)
+    style = ui.Text { size = 16.0, spacing = 2.0 }
+    t.equal(ui.text_width("Hamburg", style) - w16 == 14.0, true, @file, @line)
+}
+
+/* A weighted `row` shares the width less its gaps by weight; `min` and `max`
+ * hold a column while the others share the rest; `area_width` is the room. */
+pub weighted(t: *test.T) {
+    c: ui.Context = ui.Context {}
+    frame(&c)
+    column: ui.Area = ui.area(ui.Rect { x = 10.0, w = 408.0, h = 200.0 })
+    t.equal(ui.area_width() == 408.0 && ui.area_height() == 200.0, true, @file, @line)
+    ui.row([1, 2, 1])
+    a: ui.Rect = ui.place(0.0, 20.0)
+    b: ui.Rect = ui.place(0.0, 20.0)
+    d: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(a.x == 10.0 && a.w == 100.0 && b.x == 114.0 && b.w == 200.0, true, @file, @line)
+    t.equal(d.x == 318.0 && d.w == 100.0 && d.y == 0.0, true, @file, @line)
+    after: ui.Rect = ui.place(0.0, 10.0)
+    t.equal(after.w == 408.0 && after.y == 24.0, true, @file, @line)
+
+    /* A quarter, 101, is under its 180 minimum; the rest takes 224. */
+    ui.row([ui.Col { fr = 1.0, min = 180.0 }, ui.Col { fr = 3.0 }])
+    e: ui.Rect = ui.place(0.0, 20.0)
+    f: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(e.w == 180.0 && f.x == 194.0 && f.w == 224.0, true, @file, @line)
+
+    /* Halves, 202, past a 100 maximum; the other takes 304. */
+    ui.grid([ui.Col { max = 100.0 }, ui.Col {}], 4)
+    g: ui.Rect = ui.place(0.0, 20.0)
+    h: ui.Rect = ui.place(0.0, 20.0)
+    i: ui.Rect = ui.place(0.0, 20.0)
+    t.equal(g.w == 100.0 && h.w == 304.0 && i.w == 100.0 && i.y == g.y + 24.0, true, @file, @line)
+    ui.place(0.0, 20.0)
+    t.equal(ui.place(0.0, 10.0).w == 408.0, true, @file, @line)
+    column.end()
     c.end()
 }

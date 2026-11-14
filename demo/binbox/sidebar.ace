@@ -17,31 +17,32 @@ pub Sidebar: struct {
 
 /* A widget's header, set apart from its body. */
 open(title: string) {
-    ui.heading(title)
+    ui.text(title)
     ui.space(bar.INSET / 2.0)
 }
 
 /* The space after a widget's body. */
-close() { ui.space(bar.INSET) }
+close() {
+    ui.space(bar.INSET)
+}
 
 /* The tools widget: one button per tool, its icon larger than a label's. */
 Sidebar.tools(self) {
     g: *app.App = self.g
-    plain: ui.Theme = g.ui.theme
-    g.ui.theme.icon = bar.TOOL_ICON
+    st: ui.Graphical = g.ui.theme.button
+    st.graphic.size = bar.TOOL_ICON
     ui.grid(bar.COLS, members(bar.Tool).len)
     for i: usize in 0 .. members(bar.Tool).len {
         each: bar.Tool = members(bar.Tool)[i]
-        if ui.button(bar.shape(bar.STRIP_ICON[each]), "", each == g.pick) { g.use(each) }
+        if ui.button(ui.Icons.all(bar.shape(bar.STRIP_ICON[each])), "", each == g.pick, &st) { g.use(each) }
     }
-    g.ui.theme = plain
 }
 
 /* The blocks widget: icons alone in rows of COLS, the selected one in its
  * block's color, the rest dimmer. */
 Sidebar.blocks(self) {
     g: *app.App = self.g
-    plain: ui.Theme = g.ui.theme
+    st: ui.Graphical = g.ui.theme.swatch
     ui.grid(bar.COLS, members(grid.Block).len - 1)
     for i: usize in 1 .. members(grid.Block).len {
         each: grid.Block = members(grid.Block)[i]
@@ -54,13 +55,12 @@ Sidebar.blocks(self) {
             if each == g.block { which += 2 }
             ink = theme.PANEL_BRIGHT[which]
         }
-        g.ui.theme.icon = bar.block_icon(each)
-        if ui.swatch(bar.shape(bar.BLOCK_ICON[each]), ui.color(ink), each == g.block) { g.block = each }
+        st.graphic.size = bar.block_icon(each)
+        if ui.swatch(bar.shape(bar.BLOCK_ICON[each]), ui.color(ink), each == g.block, &st) { g.block = each }
     }
-    g.ui.theme = plain
 }
 
-/* The clock widget: its span in a muted line over the slider. */
+/* The clock widget: a slider showing its span. */
 Sidebar.clock(self) {
     g: *app.App = self.g
     ticks: *fmt.Buffer = ui.line()
@@ -69,8 +69,7 @@ Sidebar.clock(self) {
     } else {
         ticks.printf("%d ticks", 1 << g.clock)
     }
-    ui.muted(ticks.text())
-    ui.slider(&g.clock, 0, grid.SPANS - 1)
+    ui.slider(&g.clock, 0, grid.SPANS - 1, ticks.text())
 }
 
 /* The simulation widget: Step, Play/Pause, Reset, and the speed in a muted
@@ -85,11 +84,10 @@ Sidebar.sim(self) {
         ui.toggle(bar.shape(icon.Id.run), "Play", &g.auto)
     }
     if ui.button(bar.shape(icon.Id.reset), "Reset") { g.reset() }
-    setting: *fmt.Buffer = ui.line()
-    setting.printf("Speed ")
-    speed.show(setting, speed.hz(g.stop))
-    ui.muted(setting.text())
-    ui.slider(&g.stop, 0, speed.STOPS - 1)
+    ui.text("Speed", style.muted(&g.ui.theme))
+    rate: *fmt.Buffer = ui.line()
+    speed.show(rate, speed.hz(g.stop))
+    ui.slider(&g.stop, 0, speed.STOPS - 1, rate.text())
 }
 
 /* The info widget: the cell under the cursor, its block and level, and the
@@ -98,7 +96,7 @@ Sidebar.info(self, edit: bool) {
     g: *app.App = self.g
     info: *fmt.Buffer = ui.line()
     if g.hx >= 0 { info.printf("X %d, Y %d", g.hx, g.hy) } else { info.printf("X -, Y -") }
-    ui.muted(info.text())
+    ui.text(info.text(), style.muted(&g.ui.theme))
     info = ui.line()
     if g.hx >= 0 {
         here: grid.Block = g.s.g.get(g.hx, g.hy)
@@ -112,10 +110,10 @@ Sidebar.info(self, edit: bool) {
     } else {
         info.printf("Block -")
     }
-    ui.muted(info.text())
+    ui.text(info.text(), style.muted(&g.ui.theme))
     info = ui.line()
     info.printf("Grid %d x %d", grid.WIDTH, grid.HEIGHT)
-    ui.muted(info.text())
+    ui.text(info.text(), style.muted(&g.ui.theme))
 }
 
 /* The header, its fold button and the panel's title on the header color out
@@ -131,10 +129,9 @@ pub Sidebar.draw(self) {
     top: ui.Area = ui.area(head, ui.Flow.across)
     fold_icon: icon.Id = icon.Id.panel_right
     if g.view.shut { fold_icon = icon.Id.panel_left }
-    plain: ui.Theme = g.ui.theme
-    g.ui.theme.button.rest = ui.color(theme.DEEP)
-    if ui.button(bar.shape(fold_icon)) { g.view.fold() }
-    g.ui.theme = plain
+    fold: ui.Graphical = g.ui.theme.button
+    fold.box.look.rest.fill = ui.color(theme.DEEP)
+    if ui.button(bar.shape(fold_icon), "", &fold) { g.view.fold() }
     edit: bool = g.phase == app.Phase.edit
     if !g.view.shut {
         ui.space(style.HEADING_PAD - g.ui.theme.gap)

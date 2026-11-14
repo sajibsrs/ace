@@ -195,8 +195,7 @@ takes `u8`, so `f(['\r', '\n', 0])` selects `f(xs: []u8)`, and a value that
 does not fit (`['a', 300]`) is an error, never truncated. An empty literal
 has no element type, so a cast names its type: `f([]int([]))`, or `f([2]int([x, y]))` for an array parameter.
 
-Return types do not distinguish overloads. `noalias` also does not distinguish
-them.
+Return types do not distinguish overloads.
 
 Transparent aliases do not distinguish overloads. In particular, `char`/`u8`
 and `string`/`[]char`/`[]u8` variations are duplicate declarations.
@@ -555,8 +554,7 @@ The function still has an ordinary symbol, so it can be used as a function
 value, and a `defer` of it calls that symbol at exit. Generic templates,
 methods, associated functions, and specializations may be `inline`; each
 specialization carries its own marker. An inline function may return any type,
-structs, tuples, and type parameters included; it must not take a
-`noalias` parameter, and must not contain `defer` or inline assembly. `intrinsic`
+structs, tuples, and type parameters included; it must not contain `defer` or inline assembly. `intrinsic`
 declarations, bodiless `specialized` templates, and `main` cannot be `inline`,
 and a chain of inline functions that calls back into itself is rejected.
 Release builds also expand small functions on their own: a body of at
@@ -787,8 +785,9 @@ result: i32 = c_variadic(0, i32(9), f32(1.25), &value)
 An extern block also binds C global variables, written `name: type` and
 optionally link-named like a function. The name reads and writes C's storage in
 place; Ace allocates and initializes nothing. A C global is writable, and
-`&name` is `*T`, unless it is marked `const` (`limit: const i32`): then, like an
-Ace `const` global, assigning it or taking a writable view is an error. Its type
+`&name` is `*T`. Marked `const` (`limit: const i32`), it cannot be assigned,
+like an Ace `const` global, but `&name` is still `*T`; a write through it faults
+if C placed it in read-only memory. Its type
 follows the struct-field rules above, so a fixed array is allowed. A read is
 never cached across a call, since C may change the value. Thread-local C
 variables such as `errno` are reached through the accessor functions C

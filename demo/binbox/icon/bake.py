@@ -312,10 +312,10 @@ def main():
         "pub Id: enum u8 { " + ", ".join(members) + " }",
         "",
         "/* Where each icon starts in POINTS. */",
-        "pub START: [Id]u16 = [",
+        "pub START: const [Id]u16 = [",
     ]
     lines += [f"    Id.{m} = {s}," for m, s in zip(members, start)]
-    lines += ["]", "", f"pub POINTS: [{len(flat)}]f32 = ["]
+    lines += ["]", "", f"pub POINTS: const [{len(flat)}]f32 = ["]
     for i in range(0, len(flat), 8):
         lines.append("    " + ", ".join(fmt(v) for v in flat[i:i + 8]) + ",")
     lines.append("]")

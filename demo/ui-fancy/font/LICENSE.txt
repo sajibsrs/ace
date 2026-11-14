@@ -1,0 +1,7 @@
+Lato Light, Regular, and Bold (font/Lato-*.ttf), from https://www.latofonts.com
+
+Copyright (c) 2010-2011 by tyPoland Lukasz Dziedzic (http://www.typoland.com/) with Reserved Font Name "Lato".
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: https://openfontlicense.org
+
+Full license: https://openfontlicense.org

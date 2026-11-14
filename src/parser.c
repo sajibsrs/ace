@@ -21,7 +21,7 @@
 //               F_SPECIALIZED/F_INTRINSIC mark bodyless declarations;
 //               F_INLINE marks a function expanded at its direct calls;
 //               F_COLD marks one whose calls are rare (@cold)
-//   N_PARAM     str = name; a = type; F_NOALIAS; F_BYADDR on the receiver;
+//   N_PARAM     str = name; a = type; F_BYADDR on the receiver;
 //               F_CONST on a const parameter or receiver
 //               `self`, bound to the caller's storage (also used as var binder)
 //   N_STRUCT    str = name; kids = N_FIELD; b = optional @align expression;
@@ -1693,7 +1693,6 @@ static Node* parse_params(P* p, const char* closer, int self_ok) {
     if (!at(p, T_RPAREN)) {
         for (;;) {
             Node* pa = nd(p, N_PARAM);
-            if (eat(p, T_NOALIAS)) pa->flags |= F_NOALIAS;
             if (at(p, T_CONST) && kth(p, 1) == T_SELF) {
                 pa->flags |= F_CONST; // a receiver the method does not write
                 p->i++;
@@ -1701,7 +1700,6 @@ static Node* parse_params(P* p, const char* closer, int self_ok) {
             if (at(p, T_SELF)) {
                 if (!self_ok) perr(p, "'self' is only the receiver of a method declaration");
                 if (params.n) perr(p, "'self' must be the first parameter");
-                if (pa->flags & F_NOALIAS) perr(p, "'noalias' does not apply to the receiver 'self'");
                 pa->flags |= F_BYADDR; // every receiver is the caller's storage, by address
                 p->i++;
                 if (at(p, T_COLON)) perr(p, "'self' takes no type; its type is the method's owner");
@@ -2628,7 +2626,6 @@ static void pflags(Node* x) {
     if (x->flags & F_PUB) printf(" pub");
     if (x->flags & F_EXPO) printf(" extern-c");
     if (x->flags & F_BYADDR) printf(" byaddr");
-    if (x->flags & F_NOALIAS) printf(" noalias");
     if (x->flags & F_CONST) printf(" const");
     if (x->flags & F_DEFAULT) printf(" default");
     if (x->flags & F_VARARGS) printf(" varargs");

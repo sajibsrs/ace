@@ -91,17 +91,35 @@ across: f32 = math.cos(single)
 
 They are pure Ace: no libm call, no errno or floating-point flag, and the same
 result on every target. They currently run at about 6 ns per call for `exp` and
-8 ns for `log`, 11–12 ns for `sin` and `cos` once the argument needs reducing
-and about 4 ns below pi/4 (about 5 ns for `f32` `sin` and `cos`), several
-hundred ns for arguments beyond 1.6e6, and
+8 ns for `log` (2.4 ns and 3.4 ns for `f32`), about 4 ns for `sin` and `cos` up to 1.6e6 (about 3.5 ns for
+`f32` `sin` and `cos`, which reduce by pi and take one polynomial whatever the
+quadrant, so no branch depends on the argument below 4.2e8), about 7.5 ns for
+`f64` arguments beyond 1.6e6, and
 about 23 ns for `pow(f64)` (12 ns for `pow(f32)`, about 7 ns for the exponents
 2, 1, -1, and 0.5). `exp`, `log`, and `pow` are all table-driven over the same
 two 128-entry tables: a logarithm table of `invc` and `log(c)`, and a table of
 `2^(j/128)`. `pow` forms `log(x)` as a high and low word, multiplies by the
 exponent in extended precision, and rebuilds the result from the powers-of-2
 table; `exp` and `log` return one rounded double each, so they keep only the
-single compensation term that arithmetic needs. `pow`'s `f32` kernel runs the
-same tables in plain `f64` with a shorter series. All of them name as few
+single compensation term that arithmetic needs. The `f32` `exp`, `log`, and
+`pow` kernels run the same tables in plain `f64` with shorter series (a
+degree-3 exponential, a logarithm series to `r^5`) and round once into `f32`;
+every `f32`, subnormals included, is a normal `f64`, so only zero, infinite,
+NaN, and negative operands leave the main path. The worst `f32` error over all
+inputs is 0.504 ULP for `exp` and 0.501 ULP for `log`. `sin` and `cos` write the
+argument as `n * pi/64 + r` with `|r| <= pi/128`, read `S = sin(k * pi/64)` and
+`C = cos(k * pi/64)` from one 128-entry table (the cosine is the same table 32
+entries on), and return `S + C*r + (S*(cos(r) - 1) + C*(sin(r) - r))`, the two
+differences being three-term series. The table spans a full period and holds
+each value as a high and low word, so quadrant, sign, and which of the two
+functions is wanted are all its index: no branch depends on the argument, and
+the worst error found is 0.55 ULP. LLVM-libc and Intel's libm reduce the same
+way. From 1647099 on, the exact Payne–Hanek product `x * 2/pi mod 4` takes the
+place of `n` and `r`: its top seven bits, rounded, are the table index, and the
+rest is `r` as a signed fixed-point fraction of pi/64, so large arguments run
+the same table step with no branch on the argument either; the worst error
+found there is 0.543 ULP. Their rare paths stay inline, because a call anywhere
+in a function makes it save its callee-saved float registers on entry. All of them name as few
 locals as they can, because the emitter promotes only named locals used at
 least twice and only eight of them reach a callee-saved float register.
 
@@ -125,3 +143,35 @@ if math.isnan(value) {
 Classification inspects the IEEE-754 representation through `bits`, allocates
 nothing, and does not call libm.
 
+## Design rationale
+
+- Large-argument `f64` `sin` and `cos` (#146): from 1647099 on, the 192-bit
+  Payne–Hanek product `x * 2/pi mod 4` used to become a double-double remainder
+  on [-pi/4, pi/4] and a quadrant, which then chose between a sine and a cosine
+  kernel and flipped signs: five branches on the argument's phase, about 15.3
+  ns against libm's 7.8 on `bench/std`'s `sin-large`. The same product is now
+  read straight onto the pi/64 grid the smaller range already uses: the top
+  seven bits, rounded, index the 128-entry table, which spans a full period,
+  so quadrant, sign, and sine against cosine are all the index, and the rest is
+  the signed offset from that grid point. Nothing depends on the argument but
+  table addresses, which keeps the path free of mispredictions on the varied
+  arguments a large range sees. The `f32` large path reads its quadrant from
+  the same product, so one reduction serves both widths, and the old
+  pi/2 kernels and their coefficients are gone.
+- The 2/pi table is 168 bytes, least significant first, rather than 32-bit
+  words. Three unaligned 64-bit loads at the byte that holds the wanted bits
+  each read 64 consecutive bits, and the mantissa is shifted left by the 0 to
+  7 bits that remain, which zeroes at most the product's last seven bits.
+  Reading aligned 64-bit words and shifting them together ran 8.2 ns.
+- Accuracy rests on an argument, not a sample: the product drops less than
+  2^-125 of a pi/64 step, and the closest any `f64` comes to a multiple of
+  pi/64 is 2^-61.5 of a step (`0x1.6ac5b262ca1ffp+844`, from a
+  continued-fraction search over every exponent). Against a GMP reference
+  over 10.6 million large arguments the worst error is 0.543 ULP for `sin` and
+  0.541 for `cos`, down from 0.848 (libm 0.904); 3.3% of large results moved by
+  one last bit. Results below 1647099, the special values, and the `f32` large
+  path are bit-identical to before.
+- `sin-large` runs in 7.47 to 7.49 ns against libm's 7.75 to 7.90 on Apple
+  arm64, 0.95x to 0.97x. CORE-MATH's correctly rounded `sin` and LLVM-libc's
+  large-range reduction onto pi/128 also read the reduced argument as a table
+  index plus a fixed-point fraction rather than as a quadrant and a remainder.

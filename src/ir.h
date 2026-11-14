@@ -266,7 +266,7 @@ int     staticmap_hash(Sym* s, uint64_t* seed, uint32_t* mask);
 void    ir_free(IrFunc* fn);
 // Pass 6 (release only, optimizer.c): constant propagation, value numbering, loop
 // strength reduction, dead-code and control-flow cleanup, then auto-vectorization
-// (cleaning up again after it), in place.
+// and loop rotation (cleaning up again after each), in place.
 void    ir_optimize(IrFunc* fn);
 // Immediate dominators (Cooper-Harvey-Kennedy) over a reverse postorder, which
 // *rpo_out receives (malloc'd, *nrpo blocks); idom[0] = 0 and idom[b] = -1 for

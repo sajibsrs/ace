@@ -3031,6 +3031,11 @@ static SType* expr_type_raw(Ck* k, Node* e) {
             if ((u == T_UT_INT && is_int(want)) || (u == T_UT_FLOAT && is_float(want))) {
                 if (!coerce(k, e->kids[i], want)) return T_ERR;
                 u = want;
+            } else if (u == T_UT_INT && is_float(want)) {
+                // A lone integer literal meets a float operand, as in arithmetic.
+                if (!ut_fits(k, e->kids[i], operand_fit_type(e->kids[i], want))) return T_ERR;
+                if (!settle_operand(k, e->kids[i], want)) return T_ERR;
+                u = want;
             }
             if (!same_type(u, want) || !is_num(want)) {
                 ck_err(k, e, "comparison chain needs one numeric type, got %s and %s", type_name(want), type_name(u));
@@ -3697,8 +3702,9 @@ static void finish_direct_call(Ck* k, Node* call, Sym* s) {
     call->ty = s->type->ret;
 }
 
-/* A const's storage never gains a writable view: `&c`, `c[lo..hi]`, and a
- * writable method call on `c` (receivers are by address) are rejected; a plain
+/* A local or parameter const never gains a writable view: `&c`, `c[lo..hi]`,
+ * and a writable method call on `c` (receivers are by address) are rejected.
+ * A const global's view is ordinary; its read-only page faults a write. A plain
  * parameter's view marks it written. A path through a pointer reaches other
  * storage and is not checked. */
 static void reject_const_view(Ck* k, Node* at, Node* e) {
@@ -3710,7 +3716,7 @@ static void reject_const_view(Ck* k, Node* at, Node* e) {
     }
     if (!e || e->kind != N_IDENT) return;
     Sym* s = lookup_val(k, e->str, e->len);
-    if (s && s->kind == SYM_VAR && s->is_const)
+    if (s && s->kind == SYM_VAR && s->is_const && !s->is_global)
         ck_err(k, at, "const '%.*s' cannot give a writable view", (int)e->len, e->str);
     else if (s && s->kind == SYM_VAR && s->is_param) s->is_written = 1;
 }
@@ -7898,9 +7904,6 @@ static void check_inline_decl(Ck* k, Node* f) {
         ck_err(k, f, "the entry function cannot be 'inline'");
         return;
     }
-    for (int i = 0; i < f->nkids; i++)
-        if (f->kids[i]->flags & F_NOALIAS)
-            ck_err(k, f->kids[i], "inline function '%.*s' cannot take a noalias parameter", nl, f->str);
     Node* bad = inline_body_bad(f->b);
     if (bad)
         ck_err(k, bad, "inline function '%.*s' cannot contain %s", nl, f->str,

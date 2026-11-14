@@ -45,12 +45,12 @@ Search and ordering:
 
 Caller storage and views:
 
-- `copy(text: string, noalias destination: []char): bool` — copies the
+- `copy(text: string, destination: []char): bool` — copies the
   complete text into `destination[0..text.len]`; a shorter destination is
   unchanged and fails, and the unused suffix is untouched. Empty text succeeds
-  without writing. Unlike `mem.copy`, the ranges need not be equal — only the
-  source and the written range must not overlap.
-- `cstring(text: string, noalias destination: []char): bool` — copies the
+  without writing. Unlike `mem.copy`, the ranges need not be equal, and
+  overlapping ranges copy front to back.
+- `cstring(text: string, destination: []char): bool` — copies the
   text and a trailing NUL for a C function, then passes `&destination[0]`. It
   fails when the text and its NUL do not fit or the text holds a NUL byte,
   which C would read as its end.

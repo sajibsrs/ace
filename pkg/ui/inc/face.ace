@@ -1,0 +1,19 @@
+/* ui face — a font baked by font/bake.py: printable ASCII as outlines in em
+ * units, rasterized at any size when drawn. */
+
+/* A baked font. Its tables are the baking module's own; a Font only refers to
+ * them. `advance[c - first]` is how far the pen moves after character c, and
+ * `start[c - first]` where its contours begin in `points`, both in `em` units
+ * per em with y down from the baseline. */
+pub Font: struct {
+    pub em: f32 = 0.0,
+    /* The heights of a capital and a lowercase x above the baseline. */
+    pub cap: f32 = 0.0,
+    pub xheight: f32 = 0.0,
+    /* The first and last character code baked. */
+    pub first: usize = 0,
+    pub last: usize = 0,
+    pub advance: []f32 = [],
+    pub start: []u32 = [],
+    pub points: []f32 = [],
+}

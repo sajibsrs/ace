@@ -13,8 +13,8 @@ import grid: "./grid.ace"
 
 NONE: const int = -1
 
-DX: [4]int = [0, 1, 0, -1]
-DY: [4]int = [-1, 0, 1, 0]
+DX: const [4]int = [0, 1, 0, -1]
+DY: const [4]int = [-1, 0, 1, 0]
 
 /* Whether cells of `block` belong to a group. */
 pub joins(block: grid.Block): bool {

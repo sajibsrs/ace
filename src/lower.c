@@ -1157,9 +1157,6 @@ static void call_arg(Lw* l, Args* g, Node* a, SType* pt, int by_address, int ace
     g->agg = 1;
 }
 
-typedef struct { int ptr, len; uint64_t esz; } Range; // a slice argument, ptr < 0 for another
-static void noalias_check(Lw* l, Node* d, const Range* r, int n);
-
 // Arguments of a direct call to s: an instance method's receiver first.
 // Returns the leaf index of the first variadic argument, or -1.
 static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
@@ -1173,12 +1170,7 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
     int varargs = s->is_extern && d && (d->flags & F_VARARGS);
     if (varargs ? n < named : n != named) unsupported(l, "default argument");
     int first_var = -1;
-    Range rbuf[MAX_PARAMS]; // a C variadic call's arguments may pass it
-    Range* rng = n <= MAX_PARAMS ? rbuf : (Range*)arena_alloc((size_t)n * sizeof(Range));
-    int noalias = 0;
-    for (int i = 0; l->mode == EMIT_DEBUG && d && i < n && i < d->nkids; i++) noalias |= (d->kids[i]->flags & F_NOALIAS) != 0;
     for (int i = 0; i < n; i++) {
-        rng[i].ptr = -1;
         Node* a = recv && i == 0 ? callee->a : call->kids[i - recv];
         if (i >= named) { // variadic: promoted to 64 bits (an f32 to f64)
             SType* at = node_ty(a);
@@ -1194,17 +1186,7 @@ static int call_args(Lw* l, Node* call, Sym* s, Args* g) {
         int by_address = (d && i < d->nkids && (d->kids[i]->flags & F_BYADDR)) ||
                          (d && (d->flags & F_METHOD) && i == 0);
         call_arg(l, g, a, ft->params[i], by_address, !s->is_extern);
-        SType* pu = unwrap(ft->params[i]);
-        if (!noalias || !pu || pu->kind != SK_SLICE) continue;
-        IrPart* pp = &g->part[g->nparts - 1];
-        if (by_address) { // a descriptor in memory: read it at the address just passed
-            int addr = g->v[pp->first];
-            rng[i] = (Range){ load(l, IT_PTR, addr, 0, 0), load(l, IT_U64, addr, 8, 0), sema_size(pu->base) };
-            continue;
-        }
-        rng[i] = (Range){ g->v[pp->first], g->v[pp->first + 1], sema_size(pu->base) };
     }
-    if (noalias) noalias_check(l, d, rng, n);
     return first_var;
 }
 
@@ -1416,37 +1398,6 @@ static void contract_check(Lw* l, int c) {
     l->fn->ins[id].at = l->at;
 }
 
-// Debug, at a call boundary (Safety #7): the byte range of each slice argument
-// must be representable, and two whose parameters include a noalias one must
-// be disjoint unless one is empty. Nothing else is walked.
-static void noalias_check(Lw* l, Node* d, const Range* r, int n) {
-    int ebuf[MAX_PARAMS];
-    int* end = n <= MAX_PARAMS ? ebuf : (int*)arena_alloc((size_t)n * sizeof(int));
-    for (int i = 0; i < n && i < d->nkids; i++) {
-        if (r[i].ptr < 0) continue;
-        int bytes = r[i].len;
-        if (r[i].esz != 1) {
-            contract_check(l, cmp(l, IR_LE, bytes, konst(l, IT_U64, UINT64_MAX / r[i].esz)));
-            bytes = emit2(l, IR_MUL, IT_U64, bytes, konst(l, IT_U64, r[i].esz));
-        }
-        end[i] = emit2(l, IR_PADD, IT_PTR, r[i].ptr, bytes);
-        l->fn->ins[end[i]].imm = 1;
-        contract_check(l, cmp(l, IR_GE, end[i], r[i].ptr));
-    }
-    for (int i = 0; i < n && i < d->nkids; i++) {
-        if (r[i].ptr < 0) continue;
-        for (int j = i + 1; j < n && j < d->nkids; j++) {
-            if (r[j].ptr < 0 || !((d->kids[i]->flags | d->kids[j]->flags) & F_NOALIAS)) continue;
-            int ki = konst(l, IT_U64, 0), ni = cmp(l, IR_NE, r[i].len, ki);
-            int kj = konst(l, IT_U64, 0), nj = cmp(l, IR_NE, r[j].len, kj);
-            int some = guard(l, emit2(l, IR_AND, IT_BOOL, ni, nj));
-            int after = cmp(l, IR_GE, r[j].ptr, end[i]), before = cmp(l, IR_GE, r[i].ptr, end[j]);
-            contract_check(l, emit2(l, IR_OR, IT_BOOL, after, before));
-            guard_end(l, some);
-        }
-    }
-}
-
 // Debug allocator tracking (Safety & Debug Builds #9): the registry routines.
 static void registry_add(Lw* l, int ptr, int size, int align) {
     if (l->mode != EMIT_DEBUG) return;
@@ -1586,7 +1537,7 @@ static int rtcall(Lw* l, const char* name, int a, int b, int n) {
 
 // mem.copy, mem.move, mem.fill, mem.zero (Values & Passing: byte operations):
 // debug checks equal lengths, and for copy that nonempty ranges neither wrap
-// nor overlap (noalias), before the routine. The typed copy and move compare
+// nor overlap (Safety #7), before the routine. The typed copy and move compare
 // element counts, then work on count * sizeof(T) bytes.
 static int mem_write(Lw* l, Node* x, int bi) {
     uint64_t esz = 1;
@@ -2003,8 +1954,6 @@ static int auto_inline_decl(Sym* s) {
     int ok = f->kind == N_FUNC && f->b && !s->is_extern && !s->spec_args &&
              !(f->flags & (F_INTRINSIC | F_SPECIALIZED | F_COLD)) && f->nkids <= MAX_PARAMS &&
              !(!(f->flags & (F_METHOD | F_ASSOC)) && f->len == 4 && memcmp(f->str, "main", 4) == 0);
-    for (int i = 0; ok && i < f->nkids; i++)
-        if (f->kids[i]->flags & F_NOALIAS) ok = 0;
     int size = ok ? auto_inline_size(f->b, 0) : AUTO_INLINE_NODES + 1;
     if (size > AUTO_INLINE_NODES) return 0;
     ptrmap_put(&auto_inline_seen, f, (uintptr_t)size + 2);

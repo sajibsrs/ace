@@ -28,7 +28,7 @@ pub PANEL_H: const f32 = 76.0
  * block, box-select blocks and drag them, or pick the block clicked. */
 pub Tool: enum u8 { pencil, select, dropper }
 
-pub STRIP_ICON: [Tool]icon.Id = [
+pub STRIP_ICON: const [Tool]icon.Id = [
     Tool.pencil = icon.Id.edit,
     Tool.select = icon.Id.select,
     Tool.dropper = icon.Id.dropper,
@@ -43,7 +43,7 @@ pub shape(which: icon.Id): ui.Icon {
 pub EDGE: const f32 = 16.0
 
 /* The width of the zoom readout, which shows five characters at most. */
-pub ZOOM_W: const f32 = 6.0 * ui.GLYPH_WIDTH
+pub ZOOM_W: const f32 = 62.0
 
 /* A tool button's icon, larger than a label's. */
 pub TOOL_ICON: const f32 = 22.0
@@ -105,7 +105,5 @@ pub BLOCK_ICON: [grid.Block]icon.Id = [
     grid.Block.toggle = icon.Id.toggle,
 ]
 
-/* The Open list's width, and the space above and below its rows. */
+/* The Open list's width. */
 pub LIST_W: const f32 = 296.0
-pub LIST_TOP: const f32 = 12.0
-pub LIST_BOTTOM: const f32 = 12.0

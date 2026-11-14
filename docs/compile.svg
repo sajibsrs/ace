@@ -2,8 +2,8 @@
 <text x="0" y="20" font-size="18" font-weight="600" fill="#888">Time to compile 5,000 idiomatic generic functions, single file — shorter is faster</text>
 <text x="0" y="50" font-size="15" font-weight="600" fill="#888">Debug</text>
 <text x="90" y="78.0" font-size="13" fill="#888" text-anchor="end">Ace --debug</text>
-<rect x="100" y="60" width="12.5" height="26" rx="2" fill="#cc4152"/>
-<text x="118.5" y="78.0" font-size="13" font-weight="600" fill="#cc4152">0.31 s</text>
+<rect x="100" y="60" width="11.8" height="26" rx="2" fill="#cc4152"/>
+<text x="117.8" y="78.0" font-size="13" font-weight="600" fill="#cc4152">0.29 s</text>
 <text x="90" y="114.0" font-size="13" fill="#888" text-anchor="end">cc -O0</text>
 <rect x="100" y="96" width="62.1" height="26" rx="2" fill="#8b8f98"/>
 <text x="168.1" y="114.0" font-size="13" font-weight="600" fill="#8b8f98">1.5 s</text>
@@ -16,7 +16,7 @@
 <text x="460" y="50" font-size="15" font-weight="600" fill="#888">Release</text>
 <text x="550" y="78.0" font-size="13" fill="#888" text-anchor="end">Ace --release</text>
 <rect x="560" y="60" width="3.0" height="26" rx="2" fill="#cc4152"/>
-<text x="566.9" y="78.0" font-size="13" font-weight="600" fill="#cc4152">0.39 s</text>
+<text x="566.9" y="78.0" font-size="13" font-weight="600" fill="#cc4152">0.38 s</text>
 <text x="550" y="114.0" font-size="13" fill="#888" text-anchor="end">cc -O2</text>
 <rect x="560" y="96" width="22.1" height="26" rx="2" fill="#8b8f98"/>
 <text x="588.1" y="114.0" font-size="13" font-weight="600" fill="#8b8f98">9.7 s</text>

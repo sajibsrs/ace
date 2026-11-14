@@ -1,271 +1,201 @@
 /* ui look — how each control draws itself, given where it was placed, what
- * the pointer did, and the theme: flat rounded fills, knobs and cards raised
- * by soft shadows, and popups raised further. A different look is an edit to
- * this file alone; the sizes it exports are the ones placement reads. */
+ * the pointer did, and its component's style in the theme: a `Box` picks the
+ * `Look` for the control's state and draws its shadow, fill and outline; the
+ * label and icons go on top. The sizes it exports are the ones placement
+ * reads. */
 
+import math
 import Point, Color from sdl
-import Rect, Insets, Canvas, Icon, Align, GLYPH_WIDTH from "./canvas.ace"
-import Theme, Fill, Response from "./theme.ace"
+import Rect, Insets, Canvas, Icon, Align, Text, text_width from "./canvas.ace"
+import Theme, Box, Look, States, Graphical, Labeled, Ruled, Shadow, Response, LIST_PAD from "./theme.ace"
+
+/* The room a button adds above and below its frame. */
+pub BUTTON_PAD: const f32 = 2.0
 
 /* The text field's caret. */
 CARET_W: const f32 = 2.0
 CARET_PAD: const f32 = 6.0
 
-/* A popup's corner radius, rounder than a control's; a card's, and a chosen
- * list row's. */
-POPUP_RADIUS: const f32 = 8.0
-CARD_RADIUS: const f32 = 6.0
-PILL_RADIUS: const f32 = 4.0
+/* A stepped slider's ticks' height; the room under its bar is the slider
+ * rule's gap plus this. */
+pub TICK_H: const f32 = 4.0
 
-/* How far a popup's shadow falls below it, and how far it blurs. */
-SHADOW_DROP: const f32 = 18.0
-SHADOW_BLUR: const f32 = 48.0
-
-/* How far a knob's lift falls below it and blurs, and its contact shadow. */
-LIFT_DROP: const f32 = 2.0
-LIFT_BLUR: const f32 = 6.0
-CONTACT_DROP: const f32 = 1.0
-
-/* A popup's and a card's rim, half a pixel. */
-EDGE: const f32 = 0.5
-
-/* A switch's track; its knob is inset KNOB_INSET all round. */
-pub SWITCH_W: const f32 = 38.0
-SWITCH_H: const f32 = 22.0
-KNOB_INSET: const f32 = 2.0
-
-/* A checkbox's box, its corners, and its tick's stroke. */
-pub CHECK_SIDE: const f32 = 16.0
-CHECK_RADIUS: const f32 = 4.0
-CHECK_STROKE: const f32 = 1.75
-
-/* A slider's knob, as big as a switch's, which stays inside the slider, so
- * its center travels from half of it in from one end to half of it in from
- * the other. */
-pub SLIDER_KNOB: const f32 = SWITCH_H - 2.0 * KNOB_INSET
-TRACK_H: const f32 = 8.0
-/* A stepped slider's stops, as dots TICK_DOT across, TICK_DROP under its
- * track, drawn only when the stops are at least TICK_ROOM apart. */
-TICK_DOT: const f32 = 3.0
-TICK_DROP: const f32 = 4.0
-TICK_ROOM: const f32 = 6.0
-
-/* The gap round a picker's chosen segment, inside its track. */
-SEGMENT_PAD: const f32 = 2.0
-
-/* A list's card, around its rows. */
-pub LIST_PAD: const f32 = 4.0
-
-/* A focused field's ring, and the glow outside it at GLOW_ALPHA of the
- * accent. */
-RING: const f32 = 1.0
-GLOW: const f32 = 3.0
-GLOW_ALPHA: const f32 = 0.3
-
-/* `color` at `a` times its alpha. */
-fade(color: Color, a: f32): Color { return Color { r = color.r, g = color.g, b = color.b, a = color.a * a } }
-
-/* `box` moved `dy` down. */
-lower(box: Rect, dy: f32): Rect { return Rect { x = box.x, y = box.y + dy, w = box.w, h = box.h } }
-
-/* `box` grown by `d` on every side. */
-grow(box: Rect, d: f32): Rect { return box.inset(Insets.all(-d)) }
-
-/* `box` in `color` with corners of `radius`, raised off what is under it by a
- * lift shadow and a contact shadow: a knob or a picker's segment. The contact
- * shadow's 1 px blur is the fill's own fading edge. */
-raised(cv: *Canvas, t: *Theme, box: Rect, radius: f32, color: Color) {
-    cv.shadow(lower(box, LIFT_DROP), radius, LIFT_BLUR, t.lift)
-    cv.fill(lower(box, CONTACT_DROP), radius, t.contact)
-    cv.fill(box, radius, color)
+/* What `box`, with corners of `radius`, casts as `s`; nothing when `s` is
+ * transparent. */
+cast(cv: *Canvas, box: Rect, radius: f32, s: Shadow) {
+    if s.color.a <= 0.0 { return }
+    cv.shadow(Rect { x = box.x + s.dx, y = box.y + s.dy, w = box.w, h = box.h }, radius, s.blur, s.color)
 }
 
-/* A button at `box` in `fill`'s shade for `res`, its icon `shape` when
- * `icon`, and `label`; the icon and label are centered together, however wide
- * the button. */
-pub button(cv: *Canvas, t: *Theme, box: Rect, res: Response, shape: Icon, icon: bool, label: string, fill: Fill) {
-    shade: Color = fill.shade(res)
-    ink: Color = on(t, shade)
-    cv.fill(box, t.radius, shade)
+/* `box` framed by `b` in `l`: its shadow, its fill, and its outline when `b`
+ * has a width and `l` a border color. */
+frame(cv: *Canvas, b: const *Box, box: Rect, l: Look) {
+    cast(cv, box, b.radius, l.shadow)
+    if l.fill.a > 0.0 { cv.fill(box, b.radius, l.fill) }
+    if b.border > 0.0 && l.border.a > 0.0 { cv.outline(box, b.radius, b.border, l.border) }
+}
+
+/* `s` in `style` in `color`, `pad` in from `box`'s left. */
+say(cv: *Canvas, style: Text, box: Rect, pad: f32, s: string, color: Color) {
+    cv.text(Rect { x = box.x + pad, y = box.y, w = box.w - pad, h = box.h }, s, style.in(color).at(Align.left))
+}
+
+/* `s` in `style` in `color`, centered in `box`. */
+mid(cv: *Canvas, style: Text, box: Rect, s: string, color: Color) {
+    cv.text(box, s, style.in(color).at(Align.center))
+}
+
+/* A button at `box` in `st`, on while `on`, for `res`, faint when `off`: its
+ * icon, from `shapes` for its state, when `icon`, and `label`, centered together however wide the
+ * button. */
+pub button(cv: *Canvas, st: const *Graphical, box: Rect, res: Response, shapes: States[Icon], icon: bool, label: string, on: bool, off: bool) {
+    looks: States[Look] = st.box.look
+    if on { looks = st.box.on }
+    l: Look = looks.pick(res, off)
+    shape: Icon = shapes.pick(res, off)
+    frame(cv, &st.box, box, l)
+    g: f32 = st.graphic.size
     if label.len == 0 {
-        cv.icon(shape, box.square(t.icon), ink)
+        cv.icon(shape, box.square(g), l.tint)
     } else if icon {
-        at: f32 = (box.w - t.icon - t.gap - f32(label.len) * GLYPH_WIDTH) / 2.0
-        cv.icon(shape, box.square(at, t.icon), ink)
-        cv.text(box, at + t.icon + t.gap, label, ink)
+        at: f32 = (box.w - g - st.graphic.gap - text_width(label, st.label)) / 2.0
+        cv.icon(shape, box.square(at, g), l.tint)
+        say(cv, st.label, box, at + g + st.graphic.gap, label, l.text)
     } else {
-        cv.text(box, label, ink, Align.center)
+        mid(cv, st.label, box, label, l.text)
     }
-}
-
-/* Text on `fill`: the theme's over a translucent fill, which shows the
- * surface under it; over an opaque one, the accent's text when the fill is
- * dark and near-black when it is light. */
-on(t: *Theme, fill: Color): Color {
-    if fill.a < 1.0 { return t.text }
-    if 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b < 0.5 { return t.on_accent }
-    return Color { r = 0.0, g = 0.0, b = 0.0, a = 0.88 }
-}
-
-/* A line `s` in `color` at `align` in `box`. */
-pub text(cv: *Canvas, t: *Theme, box: Rect, s: string, color: Color, align: Align) {
-    cv.text(box, s, color, align)
-}
-
-/* A section's title `s` in muted text at `align` on a strip, filled as a
- * button rests, that reaches half the padding past `box`'s sides. */
-pub heading(cv: *Canvas, t: *Theme, box: Rect, s: string, align: Align) {
-    strip: Rect = Rect { x = box.x - t.padding / 2.0, y = box.y, w = box.w + t.padding, h = box.h }
-    cv.fill(strip, t.radius, t.button.rest)
-    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, align)
 }
 
 /* `s` centered on a fill like a resting button's. */
-pub readout(cv: *Canvas, t: *Theme, box: Rect, s: string) {
-    cv.fill(box, t.radius, t.button.rest)
-    cv.text(box, s, t.text, Align.center)
+pub readout(cv: *Canvas, t: const *Theme, box: Rect, s: string) {
+    l: Look = t.button.box.look.rest
+    cv.fill(box, t.button.box.radius, l.fill)
+    mid(cv, t.button.label, box, s, t.text)
 }
 
-/* `shape` in `color`, on the accent while `selected`. */
-pub swatch(cv: *Canvas, t: *Theme, box: Rect, shape: Icon, color: Color, selected: bool) {
-    if selected { cv.fill(box, t.radius, t.accent) }
-    cv.icon(shape, box.square(t.icon), color)
+/* The icon `shapes` has for `res`, in `color`, in `st`, on while `selected`. */
+pub swatch(cv: *Canvas, st: const *Graphical, box: Rect, res: Response, shapes: States[Icon], color: Color, selected: bool) {
+    looks: States[Look] = st.box.look
+    if selected { looks = st.box.on }
+    frame(cv, &st.box, box, looks.pick(res, false))
+    cv.icon(shapes.pick(res, false), box.square(st.graphic.size), color)
 }
 
-/* A CHECK_SIDE box at `box`'s left, centered on its height: on the accent
- * with a tick while `on`, else filled as a button for `res` inside a
- * hairline; then `label`. */
-pub checkbox(cv: *Canvas, t: *Theme, box: Rect, res: Response, on: bool, label: string) {
-    side: f32 = CHECK_SIDE
-    tick: Rect = box.square(0.0, side)
-    if on {
-        cv.fill(tick, CHECK_RADIUS, t.accent)
-        mark: [3]Point = [
-            Point { x = tick.x + 0.29 * side, y = tick.y + 0.52 * side },
-            Point { x = tick.x + 0.44 * side, y = tick.y + 0.67 * side },
-            Point { x = tick.x + 0.71 * side, y = tick.y + 0.35 * side },
-        ]
-        cv.stroke(mark[..], false, CHECK_STROKE, t.on_accent)
-    } else {
-        cv.fill(tick, CHECK_RADIUS, t.button.shade(res))
-        cv.outline(tick, CHECK_RADIUS, EDGE, t.separator)
-    }
-    cv.text(box, side + t.gap, label, t.text)
+/* A box the graphic's size at `box`'s left, centered on its height, in `st`
+ * for `res`: on, with `tick` inside its padding, while `on`; then `label`,
+ * the graphic's gap after the box. */
+pub checkbox(cv: *Canvas, st: const *Graphical, tick: Icon, box: Rect, res: Response, on: bool, label: string) {
+    side: f32 = st.graphic.size
+    at: Rect = box.square(0.0, side)
+    looks: States[Look] = st.box.look
+    if on { looks = st.box.on }
+    l: Look = looks.pick(res, false)
+    frame(cv, &st.box, at, l)
+    if on { cv.icon(tick, at.inset(st.box.padding), l.tint) }
+    say(cv, st.label, box, side + st.graphic.gap, label, st.label.color)
 }
 
-/* `label` at `box`'s left and a switch at its right, centered on its
- * height: its knob at the far end on `on` while `on`, else at the near end
- * on the off track. */
-pub toggle(cv: *Canvas, t: *Theme, box: Rect, on: bool, label: string) {
-    track: Rect = box.square(box.w - SWITCH_W, SWITCH_H)
-    track.w = SWITCH_W
-    color: Color = t.track
-    if on { color = t.on }
-    cv.fill(track, SWITCH_H / 2.0, color)
-    side: f32 = SWITCH_H - 2.0 * KNOB_INSET
-    knob: Rect = Rect { x = track.x + KNOB_INSET, y = track.y + KNOB_INSET, w = side, h = side }
-    if on { knob.x = track.x + track.w - KNOB_INSET - side }
-    raised(cv, t, knob, side / 2.0, t.knob)
-    cv.text(box, 0.0, label, t.text)
-}
-
-/* A slider at `box`: a track filled with the accent up to its knob, which
- * sits `at` (0 to 1) along its travel, and, when `stops` is 2 or more and
- * they have room, a dot under the track at each. */
-pub slider(cv: *Canvas, t: *Theme, box: Rect, at: f32, stops: int) {
-    r: f32 = SLIDER_KNOB / 2.0
-    travel: f32 = box.w - SLIDER_KNOB
-    track: Rect = Rect { x = box.x, y = box.y + (box.h - TRACK_H) / 2.0, w = box.w, h = TRACK_H }
-    x: f32 = box.x + r + at * travel
-    cv.fill(track, TRACK_H / 2.0, t.track)
-    cv.fill(Rect { x = track.x, y = track.y, w = x - track.x, h = track.h }, TRACK_H / 2.0, t.accent)
-    if stops >= 2 && travel / f32(stops - 1) >= TICK_ROOM {
+/* A slider at `box` in `st`: a bar filled as it rests, on up to `at` (0 to 1),
+ * `s` centered on it, and, when `stops` is 2 or more and they are the rule's
+ * room apart, a tick under the bar at each in the border color. */
+pub slider(cv: *Canvas, st: const *Ruled, box: Rect, at: f32, stops: int, s: string) {
+    l: Look = st.box.look.rest
+    r: f32 = st.box.radius
+    bar: Rect = box
+    if stops >= 2 { bar.h -= st.rule.gap + TICK_H }
+    cv.fill(bar, r, l.fill)
+    cv.fill_until(bar, math.min[f32](r, bar.h / 2.0), bar.x + bar.w * at, st.box.on.rest.fill)
+    w: f32 = st.rule.w
+    if stops >= 2 && bar.w / f32(stops - 1) >= st.rule.room {
         for i: int in 0 .. stops {
-            tx: f32 = box.x + r + travel * f32(i) / f32(stops - 1)
-            cv.fill(Rect { x = tx - TICK_DOT / 2.0, y = track.y + track.h + TICK_DROP, w = TICK_DOT, h = TICK_DOT }, TICK_DOT / 2.0, t.track)
+            tx: f32 = bar.x + bar.w * f32(i) / f32(stops - 1)
+            tx = math.max[f32](bar.x + w / 2.0, math.min[f32](tx, bar.x + bar.w - w / 2.0))
+            cv.fill(Rect { x = tx - w / 2.0, y = bar.y + bar.h + st.rule.gap, w = w, h = TICK_H }, l.border)
         }
     }
-    knob: Rect = Rect { x = x - r, y = box.y + (box.h - SLIDER_KNOB) / 2.0, w = SLIDER_KNOB, h = SLIDER_KNOB }
-    raised(cv, t, knob, r, t.knob)
+    mid(cv, st.label, bar, s, l.text)
 }
 
-/* A picker at `box`: `items` in equal segments on a track filled as a
- * button rests, the one at `chosen` on a raised segment. */
-pub picker(cv: *Canvas, t: *Theme, box: Rect, items: []string, chosen: usize) {
-    inner: Rect = box.inset(Insets.all(SEGMENT_PAD))
-    w: f32 = inner.w / f32(items.len)
-    cv.fill(box, PILL_RADIUS + SEGMENT_PAD, t.button.rest)
+/* A picker at `box` in `st`: `items` in equal segments on a track as it rests,
+ * the one at `chosen` on. */
+pub picker(cv: *Canvas, st: const *Labeled, box: Rect, items: []string, chosen: usize) {
+    w: f32 = box.w / f32(items.len)
+    frame(cv, &st.box, box, st.box.look.rest)
     if chosen < items.len {
-        raised(cv, t, Rect { x = inner.x + f32(chosen) * w, y = inner.y, w = w, h = inner.h }, PILL_RADIUS, t.segment)
+        cv.fill(Rect { x = box.x + f32(chosen) * w, y = box.y, w = w, h = box.h }, st.box.radius, st.box.on.rest.fill)
     }
     for i: usize in 0 .. items.len {
-        cv.text(Rect { x = inner.x + f32(i) * w, y = box.y, w = w, h = box.h }, items[i], t.text, Align.center)
+        ink: Color = st.box.look.rest.text
+        if i == chosen { ink = st.box.on.rest.text }
+        mid(cv, st.label, Rect { x = box.x + f32(i) * w, y = box.y, w = w, h = box.h }, items[i], ink)
     }
 }
 
-/* A card at `box`: the card color, rounder than a control, set off by a
- * contact shadow and a rim. */
-pub card(cv: *Canvas, t: *Theme, box: Rect) {
-    cv.fill(lower(box, CONTACT_DROP), CARD_RADIUS, t.contact)
-    cv.fill(box, CARD_RADIUS, t.card)
-    cv.outline(box, CARD_RADIUS, EDGE, t.edge)
+/* A card at `box` in `st`. */
+pub card(cv: *Canvas, st: const *Ruled, box: Rect) {
+    frame(cv, &st.box, box, st.box.look.rest)
 }
 
-/* Half-pixel separators between `box`'s cells, each `cell` high, inset the
- * padding from its left: a pixel at half the separator's alpha. */
-pub separators(cv: *Canvas, t: *Theme, box: Rect, cell: f32) {
-    line: Color = fade(t.separator, EDGE)
-    for y: f32 = box.y + cell; y < box.y + box.h - 0.5; y += cell {
-        cv.fill(Rect { x = box.x + t.padding, y = y, w = box.w - t.padding, h = 1.0 }, line)
-    }
+/* A tooltip `s` in `st`, its top left TIP_OFFSET right of and below the
+ * pointer at `x`, `y`, `h` high. */
+TIP_OFFSET: const f32 = 14.0
+pub tooltip(cv: *Canvas, st: const *Labeled, x: f32, y: f32, h: f32, s: string) {
+    p: Insets = st.box.padding
+    box: Rect = Rect { x = x + TIP_OFFSET, y = y + TIP_OFFSET, w = text_width(s, st.label) + p.left + p.right, h = h }
+    frame(cv, &st.box, box, st.box.look.rest)
+    mid(cv, st.label, box, s, st.box.look.rest.text)
 }
 
-/* A field at `box` showing `text`, with a caret before byte `caret` while
- * `focused`. Focused, it sits on the card color inside an accent ring and a
- * fainter glow outside that. */
-pub field(cv: *Canvas, t: *Theme, box: Rect, text: string, focused: bool, caret: usize) {
-    if !focused {
-        cv.fill(box, t.radius, t.button.rest)
-        cv.text(box, t.padding, text, t.text)
-        return
-    }
-    cv.outline(grow(box, RING + GLOW), t.radius + RING + GLOW, GLOW, fade(t.accent, GLOW_ALPHA))
-    cv.fill(box, t.radius, t.card)
-    cv.outline(grow(box, RING), t.radius + RING, RING, t.accent)
-    cv.text(box, t.padding, text, t.text)
-    x: f32 = box.x + t.padding + f32(caret) * GLYPH_WIDTH
-    cv.fill(Rect { x = x - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, t.accent)
-}
-
-/* A list row at `box` showing `item`: an accent pill while `chosen`, else a
- * pill filled as a button for `res` under the pointer. Its text lines up with
- * the padding from the list's card. */
-pub row(cv: *Canvas, t: *Theme, box: Rect, res: Response, chosen: bool, item: string) {
-    pad: f32 = t.padding - LIST_PAD
-    if chosen {
-        cv.fill(box, PILL_RADIUS, t.accent)
-        cv.text(box, pad, item, t.on_accent)
-        return
-    }
-    if res.hover || res.held { cv.fill(box, PILL_RADIUS, t.button.shade(res)) }
-    cv.text(box, pad, item, t.text)
-}
-
-/* A list's scroll thumb at `box`. */
-pub thumb(cv: *Canvas, t: *Theme, box: Rect) { cv.fill(box, box.w / 2.0, t.text) }
-
-/* A popup's background at `box`: a card raised off what is under it by a
- * shadow below and a rim. */
-pub popup(cv: *Canvas, t: *Theme, box: Rect) {
-    cv.shadow(lower(box, SHADOW_DROP), POPUP_RADIUS, SHADOW_BLUR, t.shadow)
-    cv.fill(box, POPUP_RADIUS, t.card)
-    cv.outline(box, POPUP_RADIUS, EDGE, t.edge)
-}
-
-/* A popup's title `s` in muted text on a strip, filled as a button rests,
- * across the top of the popup at `box` and `h` high. */
-pub title(cv: *Canvas, t: *Theme, box: Rect, h: f32, s: string) {
+/* A popup's title `s` on the header strip, across the top of the popup at
+ * `box` and `h` high. */
+pub title(cv: *Canvas, st: const *Labeled, box: Rect, h: f32, s: string) {
     strip: Rect = Rect { x = box.x, y = box.y, w = box.w, h = h }
-    cv.fill(strip, POPUP_RADIUS, 0.0, t.button.rest)
-    cv.text(strip.inset(Insets { left = t.padding, right = t.padding }), s, t.muted, Align.left)
+    l: Look = st.box.look.rest
+    cv.fill(strip, st.box.radius, 0.0, l.fill)
+    say(cv, st.label, strip.inset(Insets { right = st.box.padding.right }), st.box.padding.left, s, l.text)
+}
+
+/* Rules between `box`'s cells, each `cell` high, the rule's gap in from its
+ * left, in the border color. */
+pub separators(cv: *Canvas, st: const *Ruled, box: Rect, cell: f32) {
+    for y: f32 = box.y + cell; y < box.y + box.h - 0.5; y += cell {
+        cv.fill(Rect { x = box.x + st.rule.gap, y = y, w = box.w - st.rule.gap, h = st.rule.w }, st.box.look.rest.border)
+    }
+}
+
+/* A field at `box` in `st` showing `text`, or `hint` in `muted` while it is
+ * empty, with a caret in the tint before byte `caret` while `focused`.
+ * Focused, it is on, in the box's focus glow. */
+pub field(cv: *Canvas, st: const *Labeled, box: Rect, text: string, hint: string, muted: Color, focused: bool, caret: usize) {
+    l: Look = st.box.look.rest
+    if focused {
+        l = st.box.on.rest
+        cast(cv, box, st.box.radius, st.box.focus)
+    }
+    frame(cv, &st.box, box, l)
+    pad: f32 = st.box.padding.left
+    if text.len == 0 { say(cv, st.label, box, pad, hint, muted) } else { say(cv, st.label, box, pad, text, l.text) }
+    if !focused { return }
+    x: f32 = box.x + pad + text_width(text[0..caret], st.label)
+    cv.fill(Rect { x = x - CARET_W / 2.0, y = box.y + CARET_PAD, w = CARET_W, h = box.h - 2.0 * CARET_PAD }, l.tint)
+}
+
+/* A list row at `box` in `st` showing `item`: on while `chosen`, else as
+ * `res` has it. Its text is `pad` in. */
+pub row(cv: *Canvas, st: const *Labeled, box: Rect, res: Response, chosen: bool, pad: f32, item: string) {
+    looks: States[Look] = st.box.look
+    if chosen { looks = st.box.on }
+    l: Look = looks.pick(res, false)
+    frame(cv, &st.box, box, l)
+    say(cv, st.label, box, pad, item, l.text)
+}
+
+/* A list's scroll thumb at `box`, in the list's resting tint. */
+pub thumb(cv: *Canvas, st: const *Labeled, box: Rect) {
+    cv.fill(box, box.w / 2.0, st.box.look.rest.tint)
+}
+
+/* A popup's background at `box` in `b`. */
+pub popup(cv: *Canvas, b: const *Box, box: Rect) {
+    frame(cv, b, box, b.look.rest)
 }

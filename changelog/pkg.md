@@ -1,5 +1,30 @@
 # Packages
 
+- `pkg/ui`'s `ui.height(h)` sets a button's or picker's height exactly, with
+  no `look.BUTTON_PAD` added, and an icon-only button is square at the padded
+  height (`Context.tall`).
+- `pkg/ui`'s `int` slider takes an optional `label` shown in place of the
+  stop number; binbox's Speed and Clock sliders show their rate (4 Hz) and
+  span (8 ticks) with it.
+- `pkg/ui` lays out responsively: `area_width`/`area_height` give the open
+  area's size for breakpoints, and `row([1, 2, 1])`, `row(cols)` and
+  `grid(cols, count)` share a line by weight, each `Col` held between its
+  `min` and `max` while the rest is shared again, as CSS flex resolves it.
+- `pkg/ui` headings are bold 18 px text in `Theme.heading` (black in light)
+  with no strip; buttons and pickers are 4 px taller (`look.BUTTON_PAD`), a
+  button's label is picked from its resting fill so hover keeps it, a focused
+  field has a 1 px accent outline, `list` rows have a faint line under each,
+  and radii follow iOS (controls 8, checkbox 6, card 10, popup 14).
+  `Theme` is now tokens plus a style per component (`Labeled`, `Graphical`,
+  `Ruled`, from `Box` with a `States[Look]`) that `derive()` fills, hover and
+  press stepping 10/255 from `control`; each control takes an optional style
+  (`&t.primary`), and `Fill`, `lift`/`drop`/`focus` and the flat colors go.
+- `pkg/ui` popup titles sit on a darker `Theme.header` strip in white
+  `Theme.on_header` bold text.
+- `pkg/ui` `Fill` gains `ink`, the label and icon color a style sets (when it
+  has an alpha; else `look.on` picks), so the light gallery's Danger, Success,
+  Warning and Info buttons carry white labels on saturated fills. `look.on`
+  goes white below luma 0.44, and a held `chosen` fill darkens 8%.
 - `pkg/ui` follows Dear ImGui's model: controls, value controls included
   (`checkbox`, `slider`, `field`, `list`), are free functions on the context
   current between `begin` and `end`, placed in `Area`s and drawn from
@@ -128,3 +153,36 @@
   and the nearest stop, and lists draw pills on a padded card. A control that
   is on fills with `Theme.chosen()`; a label on an opaque fill takes white or
   black by the fill's luminance.
+- `pkg/ui` sets its text in Lato Light, Regular, and Bold instead of the
+  monospaced Lilex: `font/bake.py` bakes all three with per-glyph advances,
+  `text_width(s, w)` replaces `GLYPH_WIDTH`, and `Canvas.text` takes an
+  optional `Weight`. `heading` is bold; a field or slider
+  still sizes by `0.6 * text_size()` per character.
+  `font/bake.py` bakes only flattened outlines and advances. Text is drawn
+  from a size-independent glyph atlas: `set_text_size(px)` replaces the 16 px
+  `TEXT_SIZE`, and each glyph is rasterized by exact area coverage per
+  weight, size and quarter-pixel phase (x-height fitted to whole rows, 15%
+  stem darkening) into one RGBA texture that also serves untextured
+  geometry through a white texel. `set_text_density(d)` rasterizes for a
+  scaled renderer's device pixels. `Texture.image`, `Texture.update`,
+  `Renderer.geometry(texture, ...)` and `Renderer.flush` in `pkg/sdl`.
+  Theme text colors are opaque (`flat`): a glyph's triangles overlap a little,
+  and a translucent color showed the overlaps as dark dots.
+- `pkg/ui` buttons: `ui.height(h)` sizes the next control, `ui.disable()` draws
+  the next button faint and deaf to the pointer, `Fill.edge` outlines a button,
+  and `button(label, fill)` styles a text-only one. The gallery shows button
+  sizes and styles and scrolls the whole page with the wheel.
+- `pkg/ui` adds `bar(&value, min, max)`, a block slider showing its value,
+  ticked under it for `int`s, its fill masked to the block's shape by
+  `Canvas.fill_until`; `TextInput.hint` placeholders; a glow round a focused
+  field; and darker button fills. The gallery adds a menu bar with a submenu.
+- `pkg/ui` is a skeleton: plain opaque light/dark palettes in Lilex SemiBold
+  (`ui.mono()`), `Text` styles carrying a `Font`, and `Theme` effects as data
+  (`surface`, `border_w`, `panel_radius`, `lift`/`drop`/`focus` `Shadow`s).
+  The pill switch and the knob slider moved to `demo/ui-fancy` (was ui-gallery), whose
+  `fancy.ace` restores the old look from the public API; `bake.py` bakes any font.
+  `ui.slider` is a filled bar showing its value, ticked under for `int`s, and
+  `ui.popup(box, title)` adds a `header` strip in `title_text`, and
+  `ui.tooltip(text)` labels the last control after a half-second rest, in
+  `tip` and `tip_text`. `demo/ui-default` shows the
+  default look, Cmd+D toggling light and dark.

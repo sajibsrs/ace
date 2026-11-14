@@ -1,37 +1,36 @@
 #!/usr/bin/env python3
-"""Bakes printable ASCII from Lilex-SemiBold.ttf into ../inc/font.ace.
+"""Bakes printable ASCII from one TrueType font into an Ace module whose
+function NAME returns it as a ui Font.
 
-Each glyph's outlines flatten to polygons the program fills with a one pixel
-anti-aliased fringe, as it does icons: contours nest even-odd, a contour
-inside another is a hole joined to its outline by a zero-width bridge cut, and
-every polygon is split into triangles here. Coordinates are in em units of
-EM = 64 per em, y down, the baseline at 0, so a glyph at `size` pixels scales
-by size / EM. POINTS holds, per glyph, polygons in the icon table's layout
-(-2 or -4, see icon/bake.py), then -9.
+Each glyph's outlines flatten to closed contours in em units of EM = 64 per em,
+y down, the baseline at 0; ui rasterizes them at run time, at any size. POINTS
+holds, per glyph, its contours as n then n (x, y) pairs, then -9; winding is as
+the font's (nonzero fill, holes wind the other way).
 
-    python3 -I font/bake.py        (from pkg/ui)
+    python3 -I font/bake.py FONT.ttf OUT.ace NAME IMPORT
 
-The font is reader-checked only for what Lilex uses: TrueType outlines, simple
-and offset-only composite glyphs, a format 4 or 12 Unicode map.
+IMPORT is where the module finds Font: "./face.ace" inside pkg/ui, or "ui" in a
+program that depends on it. pkg/ui's own font:
+
+    python3 -I font/bake.py font/Lilex-SemiBold.ttf inc/font.ace mono ./face.ace
+
+The reader handles TrueType outlines, simple and offset-only composite glyphs,
+and a format 4 or 12 Unicode map.
 """
 
-import importlib.util
 import math
 import struct
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-OUT = HERE.parent / "inc" / "font.ace"
-FONT = HERE / "Lilex-SemiBold.ttf"
 FIRST, LAST = 32, 126
 EM = 64.0
-# Flatness of curves, in em units: 0.1 pixel at 40 pixels.
-FLAT = 0.1 * EM / 40.0
+# Flatness of curves, in em units: 0.05 pixel at 100 pixels per em.
+FLAT = 0.05 * EM / 100.0
 
-spec = importlib.util.spec_from_file_location("icon_bake", HERE.parents[2] / "demo" / "binbox" / "icon" / "bake.py")
-icon_bake = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(icon_bake)
+
+def cross(o, a, b):
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
 
 def tables(data):
@@ -171,9 +170,9 @@ class Font:
         return out
 
 
-def flatten(contour):
+def flatten(contour, upem):
     """A TrueType contour -> points in em units (y down)."""
-    k = EM / 1000.0
+    k = EM / upem
     pts = [(x * k, -y * k, on) for x, y, on in contour]
     # Start on an on-curve point; two off-curve points have one halfway.
     exp = []
@@ -212,65 +211,68 @@ def flatten(contour):
         again = False
         for k_ in range(len(ring)):
             a, b, c = ring[k_ - 1], ring[k_], ring[(k_ + 1) % len(ring)]
-            if abs(icon_bake.cross(a, b, c)) <= FLAT * math.dist(a, c) * 0.25:
+            if abs(cross(a, b, c)) <= FLAT * math.dist(a, c) * 0.25:
                 ring.pop(k_)
                 again = True
                 break
     return ring
 
 
+def bbox_top(font, code):
+    """The highest point of the glyph for `code`, in em units."""
+    gid = font.cmap[code]
+    g = font.t["glyf"] + font.loca[gid]
+    return struct.unpack(">h", font.d[g + 8:g + 10])[0] * EM / font.upem
+
+
 def main():
-    font = Font(FONT.read_bytes())
-    start, flat, worst = [], [], (0, "")
+    if len(sys.argv) != 5:
+        sys.exit("usage: bake.py FONT.ttf OUT.ace NAME IMPORT")
+    src, out, name, imp = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+    font = Font(src.read_bytes())
+    start, adv, flat, worst = [], [], [], (0, "")
     for code in range(FIRST, LAST + 1):
         start.append(len(flat))
-        rings = [flatten(c) for c in font.contours(font.cmap[code])]
-        for poly, bridges in icon_bake.polygons([r for r in rings if len(r) > 2]):
-            if len(poly) > worst[0]:
-                worst = (len(poly), chr(code))
-            flat += [-4.0 if bridges else -2.0, float(len(poly))]
-            for x, y in poly:
-                flat += [x, y]
-            flat += [float(v) for v in icon_bake.triangulate(poly)]
-            if bridges:
-                flat += [float(len(bridges))]
-                for a, c in bridges:
-                    flat += [float(a), float(c)]
-        flat += [-9.0]
-    adv = font.advance(font.cmap[ord("M")]) * EM / font.upem
+        adv.append(round(font.advance(font.cmap[code]) * EM / font.upem, 3))
+        for c in font.contours(font.cmap[code]):
+            ring = flatten(c, font.upem)
+            if len(ring) < 3:
+                continue
+            if len(ring) > worst[0]:
+                worst = (len(ring), chr(code))
+            flat.append(float(len(ring)))
+            for x, y in ring:
+                flat += [round(x, 3), round(y, 3)]
+        flat.append(-9.0)
     lines = [
-        "/* font: printable ASCII from Lilex SemiBold, flattened to polygons in em units.",
+        f"/* {src.stem}: printable ASCII flattened to contours in em units, as a ui Font.",
         " *",
-        " * Generated by font/bake.py from font/Lilex-SemiBold.ttf (SIL Open Font License 1.1,",
-        " * see font/LICENSE.txt); do not edit by hand. The layout of POINTS is described",
-        " * there and in icon/bake.py.",
+        f" * Generated by pkg/ui/font/bake.py from {src.name}; do not edit by hand. The",
+        " * layout of POINTS is described there.",
         " */",
         "",
-        "/* Em units per em; y runs down from the baseline. */",
-        f"pub EM: const f32 = {EM}",
-        "/* The advance of every glyph, the font being monospaced. */",
-        f"pub ADVANCE: const f32 = {adv}",
-        "/* The height of a capital above the baseline. */",
-        f"pub CAP: const f32 = {698 * EM / 1000}",
-        "/* The height of a lowercase x above the baseline. */",
-        f"pub XHEIGHT: const f32 = {516 * EM / 1000}",
-        "/* The first and last character code baked. */",
-        f"pub FIRST: const usize = {FIRST}",
-        f"pub LAST: const usize = {LAST}",
-        f"/* The most points of one glyph polygon: {worst[0]} (\"{worst[1]}\"). */",
-        f"pub POLY_MAX: const usize = {worst[0]}",
+        f'import Font from "{imp}"' if imp.startswith(".") else f"import Font from {imp}",
         "",
-        "/* Where each glyph, FIRST to LAST, starts in POINTS. */",
-        f"pub START: [{len(start)}]u32 = [",
+        f"pub ADVANCE: const [{len(adv)}]f32 = [",
     ]
+    for i in range(0, len(adv), 12):
+        lines.append("    " + ", ".join(repr(float(v)) for v in adv[i:i + 12]) + ",")
+    lines += ["]", "", f"pub START: const [{len(start)}]u32 = ["]
     for i in range(0, len(start), 12):
         lines.append("    " + ", ".join(str(v) for v in start[i:i + 12]) + ",")
-    lines += ["]", "", "/* Each glyph's polygons in the icon table's layout, then -9; see font/bake.py. */", f"pub POINTS: [{len(flat)}]f32 = ["]
+    lines += ["]", "", f"pub POINTS: const [{len(flat)}]f32 = ["]
     for i in range(0, len(flat), 8):
         lines.append("    " + ", ".join(repr(float(v)) for v in flat[i:i + 8]) + ",")
-    lines.append("]")
-    OUT.write_text("\n".join(lines) + "\n")
-    print(f"{OUT}: {len(start)} glyphs, {len(flat)} numbers, widest polygon {worst[0]} points (\"{worst[1]}\")")
+    lines += [
+        "]",
+        "",
+        f"/* {src.stem}. */",
+        f"pub {name}(): Font {{",
+        f"    return Font {{ em = {EM}, cap = {round(bbox_top(font, ord('H')), 3)}, xheight = {round(bbox_top(font, ord('x')), 3)}, first = {FIRST}, last = {LAST}, advance = ADVANCE[..], start = START[..], points = POINTS[..] }}",
+        "}",
+    ]
+    out.write_text("\n".join(lines) + "\n")
+    print(f"{out}: {len(start)} glyphs, {len(flat)} numbers, widest contour {worst[0]} points (\"{worst[1]}\")")
 
 
 if __name__ == "__main__":

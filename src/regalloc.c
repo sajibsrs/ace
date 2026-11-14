@@ -49,7 +49,12 @@ void ra_split_critical_edges(IrFunc* fn) {
 // loop, one outside) and whose one back edge is a plain jump: cloning the
 // reverse postorder and moving such a header after its latch, so an iteration
 // ends in the test's own conditional branch to the body instead of a jump to
-// the test, then a jump to the body once at entry. This only reorders the
+// the test, then a jump to the body once at entry. A loop whose latch is
+// only a split edge from a test leaving the loop (one pass 6 rotated) already
+// ends each iteration in a conditional branch and stays. A latch that is only
+// a jump, entered from several blocks of the body, goes before the header
+// instead: each enters it by a branch back, then falls through the header's
+// test into the body, one branch an iteration. This only reorders the
 // blocks emission walks (a->layout); analysis (a->order, a->bfirst, a->idx,
 // liveness, allocation, coalescing) keeps every value's position as if
 // nothing moved, so none of their ordering assumptions change.
@@ -61,11 +66,12 @@ static void emission_order(Ra* a) {
     memcpy(a->layout, a->order, (size_t)n * sizeof(int));
     int* pos = xcalloc((size_t)n, sizeof(int));
     int* after = xcalloc((size_t)n, sizeof(int)); // latch -> its deferred header, or -1
+    int* before = xcalloc((size_t)n, sizeof(int)); // header -> its deferred latch, or -1
     uint8_t* deferred = xcalloc((size_t)n, 1);
     uint8_t* in = xcalloc((size_t)n, 1);
     int* stack = xcalloc((size_t)n, sizeof(int));
     int moved = 0;
-    for (int b = 0; b < n; b++) after[b] = -1;
+    for (int b = 0; b < n; b++) after[b] = before[b] = -1;
     for (int i = 0; i < n; i++) pos[a->layout[i]] = i;
     for (int i = 1; i < n; i++) { // the entry stays first
         int h = a->layout[i];
@@ -91,8 +97,18 @@ static void emission_order(Ra* a) {
         }
         int s0 = hb->succ[0], s1 = hb->succ[1];
         if ((in[s0] && s0 != h) == (in[s1] && s1 != h)) continue;
-        after[latch] = h;
-        deferred[h] = 1;
+        IrBlock* lb = &fn->blocks[latch];
+        if (lb->nins == 1 && lb->npreds == 1) {
+            IrBlock* tb = &fn->blocks[lb->preds[0]];
+            if (tb->succ[1] >= 0 && !in[tb->succ[tb->succ[0] == latch]]) continue;
+        }
+        if (lb->nins == 1 && lb->npreds > 1) { // a bare latch of several back edges goes before h instead
+            before[h] = latch;
+            deferred[latch] = 1;
+        } else {
+            after[latch] = h;
+            deferred[h] = 1;
+        }
         moved++;
     }
     if (moved) {
@@ -102,6 +118,7 @@ static void emission_order(Ra* a) {
         for (int i = 0; i < n; i++) {
             int b = old[i];
             if (deferred[b]) continue;
+            if (before[b] >= 0) a->layout[k++] = before[b];
             a->layout[k++] = b;
             if (after[b] >= 0) a->layout[k++] = after[b];
         }
@@ -133,14 +150,55 @@ static void emission_order(Ra* a) {
         free(old);
     }
     for (int i = 0; i < n; i++) a->eix[a->layout[i]] = i;
-    free(pos); free(after); free(deferred); free(in); free(stack);
+    free(pos); free(after); free(before); free(deferred); free(in); free(stack);
+}
+
+// Each block's innermost natural loop, as its header's body (body[h][b]: b
+// reaches a latch of h without passing h), or NULL outside every loop.
+static uint8_t** inner_loops(IrFunc* fn, uint8_t*** bodies) {
+    int n = fn->nblocks, nrpo;
+    int* rpo;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    uint8_t** body = *bodies = xcalloc((size_t)n, sizeof(uint8_t*));
+    uint8_t** inner = xcalloc((size_t)n, sizeof(uint8_t*));
+    int* size = xcalloc((size_t)n, sizeof(int));
+    int* stack = xcalloc((size_t)n, sizeof(int));
+    for (int h = 0; h < n; h++) {
+        const IrBlock* hb = &fn->blocks[h];
+        uint8_t* in = NULL;
+        int sp = 0, count = 1;
+        for (int p = 0; p < hb->npreds; p++) {
+            int l = hb->preds[p];
+            if (idom[l] < 0 || !ir_dominates(idom, h, l)) continue;
+            if (!in) { in = body[h] = xcalloc((size_t)n, 1); in[h] = 1; }
+            if (!in[l]) { in[l] = 1; count++; stack[sp++] = l; }
+        }
+        while (sp) {
+            const IrBlock* bb = &fn->blocks[stack[--sp]];
+            for (int p = 0; p < bb->npreds; p++) {
+                int q = bb->preds[p];
+                if (in[q] || idom[q] < 0) continue;
+                in[q] = 1;
+                count++;
+                stack[sp++] = q;
+            }
+        }
+        for (int b = 0; in && b < n; b++)
+            if (in[b] && (!inner[b] || count < size[b])) { inner[b] = in; size[b] = count; }
+    }
+    free(rpo); free(idom); free(size); free(stack);
+    return inner;
 }
 
 // Reverse postorder, visiting the second successor first so that the first
-// (a branch's true side, a loop's body) follows its block.
+// (a branch's true side, a loop's body) follows its block, unless the first
+// leaves the branch's innermost loop and the second stays in it: then the
+// second follows, keeping the loop's blocks together.
 void ra_layout(Ra* a) {
     IrFunc* fn = a->fn;
     int n = fn->nblocks, npost = 0, sp = 0;
+    uint8_t** bodies;
+    uint8_t** inner = inner_loops(fn, &bodies);
     int* stack = xcalloc((size_t)n * 2, sizeof(int));
     uint8_t* seen = xcalloc((size_t)n, 1);
     a->order = xcalloc((size_t)n, sizeof(int));
@@ -151,7 +209,10 @@ void ra_layout(Ra* a) {
         int b = stack[sp - 2], k = stack[sp - 1];
         if (k < 2) {
             stack[sp - 1] = k + 1;
-            int s = fn->blocks[b].succ[1 - k];
+            const IrBlock* bb = &fn->blocks[b];
+            const uint8_t* in = inner[b];
+            int flip = in && bb->succ[1] >= 0 && !in[bb->succ[0]] && in[bb->succ[1]];
+            int s = bb->succ[flip ? k : 1 - k];
             if (s >= 0 && !seen[s]) {
                 seen[s] = 1;
                 stack[sp++] = s; stack[sp++] = 0;
@@ -163,6 +224,9 @@ void ra_layout(Ra* a) {
     }
     free(stack);
     free(seen);
+    for (int b = 0; b < n; b++) free(bodies[b]);
+    free(bodies);
+    free(inner);
     a->bfirst = xcalloc((size_t)n, sizeof(int));
     a->blast = xcalloc((size_t)n, sizeof(int));
     a->idx = xcalloc((size_t)fn->nins, sizeof(int));

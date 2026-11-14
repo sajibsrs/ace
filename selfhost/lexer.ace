@@ -15,7 +15,7 @@ import sys
 /* Token kinds, in src/ace.h's TOKEN_LIST order. */
 pub Token: enum u8 {
     eof, newline, ident,
-    import, pub, const, noalias, if, else, for,
+    import, pub, const, if, else, for,
     in, switch, default, return, break, continue, defer,
     asm, extern, contract, struct, embed, signs, distinct,
     type, enum, union, specialized, intrinsic, inline,
@@ -358,9 +358,7 @@ keyword(t: []char): Token {
             }
         }
         'n' {
-            if mem.equal(t, "noalias") {
-                k = Token.noalias
-            } else if mem.equal(t, "null") {
+            if mem.equal(t, "null") {
                 k = Token.null
             }
         }

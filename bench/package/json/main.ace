@@ -8,9 +8,9 @@ import json
 import time
 
 RECORDS: const int = 32
-TAGS: [4]string = ["admin", "ops", "dev", "billing"]
-NAMES: [4]string = ["Ada Lovelace", "Grace Hopper", "Linus \"L\" Torvalds", "Barbara Liskov"]
-PATHS: [4]string = ["/7/id", "/19/score", "/31/tags/1", "/0/name"]
+TAGS: const [4]string = ["admin", "ops", "dev", "billing"]
+NAMES: const [4]string = ["Ada Lovelace", "Grace Hopper", "Linus \"L\" Torvalds", "Barbara Liskov"]
+PATHS: const [4]string = ["/7/id", "/19/score", "/31/tags/1", "/0/name"]
 
 now(): u64 {
     return time.awake()

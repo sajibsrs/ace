@@ -14,29 +14,29 @@
 <text x="36" y="143.0" font-size="12" fill="#888" text-anchor="end">0.75x</text>
 <line x1="44" x2="892" y1="84.6" y2="84.6" stroke="#888" stroke-opacity="0.18"/>
 <text x="36" y="88.6" font-size="12" fill="#888" text-anchor="end">1x</text>
-<rect x="59.5" y="93.3" width="33.9" height="208.7" rx="2" fill="#cc4152"/>
+<rect x="59.5" y="91.1" width="33.9" height="210.9" rx="2" fill="#cc4152"/>
 <rect x="94.4" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
 <rect x="129.3" y="84.6" width="33.9" height="217.4" rx="2" fill="#5b7fbf"/>
 <rect x="164.2" y="104.2" width="33.9" height="197.8" rx="2" fill="#4a9d8f"/>
 <text x="128.8" y="320.0" font-size="12" fill="#888" text-anchor="middle">nbody</text>
-<rect x="229.1" y="117.2" width="33.9" height="184.8" rx="2" fill="#cc4152"/>
+<rect x="229.1" y="121.6" width="33.9" height="180.4" rx="2" fill="#cc4152"/>
 <rect x="264.0" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<rect x="298.9" y="84.6" width="33.9" height="217.4" rx="2" fill="#5b7fbf"/>
-<rect x="333.8" y="86.8" width="33.9" height="215.2" rx="2" fill="#4a9d8f"/>
+<rect x="298.9" y="91.1" width="33.9" height="210.9" rx="2" fill="#5b7fbf"/>
+<rect x="333.8" y="91.1" width="33.9" height="210.9" rx="2" fill="#4a9d8f"/>
 <text x="298.4" y="320.0" font-size="12" fill="#888" text-anchor="middle">spectralnorm</text>
 <rect x="398.7" y="128.1" width="33.9" height="173.9" rx="2" fill="#cc4152"/>
 <rect x="433.6" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
-<rect x="468.5" y="82.4" width="33.9" height="219.6" rx="2" fill="#5b7fbf"/>
+<rect x="468.5" y="86.8" width="33.9" height="215.2" rx="2" fill="#5b7fbf"/>
 <rect x="503.4" y="93.3" width="33.9" height="208.7" rx="2" fill="#4a9d8f"/>
 <text x="468.0" y="320.0" font-size="12" fill="#888" text-anchor="middle">fannkuch</text>
 <rect x="568.3" y="117.2" width="33.9" height="184.8" rx="2" fill="#cc4152"/>
 <rect x="603.2" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
 <rect x="638.1" y="110.7" width="33.9" height="191.3" rx="2" fill="#5b7fbf"/>
-<rect x="673.0" y="110.7" width="33.9" height="191.3" rx="2" fill="#4a9d8f"/>
+<rect x="673.0" y="115.0" width="33.9" height="187.0" rx="2" fill="#4a9d8f"/>
 <text x="637.6" y="320.0" font-size="12" fill="#888" text-anchor="middle">binarytrees</text>
 <rect x="737.9" y="95.5" width="33.9" height="206.5" rx="2" fill="#cc4152"/>
 <rect x="772.8" y="84.6" width="33.9" height="217.4" rx="2" fill="#8b8f98"/>
 <rect x="807.7" y="82.4" width="33.9" height="219.6" rx="2" fill="#5b7fbf"/>
-<rect x="842.6" y="82.4" width="33.9" height="219.6" rx="2" fill="#4a9d8f"/>
+<rect x="842.6" y="84.6" width="33.9" height="217.4" rx="2" fill="#4a9d8f"/>
 <text x="807.2" y="320.0" font-size="12" fill="#888" text-anchor="middle">mandelbrot</text>
 </svg>

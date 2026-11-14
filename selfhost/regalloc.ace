@@ -147,7 +147,10 @@ pub split_critical_edges(fn: *Func) {
 /* A loop whose header only tests (a two-way branch with one successor in the
  * loop, one outside) and whose one back edge is a plain jump: its header moves
  * after its latch in emission order, so an iteration ends in the test's own
- * conditional branch. Then a @cold call's arm moves last. Only layout and eix
+ * conditional branch. A loop whose latch is only a split edge from a test
+ * leaving the loop (one the optimizer rotated) already does and stays. A
+ * latch that is only a jump, entered from several blocks of the body, goes
+ * before the header instead. Then a @cold call's arm moves last. Only layout and eix
  * change; analysis keeps every position.
  */
 emission_order(a: *Ra, fn: Func) {
@@ -164,6 +167,9 @@ emission_order(a: *Ra, fn: Func) {
     after: array.Array[int], after_err: Error = array.Array[int].filled(usize(n), -1) // latch -> its deferred header, or -1
     fail(after_err)
     defer after.wipe()
+    before: array.Array[int], before_err: Error = array.Array[int].filled(usize(n), -1) // header -> its deferred latch, or -1
+    fail(before_err)
+    defer before.wipe()
     deferred: array.Array[bool], deferred_err: Error = array.Array[bool].filled(usize(n), false)
     fail(deferred_err)
     defer deferred.wipe()
@@ -205,8 +211,19 @@ emission_order(a: *Ra, fn: Func) {
         s0: int = hb.succ0
         s1: int = hb.succ1
         if (inl.get(s0) && s0 != h) == (inl.get(s1) && s1 != h) { continue }
-        after.set(usize(latch), h)
-        deferred.set(usize(h), true)
+        if lb.ins.len == 1 && lb.preds.len == 1 { // a split edge from a loop-exit test: rotated
+            tb: IrBlock = *(fn.block(lb.preds.get(0)))
+            other: int = tb.succ0
+            if tb.succ0 == latch { other = tb.succ1 }
+            if tb.succ1 >= 0 && !inl.get(other) { continue }
+        }
+        if lb.ins.len == 1 && lb.preds.len > 1 { // a bare latch of several back edges goes before h instead
+            before.set(usize(h), latch)
+            deferred.set(usize(latch), true)
+        } else {
+            after.set(usize(latch), h)
+            deferred.set(usize(h), true)
+        }
         moved += 1
     }
     if moved > 0 {
@@ -217,6 +234,10 @@ emission_order(a: *Ra, fn: Func) {
         k: usize = 0
         for b: int in old.view() {
             if deferred.get(b) { continue }
+            if before.get(b) >= 0 {
+                a.layout.set(k, before.get(b))
+                k += 1
+            }
             a.layout.set(k, b)
             k += 1
             if after.get(b) >= 0 {
@@ -274,8 +295,62 @@ emission_order(a: *Ra, fn: Func) {
     for i: int in 0..n { a.eix.set(usize(a.layout.get(i)), i) }
 }
 
+/* Each block's innermost natural loop, as the offset in `body` of its
+ * header's n flags (b's: b reaches a latch of the header without passing it),
+ * or -1 outside every loop. `body` is the caller's to wipe.
+ */
+inner_loops(fn: Func, body: *array.Array[bool]): array.Array[int] {
+    n: int = int(fn.blocks.len)
+    idom: array.Array[int], rpo: array.Array[int] = ir.dominators(fn)
+    defer idom.wipe()
+    defer rpo.wipe()
+    inner: array.Array[int], inner_err: Error = array.Array[int].filled(usize(n), -1)
+    fail(inner_err)
+    size: array.Array[int], size_err: Error = array.Array[int].filled(usize(n), 0)
+    fail(size_err)
+    defer size.wipe()
+    stack: array.Array[int] = array.Array[int] {}
+    defer stack.wipe()
+    for h: int in 0..n {
+        at: int = -1
+        count: int = 1
+        for l: int in fn.block(h).preds.view() {
+            if idom.get(l) < 0 || !ir.dominates(idom, h, l) { continue }
+            if at < 0 {
+                at = int(body.len)
+                fail(body.resize(body.len + usize(n)))
+                body.set(usize(at + h), true)
+            }
+            if !body.get(at + l) {
+                body.set(usize(at + l), true)
+                count += 1
+                fail(stack.push(l))
+            }
+        }
+        for stack.len > 0 {
+            x: int, _ = stack.pop()
+            for q: int in fn.block(x).preds.view() {
+                if body.get(at + q) || idom.get(q) < 0 { continue }
+                body.set(usize(at + q), true)
+                count += 1
+                fail(stack.push(q))
+            }
+        }
+        if at < 0 { continue }
+        for b: int in 0..n {
+            if body.get(at + b) && (inner.get(b) < 0 || count < size.get(b)) {
+                inner.set(usize(b), at)
+                size.set(usize(b), count)
+            }
+        }
+    }
+    return inner
+}
+
 /* Reverse postorder, visiting the second successor first so that the first
- * (a branch's true side, a loop's body) follows its block; then the emission
+ * (a branch's true side, a loop's body) follows its block, unless the first
+ * leaves the branch's innermost loop and the second stays in it: then the
+ * second follows, keeping the loop's blocks together. Then the emission
  * order. Sets order, lix, bfirst, blast, idx, layout, eix, and cold.
  */
 pub layout(a: *Ra, fn: Func) {
@@ -286,6 +361,10 @@ pub layout(a: *Ra, fn: Func) {
     seen: array.Array[bool], seen_err: Error = array.Array[bool].filled(usize(n), false)
     fail(seen_err)
     defer seen.wipe()
+    body: array.Array[bool] = array.Array[bool] {}
+    defer body.wipe()
+    inner: array.Array[int] = inner_loops(fn, &body)
+    defer inner.wipe()
     err: Error = null
     a.order, err = array.Array[int].filled(usize(n), 0)
     fail(err)
@@ -300,7 +379,11 @@ pub layout(a: *Ra, fn: Func) {
         k: int = stack.get(sp - 1)
         if k < 2 {
             stack.set(sp - 1, k + 1)
-            s: int = succ(*(fn.block(b)), 1 - k)
+            bb: IrBlock = *(fn.block(b))
+            at: int = inner.get(b)
+            flip: bool = at >= 0 && bb.succ1 >= 0 && !body.get(at + bb.succ0) && body.get(at + bb.succ1)
+            s: int = succ(bb, 1 - k)
+            if flip { s = succ(bb, k) }
             if s >= 0 && !seen.get(s) {
                 seen.set(usize(s), true)
                 fail(stack.push(s))

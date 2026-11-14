@@ -1,5 +1,28 @@
 # Standard library
 
+- `math`'s `f32` `exp` and `log` run their own kernels over the shared tables in
+  plain `f64` (single-word ln2/128 and a degree-3 exponential; a series to `r^5`
+  with no tail word), one guard sending special operands to the `f64` path.
+  Worst error over all inputs 0.504 / 0.501 ULP; `bench/std` exp-f32 3.85 to
+  2.40 ns, log-f32 4.3 to 3.4 ns on Apple arm64 (1.60x / 1.48x to 1.00x / 1.17x
+  of libm) (#48, #72).
+
+- `math`'s `f64` `sin` and `cos` from 1647099 read the Payne-Hanek product onto
+  the pi/64 table (top seven bits the index, the rest a fixed-point offset): no
+  branch on the argument, 2/pi a byte table read unaligned, `f32` sharing it.
+  Worst error 0.543 ULP; `sin-large` 15.3 to 7.5 ns (0.96x libm) (#146).
+- `math`'s `f64` `sin` and `cos` reduce by pi/64 onto a 128-entry table of
+  `sin(k*pi/64)` (high and low words, full period) plus two three-term series,
+  so quadrant and sign are the table index and no branch depends on the
+  argument below 1647099; Payne-Hanek above it is unchanged. Worst error found
+  0.545 ULP; `bench/std` sin-f64 7.2 to 4.0 ns, cos-f64 6.8 to 4.1 ns on Apple
+  arm64 (1.5x to 0.82x and 0.90x of libm) (#72).
+- `math`'s `f32` `sin` and `cos` reduce by pi through two `fma`s and take one
+  odd polynomial on [-pi/2, pi/2], the quotient's parity setting the sign bit,
+  so no branch depends on the argument below 2^28 * pi/2. Worst error over all
+  finite inputs 0.511 ULP; `bench/std` sin-f32 5.45 to 3.4 ns, cos-f32 5.59 to
+  3.6 ns on Apple arm64 (1.70x and 1.48x to 1.03x and 0.94x of libm) (#72).
+
 - `net.close_write` and `tcp.close_write` exist on linux-x64 (`shutdown` with
   `SHUT_WR`, Linux errno numbering in `CloseWriteErr`), so `pkg/http` builds
   there; `tests/emit/tcp/close_write.ace` covers the half-close and the
@@ -187,3 +210,7 @@
   compiler keeps its own copy while it bootstraps.
 - `Array.view` is `inline`, as `get` is: it counts one node in a caller's
   auto-inline budget, so accessors over it (selfhost's `A64.x`) still expand.
+- Float parsing scans the integer and fraction digits in separate runs, eight
+  at a time and then singly, with no per-digit flag or count test; leading zeros
+  are discounted only past 19 digits. `parse-f64-long` fell from 54 to 36 ns
+  (1.72x to 1.1x C `strtod`) and `parse-f64-short` from 34 to 29 ns.

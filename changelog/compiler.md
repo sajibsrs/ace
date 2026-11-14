@@ -285,3 +285,15 @@
   condition folded to true, and a null check an earlier access proves: a
   dominator-tree walk keeps known comparisons and derives value ranges through
   casts, constant offsets, and `+1` counters (`checks`). 1.217x to 1.057x (#177).
+- Release GVN merges two non-volatile loads of one address under one memory
+  version (a new one per store, call, atomic, asm, and differing merge);
+  cleanup threads an edge past a branch its predecessor already decided; layout
+  keeps a branch's in-loop successor next. `map` get 1.12x, miss 1.34x (#72).
+- Release rotates a loop whose header only tests and loads (at most 8 pure
+  operations, plain loads, checks): a copy of the header ends the preheader
+  and the latch, when the body's first block dominates every header value's
+  use; layout keeps such a latch in place. `map` get 1.25x, miss 1.03x (#72).
+- Release removes a check on an index counting down (`s[j - 1]`, the
+  decrement guarded), fuses a branch pair bounding one integer at both ends
+  into one unsigned compare, and gives a loop's equal back edges one latch,
+  laid out before the header. `str.trim` 1.46x, `parse-int` 1.10x (#72).

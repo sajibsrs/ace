@@ -2,8 +2,8 @@
 // (spec/compiler.md Compiler #2). Each pass runs
 // once, in the order spec/compiler.md gives: sparse conditional constant propagation,
 // global value numbering, loop strength reduction, dead-code and control-flow
-// cleanup, then auto-vectorization over the cleaned loops (and cleanup again
-// after it rewrites any).
+// cleanup, then auto-vectorization over the cleaned loops and loop rotation
+// (each followed by cleanup again when it rewrites any).
 //
 // The passes rely only on facts a debug build checks: a division by a zero
 // or -1 constant is never folded, and an unused load or division is removed
@@ -334,7 +334,9 @@ static void dom_walk(IrFunc* fn, const int* idom, void (*enter)(void*, int), voi
 // an operation equal to one in a dominating block is replaced by it, and an
 // identity (`x + 0`, `x * 1`, `x | x`, a cast to the same type) by its operand.
 // A constant operand counts by its value, not its id, because lowering makes a
-// fresh `const` per use. Loads are never numbered (no memory model).
+// fresh `const` per use. A load counts with its memory version: one per
+// store, call, atomic, or asm, and one per merge of differing versions, so
+// two loads of one address and version see the same memory.
 
 static int is_pure(const IrIns* x) {
     if (x->flags) return 0;
@@ -360,6 +362,8 @@ typedef struct {
     VnEnt*  ent;
     int*    log;  // bucket of each live entry, newest last
     int*    mark; // entries live at each walked block's entry
+    int*    mem;  // each load's memory version
+    int*    in;   // each block's memory version at entry
     int     nent, mask;
 } Vn;
 
@@ -393,8 +397,10 @@ static uint64_t arg_hash(const IrFunc* fn, int a) {
     return x->op == IR_CONST ? mix(mix(1, x->type), x->imm) : mix(2, (uint64_t)a);
 }
 
-static uint64_t vn_hash(const IrFunc* fn, const IrIns* x) {
+static uint64_t vn_hash(const Vn* g, const IrIns* x) {
+    const IrFunc* fn = g->fn;
     uint64_t h = mix(mix(mix(x->op, x->type), x->imm), (uint64_t)(uint32_t)x->aux);
+    if (x->op == IR_LOAD) h = mix(h, (uint64_t)(uint32_t)g->mem[x - fn->ins]);
     if (x->op == IR_GLOBAL) return mix(h, (uint64_t)(uintptr_t)x->sym);
     if (commutes(fn, x)) return mix(h, arg_hash(fn, x->args[0]) + arg_hash(fn, x->args[1]));
     for (int i = 0; i < x->nargs; i++) h = mix(h, arg_hash(fn, x->args[i]));
@@ -409,8 +415,10 @@ static int same_global(const IrIns* x, const IrIns* y) {
 
 // A global counts as equal only by a shared, non-null symbol and name: the
 // name-only (vtable) form has no symbol to key on and is never merged.
-static int vn_equal(const IrFunc* fn, const IrIns* x, const IrIns* y) {
+static int vn_equal(const Vn* g, const IrIns* x, const IrIns* y) {
+    const IrFunc* fn = g->fn;
     if (x->op != y->op || x->type != y->type || x->imm != y->imm || x->aux != y->aux || x->nargs != y->nargs) return 0;
+    if (x->op == IR_LOAD && g->mem[x - fn->ins] != g->mem[y - fn->ins]) return 0;
     if (x->op == IR_GLOBAL) return x->sym && same_global(x, y);
     int direct = 1, swapped = x->nargs == 2 && commutes(fn, x);
     for (int i = 0; i < x->nargs; i++) {
@@ -447,22 +455,67 @@ static int simplify(const IrFunc* fn, const IrIns* x) {
     }
 }
 
+// Whether x may write memory.
+static int clobbers(const IrIns* x) {
+    switch (x->op) {
+    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_ATOMIC: case IR_ASM: return 1;
+    default: return 0;
+    }
+}
+
+// Each block's memory version at entry: 0 at the function's, its
+// predecessors' common version when they agree, else b + 1, its own. A block
+// leaves with the version of its last clobber, nblocks + 1 + that
+// instruction, or else the one it entered with. A predecessor not yet reached
+// is ignored (a loop's back edge, optimistically); a block whose version
+// changes once known takes its own, so the walk ends.
+static int* mem_versions(const IrFunc* fn, const int* rpo, int nrpo) {
+    int n = fn->nblocks;
+    int* in = xalloc((size_t)n, sizeof(int));
+    int* out = xalloc((size_t)n, sizeof(int));
+    for (int b = 0; b < n; b++) in[b] = out[b] = -1;
+    for (int changed = 1; changed;) {
+        changed = 0;
+        for (int q = 0; q < nrpo; q++) {
+            int b = rpo[q], v = q == 0 ? 0 : -1;
+            const IrBlock* bb = &fn->blocks[b];
+            for (int p = 0; p < bb->npreds && q; p++) {
+                int o = out[bb->preds[p]];
+                if (o < 0 || o == v) continue;
+                v = v < 0 ? o : b + 1;
+            }
+            if (in[b] >= 0 && v != in[b]) v = b + 1;
+            int o = v;
+            for (int i = 0; i < bb->nins; i++)
+                if (clobbers(&fn->ins[bb->ins[i]])) o = n + 1 + bb->ins[i];
+            if (v != in[b] || o != out[b]) changed = 1;
+            in[b] = v;
+            out[b] = o;
+        }
+    }
+    free(out);
+    return in;
+}
+
 static void gvn_block(void* ctx, int b) {
     Vn* g = ctx;
     IrFunc* fn = g->fn;
     g->mark[b] = g->nent;
     IrBlock* bb = &fn->blocks[b];
-    int k = 0;
+    int k = 0, ver = g->in[b];
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = &fn->ins[v];
         for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(g, x->args[a]);
-        if (!is_pure(x)) { bb->ins[k++] = v; continue; }
-        int w = simplify(fn, x);
+        if (clobbers(x)) ver = fn->nblocks + 1 + v;
+        int load = x->op == IR_LOAD && !(x->flags & IRF_VOLATILE);
+        if (load) g->mem[v] = ver;
+        if (!load && !is_pure(x)) { bb->ins[k++] = v; continue; }
+        int w = load ? -1 : simplify(fn, x);
         if (w < 0) {
-            int h = (int)(vn_hash(fn, x) & (uint64_t)g->mask);
+            int h = (int)(vn_hash(g, x) & (uint64_t)g->mask);
             for (int e = g->head[h]; e >= 0 && w < 0; e = g->ent[e].next)
-                if (vn_equal(fn, &fn->ins[g->ent[e].v], x)) w = g->ent[e].v;
+                if (vn_equal(g, &fn->ins[g->ent[e].v], x)) w = g->ent[e].v;
             if (w < 0) {
                 g->ent[g->nent] = (VnEnt){ v, g->head[h] };
                 g->head[h] = g->nent;
@@ -501,13 +554,15 @@ static void gvn(IrFunc* fn) {
     g.mark = xalloc((size_t)n, sizeof(int));
     int* rpo, nrpo;
     int* idom = ir_dominators(fn, &rpo, &nrpo);
+    g.mem = xalloc((size_t)fn->nins, sizeof(int));
+    g.in = mem_versions(fn, rpo, nrpo);
     dom_walk(fn, idom, gvn_block, gvn_leave, &g);
     for (int b = 0; b < n; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
             for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(&g, x->args[a]);
         }
-    free(g.head); free(g.ent); free(g.log); free(g.repl); free(g.mark);
+    free(g.head); free(g.ent); free(g.log); free(g.repl); free(g.mark); free(g.mem); free(g.in);
     free(rpo); free(idom);
 }
 
@@ -690,6 +745,61 @@ static ChkRange chk_range(const Chk* k, int v, int depth) {
     return r;
 }
 
+// Unsigned y exceeds some value where block b runs: an edge into b or a
+// block dominating it takes a branch proving z < y, so y - 1 does not wrap.
+static int chk_positive(const Chk* k, int y, int b) {
+    const IrFunc* fn = k->fn;
+    for (;;) {
+        const IrBlock* bb = &fn->blocks[b];
+        if (bb->npreds == 1) {
+            const IrBlock* pb = &fn->blocks[bb->preds[0]];
+            const IrIns* br = &fn->ins[pb->ins[pb->nins - 1]];
+            Fact f;
+            if (br->op == IR_BR && pb->succ[0] != pb->succ[1] && chk_fact(fn, br->args[0], pb->succ[0] == b, &f) &&
+                !f.sg && f.strict && !f.kb && f.b == y)
+                return 1;
+        }
+        if (b == 0) return 0;
+        b = k->idom[b];
+    }
+}
+
+// x is a decrement y - 1 that does not wrap, so x < y; y, or -1.
+static int chk_decrement(const Chk* k, int x) {
+    const IrFunc* fn = k->fn;
+    const IrIns* d = &fn->ins[x];
+    if (d->op != IR_SUB || d->flags || d->type == IT_PTR || !is_int(d->type) || d->type == IT_BOOL ||
+        ir_type_signed((IrType)d->type) || !is_konst(fn, d->args[1], 1))
+        return -1;
+    int y = chk_strip(fn, d->args[0]);
+    return chk_positive(k, y, d->block) ? y : -1;
+}
+
+// Unsigned x < b (strict) or x <= b, neither a constant, from the facts, a
+// non-wrapping decrement (x - 1 < x), and a phi of values each below b
+// defined before its loop, or its own non-wrapping decrement, where b is
+// defined before the phi's block: a counter stepping down from below b.
+static int chk_below(const Chk* k, int x, int b, int strict, int depth) {
+    const IrFunc* fn = k->fn;
+    if (x == b) return !strict;
+    for (int i = 0; i < k->nfact; i++) {
+        const Fact* f = &k->fact[i];
+        if (!f->sg && !f->ka && !f->kb && f->a == x && f->b == b && (f->strict || !strict)) return 1;
+    }
+    if (depth == 0) return 0;
+    int y = chk_decrement(k, x);
+    if (y >= 0) return chk_below(k, y, b, 0, depth - 1);
+    const IrIns* p = &fn->ins[x];
+    int pb = p->block, bb = fn->ins[b].block;
+    if (p->op != IR_PHI || bb < 0 || bb == pb || !ir_dominates(k->idom, bb, pb)) return 0;
+    for (int i = 0; i < p->nargs; i++) {
+        int a = chk_strip(fn, p->args[i]), ab = fn->ins[a].block;
+        if (chk_decrement(k, a) == x) continue; // below x, which is below b
+        if (ab < 0 || ab == pb || !ir_dominates(k->idom, ab, pb) || !chk_below(k, a, b, strict, depth - 1)) return 0;
+    }
+    return 1;
+}
+
 // The known facts imply q.
 static int chk_implied(const Chk* k, const Fact* q) {
     for (int i = 0; i < k->nfact; i++) {
@@ -718,6 +828,7 @@ static int chk_implied(const Chk* k, const Fact* q) {
         if (q->strict && q->va == UINT64_MAX) return 0;
         return r.ulo >= q->va + q->strict;
     }
+    if (!q->ka && !q->kb && !q->sg) return chk_below(k, q->a, q->b, q->strict, 4);
     return 0;
 }
 
@@ -820,13 +931,6 @@ static int ins_before_term(IrFunc* fn, int b, IrOp op, IrType type) {
 // atomic or asm. Neither faults when the loop runs no iteration. A constant
 // operand gets its own copy there, as lowering makes one per use. Inner loops
 // go first, so a value they hoist can leave the enclosing loop too.
-
-static int clobbers(const IrIns* x) {
-    switch (x->op) {
-    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_ATOMIC: case IR_ASM: return 1;
-    default: return 0;
-    }
-}
 
 static void licm(IrFunc* fn) {
     int n = fn->nblocks;
@@ -1991,6 +2095,68 @@ static int thread_branches(Clean* c) {
     return changed;
 }
 
+// c's value on the edge from p into j when a branch on c decides it there:
+// p's own, or the one into a block that has a single predecessor and
+// dominates p. 1 or 0, else -1.
+static int edge_truth(const IrFunc* fn, const int* idom, int c, int p, int j) {
+    const IrBlock* pb = &fn->blocks[p];
+    const IrIns* t = &fn->ins[pb->ins[pb->nins - 1]];
+    if (t->op == IR_BR && t->args[0] == c && pb->succ[0] != pb->succ[1]) return pb->succ[0] == j;
+    for (int x = p; x > 0; x = idom[x]) { // x dominates p
+        const IrBlock* xb = &fn->blocks[x];
+        if (xb->npreds != 1) continue;
+        const IrBlock* yb = &fn->blocks[xb->preds[0]];
+        const IrIns* yt = &fn->ins[yb->ins[yb->nins - 1]];
+        if (yt->op == IR_BR && yt->args[0] == c && yb->succ[0] != yb->succ[1]) return yb->succ[0] == x;
+    }
+    return -1;
+}
+
+// A block j holding only a branch on c, entered from p where c is already
+// decided, is skipped: p goes straight to the successor c selects, s, whose
+// phis take from p what they take from j. Neither j nor s heads a loop, and
+// p does not already enter s.
+static int thread_known(Clean* c) {
+    IrFunc* fn = c->fn;
+    int* rpo;
+    int  nrpo, changed = 0;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    for (int j = 1; j < fn->nblocks && !changed; j++) {
+        IrBlock* jb = &fn->blocks[j];
+        if (c->dead[j] || idom[j] < 0 || jb->nins != 1) continue;
+        const IrIns* t = &fn->ins[jb->ins[0]];
+        if (t->op != IR_BR || jb->succ[0] == jb->succ[1]) continue;
+        int header = 0;
+        for (int q = 0; q < jb->npreds; q++) header |= idom[jb->preds[q]] >= 0 && ir_dominates(idom, j, jb->preds[q]);
+        if (header) continue;
+        for (int i = 0; i < jb->npreds && !changed; i++) {
+            int p = jb->preds[i];
+            IrBlock* pb = &fn->blocks[p];
+            if ((pb->succ[0] == j) + (pb->succ[1] == j) != 1) continue;
+            int r = edge_truth(fn, idom, t->args[0], p, j);
+            if (r < 0) continue;
+            int s = jb->succ[r ? 0 : 1], js = -1, skip = 0;
+            IrBlock* sb = &fn->blocks[s];
+            for (int q = 0; q < sb->npreds; q++) {
+                if (sb->preds[q] == j) js = q;
+                skip |= sb->preds[q] == p || (idom[sb->preds[q]] >= 0 && ir_dominates(idom, s, sb->preds[q]));
+            }
+            if (skip || js < 0) continue;
+            for (int q = 0; q < sb->nins && fn->ins[sb->ins[q]].op == IR_PHI; q++) {
+                int a = fn->ins[sb->ins[q]].args[js];
+                ir_arg_add(fn, sb->ins[q], a);
+            }
+            sb->preds = xgrow(sb->preds, &sb->cpreds, sb->npreds + 1, sizeof(int));
+            sb->preds[sb->npreds++] = p;
+            pb->succ[pb->succ[0] == j ? 0 : 1] = s;
+            drop_pred(fn, j, p);
+            changed = 1;
+        }
+    }
+    free(idom); free(rpo);
+    return changed;
+}
+
 static int has_effect(const IrIns* x) {
     switch (x->op) {
     case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ: case IR_ASM:
@@ -2072,11 +2238,380 @@ static void cleanup(IrFunc* fn) {
         changed |= merge_blocks(&c);
         changed |= thread_jumps(&c);
         changed |= thread_branches(&c);
+        changed |= thread_known(&c);
         changed |= dce(&c);
         compact(&c);
     }
     free(c.dead);
     free(c.repl);
+}
+
+// --- range-compare fusion ------------------------------------------------------------
+//
+// `x >= A && x <= B`, and its complement `x < A || x > B`, lowers to a branch
+// on one compare of x into a block b4 that b0 alone enters, holding only
+// constants and a second compare of x against a constant whose branch shares
+// the other successor F with b0's. When the two facts that reach b4's other
+// successor T bound x to [lo, hi] at both ends, b0 instead branches on one
+// unsigned compare, (x - lo) <= hi - lo, as GCC's and LLVM's switch and
+// range-check lowering do. The subtraction is at 32 or 64 bits, where a cast
+// from x's own type costs nothing on arm64 and no narrow wrap is needed; b4's
+// constants and compare move to b0, where the next cleanup drops them.
+
+// x op k for integer type t, as an interval [*lo, *hi] of biased keys: the
+// value sign-flipped when signed, so unsigned order is t's order. 0 when empty.
+static int range_of(IrOp op, IrType t, uint64_t k, uint64_t* lo, uint64_t* hi) {
+    int n = ir_type_bits(t);
+    uint64_t mask = n == 64 ? ~UINT64_C(0) : (UINT64_C(1) << n) - 1;
+    k &= mask;
+    if (ir_type_signed(t)) k ^= UINT64_C(1) << (n - 1); // biased: min 0, max mask
+    *lo = 0;
+    *hi = mask;
+    switch (op) {
+    case IR_LT: if (k == 0) return 0; *hi = k - 1; return 1;
+    case IR_LE: *hi = k; return 1;
+    case IR_GT: if (k == mask) return 0; *lo = k + 1; return 1;
+    case IR_GE: *lo = k; return 1;
+    default: return 0;
+    }
+}
+
+// Branch condition c's fact on taking the edge where it is `truth`, as x and
+// the interval it places x in. 0 when c is no ordering compare of an integer
+// (not bool or ptr) against a constant.
+static int range_fact(const IrFunc* fn, int c, int truth, int* x, uint64_t* lo, uint64_t* hi) {
+    const IrIns* ci = &fn->ins[c];
+    if (ci->op < IR_LT || ci->op > IR_GE || ci->nargs != 2) return 0;
+    IrOp op = (IrOp)ci->op;
+    int a = ci->args[0], k = ci->args[1];
+    if (fn->ins[a].op == IR_CONST) { // k op x: x flipped op k
+        int s = a; a = k; k = s;
+        op = op == IR_LT ? IR_GT : op == IR_GT ? IR_LT : op == IR_LE ? IR_GE : IR_LE;
+    }
+    IrType t = (IrType)fn->ins[a].type;
+    if (fn->ins[k].op != IR_CONST || fn->ins[a].op == IR_CONST || !is_int(t) || t == IT_BOOL || t == IT_PTR) return 0;
+    if (!truth) op = op == IR_LT ? IR_GE : op == IR_GE ? IR_LT : op == IR_LE ? IR_GT : IR_LE;
+    *x = a;
+    return range_of(op, t, fn->ins[k].imm, lo, hi);
+}
+
+// Fuse b0's branch with the one in its successor i4.
+static int fuse_range(IrFunc* fn, int b0, int i4) {
+    IrBlock* bb = &fn->blocks[b0];
+    if (bb->succ[1] < 0) return 0;
+    int br0 = bb->ins[bb->nins - 1];
+    if (fn->ins[br0].op != IR_BR) return 0;
+    int b4 = bb->succ[i4], f = bb->succ[1 - i4];
+    IrBlock* b4b = &fn->blocks[b4];
+    if (b4 == b0 || b4 == f || b4b->npreds != 1 || b4b->preds[0] != b0 || b4b->succ[1] < 0) return 0;
+    int br1 = b4b->ins[b4b->nins - 1], j4 = b4b->succ[0] == f ? 1 : 0, t = b4b->succ[j4];
+    if (b4b->succ[1 - j4] != f || t == f || t == b4) return 0;
+    for (int i = 0; i < b4b->nins - 1; i++) {
+        const IrIns* y = &fn->ins[b4b->ins[i]];
+        if (y->op != IR_CONST && b4b->ins[i] != fn->ins[br1].args[0]) return 0;
+    }
+    int x0, x1;
+    uint64_t lo0, hi0, lo1, hi1;
+    if (!range_fact(fn, fn->ins[br0].args[0], i4 == 0, &x0, &lo0, &hi0) ||
+        !range_fact(fn, fn->ins[br1].args[0], j4 == 0, &x1, &lo1, &hi1) || x0 != x1)
+        return 0;
+    IrType xt = (IrType)fn->ins[x0].type;
+    int n = ir_type_bits(xt);
+    uint64_t lo = lo0 > lo1 ? lo0 : lo1, hi = hi0 < hi1 ? hi0 : hi1;
+    uint64_t max = n == 64 ? ~UINT64_C(0) : (UINT64_C(1) << n) - 1;
+    if (lo > hi || lo == 0 || hi == max) return 0; // empty, or bounded at one end only
+    IrBlock* fb = &fn->blocks[f]; // F's phis take one value from b0 and b4
+    int p0 = -1, p4 = -1;
+    for (int i = 0; i < fb->npreds; i++) {
+        if (fb->preds[i] == b0) p0 = i;
+        if (fb->preds[i] == b4) p4 = i;
+    }
+    for (int k = 0; k < fb->nins && fn->ins[fb->ins[k]].op == IR_PHI; k++)
+        if (fn->ins[fb->ins[k]].args[p0] != fn->ins[fb->ins[k]].args[p4]) return 0;
+
+    // b4's constants and compare move to b0, ahead of the new test.
+    for (int i = 0; i < b4b->nins - 1; i++) {
+        int v = b4b->ins[i];
+        bb = &fn->blocks[b0];
+        bb->ins = xgrow(bb->ins, &bb->cins, bb->nins + 1, sizeof(int));
+        bb->ins[bb->nins] = bb->ins[bb->nins - 1];
+        bb->ins[bb->nins - 1] = v;
+        bb->nins++;
+        fn->ins[v].block = b0;
+    }
+    uint64_t sign = ir_type_signed(xt) ? UINT64_C(1) << (n - 1) : 0;
+    IrType wt = n == 64 ? IT_U64 : IT_U32;
+    uint64_t wmask = n == 64 ? ~UINT64_C(0) : 0xFFFFFFFFu;
+    uint64_t lov = lo ^ sign; // lo's n-bit value, sign-extended to wt
+    if (sign && (lov & sign)) lov |= ~max;
+    int w = x0;
+    if (xt != wt) {
+        w = ins_before_term(fn, b0, IR_CAST, wt);
+        ir_arg_add(fn, w, x0);
+    }
+    int neg = sign && (lov & (wmask ^ (wmask >> 1))); // lo < 0: add -lo, an immediate where -lo is small
+    int kl = konst_in(fn, b0, wt, (neg ? 0 - lov : lov) & wmask), d = ins_before_term(fn, b0, neg ? IR_ADD : IR_SUB, wt);
+    ir_arg_add(fn, d, w);
+    ir_arg_add(fn, d, kl);
+    int kw = konst_in(fn, b0, wt, hi - lo), c = ins_before_term(fn, b0, IR_LE, IT_BOOL);
+    ir_arg_add(fn, c, d);
+    ir_arg_add(fn, c, kw);
+    fn->ins[br0].args[0] = c;
+
+    // b0 goes to t in b4's place. b4, left with its branch and no
+    // predecessor, is in no successor's list: unreachable.
+    bb = &fn->blocks[b0];
+    bb->succ[0] = t;
+    bb->succ[1] = f;
+    IrBlock* tb = &fn->blocks[t];
+    for (int i = 0; i < tb->npreds; i++) if (tb->preds[i] == b4) tb->preds[i] = b0;
+    drop_pred(fn, f, b4);
+    b4b = &fn->blocks[b4];
+    b4b->ins[0] = br1;
+    b4b->nins = 1;
+    b4b->npreds = 0;
+    return 1;
+}
+
+// Returns whether any branch pair fused, leaving unreachable blocks for the
+// cleanup that follows.
+static int fuse_ranges(IrFunc* fn) {
+    int any = 0;
+    for (int b = 0; b < fn->nblocks; b++)
+        any |= fuse_range(fn, b, 0) || fuse_range(fn, b, 1);
+    return any;
+}
+
+// --- single latch ----------------------------------------------------------------------
+//
+// A loop header entered by several back edges that carry the same value into
+// each of its phis (`for ... && (a || b)`, both arms continuing) gets one new
+// latch block, a jump to the header, that they all enter instead, as LLVM's
+// loop-simplify does. With one back edge the emission order places the header
+// after that latch, so an iteration ends in the header's conditional branch.
+// The cleanup's jump threading would undo it, so this runs after the last one.
+
+static int single_latch(IrFunc* fn) {
+    int any = 0, nrpo;
+    int* rpo;
+    int* idom = NULL;
+    int nb = fn->nblocks;
+    for (int h = 1; h < nb; h++) {
+        if (fn->blocks[h].npreds < 3) continue;
+        if (!idom) idom = ir_dominators(fn, &rpo, &nrpo);
+        IrBlock* hb = &fn->blocks[h];
+        int first = -1, nback = 0, ok = idom[h] >= 0;
+        for (int i = 0; i < hb->npreds && ok; i++) {
+            int p = hb->preds[i];
+            if (idom[p] < 0 || !ir_dominates(idom, h, p)) continue;
+            ok = fn->blocks[p].succ[0] != fn->blocks[p].succ[1];
+            if (first < 0) first = i;
+            for (int k = 0; k < hb->nins && fn->ins[hb->ins[k]].op == IR_PHI && ok; k++)
+                ok = fn->ins[hb->ins[k]].args[i] == fn->ins[hb->ins[k]].args[first];
+            nback++;
+        }
+        if (!ok || nback < 2) continue;
+        int l = ir_block_new(fn); // fn->blocks may move
+        ir_ins_new(fn, l, IR_JMP, IT_VOID);
+        hb = &fn->blocks[h];
+        IrBlock* lb = &fn->blocks[l];
+        lb->succ[0] = h;
+        int k = 0;
+        for (int i = 0; i < hb->npreds; i++) { // back edges leave the lists, l comes in at first's place
+            int p = hb->preds[i];
+            if (idom[p] < 0 || !ir_dominates(idom, h, p) || i == first) {
+                if (i == first) {
+                    lb->preds = xgrow(lb->preds, &lb->cpreds, lb->npreds + 1, sizeof(int));
+                    lb->preds[lb->npreds++] = p;
+                    fn->blocks[p].succ[fn->blocks[p].succ[1] == h] = l;
+                    hb->preds[i] = l;
+                }
+                for (int q = 0; q < hb->nins && fn->ins[hb->ins[q]].op == IR_PHI; q++)
+                    fn->ins[hb->ins[q]].args[k] = fn->ins[hb->ins[q]].args[i];
+                hb->preds[k++] = hb->preds[i];
+                continue;
+            }
+            lb->preds = xgrow(lb->preds, &lb->cpreds, lb->npreds + 1, sizeof(int));
+            lb->preds[lb->npreds++] = p;
+            fn->blocks[p].succ[fn->blocks[p].succ[1] == h] = l;
+        }
+        for (int q = 0; q < hb->nins && fn->ins[hb->ins[q]].op == IR_PHI; q++) fn->ins[hb->ins[q]].nargs = k;
+        hb->npreds = k;
+        any = 1;
+    }
+    if (idom) { free(idom); free(rpo); }
+    return any;
+}
+
+// --- loop rotation -------------------------------------------------------------------
+//
+// A natural loop whose header only tests and reads memory (pure operations,
+// plain loads, checks, and a branch with one successor b in the loop, which
+// only the header reaches, and one outside), entered and closed by plain
+// jumps, gets a copy of the header at the end of its preheader and of its
+// latch, as LLVM's loop rotation does: the first test falls into b or leaves
+// before the loop, and later ones branch back to b from the latch, so a loop
+// that mostly leaves at its first test takes no jump into it. Each header
+// value becomes a phi at b of its two copies, which each of its uses takes.
+// A loop using a header value where b does not dominate (after the loop on
+// a path from the header's exit) is left alone: that use would need a phi
+// of the copies and b's phi, whose operands the allocator's one interval per
+// value keeps apart, moving each on entry and exit. Header constants move to
+// the preheader, shared by both copies. A header without a load is left
+// alone too: a counted loop gains nothing, its emitted layout already ending
+// each iteration in the test (pass 10).
+
+enum { ROT_MAX = 8 }; // header instructions copied, constants aside
+
+// A copy of header instruction v at the end of b, its header operands mapped.
+static int rot_copy(IrFunc* fn, int b, int v, const int* map) {
+    int c = ir_ins_new(fn, b, (IrOp)fn->ins[v].op, (IrType)fn->ins[v].type);
+    IrIns* x = &fn->ins[c];
+    const IrIns* y = &fn->ins[v];
+    x->flags = y->flags; x->imm = y->imm; x->aux = y->aux; x->sym = y->sym;
+    x->name = y->name; x->sig = y->sig; x->at = y->at;
+    for (int a = 0; a < y->nargs; a++) ir_arg_add(fn, c, map[y->args[a]] >= 0 ? map[y->args[a]] : fn->ins[v].args[a]);
+    return c;
+}
+
+// The block b ends with a jump, which goes; the caller appends a terminator.
+static void rot_drop_jump(IrFunc* fn, int b) {
+    IrBlock* bb = &fn->blocks[b];
+    kill_ins(fn, bb->ins[--bb->nins]);
+    bb->succ[0] = -1;
+}
+
+// Whether h could head a loop rotate_loop takes, by its own contents: two
+// predecessors, a branch, and up to ROT_MAX tests and loads, one at least.
+static int rot_header(const IrFunc* fn, int h) {
+    const IrBlock* hb = &fn->blocks[h];
+    if (hb->npreds != 2 || hb->succ[1] < 0) return 0;
+    int work = 0, loads = 0;
+    for (int i = 0; i < hb->nins - 1; i++) {
+        const IrIns* x = &fn->ins[hb->ins[i]];
+        if (x->op == IR_PHI || x->op == IR_CONST) continue;
+        if (x->op == IR_LOAD && !(x->flags & IRF_VOLATILE)) loads++;
+        else if (x->op != IR_CHECK && !is_pure(x)) return 0;
+        if (++work > ROT_MAX) return 0;
+    }
+    return loads > 0;
+}
+
+// Rotate the loop headed by h, when it qualifies.
+static int rotate_loop(IrFunc* fn, const int* idom, int h, uint8_t* body, int* stack) {
+    if (!rot_header(fn, h)) return 0;
+    int li = natural_loop(fn, idom, h, body, stack);
+    if (li < 0) return 0;
+    IrBlock* hb = &fn->blocks[h];
+    int pre = hb->preds[1 - li], latch = hb->preds[li];
+    if (fn->blocks[pre].succ[1] >= 0 || fn->blocks[latch].succ[1] >= 0 || latch == h) return 0;
+    int in = body[hb->succ[0]] ? 0 : 1, b = hb->succ[in], e = hb->succ[1 - in];
+    if (!body[b] || body[e] || b == h || fn->blocks[b].npreds != 1) return 0;
+    for (int q = 0; q < fn->nblocks; q++) // b dominates each use of a header value
+        for (int i = 0; q != h && idom[q] >= 0 && i < fn->blocks[q].nins; i++) {
+            const IrIns* x = &fn->ins[fn->blocks[q].ins[i]];
+            for (int a = 0; a < x->nargs; a++)
+                if (fn->ins[x->args[a]].block == h &&
+                    !ir_dominates(idom, b, x->op == IR_PHI ? fn->blocks[q].preds[a] : q)) return 0;
+        }
+
+    // Copies: constants to the preheader, shared; everything else once into
+    // each of pre and latch, phis taking that edge's operand.
+    int n = hb->nins;
+    int* hv = xalloc((size_t)n, sizeof(int));
+    memcpy(hv, hb->ins, (size_t)n * sizeof(int));
+    int* mp = xalloc((size_t)fn->nins, sizeof(int));
+    int* ml = xalloc((size_t)fn->nins, sizeof(int));
+    for (int v = 0; v < fn->nins; v++) mp[v] = ml[v] = -1;
+    rot_drop_jump(fn, pre);
+    rot_drop_jump(fn, latch);
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        int v = hv[i];
+        if (fn->ins[v].op != IR_CONST) { hv[k++] = v; continue; }
+        IrBlock* pb = &fn->blocks[pre];
+        pb->ins = xgrow(pb->ins, &pb->cins, pb->nins + 1, sizeof(int));
+        pb->ins[pb->nins++] = v;
+        fn->ins[v].block = pre;
+    }
+    n = k;
+    hb->nins = n;
+    memcpy(hb->ins, hv, (size_t)n * sizeof(int));
+    int nphi = 0;
+    while (nphi < n && fn->ins[hv[nphi]].op == IR_PHI) nphi++;
+    for (int i = 0; i < nphi; i++) mp[hv[i]] = fn->ins[hv[i]].args[1 - li];
+    for (int i = nphi; i < n; i++) mp[hv[i]] = rot_copy(fn, pre, hv[i], mp);
+
+    // The latch's phi operands are this iteration's values: the phis at b.
+    int* phib = xalloc((size_t)n, sizeof(int));
+    for (int i = 0; i < n - 1; i++) phib[i] = ir_phi_new(fn, b, (IrType)fn->ins[hv[i]].type);
+    IrBlock* bb = &fn->blocks[b];
+    bb->preds[0] = pre;
+    bb->preds = xgrow(bb->preds, &bb->cpreds, 2, sizeof(int));
+    bb->preds[bb->npreds++] = latch;
+    for (int i = 0; i < nphi; i++) {
+        int a = fn->ins[hv[i]].args[li], j = 0;
+        while (j < n - 1 && hv[j] != a) j++;
+        ml[hv[i]] = j < n - 1 ? phib[j] : a;
+    }
+    for (int i = nphi; i < n; i++) ml[hv[i]] = rot_copy(fn, latch, hv[i], ml);
+    fn->blocks[pre].succ[0] = fn->blocks[latch].succ[0] = hb->succ[0];
+    fn->blocks[pre].succ[1] = fn->blocks[latch].succ[1] = hb->succ[1];
+
+    // b and e trade the edge from h for one from pre and one from latch, each
+    // phi operand (never a header value) repeated for both.
+    IrBlock* eb = &fn->blocks[e];
+    int ei = 0;
+    while (eb->preds[ei] != h) ei++;
+    eb->preds[ei] = pre;
+    eb->preds = xgrow(eb->preds, &eb->cpreds, eb->npreds + 1, sizeof(int));
+    eb->preds[eb->npreds++] = latch;
+    for (int i = 0; i < eb->nins && fn->ins[eb->ins[i]].op == IR_PHI; i++)
+        ir_arg_add(fn, eb->ins[i], fn->ins[eb->ins[i]].args[ei]);
+    for (int i = 0; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PHI; i++) // b's own, not the new ones
+        if (fn->ins[bb->ins[i]].nargs == 1) ir_arg_add(fn, bb->ins[i], fn->ins[bb->ins[i]].args[0]);
+    for (int i = 0; i < n - 1; i++) {
+        ir_arg_add(fn, phib[i], mp[hv[i]]);
+        ir_arg_add(fn, phib[i], ml[hv[i]]);
+    }
+
+    // Every other use of a header value takes its phi at b.
+    for (int q = 0; q < fn->nblocks; q++) {
+        if (q == h) continue;
+        IrBlock* qb = &fn->blocks[q];
+        for (int i = 0; i < qb->nins; i++) {
+            IrIns* x = &fn->ins[qb->ins[i]];
+            for (int a = 0; a < x->nargs; a++) {
+                int j = 0;
+                if (fn->ins[x->args[a]].block != h) continue;
+                while (hv[j] != x->args[a]) j++;
+                x->args[a] = phib[j];
+            }
+        }
+    }
+
+    // h is unreachable now: no predecessors, its phis with no operands.
+    for (int i = 0; i < nphi; i++) fn->ins[hv[i]].nargs = 0;
+    hb->npreds = 0;
+    free(hv); free(mp); free(ml); free(phib);
+    return 1;
+}
+
+static int rotate(IrFunc* fn) {
+    int done = 0, any = 0;
+    for (int h = 0; h < fn->nblocks && !any; h++) any = rot_header(fn, h);
+    if (!any) return 0; // no dominators to compute
+    for (int again = 1; again;) { // one loop per round: rotation changes dominance
+        again = 0;
+        int* rpo, nrpo;
+        int* idom = ir_dominators(fn, &rpo, &nrpo);
+        uint8_t* body = xalloc((size_t)fn->nblocks, 1);
+        int* stack = xalloc((size_t)fn->nblocks, sizeof(int));
+        for (int i = 0; i < nrpo && !again; i++) again = rotate_loop(fn, idom, rpo[i], body, stack);
+        done |= again;
+        free(rpo); free(idom); free(body); free(stack);
+    }
+    return done;
 }
 
 void ir_optimize(IrFunc* fn) {
@@ -2085,6 +2620,9 @@ void ir_optimize(IrFunc* fn) {
     checks(fn);
     licm(fn);
     lsr(fn);
+    fuse_ranges(fn);
     cleanup(fn);
     if (vectorize(fn)) cleanup(fn); // over the merged blocks, which it then tidies
+    if (rotate(fn)) cleanup(fn);
+    single_latch(fn);
 }

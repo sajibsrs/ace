@@ -47,8 +47,8 @@ repeated in each additional backend.
 - **`optimizer.c`** (pass 6, release builds only) — passes over one
   function's IR, each run once, in order: sparse conditional constant
   propagation, global value numbering, loop-invariant code motion, loop
-  strength reduction, dead-code and control-flow cleanup, then auto-vectorization over the cleaned loops (and
-  cleanup again when it rewrote one). The vectorizer puts a four-lane loop
+  strength reduction, dead-code and control-flow cleanup, then auto-vectorization over the cleaned loops and
+  loop rotation (each followed by cleanup again when it rewrote one). The vectorizer puts a four-lane loop
   (two-lane for `f64`, which takes arithmetic only and never shares a loop
   with 32-bit lanes), counting whole vectors, ahead of an innermost counted
   loop of lane-wise `f32`/`i32`/`f64` arithmetic whose accesses it proves
@@ -64,6 +64,17 @@ repeated in each additional backend.
   Its elements may be a `padd` scaled by the struct size or a loop strength
   reduction pointer phi, which the remainder loop resumes at the vector
   loop's end.
+  Loop rotation copies a header that only tests and loads (up to 8 pure
+  operations, plain loads, and checks, constants aside) to the end of the
+  preheader and the latch; each header value becomes a phi of its two
+  copies in the first body block, which takes every use. `regalloc.c`'s
+  layout leaves such a loop's header in place.
+  Range fusion runs before the first cleanup: a branch on one compare of `x`
+  with a constant into a block holding only a second such compare, both
+  sharing one other successor, becomes one branch on `(x - lo) <= hi - lo`
+  over `u32` or `u64`. After the last cleanup, a header's back edges that
+  carry equal values into each phi are merged into one new latch block,
+  which `regalloc.c`'s layout places before the header.
 - **`arm64.c`** (passes 7-10, the AArch64 target) — instruction selection
   (including fused forms such as integer `madd`), leaving SSA (phis become
   copies, with coalescing), linear-scan register allocation, block layout,

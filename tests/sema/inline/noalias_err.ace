@@ -1,3 +1,0 @@
-inline sum(noalias xs: []int): int {
-    return 0
-}

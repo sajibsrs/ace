@@ -106,7 +106,7 @@ boundary only behind a pointer. On a field, `@offset` comes before `@align`.
 
 Memory has no dynamic type. Reading storage as `T` reads its `sizeof(T)` bytes
 as `T`, and the compiler never assumes two accesses are disjoint just because
-their types differ; only `noalias` and `const` parameters state non-overlap.
+their types differ; only `const` parameters state non-overlap.
 
 Plain-bits types are those where every byte pattern is a value: integers,
 `char`, floating types, enums, bits types, data pointers, C function values, and structs,
@@ -179,7 +179,7 @@ share one total order.
 A data race is two accesses to overlapping bytes, at least one a write and at
 least one not atomic (a volatile access is not atomic), with no such ordering
 between them. It is programmer error and the value read is unspecified; no build
-checks it. The `noalias` and `const`-parameter facts hold for the whole call
+checks it. The `const`-parameter facts hold for the whole call
 across every context, so another context writing that storage during the call is
 a data race. The compiler never removes, combines, or duplicates an atomic
 operation, and never moves an ordinary access across one in a direction its
@@ -207,6 +207,12 @@ word and no hidden field. An array `[N]T` is `N` contiguous elements in index
 order with no metadata and no inter-element padding: `sizeof([N]T)` is
 `N * sizeof(T)` with the element's alignment. Strings are never NUL-terminated,
 and a string literal's bytes sit in read-only memory.
+
+A `const` global sits in read-only memory too. Assigning it is an error, but it
+gives ordinary views, as a string literal does: `&N` is `*T`, `K[..]` is `[]T`,
+so a lookup table passes to any function that reads it. A write through such a
+view faults on the read-only page, in every build. A local `const` has no
+read-only page, so `&c` and `c[lo..hi]` of one are rejected at compile time.
 
 ## Thread-local variables
 
@@ -469,7 +475,7 @@ part of this surface.
 The same module exports allocation-free operations over byte-slice views:
 
 ```ace
-mem.copy(noalias dst: []u8, src: []u8)
+mem.copy(dst: []u8, src: []u8)
 mem.move(dst: []u8, src: []u8)
 mem.fill(data: []u8, value: u8)
 mem.zero(data: []u8)
@@ -483,7 +489,7 @@ counts, and copy `len * sizeof(T)` bytes through the same routines and debug
 checks:
 
 ```ace
-mem.copy[T](noalias dst: []T, src: []T)
+mem.copy[T](dst: []T, src: []T)
 mem.move[T](dst: []T, src: []T)
 ```
 
@@ -505,8 +511,7 @@ mem.copy(target, source)
 ```
 
 `copy` requires the complete source and destination ranges not to overlap.
-Its `noalias` destination states that optimizer fact in the declaration; it is
-not repeated at the call site. Use `move` whenever the ranges might overlap.
+Debug builds check it at the call, with the equal lengths. Use `move` whenever the ranges might overlap.
 `move` preserves the source bytes correctly in either overlap direction.
 
 `fill` writes `value` to every byte in its slice; `zero` writes zero to every
@@ -705,13 +710,20 @@ Why the rules in `spec/memory.md` are shaped as they are.
   points, never where the descriptor is held, so requiring a local binding
   first would add nothing but position dependence. Go draws the same line:
   `f()[i] = v` is legal for a slice and illegal for an array.
+- No aliasing marker (Mutability #8): a general `noalias` parameter fact
+  needed a check per pair of arguments, blocked inlining, and gave the
+  optimizer nothing it used. Non-overlap is instead part of the one call that
+  needs it, `mem.copy`, checked like its equal lengths. Precedent: Go and Java
+  have no aliasing marker; C's `memcpy` states non-overlap as its own rule.
 - Mutability (Philosophy #3, #10): every place is writable, and write
   protection comes only from read-only placement (`const` globals and
   literals in read-only memory, enforced by the MMU), as in Go, Odin, and C
   without `const`. A type-level permission layer (`mut` views, call-site
   marks) doubled every view type and API signature, and still could not
   protect memory reached through a pointer; the platform already does that
-  at no cost.
+  at no cost. A `const` global therefore gives ordinary views: rejecting them
+  left a constant table unusable by any function, and the read-only page
+  already catches the write.
 - Thread-local variables (Values & Passing #13): per-thread state otherwise
   needs a context pointer through every call or a `pthread_key` created at
   runtime, and Ace has no module-init hook to create one. C11 `_Thread_local`

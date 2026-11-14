@@ -2,6 +2,8 @@
  * pointer did to a control. */
 
 import Color from sdl
+import Text, Insets, Icon from "./canvas.ace"
+import mono from "./font.ace"
 
 /* What the pointer did to a control, from `track`. `hover` and `held` last
  * while true; `press` and `click` hold for one frame. */
@@ -10,26 +12,6 @@ pub Response: struct {
     pub press: bool = false,
     pub held: bool = false,
     pub click: bool = false,
-}
-
-/* A control's fill in each state. */
-pub Fill: struct {
-    pub rest: Color = Color {},
-    pub hover: Color = Color {},
-    pub press: Color = Color {},
-}
-
-/* The fill for the state `res` reports. */
-pub Fill.shade(const self, res: Response): Color {
-    if res.held { return self.press }
-    if res.hover { return self.hover }
-    return self.rest
-}
-
-/* The fill of a control that is on: the accent, lighter under the pointer
- * and darker held. */
-pub Theme.chosen(const self): Fill {
-    return Fill { rest = self.accent, hover = mix(self.accent, 1.0, 0.12), press = mix(self.accent, 0.0, 0.15) }
 }
 
 /* `c` moved `by` (0 to 1) toward the gray `to`, keeping its alpha. */
@@ -41,111 +23,351 @@ mix(c: Color, to: f32, by: f32): Color {
  * system theme reports. */
 pub Scheme: enum { light, dark }
 
-/* How every control looks. A caller copies it, changes a field for the
- * controls that follow, and assigns the copy back after. */
+/* A soft shadow: what casts it moved (`dx`, `dy`), blurred `blur` each way,
+ * in `color`. None while `color` is fully transparent. */
+pub Shadow: struct {
+    pub dx: f32 = 0.0,
+    pub dy: f32 = 0.0,
+    pub blur: f32 = 0.0,
+    pub color: Color = Color { a = 0.0 },
+}
+
+
+/* How a part looks in one state: what fills it, outlines it (and colors its
+ * rules), its label's color, and what colors its icons. */
+pub Look: struct {
+    pub fill: Color = Color { a = 0.0 },
+    pub border: Color = Color { a = 0.0 },
+    pub text: Color = Color { a = 0.0 },
+    pub tint: Color = Color { a = 0.0 },
+    pub shadow: Shadow = Shadow {},
+}
+
+/* `self` with every color at `a` times its alpha. */
+pub Look.fade(const self, a: f32): Look {
+    return Look { fill = fade(self.fill, a), border = fade(self.border, a), text = fade(self.text, a), tint = fade(self.tint, a),
+        shadow = Shadow { dx = self.shadow.dx, dy = self.shadow.dy, blur = self.shadow.blur, color = fade(self.shadow.color, a) } }
+}
+
+/* `color` at `a` times its alpha. */
+pub fade(color: Color, a: f32): Color {
+    return Color { r = color.r, g = color.g, b = color.b, a = color.a * a }
+}
+
+/* A `T` for each state a control is in. */
+pub States[T]: struct {
+    pub rest: T,
+    pub hover: T,
+    pub press: T,
+    pub off: T,
+}
+
+/* The `T` for `res`, or `off` while `disabled`: off over press over hover
+ * over rest. */
+pub States[T].pick(const self, res: Response, disabled: bool): T {
+    if disabled { return self.off }
+    if res.held { return self.press }
+    if res.hover { return self.hover }
+    return self.rest
+}
+
+/* `v` in every state. */
+pub States[T].all(v: T): States[T] {
+    return States[T] { rest = v, hover = v, press = v, off = v }
+}
+
+/* A part's frame: corners, inner padding, outline width (0 for none), how it
+ * looks in each state, how it looks while on (checked or chosen), and the glow
+ * drawn round it while it has the keyboard. */
+pub Box: struct {
+    pub radius: f32 = 0.0,
+    pub padding: Insets = Insets {},
+    pub border: f32 = 0.0,
+    pub look: States[Look] = States[Look] { rest = Look {}, hover = Look {}, press = Look {}, off = Look {} },
+    pub on: States[Look] = States[Look] { rest = Look {}, hover = Look {}, press = Look {}, off = Look {} },
+    pub focus: Shadow = Shadow {},
+}
+
+/* How an image fills its square: whole inside it, covering it, or stretched
+ * to it. */
+pub Fit: enum { contain, cover, stretch }
+
+/* A part's icon or image: its side, its gap to the label, and its fit. */
+pub Graphic: struct {
+    pub size: f32 = 0.0,
+    pub gap: f32 = 0.0,
+    pub fit: Fit = Fit.contain,
+}
+
+/* A part's lines (slider ticks, card separators, menu dividers): their width,
+ * their gap from what they mark, and the least room between two before they
+ * are drawn. */
+pub Rule: struct {
+    pub w: f32 = 0.0,
+    pub gap: f32 = 0.0,
+    pub room: f32 = 0.0,
+}
+
+/* A frame and a label. */
+pub Labeled: struct {
+    pub box: Box = Box {},
+    pub label: Text = Text {},
+}
+
+/* A frame, a label, and an icon. */
+pub Graphical: struct {
+    pub box: Box = Box {},
+    pub label: Text = Text {},
+    pub graphic: Graphic = Graphic {},
+}
+
+/* A frame, a label, and rules. */
+pub Ruled: struct {
+    pub box: Box = Box {},
+    pub label: Text = Text {},
+    pub rule: Rule = Rule {},
+}
+
+/* The icons pkg/ui draws itself. */
+pub Glyphs: struct {
+    pub check: Icon = Icon {},
+    pub chevron: Icon = Icon {},
+    pub close: Icon = Icon {},
+}
+
+/* The glyphs' strokes on a 24 grid (variables: an Icon views them through a
+ * writable slice): open strokes (-1), each its count of
+ * points, then -9. The check fills a CHECK_SIDE box's middle 12 pixels with a
+ * 1.75 stroke. */
+CHECK: const [9]f32 = [-1.0, 3.0, 5.28, 12.64, 10.08, 17.44, 18.72, 7.2, -9.0]
+CHEVRON: const [9]f32 = [-1.0, 3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 9.0, -9.0]
+CLOSE: const [13]f32 = [-1.0, 2.0, 6.0, 6.0, 18.0, 18.0, -1.0, 2.0, 18.0, 6.0, 6.0, 18.0, -9.0]
+
+/* The default glyphs. */
+pub Glyphs.init(): Glyphs {
+    return Glyphs { check = Icon { points = CHECK[0..] }, chevron = Icon { points = CHEVRON[0..] }, close = Icon { points = CLOSE[0..] } }
+}
+
+/* How every control looks: tokens, and a style per component that `derive`
+ * fills from them. A caller copies it, changes tokens and calls `derive`, or
+ * changes a component's style, for the controls that follow, and assigns the
+ * copy back after. The palettes `init` builds are plain: flat fills, thin
+ * borders, no shadows. */
 pub Theme: struct {
     /* The window behind every area. */
     pub window: Color = Color {},
-    /* Body text, and icons. */
+    /* What cards, popups, lists and a focused field are filled with. */
+    pub surface: Color = Color {},
+    /* Text and icons. */
     pub text: Color = Color {},
-    /* Secondary text: captions, hints, headings. */
+    /* Secondary text: hints and captions; a list's scroll thumb. */
     pub muted: Color = Color {},
-    /* A control's background: buttons, unticked boxes, a picker's track,
-     * unfocused fields, the hovered list row and heading strips, a neutral
-     * gray that lets what is under it show. */
-    pub button: Fill = Fill {},
-    /* A toggled-on control, a slider's filled part, a chosen row. */
+    /* What is on or chosen: a ticked box, a slider's fill, a chosen row. */
     pub accent: Color = Color {},
-    /* Text on an accent fill. */
+    /* Text on the accent. */
     pub on_accent: Color = Color {},
-    /* A popup's, card's, list's and focused field's background, raised off
-     * the window. */
-    pub card: Color = Color {},
-    /* The rim drawn just inside a card's edge. */
-    pub edge: Color = Color {},
-    /* A popup's shadow, where the popup covers it fully. */
-    pub shadow: Color = Color {},
-    /* The hairline between a card's cells, and round an unticked box. */
-    pub separator: Color = Color {},
-    /* A switch that is off, a slider's track and its ticks. */
+    /* A control's resting fill; hover and press step from it toward `text`. */
+    pub control: Color = Color {},
+    /* Outlines, and the lines between a card's cells. */
+    pub border: Color = Color {},
+    /* A slider's ticks. */
     pub track: Color = Color {},
-    /* A switch that is on. */
-    pub on: Color = Color {},
-    /* A switch's and a slider's knob. */
-    pub knob: Color = Color {},
-    /* A picker's chosen segment, raised off its track. */
-    pub segment: Color = Color {},
-    /* The shadow a knob or segment casts, 2 below it and blurred 6. */
-    pub lift: Color = Color {},
-    /* The shadow 1 below a knob, a segment or a card, where it touches what
-     * is under it. */
-    pub contact: Color = Color {},
-    /* A control's height. */
+    /* How text looks; `derive` sets its color to `text`. */
+    pub font: Text = Text {},
+    /* A control's height, the gap between controls, the padding inside one,
+     * and its corner radius. */
     pub height: f32 = 0.0,
-    /* Corner radius. */
-    pub radius: f32 = 0.0,
-    /* Inside a control, around its content. */
-    pub padding: f32 = 0.0,
-    /* Between controls, and between a control's icon and label. */
     pub gap: f32 = 0.0,
-    /* An icon's side. */
-    pub icon: f32 = 0.0,
+    pub padding: f32 = 0.0,
+    pub radius: f32 = 0.0,
+    pub button: Graphical = Graphical {},
+    /* A button that stands out: the accent. */
+    pub primary: Graphical = Graphical {},
+    pub toggle: Graphical = Graphical {},
+    pub swatch: Graphical = Graphical {},
+    pub slider: Ruled = Ruled {},
+    pub card: Ruled = Ruled {},
+    /* A menu item: `look` at rest, `on` while highlighted; its rule the
+     * dividers between groups. */
+    pub menu: Ruled = Ruled {},
+    pub field: Labeled = Labeled {},
+    pub check: Graphical = Graphical {},
+    pub picker: Labeled = Labeled {},
+    pub tip: Labeled = Labeled {},
+    /* A popup's title strip. */
+    pub header: Labeled = Labeled {},
+    pub list: Labeled = Labeled {},
+    pub popup: Box = Box {},
+    pub glyphs: Glyphs = Glyphs {},
 }
 
-/* `rgb` at opacity `a`, 0 to 1. */
-alpha(rgb: u32, a: f32): Color {
-    c: Color = Color.hex(rgb)
-    c.a = a
-    return c
-}
-
-/* The palette for `scheme`, with the sizes every scheme shares. */
+/* The palette for `scheme`, with the sizes every scheme shares, and every
+ * component derived from them. */
 pub Theme.init(scheme: Scheme): Theme {
     t: Theme = Theme {
-        window = Color.hex(0x161618),
-        text = alpha(0xffffff, 0.92),
-        muted = alpha(0xebebf5, 0.60),
-        button = Fill { rest = alpha(0x787880, 0.24), hover = alpha(0x787880, 0.34), press = alpha(0x787880, 0.44) },
+        window = Color.hex(0x1e1e1e),
+        surface = Color.hex(0x262626),
+        text = Color.hex(0xe6e6e6),
+        muted = Color.hex(0x9a9a9a),
         accent = Color.hex(0x3f86d6),
         on_accent = Color.hex(0xffffff),
-        card = Color.hex(0x232325),
-        edge = alpha(0xffffff, 0.10),
-        shadow = alpha(0x000000, 0.60),
-        separator = alpha(0x545458, 0.55),
-        track = alpha(0x787880, 0.32),
-        on = Color.hex(0x30d158),
-        knob = Color.hex(0xffffff),
-        segment = Color.hex(0x5b5b60),
-        lift = alpha(0x000000, 0.35),
-        contact = alpha(0x000000, 0.20),
+        control = Color.hex(0x333333),
+        border = Color.hex(0x404040),
+        track = Color.hex(0x404040),
+        font = Text { font = mono(), size = 14.0 },
         height = 28.0,
-        radius = 4.0,
-        padding = 12.0,
+        padding = 10.0,
         gap = 8.0,
-        icon = 15.0,
+        radius = 4.0,
     }
     if scheme == Scheme.light {
-        t.window = Color.hex(0xebebf0)
-        t.text = alpha(0x000000, 0.88)
-        t.muted = alpha(0x3c3c43, 0.62)
-        t.button = Fill { rest = alpha(0x787880, 0.16), hover = alpha(0x787880, 0.24), press = alpha(0x787880, 0.32) }
-        t.accent = Color.hex(0x007aff)
-        t.card = Color.hex(0xffffff)
-        t.edge = alpha(0x000000, 0.16)
-        t.shadow = alpha(0x000000, 0.22)
-        t.separator = alpha(0x3c3c43, 0.16)
-        t.track = alpha(0x787880, 0.26)
-        t.on = Color.hex(0x34c759)
-        t.segment = Color.hex(0xffffff)
-        t.lift = alpha(0x000000, 0.18)
-        t.contact = alpha(0x000000, 0.08)
+        t.window = Color.hex(0xf2f2f2)
+        t.surface = Color.hex(0xffffff)
+        t.text = Color.hex(0x1a1a1a)
+        t.muted = Color.hex(0x6b6b6b)
+        t.accent = Color.hex(0x2f74e0)
+        t.control = Color.hex(0xe0e0e0)
+        t.border = Color.hex(0xcccccc)
+        t.track = Color.hex(0xd0d0d0)
     }
+    t.derive()
+    if scheme == Scheme.light { t.header.box.look = States[Look].all(Look { fill = Color.hex(0xe6e6e6), text = t.text }) }
     return t
 }
 
+/* How far each state's fill steps from `control` toward `text`, per channel. */
+FILL_STEP: const f32 = 10.0 / 255.0
+
+/* `control` moved `n` steps toward the text. */
+Theme.fill(const self, n: f32): Color {
+    return Color { r = step(self.control.r, self.text.r, n), g = step(self.control.g, self.text.g, n), b = step(self.control.b, self.text.b, n), a = self.control.a }
+}
+
+step(c: f32, to: f32, n: f32): f32 {
+    if to < c { return c - n * FILL_STEP }
+    return c + n * FILL_STEP
+}
+
+/* Looks for a control filled `rest`, `hover` and `press`, its label and icons
+ * in `ink`, and faint while off: a button recolored, as
+ * `st.box.look = t.states(...)`. */
+pub Theme.states(const self, rest: Color, hover: Color, press: Color, ink: Color): States[Look] {
+    l: Look = Look { fill = rest, text = ink, tint = ink }
+    s: States[Look] = States[Look] { rest = l, hover = l, press = l, off = l.fade(OFF_ALPHA) }
+    s.hover.fill = hover
+    s.press.fill = press
+    return s
+}
+
+/* The same, its label and icons picked to read on the resting fill, so they
+ * stay put on hover. */
+pub Theme.states(const self, rest: Color, hover: Color, press: Color): States[Look] {
+    return self.states(rest, hover, press, self.on(rest))
+}
+
+/* `s` with its label in `c` in each state, faint while off. */
+ink(s: States[Look], c: Color): States[Look] {
+    r: States[Look] = s
+    r.rest.text = c
+    r.hover.text = c
+    r.press.text = c
+    r.off.text = fade(c, OFF_ALPHA)
+    return r
+}
+
+/* Text on `fill`: the theme's over a translucent fill, which shows the
+ * surface under it; over an opaque one, `on_accent` when the fill is dark and
+ * near-black when it is light. */
+pub Theme.on(const self, fill: Color): Color {
+    if fill.a < 1.0 { return self.text }
+    if 0.2126 * fill.r + 0.7152 * fill.g + 0.0722 * fill.b < 0.44 { return self.on_accent }
+    return Color { r = 0.1, g = 0.1, b = 0.1, a = 1.0 }
+}
+
+/* The width of an outline, a rule, and a tooltip's padding, and the
+ * check's box: its corners and side. */
+HAIRLINE: const f32 = 1.0
+TIP_PAD: const f32 = 6.0
+
+/* A menu item's label inset, past its check, and a divider's height. */
+MENU_INDENT: const f32 = 24.0
+DIVIDER: const f32 = 9.0
+CHECK_RADIUS: const f32 = 6.0
+CHECK_SIDE: const f32 = 16.0
+
+/* The room a list's card adds round its rows, and under a slider's bar, where
+ * its stops' ticks go. */
+pub LIST_PAD: const f32 = 4.0
+TICK_DROP: const f32 = 4.0
+TICK_ROOM: const f32 = 6.0
+
+/* An icon's side. */
+ICON: const f32 = 15.0
+
+/* A disabled control's alpha. */
+OFF_ALPHA: const f32 = 0.4
+
+/* Fills every component's style from the tokens. */
+pub Theme.derive(self) {
+    gray: States[Look] = self.states(self.fill(0.0), self.fill(1.0), self.fill(2.0))
+    hot: States[Look] = self.states(self.accent, mix(self.accent, 1.0, 0.12), mix(self.accent, 0.0, 0.08))
+    pad: Insets = Insets { left = self.padding, right = self.padding }
+    self.font.color = self.text
+    label: Text = self.font
+    control: Box = Box { radius = self.radius, padding = pad, look = gray, on = hot }
+    icon: Graphic = Graphic { size = ICON, gap = self.gap }
+    self.button = Graphical { box = control, label = label, graphic = icon }
+    self.toggle = self.button
+    self.primary = self.button
+    self.primary.box.look = self.primary.box.on
+    self.swatch = self.button
+    self.swatch.box.look = States[Look].all(Look { tint = self.text })
+    self.swatch.box.on = States[Look].all(Look { fill = self.fill(0.0), tint = self.text })
+    self.picker = Labeled { box = control, label = label }
+    self.picker.box.look = States[Look].all(Look { fill = self.fill(0.0), text = self.text })
+    self.picker.box.on = States[Look].all(Look { fill = self.accent, text = self.on_accent })
+    self.check = Graphical {
+        box = Box { radius = CHECK_RADIUS, padding = Insets.all(2.0), look = ink(gray, self.text), on = States[Look].all(Look { fill = self.accent, tint = self.on_accent }) },
+        label = label,
+        graphic = Graphic { size = CHECK_SIDE, gap = self.gap },
+    }
+    self.slider = Ruled { box = control, label = label, rule = Rule { w = HAIRLINE, gap = TICK_DROP, room = TICK_ROOM } }
+    self.slider.box.look = States[Look].all(Look { fill = self.fill(0.0), border = self.track, text = self.text })
+    self.slider.box.on = States[Look].all(Look { fill = self.accent, border = self.track, text = self.text })
+    self.field = Labeled { box = control, label = label }
+    self.field.box.border = HAIRLINE
+    self.field.box.look = States[Look].all(Look { fill = self.fill(0.0), text = self.text, tint = self.accent })
+    self.field.box.on = States[Look].all(Look { fill = self.surface, border = self.accent, text = self.text, tint = self.accent })
+    panel: Box = Box { radius = self.radius + 2.0, padding = pad, border = HAIRLINE, look = States[Look].all(Look { fill = self.surface, border = self.border, text = self.text }) }
+    self.card = Ruled { box = panel, label = label, rule = Rule { w = HAIRLINE, gap = self.padding } }
+    self.menu = Ruled {
+        box = Box {
+            radius = self.radius,
+            padding = Insets { left = MENU_INDENT, right = self.padding },
+            look = States[Look].all(Look { text = self.text, tint = self.text }),
+            on = States[Look].all(Look { fill = self.accent, text = self.on_accent, tint = self.on_accent }),
+        },
+        label = label,
+        rule = Rule { w = HAIRLINE, gap = self.padding, room = DIVIDER },
+    }
+    self.popup = panel
+    self.tip = Labeled { box = panel, label = label }
+    self.tip.box.radius = self.radius
+    self.tip.box.padding = Insets { left = TIP_PAD, right = TIP_PAD }
+    self.header = Labeled { box = Box { radius = panel.radius, padding = pad, look = States[Look].all(Look { fill = self.fill(0.0), text = self.text }) }, label = label }
+    self.list = Labeled { box = Box { radius = self.radius, padding = Insets.all(LIST_PAD), look = ink(gray, self.text), on = States[Look].all(Look { fill = self.accent, text = self.on_accent }) }, label = label }
+    self.list.box.look.rest.fill = Color { a = 0.0 }
+    self.list.box.look.rest.tint = self.muted
+    self.glyphs = Glyphs.init()
+}
+
 /* A list row's height: a control's. */
-pub Theme.row(const self): f32 { return self.height }
+pub Theme.row(const self): f32 {
+    return self.height
+}
 
 /* A popup's title strip: a control high, plus a third of the padding above
  * and below. */
-pub Theme.title(const self): f32 { return self.height + 2.0 * self.padding / 3.0 }
+pub Theme.title(const self): f32 {
+    return self.height + 2.0 * self.padding / 3.0
+}

@@ -10,7 +10,7 @@ Follow `spec/` for exact rules; do not propose or assume away these decisions:
   comptime, or trait solving.
 - Assignment copies. Parameters and receivers are writable; `const` opts out.
   A parameter's writes stay local (the callee copies only if its body writes
-  it); a receiver's reach the caller. `noalias` states non-overlap.
+  it); a receiver's reach the caller.
 - Every type has an all-bits-zero representation. Zero pointers and handles are
   `null`; there is no optional type operator. Globals are zeroed; locals require
   definite initialization, except arrays, which are raw storage; zeros are explicit.

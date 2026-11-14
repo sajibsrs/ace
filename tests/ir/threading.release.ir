@@ -5,7 +5,7 @@ b0:
     %2 = const i64 0
     jmp b1
 b1: ; preds b0, b7
-    %4 = phi i64 [%2, b0], [%24, b7]
+    %4 = phi i64 [%2, b0], [%23, b7]
     %5 = const i64 8
     %6 = lt bool %4, %5
     br %6, b2, b3
@@ -22,16 +22,15 @@ b4: ; preds b2
     %15 = const bool true
     ret %15
 b5: ; preds b2
-    %17 = load i64 [%9]
-    %18 = const i64 0
-    %19 = eq bool %17, %18
-    br %19, b6, b7
+    %17 = const i64 0
+    %18 = eq bool %10, %17
+    br %18, b6, b7
 b6: ; preds b5
-    %21 = const bool false
-    ret %21
+    %20 = const bool false
+    ret %20
 b7: ; preds b5
-    %23 = const i64 1
-    %24 = add i64 %4, %23
+    %22 = const i64 1
+    %23 = add i64 %4, %22
     jmp b1
 }
 
@@ -83,7 +82,7 @@ b5: ; preds b4, b7
     %38 = add i64 %6, %37
     jmp b1
 b6: ; preds b2, b9
-    %40 = phi i64 [%30, b2], [%54, b9]
+    %40 = phi i64 [%30, b2], [%53, b9]
     %41 = const i64 8
     %42 = lt bool %40, %41
     br %42, b7, b4
@@ -94,13 +93,12 @@ b7: ; preds b6
     %47 = eq bool %46, %29
     br %47, b5, b8
 b8: ; preds b7
-    %49 = load i64 [%45]
-    %50 = const i64 0
-    %51 = eq bool %49, %50
-    br %51, b4, b9
+    %49 = const i64 0
+    %50 = eq bool %46, %49
+    br %50, b4, b9
 b9: ; preds b8
-    %53 = const i64 1
-    %54 = add i64 %40, %53
+    %52 = const i64 1
+    %53 = add i64 %40, %52
     jmp b6
 }
 

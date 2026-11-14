@@ -10,7 +10,7 @@ line_comment  := "//" (any – newline) newline
 block_comment := "/*" (any – "*/")* "*/"       // non-nesting; a newline inside acts as a newline
 newline       := significant — terminates statements (see §6 Notes)
 
-keyword       := "import" | "pub" | "const" | "noalias" | "if" | "else"
+keyword       := "import" | "pub" | "const" | "if" | "else"
                 | "for" | "in" | "switch" | "default" | "return" | "break" | "continue" | "defer"
                 | "asm" | "extern" | "contract" | "struct" | "embed" | "signs"
                 | "specialized" | "intrinsic" | "inline" | "distinct" | "type" | "enum" | "union" | "null" | "true" | "false"
@@ -97,7 +97,7 @@ receiver      := "self"                                    // untyped; first par
 owner_type    := ident [type_params]                        // declares owner T names
 type_params   := "[" ident ("," ident)* "]"               // max[T] — type declarations always declare params
 params        := param ("," param)* [","]
-param         := ["noalias"] ident ":" type
+param         := ident ":" type
 ret_clause    := ":" type                                  // omitted for no value
 block         := "{" stmt* "}"
 

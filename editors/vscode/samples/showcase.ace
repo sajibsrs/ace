@@ -121,7 +121,7 @@ add(left: int, right: int): int {
     return left + right
 }
 
-inspect(noalias values: []int): usize {
+inspect(values: []int): usize {
     return values.len
 }
 

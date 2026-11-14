@@ -89,7 +89,7 @@ pub usable(data: []u8): usize {
  * compiler emits them natively as calls to wide per-object routines; no
  * platform memory routine is called.
  */
-pub copy(noalias dst: []u8, src: []u8) {}
+pub copy(dst: []u8, src: []u8) {}
 
 /* Like `copy`, but `dst` and `src` may overlap in either direction. */
 pub move(dst: []u8, src: []u8) {}
@@ -97,7 +97,7 @@ pub move(dst: []u8, src: []u8) {}
 /* Typed forms of `copy` and `move`: equal element counts, copying
  * `len * sizeof(T)` bytes under the same rules as the byte forms.
  */
-pub copy[T](noalias dst: []T, src: []T) {}
+pub copy[T](dst: []T, src: []T) {}
 
 pub move[T](dst: []T, src: []T) {}
 

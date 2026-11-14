@@ -1,0 +1,173 @@
+/* fancy — a look for pkg/ui built from its public API alone: a theme with
+ * soft translucent fills, shadows and rounder panels in Lato, and two
+ * controls pkg/ui leaves out, a pill switch and a knob slider. */
+
+import math
+import Color from sdl
+import ui
+import lato_regular from "./lato_regular.ace"
+import lato_bold from "./lato_bold.ace"
+
+/* `rgb` at opacity `a`, 0 to 1. */
+alpha(rgb: u32, a: f32): Color {
+    c: Color = ui.color(rgb)
+    c.a = a
+    return c
+}
+
+/* pkg/ui's palette for `scheme`, restyled: tokens first (translucent gray
+ * fills that let the surface show, rounder corners, Lato), then `derive`,
+ * then overrides: popups that drop a wide shadow, a glow round a focused
+ * field, rounder panels, a bold title strip, and no borders. */
+pub theme(scheme: ui.Scheme): ui.Theme {
+    t: ui.Theme = ui.Theme.init(scheme)
+    t.font.font = lato_regular()
+    t.font.size = 16.0
+    t.radius = 8.0
+    t.padding = 12.0
+    header: Color = ui.color(0x6e6e78)
+    drop: ui.Shadow = ui.Shadow { dy = 18.0, blur = 48.0, color = alpha(0x000000, 0.22) }
+    if scheme == ui.Scheme.dark {
+        t.window = ui.color(0x161618)
+        t.surface = ui.color(0x232325)
+        t.control = alpha(0x787880, 0.36)
+        t.track = alpha(0x787880, 0.32)
+        t.border = alpha(0x545458, 0.55)
+        header = ui.color(0x3a3a3f)
+        drop.color = alpha(0x000000, 0.60)
+    } else {
+        t.window = ui.color(0xebebf0)
+        t.surface = ui.color(0xffffff)
+        t.control = alpha(0x787880, 0.28)
+        t.track = alpha(0x787880, 0.26)
+        t.border = alpha(0x3c3c43, 0.16)
+    }
+    t.derive()
+    t.card.box.radius = 14.0
+    t.card.box.border = 0.0
+    t.menu.box.radius = 5.0
+    t.popup.radius = 14.0
+    t.popup.border = 0.0
+    t.popup.look.rest.shadow = drop
+    t.tip.box.border = 0.0
+    t.tip.box.look.rest.shadow = drop
+    t.tip.label.size = 14.0
+    t.header.box.radius = 14.0
+    t.header.box.look.rest.fill = header
+    t.header.label = ui.Text { font = lato_bold(), size = 16.0, color = ui.color(0xffffff) }
+    t.header.box.look.rest.text = t.header.label.color
+    glow: Color = t.accent
+    glow.a = 0.7
+    t.field.box.focus = ui.Shadow { blur = 6.0, color = glow }
+    t.field.box.on.rest.border = Color { a = 0.0 }
+    return t
+}
+
+/* What a knob casts: a soft shadow under it, darker on the dark scheme. */
+lift(t: *ui.Theme): ui.Shadow {
+    s: ui.Shadow = ui.Shadow { dy = 2.0, blur = 6.0, color = alpha(0x000000, 0.35) }
+    if t.window.r > 0.5 { s.color = alpha(0x000000, 0.18) }
+    return s
+}
+
+/* The switch's track and its knob, inset KNOB_INSET all round. */
+SWITCH_H: const f32 = 22.0
+KNOB_INSET: const f32 = 2.0
+KNOB: const f32 = SWITCH_H - 2.0 * KNOB_INSET
+SWITCH_W: const f32 = 2.0 * KNOB
+
+/* What `box`, with corners of `radius`, casts as `s`. */
+cast(c: *ui.Canvas, box: ui.Rect, radius: f32, s: ui.Shadow) {
+    if s.color.a <= 0.0 { return }
+    c.shadow(ui.Rect { x = box.x + s.dx, y = box.y + s.dy, w = box.w, h = box.h }, radius, s.blur, s.color)
+}
+
+/* `label` then a pill switch, on the accent while `value` is set; a click on
+ * either flips it. True when it flipped. */
+pub pill(x: *ui.Context, label: string, value: *bool): bool {
+    c: *ui.Canvas = x.canvas
+    t: *ui.Theme = &x.theme
+    lw: f32 = ui.text_width(label, t.font)
+    box: ui.Rect = ui.place(lw + t.gap + SWITCH_W, t.height)
+    res: ui.Response = ui.track(ui.id(usize(value)), box)
+    if res.click { *value = !*value }
+    track: ui.Rect = ui.Rect { x = box.x + box.w - SWITCH_W, y = box.y + (box.h - SWITCH_H) / 2.0, w = SWITCH_W, h = SWITCH_H }
+    color: Color = t.track
+    if *value { color = t.accent }
+    c.fill(track, SWITCH_H / 2.0, color)
+    knob: ui.Rect = ui.Rect { x = track.x + KNOB_INSET, y = track.y + KNOB_INSET, w = KNOB, h = KNOB }
+    if *value { knob.x = track.x + track.w - KNOB_INSET - KNOB }
+    cast(c, knob, KNOB / 2.0, lift(t))
+    c.fill(knob, KNOB / 2.0, t.on_accent)
+    c.text(ui.Rect { x = box.x, y = box.y, w = lw, h = box.h }, label, t.font.at(ui.Align.left))
+    return res.click
+}
+
+/* A knob slider's knob, a circle kept inside the slider, so its center
+ * travels from half of it in from one end to half of it in from the other;
+ * its track, TRACK_H high; and its ticks, lines TICK_W wide and TICK_H high,
+ * TICK_DROP under the track, drawn only when the stops are TICK_ROOM apart. */
+KNOB_D: const f32 = 18.0
+TRACK_H: const f32 = 8.0
+TICK_W: const f32 = 1.0
+TICK_H: const f32 = 4.0
+TICK_DROP: const f32 = 4.0
+TICK_ROOM: const f32 = 6.0
+
+/* Places a knob slider `w` wide and tracks it: where the pointer holds the
+ * knob's center along its travel, 0 to 1, or -1 while it is not held. */
+grab(x: *ui.Context, address: usize, w: f32): f32 {
+    box: ui.Rect = ui.place(w, x.theme.height)
+    res: ui.Response = ui.track(ui.id(address), box)
+    if !res.held { return -1.0 }
+    travel: f32 = box.w - KNOB_D
+    if travel <= 0.0 { return 0.0 }
+    return math.max[f32](0.0, math.min[f32](1.0, (x.mouse.x - box.x - KNOB_D / 2.0) / travel))
+}
+
+/* The slider at the last place: a track filled with the accent up to its
+ * knob, which sits `at` along its travel, casting the theme's lift, and a
+ * tick under the track at each of `stops` when there are 2 or more. */
+draw(x: *ui.Context, at: f32, stops: int) {
+    c: *ui.Canvas = x.canvas
+    t: *ui.Theme = &x.theme
+    box: ui.Rect = ui.last().rect
+    r: f32 = KNOB_D / 2.0
+    travel: f32 = box.w - KNOB_D
+    track: ui.Rect = ui.Rect { x = box.x, y = box.y + (box.h - TRACK_H) / 2.0, w = box.w, h = TRACK_H }
+    kx: f32 = box.x + r + at * travel
+    c.fill(track, TRACK_H / 2.0, t.track)
+    c.fill(ui.Rect { x = track.x, y = track.y, w = kx - track.x, h = track.h }, TRACK_H / 2.0, t.accent)
+    if stops >= 2 && travel / f32(stops - 1) >= TICK_ROOM {
+        for i: int in 0 .. stops {
+            tx: f32 = box.x + r + travel * f32(i) / f32(stops - 1)
+            c.fill(ui.Rect { x = tx - TICK_W / 2.0, y = track.y + track.h + TICK_DROP, w = TICK_W, h = TICK_H }, t.track)
+        }
+    }
+    knob: ui.Rect = ui.Rect { x = kx - r, y = box.y + (box.h - KNOB_D) / 2.0, w = KNOB_D, h = KNOB_D }
+    cast(c, knob, r, lift(t))
+    c.fill(knob, r, t.on_accent)
+}
+
+/* A knob `w` wide dragged along a track to set `value` from `min` to `max`,
+ * the track filled up to it. True when it changed. */
+pub slider(x: *ui.Context, w: f32, value: *f32, min: f32, max: f32): bool {
+    at: f32 = grab(x, usize(value), w)
+    before: f32 = *value
+    if at >= 0.0 { *value = min + at * (max - min) }
+    draw(x, (*value - min) / (max - min), 0)
+    return *value != before
+}
+
+/* A knob slider `w` wide stopping at each whole number from `min` to `max`,
+ * set to the stop nearest the pointer. */
+pub slider(x: *ui.Context, w: f32, value: *int, min: int, max: int): bool {
+    n: int = max - min
+    at: f32 = grab(x, usize(value), w)
+    before: int = *value
+    if at >= 0.0 { *value = min + int(at * f32(n) + 0.5) }
+    shown: f32 = 0.0
+    if n > 0 { shown = f32(*value - min) / f32(n) }
+    draw(x, shown, n + 1)
+    return *value != before
+}

@@ -37,7 +37,7 @@ pub IT_V4F32: const u8 = 13
 pub IT_V4I32: const u8 = 14
 pub IT_V2F64: const u8 = 15
 
-TYPE_NAMES: [16]string = [
+TYPE_NAMES: const [16]string = [
     "void", "bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "f32", "f64", "v4f32", "v4i32", "v2f64",
 ]
 
@@ -98,7 +98,7 @@ pub IR_JMP: const u8 = 52
 pub IR_BR: const u8 = 53
 pub IR_RET: const u8 = 54
 
-OP_NAMES: [55]string = [
+OP_NAMES: const [55]string = [
     "const", "param", "phi", "add", "sub", "mul", "div", "rem", "and", "or", "xor", "shl", "shr", "neg", "not",
     "eq", "ne", "lt", "le", "gt", "ge", "cast", "bitcast", "popcnt", "clz", "ctz", "bswap", "rotl", "rotr",
     "mulh", "sqrt", "floor", "ceil", "fma", "slot", "global", "str", "load", "store", "atomic", "padd", "psub", "call", "calli",
@@ -122,8 +122,8 @@ pub AO_RELEASE: const u64 = 2
 pub AO_ACQ_REL: const u64 = 3
 pub AO_SEQ_CST: const u64 = 4
 
-ATOMIC_KINDS: [10]string = ["load", "store", "xchg", "add", "sub", "and", "or", "xor", "cas", "fence"]
-ATOMIC_ORDERS: [5]string = ["relaxed", "acquire", "release", "acq_rel", "seq_cst"]
+ATOMIC_KINDS: const [10]string = ["load", "store", "xchg", "add", "sub", "and", "or", "xor", "cas", "fence"]
+ATOMIC_ORDERS: const [5]string = ["relaxed", "acquire", "release", "acq_rel", "seq_cst"]
 
 /* Instruction flags, src/ir.h's IRF_ values. */
 pub IRF_CHECKED: const u8 = 1
@@ -177,11 +177,11 @@ pub IrAsm: struct {
     pub reserved: u32 = 0,
 }
 
-ARM64_ASM_REG: [31]string = [
+ARM64_ASM_REG: const [31]string = [
     "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",
     "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30",
 ]
-X64_ASM_REG: [16]string = [
+X64_ASM_REG: const [16]string = [
     "rax", "rcx", "rdx", "rbx", "", "", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
 ]
 

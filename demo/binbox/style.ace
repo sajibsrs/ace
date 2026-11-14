@@ -1,4 +1,6 @@
-/* style — the spacing the bars, panels and dialogs share. */
+/* style — the spacing and text styles the bars, panels and dialogs share. */
+
+import ui
 
 /* Between groups in the toolbar. */
 pub GROUP_GAP: const f32 = 24.0
@@ -8,3 +10,8 @@ pub HEADING_PAD: const f32 = 8.0
 
 /* Inside a dialog. */
 pub DIALOG_PAD: const f32 = 12.0
+
+/* Secondary text: the theme's in its muted color. */
+pub muted(t: *ui.Theme): ui.Text {
+    return t.font.in(t.muted)
+}

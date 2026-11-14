@@ -87,11 +87,7 @@ constant prints as a `load` of its storage, `typeid(T)` as a `u64` constant,
 and an Error's `name` or `message` as a chain of comparisons of the packed
 value with each declared domain (name) or entry (message), each matching one
 loading its string; nothing matching leaves the empty string. `panic(message)`
-prints as a `write` of the message to descriptor 2 and a call of `abort`. In
-debug, a call of a function with a `noalias` parameter prints the range
-checks before the call: per slice argument a representability check (`check`
-of the length's bound and of the end not wrapping), then per pair with a
-`noalias` member a guarded `check` that the ranges are disjoint. A `defer` prints as nothing at its statement beyond the evaluation of its
+prints as a `write` of the message to descriptor 2 and a call of `abort`. A `defer` prints as nothing at its statement beyond the evaluation of its
 arguments; its call appears again before every `ret`, last defer first.
 In release, the IR is then optimized before it prints: a value that is constant
 on every path becomes a `const`, a pure operation equal to one that dominates it
@@ -236,6 +232,36 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   offset still takes part in value numbering, strength reduction, and address
   folding (`binbox` 1.45x to 1.25x). It needs no alias analysis; the pass adds
   about 1% to compiling selfhost, and the checks it keeps 6.5%.
+- Compiler #2, loop rotation (PHILOSOPHY.md: performance first): a hash
+  probe that usually ends at its first slot jumped into the loop to test
+  it; with the test copied before the loop and at its end, as LLVM's loop
+  rotation does, it takes no jump. `map-get` 1.25x median, `map-miss` 1.03x;
+  compiling selfhost costs 1.5%. A header value used where the first body
+  block does not dominate (after the loop, reached from the header's exit)
+  would need an exit phi of both copies and the body's phi; the allocator's
+  one interval per value cannot coalesce that three-way phi and moves each
+  operand on entry and exit, which made `map-set` 0.92x, so such a loop
+  stays. A header without a load is a counted loop, which gains nothing:
+  pass 10 already lays it out to end each iteration in the test. Pass 10
+  keeps a rotated loop's header in place: its latch, a split edge from the
+  exit test, already ends each iteration in a conditional branch, so the
+  move would only add a jump at entry.
+- Compiler #2, down-counting checks, range fusion, and single latch
+  (PHILOSOPHY.md: performance first): a reverse scan written as C writes
+  it, `for end > start && space(s[end - 1]) { end -= 1 }`, kept its bounds
+  check, tested `c >= 9 && c <= 13` in two branches, and took two jumps per
+  iteration, its `||` leaving two back edges. The check pass now proves an
+  unsigned index below a bound from a counter that steps down from that
+  bound with its decrement guarded on a dominating edge, the facts taken
+  where each value is computed rather than at the check, since a fact there
+  describes the current iteration. Range fusion is GCC's and LLVM's
+  `(x - lo) <= hi - lo`, subtracting at 32 or 64 bits so arm64 needs no
+  narrow rewrap, with `add` for a negative `lo` since arm64 immediates are
+  unsigned. Back edges carrying equal phi operands share one latch, as LLVM's
+  loop-simplify does, which pass 10 lays out before the header; the latch
+  alone gained nothing until that layout made each iteration one taken
+  branch. `str.trim` 1.46x (1.04x of C), `parse-int` 1.10x; compiling
+  selfhost costs no measurable time.
 - Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
   every optimization written once per source shape and repeats each in a second
   backend; the compile-time cost ranks below performance, simplicity, and

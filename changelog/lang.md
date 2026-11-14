@@ -1,5 +1,10 @@
 # Language
 
+- An ordering comparison (`<`, `<=`, `>`, `>=`, and chains of them) lets a lone
+  integer literal meet a float operand, as arithmetic and `==` already did, so
+  `x < 0` and `math.abs[f64]` compile; a compound integer constant still needs
+  a cast. C and selfhost.
+
 - A shift count is taken modulo the left operand's width in every build:
   shifts are no longer checked, arm64 masks a narrow count with one `and`, and
   the optimizer folds with the masked count; `pkg/regex` and selfhost drop
@@ -296,3 +301,11 @@
   `T`'s bound type through the ordinary cast check (`bound_type_param` ahead
   of primitive and declared types), so a runtime value converts to `T`. C and
   selfhost.
+- `noalias` is removed (#181): it is no longer a keyword or parameter marker,
+  and the per-pair debug range check and its inlining block go with it.
+  `mem.copy` keeps its overlap check as a call contract; `str.copy` and
+  `str.cstring` copy overlapping ranges front to back. C and selfhost.
+- A `const` global gives ordinary views (#181): `&g`, `g[lo..hi]`, and
+  receiver calls type-check as for any global, and a write through one faults
+  on its read-only page. Assignment to it, and views of a local or parameter
+  `const`, stay compile errors. C and selfhost.

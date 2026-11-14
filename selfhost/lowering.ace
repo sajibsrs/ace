@@ -2185,7 +2185,7 @@ Lw.fn_call_mangle(self, s: u32, call: u32): string {
     return self.fn_mangle(s, cft, targs, nt, sy.spec_args != 0)
 }
 
-PRIM_NAMES: [16]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid", "int", "uint"]
+PRIM_NAMES: const [16]string = ["bool", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32", "f64", "string", "usize", "typeid", "int", "uint"]
 
 /* Whether call `x` builds a contract value: `Shape(&value)` (Carved #5). */
 Lw.contract_ctor(self, x: u32): bool {
@@ -2913,19 +2913,8 @@ Lw.call_args(self, call: u32, s: u32, g: *Args): int {
         self.unsupported("default argument")
         return -1
     }
-    aliasing: bool = false
-    if self.debug && d != 0 {
-        dn: Node = self.node(d)
-        for i: u32 in 0..dn.nkids {
-            if i >= n { break }
-            if (self.node(self.kid(d, i)).flags & parser.F_NOALIAS) != 0 { aliasing = true }
-        }
-    }
-    rng: array.Array[Range] = array.Array[Range] {}
-    defer rng.wipe()
     first_var: int = -1
     for i: u32 in 0..n {
-        fail(rng.push(Range {}))
         a: u32 = 0
         if recv == 1 && i == 0 { a = self.node(callee).a } else { a = self.kid(call, i - recv) }
         if i >= named { // variadic: promoted to 64 bits (an f32 to f64)
@@ -2983,20 +2972,7 @@ Lw.call_args(self, call: u32, s: u32, g: *Args): int {
             continue
         }
         self.call_arg(g, a, pt, by_address, !sy.is_extern)
-        pu: u32 = self.unwrap(pt)
-        if !aliasing || pu == 0 || self.ty(pu).kind != TypeKind.slice { continue }
-        pp: ir.IrPart = g.parts.get(g.parts.len - 1)
-        esz: u64 = u64(self.size(self.ty(pu).base))
-        if by_address { // a descriptor in memory: read it at the address just passed
-            addr: int = g.v.get(pp.first)
-            ptr: int = self.load(ir.IT_PTR, addr, 0, 0)
-            len: int = self.load(ir.IT_U64, addr, 8, 0)
-            rng.set(usize(i), Range { ptr = ptr, len = len, esz = esz })
-            continue
-        }
-        rng.set(usize(i), Range { ptr = g.v.get(pp.first), len = g.v.get(pp.first + 1), esz = esz })
     }
-    if aliasing { self.noalias_check(d, rng.view()) }
     return first_var
 }
 
@@ -3067,49 +3043,6 @@ Lw.contract_check(self, c: int) {
 }
 
 /* A slice argument's descriptor and element size; ptr < 0 for another. */
-Range: struct {
-    ptr: int = -1,
-    len: int = -1,
-    esz: u64 = 0,
-}
-
-/* Debug, at a call boundary (Safety #7) to declaration `d`: the byte range
- * of each slice argument must be representable, and two whose parameters
- * include a noalias one must be disjoint unless one is empty.
- */
-Lw.noalias_check(self, d: u32, r: []Range) {
-    nk: usize = usize(self.node(d).nkids)
-    end: array.Array[int] = array.Array[int] {}
-    defer end.wipe()
-    for i: usize in 0..r.len {
-        fail(end.push(-1))
-        if i >= nk || r[i].ptr < 0 { continue }
-        bytes: int = r[i].len
-        if r[i].esz != 1 {
-            self.contract_check(self.cmp(ir.IR_LE, bytes, self.konst(ir.IT_U64, ~u64(0) / r[i].esz)))
-            bytes = self.emit2(ir.IR_MUL, ir.IT_U64, bytes, self.konst(ir.IT_U64, r[i].esz))
-        }
-        e: int = self.emit2(ir.IR_PADD, ir.IT_PTR, r[i].ptr, bytes)
-        self.fn.at(e).imm = 1
-        end.set(i, e)
-        self.contract_check(self.cmp(ir.IR_GE, e, r[i].ptr))
-    }
-    for i: usize in 0..r.len {
-        if i >= nk || r[i].ptr < 0 { continue }
-        for j: usize = i + 1; j < r.len && j < nk; j += 1 {
-            if r[j].ptr < 0 || ((self.node(self.kid(d, u32(i))).flags | self.node(self.kid(d, u32(j))).flags) & parser.F_NOALIAS) == 0 { continue }
-            ki: int = self.konst(ir.IT_U64, 0)
-            ni: int = self.cmp(ir.IR_NE, r[i].len, ki)
-            kj: int = self.konst(ir.IT_U64, 0)
-            nj: int = self.cmp(ir.IR_NE, r[j].len, kj)
-            some: int = self.guard(self.emit2(ir.IR_AND, ir.IT_BOOL, ni, nj))
-            after: int = self.cmp(ir.IR_GE, r[j].ptr, end.get(i))
-            before: int = self.cmp(ir.IR_GE, r[i].ptr, end.get(j))
-            self.contract_check(self.emit2(ir.IR_OR, ir.IT_BOOL, after, before))
-            self.guard_end(some)
-        }
-    }
-}
 
 /* Debug allocator tracking (Safety & Debug Builds #9): the registry routines. */
 Lw.registry_add(self, ptr: int, size: int, align: int) {
@@ -3280,7 +3213,7 @@ Lw.mem_release(self, x: u32): int {
 
 /* mem.copy, mem.move, mem.fill, mem.zero (Values & Passing: byte
  * operations): debug checks equal lengths, and for copy that nonempty ranges
- * neither wrap nor overlap (noalias), before the routine. The typed copy and
+ * neither wrap nor overlap (Safety #7), before the routine. The typed copy and
  * move compare element counts, then work on count * sizeof(T) bytes.
  */
 Lw.mem_write(self, x: u32, bi: u64): int {
@@ -4097,9 +4030,6 @@ Lw.auto_inline_decl(self, s: u32): int {
     if n.kind != Kind.func || n.b == 0 || sy.is_extern || sy.spec_args != 0 { return 0 }
     if (n.flags & (parser.F_INTRINSIC | parser.F_SPECIALIZED | parser.F_COLD)) != 0 || n.nkids > 64 { return 0 }
     if (n.flags & (parser.F_METHOD | parser.F_ASSOC)) == 0 && mem.equal(n.text, "main") { return 0 }
-    for i: u32 in 0..n.nkids {
-        if (self.node(self.kid(f, i)).flags & parser.F_NOALIAS) != 0 { return 0 }
-    }
     size: int = self.auto_inline_size(n.b, 0)
     if size > AUTO_INLINE_NODES { return 0 }
     fail(self.s.auto_seen.set(f, size + 2))
