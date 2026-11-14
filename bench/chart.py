@@ -17,9 +17,9 @@ FONT = "-apple-system,Segoe UI,Helvetica,Arial,sans-serif"
 # single-threaded with no SIMD or intrinsics, C and C++ with
 # -ffp-contract=off.
 SPEED = [
-    ("nbody", 0.96, 1.0, 0.91), ("spectralnorm", 0.85, 1.0, 0.99),
-    ("fannkuch", 0.80, 1.01, 0.96), ("binarytrees", 0.85, 0.88, 0.88),
-    ("mandelbrot", 0.95, 1.01, 1.01),
+    ("nbody", 0.97, 1.0, 0.91), ("spectralnorm", 0.83, 0.97, 0.97),
+    ("fannkuch", 0.80, 0.99, 0.96), ("binarytrees", 0.85, 0.88, 0.86),
+    ("mandelbrot", 0.95, 1.01, 1.0),
 ]
 
 # Seconds to compile bench/compiler/generic-corpus.sh's 5,000 functions to an
@@ -27,9 +27,9 @@ SPEED = [
 # mode on its own scale: [(mode, bars)]. rustc runs its default 16 codegen
 # units in parallel; the others compile the file on one thread.
 COMPILE = [
-    ("Debug", [("Ace --debug", 0.309, ACE), ("cc -O0", 1.54, C),
+    ("Debug", [("Ace --debug", 0.292, ACE), ("cc -O0", 1.54, C),
                ("clang++ -O0", 6.84, C), ("rustc -O0", 6.16, C)]),
-    ("Release", [("Ace --release", 0.391, ACE), ("cc -O2", 9.69, C),
+    ("Release", [("Ace --release", 0.378, ACE), ("cc -O2", 9.69, C),
                  ("clang++ -O2", 120.8, C), ("rustc -O2", 12.8, C)]),
 ]
 
