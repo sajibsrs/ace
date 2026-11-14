@@ -147,7 +147,9 @@ pub split_critical_edges(fn: *Func) {
 /* A loop whose header only tests (a two-way branch with one successor in the
  * loop, one outside) and whose one back edge is a plain jump: its header moves
  * after its latch in emission order, so an iteration ends in the test's own
- * conditional branch. Then a @cold call's arm moves last. Only layout and eix
+ * conditional branch. A loop whose latch is only a split edge from a test
+ * leaving the loop (one the optimizer rotated) already does and stays. Then
+ * a @cold call's arm moves last. Only layout and eix
  * change; analysis keeps every position.
  */
 emission_order(a: *Ra, fn: Func) {
@@ -205,6 +207,12 @@ emission_order(a: *Ra, fn: Func) {
         s0: int = hb.succ0
         s1: int = hb.succ1
         if (inl.get(s0) && s0 != h) == (inl.get(s1) && s1 != h) { continue }
+        if lb.ins.len == 1 && lb.preds.len == 1 { // a split edge from a loop-exit test: rotated
+            tb: IrBlock = *(fn.block(lb.preds.get(0)))
+            other: int = tb.succ0
+            if tb.succ0 == latch { other = tb.succ1 }
+            if tb.succ1 >= 0 && !inl.get(other) { continue }
+        }
         after.set(usize(latch), h)
         deferred.set(usize(h), true)
         moved += 1

@@ -49,7 +49,9 @@ void ra_split_critical_edges(IrFunc* fn) {
 // loop, one outside) and whose one back edge is a plain jump: cloning the
 // reverse postorder and moving such a header after its latch, so an iteration
 // ends in the test's own conditional branch to the body instead of a jump to
-// the test, then a jump to the body once at entry. This only reorders the
+// the test, then a jump to the body once at entry. A loop whose latch is
+// only a split edge from a test leaving the loop (one pass 6 rotated) already
+// ends each iteration in a conditional branch and stays. This only reorders the
 // blocks emission walks (a->layout); analysis (a->order, a->bfirst, a->idx,
 // liveness, allocation, coalescing) keeps every value's position as if
 // nothing moved, so none of their ordering assumptions change.
@@ -91,6 +93,11 @@ static void emission_order(Ra* a) {
         }
         int s0 = hb->succ[0], s1 = hb->succ[1];
         if ((in[s0] && s0 != h) == (in[s1] && s1 != h)) continue;
+        IrBlock* lb = &fn->blocks[latch];
+        if (lb->nins == 1 && lb->npreds == 1) {
+            IrBlock* tb = &fn->blocks[lb->preds[0]];
+            if (tb->succ[1] >= 0 && !in[tb->succ[tb->succ[0] == latch]]) continue;
+        }
         after[latch] = h;
         deferred[h] = 1;
         moved++;

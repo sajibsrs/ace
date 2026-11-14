@@ -2,8 +2,8 @@
 // (spec/compiler.md Compiler #2). Each pass runs
 // once, in the order spec/compiler.md gives: sparse conditional constant propagation,
 // global value numbering, loop strength reduction, dead-code and control-flow
-// cleanup, then auto-vectorization over the cleaned loops (and cleanup again
-// after it rewrites any).
+// cleanup, then auto-vectorization over the cleaned loops and loop rotation
+// (each followed by cleanup again when it rewrites any).
 //
 // The passes rely only on facts a debug build checks: a division by a zero
 // or -1 constant is never folded, and an unused load or division is removed
@@ -2190,6 +2190,177 @@ static void cleanup(IrFunc* fn) {
     free(c.repl);
 }
 
+// --- loop rotation -------------------------------------------------------------------
+//
+// A natural loop whose header only tests and reads memory (pure operations,
+// plain loads, checks, and a branch with one successor b in the loop, which
+// only the header reaches, and one outside), entered and closed by plain
+// jumps, gets a copy of the header at the end of its preheader and of its
+// latch, as LLVM's loop rotation does: the first test falls into b or leaves
+// before the loop, and later ones branch back to b from the latch, so a loop
+// that mostly leaves at its first test takes no jump into it. Each header
+// value becomes a phi at b of its two copies, which each of its uses takes.
+// A loop using a header value where b does not dominate (after the loop on
+// a path from the header's exit) is left alone: that use would need a phi
+// of the copies and b's phi, whose operands the allocator's one interval per
+// value keeps apart, moving each on entry and exit. Header constants move to
+// the preheader, shared by both copies. A header without a load is left
+// alone too: a counted loop gains nothing, its emitted layout already ending
+// each iteration in the test (pass 10).
+
+enum { ROT_MAX = 8 }; // header instructions copied, constants aside
+
+// A copy of header instruction v at the end of b, its header operands mapped.
+static int rot_copy(IrFunc* fn, int b, int v, const int* map) {
+    int c = ir_ins_new(fn, b, (IrOp)fn->ins[v].op, (IrType)fn->ins[v].type);
+    IrIns* x = &fn->ins[c];
+    const IrIns* y = &fn->ins[v];
+    x->flags = y->flags; x->imm = y->imm; x->aux = y->aux; x->sym = y->sym;
+    x->name = y->name; x->sig = y->sig; x->at = y->at;
+    for (int a = 0; a < y->nargs; a++) ir_arg_add(fn, c, map[y->args[a]] >= 0 ? map[y->args[a]] : fn->ins[v].args[a]);
+    return c;
+}
+
+// The block b ends with a jump, which goes; the caller appends a terminator.
+static void rot_drop_jump(IrFunc* fn, int b) {
+    IrBlock* bb = &fn->blocks[b];
+    kill_ins(fn, bb->ins[--bb->nins]);
+    bb->succ[0] = -1;
+}
+
+// Whether h could head a loop rotate_loop takes, by its own contents: two
+// predecessors, a branch, and up to ROT_MAX tests and loads, one at least.
+static int rot_header(const IrFunc* fn, int h) {
+    const IrBlock* hb = &fn->blocks[h];
+    if (hb->npreds != 2 || hb->succ[1] < 0) return 0;
+    int work = 0, loads = 0;
+    for (int i = 0; i < hb->nins - 1; i++) {
+        const IrIns* x = &fn->ins[hb->ins[i]];
+        if (x->op == IR_PHI || x->op == IR_CONST) continue;
+        if (x->op == IR_LOAD && !(x->flags & IRF_VOLATILE)) loads++;
+        else if (x->op != IR_CHECK && !is_pure(x)) return 0;
+        if (++work > ROT_MAX) return 0;
+    }
+    return loads > 0;
+}
+
+// Rotate the loop headed by h, when it qualifies.
+static int rotate_loop(IrFunc* fn, const int* idom, int h, uint8_t* body, int* stack) {
+    if (!rot_header(fn, h)) return 0;
+    int li = natural_loop(fn, idom, h, body, stack);
+    if (li < 0) return 0;
+    IrBlock* hb = &fn->blocks[h];
+    int pre = hb->preds[1 - li], latch = hb->preds[li];
+    if (fn->blocks[pre].succ[1] >= 0 || fn->blocks[latch].succ[1] >= 0 || latch == h) return 0;
+    int in = body[hb->succ[0]] ? 0 : 1, b = hb->succ[in], e = hb->succ[1 - in];
+    if (!body[b] || body[e] || b == h || fn->blocks[b].npreds != 1) return 0;
+    for (int q = 0; q < fn->nblocks; q++) // b dominates each use of a header value
+        for (int i = 0; q != h && idom[q] >= 0 && i < fn->blocks[q].nins; i++) {
+            const IrIns* x = &fn->ins[fn->blocks[q].ins[i]];
+            for (int a = 0; a < x->nargs; a++)
+                if (fn->ins[x->args[a]].block == h &&
+                    !ir_dominates(idom, b, x->op == IR_PHI ? fn->blocks[q].preds[a] : q)) return 0;
+        }
+
+    // Copies: constants to the preheader, shared; everything else once into
+    // each of pre and latch, phis taking that edge's operand.
+    int n = hb->nins;
+    int* hv = xalloc((size_t)n, sizeof(int));
+    memcpy(hv, hb->ins, (size_t)n * sizeof(int));
+    int* mp = xalloc((size_t)fn->nins, sizeof(int));
+    int* ml = xalloc((size_t)fn->nins, sizeof(int));
+    for (int v = 0; v < fn->nins; v++) mp[v] = ml[v] = -1;
+    rot_drop_jump(fn, pre);
+    rot_drop_jump(fn, latch);
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        int v = hv[i];
+        if (fn->ins[v].op != IR_CONST) { hv[k++] = v; continue; }
+        IrBlock* pb = &fn->blocks[pre];
+        pb->ins = xgrow(pb->ins, &pb->cins, pb->nins + 1, sizeof(int));
+        pb->ins[pb->nins++] = v;
+        fn->ins[v].block = pre;
+    }
+    n = k;
+    hb->nins = n;
+    memcpy(hb->ins, hv, (size_t)n * sizeof(int));
+    int nphi = 0;
+    while (nphi < n && fn->ins[hv[nphi]].op == IR_PHI) nphi++;
+    for (int i = 0; i < nphi; i++) mp[hv[i]] = fn->ins[hv[i]].args[1 - li];
+    for (int i = nphi; i < n; i++) mp[hv[i]] = rot_copy(fn, pre, hv[i], mp);
+
+    // The latch's phi operands are this iteration's values: the phis at b.
+    int* phib = xalloc((size_t)n, sizeof(int));
+    for (int i = 0; i < n - 1; i++) phib[i] = ir_phi_new(fn, b, (IrType)fn->ins[hv[i]].type);
+    IrBlock* bb = &fn->blocks[b];
+    bb->preds[0] = pre;
+    bb->preds = xgrow(bb->preds, &bb->cpreds, 2, sizeof(int));
+    bb->preds[bb->npreds++] = latch;
+    for (int i = 0; i < nphi; i++) {
+        int a = fn->ins[hv[i]].args[li], j = 0;
+        while (j < n - 1 && hv[j] != a) j++;
+        ml[hv[i]] = j < n - 1 ? phib[j] : a;
+    }
+    for (int i = nphi; i < n; i++) ml[hv[i]] = rot_copy(fn, latch, hv[i], ml);
+    fn->blocks[pre].succ[0] = fn->blocks[latch].succ[0] = hb->succ[0];
+    fn->blocks[pre].succ[1] = fn->blocks[latch].succ[1] = hb->succ[1];
+
+    // b and e trade the edge from h for one from pre and one from latch, each
+    // phi operand (never a header value) repeated for both.
+    IrBlock* eb = &fn->blocks[e];
+    int ei = 0;
+    while (eb->preds[ei] != h) ei++;
+    eb->preds[ei] = pre;
+    eb->preds = xgrow(eb->preds, &eb->cpreds, eb->npreds + 1, sizeof(int));
+    eb->preds[eb->npreds++] = latch;
+    for (int i = 0; i < eb->nins && fn->ins[eb->ins[i]].op == IR_PHI; i++)
+        ir_arg_add(fn, eb->ins[i], fn->ins[eb->ins[i]].args[ei]);
+    for (int i = 0; i < bb->nins && fn->ins[bb->ins[i]].op == IR_PHI; i++) // b's own, not the new ones
+        if (fn->ins[bb->ins[i]].nargs == 1) ir_arg_add(fn, bb->ins[i], fn->ins[bb->ins[i]].args[0]);
+    for (int i = 0; i < n - 1; i++) {
+        ir_arg_add(fn, phib[i], mp[hv[i]]);
+        ir_arg_add(fn, phib[i], ml[hv[i]]);
+    }
+
+    // Every other use of a header value takes its phi at b.
+    for (int q = 0; q < fn->nblocks; q++) {
+        if (q == h) continue;
+        IrBlock* qb = &fn->blocks[q];
+        for (int i = 0; i < qb->nins; i++) {
+            IrIns* x = &fn->ins[qb->ins[i]];
+            for (int a = 0; a < x->nargs; a++) {
+                int j = 0;
+                if (fn->ins[x->args[a]].block != h) continue;
+                while (hv[j] != x->args[a]) j++;
+                x->args[a] = phib[j];
+            }
+        }
+    }
+
+    // h is unreachable now: no predecessors, its phis with no operands.
+    for (int i = 0; i < nphi; i++) fn->ins[hv[i]].nargs = 0;
+    hb->npreds = 0;
+    free(hv); free(mp); free(ml); free(phib);
+    return 1;
+}
+
+static int rotate(IrFunc* fn) {
+    int done = 0, any = 0;
+    for (int h = 0; h < fn->nblocks && !any; h++) any = rot_header(fn, h);
+    if (!any) return 0; // no dominators to compute
+    for (int again = 1; again;) { // one loop per round: rotation changes dominance
+        again = 0;
+        int* rpo, nrpo;
+        int* idom = ir_dominators(fn, &rpo, &nrpo);
+        uint8_t* body = xalloc((size_t)fn->nblocks, 1);
+        int* stack = xalloc((size_t)fn->nblocks, sizeof(int));
+        for (int i = 0; i < nrpo && !again; i++) again = rotate_loop(fn, idom, rpo[i], body, stack);
+        done |= again;
+        free(rpo); free(idom); free(body); free(stack);
+    }
+    return done;
+}
+
 void ir_optimize(IrFunc* fn) {
     sccp(fn);
     gvn(fn);
@@ -2198,4 +2369,5 @@ void ir_optimize(IrFunc* fn) {
     lsr(fn);
     cleanup(fn);
     if (vectorize(fn)) cleanup(fn); // over the merged blocks, which it then tidies
+    if (rotate(fn)) cleanup(fn);
 }

@@ -232,6 +232,20 @@ Why the rules in `spec/compiler.md` are shaped as they are.
   offset still takes part in value numbering, strength reduction, and address
   folding (`binbox` 1.45x to 1.25x). It needs no alias analysis; the pass adds
   about 1% to compiling selfhost, and the checks it keeps 6.5%.
+- Compiler #2, loop rotation (PHILOSOPHY.md: performance first): a hash
+  probe that usually ends at its first slot jumped into the loop to test
+  it; with the test copied before the loop and at its end, as LLVM's loop
+  rotation does, it takes no jump. `map-get` 1.25x median, `map-miss` 1.03x;
+  compiling selfhost costs 1.5%. A header value used where the first body
+  block does not dominate (after the loop, reached from the header's exit)
+  would need an exit phi of both copies and the body's phi; the allocator's
+  one interval per value cannot coalesce that three-way phi and moves each
+  operand on entry and exit, which made `map-set` 0.92x, so such a loop
+  stays. A header without a load is a counted loop, which gains nothing:
+  pass 10 already lays it out to end each iteration in the test. Pass 10
+  keeps a rotated loop's header in place: its latch, a split edge from the
+  exit test, already ends each iteration in a conditional branch, so the
+  move would only add a jump at entry.
 - Compiler #4 (PHILOSOPHY.md Cautions #1): emission straight from the AST needs
   every optimization written once per source shape and repeats each in a second
   backend; the compile-time cost ranks below performance, simplicity, and

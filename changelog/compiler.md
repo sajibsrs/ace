@@ -289,3 +289,7 @@
   version (a new one per store, call, atomic, asm, and differing merge);
   cleanup threads an edge past a branch its predecessor already decided; layout
   keeps a branch's in-loop successor next. `map` get 1.12x, miss 1.34x (#72).
+- Release rotates a loop whose header only tests and loads (at most 8 pure
+  operations, plain loads, checks): a copy of the header ends the preheader
+  and the latch, when the body's first block dominates every header value's
+  use; layout keeps such a latch in place. `map` get 1.25x, miss 1.03x (#72).
