@@ -334,7 +334,9 @@ static void dom_walk(IrFunc* fn, const int* idom, void (*enter)(void*, int), voi
 // an operation equal to one in a dominating block is replaced by it, and an
 // identity (`x + 0`, `x * 1`, `x | x`, a cast to the same type) by its operand.
 // A constant operand counts by its value, not its id, because lowering makes a
-// fresh `const` per use. Loads are never numbered (no memory model).
+// fresh `const` per use. A load counts with its memory version: one per
+// store, call, atomic, or asm, and one per merge of differing versions, so
+// two loads of one address and version see the same memory.
 
 static int is_pure(const IrIns* x) {
     if (x->flags) return 0;
@@ -360,6 +362,8 @@ typedef struct {
     VnEnt*  ent;
     int*    log;  // bucket of each live entry, newest last
     int*    mark; // entries live at each walked block's entry
+    int*    mem;  // each load's memory version
+    int*    in;   // each block's memory version at entry
     int     nent, mask;
 } Vn;
 
@@ -393,8 +397,10 @@ static uint64_t arg_hash(const IrFunc* fn, int a) {
     return x->op == IR_CONST ? mix(mix(1, x->type), x->imm) : mix(2, (uint64_t)a);
 }
 
-static uint64_t vn_hash(const IrFunc* fn, const IrIns* x) {
+static uint64_t vn_hash(const Vn* g, const IrIns* x) {
+    const IrFunc* fn = g->fn;
     uint64_t h = mix(mix(mix(x->op, x->type), x->imm), (uint64_t)(uint32_t)x->aux);
+    if (x->op == IR_LOAD) h = mix(h, (uint64_t)(uint32_t)g->mem[x - fn->ins]);
     if (x->op == IR_GLOBAL) return mix(h, (uint64_t)(uintptr_t)x->sym);
     if (commutes(fn, x)) return mix(h, arg_hash(fn, x->args[0]) + arg_hash(fn, x->args[1]));
     for (int i = 0; i < x->nargs; i++) h = mix(h, arg_hash(fn, x->args[i]));
@@ -409,8 +415,10 @@ static int same_global(const IrIns* x, const IrIns* y) {
 
 // A global counts as equal only by a shared, non-null symbol and name: the
 // name-only (vtable) form has no symbol to key on and is never merged.
-static int vn_equal(const IrFunc* fn, const IrIns* x, const IrIns* y) {
+static int vn_equal(const Vn* g, const IrIns* x, const IrIns* y) {
+    const IrFunc* fn = g->fn;
     if (x->op != y->op || x->type != y->type || x->imm != y->imm || x->aux != y->aux || x->nargs != y->nargs) return 0;
+    if (x->op == IR_LOAD && g->mem[x - fn->ins] != g->mem[y - fn->ins]) return 0;
     if (x->op == IR_GLOBAL) return x->sym && same_global(x, y);
     int direct = 1, swapped = x->nargs == 2 && commutes(fn, x);
     for (int i = 0; i < x->nargs; i++) {
@@ -447,22 +455,67 @@ static int simplify(const IrFunc* fn, const IrIns* x) {
     }
 }
 
+// Whether x may write memory.
+static int clobbers(const IrIns* x) {
+    switch (x->op) {
+    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_ATOMIC: case IR_ASM: return 1;
+    default: return 0;
+    }
+}
+
+// Each block's memory version at entry: 0 at the function's, its
+// predecessors' common version when they agree, else b + 1, its own. A block
+// leaves with the version of its last clobber, nblocks + 1 + that
+// instruction, or else the one it entered with. A predecessor not yet reached
+// is ignored (a loop's back edge, optimistically); a block whose version
+// changes once known takes its own, so the walk ends.
+static int* mem_versions(const IrFunc* fn, const int* rpo, int nrpo) {
+    int n = fn->nblocks;
+    int* in = xalloc((size_t)n, sizeof(int));
+    int* out = xalloc((size_t)n, sizeof(int));
+    for (int b = 0; b < n; b++) in[b] = out[b] = -1;
+    for (int changed = 1; changed;) {
+        changed = 0;
+        for (int q = 0; q < nrpo; q++) {
+            int b = rpo[q], v = q == 0 ? 0 : -1;
+            const IrBlock* bb = &fn->blocks[b];
+            for (int p = 0; p < bb->npreds && q; p++) {
+                int o = out[bb->preds[p]];
+                if (o < 0 || o == v) continue;
+                v = v < 0 ? o : b + 1;
+            }
+            if (in[b] >= 0 && v != in[b]) v = b + 1;
+            int o = v;
+            for (int i = 0; i < bb->nins; i++)
+                if (clobbers(&fn->ins[bb->ins[i]])) o = n + 1 + bb->ins[i];
+            if (v != in[b] || o != out[b]) changed = 1;
+            in[b] = v;
+            out[b] = o;
+        }
+    }
+    free(out);
+    return in;
+}
+
 static void gvn_block(void* ctx, int b) {
     Vn* g = ctx;
     IrFunc* fn = g->fn;
     g->mark[b] = g->nent;
     IrBlock* bb = &fn->blocks[b];
-    int k = 0;
+    int k = 0, ver = g->in[b];
     for (int i = 0; i < bb->nins; i++) {
         int v = bb->ins[i];
         IrIns* x = &fn->ins[v];
         for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(g, x->args[a]);
-        if (!is_pure(x)) { bb->ins[k++] = v; continue; }
-        int w = simplify(fn, x);
+        if (clobbers(x)) ver = fn->nblocks + 1 + v;
+        int load = x->op == IR_LOAD && !(x->flags & IRF_VOLATILE);
+        if (load) g->mem[v] = ver;
+        if (!load && !is_pure(x)) { bb->ins[k++] = v; continue; }
+        int w = load ? -1 : simplify(fn, x);
         if (w < 0) {
-            int h = (int)(vn_hash(fn, x) & (uint64_t)g->mask);
+            int h = (int)(vn_hash(g, x) & (uint64_t)g->mask);
             for (int e = g->head[h]; e >= 0 && w < 0; e = g->ent[e].next)
-                if (vn_equal(fn, &fn->ins[g->ent[e].v], x)) w = g->ent[e].v;
+                if (vn_equal(g, &fn->ins[g->ent[e].v], x)) w = g->ent[e].v;
             if (w < 0) {
                 g->ent[g->nent] = (VnEnt){ v, g->head[h] };
                 g->head[h] = g->nent;
@@ -501,13 +554,15 @@ static void gvn(IrFunc* fn) {
     g.mark = xalloc((size_t)n, sizeof(int));
     int* rpo, nrpo;
     int* idom = ir_dominators(fn, &rpo, &nrpo);
+    g.mem = xalloc((size_t)fn->nins, sizeof(int));
+    g.in = mem_versions(fn, rpo, nrpo);
     dom_walk(fn, idom, gvn_block, gvn_leave, &g);
     for (int b = 0; b < n; b++)
         for (int i = 0; i < fn->blocks[b].nins; i++) {
             IrIns* x = &fn->ins[fn->blocks[b].ins[i]];
             for (int a = 0; a < x->nargs; a++) x->args[a] = vn_chase(&g, x->args[a]);
         }
-    free(g.head); free(g.ent); free(g.log); free(g.repl); free(g.mark);
+    free(g.head); free(g.ent); free(g.log); free(g.repl); free(g.mark); free(g.mem); free(g.in);
     free(rpo); free(idom);
 }
 
@@ -820,13 +875,6 @@ static int ins_before_term(IrFunc* fn, int b, IrOp op, IrType type) {
 // atomic or asm. Neither faults when the loop runs no iteration. A constant
 // operand gets its own copy there, as lowering makes one per use. Inner loops
 // go first, so a value they hoist can leave the enclosing loop too.
-
-static int clobbers(const IrIns* x) {
-    switch (x->op) {
-    case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_ATOMIC: case IR_ASM: return 1;
-    default: return 0;
-    }
-}
 
 static void licm(IrFunc* fn) {
     int n = fn->nblocks;
@@ -1991,6 +2039,68 @@ static int thread_branches(Clean* c) {
     return changed;
 }
 
+// c's value on the edge from p into j when a branch on c decides it there:
+// p's own, or the one into a block that has a single predecessor and
+// dominates p. 1 or 0, else -1.
+static int edge_truth(const IrFunc* fn, const int* idom, int c, int p, int j) {
+    const IrBlock* pb = &fn->blocks[p];
+    const IrIns* t = &fn->ins[pb->ins[pb->nins - 1]];
+    if (t->op == IR_BR && t->args[0] == c && pb->succ[0] != pb->succ[1]) return pb->succ[0] == j;
+    for (int x = p; x > 0; x = idom[x]) { // x dominates p
+        const IrBlock* xb = &fn->blocks[x];
+        if (xb->npreds != 1) continue;
+        const IrBlock* yb = &fn->blocks[xb->preds[0]];
+        const IrIns* yt = &fn->ins[yb->ins[yb->nins - 1]];
+        if (yt->op == IR_BR && yt->args[0] == c && yb->succ[0] != yb->succ[1]) return yb->succ[0] == x;
+    }
+    return -1;
+}
+
+// A block j holding only a branch on c, entered from p where c is already
+// decided, is skipped: p goes straight to the successor c selects, s, whose
+// phis take from p what they take from j. Neither j nor s heads a loop, and
+// p does not already enter s.
+static int thread_known(Clean* c) {
+    IrFunc* fn = c->fn;
+    int* rpo;
+    int  nrpo, changed = 0;
+    int* idom = ir_dominators(fn, &rpo, &nrpo);
+    for (int j = 1; j < fn->nblocks && !changed; j++) {
+        IrBlock* jb = &fn->blocks[j];
+        if (c->dead[j] || idom[j] < 0 || jb->nins != 1) continue;
+        const IrIns* t = &fn->ins[jb->ins[0]];
+        if (t->op != IR_BR || jb->succ[0] == jb->succ[1]) continue;
+        int header = 0;
+        for (int q = 0; q < jb->npreds; q++) header |= idom[jb->preds[q]] >= 0 && ir_dominates(idom, j, jb->preds[q]);
+        if (header) continue;
+        for (int i = 0; i < jb->npreds && !changed; i++) {
+            int p = jb->preds[i];
+            IrBlock* pb = &fn->blocks[p];
+            if ((pb->succ[0] == j) + (pb->succ[1] == j) != 1) continue;
+            int r = edge_truth(fn, idom, t->args[0], p, j);
+            if (r < 0) continue;
+            int s = jb->succ[r ? 0 : 1], js = -1, skip = 0;
+            IrBlock* sb = &fn->blocks[s];
+            for (int q = 0; q < sb->npreds; q++) {
+                if (sb->preds[q] == j) js = q;
+                skip |= sb->preds[q] == p || (idom[sb->preds[q]] >= 0 && ir_dominates(idom, s, sb->preds[q]));
+            }
+            if (skip || js < 0) continue;
+            for (int q = 0; q < sb->nins && fn->ins[sb->ins[q]].op == IR_PHI; q++) {
+                int a = fn->ins[sb->ins[q]].args[js];
+                ir_arg_add(fn, sb->ins[q], a);
+            }
+            sb->preds = xgrow(sb->preds, &sb->cpreds, sb->npreds + 1, sizeof(int));
+            sb->preds[sb->npreds++] = p;
+            pb->succ[pb->succ[0] == j ? 0 : 1] = s;
+            drop_pred(fn, j, p);
+            changed = 1;
+        }
+    }
+    free(idom); free(rpo);
+    return changed;
+}
+
 static int has_effect(const IrIns* x) {
     switch (x->op) {
     case IR_STORE: case IR_CALL: case IR_CALLI: case IR_RTCALL: case IR_CHECK: case IR_PROJ: case IR_ASM:
@@ -2072,6 +2182,7 @@ static void cleanup(IrFunc* fn) {
         changed |= merge_blocks(&c);
         changed |= thread_jumps(&c);
         changed |= thread_branches(&c);
+        changed |= thread_known(&c);
         changed |= dce(&c);
         compact(&c);
     }

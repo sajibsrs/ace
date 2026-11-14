@@ -285,3 +285,7 @@
   condition folded to true, and a null check an earlier access proves: a
   dominator-tree walk keeps known comparisons and derives value ranges through
   casts, constant offsets, and `+1` counters (`checks`). 1.217x to 1.057x (#177).
+- Release GVN merges two non-volatile loads of one address under one memory
+  version (a new one per store, call, atomic, asm, and differing merge);
+  cleanup threads an edge past a branch its predecessor already decided; layout
+  keeps a branch's in-loop successor next. `map` get 1.12x, miss 1.34x (#72).

@@ -394,7 +394,9 @@ dom_walk[T](fn: Func, idom: array.Array[int], w: *T) {
 // an operation equal to one in a dominating block is replaced by it, and an
 // identity (`x + 0`, `x * 1`, `x | x`, a cast to the same type) by its operand.
 // A constant operand counts by its value, not its id, because lowering makes a
-// fresh `const` per use. Loads are never numbered (no memory model).
+// fresh `const` per use. A load counts with its memory version: one per
+// store, call, atomic, or asm, and one per merge of differing versions, so
+// two loads of one address and version see the same memory.
 
 is_pure(x: IrIns): bool {
     if x.flags != 0 { return false }
@@ -419,6 +421,8 @@ Vn: struct {
     ent: array.Array[VnEnt],
     log: array.Array[int],    // bucket of each live entry, newest last
     mark: array.Array[int],   // entries live at each walked block's entry
+    mem: array.Array[int],    // each load's memory version
+    inn: array.Array[int],    // each block's memory version at entry
     mask: u64 = 0,
 }
 
@@ -428,6 +432,8 @@ Vn.wipe(self) {
     self.ent.wipe()
     self.log.wipe()
     self.mark.wipe()
+    self.mem.wipe()
+    self.inn.wipe()
 }
 
 Vn.chase(self, v: int): int {
@@ -460,9 +466,11 @@ arg_hash(fn: Func, a: int): u64 {
     return mix(2, u64(a))
 }
 
-vn_hash(fn: Func, v: int): u64 {
+vn_hash(g: Vn, v: int): u64 {
+    fn: Func = *g.fn
     x: IrIns = *(fn.at(v))
     h: u64 = mix(mix(mix(u64(x.op), u64(x.ty)), x.imm), u64(u32(x.aux)))
+    if x.op == ir.IR_LOAD { h = mix(h, u64(u32(g.mem.get(v)))) }
     if x.op == ir.IR_GLOBAL { return mix(h, u64(x.sym)) }
     if commutes(fn, v) { return mix(h, arg_hash(fn, fn.arg(v, 0)) + arg_hash(fn, fn.arg(v, 1))) }
     for i: u32 in 0..x.nargs { h = mix(h, arg_hash(fn, fn.arg(v, i))) }
@@ -479,10 +487,12 @@ same_global(x: IrIns, y: IrIns): bool {
 /* A global counts as equal only by a shared, nonzero symbol and name: the
  * name-only (vtable) form has no symbol to key on and is never merged.
  */
-vn_equal(fn: Func, xv: int, yv: int): bool {
+vn_equal(g: Vn, xv: int, yv: int): bool {
+    fn: Func = *g.fn
     x: IrIns = *(fn.at(xv))
     y: IrIns = *(fn.at(yv))
     if x.op != y.op || x.ty != y.ty || x.imm != y.imm || x.aux != y.aux || x.nargs != y.nargs { return false }
+    if x.op == ir.IR_LOAD && g.mem.get(xv) != g.mem.get(yv) { return false }
     if x.op == ir.IR_GLOBAL { return x.sym != 0 && same_global(x, y) }
     direct: bool = true
     swapped: bool = x.nargs == 2 && commutes(fn, xv)
@@ -538,24 +548,78 @@ simplify(fn: Func, v: int): int {
     }
 }
 
+/* Whether x may write memory. */
+clobbers(x: IrIns): bool {
+    switch x.op {
+        ir.IR_STORE, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_ATOMIC, ir.IR_ASM { return true }
+        default { return false }
+    }
+}
+
+/* Each block's memory version at entry: 0 at the function's, its
+ * predecessors' common version when they agree, else b + 1, its own. A block
+ * leaves with the version of its last clobber, nblocks + 1 + that
+ * instruction, or else the one it entered with. A predecessor not yet reached
+ * is ignored (a loop's back edge, optimistically); a block whose version
+ * changes once known takes its own, so the walk ends.
+ */
+mem_versions(fn: Func, rpo: array.Array[int]): array.Array[int] {
+    n: int = int(fn.blocks.len)
+    inn: array.Array[int], inn_err: Error = array.Array[int].filled(usize(n), -1)
+    fail(inn_err)
+    out: array.Array[int], out_err: Error = array.Array[int].filled(usize(n), -1)
+    fail(out_err)
+    defer out.wipe()
+    changed: bool = true
+    for changed {
+        changed = false
+        for q: usize in 0..rpo.len {
+            b: int = rpo.get(q)
+            v: int = -1
+            if q == 0 { v = 0 }
+            for p: int in fn.block(b).preds.view() {
+                if q == 0 { break }
+                o: int = out.get(p)
+                if o < 0 || o == v { continue }
+                if v < 0 { v = o } else { v = b + 1 }
+            }
+            if inn.get(b) >= 0 && v != inn.get(b) { v = b + 1 }
+            o: int = v
+            for id: int in fn.block(b).ins.view() {
+                if clobbers(*(fn.at(id))) { o = n + 1 + id }
+            }
+            if v != inn.get(b) || o != out.get(b) { changed = true }
+            inn.set(usize(b), v)
+            out.set(usize(b), o)
+        }
+    }
+    return inn
+}
+
 Vn.enter(self, b: int) {
     self.mark.set(usize(b), int(self.ent.len))
     bp: *IrBlock = self.fn.block(b)
     list: []int = bp.ins.view()
     k: usize = 0
+    ver: int = self.inn.get(b)
     for i: usize in 0..list.len {
         v: int = list[i]
         for a: u32 in 0..self.fn.at(v).nargs { self.fn.set_arg(v, a, self.chase(self.fn.arg(v, a))) }
-        if !is_pure(*self.fn.at(v)) {
+        x: IrIns = *self.fn.at(v)
+        if clobbers(x) { ver = int(self.fn.blocks.len) + 1 + v }
+        load: bool = x.op == ir.IR_LOAD && (x.flags & ir.IRF_VOLATILE) == 0
+        if load { self.mem.set(usize(v), ver) }
+        if !load && !is_pure(x) {
             list[k] = v
             k += 1
             continue
         }
-        w: int = simplify(*self.fn, v)
+        w: int = -1
+        if !load { w = simplify(*self.fn, v) }
         if w < 0 {
-            h: int = int(vn_hash(*self.fn, v) & self.mask)
+            h: int = int(vn_hash(self, v) & self.mask)
             for e: int = self.head.get(h); e >= 0 && w < 0; e = self.ent.get(e).next {
-                if vn_equal(*self.fn, self.ent.get(e).v, v) { w = self.ent.get(e).v }
+                if vn_equal(self, self.ent.get(e).v, v) { w = self.ent.get(e).v }
             }
             if w < 0 {
                 fail(self.ent.push(VnEnt { v = v, next = self.head.get(h) }))
@@ -583,7 +647,7 @@ Vn.leave(self, b: int) {
 }
 
 gvn(fn: *Func) {
-    g: Vn = Vn { fn = fn, repl = array.Array[int] {}, head = array.Array[int] {}, ent = array.Array[VnEnt] {}, log = array.Array[int] {}, mark = array.Array[int] {} }
+    g: Vn = Vn { fn = fn, repl = array.Array[int] {}, head = array.Array[int] {}, ent = array.Array[VnEnt] {}, log = array.Array[int] {}, mark = array.Array[int] {}, mem = array.Array[int] {}, inn = array.Array[int] {} }
     defer g.wipe()
     n: int = int(fn.blocks.len)
     size: usize = 16
@@ -599,6 +663,9 @@ gvn(fn: *Func) {
     idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*fn)
     defer idom.wipe()
     defer rpo.wipe()
+    g.mem, err = array.Array[int].filled(fn.ins.len, 0)
+    fail(err)
+    g.inn = mem_versions(*fn, rpo)
     dom_walk[Vn](*fn, idom, &g)
     for b: usize in 0..fn.blocks.len {
         for id: int in fn.blocks.get(b).ins.view() {
@@ -992,13 +1059,6 @@ ins_before_term(fn: *Func, b: int, op: u8, ty: u8): int {
 // atomic or asm. Neither faults when the loop runs no iteration. A constant
 // operand gets its own copy there, as lowering makes one per use. Inner loops
 // go first, so a value they hoist can leave the enclosing loop too.
-
-clobbers(x: IrIns): bool {
-    switch x.op {
-        ir.IR_STORE, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_ATOMIC, ir.IR_ASM { return true }
-        default { return false }
-    }
-}
 
 licm(fn: *Func) {
     idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*fn)
@@ -2398,6 +2458,79 @@ Clean.thread_branches(self): bool {
     return changed
 }
 
+/* c's value on the edge from p into j when a branch on c decides it there:
+ * p's own, or the one into a block that has a single predecessor and
+ * dominates p. 1 or 0, else -1.
+ */
+edge_truth(fn: Func, idom: array.Array[int], c: int, p: int, j: int): int {
+    pb: IrBlock = *(fn.block(p))
+    t: IrIns = *(fn.at(last(fn, p)))
+    if t.op == ir.IR_BR && fn.arg(last(fn, p), 0) == c && pb.succ0 != pb.succ1 { return int(flag(pb.succ0 == j)) }
+    for x: int = p; x > 0; x = idom.get(x) { // x dominates p
+        xb: IrBlock = *(fn.block(x))
+        if xb.preds.len != 1 { continue }
+        y: int = xb.preds.get(0)
+        yb: IrBlock = *(fn.block(y))
+        yt: IrIns = *(fn.at(last(fn, y)))
+        if yt.op == ir.IR_BR && fn.arg(last(fn, y), 0) == c && yb.succ0 != yb.succ1 { return int(flag(yb.succ0 == x)) }
+    }
+    return -1
+}
+
+/* A block j holding only a branch on c, entered from p where c is already
+ * decided, is skipped: p goes straight to the successor c selects, s, whose
+ * phis take from p what they take from j. Neither j nor s heads a loop, and
+ * p does not already enter s.
+ */
+Clean.thread_known(self): bool {
+    fn: *Func = self.fn
+    changed: bool = false
+    idom: array.Array[int], rpo: array.Array[int] = ir.dominators(*fn)
+    defer idom.wipe()
+    defer rpo.wipe()
+    for j: int in 1..int(fn.blocks.len) {
+        if changed { break }
+        if self.dead.get(j) || idom.get(j) < 0 || fn.block(j).ins.len != 1 { continue }
+        tv: int = fn.block(j).ins.get(0)
+        if fn.at(tv).op != ir.IR_BR || fn.block(j).succ0 == fn.block(j).succ1 { continue }
+        header: bool = false
+        for q: int in fn.block(j).preds.view() {
+            header = header || (idom.get(q) >= 0 && ir.dominates(idom, j, q))
+        }
+        if header { continue }
+        for i: usize in 0..fn.block(j).preds.len {
+            if changed { break }
+            p: int = fn.block(j).preds.get(i)
+            pb: IrBlock = *(fn.block(p))
+            if int(flag(pb.succ0 == j)) + int(flag(pb.succ1 == j)) != 1 { continue }
+            r: int = edge_truth(*fn, idom, fn.arg(tv, 0), p, j)
+            if r < 0 { continue }
+            s: int = fn.block(j).succ1
+            if r != 0 { s = fn.block(j).succ0 }
+            js: int = -1
+            skip: bool = false
+            sb: IrBlock = *(fn.block(s))
+            for q: usize in 0..sb.preds.len {
+                sq: int = sb.preds.get(q)
+                if sq == j { js = int(q) }
+                skip = skip || sq == p || (idom.get(sq) >= 0 && ir.dominates(idom, s, sq))
+            }
+            if skip || js < 0 { continue }
+            for id: int in fn.block(s).ins.view() {
+                if fn.at(id).op != ir.IR_PHI { break }
+                fn.arg_add(id, fn.arg(id, u32(js)))
+            }
+            sp: *IrBlock = fn.block(s)
+            fail(sp.preds.push(p))
+            pp: *IrBlock = fn.block(p)
+            if pp.succ0 == j { pp.succ0 = s } else { pp.succ1 = s }
+            drop_pred(fn, j, p)
+            changed = true
+        }
+    }
+    return changed
+}
+
 has_effect(x: IrIns): bool {
     switch x.op {
         ir.IR_STORE, ir.IR_ATOMIC, ir.IR_CALL, ir.IR_CALLI, ir.IR_RTCALL, ir.IR_CHECK, ir.IR_PROJ, ir.IR_ASM, ir.IR_PARAM, ir.IR_RESULT, ir.IR_JMP, ir.IR_BR, ir.IR_RET { return true }
@@ -2502,6 +2635,7 @@ cleanup(fn: *Func) {
         changed = c.merge_blocks() || changed
         changed = c.thread_jumps() || changed
         changed = c.thread_branches() || changed
+        changed = c.thread_known() || changed
         changed = c.dce() || changed
         c.compact()
     }
